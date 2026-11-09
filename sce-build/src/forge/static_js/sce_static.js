@@ -1063,6 +1063,19 @@
       }
       return value;
     },
+    /* A list a statechart filled by appends, sent into a field that states a
+       lower count (docs/adr/0086, section 15.6): a variable states none, so the
+       send holds it here, before the list is written, and a short list fails
+       the param as a precondition, the event refused whole. */
+    holdsAtLeast: function (list, least) {
+      if (!Array.isArray(list)) {
+        fail('expected a list, read ' + String(list));
+      }
+      if (list.length < least) {
+        fail('the list holds ' + String(list.length) + ', fewer than the ' + String(least) + ' its field declares', 'precondition');
+      }
+      return list;
+    },
     within: function (list, capacity) {
       if (!Array.isArray(list)) {
         fail('expected a list, read ' + String(list));

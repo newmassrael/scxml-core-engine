@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  counted.sent: a list that holds at least one element and at most two
+  (docs/adr/0086, section 15). static_composed_send sends it from a list
+  variable it fills by appends, which states no lower count (section 15.7), so
+  the send holds the count when it runs (section 15.6): sent empty it is
+  refused whole with error.execution, and sent with an element it arrives.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_counted"
+       sce:event-name="counted.sent">
+  <datamodel>
+    <data id="kept" sce:type="list&lt;uint8&gt;[1..2]" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -6,12 +6,20 @@
   they are and `late` as the list variable it was taken into, and the delivery
   that comes back is measured as static_composed_payload measures one. A value
   sent by its name crosses whole, so every out variable read from the second
-  delivery is what the first held, and the second delivery fits its schema
-  (`refusals` stays 0).
+  delivery is what the first held, and the second delivery fits its schema.
+
+  A list variable sent to a field that states a lower count fits it but for
+  that count, which a variable filled by appends does not prove (section 15.6):
+  the send holds it when it runs. The first delivery also sends `counted.sent`
+  with `held`, still empty, which is refused whole with error.execution, the one
+  refusal (`refusals` is 1) and no delivery of it; the delivery that comes back
+  appends 7 to `held` and sends it again, which arrives (`counted_deliveries`
+  1, `counted_sum` 7).
 
   It reads the schemas beside it, as static_composed_payload does:
   event_batch.scxml (batch.sent), event_batch_item.scxml (the record each
-  element of items is) and enum_signal_level.scxml.
+  element of items is) and enum_signal_level.scxml, and event_counted.scxml
+  (counted.sent).
 
   It names no backend. Which backends lower it, and the harness that compiles
   and runs its machine on each, are listed once, in docs/SCE_ACCEPTED_SUBSET.md
@@ -35,6 +43,7 @@
   <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
   <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
   <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
+  <sce:import kind="event-schema" src="event_counted.scxml" as="Counted"/>
   <datamodel>
     <data id="deliveries" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="item_count" sce:type="uint32" expr="0" sce:direction="out"/>
@@ -46,6 +55,9 @@
     <data id="late_sum" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="late" sce:type="list&lt;uint8&gt;[2]" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="held" sce:type="list&lt;uint8&gt;[2]"/>
+    <data id="counted_deliveries" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="counted_sum" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <!-- The first delivery: forwarded whole, each composed field by the name of
@@ -61,6 +73,11 @@
         <param name="spare" expr="_event.data.spare"/>
         <param name="note" expr="'echo'"/>
         <param name="late" expr="late"/>
+      </send>
+      <!-- `held` is empty: short of the one element `counted.sent` asks, the
+           send is refused whole when it runs, and its block ends here. -->
+      <send event="counted.sent" target="#_internal">
+        <param name="kept" expr="held"/>
       </send>
     </transition>
     <!-- The delivery that came back, measured. -->
@@ -83,6 +100,18 @@
       <if cond="len(_event.data.maybe) &gt; 0">
         <assign location="first_maybe" expr="_event.data.maybe[0]"/>
       </if>
+      <!-- `held` holds an element now: the send holds its count and goes. -->
+      <sce:append target="held" expr="7"/>
+      <send event="counted.sent" target="#_internal">
+        <param name="kept" expr="held"/>
+      </send>
+    </transition>
+    <!-- The list that held its count, arrived. -->
+    <transition event="counted.sent" type="internal">
+      <assign location="counted_deliveries" expr="counted_deliveries + 1"/>
+      <foreach array="_event.data.kept" item="each">
+        <assign location="counted_sum" expr="counted_sum + each"/>
+      </foreach>
     </transition>
     <!-- A delivery outside its type is refused whole, and error.execution says
          so once. -->

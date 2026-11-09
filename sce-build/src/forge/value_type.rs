@@ -3642,6 +3642,60 @@ pub fn fits(from: &ValueType, to: &ValueType, identity: &dyn TypeIdentity) -> Re
     fits_at(from, to, identity, "")
 }
 
+/// Whether a value of type `from` may be *sent* where `to` is expected
+/// (docs/adr/0086, section 15.6): [`fits`], but for one thing the build cannot
+/// prove of a list a statechart fills by appends, its own lower count. A
+/// variable states no lower count (section 15.7), so a list variable sent to a
+/// field that states one fits it in everything else and may still hold too
+/// few; the send holds that count at run time, before it encodes, and refuses
+/// the event with `error.execution` where the list is short (hybrid type
+/// checking: what the build decides it decides, and the rest is checked where
+/// the value crosses).
+///
+/// `Ok(None)` for a value that fits, which the send checks nothing of;
+/// `Ok(Some(least))` for a list that fits but for its own lower count, which
+/// the send holds to `least`, the field's; and the misfit otherwise. Only the
+/// outermost list is left to the run-time check: a lower count inside an
+/// element is one a value of the element's type proves or refuses, as any part
+/// of a type that fits does, and a value that may be absent is refused as it
+/// was.
+pub fn fits_but_for_count(
+    from: &ValueType,
+    to: &ValueType,
+    identity: &dyn TypeIdentity,
+) -> Result<Option<u32>, Misfit> {
+    match fits(from, to, identity) {
+        Ok(()) => Ok(None),
+        Err(misfit) => match count_left_to_send(from, to) {
+            Some(least) if misfit.why == MisfitReason::LowerCount && misfit.path.is_empty() => {
+                Ok(Some(least))
+            }
+            _ => Err(misfit),
+        },
+    }
+}
+
+/// The lower count a list of `from` is held to where it is sent into a place
+/// of `to` that states more than it does: the place's own, read through an
+/// optional place, since a list that is sent is present. `None` where `from`
+/// is no list or `to` asks no more than it states. The lowering of a send asks
+/// it of a param [`fits_but_for_count`] accepted, for the count it writes the
+/// check of.
+pub fn count_left_to_send(from: &ValueType, to: &ValueType) -> Option<u32> {
+    let to = match to {
+        ValueType::Optional { elem } => elem.as_ref(),
+        other => other,
+    };
+    match (from, to) {
+        (ValueType::List { max: held, .. }, ValueType::List { max: asked, .. })
+            if held.min < asked.min =>
+        {
+            Some(asked.min)
+        }
+        _ => None,
+    }
+}
+
 fn fits_at(
     from: &ValueType,
     to: &ValueType,
@@ -5368,6 +5422,42 @@ mod tests {
                 &Documents
             ),
             Ok(())
+        );
+    }
+
+    /// A list a statechart fills by appends is sent where its own lower count
+    /// is the one thing the build does not prove (docs/adr/0086, section 15.6):
+    /// the send is accepted with the field's lower count left to hold at run
+    /// time, through an optional field too; every other misfit, a lower count
+    /// inside an element among them, is refused as `fits` refuses it.
+    #[test]
+    fn a_send_leaves_only_the_outermost_lower_count_to_run_time() {
+        let send = |from: &str, to: &str| fits_but_for_count(&ty(from), &ty(to), &Documents);
+        assert_eq!(send("list<uint8>[3]", "list<uint8>[3]"), Ok(None));
+        assert_eq!(send("list<uint8>[2..3]", "list<uint8>[1..3]"), Ok(None));
+        assert_eq!(send("list<uint8>[3]", "list<uint8>[1..3]"), Ok(Some(1)));
+        assert_eq!(send("list<uint8>[1..3]", "list<uint8>[2..3]"), Ok(Some(2)));
+        assert_eq!(
+            send("list<uint8>[3]", "optional<list<uint8>[2..3]>"),
+            Ok(Some(2))
+        );
+        let refused = |from: &str, to: &str| send(from, to).unwrap_err();
+        assert_eq!(
+            refused("list<uint8>[4]", "list<uint8>[1..3]").why,
+            MisfitReason::Bound
+        );
+        let deeper = refused("list<list<uint8>[2]>[2]", "list<list<uint8>[1..2]>[2]");
+        assert_eq!(
+            (deeper.path.as_str(), deeper.why),
+            ("/*", MisfitReason::LowerCount)
+        );
+        assert_eq!(
+            refused("optional<list<uint8>[3]>", "optional<list<uint8>[1..3]>").why,
+            MisfitReason::LowerCount
+        );
+        assert_eq!(
+            refused("list<bool>[3]", "list<uint8>[1..3]").why,
+            MisfitReason::Constructor
         );
     }
 

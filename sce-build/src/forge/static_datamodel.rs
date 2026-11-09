@@ -4059,7 +4059,10 @@ impl<'a> Judge<'a> {
     /// that holds the value whole (a variable, a field of a record variable, or
     /// a part of the payload of the event the transition is on, forwarded),
     /// and is accepted when that place's type fits the field's (section 5.1),
-    /// so the send checks nothing of it when it runs. A value that does not
+    /// so the send checks nothing of it when it runs, or fits it but for the
+    /// lower count of the list itself, which a list filled by appends cannot
+    /// prove and the send holds when it runs (section 15.6,
+    /// [`crate::forge::value_type::fits_but_for_count`]). A value that does not
     /// fit is refused naming the field, the schema that reads it and the first
     /// place, by path, where it may not fit; a value that names no place is
     /// judged as the expression it is, and refused when it is one.
@@ -4146,20 +4149,26 @@ impl<'a> Judge<'a> {
             from: scope_at(base, &place.scope),
             to: scope_at(base, &field.scope),
         };
-        crate::forge::value_type::fits(&place.ty, &field.ty, &names).map_err(|misfit| {
-            self.rule_at(
-                construct,
-                &format!(
-                    "{reader}, and {}: a delivery of it may not fit that schema, so the send \
+        // A list filled by appends fits but for its own lower count, which no
+        // variable states (docs/adr/0086, sections 15.6 and 15.7): the send
+        // holds that count when it runs, and the lowering writes the check
+        // (`composed_wire_value`). Everything else is proven here or refused.
+        crate::forge::value_type::fits_but_for_count(&place.ty, &field.ty, &names).map_err(
+            |misfit| {
+                self.rule_at(
+                    construct,
+                    &format!(
+                        "{reader}, and {}: a delivery of it may not fit that schema, so the send \
                      is refused here rather than where it arrives",
-                    misfit.sentence(written.trim())
-                ),
-                line,
-                col,
-                state,
-                written,
-            )
-        })?;
+                        misfit.sentence(written.trim())
+                    ),
+                    line,
+                    col,
+                    state,
+                    written,
+                )
+            },
+        )?;
         Ok(true)
     }
 
