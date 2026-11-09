@@ -497,7 +497,10 @@ and nothing another lane edits.** A lane adds or changes:
    tests over the schemas every lane's tests share (`composed_lowering/test_support.rs`). The walks'
    file gains only the `mod` line and the re-export of the names the generator calls; the lane's
    `StaticTarget` returns its spelling from `composed_spelling` and `composed_send_spelling`, in that
-   backend's own `impl` in `static_lowering.rs`.
+   backend's own `impl` in `static_lowering.rs`. A case whose spelling needs more of the type than its
+   parts' texts (C11, which has no closure and no generic to name a type by) is asked through a
+   defaulted method of `ComposedSpelling` the walk calls for every spelling (`write_enum_of`,
+   `copy_list_into`), so the other lanes' spellings do not change.
 2. **Its row in the table**, one line of `ComposedLowering::of`, the rows a blank line apart so two lanes
    landed side by side touch no line in common. `each_backend_lowers_the_composed_positions_its_spelling_spells`
    holds every row to what the backend's target spells, so a row cannot land without its spelling or a
