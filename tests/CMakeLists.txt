@@ -265,6 +265,9 @@ add_executable(sce_scxml_tests
     # The length a template's length restriction holds a text to, in
     # characters (docs/SCE_TEST_PROFILE.md §11.4).
     test_runtime/TextLengthTest.cpp
+    # The JSON Canonicalization Scheme (RFC 8785) the test log is written in
+    # (docs/SCE_TEST_PROFILE.md §12.5).
+    test_runtime/CanonicalJsonTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp

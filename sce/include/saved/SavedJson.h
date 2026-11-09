@@ -11,6 +11,10 @@
 // two values from one text. A value is null, a bool, a string, a number (its text), an
 // array, or an object whose members stay in the order they were written.
 //
+// The same value model is written in the JSON Canonicalization Scheme (RFC 8785) by
+// writeCanonical, which the test profile's runtime writes its test log with
+// (docs/SCE_TEST_PROFILE.md §12.5, sce/include/test/TestLog.h).
+//
 // Header-only and dependency-free, as JsonText.h is, because generated machines compile
 // without nlohmann. Cross-language siblings: backends/go/runtime/saved_json.go,
 // backends/python/runtime/sce_runtime/saved_json.py, com.sce.runtime.Json (Kotlin) and
@@ -20,8 +24,11 @@
 
 #include "common/JsonText.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -533,6 +540,133 @@ inline JsonValue parseJson(std::string_view text) {
 inline std::string writeJson(const JsonValue &value) {
     std::string out;
     detail::writeInto(value, out);
+    return out;
+}
+
+namespace detail {
+
+/// The UTF-16 code units of `text`, which is UTF-8: what RFC 8785 section 3.2.3 sorts
+/// the names of an object's members by. Every SCE text is well-formed UTF-8 (the
+/// precondition of test/Length.h); a byte that begins no sequence, or a sequence cut
+/// short, stands for U+FFFD, so even a text that is not still has one place in the order.
+inline std::u16string utf16Units(std::string_view text) {
+    std::u16string units;
+    units.reserve(text.size());
+    std::size_t at = 0;
+    while (at < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[at]);
+        std::size_t length = 1;
+        std::uint32_t point = lead;
+        if (lead >= 0xF0u && lead <= 0xF4u) {
+            length = 4;
+            point = lead & 0x07u;
+        } else if (lead >= 0xE0u && lead <= 0xEFu) {
+            length = 3;
+            point = lead & 0x0Fu;
+        } else if (lead >= 0xC2u && lead <= 0xDFu) {
+            length = 2;
+            point = lead & 0x1Fu;
+        } else if (lead >= 0x80u) {
+            length = 0;
+        }
+        for (std::size_t next = 1; length > 1 && next < length; ++next) {
+            const auto byte = at + next < text.size() ? static_cast<unsigned char>(text[at + next]) : 0u;
+            if ((byte & 0xC0u) != 0x80u) {
+                length = 0;
+                break;
+            }
+            point = (point << 6) | (byte & 0x3Fu);
+        }
+        if (length == 0) {
+            units += static_cast<char16_t>(0xFFFDu);
+            ++at;
+            continue;
+        }
+        if (point >= 0x10000u) {
+            point -= 0x10000u;
+            units += static_cast<char16_t>(0xD800u + (point >> 10));
+            units += static_cast<char16_t>(0xDC00u + (point & 0x3FFu));
+        } else {
+            units += static_cast<char16_t>(point);
+        }
+        at += length;
+    }
+    return units;
+}
+
+inline void writeCanonicalInto(const JsonValue &value, std::string &out) {
+    if (value.isNull()) {
+        out += "null";
+    } else if (value.isBool()) {
+        out += value.asBool() ? "true" : "false";
+    } else if (value.isNumber()) {
+        const std::string &spelling = value.asNumber().text;
+        char *end = nullptr;
+        const double number = std::strtod(spelling.c_str(), &end);
+        if (spelling.empty() || end != spelling.c_str() + spelling.size()) {
+            throw JsonError("'" + spelling + "' is not a number");
+        }
+        if (!std::isfinite(number)) {
+            throw JsonError("the number " + spelling +
+                            " is past the range of a double, which RFC 8785 writes every number as");
+        }
+        out += JsonText::numberText(number);
+    } else if (value.isString()) {
+        out += '"';
+        JsonText::appendEscaped(out, value.asString());
+        out += '"';
+    } else if (value.isArray()) {
+        out += '[';
+        bool first = true;
+        for (const JsonValue &item : value.asArray()) {
+            if (!first) {
+                out += ',';
+            }
+            first = false;
+            writeCanonicalInto(item, out);
+        }
+        out += ']';
+    } else {
+        const JsonObject &object = value.asObject();
+        std::vector<std::pair<std::u16string, std::size_t>> order;
+        order.reserve(object.size());
+        for (std::size_t at = 0; at < object.size(); ++at) {
+            order.emplace_back(utf16Units(object.keys()[at]), at);
+        }
+        std::sort(order.begin(), order.end());
+        out += '{';
+        for (std::size_t written = 0; written < order.size(); ++written) {
+            if (written != 0) {
+                out += ',';
+            }
+            const std::size_t at = order[written].second;
+            out += '"';
+            JsonText::appendEscaped(out, object.keys()[at]);
+            out += "\":";
+            writeCanonicalInto(object.valueAt(at), out);
+        }
+        out += '}';
+    }
+}
+
+}  // namespace detail
+
+/// `value` in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of
+/// each object sorted by their names as arrays of UTF-16 code units (section 3.2.3), each
+/// text in the one form every engine writes (JsonText::appendEscaped, which is
+/// ECMAScript's `JSON.stringify` of a text: section 3.2.2.2), and each number as
+/// ECMAScript spells the double it reads as (JsonText::numberText, section 3.2.2.3). Two
+/// values equal under the scheme are then written as the same bytes, whatever order their
+/// members were set in. An object names each member once by construction
+/// (JsonObject::set), which section 3.1 asks.
+///
+/// Throws JsonError, naming why, for a number past the range of a double, which the
+/// scheme has no spelling for, and for a number whose text is no number. The number is
+/// read by `std::strtod`, as JsonText.h reads one, under the "C" locale's decimal point.
+/// The Rust sibling is `sce_rust_runtime::json::write_canonical`.
+inline std::string writeCanonical(const JsonValue &value) {
+    std::string out;
+    detail::writeCanonicalInto(value, out);
     return out;
 }
 
