@@ -2,10 +2,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 //! A test suite is exported to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
-//! §9.5): its types module (rule E1, ADR 0091 C2), the port types (E3) and
-//! the templates (E2) the behaviour module will hold, and the structural
-//! manifest of the types module, a wire surface of its own
-//! (`schemas/sce-ttcn3-types-manifest.v1.schema.json`).
+//! §9.5): its types module (rule E1, ADR 0091 C2), the structural manifest of
+//! the types module, a wire surface of its own
+//! (`schemas/sce-ttcn3-types-manifest.v1.schema.json`), and the behaviour
+//! module: the port types (E3), the templates (E2), the module parameters,
+//! the component types and functions (E4 to E13), the test cases (E14) and
+//! the control part (E15).
 //!
 //! The goldens are the export of the suites the profile's fixtures and the
 //! kind examples hold, and of `fixtures/ttcn3_export/orders_suite.scxml`,
@@ -358,13 +360,27 @@ fn an_export_is_the_same_bytes_every_time() {
             suite.display()
         );
         assert_eq!(first.functions, second.functions, "{}", suite.display());
+        assert_eq!(
+            first.feature_parameters,
+            second.feature_parameters,
+            "{}",
+            suite.display()
+        );
+        assert_eq!(
+            first.system_types,
+            second.system_types,
+            "{}",
+            suite.display()
+        );
+        assert_eq!(first.test_cases, second.test_cases, "{}", suite.display());
+        assert_eq!(first.control, second.control, "{}", suite.display());
     }
 }
 
-/// The files the export writes are the types module and its manifest, named
-/// by the suite, and no part of the behaviour module.
+/// The files the export writes are the types module, its manifest and the
+/// behaviour module, each named by the suite.
 #[test]
-fn an_export_writes_the_types_module_and_its_manifest() {
+fn an_export_writes_its_two_modules_and_the_manifest() {
     let export = exported(&job_suite());
     assert_eq!(export.types_module_name(), "job_suite_Types");
     assert_eq!(
@@ -378,8 +394,56 @@ fn an_export_writes_the_types_module_and_its_manifest() {
                 "job_suite_Types.manifest.json".to_string(),
                 export.manifest.clone()
             ),
+            (
+                "job_suite.ttcn".to_string(),
+                export.behaviour_module.clone()
+            ),
         ]
     );
+}
+
+/// Every behaviour module the export writes holds each definition the export
+/// computes, once, in the order of §9.5, and imports the types module whole.
+#[test]
+fn every_behaviour_module_holds_its_definitions_in_order() {
+    for suite in suites() {
+        let export = exported(&suite);
+        let module = &export.behaviour_module;
+        assert!(
+            module.contains(&format!(
+                "module {} {{\n\nimport from {}_Types all;\n",
+                export.suite, export.suite
+            )),
+            "{}:\n{module}",
+            suite.display()
+        );
+        let mut from = 0;
+        for definition in export
+            .port_types
+            .iter()
+            .chain(&export.templates)
+            .chain(&export.module_parameters)
+            .chain(&export.feature_parameters)
+            .chain(&export.component_types)
+            .chain(&export.system_types)
+            .chain(&export.functions)
+            .chain(&export.test_cases)
+        {
+            let at = module[from..].find(&definition.text).unwrap_or_else(|| {
+                panic!(
+                    "{}: {} is not where §9.5 puts it in\n{module}",
+                    suite.display(),
+                    definition.name
+                )
+            });
+            from += at + definition.text.len();
+        }
+        assert!(
+            module[from..].ends_with(&format!("\n{}\n\n}}", export.control)),
+            "{}: the control part does not close the module\n{module}",
+            suite.display()
+        );
+    }
 }
 
 // ── The behaviour (E4 to E13) ──────────────────────────────────
@@ -493,6 +557,395 @@ fn the_job_suites_behaviour_is_exported() {
 }}"
         )
     );
+}
+
+// ── The behaviour module (E14, E15) ────────────────────────────
+
+/// The comment the behaviour module of the suite `suite` opens with, and the
+/// opening of the module, which imports the types module whole.
+fn behaviour_header(suite: &str) -> String {
+    format!(
+        "// The behaviour of the test suite {suite}, exported from its
+// documents (docs/SCE_TEST_PROFILE.md, section 9.5).
+module {suite} {{
+
+import from {suite}_Types all;
+"
+    )
+}
+
+/// The job suite's behaviour module, whole: the port types, the templates,
+/// the suite's module parameters and then its features' in the order of
+/// their names, the component types and then the configuration's system
+/// component type, the functions, the test case and the control part, which
+/// executes the test case under its guard where both its features are on.
+#[test]
+fn the_job_suites_behaviour_module_is_exported() {
+    let export = exported(&job_suite());
+    let expected = format!(
+        "{}
+type port job_control_port message {{
+  inout job_status;
+  in event_schema;
+}}
+
+type port job_port message {{
+  inout job_status;
+  out event_schema;
+}}
+
+template uint32 elapsed_at_most(uint32 limit) := (-infinity .. limit);
+
+template job_status every_matcher(uint32 limit) := {{
+  elapsed_ms := (1, (10 .. limit)),
+  note := ? length(0 .. 8) ifpresent,
+  codes := {{ 3, ?, complement(0) }} length(1 .. 4),
+  tag := *,
+  retry := omit,
+  count := elapsed_at_most(limit)
+}};
+
+template job_status job_report := {{
+  elapsed_ms := 0,
+  note := \"started on time\",
+  codes := {{ 7 }},
+  tag := omit,
+  retry := omit,
+  count := 1
+}};
+
+modulepar uint32 elapsed_limit := 500;
+modulepar universal charstring run_label := \"nightly\"; // at most 8 bytes of UTF-8
+modulepar octetstring key := '0AFF'O; // at most 2 octets
+modulepar boolean PICS_JOB_RETRY;
+modulepar boolean PICS_JOB_TIMEOUT;
+
+type component helper {{
+  port job_control_port ctl;
+}}
+
+type component job_tester {{
+  port job_port sut;
+  port job_port ctl;
+  timer deadline := 2.0;
+  timer settle;
+  var uint32 elapsed := 0;
+}}
+
+type component tester_and_helper {{
+  port job_port sut;
+}}
+
+function f_helper() runs on helper {{
+  goto listening;
+  label listening;
+  alt {{
+    [] ctl.receive {{
+      setverdict(pass);
+      return;
+    }}
+  }}
+}}
+
+function f_job_tester_in_tester_and_helper() runs on job_tester {{
+  var helper v_helper := null;
+  var job_status v_job_status;
+  sut.send(job_report);
+  deadline.start;
+  goto requesting;
+  label requesting;
+  if (v_helper == null) {{
+    v_helper := helper.create(\"helper\") alive;
+    connect(mtc:ctl, v_helper:ctl);
+    v_helper.start(f_helper());
+  }}
+  alt {{
+    [] sut.receive(every_matcher(elapsed_limit)) -> value v_job_status {{
+{kill_helper}      deadline.stop;
+      elapsed := v_job_status.elapsed_ms;
+      ctl.send(job_report);
+      settle.start(0.5);
+      goto settling;
+    }}
+    [] deadline.timeout {{
+{kill_helper}      setverdict(fail, \"no reply in time\");
+      return;
+    }}
+  }}
+  label settling;
+  alt {{
+    [] settle.timeout {{
+      setverdict(pass);
+      return;
+    }}
+  }}
+}}
+
+testcase completes_in_time() runs on job_tester system tester_and_helper {{
+  map(mtc:sut, system:sut);
+  f_job_tester_in_tester_and_helper();
+}}
+
+control {{
+  if (PICS_JOB_TIMEOUT and PICS_JOB_RETRY) {{
+    execute(completes_in_time(), 10.0);
+  }}
+}}
+
+}}",
+        behaviour_header("job_suite"),
+        kill_helper = kill("      ", "v_helper"),
+    );
+    assert_eq!(export.behaviour_module, expected);
+    assert_eq!(
+        names(&export.feature_parameters),
+        ["PICS_JOB_RETRY", "PICS_JOB_TIMEOUT"]
+    );
+    assert_eq!(names(&export.system_types), ["tester_and_helper"]);
+    assert_eq!(names(&export.test_cases), ["completes_in_time"]);
+}
+
+/// The runtime's suite, whole: four test cases in three configurations, one
+/// of which joins no port to the test system and so has an empty system
+/// component type; a configuration two test cases run in is written once.
+/// The control part executes each in the suite's order: the first with a
+/// guard and no selection, the second with a selection and no guard, a
+/// conjunction, and a disjunction under a guard of a tenth of a millisecond.
+#[test]
+fn the_runtime_suites_behaviour_module_is_exported() {
+    let export = exported(&runtime_suite());
+    let functions: Vec<&str> = export.functions.iter().map(|f| f.text.as_str()).collect();
+    let expected = format!(
+        "{}
+type port exchange_port message {{
+  out job_request;
+  in job_reply;
+}}
+
+type port serving_port message {{
+  in job_request;
+  out job_reply;
+}}
+
+template job_request any_request := {{
+  job := ?
+}};
+
+template job_reply reply_of(uint32 answers, uint32 code) := {{
+  job := answers,
+  code := code
+}};
+
+template job_reply reply_ok := {{
+  job := ?,
+  code := 0
+}};
+
+template job_request request_of(uint32 wanted) := {{
+  job := wanted
+}};
+
+modulepar uint32 job := 7;
+modulepar boolean PICS_GUARD;
+modulepar boolean PICS_PTCS;
+modulepar boolean PICS_REMOVAL;
+
+type component answerer {{
+  port exchange_port peer;
+  var uint32 asked := 42;
+}}
+
+type component coordinator {{
+  port serving_port peer;
+  var uint32 requested := 0;
+  var uint32 ok := 0;
+}}
+
+type component idler {{
+  port exchange_port peer;
+}}
+
+type component param_asker {{
+  port exchange_port sut;
+  timer deadline := 1.0;
+  var uint32 answered := 0;
+}}
+
+type component ptc_keeper {{
+  timer patience := 0.01;
+  timer linger := 0.005;
+}}
+
+type component asking_configuration {{
+  port exchange_port sut;
+}}
+
+type component keeping_configuration {{
+  port exchange_port quiet;
+}}
+
+type component serving_configuration {{
+}}
+
+{}
+
+testcase answers_the_job() runs on param_asker system asking_configuration {{
+  map(mtc:sut, system:sut);
+  f_param_asker();
+}}
+
+testcase serves_a_ptc() runs on coordinator system serving_configuration {{
+  f_coordinator_in_serving_configuration();
+}}
+
+testcase keeps_a_ptc() runs on ptc_keeper system keeping_configuration {{
+  f_ptc_keeper_in_keeping_configuration();
+}}
+
+testcase answers_before_the_guard() runs on param_asker system asking_configuration {{
+  map(mtc:sut, system:sut);
+  f_param_asker();
+}}
+
+control {{
+  execute(answers_the_job(), 10.0);
+  if (PICS_PTCS) {{
+    execute(serves_a_ptc());
+  }}
+  if (PICS_PTCS and PICS_REMOVAL) {{
+    execute(keeps_a_ptc());
+  }}
+  if (PICS_GUARD or PICS_REMOVAL) {{
+    execute(answers_before_the_guard(), 0.0001);
+  }}
+}}
+
+}}",
+        behaviour_header("runtime_suite"),
+        functions.join("\n\n"),
+    );
+    // The functions are held to their text by
+    // `the_runtime_suites_behaviour_is_exported`; here, to their place.
+    assert_eq!(functions.len(), 5);
+    assert_eq!(export.behaviour_module, expected);
+    assert_eq!(
+        names(&export.system_types),
+        [
+            "asking_configuration",
+            "keeping_configuration",
+            "serving_configuration"
+        ]
+    );
+    assert_eq!(
+        names(&export.test_cases),
+        [
+            "answers_the_job",
+            "serves_a_ptc",
+            "keeps_a_ptc",
+            "answers_before_the_guard"
+        ]
+    );
+}
+
+/// The kind examples: the features of the feature-model example, the test
+/// case of the test-case example and the control part that selects it.
+#[test]
+fn the_kind_examples_test_case_and_control_are_exported() {
+    let export = exported(&kind_example_suite());
+    assert_eq!(
+        names(&export.feature_parameters),
+        [
+            "PICS_SESSION_AUTH",
+            "PICS_SESSION_UNICAST",
+            "PICS_SESSION_UNICAST_ACCEPT"
+        ]
+    );
+    assert_eq!(
+        definition(&export.feature_parameters, "PICS_SESSION_UNICAST_ACCEPT"),
+        "modulepar boolean PICS_SESSION_UNICAST_ACCEPT;"
+    );
+    assert_eq!(
+        definition(&export.system_types, "test_configuration"),
+        "type component test_configuration {
+  port test_port_type sut;
+}"
+    );
+    assert_eq!(
+        definition(&export.test_cases, "test_case"),
+        "testcase test_case() runs on test_component system test_configuration {
+  map(mtc:sut, system:sut);
+  f_test_component();
+}"
+    );
+    assert_eq!(
+        export.control,
+        "control {
+  if (PICS_SESSION_UNICAST) {
+    execute(test_case(), 10.0);
+  }
+}"
+    );
+}
+
+/// Each test case, system component type, module parameter of a feature and
+/// statement of the control part names the construct it was translated from
+/// and its rule (docs/SCE_TEST_PROFILE.md §9.4).
+#[test]
+fn each_test_case_and_execute_names_its_source() {
+    let export = exported(&job_suite());
+    let execution = &export.execution;
+
+    let case = &execution.test_cases[0];
+    assert_eq!(
+        (case.source.rule, case.source.node.as_str()),
+        ("E14", "scxml")
+    );
+    assert!(case.source.document.ends_with("completes_in_time.scxml"));
+    assert_eq!(case.component, "job_tester");
+    assert_eq!(case.system, "tester_and_helper");
+    assert_eq!(case.function, "f_job_tester_in_tester_and_helper");
+
+    let system = &execution.system_types[0];
+    assert_eq!(system.source.rule, "E14");
+    assert!(system.source.document.ends_with("tester_and_helper.scxml"));
+    assert_eq!(
+        (
+            system.ports[0].source.rule,
+            system.ports[0].source.node.as_str()
+        ),
+        ("E14", "sce:system-port 'sut'")
+    );
+
+    let features: Vec<(&str, &str)> = execution
+        .features
+        .iter()
+        .map(|f| (f.source.rule, f.source.node.as_str()))
+        .collect();
+    assert_eq!(
+        features,
+        [
+            ("E15", "sce:feature 'job-retry'"),
+            ("E15", "sce:feature 'job-timeout'")
+        ]
+    );
+    assert!(execution
+        .features
+        .iter()
+        .all(|f| f.source.document.ends_with("job_features.scxml") && f.value.is_none()));
+
+    let execute = &execution.control.executes[0];
+    assert_eq!(
+        (execute.source.rule, execute.source.node.as_str()),
+        ("E15", "sce:execute 'CompletesInTime'")
+    );
+    assert!(execute.source.document.ends_with("job_suite.scxml"));
+    assert!(execute.source.line.is_some());
+    assert_eq!(execute.guard.as_deref(), Some("10.0"));
+    assert_eq!(
+        execute.condition.as_deref(),
+        Some("PICS_JOB_TIMEOUT and PICS_JOB_RETRY")
+    );
+    assert_eq!(execution.control.source.rule, "E15");
 }
 
 /// The runtime's suite: a component that reads a module parameter and takes
@@ -1417,6 +1870,146 @@ fn an_arithmetic_expression_is_refused_by_name() {
     assert!(
         message_of(&record).contains("`seen + 1`")
             && message_of(&record).contains("state 'waiting' / transition 1 / assign 1"),
+        "{record}"
+    );
+}
+
+// ── The test cases and the control part (E14, E15) ─────────────
+
+/// The feature model `probe_features.scxml`, declaring `features`.
+fn write_features(dir: &Path, features: &[&str]) {
+    let declared: String = features
+        .iter()
+        .map(|feature| format!("  <sce:feature name=\"{feature}\"/>\n"))
+        .collect();
+    write(
+        dir,
+        "probe_features",
+        &document(
+            "sce:kind=\"feature-model\" name=\"probe_features\"",
+            &declared,
+        ),
+    );
+}
+
+/// The probe suite of [`write_suite`] over the record `report.scxml`, written
+/// again to import `probe_features.scxml` and to hold `body` after its
+/// imports; answer its path.
+fn write_suite_of_features(dir: &Path, body: &str) -> PathBuf {
+    write_report(dir);
+    write_suite(dir, "report", false);
+    write(
+        dir,
+        "probe_suite",
+        &document(
+            "sce:kind=\"test-suite\" name=\"probe_suite\"",
+            &format!(
+                "  <sce:import kind=\"feature-model\" src=\"probe_features.scxml\" \
+                 as=\"Features\"/>\n  <sce:import kind=\"test-case\" src=\"probe_case.scxml\" \
+                 as=\"ProbeCase\"/>\n{body}"
+            ),
+        ),
+    )
+}
+
+/// A guard is the exact decimal of its seconds, read from its whole number
+/// of microseconds, and a selection that joins a disjunction inside a
+/// conjunction is written with the disjunction in parentheses. A test case
+/// the suite neither guards nor selects is executed bare.
+#[test]
+fn a_guard_and_a_selection_are_written_as_the_suite_writes_them() {
+    let dir = scratch();
+    write_features(dir.path(), &["probe", "fast", "slow"]);
+    let export = exported(&write_suite_of_features(
+        dir.path(),
+        "  <sce:execute test-case=\"ProbeCase\" guard=\"1500ms\" \
+         requires=\"all(probe, any(fast, slow))\"/>\n",
+    ));
+    assert_eq!(
+        export.control,
+        "control {
+  if (PICS_PROBE and (PICS_FAST or PICS_SLOW)) {
+    execute(probe_case(), 1.5);
+  }
+}"
+    );
+    assert_eq!(
+        names(&export.feature_parameters),
+        ["PICS_FAST", "PICS_PROBE", "PICS_SLOW"]
+    );
+    assert_eq!(
+        definition(&export.system_types, "probe_configuration"),
+        "type component probe_configuration {
+  port probe_port sut;
+}"
+    );
+    assert_eq!(
+        definition(&export.test_cases, "probe_case"),
+        "testcase probe_case() runs on probe_tester system probe_configuration {
+  map(mtc:sut, system:sut);
+  f_probe_tester();
+}"
+    );
+
+    let bare = scratch();
+    write_report(bare.path());
+    let export = exported(&write_suite(bare.path(), "report", false));
+    assert_eq!(
+        export.control,
+        "control {
+  execute(probe_case());
+}"
+    );
+    assert!(export.feature_parameters.is_empty());
+    assert!(!export.behaviour_module.contains("modulepar"));
+}
+
+/// A feature's module parameter is a name the export makes in the module's
+/// scope: a module parameter the suite declares under that name is one
+/// identifier with it, and is refused where the suite writes it.
+#[test]
+fn a_module_parameter_named_as_a_features_is_refused_by_name() {
+    let dir = scratch();
+    write_features(dir.path(), &["probe"]);
+    let suite = write_suite_of_features(
+        dir.path(),
+        "  <sce:module-parameter id=\"PICS_PROBE\" type=\"uint32\" value=\"1\"/>\n  \
+         <sce:execute test-case=\"ProbeCase\" requires=\"probe\"/>\n",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "PICS_PROBE", "{record}");
+    assert_eq!(file_of(&record), "probe_suite.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the module parameter 'PICS_PROBE' is one TTCN-3 identifier with the feature's \
+             module parameter 'PICS_PROBE'"
+        ),
+        "{record}"
+    );
+}
+
+/// A configuration's system component type is named by the configuration's
+/// unit name, a definition of the module: a module parameter of that name is
+/// one identifier with it.
+#[test]
+fn a_module_parameter_named_as_a_configuration_is_refused_by_name() {
+    let dir = scratch();
+    write_features(dir.path(), &["probe"]);
+    let suite = write_suite_of_features(
+        dir.path(),
+        "  <sce:module-parameter id=\"probe_configuration\" type=\"uint32\" value=\"1\"/>\n  \
+         <sce:execute test-case=\"ProbeCase\"/>\n",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "probe_configuration", "{record}");
+    assert_eq!(file_of(&record), "probe_configuration.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the system component type 'probe_configuration' is one TTCN-3 identifier with \
+             the module parameter 'probe_configuration'"
+        ),
         "{record}"
     );
 }

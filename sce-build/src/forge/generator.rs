@@ -67,6 +67,18 @@ pub(crate) fn source_parts_have_lifetime(m: &CodecModel) -> bool {
     rust_source::parts_has_lifetime(m)
 }
 
+/// A test suite's selection (ADR 0057's grammar) as the condition of a TTCN-3
+/// `if` (docs/SCE_TEST_PROFILE.md §9.5, rule E15): `enabled` spells the test
+/// that a world enables a feature, a conjunction is `and` and a disjunction
+/// `or`, each join inside another in parentheses. It is the one spelling of a
+/// selection every backend's suite writes ([`test_tables::selection_body_in`]).
+pub(crate) fn ttcn3_selection(
+    expr: &crate::presence_condition::PresenceExpr,
+    enabled: &dyn Fn(&str) -> String,
+) -> String {
+    test_tables::selection_body_in(expr, enabled, test_template_walk::Connectives::TTCN3)
+}
+
 // ── Cross-file import resolution ──────────────────────────────────
 
 /// One variant of an imported enum as a content line writes it

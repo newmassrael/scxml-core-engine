@@ -84,15 +84,17 @@ pub struct Source {
     pub line: Option<u32>,
 }
 
-/// A module parameter the suite declares (§11.8), as
-/// `modulepar T name := value;`.
+/// A module parameter of the behaviour module, as
+/// `modulepar T name := value;` (-1 §8.2.1): one the suite declares (§11.8),
+/// with its default, or the one of a feature of the suite's feature model
+/// (E15), which has none, so its value is the caller's.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleParameterView {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: TypeExpr,
-    /// The default, as a literal of the type.
-    pub value: String,
+    /// The default, as a literal of the type, where it has one.
+    pub value: Option<String>,
     pub source: Source,
 }
 
@@ -349,7 +351,7 @@ pub(super) fn module_parameters(
         views.push(ModuleParameterView {
             name: parameter.id.clone(),
             ty,
-            value,
+            value: Some(value),
             source: Source {
                 rule: "E15",
                 document: at.label.clone(),
@@ -362,10 +364,12 @@ pub(super) fn module_parameters(
 }
 
 /// A configuration the suite reaches, its components resolved.
-struct Configuration<'r> {
-    name: String,
-    model: &'r TestConfigurationModel,
-    mtc: &'r ReachedComponent,
+pub(super) struct Configuration<'r> {
+    pub(super) name: String,
+    /// The document it is read from.
+    pub(super) document: &'r Reached,
+    pub(super) model: &'r TestConfigurationModel,
+    pub(super) mtc: &'r ReachedComponent,
     /// Each PTC by its id, with its component.
     ptcs: Vec<(String, &'r ReachedComponent)>,
 }
@@ -400,7 +404,7 @@ impl<'r> Configuration<'r> {
 }
 
 /// Every configuration the suite reaches, in the order of their names.
-fn configurations(reach: &Reach) -> Result<Vec<Configuration<'_>>, Located<ForgeError>> {
+pub(super) fn configurations(reach: &Reach) -> Result<Vec<Configuration<'_>>, Located<ForgeError>> {
     let mut configurations = Vec::new();
     for document in reach.sorted() {
         let ForgeDocument::TestConfiguration(model) = &document.parsed.document else {
@@ -422,6 +426,7 @@ fn configurations(reach: &Reach) -> Result<Vec<Configuration<'_>>, Located<Forge
         }
         configurations.push(Configuration {
             name: document.name.clone(),
+            document,
             model,
             mtc,
             ptcs,
@@ -481,7 +486,10 @@ pub(super) fn behaviour(
 }
 
 /// The name of the function `component` runs in `configuration`.
-fn function_name(component: &ReachedComponent, configuration: &Configuration<'_>) -> String {
+pub(super) fn function_name(
+    component: &ReachedComponent,
+    configuration: &Configuration<'_>,
+) -> String {
     let invokes = component
         .model
         .test_component

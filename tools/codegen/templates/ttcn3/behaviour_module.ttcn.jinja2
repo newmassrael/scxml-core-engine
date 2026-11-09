@@ -1,0 +1,42 @@
+{#- The behaviour module of a test suite (docs/SCE_TEST_PROFILE.md §9.2 E2
+    to E15, §9.5): it imports the types module whole, then holds the port
+    types, the templates, the module parameters (the suite's, then its
+    features'), the component types (the test components', then the system
+    component types), the functions, the test cases and the control part, in
+    that order, each definition the text its own template wrote. `module` is
+    the view `ttcn3_export` renders it from. -#}
+// The behaviour of the test suite {{ module.name }}, exported from its
+// documents (docs/SCE_TEST_PROFILE.md, section 9.5).
+module {{ module.name }} {
+
+import from {{ module.types_module }} all;
+{% for d in module.port_types %}
+
+{{ d }}
+{% endfor %}
+{% for d in module.templates %}
+
+{{ d }}
+{% endfor %}
+{% if module.module_parameters %}
+
+{% for d in module.module_parameters %}
+{{ d }}
+{% endfor %}
+{% endif %}
+{% for d in module.component_types %}
+
+{{ d }}
+{% endfor %}
+{% for d in module.functions %}
+
+{{ d }}
+{% endfor %}
+{% for d in module.test_cases %}
+
+{{ d }}
+{% endfor %}
+
+{{ module.control }}
+
+}

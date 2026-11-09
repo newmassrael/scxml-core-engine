@@ -17,16 +17,13 @@
 //!   and does not implement, so a consumer can replace the module with one
 //!   written apart from SCE;
 //! - `S_Types.manifest.json`, the structural manifest of that module
-//!   ([`manifest`]), against which a module written apart is compared.
-//!
-//! The port types (E3), the templates (E2), the module parameters the suite
-//! declares, and each test component's type and behaviour (E4 to E13,
-//! [`behaviour`]) are definitions of the behaviour module `S.ttcn`, which the
-//! test cases and the control part (E14, E15) complete. The export computes
-//! them on every run, so a suite whose definitions it cannot write is
-//! refused now and not when that module is written, and it writes no part of
-//! that module until every rule of it is written: no file the export writes
-//! is a part of one.
+//!   ([`manifest`]), against which a module written apart is compared;
+//! - `S.ttcn`, the behaviour module, which imports the types module whole
+//!   and holds the port types (E3), the templates (E2), the module parameters
+//!   the suite declares and those of its features, each test component's type
+//!   and behaviour (E4 to E13, [`behaviour`]), the system component type of
+//!   each configuration a test case runs in, the test cases (E14) and the
+//!   control part (E15, [`execution`]).
 //!
 //! Every name the export writes is a name of the documents, written as it is
 //! written ([`names`]). Nothing is written before the whole export is
@@ -35,6 +32,7 @@
 //! (docs/SCE_CODEGEN_DETERMINISM.md).
 
 pub mod behaviour;
+pub mod execution;
 mod expression;
 mod macrostep;
 pub mod manifest;
@@ -47,12 +45,14 @@ pub mod types;
 
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::model::{ForgeDocument, ForgeKind};
 use names::{unit_name, Declared, Namespace, Origin};
 
-/// What the export of a suite writes, and what it computes of the behaviour
-/// module that is not written yet.
+/// What the export of a suite writes, and each definition of its behaviour
+/// module, as text and as the model it is written from.
 #[derive(Debug, Clone)]
 pub struct Ttcn3Export {
     /// The suite's unit name, which names its modules.
@@ -62,6 +62,9 @@ pub struct Ttcn3Export {
     /// The structural manifest of the types module,
     /// `<suite>_Types.manifest.json`.
     pub manifest: String,
+    /// The behaviour module, `<suite>.ttcn`: every definition below, in the
+    /// order docs/SCE_TEST_PROFILE.md §9.5 gives.
+    pub behaviour_module: String,
     /// Each port type the suite reaches (E3), as the behaviour module holds
     /// it, in the order of their names.
     pub port_types: Vec<Definition>,
@@ -71,12 +74,22 @@ pub struct Ttcn3Export {
     /// Each module parameter the suite declares, as the behaviour module
     /// holds it, in the order the suite declares them.
     pub module_parameters: Vec<Definition>,
+    /// The module parameter of each feature of the suite's feature model
+    /// (E15), in the order of the features' names.
+    pub feature_parameters: Vec<Definition>,
     /// Each test component the suite reaches as a component type (E4), in
     /// the order of their names.
     pub component_types: Vec<Definition>,
+    /// The system component type of each configuration a test case runs in
+    /// (E14), in the order of their names.
+    pub system_types: Vec<Definition>,
     /// Each component's behaviour as a function (E5 to E13), in the order of
     /// their names.
     pub functions: Vec<Definition>,
+    /// Each test case the suite executes (E14), in the suite's order.
+    pub test_cases: Vec<Definition>,
+    /// The control part (E15).
+    pub control: String,
     /// The module parameters as the definitions above are written from, each
     /// with the construct it was translated from.
     pub parameter_views: Vec<behaviour::ModuleParameterView>,
@@ -85,6 +98,10 @@ pub struct Ttcn3Export {
     /// the rule it was translated from: what the correspondence witness of
     /// docs/SCE_TEST_PROFILE.md §9.4 serializes.
     pub behaviour: behaviour::Behaviour,
+    /// The module parameters of the features, the system component types,
+    /// the test cases and the control part as they are written from, each
+    /// with the construct and the rule it was translated from.
+    pub execution: execution::Execution,
 }
 
 /// One definition of a module: its name and its text.
@@ -101,12 +118,17 @@ impl Ttcn3Export {
     }
 
     /// The files the export writes, each its name and its text, in the order
-    /// it writes them: the types module and its manifest.
+    /// it writes them: the types module, its manifest and the behaviour
+    /// module.
     pub fn files(&self) -> Vec<(String, String)> {
         let module = self.types_module_name();
         vec![
             (format!("{module}.ttcn"), self.types_module.clone()),
             (format!("{module}.manifest.json"), self.manifest.clone()),
+            (
+                format!("{}.ttcn", self.suite),
+                self.behaviour_module.clone(),
+            ),
         ]
     }
 }
@@ -121,6 +143,49 @@ pub enum ExportError {
     Refused(Located<ForgeError>),
     /// The document named is no test suite; the text says what it is.
     NotASuite(String),
+}
+
+/// The behaviour module as its template reads it: its name, the types module
+/// it imports, and the text of each definition, in the order of §9.5.
+#[derive(Serialize)]
+struct BehaviourModuleView<'a> {
+    name: &'a str,
+    types_module: String,
+    port_types: Vec<&'a str>,
+    templates: Vec<&'a str>,
+    /// The module parameters the suite declares, then its features'.
+    module_parameters: Vec<&'a str>,
+    /// The component types of the test components, then the system
+    /// component types.
+    component_types: Vec<&'a str>,
+    functions: Vec<&'a str>,
+    test_cases: Vec<&'a str>,
+    control: &'a str,
+}
+
+/// The texts of `definitions`, in their order.
+fn texts(definitions: &[Definition]) -> impl Iterator<Item = &str> {
+    definitions.iter().map(|d| d.text.as_str())
+}
+
+/// Each of `views` as the definition `template` writes of it, which reads it
+/// as `key`, named by `name`.
+fn definitions<V: Serialize>(
+    env: &minijinja::Environment<'_>,
+    template: &str,
+    key: &str,
+    views: &[V],
+    name: impl Fn(&V) -> &str,
+) -> Result<Vec<Definition>, ForgeError> {
+    views
+        .iter()
+        .map(|view| -> Result<Definition, ForgeError> {
+            Ok(Definition {
+                name: name(view).to_string(),
+                text: render::render(env, template, key, view)?,
+            })
+        })
+        .collect()
 }
 
 /// Export the suite at `path` (docs/SCE_TEST_PROFILE.md §9.5).
@@ -144,6 +209,19 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     };
     reach::check_document(&parsed, dir, label.diagnostic_label).map_err(refused)?;
     let reached = reach::reach(&parsed, dir, label.diagnostic_label).map_err(refused)?;
+    // The feature model, which E15 alone reads: the walk does not follow it.
+    let features = suite
+        .features
+        .as_deref()
+        .and_then(|alias| {
+            parsed
+                .imports
+                .iter()
+                .find(|i| i.alias == alias && i.kind == ForgeKind::FeatureModel)
+        })
+        .map(|import| reach::feature_model(import, dir, label.diagnostic_label))
+        .transpose()
+        .map_err(refused)?;
 
     let name = unit_name(&suite.name);
     let at = Origin {
@@ -172,6 +250,16 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     let port_type_views = port_types::port_types(&reached, &mut names).map_err(refused)?;
     let template_views = templates::templates(&reached, &mut names).map_err(refused)?;
     let behaviour = behaviour::behaviour(&reached, &mut names).map_err(refused)?;
+    let execution = execution::execution(
+        suite,
+        &parsed.imports,
+        dir,
+        &at,
+        features.as_ref(),
+        &reached,
+        &mut names,
+    )
+    .map_err(refused)?;
 
     let in_suite =
         |e: ForgeError| ExportError::Refused(Located::in_file(e, label.diagnostic_label));
@@ -181,53 +269,105 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     let manifest = manifest::manifest_text(&module).map_err(|e| {
         in_suite(GenerateError::TemplateRender(format!("the manifest of {name}_Types: {e}")).into())
     })?;
-    let mut port_type_definitions = Vec::new();
-    for view in &port_type_views {
-        port_type_definitions.push(Definition {
-            name: view.name.clone(),
-            text: render::render(&env, render::PORT_TYPE, "port_type", view).map_err(in_suite)?,
-        });
-    }
-    let mut template_definitions = Vec::new();
-    for view in &template_views {
-        template_definitions.push(Definition {
-            name: view.name.clone(),
-            text: render::render(&env, render::TEMPLATE, "template", view).map_err(in_suite)?,
-        });
-    }
-    let mut module_parameters = Vec::new();
-    for view in &parameter_views {
-        module_parameters.push(Definition {
-            name: view.name.clone(),
-            text: render::render(&env, render::MODULE_PARAMETER, "parameter", view)
-                .map_err(in_suite)?,
-        });
-    }
-    let mut component_types = Vec::new();
-    for view in &behaviour.component_types {
-        component_types.push(Definition {
-            name: view.name.clone(),
-            text: render::render(&env, render::COMPONENT_TYPE, "component", view)
-                .map_err(in_suite)?,
-        });
-    }
-    let mut functions = Vec::new();
-    for view in &behaviour.functions {
-        functions.push(Definition {
-            name: view.name.clone(),
-            text: render::render(&env, render::FUNCTION, "function", view).map_err(in_suite)?,
-        });
-    }
+    let port_types = definitions(
+        &env,
+        render::PORT_TYPE,
+        "port_type",
+        &port_type_views,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let templates = definitions(&env, render::TEMPLATE, "template", &template_views, |v| {
+        v.name.as_str()
+    })
+    .map_err(in_suite)?;
+    let module_parameters = definitions(
+        &env,
+        render::MODULE_PARAMETER,
+        "parameter",
+        &parameter_views,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let feature_parameters = definitions(
+        &env,
+        render::MODULE_PARAMETER,
+        "parameter",
+        &execution.features,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let component_types = definitions(
+        &env,
+        render::COMPONENT_TYPE,
+        "component",
+        &behaviour.component_types,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let system_types = definitions(
+        &env,
+        render::COMPONENT_TYPE,
+        "component",
+        &execution.system_types,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let functions = definitions(
+        &env,
+        render::FUNCTION,
+        "function",
+        &behaviour.functions,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let test_cases = definitions(
+        &env,
+        render::TEST_CASE,
+        "test_case",
+        &execution.test_cases,
+        |v| v.name.as_str(),
+    )
+    .map_err(in_suite)?;
+    let control =
+        render::render(&env, render::CONTROL, "control", &execution.control).map_err(in_suite)?;
+    let behaviour_module = render::render(
+        &env,
+        render::BEHAVIOUR_MODULE,
+        "module",
+        &BehaviourModuleView {
+            name: &name,
+            types_module: format!("{name}_Types"),
+            port_types: texts(&port_types).collect(),
+            templates: texts(&templates).collect(),
+            module_parameters: texts(&module_parameters)
+                .chain(texts(&feature_parameters))
+                .collect(),
+            component_types: texts(&component_types)
+                .chain(texts(&system_types))
+                .collect(),
+            functions: texts(&functions).collect(),
+            test_cases: texts(&test_cases).collect(),
+            control: &control,
+        },
+    )
+    .map_err(in_suite)?;
     Ok(Ttcn3Export {
         suite: name,
         types_module,
         manifest,
-        port_types: port_type_definitions,
-        templates: template_definitions,
+        behaviour_module,
+        port_types,
+        templates,
         module_parameters,
+        feature_parameters,
         component_types,
+        system_types,
         functions,
+        test_cases,
+        control,
         parameter_views,
         behaviour,
+        execution,
     })
 }

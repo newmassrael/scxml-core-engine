@@ -400,12 +400,17 @@ fn is_name_char(c: char) -> bool {
     c.is_ascii_lowercase() || c.is_ascii_digit()
 }
 
+/// The `<NAME>` of every spelling of a feature that writes it in upper case
+/// after a prefix: the name upper-cased, each hyphen an underscore
+/// (`session-unicast` is `SESSION_UNICAST`). The grammar ([`is_feature_name`])
+/// makes it lossless.
+pub fn upper_spelling(name: &str) -> String {
+    name.to_ascii_uppercase().replace('-', "_")
+}
+
 /// The C, C++ and Swift spelling of a feature: `SCE_FEATURE_<NAME>`.
 pub fn macro_spelling(name: &str) -> String {
-    format!(
-        "SCE_FEATURE_{}",
-        name.to_ascii_uppercase().replace('-', "_")
-    )
+    format!("SCE_FEATURE_{}", upper_spelling(name))
 }
 
 /// The features in an order where each comes after those it requires, the ones

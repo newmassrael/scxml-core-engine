@@ -36,6 +36,15 @@ pub(super) const COMPONENT_TYPE: &str = "ttcn3/component_type.ttcn.jinja2";
 /// The template of one function; its value is `function`.
 pub(super) const FUNCTION: &str = "ttcn3/function.ttcn.jinja2";
 
+/// The template of one test case; its value is `test_case`.
+pub(super) const TEST_CASE: &str = "ttcn3/test_case.ttcn.jinja2";
+
+/// The template of the control part; its value is `control`.
+pub(super) const CONTROL: &str = "ttcn3/control.ttcn.jinja2";
+
+/// The template of the behaviour module; its value is `module`.
+pub(super) const BEHAVIOUR_MODULE: &str = "ttcn3/behaviour_module.ttcn.jinja2";
+
 /// The environment, every template of the export registered.
 pub(super) fn environment() -> Result<Environment<'static>, ForgeError> {
     let mut env = crate::generator::new_env();

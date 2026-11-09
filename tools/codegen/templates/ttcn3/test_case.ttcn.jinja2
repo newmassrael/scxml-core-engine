@@ -1,0 +1,12 @@
+{#- One test case of a suite as a TTCN-3 test case (docs/SCE_TEST_PROFILE.md
+    §9.2 E14, §9.5; ES 201 873-1 §26.1): it runs on the component type of
+    its configuration's MTC with the configuration's system component type as
+    its `system`, maps each MTC port the configuration maps, in document
+    order, and calls the MTC's function. `test_case` is
+    `ttcn3_export::execution::TestCaseView`. -#}
+testcase {{ test_case.name }}() runs on {{ test_case.component }} system {{ test_case.system }} {
+{% for m in test_case.maps %}
+  {{ m.operation }}({{ m.left }}:{{ m.left_port }}, {{ m.right }}:{{ m.right_port }});
+{% endfor %}
+  {{ test_case.function }}();
+}

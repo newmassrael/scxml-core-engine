@@ -3721,9 +3721,9 @@ enum Commands {
         include_dir: Vec<String>,
     },
     /// Export a test suite to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
-    /// §9.5): the suite's types module, `<suite>_Types.ttcn`, and the
-    /// structural manifest of it, `<suite>_Types.manifest.json`, written to
-    /// `--output-dir`.
+    /// §9.5): the suite's types module, `<suite>_Types.ttcn`, the structural
+    /// manifest of it, `<suite>_Types.manifest.json`, and the behaviour
+    /// module, `<suite>.ttcn`, written to `--output-dir`.
     ///
     /// `<suite>` is the unit name of the suite's document, its file's stem in
     /// lower snake case. The suite and every document it reaches are first
@@ -3734,10 +3734,12 @@ enum Commands {
     /// never renamed. Nothing is written until the whole export is computed,
     /// so a refused suite leaves no file.
     ///
-    /// The behaviour module, `<suite>.ttcn`, is not written yet: its port
-    /// types and templates are computed, and refused where they cannot be
-    /// written, on every run, and the module is written once every rule of
-    /// it is (§9.2, E4 to E15).
+    /// The behaviour module imports the types module whole and holds the
+    /// port types, the templates, the module parameters, the component types
+    /// and their functions, a test case for each test case the suite
+    /// executes and the control part that executes them (§9.2, E2 to E15).
+    /// Each feature of the suite's feature model is a `modulepar boolean
+    /// PICS_<NAME>;` with no default, which the caller sets.
     #[command(name = "export-ttcn3")]
     ExportTtcn3 {
         /// The `test-suite` document.
@@ -3745,8 +3747,8 @@ enum Commands {
         /// Directory the files are written to.
         #[arg(short, long, default_value = ".")]
         output_dir: String,
-        /// Directory the `source-hash` the types module's header carries is
-        /// computed over. Defaults to the suite's directory, as in `generate`.
+        /// Directory the `source-hash` the modules' headers carry is computed
+        /// over. Defaults to the suite's directory, as in `generate`.
         #[arg(long)]
         input_root: Option<String>,
         /// Directories searched to resolve `<xi:include>` and `<sce:use>`
@@ -14670,10 +14672,10 @@ const PAYLOAD_SCHEMA_READS: &str = "payload-schema reads an event schema \
 // ── Subcommand: export-ttcn3 ───────────────────────────────────
 //
 // A test suite exported to TTCN-3 (docs/SCE_TEST_PROFILE.md §9.5): the types
-// module and its manifest, computed whole by the library before any file is
-// written, so a refused suite leaves no file behind. The module carries the
-// §synth-6.2.6 header over the suite's source set, as every generated source
-// does; the manifest, JSON, carries none.
+// module, its manifest and the behaviour module, computed whole by the
+// library before any file is written, so a refused suite leaves no file
+// behind. Each module carries the §synth-6.2.6 header over the suite's source
+// set, as every generated source does; the manifest, JSON, carries none.
 
 fn cmd_export_ttcn3(
     scxml_path: &str,

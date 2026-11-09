@@ -9,7 +9,8 @@
 //! templates, event schemas, enums and unions below them: every document the
 //! translation `T` of §9.1 reads. A feature model, and any document of
 //! another kind a component imports, is not followed: no rule of §9.2 reads
-//! one into the types module or into a template.
+//! one into the types module, a template or a component. The suite's feature
+//! model is read apart, by rule E15 alone ([`feature_model`]).
 //!
 //! Each forge document reached is held to the rules of its kind that no
 //! backend decides, the ones `check` holds it to before any language is
@@ -77,6 +78,9 @@ pub(super) fn root_line(document: &ForgeDocument) -> Option<u32> {
         ForgeDocument::TestTemplate(m) => &m.source_location,
         ForgeDocument::TestPortType(m) => &m.source_location,
         ForgeDocument::TestSuite(m) => &m.source_location,
+        ForgeDocument::TestCase(m) => &m.source_location,
+        ForgeDocument::TestConfiguration(m) => &m.source_location,
+        ForgeDocument::FeatureModel(m) => &m.source_location,
         _ => return None,
     };
     at.as_ref().and_then(|at| at.line)
@@ -191,20 +195,19 @@ pub(super) fn reach(
             if documents.contains_key(&identity) || components.contains_key(&identity) {
                 continue;
             }
-            let at_import =
-                |error: ForgeError| Located::new(error, label.clone(), import.line, None);
-            let source = ImportSource::read(&dir, import).map_err(|e| at_import(e.into()))?;
-            let source_dir = source
-                .path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| dir.clone());
-            let source_label = source.label().diagnostic_label.to_string();
-            let stem = source.label().identifier.to_string();
+            let source = ImportSource::read(&dir, import)
+                .map_err(|e| Located::new(ForgeError::from(e), label.clone(), import.line, None))?;
             if import.kind == ForgeKind::TestComponent {
                 let Some(model) = source.parse_test_component()? else {
-                    return Err(at_import(other_kind(import, &source).into()));
+                    return Err(Located::new(
+                        other_kind(import, &source).into(),
+                        label.clone(),
+                        import.line,
+                        None,
+                    ));
                 };
+                let source_dir = directory_of(&source, &dir);
+                let source_label = source.label().diagnostic_label.to_string();
                 pending.push((
                     model.forge_imports.clone(),
                     source_dir.clone(),
@@ -214,7 +217,7 @@ pub(super) fn reach(
                     identity.clone(),
                     ReachedComponent {
                         identity,
-                        name: unit_name(&stem),
+                        name: unit_name(source.label().identifier),
                         label: source_label,
                         dir: source_dir,
                         model,
@@ -222,42 +225,82 @@ pub(super) fn reach(
                 );
                 continue;
             }
-            let Some(parsed) = source.parse()? else {
-                return Err(at_import(other_kind(import, &source).into()));
-            };
-            if parsed.document.kind() != import.kind {
-                return Err(at_import(
-                    ImportError::KindMismatch {
-                        src: import.src.clone(),
-                        declared: import.kind.to_string(),
-                        actual: parsed.document.kind().to_string(),
-                    }
-                    .into(),
-                ));
-            }
-            check_document(&parsed, &source_dir, &source_label)?;
-            let scope = type_scope(&parsed.imports, &source_dir);
+            let reached = forge_document(import, &source, identity.clone(), &dir, &label)?;
             pending.push((
-                parsed.imports.clone(),
-                source_dir.clone(),
-                source_label.clone(),
+                reached.parsed.imports.clone(),
+                reached.dir.clone(),
+                reached.label.clone(),
             ));
-            documents.insert(
-                identity.clone(),
-                Reached {
-                    identity,
-                    name: unit_name(&stem),
-                    label: source_label,
-                    dir: source_dir,
-                    parsed,
-                    scope,
-                },
-            );
+            documents.insert(identity, reached);
         }
     }
     Ok(Reach {
         documents,
         components,
+    })
+}
+
+/// The feature model a suite imports by `import` (docs/SCE_TEST_PROFILE.md
+/// §11.8), the suite read in `dir` and labelled `label`: the one document the
+/// walk does not follow and the export reads, for rule E15 alone, which
+/// declares a module parameter of each of its features. It is held to
+/// [`check_document`] as every document the export reads is.
+pub(super) fn feature_model(
+    import: &ForgeImport,
+    dir: &Path,
+    label: &str,
+) -> Result<Reached, Located<ForgeError>> {
+    let source = ImportSource::read(dir, import)
+        .map_err(|e| Located::new(ForgeError::from(e), label.to_string(), import.line, None))?;
+    let identity = stdlib::identity(&stdlib::resolve(dir, &import.src));
+    forge_document(import, &source, identity, dir, label)
+}
+
+/// The directory the imports of `source`, read from the document in `dir`,
+/// resolve against.
+fn directory_of(source: &ImportSource, dir: &Path) -> PathBuf {
+    source
+        .path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| dir.to_path_buf())
+}
+
+/// The forge document `source`, which `import` of the document read in `dir`
+/// and labelled `label` names, known by `identity`: parsed, of the kind the
+/// import declares, and held to [`check_document`].
+fn forge_document(
+    import: &ForgeImport,
+    source: &ImportSource,
+    identity: String,
+    dir: &Path,
+    label: &str,
+) -> Result<Reached, Located<ForgeError>> {
+    let at_import = |error: ForgeError| Located::new(error, label.to_string(), import.line, None);
+    let Some(parsed) = source.parse()? else {
+        return Err(at_import(other_kind(import, source).into()));
+    };
+    if parsed.document.kind() != import.kind {
+        return Err(at_import(
+            ImportError::KindMismatch {
+                src: import.src.clone(),
+                declared: import.kind.to_string(),
+                actual: parsed.document.kind().to_string(),
+            }
+            .into(),
+        ));
+    }
+    let source_dir = directory_of(source, dir);
+    let source_label = source.label().diagnostic_label.to_string();
+    check_document(&parsed, &source_dir, &source_label)?;
+    let scope = type_scope(&parsed.imports, &source_dir);
+    Ok(Reached {
+        identity,
+        name: unit_name(source.label().identifier),
+        label: source_label,
+        dir: source_dir,
+        parsed,
+        scope,
     })
 }
 

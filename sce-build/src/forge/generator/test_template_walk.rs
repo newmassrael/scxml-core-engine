@@ -277,10 +277,12 @@ pub(super) enum CaseTest<'h, 's, A> {
 
 /// The words a backend joins the tests of a matcher by, and the constants it
 /// writes a test the walk decides for every value as: C's (`&&`, `||`, `!`,
-/// `true`, `false`), which C++, Rust, Kotlin and Go share, or Python's (`and`,
-/// `or`, `not`, `True`, `False`). In both a conjunction binds tighter than a
-/// disjunction, and a negation, which the join puts only before a call, a name
-/// or a postfix expression, binds that operand whole, so one join writes both
+/// `true`, `false`), which C++, Rust, Kotlin and Go share, Python's (`and`,
+/// `or`, `not`, `True`, `False`), or TTCN-3's (`and`, `or`, `not`, `true`,
+/// `false`; ES 201 873-1 §7.1), in which the export writes a suite's
+/// selection. In each a conjunction binds tighter than a disjunction, and a
+/// negation, which the join puts only before a call, a name or a postfix
+/// expression, binds that operand whole, so one join writes them all
 /// ([`JoinSpelling::join`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Connectives {
@@ -308,6 +310,16 @@ impl Connectives {
         not: "not ",
         held: "True",
         not_held: "False",
+    };
+
+    /// TTCN-3's (ES 201 873-1 §7.1), which the export of a suite writes its
+    /// selections in (docs/SCE_TEST_PROFILE.md §9.5).
+    pub(super) const TTCN3: Self = Self {
+        and: " and ",
+        or: " or ",
+        not: "not ",
+        held: "true",
+        not_held: "false",
     };
 
     /// The constant of a test that holds for every value where `held`, and for

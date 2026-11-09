@@ -1,0 +1,16 @@
+{#- The control part of a suite (docs/SCE_TEST_PROFILE.md §9.2 E15, §9.5;
+    ES 201 873-1 §26.1, §26.2): each test case in the suite's order, executed
+    with its guard in seconds as the second argument where it has one, inside
+    an `if` over the features' module parameters where the suite selects it.
+    `control` is `ttcn3_export::execution::ControlView`. -#}
+control {
+{% for e in control.executes %}
+{% if e.condition %}
+  if ({{ e.condition }}) {
+    execute({{ e.test_case }}(){% if e.guard %}, {{ e.guard }}{% endif %});
+  }
+{% else %}
+  execute({{ e.test_case }}(){% if e.guard %}, {{ e.guard }}{% endif %});
+{% endif %}
+{% endfor %}
+}

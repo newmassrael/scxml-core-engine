@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! `sce-codegen export-ttcn3` writes a suite's types module and its manifest,
-//! the text the library exports, the module under the header every generated
-//! source carries, or, when the suite or the document is refused, no file at
-//! all (docs/SCE_TEST_PROFILE.md §9.5).
+//! `sce-codegen export-ttcn3` writes a suite's types module, its manifest and
+//! its behaviour module, the text the library exports, each module under the
+//! header every generated source carries, or, when the suite or the document
+//! is refused, no file at all (docs/SCE_TEST_PROFILE.md §9.5).
 
 mod common;
 
@@ -50,7 +50,27 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// The files are the library's export: the module after its two header
+/// The text of the module at `path` after the two lines of the header every
+/// generated source carries, which it is held to open with.
+fn below_the_header(path: &Path) -> String {
+    let module = read(path);
+    let mut lines = module.splitn(3, '\n');
+    assert_eq!(
+        lines.next(),
+        Some(format!("// {}", sce_build::forge::drift::HEADER_BANNER).as_str()),
+        "{}",
+        path.display()
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|line| line.starts_with("// source-hash: ")),
+        "{module}"
+    );
+    lines.next().unwrap_or_default().to_string()
+}
+
+/// The files are the library's export: each module after its two header
 /// lines, and the manifest as it is, each ending in a newline.
 #[test]
 fn a_suite_is_written_as_the_library_exports_it() {
@@ -63,28 +83,23 @@ fn a_suite_is_written_as_the_library_exports_it() {
     );
     assert_eq!(
         listing(out.path()),
-        ["job_suite_Types.manifest.json", "job_suite_Types.ttcn"]
+        [
+            "job_suite.ttcn",
+            "job_suite_Types.manifest.json",
+            "job_suite_Types.ttcn"
+        ]
     );
     let library = sce_build::ttcn3_export::export_suite(&job_suite(), &[])
         .expect("the job suite is exported");
 
-    let module = read(&out.path().join("job_suite_Types.ttcn"));
-    let mut lines = module.splitn(3, '\n');
     assert_eq!(
-        lines.next(),
-        Some(format!("// {}", sce_build::forge::drift::HEADER_BANNER).as_str())
-    );
-    assert!(
-        lines
-            .next()
-            .is_some_and(|line| line.starts_with("// source-hash: ")),
-        "{module}"
+        below_the_header(&out.path().join("job_suite_Types.ttcn")),
+        format!("{}\n", library.types_module)
     );
     assert_eq!(
-        lines.next(),
-        Some(format!("{}\n", library.types_module).as_str())
+        below_the_header(&out.path().join("job_suite.ttcn")),
+        format!("{}\n", library.behaviour_module)
     );
-
     assert_eq!(
         read(&out.path().join("job_suite_Types.manifest.json")),
         format!("{}\n", library.manifest)
