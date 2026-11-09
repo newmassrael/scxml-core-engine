@@ -203,6 +203,7 @@ pub fn check(
         loop_enum_paths: Default::default(),
         payload_enum_paths: Default::default(),
         payload_schema: Default::default(),
+        payload_declared: Default::default(),
         diag_label,
         read: Default::default(),
         whole_state_call_ok: Default::default(),
@@ -323,7 +324,7 @@ pub fn check(
             // An enum field of the payload is a value of the enum the schema
             // names, as a record's field is, and the payload taken whole is a
             // record of its schema.
-            judge.open_payload(schema);
+            judge.open_payload(schema, whole.is_some());
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
@@ -366,7 +367,7 @@ pub fn check(
             };
             judge.actions(&proving(&ctx, &guarded), &transition.actions, &state.id)?;
         }
-        judge.open_payload(None);
+        judge.open_payload(None, false);
         for invoke in &state.invokes {
             judge.invoke(&plain, invoke, &state.id)?;
         }
@@ -1004,6 +1005,13 @@ struct Judge<'a> {
     /// The schema of the payload of the transition the walk is in, which
     /// `_event.data` taken whole is a record of.
     payload_schema: std::cell::RefCell<Option<crate::forge::model::EntrySchema>>,
+    /// Whether the event of the transition the walk is in declares a schema
+    /// at all, whatever its fields hold: what puts its payload in scope for a
+    /// value a `<param>` reads ([`Self::wire_param`]), as for an `<assign>` or
+    /// an `<if>`. [`Self::payload_schema`] is the schema seen as one entry per
+    /// field, which a schema that holds a composed field has none of, though a
+    /// scalar field of it is a typed scalar like any other.
+    payload_declared: std::cell::Cell<bool>,
     /// Every item and index of the `<foreach>`es the walk is inside: values
     /// the loop binds and the body reads, and does not write.
     loop_names: std::cell::RefCell<Vec<String>>,
@@ -1497,11 +1505,15 @@ impl<'a> Judge<'a> {
     /// whole is a record of. Each field names its enum as this document holds
     /// the enum document the schema imports (docs/adr/0054), so a value of it is
     /// compared and assigned with a value of that same document's enum alone.
-    fn open_payload(&self, schema: Option<&crate::forge::model::EntrySchema>) {
+    /// `declared` is whether the event declares a schema at all, `schema`
+    /// being its view of one entry per field, absent for a schema that holds a
+    /// composed field.
+    fn open_payload(&self, schema: Option<&crate::forge::model::EntrySchema>, declared: bool) {
         *self.payload_enum_paths.borrow_mut() = schema
             .map(|schema| enum_fields(crate::forge::event_schema_check::EVENT_DATA_PATH, schema))
             .unwrap_or_default();
         *self.payload_schema.borrow_mut() = schema.cloned();
+        self.payload_declared.set(declared);
     }
 
     /// `expr`, which a variable declared `enum:<alias>` is to hold: a variant
@@ -3547,7 +3559,7 @@ impl<'a> Judge<'a> {
             )
         };
         if crate::forge::expr::references_event_data_lexically(written)
-            && self.payload_schema.borrow().is_none()
+            && !self.payload_declared.get()
         {
             return Err(self.rule_at(
                 construct,

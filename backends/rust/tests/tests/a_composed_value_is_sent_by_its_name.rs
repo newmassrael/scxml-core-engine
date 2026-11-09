@@ -52,9 +52,11 @@ fn a_delivery_forwarded_by_its_names_comes_back_whole() {
     );
     // A list variable sent to a field that states a lower count (docs/adr/0086,
     // section 15.6): sent empty, refused whole and never delivered; sent with
-    // its one element, delivered.
-    assert_eq!(policy.counted_deliveries(), 1);
+    // its one element, delivered, and forwarded once more with its scalar
+    // `hops`, a scalar field of a payload that holds a list.
+    assert_eq!(policy.counted_deliveries(), 2);
     assert_eq!(policy.counted_sum(), 7);
+    assert_eq!(policy.counted_hops(), 3);
     assert_eq!(
         policy.deliveries(),
         2,
