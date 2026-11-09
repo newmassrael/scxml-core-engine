@@ -7,6 +7,8 @@
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
+- Migration: how a consumer moves its existing test documents onto the profile, and checks that a moved test decides
+  what the old one decided, is `docs/SCE_TEST_PROFILE_MIGRATION.md` (ADR 0091 order of work step 7).
 - Sources, pinned by ADR 0091 answer 2:
   - ETSI ES 201 873-1 V4.17.1 (2025), the core language, cited as **-1 §x**;
   - ETSI ES 201 873-4 V4.6.1 (2017), the operational semantics, cited as **-4 §x**;
@@ -1810,8 +1812,9 @@ the others. This section fixes its structure. It changes no rule of §2 to §11.
 ### 12.1 Which backend first
 
 C++. The corpus that ADR 0091's Context measured, 432 documents that pair `cpp:` conditions with C++ message types,
-runs in C++, and its migration (order of work step 7) needs a C++ runtime to migrate onto. The other backends follow
-one at a time. Each lifts the refusal of §11.9 for itself when its runtime lands.
+runs in C++, and its migration (order of work step 7, `docs/SCE_TEST_PROFILE_MIGRATION.md`) needs a C++ runtime to
+migrate onto. The other backends follow one at a time. Each lifts the refusal of §11.9 for itself when its runtime
+lands.
 
 ### 12.2 What is generated and what is library
 

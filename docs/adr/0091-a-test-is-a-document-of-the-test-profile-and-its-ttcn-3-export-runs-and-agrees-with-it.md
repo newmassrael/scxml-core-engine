@@ -441,7 +441,7 @@ traces are those a generator would also produce.
    the Main Controller patch; D3, the reference adapters and codecs; D4, the binding and the logger; D5, the lane
    and C3.
 6. Add the equivalence law over the corpus (C3), with the canonical log's schema and its `SCE_WIRE_CONTRACTS.md` row.
-7. Write migration guidance for consumers' existing test documents.
+7. Write migration guidance for consumers' existing test documents. Done in `docs/SCE_TEST_PROFILE_MIGRATION.md`.
 
 ## Questions (answered below)
 
