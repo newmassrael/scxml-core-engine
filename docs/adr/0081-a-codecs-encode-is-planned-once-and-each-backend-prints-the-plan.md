@@ -641,6 +641,27 @@ old encode, the old encode and its templates are removed in the same landing.
    (`Write::Byte`); the C++ printer prints both, and the template's encode and decode, Swift and the diagram
    read the same spans (`forge::bit_layout`). The printed set is 145 codecs, every codec of the resources, so
    the template's C++ encode prints none of them.
+
+   *The thirty-second C++ landing, 2026-11-09:* a variant whose caller hands its tag. The template's encode
+   still printed codecs outside the resources, so the census now reads every codec document of the repository
+   and pins the ones the printer keeps. Such a variant writes its arm alone; the value answers `tag()` by the
+   arm it holds, a switch over the arm's place, the tag the decode was handed for an arm that stands for every
+   other tag. A C++ test holds the caller-tag fixtures of the Rust conformance arm to the Rust arm's frames.
+
+   *The thirty-third C++ landing, 2026-11-09:* a variant with an arm a build feature decides (ADR 0057 §10).
+   An arm's place in the `std::variant` is a constant of the build's macros, the arms before it plus each gated
+   arm before it that the build holds, and every line that names a gated arm sits inside the guard of its
+   macro: the traits, the tag switch, the cases of the encode and of a parent that derives the tag. A C++ test
+   runs a codec that holds such a variant in both builds, the arm written back where the feature is on and
+   refused as an arm not built where it is off.
+
+   *The thirty-fourth C++ landing, 2026-11-09:* a positional encode that refuses a value. Each refusal the
+   totality analysis names is one the printed encode writes (`assert_all_written`): an input a chain of slots
+   holds an entry to, a gate the value contradicts, a length out of range. The checks run before the first
+   byte; where a held codec can refuse, the encode runs over a counting sink first and then over the caller's
+   (§1), so a refusal leaves the caller's sink untouched. A printed codec's `encode_to_vec` answers an optional
+   only where its plan is not total: nineteen goldens whose plan is total now answer the bytes. One codec of the
+   repository is kept, a CBOR record list.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
