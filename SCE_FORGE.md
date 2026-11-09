@@ -1176,8 +1176,9 @@ type of its own, so the schema is generated beside the codec. That unit holds a
 text in a bounded text on Rust and a byte string in the language's own vector,
 which carries no bound: a record with a byte string makes the encode refusable
 (a byte string past its bound), so its codec declares `sce:encode-may-fail="true"`
-as for a lower count. C11's unit holds a byte string as a borrowed pointer, which
-a list the codec holds by value cannot own, so C11 refuses such a record by name.
+as for a lower count. C11's unit holds a byte string in the buffer of its bound
+beside its length (`sce_static_bytes_<N>_t`), which a list the codec holds by
+value owns: the read fills both and the write refuses a length past the bound.
 
 Rust generates the list: each in `BoundedList<<schema>::<Schema>Payload, N>`
 (docs/adr/0086, section 7.4), which holds no more than `N` on every profile, so a
@@ -1336,8 +1337,7 @@ positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
 skip walking a fixed stack rather than recursing.
 
 Every backend generates a CBOR codec. What still refuses one, by name
-(`generate/unsupported-feature`), is a record of a list C11 cannot own (above),
-and a document C11 cannot hold: a text or
+(`generate/unsupported-feature`), is a document C11 cannot hold: a text or
 byte string entry with neither `sce:max-size` nor `sce:length`, which has no
 fixed array to live in — every other backend's string grows. The generator's
 refusal and the conformance harness's schedule read one answer

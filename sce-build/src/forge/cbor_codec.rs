@@ -189,33 +189,6 @@ pub(crate) fn record_list_unlowered(m: &CodecModel, scope: &TypeScope) -> Option
     None
 }
 
-/// Why `lang` does not hold a record the lists of `m` hold that
-/// [`record_list_unlowered`] admits, or `None` when it does, `scope` naming
-/// the records the codec's imports resolve. A record is the payload type of its
-/// schema's own unit ([`record_payload_type`]), and C11's unit holds a byte
-/// string as a borrowed pointer with no length beside it, which a list the
-/// codec's value holds by value cannot own: such a record is refused by name on
-/// C11, the field named. Every other language's unit owns each field it holds.
-pub(crate) fn record_list_unlowered_on(
-    lang: Language,
-    m: &CodecModel,
-    scope: &TypeScope,
-) -> Option<String> {
-    if lang != Language::C11 {
-        return None;
-    }
-    m.cbor_entries.iter().find_map(|e| {
-        let record = scope.records.get(e.record_list()?.record)?;
-        let (id, _) = record_unbounded_bytes(&record.fields).into_iter().next()?;
-        Some(format!(
-            "CBOR entry '{}' holds records of `{}`, whose field `{id}` is a byte string, \
-             which the C11 unit of the schema holds as a borrowed pointer that a list of the \
-             codec's value cannot own",
-            e.id, record.name
-        ))
-    })
-}
-
 /// What a field of a record a CBOR list holds is on the wire, as the templates
 /// branch on it, with the bound of a text or a byte string: `uint`, `bool`,
 /// `text` or `bytes`. `None` for a type no codec writes there
@@ -854,11 +827,12 @@ fn render_c(
         None => record_type_of(&l, imports, e),
     })?;
     // Each field of a record as the schema's C11 unit holds it: a number as its
-    // type, and a text in the buffer of its bound, ended by its terminator. A
-    // record with a byte string, which that unit borrows, was refused before
-    // any backend renders ([`record_list_unlowered_on`]).
+    // type, a text in the buffer of its bound, ended by its terminator, and a
+    // byte string in the buffer of its bound beside its length
+    // (`generator::c11_schema_bytes_capacity`).
     insert_cbor_records(&l, m, imports, &mut ctx, &|ty| match ty {
         ValueType::Text { max } => crate::forge::static_lowering::c_string_storage_type(max.max),
+        ValueType::Bytes { max } => crate::forge::static_lowering::c_bytes_storage_type(max.max),
         other => scalar_record_field_type(&l, other),
     })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);

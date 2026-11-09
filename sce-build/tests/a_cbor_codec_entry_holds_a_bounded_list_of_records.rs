@@ -638,9 +638,13 @@ fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
     }
 }
 
+/// The C11 unit of the schema holds the byte string in the buffer of its bound
+/// beside its length, which a list of the codec's value owns by value: the
+/// read fills both, refusing a string past the bound, and the write refuses a
+/// length past it rather than writing it.
 #[test]
-fn c11_refuses_a_record_whose_byte_string_its_unit_borrows() {
-    let why = generated(
+fn c11_holds_a_records_byte_string_in_its_buffer_with_its_length() {
+    let c = generated(
         &document(
             r#" sce:encode-may-fail="true""#,
             DIGEST_IMPORT,
@@ -649,11 +653,12 @@ fn c11_refuses_a_record_whose_byte_string_its_unit_borrows() {
         "probe_list",
         Language::C11,
     )
-    .err()
-    .unwrap_or_else(|| panic!("C11 generated a list of records it cannot own"));
-    // Refused before any backend renders, by the record and its field.
-    assert!(
-        why.contains("field `digest` is a byte string") && why.contains("borrowed pointer"),
-        "{why}"
-    );
+    .unwrap_or_else(|why| panic!("C11 generates a list of records of a byte string: {why}"));
+    for expected in [
+        "s = sce_forge_cbor_read_bytes(c, 4U, 4U, out->digest.data, &out->digest.len);",
+        "if (record->digest.len > 4U) {",
+        "s = sce_forge_cbor_write_bytes(w, record->digest.data, record->digest.len);",
+    ] {
+        assert!(c.contains(expected), "missing `{expected}`:\n{c}");
+    }
 }
