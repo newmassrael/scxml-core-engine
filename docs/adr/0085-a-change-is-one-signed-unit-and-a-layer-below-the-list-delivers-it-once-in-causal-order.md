@@ -814,3 +814,37 @@ Decided while landing 4c (2026-11-09), under the same rule and open to the owner
   of `parts` 2): its write-over of x is `already` and its write-over of y is held for good, so y stays live and the
   parent is never told it empty. The second holds the order the layer gives; its old-rule failure is case (b), an
   order the layer never gives, and is held by the negative arm of 4e.
+- **`sce-trust/event/3` is deterministic CBOR, and so is the operation.** Section 6 asks for the ops list "as its
+  length and then each element's fields in their declared order and kinds"; ADR 0086 section 9 says that from this
+  ADR's one domain bump the bytes a signature covers are the deterministic CBOR of `[domain, list, event,
+  payload]`, the operation the CBOR of `[operation domain, message bytes, link]`, and the length prefixes go. The
+  bump moved into 4c (amendment of 2026-11-09), so the encoding moves with it: one domain names one encoding, and a
+  second bump for CBOR at landing 5 would be the two cuts this ADR refuses. A CBOR array is its length and then its
+  elements, so section 6 holds; a record is a map keyed in the order of the keys' encodings, which ADR 0086 section
+  9.2 fixes and which is no less deterministic than declared order. The operation domain keeps its number,
+  `sce-trust/operation/2`: 4b's form of it (texts with their lengths) was never on main, and 4b and 4c land
+  together. The vectors of `a_byte_format_does_not_drift` were made by an encoder written apart from the crate's
+  (CBOR by hand, SHA-256, Ed25519 and XChaCha20-Poly1305 of another library), which gave the old vectors back first.
+- **The table holds the shape, not the build's bounds.** `message::CHANGE_TYPE` and `message::OP` type each field
+  as `record_change` and `record_op` do, and give a text and the list no bound: a deployment moves `shared_parts`
+  and `merge_text` (`--limit`), and a write's text travels sealed, longer than the text it seals. The build and the
+  list refuse a change past its bounds; the trust layer refuses what the type itself says (an empty change, a
+  number outside its integer) and a change that writes one register twice, whose two writes would be one write of
+  two contents sealed under one nonce. The world test holds the table to the schemas by name, order and type.
+- **A change is named by its dot and kept by its bytes.** `Signing::subject` is the CBOR of `by`, `wallTime` and
+  `counter`; what a host keeps a change by is the bytes it is signed as, its content opened. A second content under
+  one dot is refused at the source and held as a conflict (`Why::Repeats`) elsewhere: every write of a change is
+  sealed under its register and the dot, so two changes at one dot are a nonce used twice. The notes' table and
+  their provenance go: no copy sends a write-over again as itself, so no host puts an author back on one.
+- **Each write is sealed apart, under new domains.** The nonce and the associated data are made from the write's
+  register and its change's dot (`message::write_stamp`), under `sce-trust/nonce/2` and `sce-trust/content/2`.
+  The bytes of that stamp are those of a write sent alone under the second event domain with the same register and
+  stamp, and one epoch's key may hold both across the cut (section 8.3), so the domains move to keep the nonces
+  apart. A write-over carries no content and is not sealed. A change that holds no write waits for the epoch's key
+  as one that holds writes does: a change is sealed whole under one epoch.
+- **The core's settlement and its floor stay until landing 5.** The list keeps no tombstones and reads no
+  `record_list.floor`, so the floor a host may still raise changes nothing; the checkpoints, the settlement made of
+  them and `sce_peer_floor_event` are the core's word of stability, which landing 5's stable cut and mark replace,
+  with the ABI's next number. Removing them here would move the six lanes' bindings twice for one landing.
+- **The ABI is version 7.** What `sce_peer_outbound` takes and the events an outcome holds change shape, which the
+  ABI's rule makes a new number; the lanes that pin the number (Python, Kotlin) move with the header.
