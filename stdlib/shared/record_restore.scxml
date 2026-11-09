@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_restore.scxml — a stable state of a shared record list, as a
+  host gives it to a copy it builds again (docs/adr/0085, section 4.4): the live values
+  the copies held at a stable cut, which the host folded its journal into, before the
+  changes after the cut (record_list.recall, record_recall). It is a state handed over,
+  as a saved state is (docs/adr/0045), and not a change: it claims no change's identity,
+  is judged by no roster, is sent and reported to no one, and tells the parent each
+  register it moved once.
+
+  The fields are record_change's, read as a state: `by` is 0, the author of no change,
+  and is not read; `wallTime` and `counter` are the clock of the state, which the copy
+  raises its own clock to, so it stamps nothing at or before it; and `ops` are the live
+  values, each a write (record_op `kind` 0) that carries its own dot in `wallTime`,
+  `counter` and `nodeId`, since the values of one state were written by many changes.
+  A write of a change whose write-overs the cut forgot is a live value like any other,
+  and is taken in whole.
+
+  A state may hold more values than one restore carries (`shared_parts`): a host gives
+  such a state as several restores, each of a part of the values and each with the
+  state's clock. A value is taken in once whatever restore carries it, so the
+  order of the parts means nothing.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_restore"
+       sce:event-name="record_list.restore">
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
+  <datamodel>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="ops" sce:type="list&lt;record:Op&gt;[1..shared_parts=64]" sce:direction="in"/>
+  </datamodel>
+</scxml>

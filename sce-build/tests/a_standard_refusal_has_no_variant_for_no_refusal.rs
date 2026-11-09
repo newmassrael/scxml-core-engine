@@ -122,6 +122,7 @@ fn record_refusal_declares_no_variant_for_no_refusal_and_starts_at_not_writer() 
             "changeTooLarge",
             "registerNamedTwice",
             "clockExhausted",
+            "peerRefused",
         ],
         "every variant is a reason, and none stands for no refusal"
     );
@@ -137,11 +138,13 @@ fn record_refusal_declares_no_variant_for_no_refusal_and_starts_at_not_writer() 
     // Every number is the one it had before `none` was removed, so nothing a saved
     // state or a peer holds was renumbered. 5 was `textTooLong`, retired when an
     // edit's text bound moved to the type the delivery is read by (docs/adr/0086,
-    // section 4.4; docs/adr/0046, section 6), and is no variant's.
+    // section 4.4; docs/adr/0046, section 6), and is no variant's. `peerRefused`, a
+    // refusal by the copy's delivery layer, takes the next number (docs/adr/0093,
+    // section 5).
     let numbers: Vec<u32> = variants.iter().map(|(_, value)| *value).collect();
     assert_eq!(
         numbers,
-        [1, 2, 3, 4, 6, 7, 8],
+        [1, 2, 3, 4, 6, 7, 8, 9],
         "each variant keeps its number: {variants:?}"
     );
     assert!(
@@ -266,8 +269,9 @@ fn the_scenarios_first_step_expects_no_refusal_as_null_and_later_steps_a_whole_r
         fields.sort_unstable();
         assert_eq!(
             fields,
-            ["field", "id", "kind", "reason"],
-            "a present refusal states all four fields: {step}"
+            ["command", "field", "id", "kind", "reason", "withdrawn"],
+            "a present refusal states all six fields of record_refused's second revision: \
+             {step}"
         );
         assert_ne!(
             record["reason"], "none",

@@ -33,12 +33,12 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/f
 
 mutation_case "a peer's change takes in its first operation alone, as a part held for the rest" <<'PY'
 edit("stdlib/shared/record_list.scxml",
-     '''        <assign location="dot.nodeId" expr="_event.data.by"/>
-        <foreach array="taking" item="t">
-          <send target="#_internal" event="record_list.take"/>
-        </foreach>''',
-     '''        <assign location="dot.nodeId" expr="_event.data.by"/>
-        <send target="#_internal" event="record_list.take"/>''')
+     '''    <transition event="record_list.deliver" type="internal">
+      <foreach array="taking" item="t">
+        <send target="#_internal" event="record_list.take"/>
+      </foreach>''',
+     '''    <transition event="record_list.deliver" type="internal">
+      <send target="#_internal" event="record_list.take"/>''')
 PY
 
 mutation_case "a write is given the dot it carries, not its change's stamp" <<'PY'
@@ -51,8 +51,10 @@ PY
 
 mutation_case "a write-over leaves the add it names in adds" <<'PY'
 edit("stdlib/shared/record_list.scxml",
-     '''<assign location="adds" expr="OrsetLive(adds, one)"/>''',
-     '''<assign location="adds" expr="adds"/>''')
+     '''        <sce:append target="one" expr="entry"/>
+        <assign location="adds" expr="OrsetLive(adds, one)"/>''',
+     '''        <sce:append target="one" expr="entry"/>
+        <assign location="adds" expr="adds"/>''')
 PY
 
 mutation_case "a write whose value is held already is taken in and told again" <<'PY'

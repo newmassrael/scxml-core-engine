@@ -14,22 +14,31 @@
   - `noRoomForValue`: the values the copy would hold after the change pass the room the
     host gave it (record_list.room, `values`);
   - `noRoomForHistory`: the copy's delivery layer holds as many changes not yet stable as
-    the room lets it (`history`), which stability frees (docs/adr/0085, section 2.5);
+    the room lets it (`history`), which stability frees (docs/adr/0085, section 2.5),
+    told when the layer's verdict gives it, or the copy holds as many changes taken in
+    provisionally as it has room for (`shared_provisional`, docs/adr/0093, section 3.4);
   - `noRoomForDigest`: told by no copy, since the list keeps no digest (docs/adr/0085,
     section 2.1); it stays declared, with its number, so a parent built before reads it;
   - `changeTooLarge`: the change stages more commands, or is more operations, than the
     copy is built to hold (`shared_staged`, `shared_parts`);
   - `registerNamedTwice`: two commands of the change write or clear one register;
-  - `clockExhausted`: the copy's clock cannot stamp another change in its millisecond.
+  - `clockExhausted`: the copy's clock cannot stamp another change in its millisecond;
+  - `peerRefused`: the copy's delivery layer refused the change, at its verdict with no
+    reason of its own or by withdrawing it after it was taken in provisionally
+    (docs/adr/0093, section 3).
 
   The number 5 is no variant's. It was `textTooLong`, an edit's text past what a person
   writes, until that bound moved to the type of record_edit's text: an edit past it is
   refused whole where it is read and never reaches the list (docs/adr/0086, section 4.4;
   docs/adr/0046, section 6). The numbers of the others are the ones they had, so nothing
   a saved state or a peer holds is renumbered, and 5 is not given again.
+
+  `peerRefused` is the second revision's (docs/adr/0044): a parent built against the
+  first reads every reason it knew by the number it had.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8">
+       version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8"
+       sce:revision="2">
   <datamodel>
     <data id="variants">
       <sce:variant name="notWriter" value="1"/>
@@ -39,6 +48,7 @@
       <sce:variant name="changeTooLarge" value="6"/>
       <sce:variant name="registerNamedTwice" value="7"/>
       <sce:variant name="clockExhausted" value="8"/>
+      <sce:variant name="peerRefused" value="9" sce:since="2"/>
     </data>
   </datamodel>
 </scxml>
