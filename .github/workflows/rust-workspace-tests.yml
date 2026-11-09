@@ -462,15 +462,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-workspace-sources-v2-
 
-    # Mirrors the hook's build stage. Debug profile so the binary lands
-    # where `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
-    - name: Build sce-codegen
-      run: |
-        # A reused checkout must not select an old release binary over
-        # the debug binary this step builds.
-        source scripts/lib/sce_codegen.sh
-        sce_codegen_drop_stale_release
-        cargo build --bin sce-codegen --features cli -p sce-build
+    # The generator is built by the gate this lane delegates to
+    # (`scripts/gates/workspace-tests.sh`), before the suite, and by the
+    # Gradle builds below for the Kotlin steps that run it: one spelling of
+    # the build, in the gate, rather than a second one here.
 
     # `gate_registry_contract` drives the *staged* citation stage as a
     # subprocess, and that stage refuses — exit 3, "the gate could not run,

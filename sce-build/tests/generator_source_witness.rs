@@ -317,7 +317,7 @@ fn compiled_in_sources() -> Vec<PathBuf> {
                     "the dep-info at {} names {}, which is not on disk ({e}), so it was \
                      written for another tree. Build the generator as a target first \
                      (`cargo build --bin sce-codegen --features cli -p sce-build`, as \
-                     rust-workspace-tests.yml does) and run this test again",
+                     scripts/gates/workspace-tests.sh does) and run this test again",
                     dep_info.display(),
                     path.display()
                 )

@@ -42,7 +42,11 @@ sce_gate_http_fixture_server
 # `target/debug/sce-codegen.d`, the list of every file the binary compiled in,
 # only for a target it was asked for, and `generator_source_witness` holds the
 # generator's source witness to that list; built only as a dependency of the
-# tests, the list would be that of whichever tree last built it here.
+# tests, the list would be that of whichever tree last built it here. A
+# reused checkout must not select an old release binary over the debug binary
+# built here, so a stale one is dropped first.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/sce_codegen.sh"
+sce_codegen_drop_stale_release
 cargo build --bin sce-codegen --features cli -p sce-build \
     || sce_gate_fail "cargo build --bin sce-codegen --features cli -p sce-build"
 
