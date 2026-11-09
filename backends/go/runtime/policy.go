@@ -252,8 +252,12 @@ type StatePolicy[S comparable, E comparable] interface {
 	// need is emitted as a no-op, under the feature flag above that says so.
 	// ================================================================
 
-	// InitializeDataModel initializes the datamodel via the script engine (§scxml-5.3).
-	InitializeDataModel(engine *Engine[S, E])
+	// InitializeDataModel establishes the script session and initializes the
+	// datamodel in it (§scxml-5.3), the first step of every start. It answers
+	// the failure of a session that could not be established, having released
+	// what it made, and nil otherwise (docs/adr/0096). A policy with no script
+	// engine answers nil.
+	InitializeDataModel(engine *Engine[S, E]) *ScriptSessionFailure
 
 	// ExecutePendingInvokes executes any pending <invoke> elements deferred during
 	// entry (§scxml-6.4).

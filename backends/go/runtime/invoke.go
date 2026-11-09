@@ -158,7 +158,10 @@ type SavedChildEngine interface {
 // child invoke sessions (§scxml-6.4). Generated code implements this for
 // each concrete child state machine type.
 type ChildEngine interface {
-	Initialize()
+	// Initialize starts the child, and answers the *ScriptSessionFailure that
+	// refused its start when its script session could not be established
+	// (docs/adr/0096); Engine.Initialize.
+	Initialize() error
 	Tick()
 
 	// Stop exits the child session when its parent cancels it

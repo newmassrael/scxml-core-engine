@@ -4,6 +4,7 @@
 package sce
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -338,22 +339,49 @@ type ParentNeed interface {
 }
 
 // RootStartRefusal is why InitializeAsRoot refused to start a machine.
+//
+// It refuses for either of two reasons, the two the other engines spell
+// `NeedsParent` and `ScriptSession(failure)`. RootStartNeedsParent is answered
+// as it is, so `err == RootStartNeedsParent` holds. A refusal for the script
+// session carries the failure: errors.Is(err, RootStartScriptSession) tells it
+// apart, and errors.As(err, &failure) reads the *ScriptSessionFailure.
 type RootStartRefusal int
 
 const (
 	// RootStartNeedsParent: §scxml-6.2.4 — the document sends to #_parent,
 	// and a session its host started has no parent to reach.
 	RootStartNeedsParent RootStartRefusal = iota + 1
+	// RootStartScriptSession: docs/adr/0096 — the machine's script session
+	// could not be established, so nothing was entered and nothing ran.
+	RootStartScriptSession
 )
 
 // Error is the refusal as a sentence, for a host to report — the same words
-// on every engine.
+// on every engine. A refusal for the script session, as InitializeAsRoot
+// answers it, carries the step that failed and the engine's words beside it.
 func (r RootStartRefusal) Error() string {
 	switch r {
 	case RootStartNeedsParent:
 		return "the machine sends to #_parent and was started with no parent session"
+	case RootStartScriptSession:
+		return "the machine's script session could not be established"
 	}
 	return ""
+}
+
+// rootStartScriptSessionRefusal is the refusal RootStartScriptSession carrying
+// the failure that refused the start: it is RootStartScriptSession to
+// errors.Is, the failure to errors.As, and the failure's sentence as an error.
+type rootStartScriptSessionRefusal struct {
+	failure *ScriptSessionFailure
+}
+
+func (r *rootStartScriptSessionRefusal) Error() string { return r.failure.Error() }
+
+func (r *rootStartScriptSessionRefusal) Unwrap() error { return r.failure }
+
+func (r *rootStartScriptSessionRefusal) Is(target error) bool {
+	return target == error(RootStartScriptSession)
 }
 
 // RootStartRefusal answers whether a host running this machine as a ROOT —
@@ -372,13 +400,24 @@ func (e *Engine[S, E]) RootStartRefusal() error {
 }
 
 // InitializeAsRoot is Initialize for a host that refuses to start a machine
-// needing a parent as a root (RootStartRefusal). A refusal starts nothing: no
-// datamodel is declared and no state is entered.
+// needing a parent as a root (RootStartRefusal).
+//
+// It refuses for either of two reasons: a machine that needs a parent,
+// RootStartNeedsParent, before anything is established; and a machine whose
+// script session cannot be established, a RootStartScriptSession refusal that
+// wraps the *ScriptSessionFailure (docs/adr/0096). A refusal starts nothing: no
+// state is entered and no executable content runs.
 func (e *Engine[S, E]) InitializeAsRoot() error {
 	if refusal := e.RootStartRefusal(); refusal != nil {
 		return refusal
 	}
-	e.Initialize()
+	if err := e.Initialize(); err != nil {
+		var failure *ScriptSessionFailure
+		if errors.As(err, &failure) {
+			return &rootStartScriptSessionRefusal{failure: failure}
+		}
+		return err
+	}
 	return nil
 }
 
@@ -387,12 +426,31 @@ func (e *Engine[S, E]) InitializeAsRoot() error {
 //
 // Matches Rust Engine::initialize. §scxml-5.3 guarantees datamodel
 // initialization happens before any state entry.
-func (e *Engine[S, E]) Initialize() {
+//
+// A machine with a script engine establishes its script session first, and one
+// whose session cannot be established is not started (docs/adr/0096): the
+// error is a *ScriptSessionFailure naming the step that failed, no state is
+// entered, no executable content runs, no event is taken, the inbox is not
+// opened and the engine is not running. A machine without a script engine
+// (its policy's NeedsScriptEngine is false) has no session to fail, and its
+// start always returns nil.
+func (e *Engine[S, E]) Initialize() error {
 	// §scxml-3.13: entering the initial configuration is one turn, and the
 	// <onentry> handlers it runs arm their <send delay>s against one instant —
 	// see beginTurn for what reading the clock per <send> did to two of them.
 	opened := e.beginTurn()
 	defer e.endTurn(opened)
+
+	// §scxml-5.3: Initialize datamodel before any state entry. It establishes
+	// the script session first, and a session that cannot be established
+	// refuses the start here, before the run is marked running or its inbox
+	// opened, so nothing below is reached (docs/adr/0096).
+	if e.policy.NeedsDataModelInit() {
+		if failure := e.policy.InitializeDataModel(e); failure != nil {
+			log.Printf("[sce] Engine::Initialize: refused -- %s", failure)
+			return failure
+		}
+	}
 
 	e.isRunning = true
 	e.clearTerminalState()
@@ -404,11 +462,6 @@ func (e *Engine[S, E]) Initialize() {
 	// its first macrostep, so a post naming it reaches its inbox from now on.
 	e.inbox.open()
 	e.enterDirectory()
-
-	// §scxml-5.3: Initialize datamodel before any state entry
-	if e.policy.NeedsDataModelInit() {
-		e.policy.InitializeDataModel(e)
-	}
 
 	// §scxml-D-interpret: enterStates([doc.initialTransition]) — the document's
 	// own initial transition, whose source is the <scxml> element, entered by
@@ -434,6 +487,7 @@ func (e *Engine[S, E]) Initialize() {
 		log.Printf("[sce] Engine::Initialize: reached final state during init, invoking completion callback")
 		e.completionCallback()
 	}
+	return nil
 }
 
 // EnterAt enters a configuration this document already describes, without
@@ -481,23 +535,37 @@ func (e *Engine[S, E]) Initialize() {
 // The Go twin of the Rust runtime's Engine::enter_at and of the C++
 // StaticExecutionEngine::enterAt.
 //
-// Returns ConfigurationAccepted on success; the rule that was broken otherwise,
-// with the engine untouched.
-func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationRejection {
+// It also refuses a machine whose script session cannot be established, with
+// ConfigurationScriptSessionUnavailable and the *ScriptSessionFailure naming the
+// step that failed (docs/adr/0096): the session is established before anything
+// of the engine is touched, so that refusal too leaves the engine as it was.
+//
+// Returns a verdict whose Rejection is ConfigurationAccepted on success; the
+// rule that was broken otherwise, with the engine untouched.
+func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationVerdict {
 	// Before anything is touched: a rejection must not half-enter.
 	verdict := ValidateConfiguration[S, E](e.policy, configuration, current)
 	if verdict != ConfigurationAccepted {
 		log.Printf("[sce] Engine::EnterAt: refused -- %s", verdict)
-		return verdict
+		return ConfigurationVerdict{Rejection: verdict}
 	}
 
 	// §scxml-5.3: the datamodel is declared before anything can read it. This
 	// is not a state entry action -- <datamodel> holds <data>, not executable
 	// content -- so it runs here for the same reason it runs in Initialize: a
 	// cond or an assign evaluated after this call would otherwise reference
-	// variables that were never declared.
+	// variables that were never declared. It establishes the script session
+	// first, and a session that cannot be established refuses the entry before
+	// anything of the engine is touched, as a configuration of another document
+	// is (docs/adr/0096).
 	if e.policy.NeedsDataModelInit() {
-		e.policy.InitializeDataModel(e)
+		if failure := e.policy.InitializeDataModel(e); failure != nil {
+			log.Printf("[sce] Engine::EnterAt: refused -- %s", failure)
+			return ConfigurationVerdict{
+				Rejection:            ConfigurationScriptSessionUnavailable,
+				ScriptSessionFailure: failure,
+			}
+		}
 	}
 
 	e.currentState = current
@@ -526,7 +594,7 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 	// tree's directory, as one Initialize enters.
 	e.inbox.open()
 	e.enterDirectory()
-	return ConfigurationAccepted
+	return ConfigurationVerdict{Rejection: ConfigurationAccepted}
 }
 
 // Step processes one macrostep: drain queues and run eventless transitions.

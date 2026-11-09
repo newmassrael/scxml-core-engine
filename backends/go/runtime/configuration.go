@@ -71,6 +71,12 @@ const (
 	// or parallel. §scxml-3.11 makes the current state the atomic one the engine
 	// descended to.
 	ConfigurationCurrentNotAtomic
+	// ConfigurationScriptSessionUnavailable means the set is a configuration of
+	// this document, and the machine's script session could not be
+	// established, so nothing was entered (docs/adr/0096). Engine.EnterAt
+	// refuses with it and carries the failure in its ConfigurationVerdict;
+	// ValidateConfiguration never does, since it asks about the set alone.
+	ConfigurationScriptSessionUnavailable
 )
 
 // String is the human-readable reason, for the message a refusal carries.
@@ -98,8 +104,42 @@ func (r ConfigurationRejection) String() string {
 		return "the current state is not in the configuration"
 	case ConfigurationCurrentNotAtomic:
 		return "the current state must be the atomic state the engine descended to"
+	case ConfigurationScriptSessionUnavailable:
+		return "the machine's script session could not be established"
 	}
 	return "unknown"
+}
+
+// ConfigurationVerdict is what Engine.EnterAt answers: the rule a refused
+// configuration broke, or ConfigurationScriptSessionUnavailable with the
+// failure that refused the entry (docs/adr/0096).
+//
+// The rejection alone is an enumeration ValidateConfiguration produces from
+// the set and the document, and the failure is the script engine's words,
+// which only an entry that tried to establish the session has; so the entry's
+// answer holds both. The C++ twin is `SCE::Core::ConfigurationVerdict`.
+type ConfigurationVerdict struct {
+	// Rejection is ConfigurationAccepted for an accepted entry, and the reason
+	// otherwise.
+	Rejection ConfigurationRejection
+	// ScriptSessionFailure is set exactly when Rejection is
+	// ConfigurationScriptSessionUnavailable.
+	ScriptSessionFailure *ScriptSessionFailure
+}
+
+// Accepted reports whether the entry was accepted.
+func (v ConfigurationVerdict) Accepted() bool {
+	return v.Rejection == ConfigurationAccepted
+}
+
+// String is the human-readable reason, for the message a refusal carries; a
+// refused script session is the failure's sentence, its step and the engine's
+// words.
+func (v ConfigurationVerdict) String() string {
+	if v.ScriptSessionFailure != nil {
+		return v.ScriptSessionFailure.Error()
+	}
+	return v.Rejection.String()
 }
 
 // ValidateConfiguration reports whether configuration is a configuration of

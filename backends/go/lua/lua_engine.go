@@ -104,13 +104,17 @@ func (e *LuaEngine) CreateSession(sessionID string) error {
 	// `[1,2,3].indexOf(2)` answered -1 and `[].concat(a, [4])` answered ""
 	// on this backend and nowhere else — with the W3C suite green, because
 	// no fixture in it asks. They are in ecma_semantics.lua now.
+	//
+	// A chunk that does not load fails the creation as the `library` step
+	// (docs/adr/0096), and the session is not kept: it is filed below only
+	// once every chunk loaded.
 	if err := lua.DoString(l, ecmaSemanticsLua); err != nil {
-		return fmt.Errorf("failed to load ECMAScript semantics: %w", err)
+		return &sce.ScriptLibraryNotLoaded{Library: "ECMAScript semantics", Err: err}
 	}
 
 	// Load JSON builtins from shared source (JSON.stringify works in go-lua)
 	if err := lua.DoString(l, jsonBuiltinsLua); err != nil {
-		return fmt.Errorf("failed to load JSON builtins: %w", err)
+		return &sce.ScriptLibraryNotLoaded{Library: "JSON builtins", Err: err}
 	}
 
 	// Override JSON.parse with Go-native implementation (go-lua lacks string.gsub

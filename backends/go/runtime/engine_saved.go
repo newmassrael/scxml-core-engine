@@ -859,7 +859,12 @@ func EnterSession[S comparable, E comparable](
 		policy.BindSessionID(id)
 	}
 	engine.SetClock(clock)
-	if verdict := engine.EnterAt(judged.configuration, judged.current); verdict != ConfigurationAccepted {
+	if verdict := engine.EnterAt(judged.configuration, judged.current); !verdict.Accepted() {
+		// docs/adr/0096: a session that cannot be established refuses the
+		// restore, which is not the saved configuration's fault.
+		if verdict.ScriptSessionFailure != nil {
+			return nil, refuse("%s", verdict.ScriptSessionFailure)
+		}
 		return nil, refuse("the saved configuration is refused: %s", verdict)
 	}
 	for _, queued := range judged.external {
