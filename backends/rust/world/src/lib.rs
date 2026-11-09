@@ -1261,6 +1261,33 @@ impl World {
         }
     }
 
+    /// Deliver to `to` once more the envelope `bytes` it was sent by `from` and reads by the
+    /// binding `via` (the sender's name, or a group's), at the world's present time: what a
+    /// link that holds a copy of what it carried and lets it go late does, long after the
+    /// first was taken in. The envelope is recorded as a duplicate on the network, and its
+    /// receiver's endpoint answers it as any envelope that arrives.
+    pub fn deliver_again(&mut self, from: &str, to: &str, via: &str, bytes: Vec<u8>) {
+        let now = self.clock.now_ms();
+        {
+            let mut net = self.net.lock();
+            net.trace.push(Traced {
+                at_ms: now,
+                from: from.to_string(),
+                to: to.to_string(),
+                fate: Fate::Duplicated { due_ms: now },
+                bytes: bytes.clone(),
+            });
+            net.trace.push(Traced {
+                at_ms: now,
+                from: from.to_string(),
+                to: to.to_string(),
+                fate: Fate::Delivered,
+                bytes: bytes.clone(),
+            });
+        }
+        self.with_actor(to, |actor| actor.receive(via, bytes));
+    }
+
     /// Give the machine `actor` an external event, as its host would.
     pub fn raise(&mut self, actor: &str, event: &str, data: &str) {
         self.with_actor(actor, |actor| actor.raise(event, data));
