@@ -1935,7 +1935,8 @@ The form is the type's, not the language's: a byte string and a list of `uint8` 
 So the generated unit of every template over a record writes its record's type name and its value's form by the types
 its document declares (Rust: `TYPE` and `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a
 send carries the value with both (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a
-`TestValue`). A system adapter gives the type name and the writer of each value it hands the run.
+`TestValue`). Such a unit names the SCE runtime, and its header says so (Rust: `Runtime: sce_runtime`, where a unit that
+writes no form says `none`). A system adapter gives the type name and the writer of each value it hands the run.
 
 **The text.** A log is written in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of each object
 sorted by their names as UTF-16 code units, each text escaped as ECMAScript's `JSON.stringify` escapes it, which is the

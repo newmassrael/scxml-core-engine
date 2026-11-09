@@ -288,6 +288,13 @@ fn a_template_over_a_record_writes_its_values_canonical_form() {
             over_record,
             "{name}: the canonical form is written exactly for a template over a record:\n{text}"
         );
+        // The unit names the SCE runtime exactly where it writes the form, and
+        // its header says so.
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("// Runtime: {runtime}\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
         // A message's type, as the TTCN-3 export's types module names its
         // record: the unit name of the event schema's file.
         let record = match name {

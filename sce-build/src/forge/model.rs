@@ -7248,7 +7248,9 @@ impl ForgeDocument {
             // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
             // A template's unit names nothing of the forge runtime
-            // (docs/SCE_TEST_PROFILE.md §12.2), and a port type writes no file;
+            // (docs/SCE_TEST_PROFILE.md §12.2), and a port type writes no file.
+            // A Rust unit over a record names the SCE runtime's test log, and
+            // states that tier itself (`generator::rust_test_template`);
             // the tables of a configuration, a test case and a suite are their
             // kinds', on the SCE runtime.
             Self::TestTemplate(_) | Self::TestPortType(_) => RuntimeDep::None,
