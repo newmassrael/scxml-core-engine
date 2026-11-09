@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_outcome.scxml — what the delivery layer of a copy of a shared
+  record list answered for a change the copy offered it (docs/adr/0093, section 3), as
+  the host tells the copy in record_list.verdict (record_verdict):
+
+  - `accepted`: the layer took the change and gave it its number; the copy takes it in;
+  - `held`: the layer held the change already, from before a restart; the copy takes it
+    in as it does an accepted one;
+  - `waiting`: the layer cannot carry the change yet (a core that has not read its own
+    chain back, or that waits for a key); the copy takes it in provisionally, and a
+    later record_list.confirm or record_list.withdraw settles it;
+  - `refused`: the layer will never carry the change; the copy takes nothing of it in,
+    and tells its parent `peerRefused`.
+
+  `none` is declared so that no value of the enum stands for a verdict that was never
+  given, and a host never sends it: a verdict of `none` is no verdict, and a copy
+  refuses it as one that names no change it offered.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="record_outcome" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="none" value="0"/>
+      <sce:variant name="accepted" value="1"/>
+      <sce:variant name="held" value="2"/>
+      <sce:variant name="waiting" value="3"/>
+      <sce:variant name="refused" value="4"/>
+    </data>
+  </datamodel>
+</scxml>

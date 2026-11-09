@@ -29,7 +29,7 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The standard schema the cases read: `record_list.edit` at revision 2, whose `text`
+/// The standard schema the cases read: `record_list.edit` at revision 3, whose `text`
 /// is bounded by `sce:max-size="32"` and named `shared_typed_text`.
 const SCHEMA: &str = "stdlib/shared/record_edit.scxml";
 
@@ -84,42 +84,42 @@ fn every_backend_names_the_event_and_the_revision_of_a_schema() {
             "rust",
             &[
                 "pub const EVENT_NAME: &str = \"record_list.edit\";",
-                "pub const REVISION: u32 = 2;",
+                "pub const REVISION: u32 = 3;",
             ][..],
         ),
         (
             "kotlin",
             &[
                 "const val EVENT_NAME: String = \"record_list.edit\"",
-                "const val REVISION: UInt = 2u",
+                "const val REVISION: UInt = 3u",
             ][..],
         ),
         (
             "cpp",
             &[
                 "inline constexpr const char *EVENT_NAME = \"record_list.edit\";",
-                "inline constexpr std::uint32_t REVISION = 2;",
+                "inline constexpr std::uint32_t REVISION = 3;",
             ][..],
         ),
         (
             "go",
             &[
                 "const EventName string = \"record_list.edit\"",
-                "const Revision uint32 = 2",
+                "const Revision uint32 = 3",
             ][..],
         ),
         (
             "python",
             &[
                 "EVENT_NAME: Final[str] = \"record_list.edit\"",
-                "REVISION: Final[int] = 2",
+                "REVISION: Final[int] = 3",
             ][..],
         ),
         (
             "c",
             &[
                 "#define RECORD_EDIT_EVENT_NAME \"record_list.edit\"",
-                "#define RECORD_EDIT_REVISION UINT32_C(2)",
+                "#define RECORD_EDIT_REVISION UINT32_C(3)",
             ][..],
         ),
     ] {
@@ -191,24 +191,26 @@ fn every_backend_names_the_bound_of_each_text_a_schema_bounds() {
 /// The largest `_event.data` of `record_edit` with its text bounded at `text_bound`,
 /// written out: every number at its longest spelling (a 64-bit integer as the quoted
 /// text of its digits), the text at its bound of control characters at their
-/// longest escape, the keys in their wire order.
+/// longest escape, the keys in their wire order. A field a later revision added
+/// (`command`, revision 3) is one a delivery may carry, so it is counted.
 fn largest_record_edit(text_bound: usize) -> String {
     let wide = "\"-9223372036854775808\"";
+    let wide_unsigned = "\"18446744073709551615\"";
     format!(
-        "{{\"field\":65535,\"id\":4294967295,\"more\":false,\"now\":{wide},\"text\":\"{}\",\
-         \"value\":{wide}}}",
+        "{{\"command\":{wide_unsigned},\"field\":65535,\"id\":4294967295,\"more\":false,\
+         \"now\":{wide},\"text\":\"{}\",\"value\":{wide}}}",
         "\\u0001".repeat(text_bound)
     )
 }
 
 /// Every unit declares the most bytes its event's data takes (docs/adr/0086, section
-/// 2.2), as the build resolved each bound in it: `record_edit`'s largest data is 306
-/// bytes with its text at 32, and 402 with `--limit shared_typed_text=48`.
+/// 2.2), as the build resolved each bound in it: `record_edit`'s largest data is 339
+/// bytes with its text at 32, and 435 with `--limit shared_typed_text=48`.
 #[test]
 fn every_backend_names_the_longest_data_of_a_schema() {
     let written = largest_record_edit(32).len();
     let moved = largest_record_edit(48).len();
-    assert_eq!((written, moved), (306, 402));
+    assert_eq!((written, moved), (339, 435));
     for (language, spelling) in [
         ("rust", "pub const DATA_MAX_LEN: u64 = {};"),
         ("kotlin", "const val DATA_MAX_LEN: ULong = {}uL"),
@@ -242,8 +244,9 @@ fn the_longest_data_of_a_schema_is_its_fields_at_their_longest() {
         fieldless.contains("pub const DATA_MAX_LEN: u64 = 2;"),
         "{fieldless}"
     );
-    let largest =
-        "{\"field\":65535,\"id\":4294967295,\"more\":false,\"now\":\"-9223372036854775808\"}";
+    let largest = "{\"command\":\"18446744073709551615\",\"field\":65535,\"id\":4294967295,\
+                   \"more\":false,\"now\":\"-9223372036854775808\"}";
+    assert_eq!(largest.len(), 106);
     let out = generated("stdlib/shared/record_clear.scxml", "rust", &[]);
     assert!(
         out.contains(&format!("pub const DATA_MAX_LEN: u64 = {};", largest.len())),
@@ -254,13 +257,13 @@ fn the_longest_data_of_a_schema_is_its_fields_at_their_longest() {
 /// A schema that declares no revision is the first, and says so.
 #[test]
 fn a_schema_with_no_revision_declared_is_the_first() {
-    let out = generated("stdlib/shared/record_clear.scxml", "rust", &[]);
+    let out = generated("stdlib/shared/record_room.scxml", "rust", &[]);
     assert!(
         out.contains("pub const REVISION: u32 = 1;"),
-        "record_clear declares no revision:\n{out}"
+        "record_room declares no revision:\n{out}"
     );
     assert!(
-        out.contains("pub const EVENT_NAME: &str = \"record_list.clear\";"),
+        out.contains("pub const EVENT_NAME: &str = \"record_list.room\";"),
         "{out}"
     );
 }

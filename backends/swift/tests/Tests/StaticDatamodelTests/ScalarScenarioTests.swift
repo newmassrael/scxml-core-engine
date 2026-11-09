@@ -1658,6 +1658,35 @@ private func recordBytes() -> Machine {
     replay("record_list_offline", sharedRecordList(routed: false))
 }
 
+// A copy that keeps a journal offers each change to its host and takes it in at the verdict of
+// its delivery layer, reporting the outcome (docs/adr/0083, docs/adr/0093).
+@Test func aRecordListOffersEachChangeToItsJournal() {
+    replay("record_list_journal", sharedRecordList())
+}
+
+// A change taken in provisionally is confirmed or withdrawn by its undo record, the suffix after
+// it with it, latest first (docs/adr/0093, section 3.4).
+@Test func aRecordListWithdrawsAProvisionalChangeByItsUndoRecord() {
+    replay("record_list_provisional", sharedRecordList())
+}
+
+// The host's word of the highest own stamp its layer holds raises the clock, and the next stamp
+// is after it (docs/adr/0093, section 4.3).
+@Test func aRecordListIsRaisedToItsOwnHighestStamp() {
+    replay("record_list_raise", sharedRecordList())
+}
+
+// A copy built again is given back what was made, whole, and sends nothing while it is
+// (docs/adr/0083, section 1.5; docs/adr/0085, section 7.2).
+@Test func aRecordListIsBuiltAgainByRecall() {
+    replay("record_list_recall", sharedRecordList())
+}
+
+// A stable state is handed over, then the changes after its cut (docs/adr/0085, section 4.4).
+@Test func aRecordListIsBuiltAgainFromAStableState() {
+    replay("record_list_restore", sharedRecordList())
+}
+
 // A statechart that invokes the standard record list by its library name and passes it the host's
 // words (`#_list`), then publishes what the list told it.
 @Test func aParentPassesTheHostsWordsToItsRecordListAndKeepsWhatItIsTold() {
@@ -1669,6 +1698,13 @@ private func recordBytes() -> Machine {
 // section 9.3).
 @Test func aRecordListTakesTwoConcurrentClearsInEitherOrder() {
     replay("record_list_concurrent_clears", recordListParent())
+}
+
+// A statechart that invokes a list that keeps a journal is told each change's verdict: its
+// registers once it is accepted or held, `peerRefused` once when it is refused, and a provisional
+// change as pending, then confirmed or withdrawn (docs/adr/0093, section 3.3).
+@Test func aParentIsToldEachVerdictOfItsRecordList() {
+    replay("record_list_verdict", recordListParent())
 }
 
 // A child session that talks to a Mesh peer is given a router of its own by the machine that

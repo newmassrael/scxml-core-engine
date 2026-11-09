@@ -22,13 +22,26 @@
   absent and names none.
 
   A list a host started has no parent and tells no one, as it tells no register.
+
+  The second revision adds two fields (docs/adr/0093, section 5). `command` is the
+  host's own name for the command that ended the change (record_edit, record_clear,
+  record_retire), 0 when it gave none. `withdrawn` says the change was taken in
+  provisionally and is taken out again: its delivery layer dropped it, or a change
+  before it, after the copy had told its parent the registers it moved (docs/adr/0093,
+  section 3.4). A change the layer refuses, at once or by withdrawing it, has the reason
+  `peerRefused`, and no command of it is at fault: the refusal names the register of
+  its first operation, as a write (`edit`) or a write-over (`clear`), the same whether
+  the copy refused it at its verdict or after it was built again, and `command` says
+  which change it was. A refusal of the first revision has neither, and reads as
+  command 0, not withdrawn.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_refused"
-       sce:event-name="record_list.refused">
+       sce:event-name="record_list.refused"
+       sce:revision="2">
   <sce:import kind="enum" src="sce:std/shared/record_command.scxml" as="Command"/>
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
   <datamodel>
@@ -36,5 +49,7 @@
     <data id="field" sce:type="uint16" sce:direction="in"/>
     <data id="kind" sce:type="enum:Command" sce:direction="in"/>
     <data id="reason" sce:type="enum:Refusal" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in" sce:since="2" sce:default="0"/>
+    <data id="withdrawn" sce:type="bool" sce:direction="in" sce:since="2" sce:default="false"/>
   </datamodel>
 </scxml>

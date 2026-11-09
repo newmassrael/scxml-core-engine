@@ -1836,6 +1836,41 @@ class StaticScenarioTest {
         replayRecordList(scenario("record_list_retire"))
     }
 
+    // A copy that keeps a journal offers each change to its host and takes it in at the
+    // verdict of its delivery layer, reporting the outcome (docs/adr/0083, docs/adr/0093).
+    @Test
+    fun recordListOffersEachChangeToItsJournal() {
+        replayRecordList(scenario("record_list_journal"))
+    }
+
+    // A change taken in provisionally is confirmed or withdrawn by its undo record, the
+    // suffix after it with it, latest first (docs/adr/0093, section 3.4).
+    @Test
+    fun recordListWithdrawsAProvisionalChangeByItsUndoRecord() {
+        replayRecordList(scenario("record_list_provisional"))
+    }
+
+    // The host's word of the highest own stamp its layer holds raises the clock, and the
+    // next stamp is after it (docs/adr/0093, section 4.3).
+    @Test
+    fun recordListIsRaisedToItsOwnHighestStamp() {
+        replayRecordList(scenario("record_list_raise"))
+    }
+
+    // A copy built again is given back what was made, whole, and sends nothing while it
+    // is (docs/adr/0083, section 1.5; docs/adr/0085, section 7.2).
+    @Test
+    fun recordListIsBuiltAgainByRecall() {
+        replayRecordList(scenario("record_list_recall"))
+    }
+
+    // A stable state is handed over, then the changes after its cut (docs/adr/0085,
+    // section 4.4).
+    @Test
+    fun recordListIsBuiltAgainFromAStableState() {
+        replayRecordList(scenario("record_list_restore"))
+    }
+
     /**
      * One run of `record_list`, on a machine of its own whose sends to its peers are
      * recorded, or, for a scenario that gives it no router, that is given none.
@@ -1883,6 +1918,15 @@ class StaticScenarioTest {
     @Test
     fun recordListTakesTwoConcurrentClearsInEitherOrder() {
         replayRecordListParent(scenario("record_list_concurrent_clears"))
+    }
+
+    // A statechart that invokes a list that keeps a journal is told each change's
+    // verdict: its registers once it is accepted or held, `peerRefused` once when it is
+    // refused, and a provisional change as pending, then confirmed or withdrawn
+    // (docs/adr/0093, section 3.3).
+    @Test
+    fun recordListParentIsToldEachVerdict() {
+        replayRecordListParent(scenario("record_list_verdict"))
     }
 
     /** One run of `record_list_parent`, which invokes the list as its child. */
