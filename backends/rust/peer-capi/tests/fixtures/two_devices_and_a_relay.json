@@ -113,20 +113,20 @@
       "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"86400000\",\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"list\":\"home\",\"node\":\"2\",\"relay\":\"wss://relay.example\"}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"0\"}],\"wallTime\":\"1000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "waiting",
       "op": "outbound",
-      "reason": "record_list.write: the membership log has not begun"
+      "reason": "record_list.change: the membership log has not begun"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"0\"}],\"wallTime\":\"1000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "waiting",
       "op": "outbound",
-      "reason": "record_list.write: the membership log has not begun"
+      "reason": "record_list.change: the membership log has not begun"
     },
     {
       "device": 1,
@@ -336,7 +336,7 @@
     {
       "device": 1,
       "op": "request",
-      "text": "{\"data\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"dFvaNAlLZiY4srLrYD0LJYf8ckL8UPKxyPacBX0ipKbuecqNwuaXlPBR1KRQvoGx8ZJNfV3z1dmbp0npysKVCA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":2}"
+      "text": "{\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"HxzYUnhWr0CybDe8RaciuEdSe0PlfQgrWwBFfkMolbniypovJEeA2Ql7k55tvudb5ggn1GltA8U39zU2MA0HAQ\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.change\",\"op\":\"submit\",\"v\":2}"
     },
     {
       "device": 1,
@@ -351,12 +351,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"5\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"\",\"j\":{\"expires_at_ms\":\"66000\",\"invitation\":{\"administrator\":\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\",\"audience\":\"the-relay\",\"expires_at_ms\":\"86400000\",\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"dJe8bB2fE3fx2AJBBKlN0eFI50WA3IhG8Cb2uSv3BG4\",\"list\":\"home\",\"node\":\"2\",\"signature\":\"x_D2gi1sBJsxiCMrO_DZ6dpF-Wz7FhdyOyz3mTspVbyf_ZN3npuZiQD15_vv9x85imnEzpfCEDkwyBVBsi3fDg\"},\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"nonce\":\"9HFAEj8gtVdb071D-4VQhbsCKH5KX9_PJ16pjxUgtAs\",\"proof\":\"33Ghvu8osLrBpSNMLv2xwrK73_mHFOWah3S7T8t_vbUe4VcyclOtmYqRnJ4zuXk02r_fHaxdvIz9aAvl_-LyCw\"},\"k\":\"kp\",\"n\":\"2\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"dFvaNAlLZiY4srLrYD0LJYf8ckL8UPKxyPacBX0ipKbuecqNwuaXlPBR1KRQvoGx8ZJNfV3z1dmbp0npysKVCA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"5\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"\",\"j\":{\"expires_at_ms\":\"66000\",\"invitation\":{\"administrator\":\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\",\"audience\":\"the-relay\",\"expires_at_ms\":\"86400000\",\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"dJe8bB2fE3fx2AJBBKlN0eFI50WA3IhG8Cb2uSv3BG4\",\"list\":\"home\",\"node\":\"2\",\"signature\":\"x_D2gi1sBJsxiCMrO_DZ6dpF-Wz7FhdyOyz3mTspVbyf_ZN3npuZiQD15_vv9x85imnEzpfCEDkwyBVBsi3fDg\"},\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"nonce\":\"9HFAEj8gtVdb071D-4VQhbsCKH5KX9_PJ16pjxUgtAs\",\"proof\":\"33Ghvu8osLrBpSNMLv2xwrK73_mHFOWah3S7T8t_vbUe4VcyclOtmYqRnJ4zuXk02r_fHaxdvIz9aAvl_-LyCw\"},\"k\":\"kp\",\"n\":\"2\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"HxzYUnhWr0CybDe8RaciuEdSe0PlfQgrWwBFfkMolbniypovJEeA2Ql7k55tvudb5ggn1GltA8U39zU2MA0HAQ\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"1000\\\"}\"]]}"
     },
     {
       "device": 1,
@@ -364,36 +364,28 @@
       "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"0\",\"wallTime\":\"1000\"},{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"0\"}],\"wallTime\":\"2000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "taken",
       "op": "outbound",
       "reason": ""
     },
     {
-      "data": "{\"atCounter\":0,\"atWallTime\":\"2000\",\"by\":\"2\",\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"wallTime\":\"1000\"}",
+      "data": "{\"id\":1}",
       "device": 1,
-      "event": "record_list.supersede",
-      "kept": "taken",
-      "op": "outbound",
-      "reason": ""
-    },
-    {
-      "data": "{\"before\":\"30000\"}",
-      "device": 1,
-      "event": "record_list.propose",
+      "event": "record_list.edit",
       "kept": "not_signed",
       "op": "outbound",
       "reason": ""
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"11\",\"wallTime\":\"1000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"11\",\"wallTime\":\"0\"}],\"wallTime\":\"1000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "refused",
       "op": "outbound",
-      "reason": "record_list.write: this device signed another content for this write (its register and stamp) at 1, and one write is signed with one content"
+      "reason": "record_list.change: this device signed another content under this dot (its author and its stamp) at 1, and one change is signed with one content"
     },
     {
       "device": 1,
@@ -418,12 +410,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"cursor\":\"5\",\"heads\":[[\"2\",\"1\",\"5ChMBl8ET3cZmIn5745P224Dmq0yVKFxaZS_6NrZhfY\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"5\",\"heads\":[[\"2\",\"1\",\"RzwNNfXR8gD7XCnjZZaEI82jmY8F2cEJa9wQIAJFeN8\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "request",
-      "text": "{\"data\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"5ChMBl8ET3cZmIn5745P224Dmq0yVKFxaZS_6NrZhfY\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"_nzM8vB9jHWTXorlF8Q1_lzrp6ABGfHdxCw4U5xKTJTyjj0A9F6Q_ZEy7hsLmXYuXpE4ILsyREy-bm90w3wwCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":2}"
+      "text": "{\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"RzwNNfXR8gD7XCnjZZaEI82jmY8F2cEJa9wQIAJFeN8\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"K-LmJrwL8Nfb7-t6fcZoXaR_P2MYt6mWbi1_DvZcWTA9YKp5kDq2kakBJoMr8sukf7IaE173gqzaZEagpIbLBQ\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"event\":\"record_list.change\",\"op\":\"submit\",\"v\":2}"
     },
     {
       "device": 1,
@@ -433,27 +425,17 @@
     {
       "device": 1,
       "op": "request",
-      "text": "{\"data\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"KoUVsouK085UjSklU4Jq2pMSuAZQxDnpKJGWyNcTfyA\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"p2HEs4crDcmjnirVsZhSL2ZaYQuEPtlZ4XTtMHsq1pbG5bKVcGUtFHprzw4APc-cTqO4jMIsJT0DUzalXvRpCw\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.supersede\",\"op\":\"submit\",\"v\":2}"
-    },
-    {
-      "device": 1,
-      "op": "respond",
-      "text": "{\"cursor\":\"7\",\"new\":true,\"ok\":\"accepted\",\"v\":2}"
-    },
-    {
-      "device": 1,
-      "op": "request",
       "text": "{\"cursor\":\"5\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"5ChMBl8ET3cZmIn5745P224Dmq0yVKFxaZS_6NrZhfY\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"_nzM8vB9jHWTXorlF8Q1_lzrp6ABGfHdxCw4U5xKTJTyjj0A9F6Q_ZEy7hsLmXYuXpE4ILsyREy-bm90w3wwCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"KoUVsouK085UjSklU4Jq2pMSuAZQxDnpKJGWyNcTfyA\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"p2HEs4crDcmjnirVsZhSL2ZaYQuEPtlZ4XTtMHsq1pbG5bKVcGUtFHprzw4APc-cTqO4jMIsJT0DUzalXvRpCw\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.supersede\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"6\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"RzwNNfXR8gD7XCnjZZaEI82jmY8F2cEJa9wQIAJFeN8\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"K-LmJrwL8Nfb7-t6fcZoXaR_P2MYt6mWbi1_DvZcWTA9YKp5kDq2kakBJoMr8sukf7IaE173gqzaZEagpIbLBQ\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":2,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -478,7 +460,7 @@
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"cursor\":\"7\",\"heads\":[[\"2\",\"3\",\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"6\",\"heads\":[[\"2\",\"2\",\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 0,
@@ -488,25 +470,25 @@
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"dFvaNAlLZiY4srLrYD0LJYf8ckL8UPKxyPacBX0ipKbuecqNwuaXlPBR1KRQvoGx8ZJNfV3z1dmbp0npysKVCA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"5ChMBl8ET3cZmIn5745P224Dmq0yVKFxaZS_6NrZhfY\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"_nzM8vB9jHWTXorlF8Q1_lzrp6ABGfHdxCw4U5xKTJTyjj0A9F6Q_ZEy7hsLmXYuXpE4ILsyREy-bm90w3wwCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"KoUVsouK085UjSklU4Jq2pMSuAZQxDnpKJGWyNcTfyA\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"p2HEs4crDcmjnirVsZhSL2ZaYQuEPtlZ4XTtMHsq1pbG5bKVcGUtFHprzw4APc-cTqO4jMIsJT0DUzalXvRpCw\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.supersede\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"6\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"HxzYUnhWr0CybDe8RaciuEdSe0PlfQgrWwBFfkMolbniypovJEeA2Ql7k55tvudb5ggn1GltA8U39zU2MA0HAQ\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"},{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"RzwNNfXR8gD7XCnjZZaEI82jmY8F2cEJa9wQIAJFeN8\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"K-LmJrwL8Nfb7-t6fcZoXaR_P2MYt6mWbi1_DvZcWTA9YKp5kDq2kakBJoMr8sukf7IaE173gqzaZEagpIbLBQ\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"2000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 1,
       "key": "0707070707070707070707070707070707070707070707070707070707070707",
       "op": "save",
-      "state": "5343455331d5501786d7aa009a787dfa22de92105e7305f6d34c1b16599efffa3d051786c2f3e94742400d25b7d9d0a3b8ea8d6030cbd7fa0fb51074a20ec0f89206646fd35911b7a21044db79de5905ddf549e76706887186c4498a7cdec90f2964b3074b398c3e1c34238edecb24f47956e4083c627dc8241fb4a880eba22c364346c970291d943793fc2c3a4581086289906147723c295d0fdb73eddd9065784b9f222123b513a8f565472164fa40e8a25ef4d79a93aeecbec4521b7546b06710b29e0166c0561b68f1ef27961f5c878396c10334331414ca493a5c3f6cf3097758bc201a72e06b1e8545e87a436fc04fc1c42de524b6496c8b9053649fb47c26b468ae2ea6c4bf5a1145564425822d11e299d35f2833d517147f6490a1da905e1d0192c5f604b579d0a8f2d089fa3de3f29b1a2f7d1875510fcf8b0465f940a659361437426cd22f0ff16b6447eb7e0bf9cdcfba60f11d9bfd29adf167dd391d73166b835fa9165435f0f6de91b77c54a636a3176956e5643d45d84792dd3722a85c1ca2dc274deb989d40303bf522d03fe321decc28e671ca0e529fede7ab09fd0400ead5aec257db56c0e9a87883a4d5c9f1221d926a9521e88677e3084f5a16904ad5eb5501721ed4308eab5cc3a8fee6cfdcad72ed0ffcd0917b07bc611f3b3ff92509f441036455724fb9c6fdefc6ed73fc60924ec0388e7a92f67eac70a1836f44f430e4b9f6707d7b7a8b2b3d663866e622c88037b1061f5ab948ceac21d8da26376dae2fe1889aa4c5ea1d65f126ef40c08a70455668fb6cc1b5d91c8b793d916f73b646fc16581312f83bf7f5408e685731ab4fd2b63cec5a1609364087e937f367f2c4c38ce7197fb5fc37d3c50867228cc5c51a19e3fb389fcfdb2e9b6bf2e1b53eba078ca5e7b392e78e3fd11df24e8e3a7869d6f91bd2529ae32ac6085845477be280861286cbdd65bcefc622a272e7663f722e4210a8c1d4c280312d043c2009570794ccab04de99d93bb162161a9820ac64e79155a9f9af835388c2f1d83b1c156f32e7338687c91c66952ecb663db5ac03f3cc2d2219bd3209de83d622deac869aad29b9a0512409fb72230ef896461602e047065d733a95264eb35f78c38f8377962ef2ee8a84df6cbb2775357a86883b518813f3b43ddd553e49fb3cee2e467368fb3fdc1c4a7a92e75584e3c1dc4bad9c2d4d0c339c5f75e2f212c3dcdd8b04d7b353c2c9e8706d0eaaa760b17f0b98c312c495713bd0b22c9f0deb946edbe77adff5c32ffd91eeb3579b6640b740ca34656e8cc6faba4cb3da1e0f3f314602c42dafdf3c06e77c5a2d4c69366751b9342c5839205bec3aa488b9ed443f317728f99a91b84655ebd2ec8d2d03a06efabbd6137bff2f158b56875fd2c0113f4666bef3d2045493ca7a216b533ee470a9ea09987e64e27fd6213cdb143f47852989e2a3b48bfe8b88ca40bd4744d501557ec6008d65f2db049d1807775fda0dc88f40c6284381d2512513f742709fd74aa93b4bb6cfa342a722b2bb38df74791822d747b40d88c86ed7d3a7715c93de092d1cece450e974ec33c3ff4201591a87ecf659737b82d1839f03e53883ec6d2fb6df0edb973e0e0abf1a0b94f1c60047eefa5f0cfe1254fcaf3658e80cd4720b3ad8365951bad51504079fcfb99b03eb095d6e53ebd4b83987aae2e1c95d6d60437a89084aeecac345e8dc7e003dedd000bc803e0d34b9f84ef6537de1ebb48a1de5fd921fa3208d6b946bf9b40c57d66ca91f39dc4bf9d42d7b0c0022400d2f4033baabb7787e2163a9c3b7326df83dab345044708ebb1d2f2ff9f528b20de66760c01a03403e56c33a78fad6e735b5a202058456a9fabf79c77cc47f9502af02d7fa6fe96412ee9acacd35f146c4e57afe4fd6fcaf19142508103a5cd45b8be3ac2b8c1008ae5c3b33ae7acd794c8c9ee7baf0388729f91f8c1dcd43d33f43d75e5219dc7f1ccc8ae080b2096104e5cba57ba793dc40302d7f2690bcd68a6e21a7b5199dc8ddd84aabb06eef4e4d1fbd838eeeee8fbda1a0a1f121e2bdb6f3d3ad2360fd8ad107f27ad156c509606a586ae7fefee3927260d734ce75654384e0d73a5cc1d4d0353eb22005471300d230bce9a6ce0f9197e45e79374e92c24b893a33cf3fb5ef4c0e1d18d3232ca0854e8d258d4dbdbdbde4ba722c12469f9d6ff3c124d58cffeabd2d66f62bce173d20f95d536cfe3e7a20b457e89367ccaba174dd9b7718d9976b0a1e6bbab03bd76993fb698dd4f34490f0da176fc2b38d4577ce7fbbe65d10ba50a97b12fb76b6f731cfc998150668177cf39a02e8996419145dc785f58d6d99ec3ac54e19569901326aa83477734e56c2c4b1d0ad18495ddb9f639871a322b8dd080af0c69ffce922e0fb256da28ee7732e70c23a4960c08c28c83ed683f2acb8463457f25eca83ff8692867915b6c0f9d04a18b91e3cb17927406137104218029e1ab0d682759e62e597e7c78bf735c94b2233ab2054b23e07bba01acf77f7388f1c43ea9c7b3ab64ba12f30acfc5055c0d64f92b43ddbb0de3712b6ec4a5e4f77fd32d0fdc2514c3d91e1525c6e952400009dbe664d26300a00cd1c8c776d2c987a9436cb0f36b401a36dcea7fd0b822766a2bf35ff40340e703fe5e13f3bedbe8ece0a9066369ac272b510e0fabb964a09f918f555a1f396e1ba087f369e095a9dbb83941679568be53f8ea341deaee812ede174f238a2679249cc76da93323b73f365923ce3afa15333bed8ab60ce69611dda3653be2a1c984da2b194c667f4777f65a8941349e12d22510eed4313f93f2bd46fe4e04f7039dc861081131a0d877a1ffc9f1370621e6b5e43348a38e1feff3d27c5ad13df23bdf00514c1535ef6ed3ec2c23bae7e16ba5a64f3b007ffb288b2e4de34dedecbf94126c530eb8a47665d232074036aa24063b9024028124b1ab6e8070071375571964ea83650a8831f0772fa78c0594dd7327664248c3b49c2b584fc5670a611f1982ba05058540bc194f33b01a0001407a31c18e30397ed36dc417e48744cd6f13a9aa768b614332a320772cec16e38ac0f239c4efcfafa8a2f4c8eac7bb66e090d9d01ff649874d5e37f9c138496c692d68da606406f3e5a5b7488c1bcedde41a68a82c186ac1f13e2d8f8d142793e93b1b2e30062c5810db158248091f60373f46cb7097062d1cff4bba4ec9ab209a841cbdf82f204d0647edfa128f0d242f1c30275696688f912e67cdd66b76fdcdab1acf538155e08470eca7f17c4e7258e66cfeca468d99d0021b84e115dbe8e3b3ac5a3ec1f22a2b872dca0407f997887411cde48d1194999fe43d04b09afcafe8234744c9075f6228f3f21fb122d23e00ead98080bd64c2c04b0b1c88f81a591d13fa577600b30070d68bef10f4f236eff779e82170213429d90da2c4cd376055538a83b2c3b235b6098576685a7e734a4c9c48017d43317518a4cacac4a67aae9255f767d0701767c35e66eb4fa29887f0aeb2b20419f0005bbc5be1687f5d000edb03237e260024d7c09ad94dd6c27bfbc69f95129871b5ff0fe5ce91b55b1b5679435e8e8375945dca1cdb7953ae2d3808a09b6bc5a97d0e8d014327ef4a349a8e62cbddc168390edfd9ac6778732718c2cc08dbd06a7b9c609bdb672a2d9aa3f4a8717cd0322bc8537b976262a8d44ccefb57ae8e8b4bf1c8fa943ae2ca8e8e3fcf74d9bad9c41122c00a9daa6d29797df8f6b9c01e79edd28b3f22ea541f5901d224b1d37cb8defb12af0e90eb27702df2d4fbbcfda2a08de46d80d7cd50728eaa00ce394087f2395deeb595aba44d6ba10b4827b0f3a6317e467caa25f2d5b264ed22f104d83d1b8c3dd01e6abbfb6ec3f5f5926717f452e9dd7642dbcc46ffb956f15f756e6a0e5af7cc027c2367245669d3b8ef01fa8e6af236d68c583f8666fc063ad50a333391c79a620fcee002a558b47b8ba3e6ef3766b16c4eba641f11b1a5e5b8870c7a4937e1fe157f734ef9b58352428db41dc3b67bc87b14d988d29dfa01d4e0edce3370154034c5c65c74eb4dfab06083dc9fed96106e5e674eac8ca786842dc5aa13bffe8693865421972079c6d885dd7183ed7affe158d73f5e2757d8942aa1e0389938eac7f116fc9a2394495b0ed2881621ff8aa5555e9fb12e21658062f4e1ff287cfd342570b062c9e48a1395b6107642c22021cc7550383a49aa64bf480aeb3d09855c81ce870b7c2e1094ea12bbc376055762656a4f95290fe723fe994b36ae0b0848352d11cca37e1fcb0d32ac637119e5998c18f1e26d5354a86382a78d57aacc3674a137bed8620145b8e1c5d7aa6f3667173cca26a3dea979ffcf353efb7a00e63f82a83f914b2848101affa0c0dc2ae9c5c5da2b2804b9f525013"
+      "state": "5343455331041390f8a73dcfed95e83d8fcdd70d348147f120d52bd574488f24d053ac30178b32dab561ffb28f2e441f2ce2714bbfa344719aeb9a64e1926c21c954d3a915ee2403fa411aeedeb9fa4669108bc628230b050c5f3e4f8cda9a2c4fef9512a74d5422e8f73f3b067649804ad442cfeb7c19cc272e6de62ab14f3c1d74bbca3cb6321e67d1ed8495e841656d4f9a343f32692a4a2cf699ba5aeec0218f75392bbbf0392bddd0508481cadea69d15bf58606c3b63d1dfe09d39b934d85ba90a4cbeddca299f1b14a2fa7eb2db6a8bda7d818104d619e26adfec3a7e0071a7c77e77845d13132ad99a0abf4c35a523ecfc8ab72cd1bddad26eaf2addf43819ed22d264a79e3d420df81e240697726cbcd1717337e6ee291030d9b811ed3abc002ca237b1587e5de79b405e4336b79bcec965e9af21e9da348e14c73e34f57fac3df1884eafff47ebe7e4c33e67121c4e3193c85aa09aa325e2d3654e8ff9351ebbd5f76f18dbadc9b52dd8abf440ce71bd85168d8a10780c0ae1c943afc82c276b4a5ebf9834e297792c5093c847728183830a3607bebe88740287c03706b6c99e2ee70cc8943be65677ff06ea9bb43c8114ed75cbe9a08a9da48835a9743e4cf5765c0f147596d1e2283f5e875eb2861cffc4715bd46a6256f57a4853b304aa6e78856e1ef89b95cdecb86a4906f009b5cf56887916664d788feee8a6e75919984919450dc510805a7b1b221e4797e7b90c65c952926b134bc4d5af5f65a31cfaf9efa39942b730a0be04e575ade928004307aae212c33d2b9f64ea8cefb8dd02250d8fa80ef575cc4354e4e83578c236a88d926c92a6ce0b796ad02c579624cec289997e25d30b67bf7e3718080963bfdec08c94fe5e03e51d6813cbd7fe84cb136e939730586c137977940c235b57e6502855f9c97cdaece8519463ab6b72937d28457e41636fca2e299c32c0d5fc8626c55e89341ae8411679fa588e89c9144bb7c775d1cc7d9d1f9936e4057739d14d206e225fd5fad5c95d3ec55f304c04118a67c6697382c02de295f7b47464010d29c0525c772ab665048fbd5c534f230e3085d8ed3ba433cba1481da2307d171b3293de081dde9589aec21bdefe077aa8591f69a66c27f71df2ba7e08c1298ab81130c165dc91e945c4982e8712e3976d0531396d1f010121f5991986efa8a648dcaee7a216f45c2d04799dc9c2f7cdacebfbc251b882fb5d03d8fe96dd23ddf898d762bbbbe888de1208a3c9ff65329901b8f4ce02f6b9c090a121012e7b97a38bb1d68b6b8fb46a287a48ed5c873956614c6df782e72cb48c1233377d6f47687ae8e327b4034b15beb0f5477f414c30f502d4dc0d32bd99a42f78dda16f7466eecdbe2971a242f0ef1d580de6ef4ac0c97c3b41eeeee8449a7518e44122508158fe388b1129432d40eb36636a4f0131e33879111c02351c90ab3e7350afb7ce0fc9d3609e0883f04ee56c528b2195a82e58a15a64ad6c5c9988237e9ccbdcad37e3bb982d9cbcd17c43b4a5bbb7ff02fcb8f7349baeedaa62864f7714b03d975c9d0b9d4e566739070f0baab437bd3e92ba65949b509788f3643ad063a163425c0617554f2fa30d15b10de533892cd794f36c766b4fc2be9dcb593d129f98750ea731378ab2dcbb3ac3676fccebd964828e806eb3c7dc4ed93565eb6cd87f2414f624bd2c1a2fc28938d6aa6d4cb1daec3f4f4ca4297f2a3b7ba409bbeaadaa3947f9e76db7179327ba33ccef538925acf2eae0ae2adef25ffa4385a1d0249a75ad54e804bb0e05270d90e7ea4d302cd0891f5f8de05851d44b2d34319374fb2b91b1d12954de269e20f014461eb68c4f01d3ddfa607f31e2a9a49bf6bbc353484b690149518676fdae45a5573ca9e57832478b4a4faaccd21a7d651f55e3c34d7d855e496753d1d04a34c9e74d6f108eac4eddc8a51dba3d38d41b71ac2fdfbb46a9347e0bae7286b2b810d473febd27de4bf57be6bb0e2204b0e8f105f5f66fba66a48f44b0c972eede756d14f06e9f8f7917e535fdb3dc714685b54131bb7ed59d5077e1700c06e83ab7590d3f94ec1a74a98c9d7a7e81c65ed19a8190ed904f59fb4264ea31a31bb121954e951110382daaef29f790b1cf467ac8af93ea064470b4b905776fe66efea96606608c93c34e3df6ad07e19b5bbfded6af3ccdeb36f2ea47e347379101cb19e8d0b2a38f6f7112e76815f83e7308d0810ba26847070721caf902c336224ae566edfa13614dcb816565b65be5d9c5c6c085efb49095a13ceac2d3f828dd9e01c93796a36f2bf1b052952e6f9533172485c9e4929bf391e9c92b01b5bd677120bc90791196828efaf5e7336a21c5bb075f7d96cd64bfd74553578f1edb4197807ce7a53ab6731608dc507f16281d9a09f9a1ef15b233892124df4d5db9ac3dc12c1fc9725b0be1d518955972ebe725499ee01ad9f4006348f18f38eed3f2059ee0e62e5ccd79114aacf05d595c38c5f1dc60cd0b1aaea6b819f57f0759b3ed3d2937abc990ac0981b3afa99f96060305e1790c01946829ba7fef0e548964f577a23c32df6a64a67b99edf7788f7d5adc57d9aed743ed244b078911d972186e47bc9dec55967d5c828e4e28c8d545cbb5c0676b5f557038a413176d1d079dced8218c08be3c3b9f49b9c6f4dec28d389adf7627fcee760c9891f307cb7a33169ea67bc2e29b0c26d4e29f398655799543c6da52ca7982e9639920939b066a90de418625a8dfdec6884d0c5e08eea0c17fb97d1b9c1129877ccbedfe24de86f87078917b65762cd7d97d4db61d3d9613999b305b4ea188cd838b57e4abca2e3d2ffc131e3e93f4bdc54fda0784cc36e52a1469874a1d7d5e7bf75f306df4cd1affd857c5087a7297f5eb601be3ae3a9aad8b722158d073d452b3ccb0b973ec838a9a4a2771a477a7b48f54101715dd2dae9b5f2a450dcfd6dfe46f0a1dfab8bb0491a07c0e5c786cb202535476b2eae6f6271ed20b8d9b96ed0ffc5e0424f04772da71891fc47ea7c57b73fea14ca13ba307f9f693f4f4fc5531aa2bcb22a655456ee7e145f2c132ee71b8e34f2423ca5137da849bc1d10c5f8cdf9e57ed8d3ea0d79821d06991f754217ee98c49cc22dc5f293cb930b49cc2c523ca70a1012f3359219a657d03fecccec577c1210512fe7c1dad75cb1f76996f790e6ed4101e62a2bee8b7a9b4f88c024e9c25aa913acafcfecd7c78939f03a55e41078edf1555725683608030efe546ee08f5993322dc19122d5f601e3c545278e2a3c548dac4b6df8b85a26721b1196aa2bb2b7b65f899b4c947dfbb935fb6b6885ffbaad4aebdc9620115137c8202afeb8cb25b20a692d22aab368f90588bf7e097cc7cd7a99473226f3fbaf206a7c17bbbb7a39916be195ab37ce0289a5ad410c4c1cc4fa2bff37924fb004d460f91ce0b6fe57f7baf743859f0def59f03cd0a3b02558ff453dea55aacc582bc34369349247265a607b7f1e6d5b26654fc36dd930133653da265d95b68a21c59bd74438414348a653e3014afadcabbfcd3f295492d824b046aa9591730ccb023dedb4b41e9e8d1dbbe082b7f6ad5b2d938169b51e08fbc597e9ac8e62c1f2daf9059840f0c387d94856469f61de6b37e343b664784221079b22bb835266d99cdd9dc3bcc2c0c5a236c4898ed38326a433e76ceabd3588b0fb0db73ab3628f634ccdb435dcfddcf299d59db95ab767fe247b92ca06c50771d391c0ca913010081ebdea0a78dba40a6d4d3ceec2190caeabd16ca12cdd80442649a2f5d414dc981a1609dea5b4478b93bef106f4f0a7e3a485e97c3bbd29f19375c6fba76d574fc57d7241bf8780647996b7ac654740768184e16b7d64c2adb9b5190df6c48c76487ce49c2d6ea8ab1a11d094d62f86b42cca61efcd2b7d94d6d547d172a82dbd1a79975e819beff4eecad2e1aac945a989db92f70c8e86de9c2bb667eb5c36bfbcf169802937b204371c10b1cbe062ed1a6b2805145c6ae4d4400eafad21699c79b4ea5a6d75da97a26ee6b917f99b576784c28ffbd50621d77d051d33e6843f261d479e69a08e76545ace39731fb154c70b36e33144a0a9c2adf679d24824a64218976ca2b21ddfc923c86a01da02d2a69d02713c5d081ea02d351115cb4bb57ad75efd1ae60f5695e16a6d08c5dab214755508c0847a021af6726ac1c43989eac3719"
     },
     {
-      "count": 3,
+      "count": 2,
       "device": 1,
       "key": "0707070707070707070707070707070707070707070707070707070707070707",
       "op": "restore",
-      "state": "5343455331d5501786d7aa009a787dfa22de92105e7305f6d34c1b16599efffa3d051786c2f3e94742400d25b7d9d0a3b8ea8d6030cbd7fa0fb51074a20ec0f89206646fd35911b7a21044db79de5905ddf549e76706887186c4498a7cdec90f2964b3074b398c3e1c34238edecb24f47956e4083c627dc8241fb4a880eba22c364346c970291d943793fc2c3a4581086289906147723c295d0fdb73eddd9065784b9f222123b513a8f565472164fa40e8a25ef4d79a93aeecbec4521b7546b06710b29e0166c0561b68f1ef27961f5c878396c10334331414ca493a5c3f6cf3097758bc201a72e06b1e8545e87a436fc04fc1c42de524b6496c8b9053649fb47c26b468ae2ea6c4bf5a1145564425822d11e299d35f2833d517147f6490a1da905e1d0192c5f604b579d0a8f2d089fa3de3f29b1a2f7d1875510fcf8b0465f940a659361437426cd22f0ff16b6447eb7e0bf9cdcfba60f11d9bfd29adf167dd391d73166b835fa9165435f0f6de91b77c54a636a3176956e5643d45d84792dd3722a85c1ca2dc274deb989d40303bf522d03fe321decc28e671ca0e529fede7ab09fd0400ead5aec257db56c0e9a87883a4d5c9f1221d926a9521e88677e3084f5a16904ad5eb5501721ed4308eab5cc3a8fee6cfdcad72ed0ffcd0917b07bc611f3b3ff92509f441036455724fb9c6fdefc6ed73fc60924ec0388e7a92f67eac70a1836f44f430e4b9f6707d7b7a8b2b3d663866e622c88037b1061f5ab948ceac21d8da26376dae2fe1889aa4c5ea1d65f126ef40c08a70455668fb6cc1b5d91c8b793d916f73b646fc16581312f83bf7f5408e685731ab4fd2b63cec5a1609364087e937f367f2c4c38ce7197fb5fc37d3c50867228cc5c51a19e3fb389fcfdb2e9b6bf2e1b53eba078ca5e7b392e78e3fd11df24e8e3a7869d6f91bd2529ae32ac6085845477be280861286cbdd65bcefc622a272e7663f722e4210a8c1d4c280312d043c2009570794ccab04de99d93bb162161a9820ac64e79155a9f9af835388c2f1d83b1c156f32e7338687c91c66952ecb663db5ac03f3cc2d2219bd3209de83d622deac869aad29b9a0512409fb72230ef896461602e047065d733a95264eb35f78c38f8377962ef2ee8a84df6cbb2775357a86883b518813f3b43ddd553e49fb3cee2e467368fb3fdc1c4a7a92e75584e3c1dc4bad9c2d4d0c339c5f75e2f212c3dcdd8b04d7b353c2c9e8706d0eaaa760b17f0b98c312c495713bd0b22c9f0deb946edbe77adff5c32ffd91eeb3579b6640b740ca34656e8cc6faba4cb3da1e0f3f314602c42dafdf3c06e77c5a2d4c69366751b9342c5839205bec3aa488b9ed443f317728f99a91b84655ebd2ec8d2d03a06efabbd6137bff2f158b56875fd2c0113f4666bef3d2045493ca7a216b533ee470a9ea09987e64e27fd6213cdb143f47852989e2a3b48bfe8b88ca40bd4744d501557ec6008d65f2db049d1807775fda0dc88f40c6284381d2512513f742709fd74aa93b4bb6cfa342a722b2bb38df74791822d747b40d88c86ed7d3a7715c93de092d1cece450e974ec33c3ff4201591a87ecf659737b82d1839f03e53883ec6d2fb6df0edb973e0e0abf1a0b94f1c60047eefa5f0cfe1254fcaf3658e80cd4720b3ad8365951bad51504079fcfb99b03eb095d6e53ebd4b83987aae2e1c95d6d60437a89084aeecac345e8dc7e003dedd000bc803e0d34b9f84ef6537de1ebb48a1de5fd921fa3208d6b946bf9b40c57d66ca91f39dc4bf9d42d7b0c0022400d2f4033baabb7787e2163a9c3b7326df83dab345044708ebb1d2f2ff9f528b20de66760c01a03403e56c33a78fad6e735b5a202058456a9fabf79c77cc47f9502af02d7fa6fe96412ee9acacd35f146c4e57afe4fd6fcaf19142508103a5cd45b8be3ac2b8c1008ae5c3b33ae7acd794c8c9ee7baf0388729f91f8c1dcd43d33f43d75e5219dc7f1ccc8ae080b2096104e5cba57ba793dc40302d7f2690bcd68a6e21a7b5199dc8ddd84aabb06eef4e4d1fbd838eeeee8fbda1a0a1f121e2bdb6f3d3ad2360fd8ad107f27ad156c509606a586ae7fefee3927260d734ce75654384e0d73a5cc1d4d0353eb22005471300d230bce9a6ce0f9197e45e79374e92c24b893a33cf3fb5ef4c0e1d18d3232ca0854e8d258d4dbdbdbde4ba722c12469f9d6ff3c124d58cffeabd2d66f62bce173d20f95d536cfe3e7a20b457e89367ccaba174dd9b7718d9976b0a1e6bbab03bd76993fb698dd4f34490f0da176fc2b38d4577ce7fbbe65d10ba50a97b12fb76b6f731cfc998150668177cf39a02e8996419145dc785f58d6d99ec3ac54e19569901326aa83477734e56c2c4b1d0ad18495ddb9f639871a322b8dd080af0c69ffce922e0fb256da28ee7732e70c23a4960c08c28c83ed683f2acb8463457f25eca83ff8692867915b6c0f9d04a18b91e3cb17927406137104218029e1ab0d682759e62e597e7c78bf735c94b2233ab2054b23e07bba01acf77f7388f1c43ea9c7b3ab64ba12f30acfc5055c0d64f92b43ddbb0de3712b6ec4a5e4f77fd32d0fdc2514c3d91e1525c6e952400009dbe664d26300a00cd1c8c776d2c987a9436cb0f36b401a36dcea7fd0b822766a2bf35ff40340e703fe5e13f3bedbe8ece0a9066369ac272b510e0fabb964a09f918f555a1f396e1ba087f369e095a9dbb83941679568be53f8ea341deaee812ede174f238a2679249cc76da93323b73f365923ce3afa15333bed8ab60ce69611dda3653be2a1c984da2b194c667f4777f65a8941349e12d22510eed4313f93f2bd46fe4e04f7039dc861081131a0d877a1ffc9f1370621e6b5e43348a38e1feff3d27c5ad13df23bdf00514c1535ef6ed3ec2c23bae7e16ba5a64f3b007ffb288b2e4de34dedecbf94126c530eb8a47665d232074036aa24063b9024028124b1ab6e8070071375571964ea83650a8831f0772fa78c0594dd7327664248c3b49c2b584fc5670a611f1982ba05058540bc194f33b01a0001407a31c18e30397ed36dc417e48744cd6f13a9aa768b614332a320772cec16e38ac0f239c4efcfafa8a2f4c8eac7bb66e090d9d01ff649874d5e37f9c138496c692d68da606406f3e5a5b7488c1bcedde41a68a82c186ac1f13e2d8f8d142793e93b1b2e30062c5810db158248091f60373f46cb7097062d1cff4bba4ec9ab209a841cbdf82f204d0647edfa128f0d242f1c30275696688f912e67cdd66b76fdcdab1acf538155e08470eca7f17c4e7258e66cfeca468d99d0021b84e115dbe8e3b3ac5a3ec1f22a2b872dca0407f997887411cde48d1194999fe43d04b09afcafe8234744c9075f6228f3f21fb122d23e00ead98080bd64c2c04b0b1c88f81a591d13fa577600b30070d68bef10f4f236eff779e82170213429d90da2c4cd376055538a83b2c3b235b6098576685a7e734a4c9c48017d43317518a4cacac4a67aae9255f767d0701767c35e66eb4fa29887f0aeb2b20419f0005bbc5be1687f5d000edb03237e260024d7c09ad94dd6c27bfbc69f95129871b5ff0fe5ce91b55b1b5679435e8e8375945dca1cdb7953ae2d3808a09b6bc5a97d0e8d014327ef4a349a8e62cbddc168390edfd9ac6778732718c2cc08dbd06a7b9c609bdb672a2d9aa3f4a8717cd0322bc8537b976262a8d44ccefb57ae8e8b4bf1c8fa943ae2ca8e8e3fcf74d9bad9c41122c00a9daa6d29797df8f6b9c01e79edd28b3f22ea541f5901d224b1d37cb8defb12af0e90eb27702df2d4fbbcfda2a08de46d80d7cd50728eaa00ce394087f2395deeb595aba44d6ba10b4827b0f3a6317e467caa25f2d5b264ed22f104d83d1b8c3dd01e6abbfb6ec3f5f5926717f452e9dd7642dbcc46ffb956f15f756e6a0e5af7cc027c2367245669d3b8ef01fa8e6af236d68c583f8666fc063ad50a333391c79a620fcee002a558b47b8ba3e6ef3766b16c4eba641f11b1a5e5b8870c7a4937e1fe157f734ef9b58352428db41dc3b67bc87b14d988d29dfa01d4e0edce3370154034c5c65c74eb4dfab06083dc9fed96106e5e674eac8ca786842dc5aa13bffe8693865421972079c6d885dd7183ed7affe158d73f5e2757d8942aa1e0389938eac7f116fc9a2394495b0ed2881621ff8aa5555e9fb12e21658062f4e1ff287cfd342570b062c9e48a1395b6107642c22021cc7550383a49aa64bf480aeb3d09855c81ce870b7c2e1094ea12bbc376055762656a4f95290fe723fe994b36ae0b0848352d11cca37e1fcb0d32ac637119e5998c18f1e26d5354a86382a78d57aacc3674a137bed8620145b8e1c5d7aa6f3667173cca26a3dea979ffcf353efb7a00e63f82a83f914b2848101affa0c0dc2ae9c5c5da2b2804b9f525013"
+      "state": "5343455331041390f8a73dcfed95e83d8fcdd70d348147f120d52bd574488f24d053ac30178b32dab561ffb28f2e441f2ce2714bbfa344719aeb9a64e1926c21c954d3a915ee2403fa411aeedeb9fa4669108bc628230b050c5f3e4f8cda9a2c4fef9512a74d5422e8f73f3b067649804ad442cfeb7c19cc272e6de62ab14f3c1d74bbca3cb6321e67d1ed8495e841656d4f9a343f32692a4a2cf699ba5aeec0218f75392bbbf0392bddd0508481cadea69d15bf58606c3b63d1dfe09d39b934d85ba90a4cbeddca299f1b14a2fa7eb2db6a8bda7d818104d619e26adfec3a7e0071a7c77e77845d13132ad99a0abf4c35a523ecfc8ab72cd1bddad26eaf2addf43819ed22d264a79e3d420df81e240697726cbcd1717337e6ee291030d9b811ed3abc002ca237b1587e5de79b405e4336b79bcec965e9af21e9da348e14c73e34f57fac3df1884eafff47ebe7e4c33e67121c4e3193c85aa09aa325e2d3654e8ff9351ebbd5f76f18dbadc9b52dd8abf440ce71bd85168d8a10780c0ae1c943afc82c276b4a5ebf9834e297792c5093c847728183830a3607bebe88740287c03706b6c99e2ee70cc8943be65677ff06ea9bb43c8114ed75cbe9a08a9da48835a9743e4cf5765c0f147596d1e2283f5e875eb2861cffc4715bd46a6256f57a4853b304aa6e78856e1ef89b95cdecb86a4906f009b5cf56887916664d788feee8a6e75919984919450dc510805a7b1b221e4797e7b90c65c952926b134bc4d5af5f65a31cfaf9efa39942b730a0be04e575ade928004307aae212c33d2b9f64ea8cefb8dd02250d8fa80ef575cc4354e4e83578c236a88d926c92a6ce0b796ad02c579624cec289997e25d30b67bf7e3718080963bfdec08c94fe5e03e51d6813cbd7fe84cb136e939730586c137977940c235b57e6502855f9c97cdaece8519463ab6b72937d28457e41636fca2e299c32c0d5fc8626c55e89341ae8411679fa588e89c9144bb7c775d1cc7d9d1f9936e4057739d14d206e225fd5fad5c95d3ec55f304c04118a67c6697382c02de295f7b47464010d29c0525c772ab665048fbd5c534f230e3085d8ed3ba433cba1481da2307d171b3293de081dde9589aec21bdefe077aa8591f69a66c27f71df2ba7e08c1298ab81130c165dc91e945c4982e8712e3976d0531396d1f010121f5991986efa8a648dcaee7a216f45c2d04799dc9c2f7cdacebfbc251b882fb5d03d8fe96dd23ddf898d762bbbbe888de1208a3c9ff65329901b8f4ce02f6b9c090a121012e7b97a38bb1d68b6b8fb46a287a48ed5c873956614c6df782e72cb48c1233377d6f47687ae8e327b4034b15beb0f5477f414c30f502d4dc0d32bd99a42f78dda16f7466eecdbe2971a242f0ef1d580de6ef4ac0c97c3b41eeeee8449a7518e44122508158fe388b1129432d40eb36636a4f0131e33879111c02351c90ab3e7350afb7ce0fc9d3609e0883f04ee56c528b2195a82e58a15a64ad6c5c9988237e9ccbdcad37e3bb982d9cbcd17c43b4a5bbb7ff02fcb8f7349baeedaa62864f7714b03d975c9d0b9d4e566739070f0baab437bd3e92ba65949b509788f3643ad063a163425c0617554f2fa30d15b10de533892cd794f36c766b4fc2be9dcb593d129f98750ea731378ab2dcbb3ac3676fccebd964828e806eb3c7dc4ed93565eb6cd87f2414f624bd2c1a2fc28938d6aa6d4cb1daec3f4f4ca4297f2a3b7ba409bbeaadaa3947f9e76db7179327ba33ccef538925acf2eae0ae2adef25ffa4385a1d0249a75ad54e804bb0e05270d90e7ea4d302cd0891f5f8de05851d44b2d34319374fb2b91b1d12954de269e20f014461eb68c4f01d3ddfa607f31e2a9a49bf6bbc353484b690149518676fdae45a5573ca9e57832478b4a4faaccd21a7d651f55e3c34d7d855e496753d1d04a34c9e74d6f108eac4eddc8a51dba3d38d41b71ac2fdfbb46a9347e0bae7286b2b810d473febd27de4bf57be6bb0e2204b0e8f105f5f66fba66a48f44b0c972eede756d14f06e9f8f7917e535fdb3dc714685b54131bb7ed59d5077e1700c06e83ab7590d3f94ec1a74a98c9d7a7e81c65ed19a8190ed904f59fb4264ea31a31bb121954e951110382daaef29f790b1cf467ac8af93ea064470b4b905776fe66efea96606608c93c34e3df6ad07e19b5bbfded6af3ccdeb36f2ea47e347379101cb19e8d0b2a38f6f7112e76815f83e7308d0810ba26847070721caf902c336224ae566edfa13614dcb816565b65be5d9c5c6c085efb49095a13ceac2d3f828dd9e01c93796a36f2bf1b052952e6f9533172485c9e4929bf391e9c92b01b5bd677120bc90791196828efaf5e7336a21c5bb075f7d96cd64bfd74553578f1edb4197807ce7a53ab6731608dc507f16281d9a09f9a1ef15b233892124df4d5db9ac3dc12c1fc9725b0be1d518955972ebe725499ee01ad9f4006348f18f38eed3f2059ee0e62e5ccd79114aacf05d595c38c5f1dc60cd0b1aaea6b819f57f0759b3ed3d2937abc990ac0981b3afa99f96060305e1790c01946829ba7fef0e548964f577a23c32df6a64a67b99edf7788f7d5adc57d9aed743ed244b078911d972186e47bc9dec55967d5c828e4e28c8d545cbb5c0676b5f557038a413176d1d079dced8218c08be3c3b9f49b9c6f4dec28d389adf7627fcee760c9891f307cb7a33169ea67bc2e29b0c26d4e29f398655799543c6da52ca7982e9639920939b066a90de418625a8dfdec6884d0c5e08eea0c17fb97d1b9c1129877ccbedfe24de86f87078917b65762cd7d97d4db61d3d9613999b305b4ea188cd838b57e4abca2e3d2ffc131e3e93f4bdc54fda0784cc36e52a1469874a1d7d5e7bf75f306df4cd1affd857c5087a7297f5eb601be3ae3a9aad8b722158d073d452b3ccb0b973ec838a9a4a2771a477a7b48f54101715dd2dae9b5f2a450dcfd6dfe46f0a1dfab8bb0491a07c0e5c786cb202535476b2eae6f6271ed20b8d9b96ed0ffc5e0424f04772da71891fc47ea7c57b73fea14ca13ba307f9f693f4f4fc5531aa2bcb22a655456ee7e145f2c132ee71b8e34f2423ca5137da849bc1d10c5f8cdf9e57ed8d3ea0d79821d06991f754217ee98c49cc22dc5f293cb930b49cc2c523ca70a1012f3359219a657d03fecccec577c1210512fe7c1dad75cb1f76996f790e6ed4101e62a2bee8b7a9b4f88c024e9c25aa913acafcfecd7c78939f03a55e41078edf1555725683608030efe546ee08f5993322dc19122d5f601e3c545278e2a3c548dac4b6df8b85a26721b1196aa2bb2b7b65f899b4c947dfbb935fb6b6885ffbaad4aebdc9620115137c8202afeb8cb25b20a692d22aab368f90588bf7e097cc7cd7a99473226f3fbaf206a7c17bbbb7a39916be195ab37ce0289a5ad410c4c1cc4fa2bff37924fb004d460f91ce0b6fe57f7baf743859f0def59f03cd0a3b02558ff453dea55aacc582bc34369349247265a607b7f1e6d5b26654fc36dd930133653da265d95b68a21c59bd74438414348a653e3014afadcabbfcd3f295492d824b046aa9591730ccb023dedb4b41e9e8d1dbbe082b7f6ad5b2d938169b51e08fbc597e9ac8e62c1f2daf9059840f0c387d94856469f61de6b37e343b664784221079b22bb835266d99cdd9dc3bcc2c0c5a236c4898ed38326a433e76ceabd3588b0fb0db73ab3628f634ccdb435dcfddcf299d59db95ab767fe247b92ca06c50771d391c0ca913010081ebdea0a78dba40a6d4d3ceec2190caeabd16ca12cdd80442649a2f5d414dc981a1609dea5b4478b93bef106f4f0a7e3a485e97c3bbd29f19375c6fba76d574fc57d7241bf8780647996b7ac654740768184e16b7d64c2adb9b5190df6c48c76487ce49c2d6ea8ab1a11d094d62f86b42cca61efcd2b7d94d6d547d172a82dbd1a79975e819beff4eecad2e1aac945a989db92f70c8e86de9c2bb667eb5c36bfbcf169802937b204371c10b1cbe062ed1a6b2805145c6ae4d4400eafad21699c79b4ea5a6d75da97a26ee6b917f99b576784c28ffbd50621d77d051d33e6843f261d479e69a08e76545ace39731fb154c70b36e33144a0a9c2adf679d24824a64218976ca2b21ddfc923c86a01da02d2a69d02713c5d081ea02d351115cb4bb57ad75efd1ae60f5695e16a6d08c5dab214755508c0847a021af6726ac1c43989eac3719"
     },
     {
       "device": 1,
@@ -514,20 +496,20 @@
       "text": "{\"administrator\":false,\"awaits_own_chain\":true,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"1000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"10\",\"wallTime\":\"0\"}],\"wallTime\":\"1000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "held",
       "op": "outbound",
       "reason": ""
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":2,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"3000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":2,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"0\"}],\"wallTime\":\"3000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "waiting",
       "op": "outbound",
-      "reason": "record_list.write: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
+      "reason": "record_list.change: this device's state came back from a store that may be behind what it signed, and it signs nothing new until a round has read its own chain back from the relay"
     },
     {
       "device": 1,
@@ -557,12 +539,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"cursor\":\"7\",\"heads\":[[\"2\",\"3\",\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"6\",\"heads\":[[\"2\",\"2\",\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "request",
-      "text": "{\"from\":\"4\",\"node\":\"2\",\"op\":\"operations\",\"to\":\"18446744073709551615\",\"v\":2}"
+      "text": "{\"from\":\"3\",\"node\":\"2\",\"op\":\"operations\",\"to\":\"18446744073709551615\",\"v\":2}"
     },
     {
       "device": 1,
@@ -572,27 +554,27 @@
     {
       "device": 1,
       "op": "request",
-      "text": "{\"data\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"fK9RpifkhP4iNmzYfuQePvyi6JxxTpv6uxtBoI7U9lULx2qNUIelWHLarG_7TU57Txaicm2-oxXjoq4q39GiAw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"event\":\"record_list.write\",\"op\":\"submit\",\"v\":2}"
+      "text": "{\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"kYxmOTTaNs-Z5hjBTrM7vIMQCKyovtoRp07ZbuF9nNou2C6nj_TslkyDDyOfntr3aDsEe9GgtTK65WmvssvhCw\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"event\":\"record_list.change\",\"op\":\"submit\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"cursor\":\"8\",\"new\":true,\"ok\":\"accepted\",\"v\":2}"
+      "text": "{\"cursor\":\"7\",\"new\":true,\"ok\":\"accepted\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "request",
-      "text": "{\"cursor\":\"7\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
+      "text": "{\"cursor\":\"6\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"fK9RpifkhP4iNmzYfuQePvyi6JxxTpv6uxtBoI7U9lULx2qNUIelWHLarG_7TU57Txaicm2-oxXjoq4q39GiAw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"kYxmOTTaNs-Z5hjBTrM7vIMQCKyovtoRp07ZbuF9nNou2C6nj_TslkyDDyOfntr3aDsEe9GgtTK65WmvssvhCw\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]]}"
+      "text": "{\"dropped\":[],\"events\":[],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"3000\\\"}\"]]}"
     },
     {
       "device": 1,
@@ -600,25 +582,17 @@
       "text": "{\"administrator\":false,\"awaits_own_chain\":false,\"epoch\":0,\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"keys\":[],\"members\":[{\"node\":\"1\",\"role\":3},{\"node\":\"2\",\"role\":2}],\"node\":\"2\",\"owed\":0,\"role\":2,\"waiting\":0}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"2000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":1,\"kind\":1,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"0\",\"wallTime\":\"1000\"},{\"counter\":0,\"field\":3,\"id\":1,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"20\",\"wallTime\":\"0\"}],\"wallTime\":\"2000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "held",
       "op": "outbound",
       "reason": ""
     },
     {
-      "data": "{\"atCounter\":0,\"atWallTime\":\"2000\",\"by\":\"2\",\"counter\":0,\"field\":3,\"id\":1,\"nodeId\":\"2\",\"wallTime\":\"1000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":2,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"0\"}],\"wallTime\":\"3000\"}",
       "device": 1,
-      "event": "record_list.supersede",
-      "kept": "held",
-      "op": "outbound",
-      "reason": ""
-    },
-    {
-      "data": "{\"counter\":0,\"field\":3,\"id\":2,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"30\",\"wallTime\":\"3000\"}",
-      "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "held",
       "op": "outbound",
       "reason": ""
@@ -646,7 +620,7 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"4\",\"K4iNw0Qwgp6JmfRqTAOP4mkYLOcHRHSKMuML8yPvMUg\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"7\",\"heads\":[[\"2\",\"3\",\"pMgNnKGTUYwSbfrgEAdPMnPEVMWTfVJ1D3AV40doLG8\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 1,
@@ -656,12 +630,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"\",\"j\":{\"expires_at_ms\":\"66000\",\"invitation\":{\"administrator\":\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\",\"audience\":\"the-relay\",\"expires_at_ms\":\"86400000\",\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"dJe8bB2fE3fx2AJBBKlN0eFI50WA3IhG8Cb2uSv3BG4\",\"list\":\"home\",\"node\":\"2\",\"signature\":\"x_D2gi1sBJsxiCMrO_DZ6dpF-Wz7FhdyOyz3mTspVbyf_ZN3npuZiQD15_vv9x85imnEzpfCEDkwyBVBsi3fDg\"},\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"nonce\":\"9HFAEj8gtVdb071D-4VQhbsCKH5KX9_PJ16pjxUgtAs\",\"proof\":\"33Ghvu8osLrBpSNMLv2xwrK73_mHFOWah3S7T8t_vbUe4VcyclOtmYqRnJ4zuXk02r_fHaxdvIz9aAvl_-LyCw\"},\"k\":\"kp\",\"n\":\"2\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"dFvaNAlLZiY4srLrYD0LJYf8ckL8UPKxyPacBX0ipKbuecqNwuaXlPBR1KRQvoGx8ZJNfV3z1dmbp0npysKVCA\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"5ChMBl8ET3cZmIn5745P224Dmq0yVKFxaZS_6NrZhfY\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"_nzM8vB9jHWTXorlF8Q1_lzrp6ABGfHdxCw4U5xKTJTyjj0A9F6Q_ZEy7hsLmXYuXpE4ILsyREy-bm90w3wwCw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"},{\"d\":\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":1,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"KoUVsouK085UjSklU4Jq2pMSuAZQxDnpKJGWyNcTfyA\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"p2HEs4crDcmjnirVsZhSL2ZaYQuEPtlZ4XTtMHsq1pbG5bKVcGUtFHprzw4APc-cTqO4jMIsJT0DUzalXvRpCw\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.supersede\",\"k\":\"op\"},{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"fK9RpifkhP4iNmzYfuQePvyi6JxxTpv6uxtBoI7U9lULx2qNUIelWHLarG_7TU57Txaicm2-oxXjoq4q39GiAw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"administrators\\\":[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\"],\\\"kind\\\":\\\"genesis\\\",\\\"profile\\\":\\\"untrusted\\\",\\\"quorum\\\":1},\\\"index\\\":\\\"0\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"E0BotimEXOIVSJi11qjQH5Mb6uY-35Q7-oHoG1Uco7OSwBwQH1NbdG-WTAUmo_fRJleZ59Q8BHqodAVCX0nPCA\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"1\\\",\\\"role\\\":3},\\\"index\\\":\\\"1\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"-DiSu56MyErKOQbXRiA3t8TE1Wj0OkP7Qxb9CDnHvssH-U3JR9o19ZsG6dvzA2EQhRKTZN6qSOQ59DYCU7KJCw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"\",\"j\":{\"expires_at_ms\":\"66000\",\"invitation\":{\"administrator\":\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\",\"audience\":\"the-relay\",\"expires_at_ms\":\"86400000\",\"genesis\":\"lTTj2GOE5ZPziBsghLbpjj7X22fmocagPHdzXzsGKYs\",\"key\":\"dJe8bB2fE3fx2AJBBKlN0eFI50WA3IhG8Cb2uSv3BG4\",\"list\":\"home\",\"node\":\"2\",\"signature\":\"x_D2gi1sBJsxiCMrO_DZ6dpF-Wz7FhdyOyz3mTspVbyf_ZN3npuZiQD15_vv9x85imnEzpfCEDkwyBVBsi3fDg\"},\"key\":\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"nonce\":\"9HFAEj8gtVdb071D-4VQhbsCKH5KX9_PJ16pjxUgtAs\",\"proof\":\"33Ghvu8osLrBpSNMLv2xwrK73_mHFOWah3S7T8t_vbUe4VcyclOtmYqRnJ4zuXk02r_fHaxdvIz9aAvl_-LyCw\"},\"k\":\"kp\",\"n\":\"2\"},{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":null,\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":2},\\\"index\\\":\\\"2\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"rFCvdEuBRccwBjxHhTZspo-BvqN6EA7VZD4BgONUtG4\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"8hYruhL_8Di-u8hWqsi0xXP4lqjKVpMQAOp2_aTnWea59HVi2ktJTdKyCtvLkUJhw_a__jCG5Hs6_mO6C7oCDw\\\"]]}\",\"k\":\"entry\"},{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\\",\\\"seq\\\":\\\"1\\\",\\\"sig\\\":\\\"HxzYUnhWr0CybDe8RaciuEdSe0PlfQgrWwBFfkMolbniypovJEeA2Ql7k55tvudb5ggn1GltA8U39zU2MA0HAQ\\\",\\\"wallTime\\\":\\\"1000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"},{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"RzwNNfXR8gD7XCnjZZaEI82jmY8F2cEJa9wQIAJFeN8\\\",\\\"seq\\\":\\\"2\\\",\\\"sig\\\":\\\"K-LmJrwL8Nfb7-t6fcZoXaR_P2MYt6mWbi1_DvZcWTA9YKp5kDq2kakBJoMr8sukf7IaE173gqzaZEagpIbLBQ\\\",\\\"wallTime\\\":\\\"2000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"},{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"kYxmOTTaNs-Z5hjBTrM7vIMQCKyovtoRp07ZbuF9nNou2C6nj_TslkyDDyOfntr3aDsEe9GgtTK65WmvssvhCw\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.supersede\",\"{\\\"atCounter\\\":0,\\\"atWallTime\\\":\\\"2000\\\",\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"],[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"1000\\\"}\"],[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"2000\\\"}\"],[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -706,22 +680,22 @@
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"4\",\"K4iNw0Qwgp6JmfRqTAOP4mkYLOcHRHSKMuML8yPvMUg\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"7\",\"heads\":[[\"2\",\"3\",\"pMgNnKGTUYwSbfrgEAdPMnPEVMWTfVJ1D3AV40doLG8\"]],\"log_len\":\"3\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "request",
-      "text": "{\"cursor\":\"7\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
+      "text": "{\"cursor\":\"6\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"counter\\\":0,\\\"cx\\\":[],\\\"field\\\":3,\\\"id\\\":2,\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"nodeId\\\":\\\"2\\\",\\\"prev\\\":\\\"YviWqjFiVm5Yp9AETff1zRF1sBFtQImVH9zDHXpMfeY\\\",\\\"seq\\\":\\\"4\\\",\\\"sig\\\":\\\"fK9RpifkhP4iNmzYfuQePvyi6JxxTpv6uxtBoI7U9lULx2qNUIelWHLarG_7TU57Txaicm2-oxXjoq4q39GiAw\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.write\",\"k\":\"op\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"7\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"cx\\\":[],\\\"mh\\\":\\\"2\\\",\\\"mhh\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"prev\\\":\\\"WBWqJMzdDNZGtcMxidwPLybiPRvVUy_SFETFYZvAMMs\\\",\\\"seq\\\":\\\"3\\\",\\\"sig\\\":\\\"kYxmOTTaNs-Z5hjBTrM7vIMQCKyovtoRp07ZbuF9nNou2C6nj_TslkyDDyOfntr3aDsEe9GgtTK65WmvssvhCw\\\",\\\"wallTime\\\":\\\"3000\\\"}\",\"e\":\"record_list.change\",\"k\":\"op\"}],\"v\":2}"
     },
     {
       "device": 0,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[[\"record_list.write\",\"{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.change\",\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"3000\\\"}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 0,
@@ -751,7 +725,7 @@
     {
       "device": 0,
       "op": "request",
-      "text": "{\"entry\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\",\"op\":\"append\",\"v\":2}"
+      "text": "{\"entry\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"3\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"NoHW8ykOP-gmpL2sYvZ9nxKnx5dRX1a3urOoLSNsxhWBISgOHxkCi7zb9eB_DP_M929fY4GXtbXkBiz1quoIBQ\\\"]]}\",\"op\":\"append\",\"v\":2}"
     },
     {
       "device": 0,
@@ -766,17 +740,17 @@
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"cursor\":\"9\",\"heads\":[[\"2\",\"4\",\"K4iNw0Qwgp6JmfRqTAOP4mkYLOcHRHSKMuML8yPvMUg\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"3\",\"pMgNnKGTUYwSbfrgEAdPMnPEVMWTfVJ1D3AV40doLG8\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "request",
-      "text": "{\"cursor\":\"8\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
+      "text": "{\"cursor\":\"7\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"9\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\",\"k\":\"entry\"}],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[{\"d\":\"{\\\"body\\\":{\\\"final_seq\\\":\\\"3\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"NoHW8ykOP-gmpL2sYvZ9nxKnx5dRX1a3urOoLSNsxhWBISgOHxkCi7zb9eB_DP_M929fY4GXtbXkBiz1quoIBQ\\\"]]}\",\"k\":\"entry\"}],\"v\":2}"
     },
     {
       "device": 0,
@@ -784,9 +758,9 @@
       "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[],\"outcome\":\"ended\",\"owed\":0,\"pushed\":1,\"rebuild\":false,\"refused\":[],\"reread\":false,\"restored\":[],\"stalled\":false,\"steps\":[],\"taken\":[]}"
     },
     {
-      "data": "{\"counter\":0,\"field\":3,\"id\":3,\"nodeId\":\"2\",\"text\":\"\",\"value\":\"40\",\"wallTime\":\"4000\"}",
+      "data": "{\"by\":\"2\",\"counter\":0,\"ops\":[{\"counter\":0,\"field\":3,\"id\":3,\"kind\":0,\"nodeId\":\"0\",\"text\":\"\",\"value\":\"40\",\"wallTime\":\"0\"}],\"wallTime\":\"4000\"}",
       "device": 1,
-      "event": "record_list.write",
+      "event": "record_list.change",
       "kept": "taken",
       "op": "outbound",
       "reason": ""
@@ -804,7 +778,7 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"len\":\"4\",\"ok\":\"entries\",\"v\":2}"
+      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"3\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"NoHW8ykOP-gmpL2sYvZ9nxKnx5dRX1a3urOoLSNsxhWBISgOHxkCi7zb9eB_DP_M929fY4GXtbXkBiz1quoIBQ\\\"]]}\"],\"len\":\"4\",\"ok\":\"entries\",\"v\":2}"
     },
     {
       "device": 1,
@@ -819,7 +793,7 @@
     {
       "device": 1,
       "op": "outcome",
-      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[[\"2\",\"5\"]],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":true,\"refused\":[\"node 2 has role 0 in this list and this needs 1\"],\"reread\":false,\"restored\":[],\"stalled\":true,\"steps\":[],\"taken\":[]}"
+      "text": "{\"dropped\":[],\"events\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":0}\"]],\"evicted\":[[\"2\",\"4\"]],\"outcome\":\"ended\",\"owed\":0,\"pushed\":0,\"rebuild\":true,\"refused\":[\"node 2 has role 0 in this list and this needs 1\"],\"reread\":false,\"restored\":[],\"stalled\":true,\"steps\":[],\"taken\":[]}"
     },
     {
       "device": 1,
@@ -839,12 +813,12 @@
     {
       "device": 1,
       "op": "respond",
-      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"106000\",\"held\":true,\"nonce\":\"M1GaVzYPGr5bNnONQEESqttr1VGHYeziNjJKzzQ8ehU\",\"ok\":\"challenge\",\"v\":2}"
+      "text": "{\"audience\":\"the-relay\",\"expires_at_ms\":\"105000\",\"held\":true,\"nonce\":\"M1GaVzYPGr5bNnONQEESqv9EVAJlBrdpaChwldnXss0\",\"ok\":\"challenge\",\"v\":2}"
     },
     {
       "device": 1,
       "op": "request",
-      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"4\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"J2uHA85F1X_0oJQn1h_efCh_xci-Z68HpwRWnRDi-Px-mqjB0oLX87VVdeLBgz6nuS-A8VClWzNsZGOvEQV8Cw\\\"]]}\"],\"expires_at_ms\":\"106000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"M1GaVzYPGr5bNnONQEESqttr1VGHYeziNjJKzzQ8ehU\",\"op\":\"login\",\"signature\":\"mtiaIYGnQv_UvHRKlmeQhF5OZ9b7K666cAfiaqdw7cSU2b_Hxq2mqhSESIjRGElHdmSX1A5fWXhvw8lzJrt7Bw\",\"v\":2}"
+      "text": "{\"entries\":[\"{\\\"body\\\":{\\\"final_seq\\\":\\\"3\\\",\\\"key\\\":\\\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\\\",\\\"kind\\\":\\\"grant\\\",\\\"node\\\":\\\"2\\\",\\\"role\\\":0},\\\"index\\\":\\\"3\\\",\\\"list\\\":\\\"home\\\",\\\"prev\\\":\\\"MwPfLL2muZC0oWJOAC-Wp2mo_De0uj4RxnLKgBzNgvs\\\",\\\"signatures\\\":[[\\\"_RckOFqgx1tk-3jNYC-h2ZH96_drE8WO1wLqyDXp9hg\\\",\\\"NoHW8ykOP-gmpL2sYvZ9nxKnx5dRX1a3urOoLSNsxhWBISgOHxkCi7zb9eB_DP_M929fY4GXtbXkBiz1quoIBQ\\\"]]}\"],\"expires_at_ms\":\"105000\",\"list\":\"home\",\"node\":\"2\",\"nonce\":\"M1GaVzYPGr5bNnONQEESqv9EVAJlBrdpaChwldnXss0\",\"op\":\"login\",\"signature\":\"ifEYCWbQnTg_kZVTC-3zzfdflM8umoPQQ6cq3tlBxLTHWNQI-yshfD4zxRp7Ptq02wtG-mYainkJwJl2OJefAw\",\"v\":2}"
     },
     {
       "device": 1,
@@ -879,17 +853,17 @@
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"cursor\":\"9\",\"heads\":[[\"2\",\"4\",\"K4iNw0Qwgp6JmfRqTAOP4mkYLOcHRHSKMuML8yPvMUg\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":2}"
+      "text": "{\"cursor\":\"8\",\"heads\":[[\"2\",\"3\",\"pMgNnKGTUYwSbfrgEAdPMnPEVMWTfVJ1D3AV40doLG8\"]],\"log_len\":\"4\",\"ok\":\"heads\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "request",
-      "text": "{\"cursor\":\"9\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
+      "text": "{\"cursor\":\"8\",\"limit\":200,\"op\":\"feed\",\"v\":2}"
     },
     {
       "device": 0,
       "op": "respond",
-      "text": "{\"more\":false,\"next\":\"9\",\"ok\":\"feed\",\"records\":[],\"v\":2}"
+      "text": "{\"more\":false,\"next\":\"8\",\"ok\":\"feed\",\"records\":[],\"v\":2}"
     },
     {
       "device": 0,
