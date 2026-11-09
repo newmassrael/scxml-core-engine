@@ -720,6 +720,7 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
   <sce:import kind="test-template" src="job_request.scxml" as="Request"/>
   <sce:import kind="test-template" src="completed_within.scxml" as="CompletedWithin"/>
   <sce:test-port id="sut" type="JobPort"/>
+  <sce:test-port id="control" type="JobPort"/>
   <sce:test-timer id="reply" duration="2s"/>
   <datamodel>
     <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
@@ -797,6 +798,22 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
   </sce:connect>
 </scxml>
 ```
+
+The tester's `control` port is of `job_port`, which sends `JobRequest` and receives `JobCompleted`. The helper's
+`control` port is of the port type that turns each direction, so that what one port sends the other receives:
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="job_control_port">
+  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
+  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
+  <sce:message type="JobRequest" direction="in"/>
+  <sce:message type="JobCompleted" direction="out"/>
+</scxml>
+```
+
+Two ports of one type connect only where the type receives every message it sends; two ports of `job_port` would
+not, since `JobRequest` is on its `out` list and not on its `in` list.
 
 - `<sce:mtc>` names the MTC's component type, once. `<sce:ptc>` names each PTC and its type. The name `mtc` is the
   MTC's and no PTC takes it.

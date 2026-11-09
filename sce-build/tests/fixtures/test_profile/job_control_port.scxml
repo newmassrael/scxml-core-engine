@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3, §11.6: the port type a control port
+     connected to a port of job_port.scxml is of. It lists the same messages
+     with each direction turned: the job status both ways, and the job's
+     completion in, which job_port sends out. A connect holds each port's out
+     list in the other's in list (-1 §21.1.1 b), so two ports of job_port
+     itself, which sends the completion and does not receive it, cannot be
+     connected. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="job_control_port">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="event-schema" src="../../../kind-examples/event-schema.scxml"
+              as="JobCompleted"/>
+  <sce:message type="JobStatus" direction="inout"/>
+  <sce:message type="JobCompleted" direction="in"/>
+</scxml>

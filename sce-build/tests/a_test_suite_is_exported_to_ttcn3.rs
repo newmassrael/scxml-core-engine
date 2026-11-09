@@ -140,7 +140,16 @@ type record job_status {{
     );
     assert_eq!(export.types_module, expected);
 
-    assert_eq!(names(&export.port_types), ["job_port"]);
+    // The helper's control port is the complement of the tester's: what one
+    // sends out, the other takes in.
+    assert_eq!(names(&export.port_types), ["job_control_port", "job_port"]);
+    assert_eq!(
+        definition(&export.port_types, "job_control_port"),
+        "type port job_control_port message {
+  inout job_status;
+  in event_schema;
+}"
+    );
     assert_eq!(
         definition(&export.port_types, "job_port"),
         "type port job_port message {

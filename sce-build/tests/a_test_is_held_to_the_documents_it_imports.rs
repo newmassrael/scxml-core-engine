@@ -38,7 +38,12 @@ fn read(path: &Path) -> String {
 /// The fixture `name`, parsed as the forge document it is, and held to the
 /// rules its imports decide. Its refusals carry its path.
 fn check(name: &str) -> Result<(), Located<ForgeError>> {
-    let path = dir().join(name);
+    check_in(&dir(), name)
+}
+
+/// [`check`] for the fixture `name` of `dir`.
+fn check_in(dir: &Path, name: &str) -> Result<(), Located<ForgeError>> {
+    let path = dir.join(name);
     let text = read(&path);
     let label = path.to_str().expect("a UTF-8 path");
     let parsed = parse_forge_with_imports(
@@ -50,7 +55,7 @@ fn check(name: &str) -> Result<(), Located<ForgeError>> {
     )
     .unwrap_or_else(|e| panic!("{name} parses: {e:?}"))
     .unwrap_or_else(|| panic!("{name} is a forge document"));
-    test_profile_assembly::check(&parsed, &dir(), label)
+    test_profile_assembly::check(&parsed, dir, label)
 }
 
 /// The first record of a refusal: its wire code and its `actual`.
@@ -85,6 +90,29 @@ fn a_test_whose_documents_agree_is_accepted() {
         "ping_suite.scxml",
     ] {
         if let Err(err) = check(name) {
+            panic!("{name} is refused: {err:?}");
+        }
+    }
+}
+
+/// The suite every other test of the profile reads, `job_suite.scxml`, holds
+/// whole to the rules its imports decide: its port types, the configuration
+/// whose connect joins the tester's `control` port to the helper's, the test
+/// case and the suite. A fixture read only by its parser can break a rule of
+/// how the documents fit together and stay unseen; this holds the one every
+/// generated test and the TTCN-3 export read.
+#[test]
+fn the_profiles_own_suite_is_accepted_whole() {
+    let profile = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile");
+    for name in [
+        "job_port.scxml",
+        "job_control_port.scxml",
+        "status_in_port.scxml",
+        "tester_and_helper.scxml",
+        "completes_in_time.scxml",
+        "job_suite.scxml",
+    ] {
+        if let Err(err) = check_in(&profile, name) {
             panic!("{name} is refused: {err:?}");
         }
     }
