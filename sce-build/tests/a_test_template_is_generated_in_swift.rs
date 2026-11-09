@@ -25,7 +25,6 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -72,8 +71,8 @@ const TEST_RUNTIME_IMPORT: &str = "\nimport SceTestProfile\n";
 
 /// Every accepted template the profile's fixtures hold that Swift generates:
 /// its document, the unit it is written as, and whether it is specific
-/// (docs/SCE_TEST_PROFILE.md §6.2). The two over a union are refused
-/// ([`a_template_that_reaches_a_union_is_refused_on_swift`]).
+/// (docs/SCE_TEST_PROFILE.md §6.2). The two over a union are among them, since
+/// Swift lowers a union (`codegen_matrix::UNION_BACKENDS`).
 fn templates() -> Vec<(PathBuf, &'static str, bool)> {
     let at = |dir: PathBuf, name: &'static str| dir.join(format!("{name}.scxml"));
     vec![
@@ -83,6 +82,7 @@ fn templates() -> Vec<(PathBuf, &'static str, bool)> {
         (at(profile_dir(), "job_report_of"), "JobReportOf", true),
         // Specific in itself, and no specific template through its reference.
         (at(profile_dir(), "report_within"), "ReportWithin", false),
+        (at(profile_dir(), "shape_is_circle"), "ShapeIsCircle", false),
         (
             at(imports_dir(), "quantity_at_most"),
             "QuantityAtMost",
@@ -100,6 +100,11 @@ fn templates() -> Vec<(PathBuf, &'static str, bool)> {
             false,
         ),
         (at(imports_dir(), "card_within"), "CardWithin", false),
+        (
+            at(imports_dir(), "order_placed_match"),
+            "OrderPlacedMatch",
+            false,
+        ),
         (at(imports_dir(), "voucher_is"), "VoucherIs", true),
         // A unit is named by the document's file (`test-template.scxml`), as
         // every forge unit is (`DocumentLabel::for_input_path`), not by its
@@ -300,26 +305,6 @@ fn refused(path: &Path) -> String {
         panic!("{name} generated on Swift");
     };
     unsupported(name, err)
-}
-
-/// A template whose type reaches a union, in itself or below a field, is
-/// refused on Swift by the union's own refusal, which a schema unit's union
-/// field is refused by: Swift lowers no union. What the unit spells once it
-/// does is held by the tests of `forge::generator::swift_test_template`.
-#[test]
-fn a_template_that_reaches_a_union_is_refused_on_swift() {
-    for (path, alias) in [
-        (profile_dir().join("shape_is_circle.scxml"), "Shape"),
-        (imports_dir().join("order_placed_match.scxml"), "Payment"),
-    ] {
-        let name = path.file_stem().and_then(|s| s.to_str()).expect("a stem");
-        let detail = refused(&path);
-        assert!(
-            detail.starts_with(&format!("test-template '{name}': `union:{alias}`: ")),
-            "{detail}"
-        );
-        assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
-    }
 }
 
 /// The record schema the documents of a test of its own import: two `bool`

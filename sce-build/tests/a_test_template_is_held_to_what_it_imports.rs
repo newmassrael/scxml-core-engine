@@ -131,7 +131,7 @@ fn a_template_that_keeps_every_rule_of_its_imports_is_accepted() {
 /// generation, and a refused one is refused with its own code before it. Every
 /// backend generates a template (`codegen_matrix::TEST_TEMPLATE_BACKENDS`), so
 /// the generation that refuses the accepted one is a backend's that lowers no
-/// union (`codegen_matrix::UNION_BACKENDS`), Swift here, refusing the union the
+/// union (`codegen_matrix::UNION_BACKENDS`), C++ here, refusing the union the
 /// template reaches by name, which only the generation does.
 #[test]
 fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one() {
@@ -141,10 +141,10 @@ fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one
             .all(|language| TEST_TEMPLATE_BACKENDS.contains(language)),
         "a backend generates no template: the test's refusal is no longer the only one"
     );
-    let refusing = Language::Swift;
+    let refusing = Language::Cpp;
     assert!(
         !UNION_BACKENDS.contains(&refusing),
-        "Swift lowers a union: name a backend that still refuses one"
+        "C++ lowers a union: name a backend that still refuses one"
     );
     match sce_build::compile_forge_file(
         &imports_dir().join("order_placed_match.scxml"),

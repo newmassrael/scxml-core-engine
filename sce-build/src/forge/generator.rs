@@ -4269,6 +4269,15 @@ fn render_event_schema(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("payload_struct_name".into(), payload_struct_name.into());
+    // A Swift payload whose field holds a union directly has no value to start
+    // that field at (docs/adr/0092, amendment of 2026-11-07), so the struct is
+    // built whole by its memberwise initialiser and is no `SceDefault`.
+    ctx.insert(
+        "swift_zeroless".into(),
+        (_lang == crate::generator::Language::Swift
+            && fields.iter().any(|f| f["swift_zero"] == ""))
+        .into(),
+    );
     ctx.insert("event_name".into(), m.event_name.clone().into());
     // The event name and the revision as typed constants of the unit, which a host
     // that stamps what it sends (a command log, a wire record) names instead of
@@ -4690,6 +4699,93 @@ fn render_union_kotlin(
     ctx.insert(
         "union_qualified".into(),
         kotlin_qualified(&m.name, &union_type).into(),
+    );
+    ctx.insert("kind_type".into(), kind_type.into());
+    ctx.insert("cases".into(), serde_json::json!(cases));
+    l.render(env, "union", ctx)
+}
+
+/// The members a Swift union enum has besides its cases: a case named for one
+/// would declare it twice.
+const SWIFT_UNION_MEMBERS: &[&str] = &[
+    crate::forge::composed_lowering::SWIFT_UNION_KIND,
+    "revision",
+    "dataMaxLen",
+    "schemaID",
+    "jsonSchema",
+];
+
+/// The Swift unit of a union document (docs/adr/0092, section 7, the Swift
+/// row): an enum named for the document, `Equatable` and `Sendable`, one case
+/// per variant in the tag enum's order holding the case's record or nothing for
+/// an empty case; `kind`, the value of the tag's enum the case is for; and one
+/// `proven<Case>` per case that holds a record, the read of a case a test of
+/// the tag proved, computed and written once. The constants of
+/// [`UnionUnit::context`] are members of the enum, as an event schema's are of
+/// its caseless enum, because the units of one module never share a top-level
+/// name.
+///
+/// A case is named by its variant as the tag's own Swift enum spells it
+/// ([`crate::forge::enum_naming::variant_ident`]), so the case of `circle` is
+/// `.circle` as the tag's value is `ShapeKind.circle`. The tag's enum and the
+/// cases' records are files of the same module and are named bare. A name Swift
+/// reserves, two variants that become one case and a variant spelled as a
+/// member the enum has are refused by name rather than left to the compiler.
+fn render_union_swift(
+    env: &minijinja::Environment,
+    m: &UnionModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let unit = UnionUnit::read(m, imports)?;
+    let tag = unit.tag;
+    let kind_type = enum_qualified_type(&tag.document_name, Language::Swift);
+    let mut spelled: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    let mut cases = Vec::with_capacity(unit.cases.len());
+    for (variant, record) in &unit.cases {
+        let variant = variant.as_str();
+        // The case, the value of the tag it is for and the read of its record
+        // are spelled by the one helper the test-template walk uses as well
+        // ([`crate::forge::composed_lowering`]), so the two cannot drift.
+        let ident = crate::forge::composed_lowering::swift_case_ident(&tag.document_name, variant);
+        if crate::reader_names::is_reserved_word(Language::Swift, &ident) {
+            return Err(union_refused(
+                m,
+                format!("the case `{variant}` is a name Swift reserves, `{ident}`"),
+            ));
+        }
+        if SWIFT_UNION_MEMBERS.contains(&ident.as_str()) {
+            return Err(union_refused(
+                m,
+                format!("the case `{variant}` is named for a member of the enum, `{ident}`"),
+            ));
+        }
+        if let Some(first) = spelled.insert(ident.clone(), variant) {
+            return Err(union_refused(
+                m,
+                format!("the cases `{first}` and `{variant}` are both the Swift case `{ident}`"),
+            ));
+        }
+        let record =
+            record.map(|import| event_schema_payload_type(&import.document_name, Language::Swift));
+        cases.push(serde_json::json!({
+            "ident": ident,
+            "variant": variant,
+            "kind_case": ident,
+            "read": crate::forge::composed_lowering::swift_case_read(variant),
+            "record": record,
+        }));
+    }
+    let l = LangCtx::new(Language::Swift, imports);
+    let mut ctx = unit.context(&l, m, options);
+    ctx.insert(
+        "union_type".into(),
+        filters::to_pascal_case(m.name.clone()).into(),
+    );
+    ctx.insert(
+        "kind_member".into(),
+        crate::forge::composed_lowering::SWIFT_UNION_KIND.into(),
     );
     ctx.insert("kind_type".into(), kind_type.into());
     ctx.insert("cases".into(), serde_json::json!(cases));
@@ -31604,10 +31700,11 @@ pub fn generate_swift_with_imports(
         // A template's holes are texts, integers and enum names, each a `String`
         // or an integer of the standard library (docs/adr/0087, section 3.1).
         ForgeDocument::TextTemplate(_) => None,
-        // docs/adr/0092: Swift does not lower a union yet (see the cpp dispatch).
-        ForgeDocument::Union(m) => {
-            return Err(crate::forge::union_check::document_unlowered(m).into())
-        }
+        // docs/adr/0092: Swift is among the union backends
+        // (`codegen_matrix::UNION_BACKENDS`); what it does not spell of one, a
+        // case named for a word Swift reserves among it, is refused by name
+        // where the unit is rendered ([`render_union_swift`]).
+        ForgeDocument::Union(_) => None,
         // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `matches`
         // and a specific template's `value` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
         // What it names that Swift does not write, a union and a record or an enum
@@ -31666,6 +31763,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::BoundedCollection(m) => render_bounded_collection_swift(&env, m, options)?,
         ForgeDocument::Queue(m) => render_queue_swift(&env, m, options)?,
         ForgeDocument::TextTemplate(m) => render_text_template(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Union(m) => render_union_swift(&env, m, imports, options)?,
         ForgeDocument::TestTemplate(m) => {
             swift_test_template::render_test_template_swift(&env, m, imports)?
         }
@@ -32276,22 +32374,13 @@ fn swift_event_schema_refusal(m: &EventSchemaModel, construct: &str) -> String {
 /// field of an enum Swift does not write, a field that may be absent, and a name
 /// Swift reserves are named here until each is spelled.
 fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext]) -> Option<String> {
-    // A union is lowered by no backend yet (docs/adr/0092, section 7), and is
-    // named by the field that holds it before the union's import is.
-    if let Some((field, alias)) = m.fields.iter().find_map(|f| {
-        f.sce_type
-            .union_aliases()
-            .first()
-            .map(|alias| (f.id.as_str(), alias.to_string()))
-    }) {
-        return Some(format!("the field `{field}` of `union:{alias}`"));
-    }
-    // The two kinds of document a schema imports are an enum, the type a field holds
-    // a value in, and an event schema, the record a field holds (docs/adr/0086,
-    // section 1.8).
+    // The kinds of document a schema imports are an enum, the type a field holds
+    // a value in, an event schema, the record a field holds (docs/adr/0086,
+    // section 1.8), and a union, the sum a field holds one of the records of
+    // (docs/adr/0092, section 7), whose unit Swift writes.
     if let Some(import) = imports
         .iter()
-        .find(|i| i.kind != "enum" && i.kind != "event-schema")
+        .find(|i| i.kind != "enum" && i.kind != "event-schema" && i.kind != "union")
     {
         return Some(format!("the <sce:import as=\"{}\">", import.alias));
     }

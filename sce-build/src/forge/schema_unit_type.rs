@@ -24,7 +24,8 @@
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]) as the sum type its own
 //! unit declares, named as the import names the union's unit: on Rust the enum
 //! through its sibling module (`union_shape::UnionShape`), on Kotlin the sealed
-//! interface. Every other backend refuses it by name.
+//! interface, on Swift the enum bare in the module. Every other backend refuses
+//! it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -164,7 +165,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "[UInt8]".to_string(),
             ValueType::Optional { elem } => format!("{}?", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, .. } => format!("[{}]", inner(elem, c11)?),
         },
         Language::C11 => match ty {
@@ -227,7 +228,10 @@ fn c11_mangle(ty: &ValueType, names: &dyn UnitNames) -> String {
 }
 
 /// The value a Swift unit's field of the composed type `ty` holds until it is
-/// written: an empty list, nothing, or a record at its own zero.
+/// written: an empty list, nothing, or a record at its own zero. A union has
+/// none (docs/adr/0092, amendment of 2026-11-07: no case is the zero of the
+/// others), so a field that holds one directly answers the empty text, and its
+/// unit is built whole by its memberwise initialiser and is no `SceDefault`.
 pub(crate) fn swift_zero(ty: &ValueType, names: &dyn UnitNames) -> Result<String, String> {
     Ok(match ty {
         ValueType::List { .. } => "[]".to_string(),
@@ -238,7 +242,7 @@ pub(crate) fn swift_zero(ty: &ValueType, names: &dyn UnitNames) -> Result<String
                 format!("`record:{alias}` names no event schema the document imports")
             })?
         ),
-        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
+        ValueType::Union { .. } => String::new(),
         ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
             return Err(format!(
                 "`{ty}` is one entry, which the unit spells where it spells every entry"

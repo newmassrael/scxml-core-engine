@@ -1,0 +1,66 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+{# docs/adr/0092, section 7, the Swift row. A file of the module that names it,
+   so the tag's enum and the cases' records are named bare. The constants of the
+   unit are members of the type, as an event schema's are of its caseless enum,
+   because two units of one module never share a top-level name. #}
+/// A value of `{{ union_name }}`: exactly one case, told apart by its tag `{{ tag }}`, a value of
+/// ``{{ kind_type }}``. Two values are equal when they are in one case and their records are equal.
+public enum {{ union_type }}: Equatable, Sendable {
+    /// The revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own).
+    public static let revision: UInt32 = {{ schema_revision }}
+
+    /// The most bytes a value's JSON text takes: its largest case, every list full, every text at its
+    /// bound, every number at its longest spelling.
+    public static let dataMaxLen: UInt64 = {{ data_max_len }}
+
+    /// The id of the union's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of `jsonSchema`.
+    public static let schemaID: String = "{{ schema_id }}"
+{% if payload_grammar %}
+
+    /// A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `{{ tag }}` beside the
+    /// fields of its record, every bound as this build resolved it.
+    public static let jsonSchema: String = "{{ json_schema | escape_swift }}"
+{% else %}
+
+    // No jsonSchema: {{ payload_grammar_absent }}.
+{% endif %}
+{% for c in cases %}
+
+{% if c.record %}
+    /// The case `{{ c.variant }}`, holding its record.
+    case {{ c.ident }}({{ c.record }})
+{% else %}
+    /// The case `{{ c.variant }}`, its tag alone.
+    case {{ c.ident }}
+{% endif %}
+{% endfor %}
+
+    /// The case this value is in: the tag its text writes under `{{ tag }}`.
+    public var {{ kind_member }}: {{ kind_type }} {
+        switch self {
+{% for c in cases %}
+        case .{{ c.ident }}:
+            return {{ kind_type }}.{{ c.kind_case }}
+{% endfor %}
+        }
+    }
+{% for c in cases if c.record %}
+
+    /// The record of the case `{{ c.variant }}`, read where a test of the tag proved the value is in it.
+    public var {{ c.read }}: {{ c.record }} {
+        guard case .{{ c.ident }}(let value) = self else {
+            preconditionFailure("a {{ union_name | escape_swift }} read as {{ c.variant | escape_swift }} is in \({{ kind_member }}.declaredName)")
+        }
+        return value
+    }
+{% endfor %}
+}

@@ -392,7 +392,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// statechart's variable, a read of a payload that holds one and a send of
 /// that payload are composed values, which a backend lowers where its composed
 /// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
-pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
+pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin, Language::Swift];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a

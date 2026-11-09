@@ -694,7 +694,15 @@ union at any depth as that interface. Rust generates it as an enum deriving `Deb
 for an empty case), a `<tag>(&self)` read of the tag and a `proven_<case>(&self)`
 read per case that holds a record, beside the same four constants; and a field of
 the union at any depth as that enum. A tag whose key names no Rust method, or would
-hide a derived one (`clone`, `eq`, `fmt`), is refused by name. Every other backend
+hide a derived one (`clone`, `eq`, `fmt`), is refused by name. Swift generates it as an
+enum, `Equatable` and `Sendable`, one case per variant (holding the case's record, or
+nothing for an empty case) spelled as the tag's own Swift enum spells the variant, a
+`kind` property and a `proven<Case>` property per case that holds a record, and, as
+members of the enum, `revision`, `dataMaxLen`, `schemaID` and `jsonSchema`; a field of
+the union at any depth is that enum. A union has no value to start at, so a Swift
+payload with a field that holds one directly has no zero: it is built whole by its
+initialiser and is no `SceDefault`. A case named for a word Swift reserves, for a
+member of the enum, or as another case is refused by name. Every other backend
 refuses a union document and a union field by name. A statechart's variable of a union, and its read or send
 of a payload that holds one, are composed values: a backend whose statechart does
 not lower them refuses each by name, as it refuses any composed value it does not

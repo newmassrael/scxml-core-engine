@@ -44,6 +44,28 @@ public enum {{ struct_name }} {
 }
 {% if fields %}
 
+{% if swift_zeroless %}
+/// The payload of the event: a struct of the schema's fields in the schema's order. A field
+/// that holds a union directly has no value to start at (docs/adr/0092, amendment of
+/// 2026-11-07: no case is the zero of the others), so the payload has no zero either: it is
+/// built whole by its initialiser and is no `SceDefault`. A value, so a host that reads one
+/// holds a copy.
+public struct {{ payload_struct_name }}: Equatable, Sendable {
+{% for f in fields %}
+{% if f.swift_zero %}
+    public var {{ f.id }}: {{ f.swift_type }} = {{ f.swift_zero }}
+{% else %}
+    public var {{ f.id }}: {{ f.swift_type }}
+{% endif %}
+{% endfor %}
+
+    public init({% for f in fields %}{{ f.id }}: {{ f.swift_type }}{% if f.swift_zero %} = {{ f.swift_zero }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for f in fields %}
+        self.{{ f.id }} = {{ f.id }}
+{% endfor %}
+    }
+}
+{% else %}
 /// The payload of the event: a struct of the schema's fields in the schema's order,
 /// each at its zero until written. A value, so a host that reads one holds a copy.
 public struct {{ payload_struct_name }}: Equatable, Sendable, SceDefault {
@@ -59,6 +81,7 @@ public struct {{ payload_struct_name }}: Equatable, Sendable, SceDefault {
 {% endfor %}
     }
 }
+{% endif %}
 {% else %}
 
 // This schema declares no field: the event carries no data, so no payload type is generated.
