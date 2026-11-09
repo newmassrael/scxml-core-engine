@@ -1781,7 +1781,7 @@ The same refusal answers every start:
 
 | Backend | Plain start | Failure type | Status |
 |---|---|---|---|
-| Rust | `initialize(&mut self) -> Result<(), P::StartFailure>`, `#[must_use]` | `ScriptSessionFailure { stage: ScriptSessionStage, message }`; a policy without a script engine has `Infallible`, so its start is `let Ok(()) = …` | landed |
+| Rust | `initialize(&mut self) -> Result<(), P::StartFailure>`, `#[must_use]` | `ScriptSessionFailure { stage, message }`, `#[non_exhaustive]`, the engine's `message` under `std` only (a `no_std` build has no engine and holds the step alone); a policy without a script engine has `Infallible`, so its start is `.unwrap_or_else(\|never\| match never {})` | landed |
 | C++ | `[[nodiscard]] std::optional<ScriptSessionFailure> initialize()` | `ScriptSessionFailure` | pending |
 | Go | `Initialize() error` | `*ScriptSessionFailure` (an `error`) | pending |
 | Kotlin | `initialize()` and `start(scope)` throw | `ScriptSessionUnavailableException`; `start` establishes before it launches its coroutine | pending |

@@ -79,7 +79,7 @@ its language that a caller cannot drop without saying so:
 
 | Backend | Plain start | Failure type |
 |---|---|---|
-| Rust | `initialize(&mut self) -> Result<(), P::StartFailure>` | `ScriptSessionFailure`; a policy without a script engine has `Infallible`, so its start is `let Ok(()) = …` |
+| Rust | `initialize(&mut self) -> Result<(), P::StartFailure>` | `ScriptSessionFailure`; a policy without a script engine has `Infallible`, so its start cannot fail (`.unwrap_or_else(\|never\| match never {})`) |
 | C++ | `[[nodiscard]] std::optional<ScriptSessionFailure> initialize()` | `ScriptSessionFailure` |
 | Go | `Initialize() error` | `*ScriptSessionFailure` (an `error`) |
 | Kotlin | `initialize()` and `start(scope)` throw | `ScriptSessionUnavailableException`; `start` establishes before it launches its coroutine |
