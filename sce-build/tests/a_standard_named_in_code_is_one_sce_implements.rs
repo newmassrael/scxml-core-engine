@@ -286,6 +286,18 @@ const IMPLEMENTED: &[Implemented] = &[
               malformed one. The name appears because SCE produces the \
               format, not because anything branches on the document.",
     },
+    Implemented {
+        token: "RFC 8949",
+        scope: &["sce-build/src/forge/generator/cpp_source/cbor.rs"],
+        why: "SCE generates the encode of a record as the CBOR that document \
+              defines: the C++ printer emits a map head counting the entries \
+              present, then each entry in ascending key order, every head in \
+              its shortest form. The doc comment it writes above the emitted \
+              encode names the section that fixes that form, and it is a \
+              string literal of the printer, which is why it is read as code. \
+              The name appears because SCE produces the encoding, not \
+              because anything branches on the document.",
+    },
 ];
 
 /// Modules implementing requirement closure, which no entry above may reach.
