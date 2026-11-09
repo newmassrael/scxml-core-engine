@@ -834,12 +834,11 @@ def test_a_sync_run_is_composed_of_the_standard_sync_rules() -> None:
 
 
 # One copy of a shared to-do list, as each of the three that took part in one run
-# of it was driven: a person's copy stamps a change with its clock and sends it to
-# the hub, the hub passes a write on to every copy but the one it came from, and
-# each to-do is an element of an add set and a tombstone set, and each of its
-# fields a stamped value, so the copies agree whatever order the writes arrive in.
-# Every step states what the copy sent its peers and the `adds`, `tombstones` and
-# `values` it holds.
+# of it was driven: a copy stamps a change with its clock, takes it in and sends it
+# whole to its group (`record_list.change` by `#people`), takes each peer's change in
+# whole as its delivery layer gives it, and each to-do is an element of an add set
+# and each of its fields a stamped value. Every step states what the copy sent its
+# peers and the `adds` and `values` it holds.
 def test_a_shared_list_as_alice_took_part_in_it() -> None:
     replay("todo_peer_alice")
 
@@ -848,8 +847,8 @@ def test_a_shared_list_as_bob_took_part_in_it() -> None:
     replay("todo_peer_bob")
 
 
-def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
-    replay("todo_peer_server")
+def test_a_shared_list_as_carol_took_part_in_it() -> None:
+    replay("todo_peer_carol")
 
 
 # The standard shared record list (sce:std/shared/record_list.scxml), named by its

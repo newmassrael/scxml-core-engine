@@ -2865,14 +2865,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     sce_generate_static_integration_c_test(todo_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/todo_peer.scxml"
-        STAGE_ALSO todo_join.scxml todo_edit.scxml todo_write.scxml todo_supersede.scxml
-                   todo_keep.scxml todo_node.scxml todo_visit.scxml
-                   todo_share.scxml todo_agenda.scxml todo_zone.scxml todo_compact.scxml
-                   todo_settle.scxml todo_propose.scxml todo_ack.scxml todo_floor.scxml
+        STAGE_ALSO todo_join.scxml todo_edit.scxml todo_agenda.scxml todo_zone.scxml
                    todo_room.scxml todo_role.scxml
                    event_occurrence.scxml event_schedule.scxml event_later.scxml
                    event_latest.scxml event_conflict.scxml event_selects.scxml event_agenda.scxml
-                   event_settled.scxml event_answer.scxml event_member.scxml event_roster.scxml
+                   event_member.scxml event_roster.scxml
     )
     # Its time zone: the standard rule that reads a table of transitions.
     foreach(_ZONE_HEADER utc_from_local)
@@ -2883,8 +2880,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # that expands a repetition, the fixtures of the machine's own directory.
     set(_STATIC_EVENT_HEADERS "")
     foreach(_EVENT_HEADER event_occurrence event_schedule event_later event_latest event_conflict
-                          event_selects event_agenda event_settled event_answer event_member
-                          event_roster)
+                          event_selects event_agenda event_member event_roster)
         sce_c_integration_generation(_EVENT_ONE
             "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_EVENT_HEADER}.scxml")
         list(APPEND _STATIC_EVENT_HEADERS ${_EVENT_ONE_HEADERS})
@@ -3233,7 +3229,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LANGUAGE c11
         INPUT_ROOT "${_LARGE_FIXTURES}"
         ARGS --with-imports
-             --limit merge_values=65536 --limit merge_entries=65536 --limit merge_digest=262144
+             --limit merge_values=65536 --limit merge_entries=65536
         COMMENT "Generating C11 todo_peer at the bounds of a team")
     add_executable(sce_c_integration_static_large
         integration/test_static_large.c

@@ -1,114 +1,88 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): one copy of a shared
-  to-do list, for the world simulation (backends/rust/world). The same document is a
-  person's copy and the hub the copies send to; `todo.join` says which.
+  to-do list, for the world simulation (backends/rust/world). Every copy is the same
+  document, and no copy is special.
 
-  A to-do is a row of fields (todo_write): a title, whether it is done, a due day,
-  whether it is removed. Each field of each to-do is a multi-value register: a write
-  gives the field one more value, known by the stamp of the write (its dot), and a
-  person who writes over a field writes over the values they have SEEN, no others. So
-  two people who change the same field of one to-do at once, neither having seen the
-  other's write, both keep theirs, on every copy, whatever order the changes reach it
-  in and however many times each does; and a person who writes after seeing them
-  replaces them all. A field with one value reads as that value, and with more than one
-  says it was changed twice at once, and which values, for a person to choose from.
+  A to-do is a row of fields: a title, whether it is done, a due day, whether it is
+  removed, and the fields of its schedule. The numbers of the fields are the host's. Each
+  field of each to-do is a multi-value register: a write gives the field one more value,
+  known by the stamp of the write (its dot), and a person who writes over a field writes
+  over the values they have SEEN, no others. So two people who change the same field of
+  one to-do at once, neither having seen the other's write, both keep theirs, on every
+  copy, whatever order the changes reach it in; and a person who writes after seeing
+  them replaces them all. A field with one value reads as that value, and with more than
+  one says it was changed twice at once, and which values, for a person to choose from.
 
-  The registers are an observed-remove set of the standard `orset_*` algorithms: a
-  write is an add of the register's element with the write's dot as its tag, writing
-  over a value is a tombstone of the value's tag, and what a field holds is the adds no
-  tombstone names. A copy holds exactly those: a tombstone takes the add it names out of
-  `adds` as it arrives (orset_live of the add and the tombstone), and an add that a
-  tombstone already names is not taken in. So `adds` is the set's value, and a write is
-  judged against the tombstones and the adds one pass each, never against every pair.
-  The element is `id * 65536 + field`: a to-do is a uint32
-  and a field a uint16 (todo_write), so the pair is one uint64 below 2^48 and no two
-  registers share one, whatever the numbers; it is below 2^53 as well, which the
-  Interpreter's integers hold exactly, so no lane meets a limit another does not.
-  What a set cannot carry is the value itself, a number and a text, so each live add
-  has its value in `values`, beside it, taken in when the add is live and taken out when a tombstone
-  names it. The standard `mv_value_*` algorithms keep them: the machine assigns a
-  write's text into a record of its own first (a payload's text is not handed to an
-  algorithm, and that assignment is where a text past its bound is refused), and the
-  record is what `mv_value_keep` records, bounded as its schema says, and
-  `mv_value_drop` forgets. That is the whole of what this document adds to the merge.
+  The list's protocol is the standard shared record list's (sce:std/shared/record_list,
+  docs/adr/0042, docs/adr/0085): a change is one message, `record_list.change`
+  (record_change), its author, its stamp and its operations (record_op), and this copy
+  takes in and keeps exactly what that list does. A person's edit is a change of its
+  own: a write-over of every value the copy holds in the field, in the order of `adds`,
+  then the write. The copy takes the change in first, each operation by `todo.take`, an
+  event with no data that reads the next operation of `taking`, and then sends it whole.
+  A change a peer made reaches the copy as the same message and is taken in by the same
+  events, so no copy can hold half of one.
 
-  The clock is moved by what a copy sees as well as by what it does, as the sheet's
-  is: a change made after reading someone else's sorts after it.
+  The registers are an observed-remove set of the standard `orset_*` algorithms, the
+  operation-based form of it: a write is an add of the register's element with the
+  write's dot as its tag, and a write-over removes the tag it names. A copy holds exactly
+  the adds no write-over has removed, in `adds`, and keeps no tombstone: the layer that
+  delivers the changes gives a copy each change once, whole, and only after every change
+  its author had taken in when it made it, so a write-over always arrives after the
+  write it names, and no write arrives twice. A write-over whose value is gone already
+  changes nothing. The element is `id * 65536 + field`: a to-do is a uint32 and a field
+  a uint16, so the pair is one uint64 below 2^48 and no two registers share one, whatever
+  the numbers; it is below 2^53 as well, which the Interpreter's integers hold exactly,
+  so no lane meets a limit another does not. What a set cannot carry is the value itself,
+  a number and a text, so each live add has its value in `values`, beside it, kept by the
+  standard `mv_value_*` algorithms. That is the whole of what this document adds to the
+  merge.
 
-  A copy that has lost changes for good (restarted from an older save, so that what it
-  lacks is something its peers believe delivered, and no retry repairs it) finds them with
-  a digest and takes only what it lacks. Each copy keeps a merkle digest of its changes
-  (merge/merkle_insert: a trie over the minute of each change's dot, a node the XOR of
-  the hashes under it). A change is a live add or a tombstone; an add that a tombstone
-  names leaves the digest when the tombstone arrives (XOR again), and the tombstone stays,
-  so two copies hold the same digest exactly when they hold the same live adds and
-  tombstones, whatever order the changes reached each in. The hash is a 32-bit mix of the
-  register, the dot and whether it is an add or a tombstone (merge/merkle_change_hash),
-  every part of each taken whole.
+  The clock is moved by what a copy sees as well as by what it does: a change made after
+  reading someone else's sorts after it. It is moved once for each change taken in.
 
-  The host raises `todo.resync` on a copy when its link is back. A message cannot carry a
-  list, so the digest is not sent: it is walked, one node to a message (`todo.node`: depth,
-  prefix, hash). A copy that is sent a node compares it with its own at that place; where
-  they differ it answers with its own three children of the node (a child it holds
-  nothing under is sent with hash 0, so the peer finds what only the peer holds), down to
-  the last depth, 30, where a node is one minute: there each side sends the changes it
-  holds for that minute as the ordinary `todo.write` and `todo.supersede` they were, which
-  every copy takes in once whoever sends them and however often. merkle_diff is not used
-  for the walk: it compares two whole digests held in one place, and here the peer's
-  arrives a node at a time, so the walk is made by the messages. The digest's keeping is
-  merkle_insert's.
-
-  The root has three children and each node three, thirty levels down, which is every
-  minute a signed 64-bit millisecond clock holds (merkle_node): a change at any wall time
-  is on a path the walk takes. A wall time of today is under a run of fourteen nodes that
-  hold the whole digest, which the walk passes one level to a message each; that is the
-  same for every change however many there are, and a walk for many changes shares it.
-  The messages of a walk are the nodes where the copies differ, three to a level, and
-  grow with the changes they differ in and not with the time they were made at.
-
-  A tombstone names its register by the element, and the supersede sent for it takes the
-  element back to the to-do and the field (`element / 65536`, `element % 65536`).
-
-  A copy that is written to for long enough has to forget what is settled, and the
-  copies decide when they may. The host asks the hub (`todo.settle`: an instant); the hub
-  asks each person's copy what it holds of the changes up to it (`todo.propose`); each
-  person moves its clock past the instant, so that it stamps nothing at or before it
-  again, and answers with a hash of its adds and tombstones up to it (`todo.ack`,
-  event_settled). When both answers are the hub's own, every copy holds the same up to
-  the instant and none will add to it, whatever order the messages came in and however
-  often: the hub tells every copy to forget (`todo.floor`), and each forgets the
-  tombstones it held when it answered. From then on a write
-  stamped at or before the floor is not taken in: what a copy does not hold of it, it
-  forgot. A copy whose answer was not the hub's, restarted from an old save, is told the
-  floor and finds that it never held what the others settled: it forgets nothing and
-  says it is `stale`, since the tombstones that would tell it which of its values were
-  written over are gone from its peers. `todo.compact` is the host's own word, for a host
-  that knows.
+  Its peers. The copy sends to one route and names no peer of its own: `#people`, one
+  group every copy sends to and reads. The route is bound to the delivery layer, which is
+  not the list: the Mesh core's causal route (`delivery: causal`, SCE_MESH.md, docs/adr/
+  0085 section 3.2) in the world. The layer tags each change, gives every copy each
+  change exactly once and only once the copy holds every change it follows, repairs what
+  a link lost, and forgets a change once every copy holds it. The list sees none of that:
+  it takes in what it is given, in the order it is given it. What the copy's node is is
+  the host's word (`todo.join`).
 
   A copy keeps every list in a room it is built with (`sce:limit`), and a write that
-  would pass it fails half way, which no copy can undo. The host therefore gives a list less
-  room than the build holds (`todo.room`), and a copy refuses a change of its own whole when it
-  holds as much as it was given: before it stamps or sends anything, counted in `full`.
-  What lifts it is a settle, which forgets tombstones. A change that is a person's own is the
-  one judged, and what a person sent is taken in as it is, so the room is kept below the build's
-  by what the people of one list can write at once.
+  would pass it fails half way, which no copy can undo. The host therefore gives a list
+  less room than the build holds (`todo.room`), and a copy refuses a change of its own
+  whole when it would give a register that holds no value one more value past the room:
+  before it stamps or sends anything, counted in `full`. A change to a register that
+  holds a value already writes over as many as it writes, and is never refused for the
+  room. A change that is a person's own is the one judged, and what a person sent is
+  taken in as it is, so the room is kept below the build's by what the people of one list
+  can write at once.
 
-  `values` and `digest` are what a run compares across copies.
+  The host's word on what a member may do (`todo.role`) is judged on every copy: a change
+  of this copy's own member that is not a writer's is refused, and a peer's change whose
+  author is not a writer is taken in as no change; both are counted in `denied`.
+
+  A send to the route the host gave no binding for is `error.execution` where it is
+  made, which ends its block. So the copy takes a change in before it sends it, and the
+  send is a block of its own: a copy with no router takes every change it makes in, and
+  counts each send it could not make in `refusals`.
+
+  The schedule is read from the values: `todo.agenda` asks what a to-do has scheduled in
+  a window, and `todo.zone` gives the copy its host's time zones.
+
+  `values` and `adds` are what a run compares across copies.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="open" datamodel="sce-static" name="todo_peer">
   <sce:import kind="event-schema" src="todo_join.scxml" as="Join"/>
   <sce:import kind="event-schema" src="todo_edit.scxml" as="Edit"/>
-  <sce:import kind="event-schema" src="todo_write.scxml" as="Write"/>
-  <sce:import kind="event-schema" src="todo_supersede.scxml" as="Supersede"/>
-  <sce:import kind="event-schema" src="todo_keep.scxml" as="Keep"/>
-  <sce:import kind="event-schema" src="todo_node.scxml" as="PeerNode"/>
-  <sce:import kind="event-schema" src="todo_visit.scxml" as="Visit"/>
-  <sce:import kind="event-schema" src="todo_share.scxml" as="Share"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_change.scxml" as="Change"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
   <sce:import kind="event-schema" src="todo_agenda.scxml" as="Agenda"/>
   <sce:import kind="event-schema" src="event_occurrence.scxml" as="Occurrence"/>
-  <sce:import kind="event-schema" src="sce:std/merge/merkle_node.scxml" as="Node"/>
   <sce:import kind="event-schema" src="sce:std/merge/hlc_timestamp.scxml" as="Hlc"/>
   <sce:import kind="event-schema" src="sce:std/merge/orset_entry.scxml" as="Entry"/>
   <sce:import kind="event-schema" src="sce:std/merge/mv_value.scxml" as="Value"/>
@@ -119,28 +93,18 @@
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_holds.scxml" as="MvValueHolds"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_keep.scxml" as="MvValueKeep"/>
   <sce:import kind="algorithm" src="sce:std/merge/mv_value_drop.scxml" as="MvValueDrop"/>
-  <sce:import kind="algorithm" src="sce:std/merge/merkle_insert.scxml" as="MerkleInsert"/>
-  <sce:import kind="algorithm" src="sce:std/merge/merkle_change_hash.scxml" as="MerkleChangeHash"/>
   <sce:import kind="event-schema" src="event_schedule.scxml" as="Schedule"/>
   <sce:import kind="algorithm" src="event_latest.scxml" as="EventLatest"/>
   <sce:import kind="algorithm" src="event_conflict.scxml" as="EventConflict"/>
   <sce:import kind="algorithm" src="event_agenda.scxml" as="EventAgenda"/>
   <sce:import kind="event-schema" src="todo_zone.scxml" as="Zone"/>
-  <sce:import kind="event-schema" src="todo_compact.scxml" as="Compact"/>
   <sce:import kind="algorithm" src="sce:std/time/utc_from_local.scxml" as="UtcFromLocal"/>
-  <sce:import kind="event-schema" src="todo_settle.scxml" as="Settle"/>
-  <sce:import kind="event-schema" src="todo_propose.scxml" as="Propose"/>
-  <sce:import kind="event-schema" src="todo_ack.scxml" as="Ack"/>
-  <sce:import kind="event-schema" src="todo_floor.scxml" as="Floor"/>
-  <sce:import kind="event-schema" src="event_answer.scxml" as="Answer"/>
-  <sce:import kind="algorithm" src="event_settled.scxml" as="EventSettled"/>
   <sce:import kind="event-schema" src="todo_room.scxml" as="Room"/>
   <sce:import kind="event-schema" src="todo_role.scxml" as="Role"/>
   <sce:import kind="event-schema" src="event_member.scxml" as="Member"/>
   <sce:import kind="algorithm" src="event_roster.scxml" as="EventRoster"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
-    <data id="hub" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="clock" sce:type="record:Hlc" sce:direction="out">
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
@@ -151,14 +115,20 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
+    <!-- The change in hand: its stamp, which is the dot of every write in it, with its
+         author as the dot's node. Every operation of one change is taken in before
+         anything else reaches the copy, so the operations in `taking` are read with it. -->
+    <data id="dot" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
     <!-- The bounds of the lists a deployment may move are named (`sce:limit`): the
-         lists of entries, of values and of the digest are as large as the standard
-         algorithms that return them, which carry the same names, so a build that gives
-         a name a number moves the machine and the algorithms together. -->
+         lists of entries and of values are as large as the standard algorithms that
+         return them, which carry the same names, so a build that gives a name a number
+         moves the machine and the algorithms together. -->
     <data id="adds" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
-    <data id="tombstones" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]" sce:direction="out"/>
     <data id="one" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
-    <data id="stable" sce:type="list&lt;record:Entry&gt;[merge_entries=1024]"/>
     <data id="entry" sce:type="record:Entry">
       <sce:set name="element" expr="0"/>
       <sce:set name="wallTime" expr="0"/>
@@ -167,8 +137,8 @@
     </data>
     <data id="values" sce:type="list&lt;record:Value&gt;[merge_values=512]" sce:direction="out"/>
     <!-- The text a person types, held to the 32 bytes a person writes (todo_edit): a write
-         has room for more, for what a host puts there when it keeps the content from the hub
-         (todo_write), and a text past 32 that a person typed is refused as one past the room. -->
+         has room for more (record_op), and a text past 32 that a person typed is refused
+         as one past the room. -->
     <data id="typed" sce:type="string[32]" expr="''"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
@@ -179,13 +149,7 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
-    <data id="digest" sce:type="list&lt;record:Node&gt;[merge_digest=2048]" sce:direction="out"/>
-    <data id="mine" sce:type="uint32" expr="0"/>
-    <data id="shareId" sce:type="uint32" expr="0"/>
-    <data id="shareField" sce:type="uint16" expr="0"/>
-    <data id="known" sce:type="bool" expr="false"/>
     <data id="wasLive" sce:type="bool" expr="false"/>
-    <data id="isLive" sce:type="bool" expr="false"/>
     <data id="present" sce:type="bool" expr="false"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="agenda" sce:type="list&lt;record:Occurrence&gt;[64]" sce:direction="out"/>
@@ -262,97 +226,74 @@
     <data id="rawCount" sce:type="uint32" expr="0"/>
     <data id="rawLast" sce:type="uint32" expr="0"/>
     <data id="utcSec" sce:type="int64" expr="0"/>
-    <!-- What the copies have settled (todo.settle): `floor`, the instant up to which this
-         copy has forgotten, `stale` when the hub settled an instant this copy did not
-         hold the same of, and `late` the writes refused for being stamped at or before
-         the floor. `frozenFor` and `frozenHash` are what the copy held of the tombstones
-         and the adds up to the instant it was last asked about, kept in `stable`; the hub
-         keeps the round it has open (`pending`, -1 for none) and what each person
-         answered. -->
-    <data id="floor" sce:type="int64" expr="0" sce:direction="out"/>
-    <data id="stale" sce:type="bool" expr="false" sce:direction="out"/>
-    <data id="late" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="frozenFor" sce:type="int64" expr="-1"/>
-    <data id="frozenHash" sce:type="uint32" expr="0"/>
-    <data id="pending" sce:type="int64" expr="-1"/>
-    <data id="members" sce:type="uint32" expr="0"/>
-    <data id="agreeing" sce:type="uint32" expr="0"/>
-    <data id="answers" sce:type="list&lt;record:Answer&gt;[512]"/>
-    <data id="answer" sce:type="record:Answer">
-      <sce:set name="sender" expr="0"/>
-      <sce:set name="hash" expr="0"/>
-    </data>
-    <data id="agreed" sce:type="uint32" expr="0"/>
-    <!-- How much the host lets this copy hold (todo.room), 0 for no limit; the changes a
-         person made that were refused for it (`full`); and what the change in hand is
-         judged by: whether it is to a register that holds no value yet, and whether the
-         copy is full. -->
+    <!-- How many values the host lets this copy hold (todo.room), 0 for no limit, and the
+         changes a person made that were refused for it (`full`). What the change in hand
+         is judged by: how many values it writes over (`gone`). -->
     <data id="roomValues" sce:type="uint32" expr="0"/>
-    <data id="roomHistory" sce:type="uint32" expr="0"/>
-    <data id="roomDigest" sce:type="uint32" expr="0"/>
     <data id="full" sce:type="uint32" expr="0" sce:direction="out"/>
-    <data id="fresh" sce:type="bool" expr="false"/>
-    <data id="blocked" sce:type="bool" expr="false"/>
+    <data id="gone" sce:type="uint32" expr="0"/>
     <!-- What the host lets each member do (todo.role), the changes that were refused for it
-         (`denied`) and what the change in hand is judged by: whether its author may write. -->
+         (`denied`, a person's own and a peer's alike) and what the change in hand is judged
+         by: whether its author may write. -->
     <data id="roster" sce:type="list&lt;record:Member&gt;[todo_roster=64]"/>
     <data id="denied" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="forbidden" sce:type="bool" expr="false"/>
     <data id="authorized" sce:type="bool" expr="true"/>
+    <!-- The operations of the change in hand (`taking`), in the order of the change, the
+         next to take in at `took`, each read by an event of its own that carries no data;
+         and the operation in hand (`op`). A change of the copy's own is sent from
+         `taking` whole once every operation of it is taken in. -->
+    <data id="taking" sce:type="list&lt;record:Op&gt;[shared_parts=64]"/>
+    <data id="took" sce:type="uint32" expr="0"/>
+    <data id="op" sce:type="record:Op">
+      <sce:set name="kind" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
   </datamodel>
   <state id="open">
     <transition event="todo.join" type="internal">
       <assign location="node" expr="_event.data.node"/>
-      <assign location="hub" expr="_event.data.hub"/>
     </transition>
 
-    <!-- What the host lets this copy hold (todo.room): the most values, tombstones and
-         digest nodes. 0 is no limit of that kind. -->
+    <!-- How many values the host lets this copy hold (todo.room). 0 is no limit. -->
     <transition event="todo.room" type="internal">
       <assign location="roomValues" expr="_event.data.values"/>
-      <assign location="roomHistory" expr="_event.data.history"/>
-      <assign location="roomDigest" expr="_event.data.digest"/>
     </transition>
 
     <!-- What the host lets a member do (todo.role): the member takes the role, or is taken
-         off the roster by a role of 0. A copy with no roster refuses no one, and one with a
-         roster refuses a change of its own member's that is not a writer's, and the hub
-         what a member that is not a writer sends it. The roster is the host's word and the
-         copies take it alike, as they take the room. -->
+         off the roster by a role of 0. A copy with no roster refuses no one. The roster is
+         the host's word and the copies take it alike, as they take the room. -->
     <transition event="todo.role" type="internal">
       <assign location="roster" expr="EventRoster(roster, _event.data.node, _event.data.role)"/>
     </transition>
 
-    <!-- A person's change: stamped, then handled as any write is, and sent to the hub.
-         The values the person has seen in the field are the ones it writes over: each
-         is named in a supersede, here and at the hub, before the write itself.
+    <!-- A person's change of one field: judged whole, and taken in, or refused whole.
 
-         A copy that holds as much as the host let it (todo.room) refuses the change
-         whole, as it refuses a text that does not fit: before the clock moves and before
-         anything is sent, so that no copy holds half of it, and counts it in `full` for
-         the host to say that the list is full. A change to a register that already has
-         a value adds none and is not refused for the values; a change when the tombstones
-         or the digest are as many as allowed is, since each adds to them, and what lets it
-         through is a settle. -->
+         The text is read first, into a place nothing else reads: a text past what a person
+         writes is an assignment that fails and ends the block, so the change is refused
+         whole, with the clock where it was and nothing sent. It is refused, and counted in
+         `denied`, when the copy's member may not write (todo.role: with no roster set,
+         anyone may; with one, a member whose role is a writer's); and, counted in `full`,
+         when it would give a register that holds no value one more value past the room
+         the host gave the copy (todo.room).
+
+         A change that passes is stamped once and turned into its operations in `taking`:
+         a write-over of each value the copy holds in the field, in the order of `adds`,
+         each naming the dot of the value it writes over, then the write, whose dot is the
+         change's stamp and is carried once (record_op). A change of more operations than
+         `taking` holds is refused whole, by error.execution, before the clock moves. Then
+         every operation is queued to be taken in here, and after them the change is queued
+         to be sent: the copy holds the change before it sends it. -->
     <transition event="todo.edit" type="internal">
-      <!-- The text is read first, into a place nothing else reads: a text past its bound
-           is an assignment that fails and ends the block, so the change is refused
-           whole, with the clock where it was and nothing sent. The bound a person's text
-           has is the one `typed` holds, and the one a write has is wider. -->
       <assign location="typed" expr="_event.data.text"/>
-      <assign location="held.text" expr="_event.data.text"/>
       <assign location="entry.element" expr="_event.data.id"/>
       <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-      <assign location="fresh" expr="true"/>
-      <foreach array="adds" item="o">
-        <if cond="o.element === entry.element">
-          <assign location="fresh" expr="false"/>
-        </if>
-      </foreach>
-      <!-- Whether the host let this copy's member write (todo.role): with no roster set,
-           anyone; with one, a member whose role is a writer's. A change it may not make is
-           refused as one that does not fit is, before the clock moves, and counted in
-           `denied`. -->
       <assign location="forbidden" expr="false"/>
       <if cond="len(roster) &gt; 0">
         <assign location="forbidden" expr="true"/>
@@ -362,182 +303,67 @@
           </if>
         </foreach>
       </if>
-      <assign location="blocked" expr="!forbidden &amp;&amp; ((roomValues &gt; 0 &amp;&amp; fresh &amp;&amp; len(values) &gt;= roomValues) || (roomHistory &gt; 0 &amp;&amp; len(tombstones) &gt;= roomHistory) || (roomDigest &gt; 0 &amp;&amp; len(digest) &gt;= roomDigest))"/>
       <if cond="forbidden">
         <assign location="denied" expr="denied + 1"/>
       </if>
-      <if cond="blocked">
+      <assign location="gone" expr="0"/>
+      <foreach array="adds" item="o">
+        <if cond="o.element === entry.element">
+          <assign location="gone" expr="gone + 1"/>
+        </if>
+      </foreach>
+      <if cond="!forbidden &amp;&amp; roomValues &gt; 0 &amp;&amp; gone === 0 &amp;&amp; len(values) &gt;= roomValues">
         <assign location="full" expr="full + 1"/>
+        <assign location="forbidden" expr="true"/>
       </if>
-      <if cond="!blocked &amp;&amp; !forbidden">
-        <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
+      <if cond="!forbidden">
+        <assign location="stamp" expr="HlcSend(clock, _event.data.now, node)"/>
+        <sce:clear target="taking"/>
+        <assign location="took" expr="0"/>
         <foreach array="adds" item="o">
           <if cond="o.element === entry.element">
-            <send target="#_internal" event="todo.supersede">
-              <param name="id" expr="_event.data.id"/>
-              <param name="field" expr="_event.data.field"/>
-              <param name="wallTime" expr="o.wallTime"/>
-              <param name="counter" expr="o.counter"/>
-              <param name="nodeId" expr="o.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-            <send target="#server" event="todo.supersede">
-              <param name="id" expr="_event.data.id"/>
-              <param name="field" expr="_event.data.field"/>
-              <param name="wallTime" expr="o.wallTime"/>
-              <param name="counter" expr="o.counter"/>
-              <param name="nodeId" expr="o.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
+            <assign location="op.kind" expr="1"/>
+            <assign location="op.id" expr="_event.data.id"/>
+            <assign location="op.field" expr="_event.data.field"/>
+            <assign location="op.value" expr="0"/>
+            <assign location="op.text" expr="''"/>
+            <assign location="op.wallTime" expr="o.wallTime"/>
+            <assign location="op.counter" expr="o.counter"/>
+            <assign location="op.nodeId" expr="o.nodeId"/>
+            <sce:append target="taking" expr="op"/>
           </if>
         </foreach>
-        <send target="#_internal" event="todo.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="clock.wallTime"/>
-          <param name="counter" expr="clock.counter"/>
-          <param name="nodeId" expr="node"/>
-        </send>
-        <send target="#server" event="todo.write">
-          <param name="id" expr="_event.data.id"/>
-          <param name="field" expr="_event.data.field"/>
-          <param name="value" expr="_event.data.value"/>
-          <param name="text" expr="_event.data.text"/>
-          <param name="wallTime" expr="clock.wallTime"/>
-          <param name="counter" expr="clock.counter"/>
-          <param name="nodeId" expr="node"/>
-        </send>
+        <assign location="op.kind" expr="0"/>
+        <assign location="op.id" expr="_event.data.id"/>
+        <assign location="op.field" expr="_event.data.field"/>
+        <assign location="op.value" expr="_event.data.value"/>
+        <assign location="op.text" expr="_event.data.text"/>
+        <assign location="op.wallTime" expr="0"/>
+        <assign location="op.counter" expr="0"/>
+        <assign location="op.nodeId" expr="0"/>
+        <sce:append target="taking" expr="op"/>
+        <assign location="clock" expr="stamp"/>
+        <assign location="dot" expr="stamp"/>
+        <foreach array="taking" item="t">
+          <send target="#_internal" event="todo.take"/>
+        </foreach>
+        <send target="#_internal" event="todo.pass"/>
       </if>
     </transition>
 
-    <!-- A write stamped at or before the floor is not taken in, from anyone and however
-         often it arrives. Everything up to the floor was settled when the copies agreed on
-         it: a write of that time that this copy does not hold is one it forgot, with the
-         tombstone that named it, and taking it in again would bring the value back. A
-         person's copy stamps nothing at or before an instant it has answered for, so no
-         write that is new is refused here. -->
-    <transition event="todo.write" cond="floor &gt; 0 &amp;&amp; _event.data.wallTime &lt;= floor" type="internal">
-      <!-- It is counted only when this copy does not hold it: a live write that a peer
-           shows again, which a repair of another copy sends to every copy that reads the
-           same name, is held and changes nothing. -->
-      <assign location="held.id" expr="_event.data.id"/>
-      <assign location="held.field" expr="_event.data.field"/>
-      <assign location="held.wallTime" expr="_event.data.wallTime"/>
-      <assign location="held.counter" expr="_event.data.counter"/>
-      <assign location="held.nodeId" expr="_event.data.nodeId"/>
-      <assign location="present" expr="MvValueHolds(values, held)"/>
-      <if cond="!present">
-        <assign location="late" expr="late + 1"/>
-      </if>
-    </transition>
-
-    <!-- A write to a field, from a person here or from elsewhere: one more value, once.
-         The hub takes it only from a member the host let write (todo.role): a write whose
-         author is not on a roster that is set, or is on it with less than a writer's role,
-         is dropped whole and counted in `denied`, as a change a person's copy was not let
-         make is. -->
-    <transition event="todo.write" type="internal">
+    <!-- A peer's change, as the delivery layer gives it: once, whole, and after every
+         change its author had taken in when it made it (docs/adr/0085, section 3). Its
+         author is judged against the roster, on every copy: one the roster does not let
+         write is taken in as no change, counted in `denied`. Otherwise every operation is
+         queued to be taken in, in the order of the change, and then the clock is moved by
+         the change's stamp, once: a peer's change by `hlc_receive`; a change of this copy's
+         own node, which a copy that was started again from an older save is given back, up
+         to its stamp, so that what the copy stamps next is after it and never with a dot it
+         has used. The operations are read first: a change whose text does not fit what a
+         copy keeps fails there, ends the block and is taken in not at all. -->
+    <transition event="record_list.change" type="internal">
       <assign location="authorized" expr="true"/>
-      <if cond="hub &amp;&amp; len(roster) &gt; 0">
-        <assign location="authorized" expr="false"/>
-        <foreach array="roster" item="m">
-          <if cond="m.node === _event.data.nodeId &amp;&amp; m.role &gt;= 2">
-            <assign location="authorized" expr="true"/>
-          </if>
-        </foreach>
-      </if>
-      <if cond="!authorized">
-        <assign location="denied" expr="denied + 1"/>
-      </if>
-      <if cond="authorized">
-        <!-- The same, for a write that arrives: one whose text does not fit changes
-             nothing here and is passed on to no one, rather than being merged in part. -->
-        <assign location="held.text" expr="_event.data.text"/>
-        <if cond="_event.data.nodeId !== node">
-          <assign location="stamp.wallTime" expr="_event.data.wallTime"/>
-          <assign location="stamp.counter" expr="_event.data.counter"/>
-          <assign location="stamp.nodeId" expr="_event.data.nodeId"/>
-          <assign location="clock" expr="HlcReceive(clock, stamp, clock.wallTime, node)"/>
-        </if>
-        <!-- A write this copy made and no longer holds, which a peer sends back when the
-             copy has been restarted from an older save, is taken in with the clock moved
-             up to it, so that what the copy writes next is stamped after it and never with
-             a dot it has already used. A write made here that the clock already stands at
-             (every one, as it is first handled) moves nothing. -->
-        <if cond="_event.data.nodeId === node &amp;&amp; (_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter))">
-          <assign location="clock.wallTime" expr="_event.data.wallTime"/>
-          <assign location="clock.counter" expr="_event.data.counter"/>
-        </if>
-        <assign location="entry.element" expr="_event.data.id"/>
-        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-        <assign location="entry.counter" expr="_event.data.counter"/>
-        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-        <!-- Whether the write is live: no tombstone names it. One a person wrote over
-             before it arrived is not taken in, and only a live one is added. And whether
-             its value is already held, which a write that arrives twice is. -->
-        <assign location="isLive" expr="true"/>
-        <foreach array="tombstones" item="t">
-          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-            <assign location="isLive" expr="false"/>
-          </if>
-        </foreach>
-        <if cond="isLive">
-          <sce:clear target="one"/>
-          <sce:append target="one" expr="entry"/>
-          <assign location="adds" expr="OrsetUnion(adds, one)"/>
-        </if>
-        <assign location="held.id" expr="_event.data.id"/>
-        <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.value" expr="_event.data.value"/>
-        <assign location="held.wallTime" expr="_event.data.wallTime"/>
-        <assign location="held.counter" expr="_event.data.counter"/>
-        <assign location="held.nodeId" expr="_event.data.nodeId"/>
-        <assign location="present" expr="MvValueHolds(values, held)"/>
-        <if cond="isLive &amp;&amp; !present">
-          <assign location="values" expr="MvValueKeep(values, held)"/>
-          <send target="#_internal" event="todo.keep">
-            <param name="kind" expr="0"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-
-        <if cond="hub &amp;&amp; _event.data.nodeId !== 1">
-          <send target="#alice" event="todo.write">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="value" expr="_event.data.value"/>
-            <param name="text" expr="_event.data.text"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-        <if cond="hub &amp;&amp; _event.data.nodeId !== 2">
-          <send target="#bob" event="todo.write">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="value" expr="_event.data.value"/>
-            <param name="text" expr="_event.data.text"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-      </if>
-    </transition>
-
-    <!-- A value someone wrote over, from a person here or from elsewhere: its add is
-         named by a tombstone, and its value, if held, is taken out. The hub takes it only
-         from a member the host let write, as it takes a write (`by` is who wrote over). -->
-    <transition event="todo.supersede" type="internal">
-      <assign location="authorized" expr="true"/>
-      <if cond="hub &amp;&amp; len(roster) &gt; 0">
+      <if cond="len(roster) &gt; 0">
         <assign location="authorized" expr="false"/>
         <foreach array="roster" item="m">
           <if cond="m.node === _event.data.by &amp;&amp; m.role &gt;= 2">
@@ -549,462 +375,86 @@
         <assign location="denied" expr="denied + 1"/>
       </if>
       <if cond="authorized">
-        <assign location="entry.element" expr="_event.data.id"/>
-        <assign location="entry.element" expr="entry.element * 65536 + _event.data.field"/>
-        <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-        <assign location="entry.counter" expr="_event.data.counter"/>
-        <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-        <!-- Whether the tombstone is new, which one that arrives twice is not. -->
-        <assign location="known" expr="false"/>
-        <foreach array="tombstones" item="t">
-          <if cond="t.element === entry.element &amp;&amp; t.wallTime === entry.wallTime &amp;&amp; t.counter === entry.counter &amp;&amp; t.nodeId === entry.nodeId">
-            <assign location="known" expr="true"/>
-          </if>
+        <assign location="taking" expr="_event.data.ops"/>
+        <assign location="took" expr="0"/>
+        <assign location="dot.wallTime" expr="_event.data.wallTime"/>
+        <assign location="dot.counter" expr="_event.data.counter"/>
+        <assign location="dot.nodeId" expr="_event.data.by"/>
+        <foreach array="taking" item="t">
+          <send target="#_internal" event="todo.take"/>
         </foreach>
+        <if cond="dot.nodeId === node &amp;&amp; (dot.wallTime &gt; clock.wallTime || (dot.wallTime === clock.wallTime &amp;&amp; dot.counter &gt; clock.counter))">
+          <assign location="clock.wallTime" expr="dot.wallTime"/>
+          <assign location="clock.counter" expr="dot.counter"/>
+        </if>
+        <if cond="dot.nodeId !== node">
+          <assign location="clock" expr="HlcReceive(clock, dot, clock.wallTime, node)"/>
+        </if>
+      </if>
+    </transition>
+
+    <!-- The next operation of `taking`, taken in: a write gives its register one more
+         value, once, and a write-over takes the value it names out. This is where every
+         operation is merged, a copy's own and a peer's alike, and it keeps nothing of an
+         operation but its effect.
+
+         A write: its dot is the change's (`dot`). Unless its value is held already, its
+         add is added and its value kept. The text is read into the value it is kept in. -->
+    <transition event="todo.take" type="internal">
+      <assign location="op" expr="taking[took]"/>
+      <assign location="took" expr="took + 1"/>
+      <assign location="entry.element" expr="op.id"/>
+      <assign location="entry.element" expr="entry.element * 65536 + op.field"/>
+      <if cond="op.kind === 0">
+        <assign location="held.text" expr="op.text"/>
+        <assign location="held.id" expr="op.id"/>
+        <assign location="held.field" expr="op.field"/>
+        <assign location="held.value" expr="op.value"/>
+        <assign location="held.wallTime" expr="dot.wallTime"/>
+        <assign location="held.counter" expr="dot.counter"/>
+        <assign location="held.nodeId" expr="dot.nodeId"/>
+        <assign location="entry.wallTime" expr="dot.wallTime"/>
+        <assign location="entry.counter" expr="dot.counter"/>
+        <assign location="entry.nodeId" expr="dot.nodeId"/>
+        <assign location="present" expr="MvValueHolds(values, held)"/>
+        <if cond="!present">
+          <sce:clear target="one"/>
+          <sce:append target="one" expr="entry"/>
+          <assign location="adds" expr="OrsetUnion(adds, one)"/>
+          <assign location="values" expr="MvValueKeep(values, held)"/>
+        </if>
+      </if>
+      <!-- A write-over: the add of the dot it names leaves `adds` and its value leaves
+           `values`, and nothing is kept of it. Its write was given to this copy before it,
+           so no later delivery brings the value back. A write-over whose value is gone
+           already, because another change wrote it over first, changes nothing. -->
+      <if cond="op.kind === 1">
+        <assign location="entry.wallTime" expr="op.wallTime"/>
+        <assign location="entry.counter" expr="op.counter"/>
+        <assign location="entry.nodeId" expr="op.nodeId"/>
+        <assign location="held.id" expr="op.id"/>
+        <assign location="held.field" expr="op.field"/>
+        <assign location="held.wallTime" expr="op.wallTime"/>
+        <assign location="held.counter" expr="op.counter"/>
+        <assign location="held.nodeId" expr="op.nodeId"/>
+        <assign location="wasLive" expr="MvValueHolds(values, held)"/>
         <sce:clear target="one"/>
         <sce:append target="one" expr="entry"/>
-        <assign location="tombstones" expr="OrsetUnion(tombstones, one)"/>
-        <!-- The add it names is no longer live: it leaves `adds` (a tombstone that is
-             not new leaves nothing to take out). -->
         <assign location="adds" expr="OrsetLive(adds, one)"/>
-
-        <!-- And whether the write it names is held, which is when its add leaves the
-             digest as the tombstone enters it. -->
-        <assign location="held.id" expr="_event.data.id"/>
-        <assign location="held.field" expr="_event.data.field"/>
-        <assign location="held.wallTime" expr="_event.data.wallTime"/>
-        <assign location="held.counter" expr="_event.data.counter"/>
-        <assign location="held.nodeId" expr="_event.data.nodeId"/>
-        <assign location="wasLive" expr="MvValueHolds(values, held)"/>
         <assign location="values" expr="MvValueDrop(values, held)"/>
-        <if cond="!known">
-          <send target="#_internal" event="todo.keep">
-            <param name="kind" expr="1"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-        <if cond="wasLive">
-          <send target="#_internal" event="todo.keep">
-            <param name="kind" expr="0"/>
-            <param name="element" expr="entry.element"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-          </send>
-        </if>
-
-        <if cond="hub &amp;&amp; _event.data.by !== 1">
-          <send target="#alice" event="todo.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-            <param name="by" expr="_event.data.by"/>
-          </send>
-        </if>
-        <if cond="hub &amp;&amp; _event.data.by !== 2">
-          <send target="#bob" event="todo.supersede">
-            <param name="id" expr="_event.data.id"/>
-            <param name="field" expr="_event.data.field"/>
-            <param name="wallTime" expr="_event.data.wallTime"/>
-            <param name="counter" expr="_event.data.counter"/>
-            <param name="nodeId" expr="_event.data.nodeId"/>
-            <param name="by" expr="_event.data.by"/>
-          </send>
-        </if>
       </if>
     </transition>
 
-    <!-- A change taken in for the first time, told to the digest: its hash is XORed
-         into every node on the path of its minute. An add that a tombstone has named
-         is told again, which takes it out. The hash is merkle_change_hash's, of the
-         entry the change names and its kind. -->
-    <transition event="todo.keep" type="internal">
-      <assign location="entry.element" expr="_event.data.element"/>
-      <assign location="entry.wallTime" expr="_event.data.wallTime"/>
-      <assign location="entry.counter" expr="_event.data.counter"/>
-      <assign location="entry.nodeId" expr="_event.data.nodeId"/>
-      <assign location="mine" expr="MerkleChangeHash(entry, _event.data.kind)"/>
-      <assign location="digest" expr="MerkleInsert(digest, _event.data.wallTime / 60000, mine)"/>
-    </transition>
-
-    <!-- The host's word that the changes up to an instant are settled everywhere: the
-         tombstones stamped at or before it go, and leave the digest as they entered it
-         (the same hash, XORed again), so that the digest is still the digest of what the
-         copy holds, and a copy that is told the same instant holds the same. The adds
-         they named left `adds` when each tombstone arrived, and a register's values are
-         what no tombstone names, so neither is moved: the tombstones are what grows
-         without it, and this is what lets a copy that is written to for years hold only
-         what is current (orset_live, the difference that is how a set forgets). -->
-    <transition event="todo.compact" type="internal">
-      <sce:clear target="stable"/>
-      <assign location="frozenFor" expr="-1"/>
-      <foreach array="tombstones" item="t">
-        <if cond="t.wallTime &lt;= _event.data.before">
-          <sce:append target="stable" expr="t"/>
-          <assign location="mine" expr="MerkleChangeHash(t, 1)"/>
-          <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
-        </if>
-      </foreach>
-      <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
-      <if cond="_event.data.before &gt; floor">
-        <assign location="floor" expr="_event.data.before"/>
-      </if>
-    </transition>
-
-    <!-- The host asks the hub to settle what is stamped at or before an instant, so that
-         the copies decide the instant themselves and no host has to know that every copy
-         holds everything up to it. The hub moves its clock past the instant, asks each
-         person's copy what it holds (todo.propose), and repeats the last instant it
-         settled to both, so that a copy that missed it is told again. -->
-    <transition event="todo.settle" type="internal">
-      <if cond="hub &amp;&amp; _event.data.before &gt; floor">
-        <assign location="pending" expr="_event.data.before"/>
-        <assign location="members" expr="_event.data.members"/>
-        <sce:clear target="answers"/>
-        <if cond="clock.wallTime &lt;= _event.data.before">
-          <assign location="clock.wallTime" expr="_event.data.before + 1"/>
-          <assign location="clock.counter" expr="0"/>
-        </if>
-        <send target="#alice" event="todo.propose">
-          <param name="before" expr="_event.data.before"/>
-        </send>
-        <send target="#bob" event="todo.propose">
-          <param name="before" expr="_event.data.before"/>
-        </send>
-      </if>
-    </transition>
-
-    <!-- A person's copy is asked what it holds up to an instant. It moves its clock past
-         the instant first, so that what it stamps from now on is after it, and then
-         takes what it holds of the tombstones up to the instant and the hash of the
-         adds and tombstones (event_settled): the tombstones are what it will forget if
-         the hub settles, and no others, so that a tombstone that arrives after it
-         answered is kept with the value it names. -->
-    <transition event="todo.propose" type="internal">
-      <if cond="!hub &amp;&amp; _event.data.before &gt; floor">
-        <if cond="clock.wallTime &lt;= _event.data.before">
-          <assign location="clock.wallTime" expr="_event.data.before + 1"/>
-          <assign location="clock.counter" expr="0"/>
-        </if>
-        <sce:clear target="stable"/>
-        <foreach array="tombstones" item="t">
-          <if cond="t.wallTime &lt;= _event.data.before">
-            <sce:append target="stable" expr="t"/>
-          </if>
-        </foreach>
-        <assign location="frozenFor" expr="_event.data.before"/>
-        <assign location="frozenHash" expr="EventSettled(adds, tombstones, _event.data.before)"/>
-        <send target="#server" event="todo.ack">
-          <param name="sender" expr="node"/>
-          <param name="before" expr="_event.data.before"/>
-          <param name="hash" expr="frozenHash"/>
-        </send>
-      </if>
-    </transition>
-
-    <!-- The hub reads an answer only for the round it has open, and keeps each distinct
-         answer (a copy and the hash it gave). A copy whose answer is the hub's own,
-         now, held exactly what the hub holds when it answered, and stamps nothing at or
-         before the instant after: when as many different copies as the host named
-         (`members`) have such an answer, every copy held the same up to the instant, and
-         the instant is settled. The hub tells every copy, itself included, to forget. An
-         answer that differs settles nothing; the round stays open for a later answer, or
-         for the host's next todo.settle. -->
-    <transition event="todo.ack" type="internal">
-      <if cond="hub &amp;&amp; _event.data.before === pending">
-        <assign location="mine" expr="EventSettled(adds, tombstones, pending)"/>
-        <assign location="known" expr="false"/>
-        <foreach array="answers" item="a">
-          <if cond="a.sender === _event.data.sender &amp;&amp; a.hash === _event.data.hash">
-            <assign location="known" expr="true"/>
-          </if>
-        </foreach>
-        <if cond="!known">
-          <assign location="answer.sender" expr="_event.data.sender"/>
-          <assign location="answer.hash" expr="_event.data.hash"/>
-          <sce:append target="answers" expr="answer"/>
-        </if>
-        <!-- No copy has two answers of one hash, so the answers that are the hub's are
-             as many as the copies that hold what it holds. -->
-        <assign location="agreeing" expr="0"/>
-        <foreach array="answers" item="a">
-          <if cond="a.hash === mine">
-            <assign location="agreeing" expr="agreeing + 1"/>
-          </if>
-        </foreach>
-        <if cond="members &gt; 0 &amp;&amp; agreeing &gt;= members">
-          <sce:clear target="stable"/>
-          <foreach array="tombstones" item="t">
-            <if cond="t.wallTime &lt;= pending">
-              <sce:append target="stable" expr="t"/>
-            </if>
-          </foreach>
-          <assign location="frozenFor" expr="pending"/>
-          <assign location="frozenHash" expr="mine"/>
-          <send target="#alice" event="todo.floor">
-            <param name="before" expr="pending"/>
-            <param name="hash" expr="mine"/>
-          </send>
-          <send target="#bob" event="todo.floor">
-            <param name="before" expr="pending"/>
-            <param name="hash" expr="mine"/>
-          </send>
-          <send target="#_internal" event="todo.floor">
-            <param name="before" expr="pending"/>
-            <param name="hash" expr="mine"/>
-          </send>
-          <assign location="pending" expr="-1"/>
-        </if>
-        <!-- The copies are told the last instant settled when an answer is not the hub's
-             and there was one: a copy that took part in it finds that it holds what was
-             agreed or has forgotten it already, and one that did not (restarted from an
-             old save) finds that it never did, and is stale. -->
-        <if cond="_event.data.hash !== mine &amp;&amp; floor &gt; 0">
-          <send target="#alice" event="todo.floor">
-            <param name="before" expr="floor"/>
-            <param name="hash" expr="agreed"/>
-          </send>
-          <send target="#bob" event="todo.floor">
-            <param name="before" expr="floor"/>
-            <param name="hash" expr="agreed"/>
-          </send>
-        </if>
-      </if>
-    </transition>
-
-    <!-- The hub's word that an instant is settled. A copy that held what the hub says
-         every copy held (it answered, or it holds it now) forgets the tombstones it held
-         up to the instant, and stamps nothing at or before the
-         instant from here on. A copy that holds another thing is not one the hub asked:
-         it forgets nothing, and says it is stale, for the host to start it again from
-         what its peers hold, since the tombstones its peers forgot are the ones that
-         would tell it which of its values were written over. -->
-    <transition event="todo.floor" type="internal">
-      <if cond="_event.data.before &gt; floor">
-        <if cond="frozenFor !== _event.data.before">
-          <sce:clear target="stable"/>
-          <foreach array="tombstones" item="t">
-            <if cond="t.wallTime &lt;= _event.data.before">
-              <sce:append target="stable" expr="t"/>
-            </if>
-          </foreach>
-          <assign location="frozenFor" expr="_event.data.before"/>
-          <assign location="frozenHash" expr="EventSettled(adds, tombstones, _event.data.before)"/>
-        </if>
-        <if cond="frozenHash === _event.data.hash">
-          <if cond="clock.wallTime &lt;= _event.data.before">
-            <assign location="clock.wallTime" expr="_event.data.before + 1"/>
-            <assign location="clock.counter" expr="0"/>
-          </if>
-          <foreach array="stable" item="t">
-            <assign location="mine" expr="MerkleChangeHash(t, 1)"/>
-            <assign location="digest" expr="MerkleInsert(digest, t.wallTime / 60000, mine)"/>
-          </foreach>
-          <assign location="tombstones" expr="OrsetLive(tombstones, stable)"/>
-          <assign location="floor" expr="_event.data.before"/>
-          <assign location="agreed" expr="_event.data.hash"/>
-          <assign location="stale" expr="false"/>
-          <assign location="frozenFor" expr="-1"/>
-        </if>
-        <if cond="frozenHash !== _event.data.hash">
-          <assign location="stale" expr="true"/>
-        </if>
-      </if>
-    </transition>
-
-    <!-- The host's word that this copy's link is back: it shows its peers the root of
-         its digest. A person's copy has only the hub to show it to; the hub shows every
-         person (to 0), however many the host has. -->
-    <transition event="todo.resync" type="internal">
-      <send target="#_internal" event="todo.visit">
-        <param name="to" expr="0"/>
-        <param name="depth" expr="0"/>
-        <param name="prefix" expr="0"/>
-        <param name="reply" expr="false"/>
+    <!-- A change of this copy's own, sent to its peers whole once every operation of it is
+         taken in here: its author, its stamp and its operations, in their order. The send
+         is the whole of the block, so one that fails where it is made fails alone. -->
+    <transition event="todo.pass" type="internal">
+      <send target="#people" event="record_list.change">
+        <param name="by" expr="dot.nodeId"/>
+        <param name="wallTime" expr="dot.wallTime"/>
+        <param name="counter" expr="dot.counter"/>
+        <param name="ops" expr="taking"/>
       </send>
-    </transition>
-
-    <!-- Show a peer the node of this copy's digest at a place: the hash it holds there,
-         0 where it holds nothing. -->
-    <transition event="todo.visit" type="internal">
-      <assign location="mine" expr="0"/>
-      <foreach array="digest" item="n">
-        <if cond="n.depth === _event.data.depth &amp;&amp; n.prefix === _event.data.prefix">
-          <assign location="mine" expr="n.hash"/>
-        </if>
-      </foreach>
-      <if cond="!hub">
-        <send target="#server" event="todo.node">
-          <param name="sender" expr="node"/>
-          <param name="to" expr="0"/>
-          <param name="depth" expr="_event.data.depth"/>
-          <param name="prefix" expr="_event.data.prefix"/>
-          <param name="hash" expr="mine"/>
-          <param name="reply" expr="_event.data.reply"/>
-        </send>
-      </if>
-      <!-- The hub reaches its people by two names, `#alice` and `#bob`: the first is every
-           person but the second and the second every person but the first, so that a
-           person other than those two is reached by either, and the second only by its
-           own. The node says whom it is for (`to`, 0 for all) and a person that it is
-           not for lets it go. -->
-      <if cond="hub &amp;&amp; _event.data.to !== 2">
-        <send target="#alice" event="todo.node">
-          <param name="sender" expr="node"/>
-          <param name="to" expr="_event.data.to"/>
-          <param name="depth" expr="_event.data.depth"/>
-          <param name="prefix" expr="_event.data.prefix"/>
-          <param name="hash" expr="mine"/>
-          <param name="reply" expr="_event.data.reply"/>
-        </send>
-      </if>
-      <if cond="hub &amp;&amp; (_event.data.to === 2 || _event.data.to === 0)">
-        <send target="#bob" event="todo.node">
-          <param name="sender" expr="node"/>
-          <param name="to" expr="_event.data.to"/>
-          <param name="depth" expr="_event.data.depth"/>
-          <param name="prefix" expr="_event.data.prefix"/>
-          <param name="hash" expr="mine"/>
-          <param name="reply" expr="_event.data.reply"/>
-        </send>
-      </if>
-    </transition>
-
-    <!-- A node of a peer's digest: where this copy's own differs, the peer is shown the
-         children of it, and at a minute the changes of that minute are sent. A node that
-         is the same on both sides ends the walk there. At a minute the peer is also shown
-         this copy's node once, so that it sends its changes too; that one is marked, and
-         is not answered. -->
-    <transition event="todo.node" type="internal">
-      <if cond="hub || _event.data.to === 0 || _event.data.to === node">
-        <assign location="mine" expr="0"/>
-        <foreach array="digest" item="n">
-          <if cond="n.depth === _event.data.depth &amp;&amp; n.prefix === _event.data.prefix">
-            <assign location="mine" expr="n.hash"/>
-          </if>
-        </foreach>
-        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth &lt; 30">
-          <send target="#_internal" event="todo.visit">
-            <param name="to" expr="_event.data.sender"/>
-            <param name="depth" expr="_event.data.depth + 1"/>
-            <param name="prefix" expr="_event.data.prefix * 3"/>
-            <param name="reply" expr="false"/>
-          </send>
-          <send target="#_internal" event="todo.visit">
-            <param name="to" expr="_event.data.sender"/>
-            <param name="depth" expr="_event.data.depth + 1"/>
-            <param name="prefix" expr="_event.data.prefix * 3 + 1"/>
-            <param name="reply" expr="false"/>
-          </send>
-          <send target="#_internal" event="todo.visit">
-            <param name="to" expr="_event.data.sender"/>
-            <param name="depth" expr="_event.data.depth + 1"/>
-            <param name="prefix" expr="_event.data.prefix * 3 + 2"/>
-            <param name="reply" expr="false"/>
-          </send>
-        </if>
-        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30">
-          <send target="#_internal" event="todo.share">
-            <param name="to" expr="_event.data.sender"/>
-            <param name="minute" expr="_event.data.prefix"/>
-          </send>
-        </if>
-        <if cond="mine !== _event.data.hash &amp;&amp; _event.data.depth === 30 &amp;&amp; !_event.data.reply">
-          <send target="#_internal" event="todo.visit">
-            <param name="to" expr="_event.data.sender"/>
-            <param name="depth" expr="30"/>
-            <param name="prefix" expr="_event.data.prefix"/>
-            <param name="reply" expr="true"/>
-          </send>
-        </if>
-      </if>
-    </transition>
-
-    <!-- The changes this copy holds that fall in one minute, sent to a peer as the
-         writes and supersedes they were. A live write is held with its value; a
-         tombstone names its register by the element, which is taken back to the
-         to-do and the field. -->
-    <transition event="todo.share" type="internal">
-      <foreach array="values" item="v">
-        <if cond="v.wallTime / 60000 === _event.data.minute">
-          <assign location="shareId" expr="v.id"/>
-          <assign location="shareField" expr="v.field"/>
-          <if cond="!hub">
-            <send target="#server" event="todo.write">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="value" expr="v.value"/>
-              <param name="text" expr="v.text"/>
-              <param name="wallTime" expr="v.wallTime"/>
-              <param name="counter" expr="v.counter"/>
-              <param name="nodeId" expr="v.nodeId"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to !== 2">
-            <send target="#alice" event="todo.write">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="value" expr="v.value"/>
-              <param name="text" expr="v.text"/>
-              <param name="wallTime" expr="v.wallTime"/>
-              <param name="counter" expr="v.counter"/>
-              <param name="nodeId" expr="v.nodeId"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to === 2">
-            <send target="#bob" event="todo.write">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="value" expr="v.value"/>
-              <param name="text" expr="v.text"/>
-              <param name="wallTime" expr="v.wallTime"/>
-              <param name="counter" expr="v.counter"/>
-              <param name="nodeId" expr="v.nodeId"/>
-            </send>
-          </if>
-        </if>
-      </foreach>
-      <foreach array="tombstones" item="t">
-        <if cond="t.wallTime / 60000 === _event.data.minute">
-          <assign location="shareId" expr="t.element / 65536"/>
-          <assign location="shareField" expr="t.element % 65536"/>
-          <if cond="!hub">
-            <send target="#server" event="todo.supersede">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="wallTime" expr="t.wallTime"/>
-              <param name="counter" expr="t.counter"/>
-              <param name="nodeId" expr="t.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to !== 2">
-            <send target="#alice" event="todo.supersede">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="wallTime" expr="t.wallTime"/>
-              <param name="counter" expr="t.counter"/>
-              <param name="nodeId" expr="t.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-          </if>
-          <if cond="hub &amp;&amp; _event.data.to === 2">
-            <send target="#bob" event="todo.supersede">
-              <param name="id" expr="shareId"/>
-              <param name="field" expr="shareField"/>
-              <param name="wallTime" expr="t.wallTime"/>
-              <param name="counter" expr="t.counter"/>
-              <param name="nodeId" expr="t.nodeId"/>
-              <param name="by" expr="node"/>
-            </send>
-          </if>
-        </if>
-      </foreach>
     </transition>
 
     <!-- The host asks what a to-do has scheduled in a window: its occurrences there,
