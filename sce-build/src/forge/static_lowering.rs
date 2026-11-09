@@ -16454,11 +16454,7 @@ impl StaticTarget for SwiftTarget {
     // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
         use crate::forge::composed_lowering::{ComposedSpelling, SwiftCarrier, SwiftComposed};
-        SwiftComposed {
-            machine,
-            carrier: SwiftCarrier::Json,
-        }
-        .record_type(alias)
+        SwiftComposed::new(machine, SwiftCarrier::Json).record_type(alias)
     }
     // The runtime's `PayloadValue` reads each constructor of a composed payload,
     // and its typed writers write the JSON the inject seam carries as the event's
@@ -16467,10 +16463,12 @@ impl StaticTarget for SwiftTarget {
         &self,
         machine: &'a str,
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
-        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
-            machine,
-            carrier: crate::forge::composed_lowering::SwiftCarrier::Json,
-        }))
+        Some(Box::new(
+            crate::forge::composed_lowering::SwiftComposed::new(
+                machine,
+                crate::forge::composed_lowering::SwiftCarrier::Json,
+            ),
+        ))
     }
     // The walks of `composed_spelling`, the JSON they write held as the
     // `WireValue` every param of a `<send>` is held in (`wire_value`) until the
@@ -16479,10 +16477,12 @@ impl StaticTarget for SwiftTarget {
         &self,
         machine: &'a str,
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
-        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
-            machine,
-            carrier: crate::forge::composed_lowering::SwiftCarrier::Wire,
-        }))
+        Some(Box::new(
+            crate::forge::composed_lowering::SwiftComposed::new(
+                machine,
+                crate::forge::composed_lowering::SwiftCarrier::Wire,
+            ),
+        ))
     }
     // A struct of the schema's fields in the schema's order, named as the author
     // wrote them because an expression reads a field by that name

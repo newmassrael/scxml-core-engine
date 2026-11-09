@@ -7286,10 +7286,7 @@ fn swift_composed_payload(
         .iter()
         .map(|e| (e.alias.clone(), e.machine_enum()))
         .collect();
-    let spelling = composed::SwiftComposed {
-        machine: machine_name,
-        carrier: composed::SwiftCarrier::Json,
-    };
+    let spelling = composed::SwiftComposed::new(machine_name, composed::SwiftCarrier::Json);
     let walked = |result: Result<Vec<(String, String)>, String>| {
         result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
     };

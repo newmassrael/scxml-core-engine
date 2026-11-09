@@ -35,6 +35,29 @@ use super::*;
 pub struct SwiftComposed<'a> {
     pub machine: &'a str,
     pub carrier: SwiftCarrier,
+    /// Whether the spelling names a read of a union's tag, which is how a
+    /// backend says it holds a union at all
+    /// ([`ComposedSpelling::union_tag_read`]). A machine takes it from the
+    /// backend's row ([`Self::new`]), so the spelling and the row cannot
+    /// disagree; a test of the spellings that are written before the row says
+    /// so sets it itself.
+    pub unions: bool,
+}
+
+impl<'a> SwiftComposed<'a> {
+    /// The spelling of the machine `machine`, as the backend's row of the one
+    /// table of what each backend lowers says it holds
+    /// ([`crate::forge::event_schema_check::ComposedLowering::of`]).
+    pub fn new(machine: &'a str, carrier: SwiftCarrier) -> Self {
+        Self {
+            machine,
+            carrier,
+            unions: crate::forge::event_schema_check::ComposedLowering::of(
+                crate::generator::Language::Swift,
+            )
+            .unions,
+        }
+    }
 }
 
 /// Where a Swift writer's JSON goes: the writers spell every composed value as
@@ -670,8 +693,9 @@ impl ComposedSpelling for SwiftComposed<'_> {
     }
     // The tag is read by the one property every union of a Swift unit and of a
     // Swift machine answers it by, whatever key it is written under on the wire.
+    // A machine that holds no union yet ([`SwiftComposed::unions`]) names none.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        Some(SWIFT_UNION_KIND.to_string())
+        self.unions.then(|| SWIFT_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
         swift_case_read(variant)
@@ -891,6 +915,7 @@ mod tests {
     const SWIFT: SwiftComposed<'static> = SwiftComposed {
         machine: "M",
         carrier: SwiftCarrier::Json,
+        unions: true,
     };
 
     /// The Swift row of the one table of what each backend lowers of a
@@ -1138,6 +1163,7 @@ mod tests {
         let wire = SwiftComposed {
             machine: "M",
             carrier: SwiftCarrier::Wire,
+            unions: true,
         };
         let written = writer(
             &ty("list<list<uint8>[2]>[2]"),
