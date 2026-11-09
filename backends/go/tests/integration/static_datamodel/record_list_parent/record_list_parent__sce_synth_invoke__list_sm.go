@@ -7146,7 +7146,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7166,7 +7166,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7705,7 +7705,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7729,7 +7729,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
