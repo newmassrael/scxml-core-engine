@@ -104,10 +104,13 @@ impl Reach {
 }
 
 /// Hold `parsed`, the suite or a document it reaches, to the rules of its
-/// kind that no backend decides: its names, its import graph, a schema's
+/// kind that no backend decides, in the order `check` asks them: its names,
+/// its import graph, the units of its quantities, its cycles, a schema's
 /// revisions, a union's cases, a template's matchers and references, and how
 /// a port type, a configuration, a test case and a suite fit the documents
-/// they import. `dir` is the directory its imports resolve against.
+/// they import. The rules of the kinds the export reads no document of (a
+/// transform's, a codec's) are not asked. `dir` is the directory its imports
+/// resolve against.
 pub(super) fn check_document(
     parsed: &ParsedForge,
     dir: &Path,
@@ -116,6 +119,8 @@ pub(super) fn check_document(
     crate::forge::provenance::validate_forge_emission_provenance(&parsed.document, label)?;
     crate::forge::namespace::check(parsed, label)?;
     crate::forge::cross_kind_check::check(parsed, dir, label)?;
+    crate::forge::quantity_check::check(parsed, label)?;
+    crate::forge::cycle_check::check(parsed, dir, label)?;
     crate::forge::schema_revision::check(parsed, dir, label)?;
     crate::forge::union_check::check(parsed, dir, label)?;
     crate::forge::test_template_check::check(parsed, dir, label)?;
