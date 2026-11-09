@@ -1933,5 +1933,12 @@ name = "a_test_suite_export_is_written_whole_or_not_at_all"
 path = "tests/a_test_suite_export_is_written_whole_or_not_at_all.rs"
 required-features = ["cli"]
 
+# A plan names the machine a hyphenated stem spells, as the build reads it from the plan. It
+# runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_plan_names_the_machine_a_hyphenated_stem_spells"
+path = "tests/a_plan_names_the_machine_a_hyphenated_stem_spells.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
