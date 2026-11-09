@@ -439,6 +439,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          `check` needs no counterpart",
     ),
     f(
+        "--plan-machines",
+        Reach::Emission,
+        Some(&["--plan", "--plan-machines"]),
+        "rust",
+        "adds to a plan the machine name of each planned generation's \
+         statechart, the name the parse already gave the model; it reads the \
+         document no differently, so `check` needs no counterpart",
+    ),
+    f(
         "--plan-reads",
         Reach::Emission,
         Some(&["--plan", "--plan-reads", "{probe_file}"]),

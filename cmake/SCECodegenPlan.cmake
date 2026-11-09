@@ -5,7 +5,7 @@
 # A build system has to declare a command's outputs before the command has
 # run, and the files a document produces are not all files its author wrote:
 # an inline `<invoke>` becomes a child document with a machine of its own
-# (`<stem>__sce_synth_invoke__<id>`), an `<invoke>` that names its target
+# (`<machine>__sce_synth_invoke__<id>`), an `<invoke>` that names its target
 # through an expression brings a stub or a candidate with it, and a document
 # that declares its transition function has a header of it written beside the
 # machine. Both CMake routes that generate at build time used to list those
@@ -27,6 +27,17 @@
 # `sce_codegen_generation`, which asks it and declares the command, and
 # `the_conformance_cmake_route_declares_what_the_generator_plans` holds all
 # three to that.
+#
+# The machine a statechart's generation writes is named by the generator too:
+# its machine name is the document's file stem written as an identifier
+# (docs/SCE_ACCEPTED_SUBSET.md, `job-tester.scxml` is the machine `job_tester`,
+# written to `job_tester_sm.h` in `namespace SCE::Generated::job_tester`), and
+# every plan states it (`--plan-machines`), the run's own and each child
+# generation's. The module names a machine's files from that statement and
+# never from the stem: a stem it spelled into `<stem>_sm.h` itself was a
+# second spelling of the generator's name, and a hyphenated or camelCase stem
+# made the plan refuse the generation it was declaring, as one that does not
+# name the file its command produces.
 #
 # A generation with a deploy writes the machine and the transport the deploy
 # routes it through, in one run: the generator decides which files a run
@@ -331,11 +342,16 @@ endfunction()
 #   generations need linked (`<PREFIX>_REQUIRES`), so a route that links a
 #   machine reads it from the answer it already asks for.
 #
+#   `--plan-machines`: every plan states the machine name of the statechart
+#   each of its generations writes (`<PREFIX>_MACHINE_NAME`), which names the
+#   machine's files (`_sce_codegen_plan_machine`): the generator's name, read
+#   rather than spelled again here from the stem.
+#
 #   `--no-format`: formatting changes bytes and never which files, and a plan
 #   is asked once per generation when the tree is configured, so it neither
 #   waits for clang-format on every file nor needs one there.
 function(_sce_codegen_plan_arguments VAR RUN FORMATS LANGUAGE OUTPUT_DIR INPUT_ROOT CHILD_GENERATIONS)
-    set(_ARGUMENTS --plan --plan-requires)
+    set(_ARGUMENTS --plan --plan-requires --plan-machines)
     if(CHILD_GENERATIONS)
         list(APPEND _ARGUMENTS --plan-children)
     endif()
@@ -356,8 +372,8 @@ endfunction()
 #   with: an output directory and a language are always given, a document's
 #   generation names its STEM, and the children of a generation are planned
 #   only in a language whose machine this module names
-#   (`_sce_codegen_plan_machine`), since a child's command waits for the
-#   machine of the generation that writes its document.
+#   (`_sce_codegen_plan_names_machines`), since a child's command waits for
+#   the machine of the generation that writes its document.
 function(_sce_codegen_plan_options_judged PARSED CALLER)
     foreach(_REQUIRED OUTPUT_DIR LANGUAGE)
         if("${${PARSED}_${_REQUIRED}}" STREQUAL "")
@@ -368,9 +384,8 @@ function(_sce_codegen_plan_options_judged PARSED CALLER)
         message(FATAL_ERROR "${CALLER}: STEM is required with DOCUMENT")
     endif()
     if(${PARSED}_CHILD_GENERATIONS)
-        _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${${PARSED}_STEM}"
-            "${${PARSED}_LANGUAGE}")
-        if("${_MACHINE}" STREQUAL "")
+        _sce_codegen_plan_names_machines(_NAMES_MACHINES "${${PARSED}_LANGUAGE}")
+        if(NOT _NAMES_MACHINES)
             message(FATAL_ERROR
                 "${CALLER}: CHILD_GENERATIONS plans the children of a ${${PARSED}_LANGUAGE} "
                 "generation, a language whose machine this module does not name; the "
@@ -741,29 +756,53 @@ if(NOT CMAKE_SCRIPT_MODE_FILE)
     unset(_SCE_CODEGEN_PLAN_SETTLE_CALL)
 endif()
 
-# _sce_codegen_plan_machine(<MACHINE_VAR> <DEPFILE_VAR> <STEM> <LANGUAGE>)
+# _sce_codegen_plan_names_machines(<VAR> <LANGUAGE>)
 #
-#   The machine a generation of each language writes for the document of
-#   STEM, header first, and the name of the depfile it is asked to write
+#   Whether this module names the machine a generation of LANGUAGE writes:
+#   whether `_sce_codegen_plan_machine` gives a machine of that language any
+#   file, asked of it so the languages are listed in the one place (C++ and
+#   C11, the languages a target compiles at build time).
+function(_sce_codegen_plan_names_machines VAR LANGUAGE)
+    _sce_codegen_plan_machine(_FILES _UNUSED_DEPFILE "machine" "${LANGUAGE}")
+    if("${_FILES}" STREQUAL "")
+        set(${VAR} FALSE PARENT_SCOPE)
+    else()
+        set(${VAR} TRUE PARENT_SCOPE)
+    endif()
+endfunction()
+
+# _sce_codegen_plan_machine(<MACHINE_VAR> <DEPFILE_VAR> <MACHINE_NAME> <LANGUAGE>)
+#
+#   The files of the machine MACHINE_NAME a generation of each language
+#   writes, header first, and the name of the depfile it is asked to write
 #   beside it. The one place a build names them: every declaration of a
 #   machine reads them from here, and every plan is held to naming them.
+#
+#   MACHINE_NAME is the generator's: the name a plan states for the
+#   generation (`\tmachine\t<generation>\t<name>`, `--plan-machines`), the
+#   document's file stem written as an identifier, never the stem as the
+#   caller wrote it. `job-tester.scxml` is the machine `job_tester`, whose
+#   header is `job_tester_sm.h`.
 #
 #   A language a target compiles at build time is C++ or C11; a generation
 #   of another one (Rust, Kotlin, Go, Python, which `sce_add_state_machine`
 #   generates for a build of their own) has no machine named here, both are
 #   empty, and its step produces the first file its plan names, as a forge
-#   document's does.
-function(_sce_codegen_plan_machine MACHINE_VAR DEPFILE_VAR STEM LANGUAGE)
-    if(LANGUAGE STREQUAL "cpp")
-        set(${MACHINE_VAR} "${STEM}_sm.h" PARENT_SCOPE)
-        set(${DEPFILE_VAR} "${STEM}_sm.h.d" PARENT_SCOPE)
+#   document's does. So is a generation whose plan states no machine name.
+function(_sce_codegen_plan_machine MACHINE_VAR DEPFILE_VAR MACHINE_NAME LANGUAGE)
+    if("${MACHINE_NAME}" STREQUAL "")
+        set(${MACHINE_VAR} "" PARENT_SCOPE)
+        set(${DEPFILE_VAR} "" PARENT_SCOPE)
+    elseif(LANGUAGE STREQUAL "cpp")
+        set(${MACHINE_VAR} "${MACHINE_NAME}_sm.h" PARENT_SCOPE)
+        set(${DEPFILE_VAR} "${MACHINE_NAME}_sm.h.d" PARENT_SCOPE)
     elseif(LANGUAGE STREQUAL "c11")
         # The source is the second output and the depfile sits beside it. With
         # the source first, ninja on CMake 3.x read the depfile as describing
         # another edge ("expected depfile ... to mention '_sm.c', got '_sm.h'")
         # and regenerated every C11 machine on every build.
-        set(${MACHINE_VAR} "${STEM}_sm.h" "${STEM}_sm.c" PARENT_SCOPE)
-        set(${DEPFILE_VAR} "${STEM}_sm.c.d" PARENT_SCOPE)
+        set(${MACHINE_VAR} "${MACHINE_NAME}_sm.h" "${MACHINE_NAME}_sm.c" PARENT_SCOPE)
+        set(${DEPFILE_VAR} "${MACHINE_NAME}_sm.c.d" PARENT_SCOPE)
     else()
         set(${MACHINE_VAR} "" PARENT_SCOPE)
         set(${DEPFILE_VAR} "" PARENT_SCOPE)
@@ -782,9 +821,13 @@ endfunction()
 #   Ask the generator which files generating DOCUMENT (or compiling the set
 #   DOCUMENTS, or rendering the harness of MANIFEST) into OUTPUT_DIR writes.
 #
-#   STEM        The name the run gives the machine: the document's own stem,
-#               which names its files. A document of a forge kind names its
-#               files itself, and its plan is read for them.
+#   STEM        The document's own stem, as its file writes it, which names
+#               the generation in what the module says and is its name among
+#               the generations a plan holds. It does not name the machine's
+#               files: the generator names the machine (the stem written as
+#               an identifier) and the plan states it (`<PREFIX>_MACHINE_NAME`).
+#               A document of a forge kind names its files itself, and its
+#               plan is read for them.
 #   DOCUMENT    A document on disk now, or the library name of a standard
 #               statechart (`sce:std/...`), which the generator reads from the
 #               library it embeds.
@@ -797,8 +840,9 @@ endfunction()
 #               directly in it: this declares the outputs of a flat directory.
 #   LANGUAGE    The language generated: `cpp` and `c11`, which a target
 #               compiles, have the machine of a statechart named here
-#               (`_sce_codegen_plan_machine`); another language's step
-#               produces the first file its plan names.
+#               (`_sce_codegen_plan_machine`, from the name the plan states);
+#               another language's step produces the first file its plan
+#               names.
 #   INPUT_ROOT  The `--input-root` the run is given; empty passes none, as the
 #               run of a library name passes none.
 #   CHILDREN_HELD_IN
@@ -888,6 +932,16 @@ endfunction()
 #                             document whose generation the plan holds, in the
 #                             order the generator planned them (a document
 #                             before the documents its generation writes)
+#     <PREFIX>_MACHINE_NAME   the machine name the generator states for the
+#                             statechart whose machine the run writes
+#                             (`--plan-machines`): the document's file stem
+#                             written as an identifier, `job_tester` for
+#                             `job-tester.scxml`, which names the machine's
+#                             files, its namespace and its types; or for a
+#                             plan FROM another, the one it states for the
+#                             child's generation. Empty for a run that writes
+#                             no statechart's machine (a forge document, a
+#                             set, a harness)
 #     <PREFIX>_OUTPUTS        the paths of the machine, header first: the
 #                             command's OUTPUT, and the header is the
 #                             depfile's one target, which ninja needs to be
@@ -941,7 +995,10 @@ function(sce_codegen_plan PREFIX)
     set(_DOCUMENT "")
     set(_DEPENDS "")
     set(_REQUIRES "")
-    # Whether the run is one document's generation, whose machine its stem
+    # The machine name the generator states for the run's statechart, empty
+    # for a run that writes none.
+    set(_MACHINE_NAME "")
+    # Whether the run is one document's generation, whose machine the plan
     # names; a set's and a harness's step produces the first file it writes.
     set(_ONE_DOCUMENT TRUE)
 
@@ -980,6 +1037,17 @@ function(sce_codegen_plan PREFIX)
         set(_FORMATS TRUE)
         set(_ARGS "${${_FROM}_ARGS}")
         set(_REQUIRES "${${_FROM}_REQUIRES}")
+        set(_MACHINE_NAME "${${_FROM}_MACHINE_NAME}")
+        if("${_MACHINE_NAME}" STREQUAL "")
+            # A child generation is one of a language whose machine this
+            # module names (`_sce_codegen_plan_options_judged`), and its
+            # command produces the child's machine.
+            message(FATAL_ERROR
+                "sce_codegen_plan(${PREFIX} FROM ${_SCP_FROM} CHILD ${_SCP_CHILD}): the plan "
+                "states no machine name for the generation of ${_SCP_CHILD} "
+                "(`\\tmachine\\t<generation>\\t<name>`, --plan-machines), so the machine "
+                "its command produces cannot be declared")
+        endif()
         set(_DEPENDS "${_DOCUMENT}")
         if(NOT "${${_FROM}_WRITER}" STREQUAL "")
             list(APPEND _DEPENDS "${${_FROM}_WRITER}")
@@ -1047,19 +1115,21 @@ function(sce_codegen_plan PREFIX)
                 "rebuild it from this tree.\n${_PLAN_ERROR}")
         endif()
 
-        # A line that begins with a tab names no file: it states what the
-        # machines of a generation need linked,
-        # `\trequires\t<generation>\t<requirement>` (`--plan-requires`), the
-        # run's own when <generation> is empty. Every other line with a tab is
-        # a file of a child document's generation, `<child document>\t<file>`;
-        # every other line is the run's own.
+        # A line that begins with a tab names no file: it states something of
+        # a generation, the run's own when <generation> is empty, either the
+        # name of the machine it writes, `\tmachine\t<generation>\t<name>`
+        # (`--plan-machines`), or what its machines need linked,
+        # `\trequires\t<generation>\t<requirement>` (`--plan-requires`).
+        # Every other line with a tab is a file of a child document's
+        # generation, `<child document>\t<file>`; every other line is the
+        # run's own.
         set(_GENERATION_LINES "")
-        set(_REQUIREMENT_LINES "")
+        set(_STATEMENT_LINES "")
         string(REPLACE "\n" ";" _PLANNED "${_PLAN_OUTPUT}")
         foreach(_LINE ${_PLANNED})
             string(FIND "${_LINE}" "\t" _TAB)
             if(_TAB EQUAL 0)
-                list(APPEND _REQUIREMENT_LINES "${_LINE}")
+                list(APPEND _STATEMENT_LINES "${_LINE}")
                 continue()
             endif()
             if(NOT _TAB EQUAL -1)
@@ -1146,36 +1216,52 @@ function(sce_codegen_plan PREFIX)
             endif()
         endforeach()
 
-        # What the machines of each generation need linked: the run's own, and
-        # each child generation's, which a plan FROM this one reads.
+        # The name of the machine each generation writes and what its machines
+        # need linked: the run's own, and each child generation's, which a
+        # plan FROM this one reads.
         foreach(_CHILD ${_GENERATIONS})
             set(_GENERATION_${_CHILD}_REQUIRES "")
+            set(_GENERATION_${_CHILD}_MACHINE_NAME "")
         endforeach()
-        foreach(_LINE ${_REQUIREMENT_LINES})
-            if(NOT "${_LINE}" MATCHES "^\trequires\t([^\t]*)\t([^\t]+)$")
+        foreach(_LINE ${_STATEMENT_LINES})
+            if(NOT "${_LINE}" MATCHES "^\t(machine|requires)\t([^\t]*)\t([^\t]+)$")
                 message(FATAL_ERROR
                     "sce-codegen --plan ${_RUN} (${_LANGUAGE}) answers "
                     "a line this module cannot read: \"${_LINE}\". A line that begins with a "
-                    "tab states what a generation requires, "
+                    "tab states the machine a generation writes, "
+                    "`\\tmachine\\t<generation>\\t<name>`, or what it requires, "
                     "`\\trequires\\t<generation>\\t<requirement>`.")
             endif()
-            set(_REQUIREMENT "${CMAKE_MATCH_2}")
-            if("${CMAKE_MATCH_1}" STREQUAL "")
-                list(APPEND _REQUIRES "${_REQUIREMENT}")
+            set(_STATED "${CMAKE_MATCH_1}")
+            set(_VALUE "${CMAKE_MATCH_3}")
+            if("${CMAKE_MATCH_2}" STREQUAL "")
+                if(_STATED STREQUAL "requires")
+                    list(APPEND _REQUIRES "${_VALUE}")
+                else()
+                    set(_MACHINE_NAME "${_VALUE}")
+                endif()
                 continue()
             endif()
-            get_filename_component(_CHILD_NAME "${CMAKE_MATCH_1}" NAME)
+            get_filename_component(_CHILD_NAME "${CMAKE_MATCH_2}" NAME)
             string(REGEX REPLACE "\\.scxml$" "" _CHILD "${_CHILD_NAME}")
             if(NOT "${_CHILD}" IN_LIST _GENERATIONS)
                 message(FATAL_ERROR
                     "sce-codegen --plan generate for ${_SCP_DOCUMENT} (${_LANGUAGE}) states "
-                    "that the generation of ${_CHILD_NAME} requires ${_REQUIREMENT}, and "
+                    "that the generation of ${_CHILD_NAME} ${_STATED} ${_VALUE}, and "
                     "plans no generation of it")
             endif()
-            list(APPEND _GENERATION_${_CHILD}_REQUIRES "${_REQUIREMENT}")
+            if(_STATED STREQUAL "requires")
+                list(APPEND _GENERATION_${_CHILD}_REQUIRES "${_VALUE}")
+            else()
+                set(_GENERATION_${_CHILD}_MACHINE_NAME "${_VALUE}")
+            endif()
         endforeach()
+        # Which generation writes each child document, and the name of the
+        # machine it writes, whose header a child's command waits for: the run
+        # first, then each generation in the order it was planned.
         set(_WRITERS_OF "${_STEM}")
         set(_WRITER_FILES_${_STEM} ${_FILES})
+        set(_WRITER_MACHINE_NAME_${_STEM} "${_MACHINE_NAME}")
         foreach(_CHILD ${_GENERATIONS})
             set(_WRITER "")
             # A document staged from CHILDREN_HELD_IN is there before the build
@@ -1184,12 +1270,21 @@ function(sce_codegen_plan PREFIX)
                 set(_GENERATION_${_CHILD}_WRITER "")
                 list(APPEND _WRITERS_OF "${_CHILD}")
                 set(_WRITER_FILES_${_CHILD} ${_GENERATION_${_CHILD}_FILES})
+                set(_WRITER_MACHINE_NAME_${_CHILD} "${_GENERATION_${_CHILD}_MACHINE_NAME}")
                 continue()
             endif()
             foreach(_CANDIDATE ${_WRITERS_OF})
                 if("${_CHILD}.scxml" IN_LIST _WRITER_FILES_${_CANDIDATE})
+                    if("${_WRITER_MACHINE_NAME_${_CANDIDATE}}" STREQUAL "")
+                        message(FATAL_ERROR
+                            "sce-codegen --plan-children for ${_SCP_DOCUMENT} (${_LANGUAGE}) "
+                            "plans the generation of ${_CHILD}.scxml, whose document the "
+                            "generation of ${_CANDIDATE} writes, and states no machine name "
+                            "for that generation, so the machine the child's command waits "
+                            "for cannot be named")
+                    endif()
                     _sce_codegen_plan_machine(_WRITER_MACHINE _UNUSED_DEPFILE
-                        "${_CANDIDATE}" "${_LANGUAGE}")
+                        "${_WRITER_MACHINE_NAME_${_CANDIDATE}}" "${_LANGUAGE}")
                     list(GET _WRITER_MACHINE 0 _WRITER_HEADER)
                     set(_WRITER "${_OUTPUT_DIR}/${_WRITER_HEADER}")
                     break()
@@ -1204,6 +1299,7 @@ function(sce_codegen_plan PREFIX)
             set(_GENERATION_${_CHILD}_WRITER "${_WRITER}")
             list(APPEND _WRITERS_OF "${_CHILD}")
             set(_WRITER_FILES_${_CHILD} ${_GENERATION_${_CHILD}_FILES})
+            set(_WRITER_MACHINE_NAME_${_CHILD} "${_GENERATION_${_CHILD}_MACHINE_NAME}")
         endforeach()
 
         # Every child document the run writes or stages is one whose machine
@@ -1229,6 +1325,10 @@ function(sce_codegen_plan PREFIX)
             foreach(_CHILD ${_GENERATIONS})
                 list(APPEND _PLANNED_FILES ${_GENERATION_${_CHILD}_FILES})
             endforeach()
+            # An in-line child's document is one the generator writes and names
+            # after the machine it gives the child,
+            # `<parent machine>__sce_synth_invoke__<id>`, an identifier as
+            # written: the name of the file the plan names is that machine's.
             foreach(_CHILD ${_SYNTH})
                 _sce_codegen_plan_machine(_SYNTH_MACHINE _UNUSED_DEPFILE
                     "${_CHILD}" "${_LANGUAGE}")
@@ -1243,27 +1343,22 @@ function(sce_codegen_plan PREFIX)
         endif()
     endif()
 
-    _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_STEM}" "${_LANGUAGE}")
+    # The machine the generator named, read from the plan: the stem written as
+    # an identifier, never the stem as STEM gives it.
+    _sce_codegen_plan_machine(_MACHINE _DEPFILE_NAME "${_MACHINE_NAME}" "${_LANGUAGE}")
     if(NOT _SCP_FROM)
         # A document of a forge kind (an algorithm, a schema, an enum, a
         # bounded collection ...) is generated into files of its own name and
-        # no state machine. What its command produces is then the run's
-        # primary artefact: the first file the answer names, since the answer
-        # lists the files in the order the run wrote them and the generator
-        # writes its primary first and names it the depfile's one target. A
-        # run that writes a state machine is a statechart's, and is held to
-        # the machine its stem names below. So is a set's run and a harness's
-        # (whose primary the generator likewise writes first), and a run of a
+        # no state machine, and its plan states no machine name. What its
+        # command produces is then the run's primary artefact: the first file
+        # the answer names, since the answer lists the files in the order the
+        # run wrote them and the generator writes its primary first and names
+        # it the depfile's one target. A run whose plan states the machine it
+        # writes is a statechart's, and is held below to the files of the
+        # machine so named. A set's run and a harness's produce their primary
+        # (which the generator likewise writes first), and so does a run of a
         # language whose machine this module does not name.
-        set(_WRITES_A_MACHINE FALSE)
-        if(_ONE_DOCUMENT AND NOT "${_MACHINE}" STREQUAL "")
-            foreach(_NAME ${_FILES})
-                if("${_NAME}" MATCHES "_sm\\.h$")
-                    set(_WRITES_A_MACHINE TRUE)
-                endif()
-            endforeach()
-        endif()
-        if(NOT _WRITES_A_MACHINE)
+        if(NOT _ONE_DOCUMENT OR "${_MACHINE}" STREQUAL "")
             set(_MACHINE "")
             foreach(_NAME ${_FILES})
                 if(NOT "${_NAME}" MATCHES "\\.scxml$")
@@ -1284,7 +1379,8 @@ function(sce_codegen_plan PREFIX)
         if(NOT "${_NAMED}" IN_LIST _FILES)
             message(FATAL_ERROR
                 "sce-codegen --plan generate for ${_STEM} (${_LANGUAGE}) does not name "
-                "${_NAMED}, a file its generate command is declared to produce")
+                "${_NAMED}, a file of the machine ${_MACHINE_NAME} it states and its "
+                "generate command is declared to produce")
         endif()
     endforeach()
 
@@ -1364,16 +1460,17 @@ endfunction()
 #
 #   The answer is every variable `sce_codegen_plan` documents, and, for each
 #   generation a CHILD_GENERATIONS plan holds, what a plan FROM it reads: its
-#   document, its files, its arguments, what its machines require and the
-#   machine of the generation that writes its document.
+#   document, its files, its arguments, what its machines require, the name
+#   of the machine it writes and the machine of the generation that writes
+#   its document.
 macro(_sce_codegen_plan_publish TO FROM)
     foreach(_SCPP_NAME FILES SYNTH CHILDREN STAGED GENERATIONS OUTPUTS BYPRODUCTS
             BYPRODUCTS_ARG DEPFILE HEADERS SOURCES REQUIRES DECLARED_ELSEWHERE DOCUMENT
-            RUN FORMATS DEPENDS ARGS STEM OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
+            RUN FORMATS DEPENDS ARGS STEM MACHINE_NAME OUTPUT_DIR LANGUAGE CLAIM INPUT_ROOT)
         set(${TO}_${_SCPP_NAME} "${${FROM}${_SCPP_NAME}}" PARENT_SCOPE)
     endforeach()
     foreach(_SCPP_CHILD ${${FROM}GENERATIONS})
-        foreach(_SCPP_NAME DOCUMENT FILES ARGS REQUIRES WRITER)
+        foreach(_SCPP_NAME DOCUMENT FILES ARGS REQUIRES MACHINE_NAME WRITER)
             set(${TO}_GENERATION_${_SCPP_CHILD}_${_SCPP_NAME}
                 "${${FROM}GENERATION_${_SCPP_CHILD}_${_SCPP_NAME}}" PARENT_SCOPE)
         endforeach()
@@ -1456,8 +1553,11 @@ endfunction()
 #   the generations of its directory were declared is refused, as one the
 #   build would never run.
 #
-#   STEM     The machine's name, which names its files: the document's name
-#            without `.scxml` when not given. One document's alone.
+#   STEM     The document's name without `.scxml`, as its file writes it,
+#            when not given: the generation's name in what the module says.
+#            The machine's name, which names its files, is the generator's,
+#            read from the plan (`sce_codegen_plan`, `<PREFIX>_MACHINE_NAME`).
+#            One document's alone.
 #   DEPLOY   The deploy the run is generated with (`--deploy`), which the
 #            plan is asked with too and the command depends on.
 #   CHILD_GENERATIONS

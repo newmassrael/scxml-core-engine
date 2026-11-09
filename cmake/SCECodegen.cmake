@@ -160,7 +160,7 @@ Arguments:
                 parent's type, which is the form a parent that starts it names.
                 A document a hybrid `<invoke>` declares in `sce:candidates` is
                 one — the parent refers to it as
-                `::SCE::Generated::<name>::<name><SelfType>` — so it is
+                `::SCE::Generated::<machine>::<machine><SelfType>` — so it is
                 generated this way and not as a machine of its own (optional,
                 cpp only). The parent's own generation already declares the
                 generation of every child it names (see below), so a target
@@ -189,6 +189,15 @@ Arguments:
                 `<invoke>` types the build's host serves (optional,
                 multi-valued; `--host-processor`, `--host-invoker`)
 
+The machine's name is the generator's: the file's stem written as an
+identifier (a hyphen or a dot becomes an underscore, a capital after a
+lower-case letter or a digit opens a word, every letter is lower case), which
+names its files, its namespace and its types, and which the plan states when
+the build is configured. `job-tester.scxml` is the machine `job_tester`: the
+target compiles `job_tester_sm.h` (and, for c11, `job_tester_sm.c`), whose
+machine is in `namespace SCE::Generated::job_tester`. A stem already in lower
+snake case is the machine's name as written.
+
 What the target is given: for cpp and c11, every header (and C11 source) the
 generation writes, the machine's and those of every child generation its plan
 holds (a child an inline `<invoke>` synthesizes, a `src` or candidate child
@@ -196,7 +205,10 @@ the machine starts as a class template over its type), and the output
 directory on its include path. For another language, whose code a build of
 its own compiles, the target waits for the generation: it depends on a custom
 target `<target>_<name>_kt` (Kotlin) or `<target>_<name>_<language>` that lists
-every file the generation writes. Machines added into one output directory
+every file the generation writes, where `<name>` is the file's name up to its
+first dot, as written (`<target>_job-tester_kt`): a target is named when the
+call is made, before the plan that states the machine's name is read, and a
+CMake target's name takes a hyphen. Machines added into one output directory
 share it: a file two of them would write is generated once.
 
 Example:
@@ -303,6 +315,10 @@ function(sce_add_state_machine)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
+    # The document's name as its file writes it, for what the build says and
+    # for the name of the target a generation of another language is waited
+    # on through. The machine's name and its files are the generator's, which
+    # the plan states (`<PREFIX>_MACHINE_NAME` in SCECodegenPlan.cmake).
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
     _sce_codegen_document(_SCE_DOCUMENT "${SCE_SCXML_FILE}" sce_add_state_machine)
 
@@ -552,6 +568,8 @@ function(sce_create_state_machine_library)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     endif()
 
+    # The document's name as its file writes it, for what the build says; the
+    # machine's files are the generator's, which the plan states.
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
     _sce_codegen_document(_SCE_DOCUMENT "${SCE_SCXML_FILE}" sce_create_state_machine_library)
 

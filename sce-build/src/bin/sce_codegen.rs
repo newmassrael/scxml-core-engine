@@ -151,6 +151,15 @@ fn plans_requirements() -> bool {
     output_mode() == OutputMode::Plan && PLAN_REQUIRES.get().copied().unwrap_or(false)
 }
 
+/// Installed once by `main`, beside [`PLAN_CHILDREN`]: whether a `--plan` run
+/// also states the machine name of each planned generation that writes a
+/// statechart's machine (`--plan-machines`, [`finish_generated_output`]).
+static PLAN_MACHINES: OnceLock<bool> = OnceLock::new();
+
+fn plans_machines() -> bool {
+    output_mode() == OutputMode::Plan && PLAN_MACHINES.get().copied().unwrap_or(false)
+}
+
 /// Installed once by `main`, beside [`PLAN_CHILDREN`]: where a `--plan` run
 /// writes the list of the files it read (`--plan-reads`, [`write_plan_reads`]).
 static PLAN_READS: OnceLock<PathBuf> = OnceLock::new();
@@ -197,18 +206,23 @@ struct PendingTree {
     /// ([`GenerateReport::runtime_requires`]), handed over where a run that
     /// writes would print its manifest ([`emit_generate_manifest`]).
     requires: BTreeSet<RuntimeRequirement>,
+    /// In a `--plan` run, the machine name of the statechart whose machine
+    /// the run writes ([`GenerateReport::machine`]), handed over beside
+    /// [`Self::requires`].
+    machine: Option<String>,
 }
 
 /// One generation a `--plan-children` run planned beside the run's own: the
 /// child document it reads, the arguments it is run with beside the ones
 /// every generation of the build is given ([`ChildGeneration::arguments`]),
-/// every file it would produce that no generation before it does, and what
-/// its machines need linked.
+/// every file it would produce that no generation before it does, what its
+/// machines need linked, and the name of the machine it writes.
 struct PlannedGeneration {
     document: PathBuf,
     arguments: Vec<String>,
     files: Vec<PathBuf>,
     requires: BTreeSet<RuntimeRequirement>,
+    machine: Option<String>,
 }
 
 impl PendingTree {
@@ -218,6 +232,7 @@ impl PendingTree {
             content: BTreeMap::new(),
             generations: Vec::new(),
             requires: BTreeSet::new(),
+            machine: None,
         }
     }
 
@@ -410,7 +425,11 @@ fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
 /// with each further argument after another tab, then one line per file it
 /// would produce, as `<child document>\t<file>`. A file is never named by an
 /// empty path, so the empty field tells the two apart, and a line with no tab
-/// is always the run's own. A `--plan-requires` run then states what the
+/// is always the run's own. A `--plan-machines` run then states the machine
+/// name of the run's statechart and of each planned generation's, in the same
+/// order, as `\tmachine\t<generation>\t<name>`, with an empty `<generation>`
+/// for the run's own, and none for a run that writes no statechart's machine.
+/// A `--plan-requires` run then states what the
 /// machines of each generation need linked, the run's first and then each
 /// planned generation's in the order they were planned, one line per
 /// requirement, as `\trequires\t<generation>\t<requirement>`, with an empty
@@ -432,6 +451,19 @@ fn finish_generated_output() {
                 ));
                 for file in &generation.files {
                     out_line(&format!("{document}\t{}", file.display()));
+                }
+            }
+            if plans_machines() {
+                let stated = std::iter::once((String::new(), tree.machine.as_deref()))
+                    .chain(tree.generations.iter().map(|generation| {
+                        (
+                            generation.document.display().to_string(),
+                            generation.machine.as_deref(),
+                        )
+                    }))
+                    .filter_map(|(generation, machine)| machine.map(|name| (generation, name)));
+                for (generation, machine) in stated {
+                    out_line(&format!("\tmachine\t{generation}\t{machine}"));
                 }
             }
             if plans_requirements() {
@@ -1358,6 +1390,16 @@ struct GenerateReport {
     /// other output of the run. Stated by a `--plan --plan-requires` run
     /// ([`finish_generated_output`]).
     runtime_requires: BTreeSet<RuntimeRequirement>,
+    /// The machine name of the ONE statechart whose machine this run wrote
+    /// (its own, or the stub that stands in for a rejected one): the name the
+    /// parse gave the model, the file stem written as an identifier
+    /// (`sce_build::model::statechart_machine_name`), which names the
+    /// machine's files. `None` when the run wrote no statechart's machine (a
+    /// forge kind, a document set, a transport alone). Stated by a `--plan
+    /// --plan-machines` run ([`finish_generated_output`]), so a build reads
+    /// the machine's name from the generator rather than spelling the stem a
+    /// second time.
+    machine: Option<String>,
 }
 
 impl GenerateReport {
@@ -1685,11 +1727,13 @@ fn resolve_script_engine_target(
 /// Not in a `--plan` run, whose stdout is the plan's answer and nothing else:
 /// a consumer that reads it line by line takes every line for a line of the
 /// answer. What of the report the answer carries, what the run's machines
-/// need linked, is handed to it here instead, for
-/// [`finish_generated_output`] to state when it was asked for.
+/// need linked and the name of the machine it writes, is handed to it here
+/// instead, for [`finish_generated_output`] to state when it was asked for.
 fn emit_generate_manifest(report: &GenerateReport) {
     if output_mode() == OutputMode::Plan {
-        pending_tree().requires.clone_from(&report.runtime_requires);
+        let mut tree = pending_tree();
+        tree.requires.clone_from(&report.runtime_requires);
+        tree.machine.clone_from(&report.machine);
         return;
     }
     outln!(
@@ -1803,6 +1847,26 @@ struct Cli {
     /// for it is the generator's, as the answer for the run is.
     #[arg(long, global = true, requires = "plan")]
     plan_children: bool,
+
+    /// With `--plan`: also state the machine name of the statechart whose
+    /// machine the run writes, and with `--plan-children` of each planned
+    /// generation's: the name the parse gives the model, the document's file
+    /// stem written as an identifier (SCE_ACCEPTED_SUBSET.md §2.1,
+    /// `job-tester.scxml` is the machine `job_tester`), which names the
+    /// machine's files, its namespace or package and its types. After the
+    /// run's own lines and its generations', each is printed as
+    /// `\tmachine\t<generation>\t<name>`, where `<generation>` is empty for
+    /// the run's own machine and the child document of a generation it
+    /// planned otherwise. A run that writes no statechart's machine (a forge
+    /// kind, a document set, a harness) states none. A line that begins with
+    /// a tab is never a file: a file is never named by an empty path.
+    ///
+    /// A build declares a machine's files before it has run the generator,
+    /// and a name it spelled from the stem itself would be a second spelling
+    /// of the generator's, which falls behind it: the build reads the name
+    /// from here instead.
+    #[arg(long, global = true, requires = "plan")]
+    plan_machines: bool,
 
     /// With `--plan`: also write to FILE, one path per line, every file the
     /// plan read: the prerequisites a `--write-deps` depfile of the same run
@@ -4327,6 +4391,7 @@ fn main() {
         let _ = OUTPUT_MODE.set(OutputMode::Plan);
         let _ = PLAN_CHILDREN.set(cli.plan_children);
         let _ = PLAN_REQUIRES.set(cli.plan_requires);
+        let _ = PLAN_MACHINES.set(cli.plan_machines);
         if let Some(reads) = cli.plan_reads {
             let _ = PLAN_READS.set(reads);
         }
@@ -6812,6 +6877,7 @@ fn plan_child_generations(
             arguments: kind.arguments(args),
             files,
             requires: std::mem::take(&mut child_report.runtime_requires),
+            machine: child_report.machine.take(),
         });
         pending.extend(asked_by(&child_report));
     }
@@ -7578,6 +7644,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             write_drift_aware(&path, content, &drift_ctx);
             report.artifacts.push(path);
         }
+        // The stub stands in for the machine, under the machine's name.
+        report.machine = Some(model.name.clone());
 
         // The document parsed — §5.8 refuses to *generate* it, not to
         // read it — so its symbols resolve and the sidecar is emitted
@@ -7974,6 +8042,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // What the machine needs linked, as its backend decided while
         // rendering it, and below what each child it carries needs.
         report.runtime_requires.extend(output.requires);
+        // The name its files were written under, for a plan to state.
+        report.machine = Some(model.name.clone());
 
         let files = maybe_format_files(output.files, &cpp_formatter);
         for (filename, code) in &files {
@@ -14727,9 +14797,10 @@ fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
                 requests_path,
                 number,
                 "a request asks one plan of a build step (`--plan [--plan-children] \
-                 [--plan-requires] generate <document> ...`, or `--plan [--plan-requires]` \
-                 with `orchestrate` or `generate-conformance`), and the file it reads into \
-                 is the batch's to name (`--plan-reads`)",
+                 [--plan-machines] [--plan-requires] generate <document> ...`, or `--plan \
+                 [--plan-machines] [--plan-requires]` with `orchestrate` or \
+                 `generate-conformance`), and the file it reads into is the batch's to name \
+                 (`--plan-reads`)",
             ),
             Err(error) => refuse(
                 requests_path,
