@@ -71,15 +71,17 @@ fn host(entries: &[Entry], own: bool) -> Trust {
     trust
 }
 
+/// A change of node 1's stamped at `time` and `counter` of one write, of `text` to row 1, field 1.
 fn write_data(time: i64, counter: u64, text: &str) -> String {
-    json!({"id": "1", "field": 1, "value": "0", "text": text,
-           "wallTime": time.to_string(), "counter": counter.to_string(), "nodeId": "1"})
+    json!({"by": "1", "wallTime": time.to_string(), "counter": counter.to_string(), "ops": [
+        {"kind": 0, "id": "1", "field": 1, "value": "0", "text": text,
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
 /// The write as node 1's host sends it, through the host's own signing.
 fn sealed(host: &mut Trust, time: i64, text: &str) -> Result<String, String> {
-    host.seal("relay", "record_list.write", &write_data(time, 0, text))
+    host.seal("relay", "record_list.change", &write_data(time, 0, text))
         .map(|sent| sent.expect("a write is sent"))
 }
 
@@ -95,7 +97,7 @@ fn forged(
     text: &str,
 ) -> (String, [u8; 32]) {
     let mut value: Value = serde_json::from_str(&write_data(time, counter, text)).unwrap();
-    let signing = message::signing(LIST, "record_list.write", &value)
+    let signing = message::signing(LIST, "record_list.change", &value)
         .unwrap()
         .unwrap();
     let (next, log_hash) = host.head();
@@ -113,7 +115,7 @@ fn forged(
 }
 
 fn take(host: &Trust, data: &str) -> Result<sce_rust_trust::Taken, TakeError> {
-    host.take_operation("record_list.write", data)
+    host.take_operation("record_list.change", data)
 }
 
 /// What a host holds of every device: the operations it tells its machine, device by device.
