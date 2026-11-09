@@ -490,19 +490,22 @@ the documents of the profile alone (ADR 0091 §8).
 
 - **Input.** One `test-suite` document and every document it reaches through the imports of its test cases, their
   configurations, the components those name, and the port types, templates, event schemas, enums and unions below
-  them. A feature model, and a document of any other kind a component imports, is not read: no rule of §9.2
-  translates one. Every document read is first held to the rules of its kind that no backend decides, the ones
-  `check` holds it to before a language is asked, so the export translates no document `check` refuses.
+  them; and the feature model the suite imports, which E15 alone reads, for the names of its features. A document
+  of any other kind a component imports is not read: no rule of §9.2 translates one. Every document read is first
+  held to the rules of its kind that no backend decides, the ones `check` holds it to before a language is asked,
+  so the export translates no document `check` refuses.
 - **Output.** For a suite whose unit name is `S`, its file's stem in lower snake case as every unit of a document
   is named: `S_Types.ttcn`, the types module (E1; ADR 0091 C2), and `S_Types.manifest.json`, its structural
-  manifest. The behaviour module `S.ttcn` holds the port types (E3), the templates (E2), the module parameters the
-  suite declares and the definitions of E4 to E15. The export computes the port types, the templates, the module
-  parameters and the component types and functions of E4 to E13 on every run, and refuses a suite any of which it
-  cannot write; a library caller reads each as the definition's text and as the model it is written from
-  (`Ttcn3Export`). It writes no part of that module, nor the witness of §9.4, until every rule of the module is
-  written, the test cases (E14) and the control part (E15) among them. Nothing is written before the whole export is
-  computed, so a refused suite leaves no file. The module carries the header of every generated source
-  (`source-hash`); the manifest carries none.
+  manifest; and `S.ttcn`, the behaviour module. The behaviour module imports the types module whole
+  (`import from S_Types all;`) and holds, in this order: the port types (E3); the templates (E2); the module
+  parameters, the suite's in the order it declares them and then one for each feature of its feature model in the
+  order of the features' names (E15); the component types, those of the test components (E4) and then the system
+  component types of the configurations (E14), each group in the order of their names; the functions (E5 to E13);
+  the test cases (E14), in the order the suite executes them; and the control part (E15). A library caller reads
+  each definition as its text and as the model it is written from (`Ttcn3Export`). Nothing is written before the
+  whole export is computed, so a refused suite leaves no file. Each module carries the header of every generated
+  source (`source-hash`); the manifest carries none. The witness of §9.4 is a serialization of the model each
+  definition is written from (**Provenance**, below).
 - **Text.** The TTCN-3 is written by the templates under `tools/codegen/templates/ttcn3/`, through the door every
   template passes, read as TTCN-3: a value written into a comment is encoded for it, and a text value is written as
   a character string, a `"` twice and each character outside printable ASCII concatenated as its quadruple
@@ -528,10 +531,13 @@ module, the test log and the witness need no mapping between two names of one th
   scopes of one level, two templates or two component types or two functions, may each hold a name the other holds.
   An enumerated value may repeat among enumerated types and is no other name. So a module parameter and a template's
   formal parameter of one name are refused, and so are a module parameter and a component's variable, and a port and
-  a state of the component. The names the export makes are in the same scopes: the eight integer types, the modules
-  `S` and `S_Types`, the codec functions and their parameters `msg` and `octets`, each component's functions, and the
-  locals of a function, `v_<ptc>` for each PTC it creates and `v_<record>` for each record a branch of it receives
-  into a variable. Where a made name and a written one collide, the written one is refused.
+  a state of the component. A test case is named by the unit name of its document, and a configuration's system
+  component type by the unit name of the configuration's, both definitions of the module; a system port is a name
+  of its system component type's scope. The names the export makes are in the same scopes: the eight integer types,
+  the modules `S` and `S_Types`, the codec functions and their parameters `msg` and `octets`, each component's
+  functions, the module parameter `PICS_<NAME>` of each feature (E15), and the locals of a function, `v_<ptc>` for
+  each PTC it creates and `v_<record>` for each record a branch of it receives into a variable. Where a made name
+  and a written one collide, the written one is refused.
 
 **Types (E1).** The types module holds, in this order:
 
@@ -665,9 +671,51 @@ or another PTC the same component creates, connected then only if that one is cr
 whose other end is a PTC the creator holds no reference to is refused by name: -1 reaches a component outside the
 scope of its creation only through a reference passed to it (-1 §21.3.1), which no document writes.
 
-**Provenance.** Every module parameter, component type, function and statement is computed as a model that names
-the rule of §9.2 that wrote it, the document and the node it was written from (`ttcn3_export::behaviour::Source`),
-so the witness of §9.4 is a serialization of that model.
+**Test cases (E14).** Each configuration a test case of the suite runs in is a system component type,
+`type component C { port P p; … }`, named by the configuration's unit name, with a port of each `<sce:system-port>`
+of its port type, in document order (-1 §6.2.10); a configuration that maps no port to the test system is an empty
+one. It is written once, however many test cases run in it. Each test case the suite executes is
+
+```ttcn3
+testcase t() runs on M system C {
+  map(mtc:p, system:s);
+  f_m();
+}
+```
+
+named by its unit name: it runs on the component type of its configuration's MTC, its `system` is the
+configuration's system component type (-1 §26.1), its body applies each `<sce:map>` of the configuration whose
+component is `mtc`, in document order, and then calls the MTC's function, `f_<mtc>_in_<configuration>` where the
+MTC invokes a PTC and `f_<mtc>` otherwise. A map or a connect that names a PTC is not applied here: its creator
+applies it as it creates the PTC (E11).
+
+**The control part (E15).** Each feature of the suite's feature model is `modulepar boolean PICS_<NAME>;` with no
+default (-1 §8.2.1), `<NAME>` the feature's name upper-cased with each hyphen an underscore, the spelling ADR 0057
+gives a feature on every backend that writes it in upper case (`SCE_FEATURE_<NAME>` in C); a feature's name has no
+upper-case letter and no underscore, so two features never share one. Which features a run enables is its caller's
+to say, as the world is the input of a native runner (§12). The control part executes each test case in the order
+of the suite's `<sce:execute>`s (P11; -1 §26.2):
+
+```ttcn3
+control {
+  execute(t1(), 10.0);
+  if (PICS_PTCS and (PICS_GUARD or PICS_REMOVAL)) {
+    execute(t2());
+  }
+}
+```
+
+The guard is the second argument, the exact decimal of its seconds as a timer's duration is written (E10), and is
+left out where the suite gives none. A test case the suite selects stands inside an `if` whose condition is the
+selection: each feature its module parameter, `all` a conjunction `and`, `any` a disjunction `or`, and a join
+inside another in parentheses, as every backend writes a suite's selection. The selection is the one the suite's
+check has read against the feature model, and a feature the model does not declare is refused by name.
+
+**Provenance.** Every module parameter, component type, function, test case and statement, the statements of the
+control part among them, is computed as a model that names the rule of §9.2 that wrote it, the document and the
+node it was written from (`ttcn3_export::behaviour::Source`), so the witness of §9.4 is a serialization of that
+model. A feature's module parameter names the feature in the feature model; a system component type and its ports
+the configuration and its `<sce:system-port>`s; a test case its document; an `execute` its `<sce:execute>`.
 
 **The manifest.** `S_Types.manifest.json` is the model the types module is written from, serialized
 (`schemas/sce-ttcn3-types-manifest.v1.schema.json`, `pre-release`, a row of `SCE_WIRE_CONTRACTS.md`): every
