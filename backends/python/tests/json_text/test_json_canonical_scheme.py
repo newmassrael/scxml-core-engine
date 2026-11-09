@@ -124,7 +124,7 @@ def test_two_names_that_are_the_same_code_units_are_refused() -> None:
     U+1F600 and its two surrogates as two texts, which are one name as code
     units, so the object they name is refused rather than written with one name
     twice."""
-    one, two = "\U0001f600", "😀"
+    one, two = "\U0001f600", chr(0xD83D) + chr(0xDE00)
     assert one != two, "Python holds the character and its surrogate pair apart"
     with pytest.raises(NotCanonical) as refused:
         write_jcs({one: "a", two: "b"})
