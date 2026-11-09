@@ -41,6 +41,12 @@ edit("sce-build/src/forge/static_lowering.rs",
      "    let (wired, fails) = match None::<u32> {")
 PY
 
+mutation_case "the field is looked up among the schemas of one entry per field, which hold no list" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    let alias = rewrites.event_aliases.get(event)?;",
+     "    let alias = rewrites\n        .schemas\n        .iter()\n        .find(|(_, schema)| schema.event_name == event)\n        .map(|(alias, _)| alias)?;")
+PY
+
 mutation_case "the count is read of the list the field proves, so no list is checked" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "    crate::forge::value_type::count_left_to_send(held, &field.ty)\n}",
