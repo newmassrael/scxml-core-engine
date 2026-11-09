@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7b98612ed0f35af10eaffafb7dd60088b78d6093971dc622b4d3161a336da46c
+// source-hash: 9f0e28d53caaa29bc10122250abf2dd34aa356f984c7dd48a910705065c74b3a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -1091,6 +1091,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let roundTripped = try CodecSubbyte.decode(&cursor)
         #expect(roundTripped == value, "codec_subbyte case \(index) decode")
         #expect(cursor.remaining == 0, "codec_subbyte case \(index) decode consumed the frame and nothing else")
+    }
+}
+
+// MARK: - codec: codec_optional_field_attributes
+
+@Test func codecOptionalFieldAttributesMatchesReference() throws {
+
+    let cases = try oracleCases("codecs", "codec_optional_field_attributes")
+    #expect(!cases.isEmpty, "codec_optional_field_attributes: the oracle holds no case")
+    for (index, testCase) in cases.enumerated() {
+        let decoded = try #require(testCase.member("decoded"), "codec_optional_field_attributes case \(index) has no decoded value")
+        let expectedBytes = try oracleBytes(testCase.member("encoded"))
+
+        let value = CodecOptionalFieldAttributes(
+            status: try oracleInteger(decoded.member("status"), as: UInt8.self),
+            reading: try oracleInteger(decoded.member("reading"), as: UInt16.self)
+        )
+
+        var sink = BytesSink()
+        try value.encode(into: &sink)
+        #expect(sink.bytes == expectedBytes, "codec_optional_field_attributes case \(index) encode")
+
+        var cursor = SceCursor(expectedBytes)
+        let roundTripped = try CodecOptionalFieldAttributes.decode(&cursor)
+        #expect(roundTripped == value, "codec_optional_field_attributes case \(index) decode")
+        #expect(cursor.remaining == 0, "codec_optional_field_attributes case \(index) decode consumed the frame and nothing else")
     }
 }
 
