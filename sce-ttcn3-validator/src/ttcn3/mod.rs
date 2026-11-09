@@ -17,7 +17,7 @@ pub mod parser;
 use std::fmt;
 
 use crate::place::{extended, Segment};
-use ast::{Definition, Member, Module, Statement};
+use ast::{Alternative, Definition, Local, Member, Module, Statement};
 
 /// Why a module is not read: the row, and what stood there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,13 +68,7 @@ pub fn places(module: &Module) -> Vec<Vec<Segment>> {
                 let at = vec![Segment::ComponentType(name.clone())];
                 places.push(at.clone());
                 for member in members {
-                    let name = member.name().to_string();
-                    let segment = match member {
-                        Member::Port { .. } => Segment::Port(name),
-                        Member::Timer { .. } => Segment::Timer(name),
-                        Member::Var { .. } => Segment::Var(name),
-                    };
-                    places.push(extended(&at, segment));
+                    places.push(extended(&at, member_segment(member)));
                 }
             }
             Definition::Function {
@@ -119,6 +113,130 @@ pub fn places(module: &Module) -> Vec<Vec<Segment>> {
         }
     }
     places
+}
+
+/// What stands at a place of a module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Found<'m> {
+    Definition(&'m Definition),
+    Member(&'m Member),
+    Local(&'m Local),
+    /// A label, by its name.
+    Label(&'m str),
+    Statement(&'m Statement),
+    Alternative(&'m Alternative),
+}
+
+/// Whether `segment` names `definition` of the module `module`.
+fn names_definition(segment: &Segment, definition: &Definition, module: &str) -> bool {
+    match (segment, definition) {
+        (Segment::Type(name), Definition::Type { name: defined, .. })
+        | (Segment::ExternalFunction(name), Definition::ExternalFunction { name: defined, .. })
+        | (Segment::PortType(name), Definition::PortType { name: defined, .. })
+        | (Segment::Template(name), Definition::Template { name: defined, .. })
+        | (Segment::Modulepar(name), Definition::Modulepar { name: defined, .. })
+        | (Segment::ComponentType(name), Definition::ComponentType { name: defined, .. })
+        | (Segment::Function(name), Definition::Function { name: defined, .. })
+        | (Segment::Testcase(name), Definition::Testcase { name: defined, .. }) => name == defined,
+        (Segment::Control(name), Definition::Control { .. }) => name == module,
+        _ => false,
+    }
+}
+
+/// The segment that names `member` in its component type.
+fn member_segment(member: &Member) -> Segment {
+    let name = member.name().to_string();
+    match member {
+        Member::Port { .. } => Segment::Port(name),
+        Member::Timer { .. } => Segment::Timer(name),
+        Member::Var { .. } => Segment::Var(name),
+    }
+}
+
+/// The statements of `body` that `label` opens, up to the next label, or,
+/// with no label, those before the first one: the statements the segment
+/// `{"label": …}`, or the function itself, opens. None where the body holds
+/// no such label.
+pub fn opened<'m>(body: &'m [Statement], label: Option<&str>) -> Option<Vec<&'m Statement>> {
+    let start = match label {
+        None => 0,
+        Some(name) => {
+            body.iter()
+                .position(|statement| matches!(statement, Statement::Label(l) if l == name))?
+                + 1
+        }
+    };
+    Some(
+        body[start..]
+            .iter()
+            .take_while(|statement| !matches!(statement, Statement::Label(_)))
+            .collect(),
+    )
+}
+
+/// What stands at `path` in `module`, where the module holds that place.
+pub fn find<'m>(module: &'m Module, path: &[Segment]) -> Option<Found<'m>> {
+    let (first, rest) = path.split_first()?;
+    let definition = module
+        .definitions
+        .iter()
+        .find(|definition| names_definition(first, definition, &module.name))?;
+    match (definition, rest) {
+        (_, []) => Some(Found::Definition(definition)),
+        (Definition::ComponentType { members, .. }, [segment]) => members
+            .iter()
+            .find(|member| member_segment(member) == *segment)
+            .map(Found::Member),
+        (Definition::Function { locals, .. }, [Segment::Local(name)]) => locals
+            .iter()
+            .find(|local| local.name == *name)
+            .map(Found::Local),
+        (Definition::Function { body, .. }, [Segment::Label(name)]) => {
+            body.iter().find_map(|statement| match statement {
+                Statement::Label(label) if label == name => Some(Found::Label(label.as_str())),
+                _ => None,
+            })
+        }
+        (Definition::Function { body, .. }, [Segment::Label(name), inner @ ..]) => {
+            within(&opened(body, Some(name.as_str()))?, inner)
+        }
+        (Definition::Function { body, .. }, inner) => within(&opened(body, None)?, inner),
+        (Definition::Control { body }, inner) => {
+            within(&body.iter().collect::<Vec<&Statement>>(), inner)
+        }
+        _ => None,
+    }
+}
+
+/// What stands at `path` among `statements`, the path's first segment a
+/// position among them.
+fn within<'m>(statements: &[&'m Statement], path: &[Segment]) -> Option<Found<'m>> {
+    let (Segment::Statement(position), rest) = path.split_first()? else {
+        return None;
+    };
+    inside(*statements.get(*position)?, rest)
+}
+
+/// What stands at `path` inside `statement`: the statement itself where the
+/// path ends.
+fn inside<'m>(statement: &'m Statement, path: &[Segment]) -> Option<Found<'m>> {
+    let Some((segment, rest)) = path.split_first() else {
+        return Some(Found::Statement(statement));
+    };
+    match (statement, segment) {
+        (Statement::If { then, .. }, Segment::Then(position)) => inside(then.get(*position)?, rest),
+        (Statement::If { otherwise, .. }, Segment::Else(position)) => {
+            inside(otherwise.get(*position)?, rest)
+        }
+        (Statement::Alt(alternatives), Segment::Alternative(position)) => {
+            let alternative = alternatives.get(*position)?;
+            if rest.is_empty() {
+                return Some(Found::Alternative(alternative));
+            }
+            within(&alternative.block.iter().collect::<Vec<&Statement>>(), rest)
+        }
+        _ => None,
+    }
 }
 
 /// The place `path` of `statement`, and the places inside it.
@@ -250,6 +368,91 @@ control {
         };
         assert_eq!(connections.len(), 2);
         assert_eq!(connections[1].when.as_deref(), Some("v_other"));
+    }
+
+    /// Every place the reader names is found where it stands, and a path
+    /// the module does not hold is found nowhere.
+    #[test]
+    fn every_place_is_found_where_it_stands() {
+        let module = parse(
+            "module s {
+type component c {
+  port p sut;
+  timer t;
+}
+function f_c() runs on c {
+  var job v_job;
+  goto a;
+  label a;
+  if (x == 1) {
+    log(\"one\");
+  } else {
+    log(\"other\");
+  }
+  alt {
+    [] sut.receive(job_is) -> value v_job {
+      t.stop;
+      goto a;
+    }
+    [x > 0] t.timeout {
+      return;
+    }
+  }
+}
+control {
+  execute(t1());
+}
+}",
+        )
+        .expect("a module");
+        for path in places(&module) {
+            assert!(find(&module, &path).is_some(), "{}", path_text(&path));
+        }
+        let path = |text: &str| -> Vec<Segment> { serde_json::from_str(text).expect("a path") };
+        assert!(matches!(
+            find(&module, &path(r#"[{"component-type":"c"},{"timer":"t"}]"#)),
+            Some(Found::Member(Member::Timer { .. }))
+        ));
+        assert!(matches!(
+            find(&module, &path(r#"[{"function":"f_c"},{"label":"a"}]"#)),
+            Some(Found::Label("a"))
+        ));
+        assert!(matches!(
+            find(&module, &path(r#"[{"function":"f_c"},{"statement":0}]"#)),
+            Some(Found::Statement(Statement::Goto(_)))
+        ));
+        assert!(matches!(
+            find(
+                &module,
+                &path(r#"[{"function":"f_c"},{"label":"a"},{"statement":0},{"else":0}]"#)
+            ),
+            Some(Found::Statement(Statement::Log(_)))
+        ));
+        assert!(matches!(
+            find(
+                &module,
+                &path(r#"[{"function":"f_c"},{"label":"a"},{"statement":1},{"alternative":1}]"#)
+            ),
+            Some(Found::Alternative(alternative)) if alternative.guard.is_some()
+        ));
+        assert!(matches!(
+            find(
+                &module,
+                &path(
+                    r#"[{"function":"f_c"},{"label":"a"},{"statement":1},{"alternative":0},{"statement":1}]"#
+                )
+            ),
+            Some(Found::Statement(Statement::Goto(label))) if label == "a"
+        ));
+        for absent in [
+            r#"[{"function":"f_c"},{"label":"b"}]"#,
+            r#"[{"function":"f_c"},{"label":"a"},{"statement":2}]"#,
+            r#"[{"component-type":"c"},{"var":"t"}]"#,
+            r#"[{"control":"t"}]"#,
+        ] {
+            assert_eq!(find(&module, &path(absent)), None, "{absent}");
+        }
+        assert_eq!(opened(&[], Some("a")), None);
     }
 
     /// The types module's places are its types and its codec functions.

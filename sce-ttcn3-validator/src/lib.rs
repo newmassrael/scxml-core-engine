@@ -29,13 +29,15 @@
 //! §9.4: every place of the two modules is named by exactly one location of
 //! the witness and every location names a place, and every construct has
 //! exactly one entry for each rule that translates it and every entry names a
-//! construct of the documents. Each finding is a [`Violation`] with a stable
-//! code.
+//! construct of the documents. [`scxml313`] computes the exit and entry sets
+//! of a branch from the documents alone. Each finding is a [`Violation`] with
+//! a stable code.
 
 pub mod coverage;
 pub mod documents;
 pub mod place;
 pub mod rules;
+pub mod scxml313;
 pub mod ttcn3;
 pub mod violation;
 pub mod witness;

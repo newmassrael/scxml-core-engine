@@ -263,12 +263,12 @@ scan_exclusions = [
     "sce-revision/",
     # The validator of a test suite's TTCN-3 export (`sce-ttcn3-validator/`, ADR
     # 0091 answer 12), which holds the export's witness to the suite's documents and
-    # modules apart from the exporter. Measured 2026-11-09 over its 13 Rust sources:
-    # each `§` in them names a section of docs/SCE_TEST_PROFILE.md or of ES 201 873-1,
-    # and none a section of any ledger's namespace, so excluding them swallows no
-    # section from this gate. The check of a branch's exit and entry sets computes
-    # the Recommendation's 3.13 again; where a source cites it, the crate leaves this
-    # list and is enrolled in `paths`.
+    # modules apart from the exporter. Its third check computes a branch's exit and
+    # entry sets again (`src/scxml313.rs`), which cites §scxml-3.13 and §scxml-D;
+    # every other `§` of the crate names a section of docs/SCE_TEST_PROFILE.md or of
+    # ES 201 873-1. The existence axis reads those two cites wherever the crate is
+    # listed; what excluding it gives up is their binding, so the crate leaves this
+    # list for `paths` in the change that binds src/scxml313.rs to both sections.
     "sce-ttcn3-validator/",
 ]
 severity_missing = "reject"

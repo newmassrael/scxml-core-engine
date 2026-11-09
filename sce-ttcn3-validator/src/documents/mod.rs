@@ -23,12 +23,25 @@
 //! start tag, with three exceptions the witness states: a component's root
 //! and a feature keep none, and an element of executable content takes the
 //! row of the state or the transition whose block holds it.
+//!
+//! Beside its name, each construct keeps what the second check of §9.4 reads
+//! of it ([`Detail`]), each document what its rule translates whole
+//! ([`Form`]), and a test component its statechart ([`Statechart`]), which
+//! the third check computes the exit and entry sets over. A document is read
+//! as it is written: one that holds an `<xi:include>` or an `<sce:use>`,
+//! which the export expands before it reads the document, is not read, and
+//! says so by name.
 
 mod statechart;
+
+#[cfg(test)]
+pub(crate) use statechart::tests as statechart_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::PathBuf;
+
+pub use statechart::{ChartState, ChartTransition, Content, Statechart, Trigger};
 
 use crate::rules::{Facts, Kind};
 use crate::witness::Construct;
@@ -39,6 +52,9 @@ pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 
 /// SCE's namespace, of `sce:kind`, `sce:import` and the profile's elements.
 pub const SCE_NAMESPACE: &str = "http://sce.dev/ext";
+
+/// The XInclude namespace, of `<xi:include>`.
+const XINCLUDE_NAMESPACE: &str = "http://www.w3.org/2001/XInclude";
 
 /// The scheme of a document of the standard library.
 const STANDARD: &str = "sce:std/";
@@ -149,13 +165,115 @@ impl DocumentKind {
     }
 }
 
-/// A construct of a document, its kind, and what the documents fix about it.
+/// A construct of a document, its kind, what the documents fix about it, and
+/// what its element writes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     pub node: String,
     pub line: Option<u32>,
     pub kind: Kind,
     pub facts: Facts,
+    pub detail: Detail,
+}
+
+/// What the element of a construct writes that its TTCN-3 form is held to
+/// (§9.4, the second check): each attribute as written, an alias as the
+/// document names its import.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Detail {
+    /// Nothing beyond its name and kind.
+    #[default]
+    Bare,
+    /// An `<sce:module-parameter>`: its id, its type and its value.
+    ModuleParameter { id: String, ty: String },
+    /// An `<sce:execute>`: the alias of its test case, its guard, and
+    /// whether it writes a selection.
+    Execute {
+        test_case: String,
+        guard: Option<String>,
+        requires: bool,
+    },
+    /// An `<sce:feature>`, by its name.
+    Feature { name: String },
+    /// An `<sce:test-port>` or an `<sce:system-port>`: its id and the alias of
+    /// its port type.
+    Port { id: String, port_type: String },
+    /// An `<sce:test-timer>`: its id and its default duration.
+    Timer {
+        id: String,
+        duration: Option<String>,
+    },
+    /// A `<data>` of a component: its id and its type.
+    Variable { id: String, ty: Option<String> },
+    /// An `<invoke>` of a PTC: its id and the document it starts.
+    Invoke { id: String, src: String },
+    /// A `<transition>`: the branch it is, if it is one, and whether it has a
+    /// guard.
+    Transition {
+        trigger: Option<Trigger>,
+        guarded: bool,
+    },
+    /// A `<send>`: its port, the alias of its template and the variables
+    /// bound to the template's parameters.
+    Send {
+        port: String,
+        template: String,
+        args: Vec<String>,
+    },
+    /// An `<assign>`: its location.
+    Assign { location: String },
+    /// A `<log>`: its label, and whether it writes a value.
+    Log { label: String, expr: bool },
+    /// An `<sce:setverdict>`: its value, and whether it writes a reason.
+    Setverdict { value: String, reason: bool },
+    /// An `<sce:start-timer>`: its timer and the duration it writes.
+    StartTimer {
+        timer: String,
+        duration: Option<String>,
+    },
+    /// An `<sce:stop-timer>`: its timer.
+    StopTimer { timer: String },
+}
+
+/// A declaration of a name and its type, as the document writes the type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Typed {
+    pub name: String,
+    pub ty: String,
+}
+
+/// An `<sce:map>` of a configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Map {
+    pub component: String,
+    pub port: String,
+    pub system_port: String,
+}
+
+/// What a document a rule translates whole writes that its TTCN-3 form is
+/// held to (§9.4, the second check).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Form {
+    /// Nothing beyond its kind.
+    #[default]
+    Bare,
+    /// An event schema: its fields in declared order.
+    Record(Vec<Typed>),
+    /// An enum: each variant in declared order, with its number.
+    Enumerated(Vec<(String, String)>),
+    /// A union: the type of its tag, and each case's variant with the alias
+    /// of the record it holds, where it holds one.
+    Union {
+        tag: String,
+        cases: Vec<(String, Option<String>)>,
+    },
+    /// A template: its type and its formal parameters, in declared order.
+    Template { ty: String, parameters: Vec<Typed> },
+    /// A port type: each message's direction and the alias of its event
+    /// schema, in document order.
+    PortType(Vec<(String, String)>),
+    /// A configuration: the alias of its MTC's component, and each map.
+    Configuration { mtc: String, maps: Vec<Map> },
 }
 
 /// An `<sce:import>`, and the document it names, once read.
@@ -187,6 +305,10 @@ pub struct Document {
     pub name: String,
     pub kind: DocumentKind,
     pub nodes: Vec<Node>,
+    /// What the document writes that its rule translates whole.
+    pub form: Form,
+    /// A test component's statechart.
+    pub statechart: Option<Statechart>,
     /// A component: the row of each receive branch that matches with a
     /// template, at which the local the message is stored in is named.
     received: BTreeSet<u32>,
@@ -197,13 +319,41 @@ pub struct Document {
 impl Document {
     /// The construct `node` on `line`, of `kind`; its index.
     fn push(&mut self, node: String, line: Option<u32>, kind: Kind) -> usize {
+        self.push_detailed(node, line, kind, Detail::Bare)
+    }
+
+    /// The construct `node` on `line`, of `kind`, whose element writes
+    /// `detail`; its index.
+    fn push_detailed(
+        &mut self,
+        node: String,
+        line: Option<u32>,
+        kind: Kind,
+        detail: Detail,
+    ) -> usize {
         self.nodes.push(Node {
             node,
             line,
             kind,
             facts: Facts::default(),
+            detail,
         });
         self.nodes.len() - 1
+    }
+
+    /// The construct `index` names, as the witness names it.
+    pub fn construct(&self, index: usize) -> Construct {
+        let node = &self.nodes[index];
+        Construct {
+            document: self.name.clone(),
+            node: node.node.clone(),
+            line: node.line,
+        }
+    }
+
+    /// Whether the component invokes a PTC.
+    pub fn invokes(&self) -> bool {
+        self.links.invokes
     }
 
     /// The document this one imports as `alias`, of `kind`, once read.
@@ -325,6 +475,51 @@ impl Documents {
     /// The document named `name`.
     pub fn document(&self, name: &str) -> Option<&Document> {
         self.documents.iter().find(|document| document.name == name)
+    }
+
+    /// The document `from` imports as `alias`, of `kind`, once read.
+    pub fn imported(&self, from: &Document, alias: &str, kind: DocumentKind) -> Option<&Document> {
+        from.target(alias, kind)
+            .and_then(|index| self.documents.get(index))
+    }
+
+    /// The configurations that hold `component` as their MTC or a PTC.
+    pub fn configurations_holding(&self, component: &Document) -> Vec<&Document> {
+        self.documents
+            .iter()
+            .filter(|document| document.kind == DocumentKind::TestConfiguration)
+            .filter(|configuration| {
+                configuration.links.components.iter().any(|alias| {
+                    self.imported(configuration, alias, DocumentKind::TestComponent)
+                        .is_some_and(|held| held.name == component.name)
+                })
+            })
+            .collect()
+    }
+
+    /// The document of `construct` and the position of its node, where the
+    /// documents hold it as a node of their own.
+    pub fn node(&self, construct: &Construct) -> Option<(&Document, usize)> {
+        let document = self.document(&construct.document)?;
+        let index = document
+            .nodes
+            .iter()
+            .position(|node| node.node == construct.node && node.line == construct.line)?;
+        Some((document, index))
+    }
+
+    /// The kind of `construct`, where the documents hold it.
+    pub fn kind_of(&self, construct: &Construct) -> Option<Kind> {
+        if let Some((document, index)) = self.node(construct) {
+            return Some(document.nodes[index].kind);
+        }
+        self.holds(construct).then_some(Kind::Received)
+    }
+
+    /// The configuration the test case `case` runs in.
+    pub fn configuration_of(&self, case: &Document) -> Option<&Document> {
+        let alias = case.links.configuration.as_deref()?;
+        self.imported(case, alias, DocumentKind::TestConfiguration)
     }
 
     /// Whether the documents hold `construct`: its document is one the suite
@@ -488,6 +683,15 @@ fn read_document(files: &impl Files, name: &str) -> Result<Document, InputError>
         reason: error.to_string(),
     })?;
     let root = xml.root_element();
+    if let Some((element, line)) = unexpanded(root) {
+        return Err(InputError::Document {
+            document: name.to_string(),
+            reason: format!(
+                "it holds an <{element}> on row {line}, which the export expands before it reads \
+                 the document and this validator does not: it reads a document as it is written"
+            ),
+        });
+    }
     let written = sce_attribute(&root, "kind").ok_or_else(|| InputError::Document {
         document: name.to_string(),
         reason: "it declares no sce:kind: a statechart, which no rule of section 9.2 translates"
@@ -510,16 +714,134 @@ fn read_document(files: &impl Files, name: &str) -> Result<Document, InputError>
         name: name.to_string(),
         kind,
         nodes: Vec::new(),
+        form: Form::Bare,
+        statechart: None,
         received: BTreeSet::new(),
         imports,
         links: Links::default(),
     };
     if kind == DocumentKind::TestComponent {
-        statechart::read(root, &mut document)?;
+        document.statechart = Some(statechart::read(root, &mut document)?);
     } else {
         profile_document(root, &mut document);
     }
     Ok(document)
+}
+
+/// The first element below `root` that a preprocessor of the generator
+/// expands, `<xi:include>` (or an `<include>` of no namespace, which the
+/// expander takes as one) or `<sce:use>`, as it is spelled, and its row.
+fn unexpanded(root: roxmltree::Node<'_, '_>) -> Option<(&'static str, u32)> {
+    root.descendants().find_map(|node| {
+        let name = node.tag_name();
+        if !node.is_element() {
+            return None;
+        }
+        let include = name.name() == "include"
+            && (name.namespace() == Some(XINCLUDE_NAMESPACE) || name.namespace().is_none());
+        if include {
+            return Some(("xi:include", row(&node)));
+        }
+        is_element(&node, SCE_NAMESPACE, "use").then(|| ("sce:use", row(&node)))
+    })
+}
+
+/// The `<data>` children of `element`'s `<datamodel>`s.
+fn data_children<'a, 'input>(
+    element: roxmltree::Node<'a, 'input>,
+) -> Vec<roxmltree::Node<'a, 'input>> {
+    children(element, SCXML_NAMESPACE, "datamodel")
+        .into_iter()
+        .flat_map(|model| children(model, SCXML_NAMESPACE, "data"))
+        .collect()
+}
+
+/// `data`, a `<data>`, as the name and the `sce:type` it declares.
+fn typed(data: &roxmltree::Node<'_, '_>) -> Typed {
+    Typed {
+        name: attribute(data, "id").unwrap_or_default(),
+        ty: sce_attribute(data, "type").unwrap_or_default(),
+    }
+}
+
+/// What a document a rule translates whole writes, by its kind: an event
+/// schema's fields are the `<data>` of its data model; a template's formal
+/// parameters the `<data sce:direction="in">` with no `expr` of its (§11.4).
+fn form(root: roxmltree::Node<'_, '_>, kind: DocumentKind) -> Form {
+    match kind {
+        DocumentKind::EventSchema => Form::Record(data_children(root).iter().map(typed).collect()),
+        DocumentKind::Enum => Form::Enumerated(
+            data_children(root)
+                .into_iter()
+                .flat_map(|data| children(data, SCE_NAMESPACE, "variant"))
+                .map(|variant| {
+                    (
+                        attribute(&variant, "name").unwrap_or_default(),
+                        attribute(&variant, "value").unwrap_or_default(),
+                    )
+                })
+                .collect(),
+        ),
+        DocumentKind::Union => {
+            let data = data_children(root);
+            let tag = data
+                .iter()
+                .find(|data| sce_attribute(data, "type").is_some());
+            Form::Union {
+                tag: tag
+                    .and_then(|data| sce_attribute(data, "type"))
+                    .unwrap_or_default(),
+                cases: tag
+                    .map(|data| children(*data, SCE_NAMESPACE, "case"))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|case| {
+                        (
+                            attribute(case, "variant").unwrap_or_default(),
+                            attribute(case, "record").filter(|record| !record.is_empty()),
+                        )
+                    })
+                    .collect(),
+            }
+        }
+        DocumentKind::TestTemplate => Form::Template {
+            ty: sce_attribute(&root, "type").unwrap_or_default(),
+            parameters: data_children(root)
+                .iter()
+                .filter(|data| {
+                    sce_attribute(data, "direction").as_deref() == Some("in")
+                        && data.attribute("expr").is_none()
+                })
+                .map(typed)
+                .collect(),
+        },
+        DocumentKind::TestPortType => Form::PortType(
+            children(root, SCE_NAMESPACE, "message")
+                .iter()
+                .map(|message| {
+                    (
+                        attribute(message, "direction").unwrap_or_default(),
+                        attribute(message, "type").unwrap_or_default(),
+                    )
+                })
+                .collect(),
+        ),
+        DocumentKind::TestConfiguration => Form::Configuration {
+            mtc: children(root, SCE_NAMESPACE, "mtc")
+                .first()
+                .and_then(|mtc| attribute(mtc, "type"))
+                .unwrap_or_default(),
+            maps: children(root, SCE_NAMESPACE, "map")
+                .iter()
+                .map(|map| Map {
+                    component: attribute(map, "component").unwrap_or_default(),
+                    port: attribute(map, "port").unwrap_or_default(),
+                    system_port: attribute(map, "system-port").unwrap_or_default(),
+                })
+                .collect(),
+        },
+        _ => Form::Bare,
+    }
 }
 
 /// The constructs of a document of the profile that is no component: its
@@ -527,22 +849,30 @@ fn read_document(files: &impl Files, name: &str) -> Result<Document, InputError>
 /// a feature model and the system ports of a configuration.
 fn profile_document(root: roxmltree::Node<'_, '_>, document: &mut Document) {
     document.push("scxml".to_string(), Some(row(&root)), document.kind.root());
+    document.form = form(root, document.kind);
     match document.kind {
         DocumentKind::TestSuite => {
             for parameter in children(root, SCE_NAMESPACE, "module-parameter") {
                 let id = attribute(&parameter, "id").unwrap_or_default();
-                document.push(
+                let ty = attribute(&parameter, "type").unwrap_or_default();
+                document.push_detailed(
                     format!("sce:module-parameter '{id}'"),
                     Some(row(&parameter)),
                     Kind::ModuleParameter,
+                    Detail::ModuleParameter { id, ty },
                 );
             }
             for execute in children(root, SCE_NAMESPACE, "execute") {
                 let test_case = attribute(&execute, "test-case").unwrap_or_default();
-                document.push(
+                document.push_detailed(
                     format!("sce:execute '{test_case}'"),
                     Some(row(&execute)),
                     Kind::Execute,
+                    Detail::Execute {
+                        test_case: test_case.clone(),
+                        guard: attribute(&execute, "guard"),
+                        requires: attribute(&execute, "requires").is_some(),
+                    },
                 );
                 document.links.executes.push(test_case);
             }
@@ -550,16 +880,23 @@ fn profile_document(root: roxmltree::Node<'_, '_>, document: &mut Document) {
         DocumentKind::FeatureModel => {
             for feature in children(root, SCE_NAMESPACE, "feature") {
                 let name = attribute(&feature, "name").unwrap_or_default();
-                document.push(format!("sce:feature '{name}'"), None, Kind::Feature);
+                document.push_detailed(
+                    format!("sce:feature '{name}'"),
+                    None,
+                    Kind::Feature,
+                    Detail::Feature { name },
+                );
             }
         }
         DocumentKind::TestConfiguration => {
             for port in children(root, SCE_NAMESPACE, "system-port") {
                 let id = attribute(&port, "id").unwrap_or_default();
-                document.push(
+                let port_type = attribute(&port, "type").unwrap_or_default();
+                document.push_detailed(
                     format!("sce:system-port '{id}'"),
                     Some(row(&port)),
                     Kind::SystemPort,
+                    Detail::Port { id, port_type },
                 );
             }
             for local in ["mtc", "ptc"] {
@@ -585,13 +922,13 @@ pub(crate) mod tests {
 
     /// Documents held in memory, each by its name, its identity its folded
     /// name.
-    pub(crate) struct Memory(pub(crate) BTreeMap<&'static str, &'static str>);
+    pub(crate) struct Memory<T: AsRef<str>>(pub(crate) BTreeMap<&'static str, T>);
 
-    impl Files for Memory {
+    impl<T: AsRef<str>> Files for Memory<T> {
         fn text(&self, name: &str) -> io::Result<String> {
             self.0
                 .get(name)
-                .map(|text| text.to_string())
+                .map(|text| text.as_ref().to_string())
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, name.to_string()))
         }
 
@@ -650,7 +987,7 @@ pub(crate) mod tests {
     const PORT: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="test-port-type" name="port"/>"#;
 
-    fn memory() -> Memory {
+    fn memory() -> Memory<&'static str> {
         Memory(BTreeMap::from([
             ("s.scxml", SUITE),
             ("parts/features.scxml", FEATURES),
@@ -751,5 +1088,39 @@ pub(crate) mod tests {
             Documents::read(&files, "s.scxml"),
             Err(InputError::Document { document, .. }) if document == "port.scxml"
         ));
+    }
+
+    /// A document that holds what the generator's preprocessors expand, an
+    /// `<xi:include>` (or an `<include>` of no namespace) or an `<sce:use>`,
+    /// is not read as it is written, and says so by name.
+    #[test]
+    fn a_document_the_export_would_expand_is_refused_by_name() {
+        for (written, named) in [
+            (
+                r#"<xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="part.xml"/>"#,
+                "<xi:include>",
+            ),
+            (r#"<include xmlns="" href="part.xml"/>"#, "<xi:include>"),
+            (r#"<sce:use template="part.xml"/>"#, "<sce:use>"),
+        ] {
+            let config = CONFIG.replace(
+                "  <sce:system-port",
+                &format!("  {written}\n  <sce:system-port"),
+            );
+            let mut files = Memory(
+                memory()
+                    .0
+                    .into_iter()
+                    .map(|(name, text)| (name, text.to_string()))
+                    .collect(),
+            );
+            files.0.insert("config.scxml", config);
+            let refused = Documents::read(&files, "s.scxml");
+            assert!(
+                matches!(&refused, Err(InputError::Document { document, reason })
+                    if document == "config.scxml" && reason.contains(named)),
+                "{named}: {refused:?}"
+            );
+        }
     }
 }
