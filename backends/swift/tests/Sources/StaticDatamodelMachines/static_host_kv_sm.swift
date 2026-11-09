@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -644,57 +644,57 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         case .doneInvokeDel:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvDoneInvokeDelPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.existed = try fields.truth("existed")
             pendingDoneInvokeDelPayload = payload
             pendingPayloadTag = .doneInvokeDel
         case .doneInvokeGet:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvDoneInvokeGetPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.found = try fields.truth("found")
-            payload.value = try fields.text("value")
+            payload.value = try fields.text("value", bound: 4096)
             pendingDoneInvokeGetPayload = payload
             pendingPayloadTag = .doneInvokeGet
         case .doneInvokePut:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvDoneInvokePutPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.replaced = try fields.truth("replaced")
             pendingDoneInvokePutPayload = payload
             pendingPayloadTag = .doneInvokePut
         case .doneInvokeWalk:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvDoneInvokeWalkPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.found = try fields.truth("found")
-            payload.key = try fields.text("key")
+            payload.key = try fields.text("key", bound: 256)
             pendingDoneInvokeWalkPayload = payload
             pendingPayloadTag = .doneInvokeWalk
         case .hostKvDeleteRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvHostKvDeleteRequestPayload()
-            payload.key = try fields.text("key")
+            payload.key = try fields.text("key", bound: 256)
             pendingHostKvDeleteRequestPayload = payload
             pendingPayloadTag = .hostKvDeleteRequest
         case .hostKvGetRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvHostKvGetRequestPayload()
-            payload.key = try fields.text("key")
+            payload.key = try fields.text("key", bound: 256)
             pendingHostKvGetRequestPayload = payload
             pendingPayloadTag = .hostKvGetRequest
         case .hostKvNextKeyRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvHostKvNextKeyRequestPayload()
-            payload.after = try fields.text("after")
-            payload.prefix = try fields.text("prefix")
+            payload.after = try fields.text("after", bound: 256)
+            payload.prefix = try fields.text("prefix", bound: 256)
             pendingHostKvNextKeyRequestPayload = payload
             pendingPayloadTag = .hostKvNextKeyRequest
         case .hostKvPutRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostKvHostKvPutRequestPayload()
-            payload.key = try fields.text("key")
-            payload.value = try fields.text("value")
+            payload.key = try fields.text("key", bound: 256)
+            payload.value = try fields.text("value", bound: 4096)
             pendingHostKvPutRequestPayload = payload
             pendingPayloadTag = .hostKvPutRequest
         default:

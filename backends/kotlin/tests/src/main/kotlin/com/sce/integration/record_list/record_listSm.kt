@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 26e5bf730b3c2b04bc64b3f3339bd11d68362c63297741a6a051afa4c6cd0d1b
+// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce:std/shared/record_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: record_list.scxml:209 :: _machine
+// SCE-MAP: record_list.scxml:210 :: _machine
 
 package com.sce.integration.record_list
 
@@ -246,7 +246,6 @@ enum class RecordListRefusalEnum(val declaredName: String) {
     NO_ROOM_FOR_VALUE("noRoomForValue"),
     NO_ROOM_FOR_HISTORY("noRoomForHistory"),
     NO_ROOM_FOR_DIGEST("noRoomForDigest"),
-    TEXT_TOO_LONG("textTooLong"),
     CHANGE_TOO_LARGE("changeTooLarge"),
     REGISTER_NAMED_TWICE("registerNamedTwice"),
     CLOCK_EXHAUSTED("clockExhausted");
@@ -260,7 +259,6 @@ enum class RecordListRefusalEnum(val declaredName: String) {
         NO_ROOM_FOR_VALUE -> 2u.toUByte()
         NO_ROOM_FOR_HISTORY -> 3u.toUByte()
         NO_ROOM_FOR_DIGEST -> 4u.toUByte()
-        TEXT_TOO_LONG -> 5u.toUByte()
         CHANGE_TOO_LARGE -> 6u.toUByte()
         REGISTER_NAMED_TWICE -> 7u.toUByte()
         CLOCK_EXHAUSTED -> 8u.toUByte()
@@ -448,8 +446,6 @@ class RecordListStateMachine(
 
     /** What the published `values` holds. */
     val values: List<RecordListValueRecord> get() = vValues
-    /** W3C SCXML 5.2: the `typed` datamodel variable, the machine's own. */
-    private var vTyped: String = ""
     /** W3C SCXML 5.2: the `held` datamodel variable, the machine's own. */
     private var vHeld: RecordListValueRecord = RecordListValueRecord(id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
     /** W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`). */
@@ -601,7 +597,6 @@ class RecordListStateMachine(
     class InvokeParams {
         var node: ULong? = null
         var hub: Boolean? = null
-        var typed: String? = null
         var mine: UInt? = null
         var shareId: UInt? = null
         var shareField: UShort? = null
@@ -653,7 +648,6 @@ class RecordListStateMachine(
     private fun acceptParamsPart0(params: InvokeParams) {
         params.node?.let { vNode = it }
         params.hub?.let { vHub = it }
-        params.typed?.let { vTyped = it }
         params.mine?.let { vMine = it }
         params.shareId?.let { vShareId = it }
         params.shareField?.let { vShareField = it }
@@ -772,10 +766,10 @@ class RecordListStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
-        revised = "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
-        format2First = "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
-        format2Revised = "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
+        first = "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
+        revised = "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
+        format2First = "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
+        format2Revised = "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
         records = listOf(
             RecordLineage(
                 event = "merge.hlc_timestamp",
@@ -930,7 +924,6 @@ class RecordListStateMachine(
         variables += "stable" to SavedValues.list(vStable) { it.toSaved() }
         variables += "entry" to vEntry.toSaved()
         variables += "values" to SavedValues.list(vValues) { it.toSaved() }
-        variables += "typed" to SavedValues.of(vTyped)
         variables += "held" to vHeld.toSaved()
         variables += "digest" to SavedValues.list(vDigest) { it.toSaved() }
         variables += "mine" to SavedValues.of(vMine)
@@ -1034,66 +1027,65 @@ class RecordListStateMachine(
         val saved8 = SavedValues.list(savedGrown.variable("stable"), "stable", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
         val saved9 = RecordListEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
         val saved10 = SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
-        val saved11 = SavedValues.string(savedGrown.variable("typed"), "typed", 32)
-        val saved12 = RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
-        val saved13 = SavedValues.list(savedGrown.variable("digest"), "digest", 2048) { e, w -> RecordListNodeRecord.fromSaved(e, w) }
-        val saved14 = SavedValues.uint32(savedGrown.variable("mine"), "mine")
-        val saved15 = SavedValues.uint32(savedGrown.variable("shareId"), "shareId")
-        val saved16 = SavedValues.uint16(savedGrown.variable("shareField"), "shareField")
-        val saved17 = SavedValues.bool(savedGrown.variable("known"), "known")
-        val saved18 = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
-        val saved19 = SavedValues.bool(savedGrown.variable("isLive"), "isLive")
-        val saved20 = SavedValues.bool(savedGrown.variable("present"), "present")
-        val saved21 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
-        val saved22 = SavedValues.int64(savedGrown.variable("floor"), "floor")
-        val saved23 = SavedValues.bool(savedGrown.variable("stale"), "stale")
-        val saved24 = SavedValues.uint32(savedGrown.variable("late"), "late")
-        val saved25 = SavedValues.int64(savedGrown.variable("frozenFor"), "frozenFor")
-        val saved26 = SavedValues.uint32(savedGrown.variable("frozenHash"), "frozenHash")
-        val saved27 = SavedValues.int64(savedGrown.variable("pending"), "pending")
-        val saved28 = SavedValues.uint32(savedGrown.variable("members"), "members")
-        val saved29 = SavedValues.uint32(savedGrown.variable("agreeing"), "agreeing")
-        val saved30 = SavedValues.list(savedGrown.variable("answers"), "answers", 512) { e, w -> RecordListAnswerRecord.fromSaved(e, w) }
-        val saved31 = RecordListAnswerRecord.fromSaved(savedGrown.variable("answer"), "answer")
-        val saved32 = SavedValues.uint32(savedGrown.variable("agreed"), "agreed")
-        val saved33 = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
-        val saved34 = SavedValues.uint32(savedGrown.variable("roomHistory"), "roomHistory")
-        val saved35 = SavedValues.uint32(savedGrown.variable("roomDigest"), "roomDigest")
-        val saved36 = SavedValues.uint32(savedGrown.variable("full"), "full")
-        val saved37 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListMemberRecord.fromSaved(e, w) }
-        val saved38 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
-        val saved39 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
-        val saved40 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
-        val saved41 = SavedValues.bool(savedGrown.variable("announce"), "announce")
-        val saved42 = SavedValues.uint32(savedGrown.variable("announced"), "announced")
-        val saved43 = SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
-        val saved44 = SavedValues.bool(savedGrown.variable("listed"), "listed")
-        val saved45 = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
-        val saved46 = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
-        val saved47 = RecordListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
-        val saved48 = SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListPartRecord.fromSaved(e, w) }
-        val saved49 = SavedValues.bool(savedGrown.variable("holding"), "holding")
-        val saved50 = SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
-        val saved51 = SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
-        val saved52 = SavedValues.bool(savedGrown.variable("probing"), "probing")
-        val saved53 = SavedValues.uint32(savedGrown.variable("gone"), "gone")
-        val saved54 = SavedValues.uint32(savedGrown.variable("writes"), "writes")
-        val saved55 = SavedValues.bool(savedGrown.variable("covered"), "covered")
-        val saved56 = RecordListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
-        val saved57 = RecordListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
-        val saved58 = SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
-        val saved59 = SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
-        val saved60 = RecordListCommandEnum.fromSaved(savedGrown.variable("namedKind"), "namedKind")
-        val saved61 = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
-        val saved62 = SavedValues.uint32(savedGrown.variable("took"), "took")
-        val saved63 = SavedValues.list(savedGrown.variable("passing"), "passing", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
-        val saved64 = SavedValues.uint32(savedGrown.variable("passed"), "passed")
-        val saved65 = SavedValues.list(savedGrown.variable("waiting"), "waiting", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
-        val saved66 = SavedValues.list(savedGrown.variable("kept"), "kept", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
-        val saved67 = RecordListPartRecord.fromSaved(savedGrown.variable("part"), "part")
-        val saved68 = RecordListPartRecord.fromSaved(savedGrown.variable("op"), "op")
-        val saved69 = SavedValues.bool(savedGrown.variable("already"), "already")
-        val saved70 = SavedValues.uint32(savedGrown.variable("count"), "count")
+        val saved11 = RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
+        val saved12 = SavedValues.list(savedGrown.variable("digest"), "digest", 2048) { e, w -> RecordListNodeRecord.fromSaved(e, w) }
+        val saved13 = SavedValues.uint32(savedGrown.variable("mine"), "mine")
+        val saved14 = SavedValues.uint32(savedGrown.variable("shareId"), "shareId")
+        val saved15 = SavedValues.uint16(savedGrown.variable("shareField"), "shareField")
+        val saved16 = SavedValues.bool(savedGrown.variable("known"), "known")
+        val saved17 = SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
+        val saved18 = SavedValues.bool(savedGrown.variable("isLive"), "isLive")
+        val saved19 = SavedValues.bool(savedGrown.variable("present"), "present")
+        val saved20 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        val saved21 = SavedValues.int64(savedGrown.variable("floor"), "floor")
+        val saved22 = SavedValues.bool(savedGrown.variable("stale"), "stale")
+        val saved23 = SavedValues.uint32(savedGrown.variable("late"), "late")
+        val saved24 = SavedValues.int64(savedGrown.variable("frozenFor"), "frozenFor")
+        val saved25 = SavedValues.uint32(savedGrown.variable("frozenHash"), "frozenHash")
+        val saved26 = SavedValues.int64(savedGrown.variable("pending"), "pending")
+        val saved27 = SavedValues.uint32(savedGrown.variable("members"), "members")
+        val saved28 = SavedValues.uint32(savedGrown.variable("agreeing"), "agreeing")
+        val saved29 = SavedValues.list(savedGrown.variable("answers"), "answers", 512) { e, w -> RecordListAnswerRecord.fromSaved(e, w) }
+        val saved30 = RecordListAnswerRecord.fromSaved(savedGrown.variable("answer"), "answer")
+        val saved31 = SavedValues.uint32(savedGrown.variable("agreed"), "agreed")
+        val saved32 = SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
+        val saved33 = SavedValues.uint32(savedGrown.variable("roomHistory"), "roomHistory")
+        val saved34 = SavedValues.uint32(savedGrown.variable("roomDigest"), "roomDigest")
+        val saved35 = SavedValues.uint32(savedGrown.variable("full"), "full")
+        val saved36 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListMemberRecord.fromSaved(e, w) }
+        val saved37 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
+        val saved38 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
+        val saved39 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
+        val saved40 = SavedValues.bool(savedGrown.variable("announce"), "announce")
+        val saved41 = SavedValues.uint32(savedGrown.variable("announced"), "announced")
+        val saved42 = SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
+        val saved43 = SavedValues.bool(savedGrown.variable("listed"), "listed")
+        val saved44 = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
+        val saved45 = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
+        val saved46 = RecordListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
+        val saved47 = SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        val saved48 = SavedValues.bool(savedGrown.variable("holding"), "holding")
+        val saved49 = SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
+        val saved50 = SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
+        val saved51 = SavedValues.bool(savedGrown.variable("probing"), "probing")
+        val saved52 = SavedValues.uint32(savedGrown.variable("gone"), "gone")
+        val saved53 = SavedValues.uint32(savedGrown.variable("writes"), "writes")
+        val saved54 = SavedValues.bool(savedGrown.variable("covered"), "covered")
+        val saved55 = RecordListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
+        val saved56 = RecordListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
+        val saved57 = SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
+        val saved58 = SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
+        val saved59 = RecordListCommandEnum.fromSaved(savedGrown.variable("namedKind"), "namedKind")
+        val saved60 = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        val saved61 = SavedValues.uint32(savedGrown.variable("took"), "took")
+        val saved62 = SavedValues.list(savedGrown.variable("passing"), "passing", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        val saved63 = SavedValues.uint32(savedGrown.variable("passed"), "passed")
+        val saved64 = SavedValues.list(savedGrown.variable("waiting"), "waiting", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        val saved65 = SavedValues.list(savedGrown.variable("kept"), "kept", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        val saved66 = RecordListPartRecord.fromSaved(savedGrown.variable("part"), "part")
+        val saved67 = RecordListPartRecord.fromSaved(savedGrown.variable("op"), "op")
+        val saved68 = SavedValues.bool(savedGrown.variable("already"), "already")
+        val saved69 = SavedValues.uint32(savedGrown.variable("count"), "count")
         return {
             vNode = saved1
             vHub = saved2
@@ -1105,66 +1097,65 @@ class RecordListStateMachine(
             vStable = saved8
             vEntry = saved9
             vValues = saved10
-            vTyped = saved11
-            vHeld = saved12
-            vDigest = saved13
-            vMine = saved14
-            vShareId = saved15
-            vShareField = saved16
-            vKnown = saved17
-            vWasLive = saved18
-            vIsLive = saved19
-            vPresent = saved20
-            vRefusals = saved21
-            vFloor = saved22
-            vStale = saved23
-            vLate = saved24
-            vFrozenFor = saved25
-            vFrozenHash = saved26
-            vPending = saved27
-            vMembers = saved28
-            vAgreeing = saved29
-            vAnswers = saved30
-            vAnswer = saved31
-            vAgreed = saved32
-            vRoomValues = saved33
-            vRoomHistory = saved34
-            vRoomDigest = saved35
-            vFull = saved36
-            vRoster = saved37
-            vDenied = saved38
-            vForbidden = saved39
-            vAuthorized = saved40
-            vAnnounce = saved41
-            vAnnounced = saved42
-            vMoved = saved43
-            vListed = saved44
-            vLive = saved45
-            vOrdinal = saved46
-            vEmpty = saved47
-            vStaged = saved48
-            vHolding = saved49
-            vClosingNow = saved50
-            vSpoiled = saved51
-            vProbing = saved52
-            vGone = saved53
-            vWrites = saved54
-            vCovered = saved55
-            vProbe = saved56
-            vSpoiledFor = saved57
-            vNamedId = saved58
-            vNamedField = saved59
-            vNamedKind = saved60
-            vTaking = saved61
-            vTook = saved62
-            vPassing = saved63
-            vPassed = saved64
-            vWaiting = saved65
-            vKept = saved66
-            vPart = saved67
-            vOp = saved68
-            vAlready = saved69
-            vCount = saved70
+            vHeld = saved11
+            vDigest = saved12
+            vMine = saved13
+            vShareId = saved14
+            vShareField = saved15
+            vKnown = saved16
+            vWasLive = saved17
+            vIsLive = saved18
+            vPresent = saved19
+            vRefusals = saved20
+            vFloor = saved21
+            vStale = saved22
+            vLate = saved23
+            vFrozenFor = saved24
+            vFrozenHash = saved25
+            vPending = saved26
+            vMembers = saved27
+            vAgreeing = saved28
+            vAnswers = saved29
+            vAnswer = saved30
+            vAgreed = saved31
+            vRoomValues = saved32
+            vRoomHistory = saved33
+            vRoomDigest = saved34
+            vFull = saved35
+            vRoster = saved36
+            vDenied = saved37
+            vForbidden = saved38
+            vAuthorized = saved39
+            vAnnounce = saved40
+            vAnnounced = saved41
+            vMoved = saved42
+            vListed = saved43
+            vLive = saved44
+            vOrdinal = saved45
+            vEmpty = saved46
+            vStaged = saved47
+            vHolding = saved48
+            vClosingNow = saved49
+            vSpoiled = saved50
+            vProbing = saved51
+            vGone = saved52
+            vWrites = saved53
+            vCovered = saved54
+            vProbe = saved55
+            vSpoiledFor = saved56
+            vNamedId = saved57
+            vNamedField = saved58
+            vNamedKind = saved59
+            vTaking = saved60
+            vTook = saved61
+            vPassing = saved62
+            vPassed = saved63
+            vWaiting = saved64
+            vKept = saved65
+            vPart = saved66
+            vOp = saved67
+            vAlready = saved68
+            vCount = saved69
         }
     }
 
@@ -1192,7 +1183,6 @@ class RecordListStateMachine(
         SavedValues.list(savedGrown.variable("stable"), "stable", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
         RecordListEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
         SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
-        SavedValues.string(savedGrown.variable("typed"), "typed", 32)
         RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
         SavedValues.list(savedGrown.variable("digest"), "digest", 2048) { e, w -> RecordListNodeRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("mine"), "mine")
@@ -1283,7 +1273,8 @@ class RecordListStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: RecordListEvent, metadata: EventMetadata) {
@@ -1341,7 +1332,7 @@ class RecordListStateMachine(
                     pendingRecordListCompactPayload = RecordListRecordListCompactPayload(fields.int64("before"))
                 } else if (event == RecordListEvent.RecordList.Edit) {
                     val fields = EventPayload.decode(metadata.data, "{\"more\":false}")
-                    pendingRecordListEditPayload = RecordListRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"), fields.boolean("more"))
+                    pendingRecordListEditPayload = RecordListRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 32), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListEvent.RecordList.Floor) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListFloorPayload = RecordListRecordListFloorPayload(fields.int64("before"), fields.uint32("hash"))
@@ -1380,7 +1371,7 @@ class RecordListStateMachine(
                     pendingRecordListVisitPayload = RecordListRecordListVisitPayload(fields.uint64("to"), fields.uint8("depth"), fields.uint64("prefix"), fields.boolean("reply"))
                 } else if (event == RecordListEvent.RecordList.Write) {
                     val fields = EventPayload.decode(metadata.data, "{\"parts\":1}")
-                    pendingRecordListWritePayload = RecordListRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
+                    pendingRecordListWritePayload = RecordListRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
                 }
             }
         }
@@ -2090,7 +2081,7 @@ class RecordListStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    // SCE-MAP: record_list.scxml:210 :: _machine
     override fun onEntry(state: RecordListState, isDefaultEntry: Boolean) {
         when (state) {
             is RecordListState.Open -> onEntryOfOpen()
@@ -2099,11 +2090,11 @@ class RecordListStateMachine(
 
 
     private fun onEntryOfOpen() {
-                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
+                // SCE-MAP: record_list.scxml:428 :: open :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    // SCE-MAP: record_list.scxml:210 :: _machine
     override fun onExit(state: RecordListState) {
         when (state) {
             is RecordListState.Open -> onExitOfOpen()
@@ -2112,13 +2103,13 @@ class RecordListStateMachine(
 
 
     private fun onExitOfOpen() {
-                // SCE-MAP: record_list.scxml:432 :: open :: _state_body
+                // SCE-MAP: record_list.scxml:428 :: open :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    // SCE-MAP: record_list.scxml:210 :: _machine
     override fun executeTransitionContent(source: RecordListState, transitionIndex: Int) {
         when (source) {
             is RecordListState.Open -> transitionContentOfOpen(transitionIndex)
@@ -2166,7 +2157,7 @@ class RecordListStateMachine(
 
 
     private fun transitionContentOfOpenAt0() {
-                // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
+                // SCE-MAP: record_list.scxml:429 :: open :: _transition_0
                 if (pendingRecordListJoinPayload == null) {
                     return
                 }
@@ -2177,7 +2168,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt1() {
-                // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
+                // SCE-MAP: record_list.scxml:436 :: open :: _transition_1
                 if (pendingRecordListRoomPayload == null) {
                     return
                 }
@@ -2190,7 +2181,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt2() {
-                // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
+                // SCE-MAP: record_list.scxml:447 :: open :: _transition_2
                 if (pendingRecordListRolePayload == null) {
                     return
                 }
@@ -2201,7 +2192,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt3() {
-                // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
+                // SCE-MAP: record_list.scxml:459 :: open :: _transition_3
                 if (pendingRecordListEditPayload == null) {
                     return
                 }
@@ -2218,12 +2209,6 @@ class RecordListStateMachine(
             vNamedKind = RecordListCommandEnum.EDIT
 
             vProbing = true
-
-            vProbe = RecordListRefusalEnum.TEXT_TOO_LONG
-
-            if (try { vTyped = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, "<assign location='typed'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
 
             vPart = vPart.copy(kind = 0.toUByte())
 
@@ -2267,7 +2252,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt4() {
-                // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
+                // SCE-MAP: record_list.scxml:484 :: open :: _transition_4
                 if (pendingRecordListClearPayload == null) {
                     return
                 }
@@ -2327,7 +2312,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt5() {
-                // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
+                // SCE-MAP: record_list.scxml:509 :: open :: _transition_5
                 if (pendingRecordListRetirePayload == null) {
                     return
                 }
@@ -2387,7 +2372,7 @@ class RecordListStateMachine(
     }
 
     private fun transitionContentOfOpenAt6() {
-                // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
+                // SCE-MAP: record_list.scxml:551 :: open :: _transition_6
 
 
             if (!vSpoiled && (vRoster).size.toUInt() > 0.toUInt()) {
@@ -2803,7 +2788,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt7() {
-                // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
+                // SCE-MAP: record_list.scxml:703 :: open :: _transition_7
 
             if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3101,7 +3086,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt8() {
-                // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
+                // SCE-MAP: record_list.scxml:839 :: open :: _transition_8
 
             if (try { vOp = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3609,7 +3594,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt9() {
-                // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
+                // SCE-MAP: record_list.scxml:942 :: open :: _transition_9
                 if (pendingRecordListWritePayload == null) {
                     return
                 }
@@ -3636,7 +3621,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt10() {
-                // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
+                // SCE-MAP: record_list.scxml:965 :: open :: _transition_10
                 if (pendingRecordListWritePayload == null) {
                     return
                 }
@@ -3712,7 +3697,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt11() {
-                // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
+                // SCE-MAP: record_list.scxml:1000 :: open :: _transition_11
 
             if (try { vLate = com.sce.forge.runtime.SceChecked.add(vLate, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, "<assign location='late'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3720,7 +3705,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt12() {
-                // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
+                // SCE-MAP: record_list.scxml:1007 :: open :: _transition_12
                 if (pendingRecordListSupersedePayload == null) {
                     return
                 }
@@ -3796,7 +3781,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt13() {
-                // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
+                // SCE-MAP: record_list.scxml:1047 :: open :: _transition_13
 
 
             if (vPart.parts > 1.toUInt()) {
@@ -3991,7 +3976,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt14() {
-                // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
+                // SCE-MAP: record_list.scxml:1126 :: open :: _transition_14
                 if (pendingRecordListAnnouncePayload == null) {
                     return
                 }
@@ -4041,7 +4026,7 @@ RecordListEvent.RecordList.Refused,
     }
 
     private fun transitionContentOfOpenAt15() {
-                // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
+                // SCE-MAP: record_list.scxml:1149 :: open :: _transition_15
 
 
             for (named in vMoved) {
@@ -4288,7 +4273,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt16() {
-                // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
+                // SCE-MAP: record_list.scxml:1204 :: open :: _transition_16
                 if (pendingRecordListKeepPayload == null) {
                     return
                 }
@@ -4311,7 +4296,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt17() {
-                // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
+                // SCE-MAP: record_list.scxml:1221 :: open :: _transition_17
                 if (pendingRecordListCompactPayload == null) {
                     return
                 }
@@ -4376,7 +4361,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt18() {
-                // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
+                // SCE-MAP: record_list.scxml:1255 :: open :: _transition_18
                 if (pendingRecordListSettlePayload == null) {
                     return
                 }
@@ -4448,7 +4433,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt19() {
-                // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
+                // SCE-MAP: record_list.scxml:1276 :: open :: _transition_19
                 if (pendingRecordListProposePayload == null) {
                     return
                 }
@@ -4538,7 +4523,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt20() {
-                // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
+                // SCE-MAP: record_list.scxml:1306 :: open :: _transition_20
                 if (pendingRecordListAckPayload == null) {
                     return
                 }
@@ -4731,7 +4716,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt21() {
-                // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
+                // SCE-MAP: record_list.scxml:1370 :: open :: _transition_21
                 if (pendingRecordListFloorPayload == null) {
                     return
                 }
@@ -4834,7 +4819,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt22() {
-                // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
+                // SCE-MAP: record_list.scxml:1420 :: open :: _transition_22
 
             vTaking = emptyList()
 
@@ -4891,7 +4876,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt23() {
-                // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
+                // SCE-MAP: record_list.scxml:1440 :: open :: _transition_23
                 if (pendingRecordListVisitPayload == null) {
                     return
                 }
@@ -5028,7 +5013,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt24() {
-                // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
+                // SCE-MAP: record_list.scxml:1477 :: open :: _transition_24
                 if (pendingRecordListNodePayload == null) {
                     return
                 }
@@ -5202,7 +5187,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt25() {
-                // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
+                // SCE-MAP: record_list.scxml:1526 :: open :: _transition_25
                 if (pendingRecordListSharePayload == null) {
                     return
                 }
@@ -5489,7 +5474,7 @@ RecordListEvent.RecordList.Value,
     }
 
     private fun transitionContentOfOpenAt26() {
-                // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
+                // SCE-MAP: record_list.scxml:1590 :: open :: _transition_26
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

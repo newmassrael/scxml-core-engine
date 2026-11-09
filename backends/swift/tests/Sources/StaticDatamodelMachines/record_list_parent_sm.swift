@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -253,7 +253,6 @@ public enum RecordListParentRecordRefusalEnum: UInt8, CaseIterable, Sendable {
     case noRoomForValue = 2
     case noRoomForHistory = 3
     case noRoomForDigest = 4
-    case textTooLong = 5
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
@@ -265,7 +264,6 @@ public enum RecordListParentRecordRefusalEnum: UInt8, CaseIterable, Sendable {
         case .noRoomForValue: return "noRoomForValue"
         case .noRoomForHistory: return "noRoomForHistory"
         case .noRoomForDigest: return "noRoomForDigest"
-        case .textTooLong: return "textTooLong"
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
@@ -290,7 +288,6 @@ public enum RecordListParentRecordRefusalEnum: UInt8, CaseIterable, Sendable {
         case "noRoomForValue": self = .noRoomForValue
         case "noRoomForHistory": self = .noRoomForHistory
         case "noRoomForDigest": self = .noRoomForDigest
-        case "textTooLong": self = .textTooLong
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
@@ -876,7 +873,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 32)
             payload.now = try fields.signed64("now")
             payload.more = try fields.truth("more")
             pendingRecordListEditPayload = payload
@@ -904,7 +901,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.field = try fields.unsigned("field")
             payload.count = try fields.unsigned("count")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 96)
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
             payload.nodeId = try fields.unsigned64("nodeId")
@@ -954,7 +951,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.field = try fields.unsigned("field")
             payload.ordinal = try fields.unsigned("ordinal")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 96)
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
             payload.nodeId = try fields.unsigned64("nodeId")
@@ -966,7 +963,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 96)
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
             payload.nodeId = try fields.unsigned64("nodeId")
@@ -2257,10 +2254,10 @@ extension RecordListParentPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "d29628f9cc18dfa690b968ce10709031b7e718b8f8e45573c79d78466a4fc1cf",
-            revised: "4c3e62bd1e2a8511315643a001a26fd69249ba1130d0128413aa2164e09adae4",
-            format2First: "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a",
-            format2Revised: "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde",
+            first: "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
+            revised: "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
+            format2First: "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
+            format2Revised: "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
             records: [
                 SavedRecordLineage(
                     event: "record_list.refused", revision: 1,

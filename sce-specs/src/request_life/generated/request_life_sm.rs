@@ -1310,7 +1310,8 @@ impl StatePolicy for RequestLifePolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -1325,7 +1326,7 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeEvent::Claim => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Claim(RequestLifeClaimPayload {
-                    holder: fields.text("holder")?,
+                    holder: fields.text("holder", 64)?,
                     ttl: fields.unsigned64("ttl")?,
                     resume: fields.truth("resume")?,
                     offeredMatches: fields.truth("offeredMatches")?,
@@ -1336,14 +1337,14 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeEvent::Fail => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Fail(RequestLifeFailPayload {
-                    holder: fields.text("holder")?,
+                    holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                 });
             }
             RequestLifeEvent::Heartbeat => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Heartbeat(RequestLifeHeartbeatPayload {
-                    holder: fields.text("holder")?,
+                    holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                     ttl: fields.unsigned64("ttl")?,
                     now: fields.unsigned64("now")?,
@@ -1358,15 +1359,15 @@ impl StatePolicy for RequestLifePolicy {
             RequestLifeEvent::Publish => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Publish(RequestLifePublishPayload {
-                    holder: fields.text("holder")?,
+                    holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
-                    bundle: fields.text("bundle")?,
+                    bundle: fields.text("bundle", 64)?,
                 });
             }
             RequestLifeEvent::Write => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RequestLifePayload::Write(RequestLifeWritePayload {
-                    holder: fields.text("holder")?,
+                    holder: fields.text("holder", 64)?,
                     attempt: fields.unsigned::<u32>("attempt")?,
                 });
             }

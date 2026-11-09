@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -279,7 +279,7 @@ func (e StaticModelHarnessEvent) String() string {
 
 // StaticModelHarnessSourceHash is the digest of the source set this machine
 // was generated from: the `source-hash` of the file's own header, as a value.
-const StaticModelHarnessSourceHash = "9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1"
+const StaticModelHarnessSourceHash = "39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e"
 
 // StaticModelHarnessTransition is one transition of this machine, as constant
 // data. Nothing in the machine reads it: a host that draws the machine, or
@@ -2043,8 +2043,8 @@ func (p *StaticModelHarnessPolicy) PopulateEventMetadata(meta *sce.EventMetadata
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticModelHarnessPolicy) LiftTypedPayload(event StaticModelHarnessEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -2058,16 +2058,16 @@ func (p *StaticModelHarnessPolicy) LiftTypedPayload(event StaticModelHarnessEven
 			return err
 		}
 		var payload StaticModelHarnessDoneInvokeGenPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 4096); err != nil {
 			return err
 		}
 		if payload.constrained, err = sce.PayloadBool(fields, "constrained"); err != nil {
 			return err
 		}
-		if payload.model, err = sce.PayloadString(fields, "model"); err != nil {
+		if payload.model, err = sce.PayloadTextWithin(fields, "model", 128); err != nil {
 			return err
 		}
 		if payload.prompt_tokens, err = sce.PayloadUnsigned[uint32](fields, "prompt_tokens"); err != nil {
@@ -2076,7 +2076,7 @@ func (p *StaticModelHarnessPolicy) LiftTypedPayload(event StaticModelHarnessEven
 		if payload.answer_tokens, err = sce.PayloadUnsigned[uint32](fields, "answer_tokens"); err != nil {
 			return err
 		}
-		if payload.finish, err = sce.PayloadString(fields, "finish"); err != nil {
+		if payload.finish, err = sce.PayloadTextWithin(fields, "finish", 16); err != nil {
 			return err
 		}
 		p.pendingDoneInvokeGenPayload = payload
@@ -2098,7 +2098,7 @@ func (p *StaticModelHarnessPolicy) LiftTypedPayload(event StaticModelHarnessEven
 			return err
 		}
 		var payload StaticModelHarnessHarnessStartPayload
-		if payload.request, err = sce.PayloadString(fields, "request"); err != nil {
+		if payload.request, err = sce.PayloadTextWithin(fields, "request", 512); err != nil {
 			return err
 		}
 		p.pendingHarnessStartPayload = payload

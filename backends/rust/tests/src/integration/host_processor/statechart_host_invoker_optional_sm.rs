@@ -1267,7 +1267,8 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -1286,7 +1287,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                         rows: fields.unsigned::<u8>("rows")?,
                         total: fields.unsigned64("total")?,
                         at: fields.optional("at", |fields| Ok(fields.signed64("at")?))?,
-                        label: fields.optional("label", |fields| Ok(fields.text("label")?))?,
+                        label: fields.optional("label", |fields| Ok(fields.text("label", 16)?))?,
                         hit: fields.optional("hit", |fields| Ok(fields.truth("hit")?))?,
                     },
                 );
