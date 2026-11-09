@@ -89,7 +89,7 @@ type Suite struct {
 type CaseResult struct {
 	// TestCase is the test case's name.
 	TestCase string
-	// Result is its verdict and log.
+	// Result is its verdict and logs.
 	Result TestCaseResult
 }
 
@@ -106,7 +106,8 @@ func (r *OverrideRefusal) Error() string {
 }
 
 // refused is P13: the test case cannot start, so it ends at once with
-// `error`.
+// `error`. No component was created, so the test log holds its start and its
+// end alone.
 func refused(testCase, why string) CaseResult {
 	return CaseResult{
 		TestCase: testCase,
@@ -114,6 +115,10 @@ func refused(testCase, why string) CaseResult {
 			Verdict: VerdictError,
 			EndedAt: 0,
 			Log:     []LogRecord{{At: 0, Component: MTCName, Kind: LogError, Detail: why}},
+			Records: []TestLogRecord{
+				{At: 0, Event: TestCaseStarted{}},
+				{At: 0, Event: TestCaseEnded{Verdict: VerdictError}},
+			},
 		},
 	}
 }

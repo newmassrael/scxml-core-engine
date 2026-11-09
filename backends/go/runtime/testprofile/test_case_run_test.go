@@ -21,6 +21,10 @@
 // their run is not consumed by running it. The case of TheDoors reaches the run
 // only through the two host processors a generated component registers on its
 // engine (§12.3), written here with the types the engine registers them under.
+// The cases of TheTestLog hold the records of a run and its canonical text to
+// the bytes the Rust module `the_test_log` expects. Of TestPort, the case of a
+// message's value has no Rust twin: it holds what only a Go message can lack,
+// a value at all.
 
 package testprofile
 
@@ -32,6 +36,7 @@ import (
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	"github.com/newmassrael/sce-go-runtime/testprofile/canonical"
 )
 
 const second Duration = 1_000_000
@@ -136,8 +141,20 @@ func (a *traceAdapter) TakeInputsDue(now Instant) []SystemInput {
 	return due
 }
 
+// message is a message of the record event that holds no field: `{}` in the
+// test log, of the record type `empty`.
 func message(event string) Message {
-	return Message{Event: event, Value: struct{}{}}
+	return NewMessage(event, struct{}{}, "empty", func(struct{}) any { return canonical.Record() })
+}
+
+// writtenText is n as a text in the test log, of the record type `text`.
+func writtenText(event, n string) Message {
+	return NewMessage(event, n, "text", func(n string) any { return canonical.Text(n) })
+}
+
+// writtenNumber is n as a number in the test log, of the record type `number`.
+func writtenNumber(event string, n int) Message {
+	return NewMessage(event, n, "number", func(n int) any { return canonical.Integer(n) })
 }
 
 func logged(result TestCaseResult, component string, kind LogKind) bool {
@@ -319,6 +336,28 @@ func TestTestPort_ASnapshotSeesOnlyWhatWasQueuedWhenItWasTaken(t *testing.T) {
 	}
 }
 
+// A message's value is read back by its type, and carries its type's name and
+// its canonical form; a message of another type, or one that carries no value,
+// is no V.
+func TestTestPort_AMessageCarriesItsValueItsTypeAndItsCanonicalForm(t *testing.T) {
+	seven := writtenNumber("number", 7)
+	if n, ok := ValueAs[int](seven); !ok || n != 7 {
+		t.Fatalf("read back %d %v", n, ok)
+	}
+	if _, ok := ValueAs[string](seven); ok {
+		t.Fatal("a number is no text")
+	}
+	if _, ok := ValueAs[int](Message{Event: "bare"}); ok {
+		t.Fatal("a message that carries no value is no int")
+	}
+	if seven.TypeName() != "number" {
+		t.Fatalf("type %q", seven.TypeName())
+	}
+	if text, err := sce.WriteJCS(seven.CanonicalValue()); err != nil || text != `"7"` {
+		t.Fatalf("canonical %q %v", text, err)
+	}
+}
+
 // -- test_timer --------------------------------------------------------------
 
 func TestTestTimer_TimesOutAtItsInstantAndRestartsWhenStartedAgain(t *testing.T) {
@@ -369,10 +408,10 @@ func (f *fourInputs) TakeInputsDue(now Instant) []SystemInput {
 	}
 	f.given = true
 	return []SystemInput{
-		{SystemPort: "sut", Message: Message{Event: "number", Value: "7"}},
-		{SystemPort: "sut", Message: Message{Event: "other", Value: 7}},
-		{SystemPort: "sut", Message: Message{Event: "number", Value: 6}},
-		{SystemPort: "sut", Message: Message{Event: "number", Value: 7}},
+		{SystemPort: "sut", Message: writtenText("number", "7")},
+		{SystemPort: "sut", Message: writtenNumber("other", 7)},
+		{SystemPort: "sut", Message: writtenNumber("number", 6)},
+		{SystemPort: "sut", Message: writtenNumber("number", 7)},
 	}
 }
 
@@ -963,13 +1002,15 @@ const testPort = "http://sce.dev/ext/test-port"
 const testComponent = "http://sce.dev/ext/test-component"
 
 // testPortProcessor is a send (P6): the request carries the template's value,
-// which the run appends to the connected port, or hands the system adapter.
+// with its type's name and the writer of its canonical form, which the run
+// appends to the connected port, or hands the system adapter.
 func testPortProcessor(context *ComponentContext) sce.HostSendHandler {
 	return func(request sce.HostSendRequest) []sce.HostSendResponse {
-		if request.Value == nil {
+		value, carried := request.Value.(TestValue)
+		if !carried {
 			panic("a test-port send carries its template's value")
 		}
-		context.Send(request.Target, Message{Event: request.EventName, Value: request.Value})
+		context.Send(request.Target, Message{Event: request.EventName, Value: value})
 		return nil
 	}
 }
@@ -993,6 +1034,12 @@ type ping struct {
 	n int
 }
 
+// pingCanonical is a ping in the canonical form of the test log, as the unit
+// of a template over its record writes it.
+func pingCanonical(p ping) any {
+	return canonical.Record(canonical.Field("n", canonical.Integer(p.n)))
+}
+
 // doorsTester is an MTC wired as a generated one is: its start registers the
 // two processors, each holding its context, and it reaches the doors of the
 // run only through them. Entering its state invokes `echo` and sends it a
@@ -1007,7 +1054,12 @@ func (d *doorsTester) Start(context *ComponentContext) {
 	sends := testPortProcessor(context)
 	invokes := testComponentInvoker(context)
 	invokes(sce.HostInvokeEvent{Start: &sce.HostInvokeRequest{ProcessorType: testComponent, InvokeID: "echo"}})
-	sends(sce.HostSendRequest{ProcessorType: testPort, EventName: "ping", Target: "p", Value: ping{n: 3}})
+	sends(sce.HostSendRequest{
+		ProcessorType: testPort,
+		EventName:     "ping",
+		Target:        "p",
+		Value:         MessageValue(ping{n: 3}, "ping", pingCanonical),
+	})
 	context.StartTimer("reply", 10)
 	d.invoker = invokes
 	d.context = context
@@ -1087,4 +1139,167 @@ func TestTheDoors_ASendAndAPtcGoThroughTheHostProcessors(t *testing.T) {
 	if !logged(result, "echo", LogVerdict) {
 		t.Fatalf("the echo set no verdict: %v", result.Log)
 	}
+	// §12.5: the request carried the value with its type's name and the
+	// writer of its canonical form, which the test log records.
+	want := `{"at":"0","component":"mtc","kind":"message-sent","port":"p","type":"ping","value":{"n":"3"}}`
+	if !tracedAs(t, result, want) {
+		t.Fatalf("the test log holds no %s: %s", want, result.CanonicalLog("doors", "doors"))
+	}
+}
+
+// tracedAs reports whether a record of the test log of result is written as
+// want.
+func tracedAs(t *testing.T, result TestCaseResult, want string) bool {
+	t.Helper()
+	for _, record := range result.Records {
+		text, err := sce.WriteJCS(record.ToValue())
+		if err != nil {
+			t.Fatalf("a record is canonical: %v", err)
+		}
+		if text == want {
+			return true
+		}
+	}
+	return false
+}
+
+// -- the_test_log ----------------------------------------------------------------
+
+// pinging is an MTC and its echo, joined `p` to `q`; the MTC has two timers.
+func pinging() Configuration {
+	return Configuration{
+		MTCType:      "Tester",
+		PTCTypes:     map[string]string{"echo": "Echo"},
+		PortsOfType:  byType([2]string{"Tester", "p"}, [2]string{"Echo", "q"}),
+		TimersOfType: byType([2]string{"Tester", "t"}, [2]string{"Tester", "s"}),
+		Connections:  []Connection{{A: Endpoint{Component: "mtc", Port: "p"}, B: Endpoint{Component: "echo", Port: "q"}}},
+	}
+}
+
+// pingOf is the ping's value, a record of one number of the record type
+// `ping`, as the unit of a template over it writes it.
+func pingOf(n uint32) Message {
+	return NewMessage("ping", n, "ping", func(n uint32) any {
+		return canonical.Record(canonical.Field("n", canonical.Integer(n)))
+	})
+}
+
+// pingingMachines are the MTC, which creates the echo, pings it, starts two
+// timers and logs, and at the first timer's timeout stops the second, and the
+// first again, which no longer runs, and passes; and the echo, which takes the
+// ping, passes with a reason, and terminates.
+func pingingMachines() machines {
+	return machines{}.with("Tester", steps{
+		onStart: func(context *ComponentContext, _ *scripted) {
+			context.Create("echo")
+			context.Send("p", pingOf(3))
+			context.StartTimer("t", 10)
+			context.StartTimer("s", 20)
+			context.Log(`asked "echo"`)
+		},
+		onSnapshot: func(context *ComponentContext, self *scripted) {
+			if context.TimedOut("t") {
+				context.Timeout("t")
+				context.StopTimer("s")
+				context.StopTimer("t")
+				context.Setverdict(VerdictPass, "")
+				self.end()
+			}
+		},
+	}).with("Echo", steps{
+		onStart: idle(),
+		onSnapshot: func(context *ComponentContext, self *scripted) {
+			if context.SnapshotPresent("q") {
+				context.Receive("q")
+				context.Setverdict(VerdictPass, "pinged")
+				self.end()
+			}
+		},
+	})
+}
+
+// loggedSuite is the suite of testCase alone.
+func loggedSuite(testCase TestCase) Suite {
+	return Suite{Name: "logged_suite", Executes: []Execute{execute(testCase, NoGuard)}}
+}
+
+// expectLog holds that got is the log whose parts, joined, are want.
+func expectLog(t *testing.T, got string, want ...string) {
+	t.Helper()
+	if joined := strings.Join(want, ""); got != joined {
+		t.Fatalf("the test log is\n%s\nnot\n%s", got, joined)
+	}
+}
+
+// P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the suite's
+// runner. The echo's work comes in the round after the MTC's start, at
+// `NOW = 0`, the timeout at 10; the stop of a timer that no longer runs, and
+// the removal of the terminated echo when the MTC ends, write no record.
+func TestTheTestLog_ARunWritesEachRecordWhereItsEventHappens(t *testing.T) {
+	suite := loggedSuite(TestCase{Name: "pings_the_echo", Configuration: pinging(), Machines: pingingMachines().factory()})
+	results, err := RunSuite(suite, FeaturesOf(), func(string) SystemAdapter { return &traceAdapter{} }, nil)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("the suite runs its one case: %v %v", results, err)
+	}
+	expectLog(t, results[0].CanonicalLog(suite.Name),
+		`{"records":[`,
+		`{"at":"0","kind":"test-case-started"},`,
+		`{"at":"0","component":"mtc","kind":"component-created","type":"Tester"},`,
+		`{"at":"0","component":"echo","kind":"component-created","type":"Echo"},`,
+		`{"at":"0","component":"mtc","kind":"message-sent","port":"p",`,
+		`"type":"ping","value":{"n":"3"}},`,
+		`{"at":"0","component":"mtc","duration_us":"10","kind":"timer-started",`,
+		`"timer":"t"},`,
+		`{"at":"0","component":"mtc","duration_us":"20","kind":"timer-started",`,
+		`"timer":"s"},`,
+		`{"at":"0","component":"mtc","kind":"log","text":"asked \"echo\""},`,
+		`{"at":"0","component":"echo","kind":"message-received","port":"q",`,
+		`"type":"ping","value":{"n":"3"}},`,
+		`{"at":"0","component":"echo","kind":"verdict-set","reason":"pinged",`,
+		`"verdict":"pass"},`,
+		`{"at":"0","component":"echo","kind":"component-done","verdict":"pass"},`,
+		`{"at":"10","component":"mtc","kind":"timer-timed-out","timer":"t"},`,
+		`{"at":"10","component":"mtc","kind":"timer-stopped","timer":"s"},`,
+		`{"at":"10","component":"mtc","kind":"verdict-set","verdict":"pass"},`,
+		`{"at":"10","component":"mtc","kind":"component-done","verdict":"pass"},`,
+		`{"at":"10","kind":"test-case-ended","verdict":"pass"}`,
+		`],"schema":"sce-test-log.v1","suite":"logged_suite",`,
+		`"test_case":"pings_the_echo","verdict":"pass"}`,
+	)
+}
+
+// P13: an error the runtime sets is a verdict without the runtime's own
+// reason, which another runtime would not write alike.
+func TestTheTestLog_AnErrorTheRuntimeSetsIsLoggedWithoutItsCause(t *testing.T) {
+	m := machines{}.with("Waiter", steps{onStart: idle(), onSnapshot: idle()})
+	result := runCase(lone("Waiter"), m, &traceAdapter{}, GuardOf(7))
+	if result.Verdict != VerdictError {
+		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
+	}
+	expectLog(t, result.CanonicalLog("logged_suite", "waits"),
+		`{"records":[`,
+		`{"at":"0","kind":"test-case-started"},`,
+		`{"at":"0","component":"mtc","kind":"component-created","type":"Waiter"},`,
+		`{"at":"7","component":"mtc","kind":"verdict-set","verdict":"error"},`,
+		`{"at":"7","kind":"test-case-ended","verdict":"error"}`,
+		`],"schema":"sce-test-log.v1","suite":"logged_suite",`,
+		`"test_case":"waits","verdict":"error"}`,
+	)
+}
+
+// P13: a test case that cannot start, for want of an adapter, logs its start
+// and its end alone, since no component was created.
+func TestTheTestLog_ATestCaseThatCannotStartLogsItsStartAndEnd(t *testing.T) {
+	suite := loggedSuite(TestCase{Name: "unplayed", Configuration: pinging(), Machines: pingingMachines().factory()})
+	results, err := RunSuite(suite, FeaturesOf(), func(string) SystemAdapter { return nil }, nil)
+	if err != nil || len(results) != 1 {
+		t.Fatalf("the suite reports its one case: %v %v", results, err)
+	}
+	expectLog(t, results[0].CanonicalLog(suite.Name),
+		`{"records":[`,
+		`{"at":"0","kind":"test-case-started"},`,
+		`{"at":"0","kind":"test-case-ended","verdict":"error"}`,
+		`],"schema":"sce-test-log.v1","suite":"logged_suite",`,
+		`"test_case":"unplayed","verdict":"error"}`,
+	)
 }

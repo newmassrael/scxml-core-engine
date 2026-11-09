@@ -70,7 +70,10 @@ type Configuration struct {
 	Mappings []Mapping
 }
 
-// LogKind is what the test log records of a run (§12.5).
+// LogKind is what a line of the run's log records (§12.5): the run as a reader
+// follows it, with the removals of PTCs and the cause of an `error` in the
+// runtime's words. The test log, which two runtimes compare, is
+// TestCaseResult.Records.
 type LogKind int
 
 const (
@@ -123,7 +126,7 @@ func (k LogKind) String() string {
 	return fmt.Sprintf("LogKind(%d)", int(k))
 }
 
-// LogRecord is one line of the test log.
+// LogRecord is one line of the run's log.
 type LogRecord struct {
 	// At is `NOW` when it was recorded.
 	At Instant
@@ -137,14 +140,18 @@ type LogRecord struct {
 }
 
 // TestCaseResult is the outcome of one test case: its verdict, the instant it
-// ended at, and its log.
+// ended at, the lines of its log, and its test log.
 type TestCaseResult struct {
 	// Verdict is the test case verdict (P14).
 	Verdict Verdict
 	// EndedAt is `NOW` when the run ended.
 	EndedAt Instant
-	// Log is the test log.
+	// Log is the lines of the run's log, for a reader.
 	Log []LogRecord
+	// Records is the test log (docs/adr/0091, C3): the records of TCI's test
+	// logging interface, in the order the run produced them, which
+	// CanonicalLog writes.
+	Records []TestLogRecord
 }
 
 // SystemInput is one input of the SUT: the system port it arrives on and the
@@ -275,8 +282,9 @@ type runState struct {
 	removedVerdict Verdict
 	mtcTerminated  bool
 	// failed says a dynamic error ended the run (P13).
-	failed bool
-	log    []LogRecord
+	failed  bool
+	log     []LogRecord
+	records []TestLogRecord
 
 	// held says a step of the run is inside the state (access).
 	held bool
@@ -408,6 +416,7 @@ func (r *runState) settle(name string, serial uint64, machine ComponentMachine, 
 		return
 	}
 	e.terminated = true
+	r.trace(ComponentDone{Component: name, Verdict: e.state.verdict})
 	if name == MTCName {
 		r.mtcTerminated = true
 		return
@@ -442,9 +451,12 @@ func (r *runState) finish() TestCaseResult {
 	if r.failed {
 		verdict = VerdictError
 	}
+	r.trace(TestCaseEnded{Verdict: verdict})
 	log := make([]LogRecord, len(r.log))
 	copy(log, r.log)
-	return TestCaseResult{Verdict: verdict, EndedAt: r.now, Log: log}
+	records := make([]TestLogRecord, len(r.records))
+	copy(records, r.records)
+	return TestCaseResult{Verdict: verdict, EndedAt: r.now, Log: log, Records: records}
 }
 
 // -- Entities (§2.1, P9) ----------------------------------------------------
@@ -471,6 +483,7 @@ func (r *runState) enter(name, componentType string) uint64 {
 		kind = LogStart
 	}
 	r.record(name, kind, componentType)
+	r.trace(ComponentCreated{Component: name, ComponentType: componentType})
 	return r.created
 }
 
@@ -525,6 +538,12 @@ func (r *runState) removeEntity(name string) {
 
 func (r *runState) send(sender, port string, message Message) {
 	r.record(sender, LogSend, port+" "+message.Event)
+	r.trace(MessageSent{
+		Component:   sender,
+		Port:        port,
+		MessageType: message.TypeName(),
+		Value:       message.CanonicalValue(),
+	})
 	for _, connection := range r.configuration.Connections {
 		var peer Endpoint
 		switch {
@@ -586,6 +605,12 @@ func (r *runState) receive(name string, serial uint64, port string) Message {
 	}
 	message := queue.RemoveHead()
 	r.record(name, LogReceive, port+" "+message.Event)
+	r.trace(MessageReceived{
+		Component:   name,
+		Port:        port,
+		MessageType: message.TypeName(),
+		Value:       message.CanonicalValue(),
+	})
 	return message
 }
 
@@ -598,6 +623,7 @@ func (r *runState) timeout(name string, serial uint64, timer string) {
 	}
 	binding.TimeoutTaken()
 	r.record(name, LogTimeout, timer)
+	r.trace(TimerTimedOut{Component: name, Timer: timer})
 }
 
 func (r *runState) setverdict(name string, serial uint64, verdict Verdict, reason string) {
@@ -608,18 +634,26 @@ func (r *runState) setverdict(name string, serial uint64, verdict Verdict, reaso
 		detail += " " + reason
 	}
 	r.record(name, LogVerdict, detail)
+	r.trace(VerdictSet{Component: name, Verdict: verdict, Reason: reason})
 }
 
 // -- The verdict and the log (§5, §12.5) ------------------------------------
 
-// fail is a dynamic error (P13): the run ends with `error`.
+// fail is a dynamic error (P13): the run ends with `error`. The test log
+// records the verdict without why, which is this runtime's own prose.
 func (r *runState) fail(component, why string) {
 	r.failed = true
 	r.record(component, LogError, why)
+	r.trace(VerdictSet{Component: component, Verdict: VerdictError})
 }
 
 func (r *runState) record(component string, kind LogKind, detail string) {
 	r.log = append(r.log, LogRecord{At: r.now, Component: component, Kind: kind, Detail: detail})
+}
+
+// trace is a record of the test log, at `NOW`.
+func (r *runState) trace(event TestLogEvent) {
+	r.records = append(r.records, TestLogRecord{At: r.now, Event: event})
 }
 
 // createEntity creates the component name of the type componentType and
@@ -781,18 +815,30 @@ func (c *ComponentContext) Setverdict(verdict Verdict, reason string) {
 func (c *ComponentContext) StartTimer(timer string, duration Duration) {
 	perform(c.run, c.name, func(r *runState) {
 		r.component(c.name, c.serial).timer(timer).Start(r.now, duration)
+		r.trace(TimerStarted{Component: c.name, Timer: timer, Duration: duration})
 	})
 }
 
-// StopTimer is `<sce:stop-timer>` (P7).
+// StopTimer is `<sce:stop-timer>` (P7). The test log records the stop of a
+// running timer; the stop of one that is not running changes nothing.
 func (c *ComponentContext) StopTimer(timer string) {
-	perform(c.run, c.name, func(r *runState) { r.component(c.name, c.serial).timer(timer).Stop() })
+	perform(c.run, c.name, func(r *runState) {
+		binding := r.component(c.name, c.serial).timer(timer)
+		running := binding.Status() == TimerRunning
+		binding.Stop()
+		if running {
+			r.trace(TimerStopped{Component: c.name, Timer: timer})
+		}
+	})
 }
 
 // Log is a `<log>` (P8): recorded in the test log with `NOW` and the
 // component.
 func (c *ComponentContext) Log(text string) {
-	perform(c.run, c.name, func(r *runState) { r.record(c.name, LogLog, text) })
+	perform(c.run, c.name, func(r *runState) {
+		r.record(c.name, LogLog, text)
+		r.trace(Logged{Component: c.name, Text: text})
+	})
 }
 
 // -- Doors (§12.3) ------------------------------------------------------------
@@ -903,7 +949,7 @@ func NewTestCaseRun(
 	}}
 }
 
-// Run runs the test case to its end and answers its verdict and log.
+// Run runs the test case to its end and answers its verdict and logs.
 //
 // It panics when this run has been run already.
 func (t *TestCaseRun) Run() TestCaseResult {
@@ -911,6 +957,7 @@ func (t *TestCaseRun) Run() TestCaseResult {
 		panic("a test case run is run once; build another to run the test case again")
 	}
 	t.started = true
+	perform(t.state, MTCName, func(r *runState) { r.trace(TestCaseStarted{}) })
 	createEntity(t.state, MTCName, t.state.configuration.MTCType)
 	for !access(t.state, MTCName, func(r *runState) bool { return r.ended() }) {
 		round(t.state)

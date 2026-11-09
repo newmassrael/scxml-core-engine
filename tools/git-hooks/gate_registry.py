@@ -2186,7 +2186,10 @@ GATES: dict[str, dict] = {
         # The shared Lua is copied under backends/go; the shared tables its
         # readers ask are not.
         "extra": ["backends/go/**", "tools/codegen/templates/**",
-                  "sce-build/src/**", "tests/ecmascript/**"],
+                  "sce-build/src/**", "tests/ecmascript/**",
+                  # The test log's wire schema, which the runtime's
+                  # `TestEveryKindIsOneTheSchemaNames` reads at run time.
+                  "schemas/sce-test-log.v1.schema.json"],
         "deps": ["codegen-build"],
         # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
         # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them

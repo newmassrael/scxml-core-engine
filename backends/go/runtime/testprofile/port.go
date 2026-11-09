@@ -16,19 +16,88 @@ type Instant = int64
 // Duration is a length of logical time, in microseconds.
 type Duration = int64
 
+// TestValue is a value a message carries, its type's name and its canonical
+// form in the test log (docs/SCE_TEST_PROFILE.md §12.5).
+//
+// The value is read back by its type (ValueAs); its canonical form is written
+// by the types its document declares (package canonical), which its Go type
+// alone does not say. MessageValue makes one of a value, its type's name and
+// the writer of its form, which is what a generated send and a system adapter
+// give; a host may implement it on a type of its own.
+//
+// Cross-language siblings: `sce_rust_runtime::test::TestValue` (Rust),
+// `com.sce.runtime.test.TestValue` (Kotlin).
+type TestValue interface {
+	// Any is the value, to be read back by its type.
+	Any() any
+	// TypeName is the name of the value's record as the types module of the
+	// suite's TTCN-3 export names it (docs/SCE_TEST_PROFILE.md §9.5): the unit
+	// name of its `event-schema` document. A value in TCI always carries its
+	// type, and so does a message of the test log.
+	TypeName() string
+	// Canonical is the value in the canonical form of the test log: built
+	// from texts, truth values, arrays and objects alone (package canonical),
+	// so that the JSON Canonicalization Scheme (sce.WriteJCS) writes it as the
+	// same bytes on every runtime. It runs while the run's state is held, so
+	// it reads the value and nothing else.
+	Canonical() any
+}
+
+// withCanonical is a value, its type's name and the writer of its canonical
+// form: what MessageValue makes.
+type withCanonical[V any] struct {
+	value     V
+	typeName  string
+	canonical func(V) any
+}
+
+func (w withCanonical[V]) Any() any {
+	return w.value
+}
+
+func (w withCanonical[V]) TypeName() string {
+	return w.typeName
+}
+
+func (w withCanonical[V]) Canonical() any {
+	return w.canonical(w.value)
+}
+
+// String shows the value's type's name alone: the value's type is not known
+// here.
+func (w withCanonical[V]) String() string {
+	return "TestValue(typeName=" + w.typeName + ", ..)"
+}
+
+// MessageValue is value as a message's value, of the record typeName, whose
+// canonical form canonical writes: the `TYPE` and the `Canonical` of the unit
+// of a template over its record, as a generated send gives them
+// (`<template>.TYPE`, `<template>.Canonical`), on the request's
+// sce.HostSendRequest.Value.
+func MessageValue[V any](value V, typeName string, canonical func(V) any) TestValue {
+	return withCanonical[V]{value: value, typeName: typeName, canonical: canonical}
+}
+
 // Message is a message on a port: the event name of its record and the
 // record's value.
 //
-// The value is the record type the statechart generator writes for the
-// `event-schema` that declares it; a template's matcher reads it as that type
-// (ValueAs). Matching is on the value and never on an encoding (ADR 0091 C2).
-// A value is never changed once sent, so a message is copied freely: every
-// copy reads the same record.
+// The value is of the record type the unit of its `event-schema` declares; a
+// template's matcher reads it as that type (ValueAs). Matching is on the value
+// and never on an encoding (ADR 0091 C2), and so is the test log
+// (CanonicalValue). A value is never changed once sent, so a message is copied
+// freely: every copy reads the same record.
 type Message struct {
 	// Event is the event name of the message's record.
 	Event string
-	// Value is the record's value, read back by its type.
-	Value any
+	// Value is the record's value, with its type's name and the writer of its
+	// canonical form.
+	Value TestValue
+}
+
+// NewMessage is a message of the record event whose value is value, of the
+// record type typeName, whose canonical form canonical writes (MessageValue).
+func NewMessage[V any](event string, value V, typeName string, canonical func(V) any) Message {
+	return Message{Event: event, Value: MessageValue(value, typeName, canonical)}
 }
 
 // String shows the message's event alone: the value's type is not known here.
@@ -36,10 +105,27 @@ func (m Message) String() string {
 	return "Message(event=" + m.Event + ", ..)"
 }
 
+// TypeName is the name of the value's record type in the test log
+// (TestValue.TypeName).
+func (m Message) TypeName() string {
+	return m.Value.TypeName()
+}
+
+// CanonicalValue is the value in the canonical form of the test log
+// (TestValue.Canonical).
+func (m Message) CanonicalValue() any {
+	return m.Value.Canonical()
+}
+
 // ValueAs is the value of message and true when it is a V, and the zero V and
-// false when it is of another type, which a template of V does not match.
+// false when it is of another type, which a template of V does not match, or
+// when the message carries no value at all.
 func ValueAs[V any](message Message) (V, bool) {
-	value, ok := message.Value.(V)
+	if message.Value == nil {
+		var none V
+		return none, false
+	}
+	value, ok := message.Value.Any().(V)
 	return value, ok
 }
 
