@@ -140,6 +140,10 @@ paths = [
     "backends/go/runtime",
     "backends/kotlin/runtime/src",
     "backends/python/runtime/sce_runtime",
+    # The validator of a test suite's TTCN-3 export (ADR 0091 answer 12): its
+    # third check computes a branch's exit and entry sets on its own
+    # (`src/scxml313.rs`, bound to §scxml-3.13 and §scxml-D).
+    "sce-ttcn3-validator/src",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
@@ -261,15 +265,6 @@ scan_exclusions = [
     # so excluding them swallows no section from this gate. If one ever cites a
     # clause it has to leave this list and be enrolled in `paths`.
     "sce-revision/",
-    # The validator of a test suite's TTCN-3 export (`sce-ttcn3-validator/`, ADR
-    # 0091 answer 12), which holds the export's witness to the suite's documents and
-    # modules apart from the exporter. Its third check computes a branch's exit and
-    # entry sets again (`src/scxml313.rs`), which cites §scxml-3.13 and §scxml-D;
-    # every other `§` of the crate names a section of docs/SCE_TEST_PROFILE.md or of
-    # ES 201 873-1. The existence axis reads those two cites wherever the crate is
-    # listed; what excluding it gives up is their binding, so the crate leaves this
-    # list for `paths` in the change that binds src/scxml313.rs to both sections.
-    "sce-ttcn3-validator/",
 ]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified

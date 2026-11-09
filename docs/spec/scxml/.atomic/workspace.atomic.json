@@ -2204,6 +2204,10 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "build_swift_event_payload",
           "kind": "references"
+        },
+        {
+          "file": "sce-ttcn3-validator/src/scxml313.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -16035,6 +16039,10 @@
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "SCE::Core",
+          "kind": "references"
+        },
+        {
+          "file": "sce-ttcn3-validator/src/scxml313.rs",
           "kind": "references"
         }
       ],
