@@ -114,7 +114,9 @@ fn the_binding_reads_every_payload_the_clause_names() {
     let mut failures = Vec::new();
     for (index, case) in table.iter().enumerate() {
         let session = format!("event_data_reading_{index}");
-        engine.create_session(&session);
+        engine
+            .create_session(&session)
+            .expect("the session is created");
         engine
             .set_current_event(
                 &session,
@@ -160,7 +162,7 @@ fn the_binding_reads_every_payload_the_clause_names() {
 #[test]
 fn a_payload_that_is_a_call_leaves_the_session_alone() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     engine
         .execute_script("s", "breached = false")
         .expect("execute_script");

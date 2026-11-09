@@ -3392,6 +3392,7 @@ fn describe<P: StatePolicy>(rejection: &ConfigurationRejection<P::State>) -> Str
         ConfigurationRejection::CurrentNotAtomic { current } => {
             format!("the saved current state '{}' is not atomic", name(current))
         }
+        ConfigurationRejection::ScriptSessionUnavailable(ref failure) => failure.to_string(),
     }
 }
 

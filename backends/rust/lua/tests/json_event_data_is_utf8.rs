@@ -80,7 +80,7 @@ fn event(engine: &LuaEngine, session: &str, data: &str) {
 fn json_event_data_carries_a_non_ascii_string_whole() {
     let sent = WIDE_TEXT;
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(&engine, "s", &format!(r#"{{"north_star": "{sent}"}}"#));
     engine
         .execute_script("s", "held = _event.data.north_star")
@@ -100,7 +100,7 @@ fn json_event_data_carries_a_non_ascii_string_whole() {
 fn a_non_ascii_string_assigned_directly_is_unaffected() {
     let sent = WIDE_TEXT;
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     engine
         .execute_script("s", &format!("held = '{sent}'"))
         .expect("execute_script");
@@ -116,7 +116,7 @@ fn a_non_ascii_string_assigned_directly_is_unaffected() {
 #[test]
 fn a_non_ascii_json_key_survives_the_rewrite() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(&engine, "s", &format!(r#"{{"{WIDE_KEY}": "ok"}}"#));
     engine
         .execute_script("s", &format!("held = _event.data['{WIDE_KEY}']"))
@@ -133,7 +133,7 @@ fn a_non_ascii_json_key_survives_the_rewrite() {
 #[test]
 fn nested_json_keeps_non_ascii_on_both_sides_of_the_colon() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(
         &engine,
         "s",
@@ -169,7 +169,7 @@ fn a_mangled_payload_would_be_a_latin1_widening_and_is_not() {
     assert_ne!(widened, sent, "the case must be able to tell the two apart");
 
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(&engine, "s", &format!(r#"{{"north_star": "{sent}"}}"#));
     engine
         .execute_script("s", "held = _event.data.north_star")
@@ -194,7 +194,7 @@ fn a_mangled_payload_would_be_a_latin1_widening_and_is_not() {
 #[test]
 fn a_unicode_escape_still_yields_a_table_not_a_string() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     // Built from the backslash character so this source carries no escape of
     // its own: the payload is the literal text a JSON encoder emits for
     // `MIXED` when asked to stay ASCII-only.
@@ -220,7 +220,7 @@ fn a_unicode_escape_still_yields_a_table_not_a_string() {
 #[test]
 fn an_escaped_solidus_still_yields_a_table_not_a_string() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     let b = '\\';
     let payload = format!("{{\"path\": \"a{b}/b\"}}");
     event(&engine, "s", &payload);
@@ -240,7 +240,7 @@ fn an_escaped_solidus_still_yields_a_table_not_a_string() {
 #[test]
 fn a_json_array_arrives_as_an_indexable_table() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(&engine, "s", r#"{"codes": [200, 201]}"#);
     engine
         .execute_script("s", "first = _event.data.codes[1]")
@@ -264,7 +264,7 @@ fn a_json_array_arrives_as_an_indexable_table() {
 #[test]
 fn a_top_level_json_array_arrives_as_a_table() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     event(&engine, "s", r#"["a", "b"]"#);
     engine
         .execute_script("s", "first = _event.data[1]")
@@ -285,7 +285,7 @@ fn a_top_level_json_array_arrives_as_a_table() {
 #[test]
 fn json_parse_and_event_data_agree_on_the_same_document() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     let b = '\\';
     let doc = format!("{{\"north_star\": \"{b}u0041{b}ubd81\", \"codes\": [200, 201]}}");
 
@@ -316,7 +316,7 @@ fn json_parse_and_event_data_agree_on_the_same_document() {
 #[test]
 fn json_parse_builds_a_one_based_sequence() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     engine
         .execute_script("s", "held = JSON.parse('[200, 201]')[1]")
         .expect("execute_script");
@@ -333,7 +333,7 @@ fn json_parse_builds_a_one_based_sequence() {
 #[test]
 fn an_escape_before_non_ascii_text_does_not_split_it() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     // Two single multi-byte scalars, each sitting immediately after an
     // escaped quote — the position the scan has to get right.
     let one = "\u{BD81}";

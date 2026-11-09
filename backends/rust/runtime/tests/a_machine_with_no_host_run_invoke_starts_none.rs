@@ -70,6 +70,7 @@ impl<const RUNS: bool> StatePolicy for HostPolicy<RUNS> {
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<St, 1>;
+    type StartFailure = core::convert::Infallible;
 
     const HAS_HOST_INVOKES: bool = RUNS;
 
@@ -182,7 +183,7 @@ fn asked_to_start<const RUNS: bool>() -> (Engine<HostPolicy<RUNS>>, bool, Vec<u6
         }
         None
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let started = engine.perform_host_invoke(HostInvokeRequest {
         processor_type: TYPE.to_string(),
         invoke_id: JOB.to_string(),

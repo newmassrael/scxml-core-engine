@@ -112,6 +112,7 @@ impl StatePolicy for MockPolicy {
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<St, 1>;
+    type StartFailure = core::convert::Infallible;
 
     // One child of the `<scxml>` element and no transition of its own: the
     // only row of the transitions table is the document's initial transition.
@@ -208,7 +209,7 @@ fn scheduler_consults_hal_under_std() {
     mock_set_ticks(1_000_000);
 
     let mut engine = Engine::<MockPolicy>::new(MockPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // (1) Schedule a 5s delayed event. ready_at = now_ticks_ms() + 5000.
     let _send_id = engine.schedule_event(Ev::Delayed, Duration::from_secs(5), "sid1", "", "");
@@ -245,7 +246,7 @@ fn scheduler_resolution_is_milliseconds() {
     mock_set_ticks(2_000_000);
 
     let mut engine = Engine::<MockPolicy>::new(MockPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let _ = engine.schedule_event(Ev::Delayed, Duration::from_micros(500), "sid2", "", "");
 

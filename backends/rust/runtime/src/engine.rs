@@ -368,24 +368,42 @@ pub enum ScheduledRoute {
 }
 
 /// Why [`Engine::initialize_as_root`] refused to start a machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RootStartRefusal {
     /// §scxml-6.2.4: the document sends to `#_parent`, and a session its
     /// host started has no parent to reach.
     NeedsParent,
+    /// docs/adr/0096: the machine's script session could not be established,
+    /// so nothing was entered and nothing ran.
+    ScriptSession(crate::ScriptSessionFailure),
 }
 
 impl RootStartRefusal {
     /// The refusal as a sentence, for a host to report — the same words on
-    /// every engine.
-    pub fn reason(self) -> &'static str {
+    /// every engine. A [`ScriptSession`](Self::ScriptSession) refusal carries
+    /// the step that failed and the engine's words beside it; `Display`
+    /// writes both.
+    pub fn reason(&self) -> &'static str {
         match self {
             Self::NeedsParent => {
                 "the machine sends to #_parent and was started with no parent session"
             }
+            Self::ScriptSession(_) => "the machine's script session could not be established",
         }
     }
 }
+
+impl core::fmt::Display for RootStartRefusal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NeedsParent => f.write_str(self.reason()),
+            Self::ScriptSession(failure) => core::fmt::Display::fmt(failure, f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for RootStartRefusal {}
 
 /// What became of a `<send>` handed to [`Engine::send_to_target`].
 #[cfg(feature = "std")]
@@ -1483,6 +1501,17 @@ impl<P: StatePolicy> Engine<P> {
         self.policy.adopt_tree_inboxes_in_children(tree);
     }
 
+    /// The child session this machine was to be has had its start refused
+    /// (docs/adr/0096), so it never ran: what its parent gave it before the
+    /// start is withdrawn. Its Mesh router is told the session ended and its
+    /// inbox leaves the tree's directory, with nothing applied, since a session
+    /// that never started takes no input.
+    #[cfg(feature = "std")]
+    pub(crate) fn withdraw_unstarted_child(&mut self) {
+        self.detach_mesh();
+        self.tree_inboxes.remove(self.policy.own_session_id());
+    }
+
     /// The child session this machine is has ended, by reaching a top-level
     /// `<final>` or because its parent stopped it: its inbox leaves the tree's
     /// directory, so a post naming it is refused from then on, and what the
@@ -1784,9 +1813,10 @@ impl<P: StatePolicy> Engine<P> {
         exit_interpreter(&mut EngineHost { engine: self });
     }
 
-    /// Execute the policy's `initialize_data_model`.
-    pub(crate) fn initialize_data_model_dispatch(&mut self) {
-        self.with_policy(|policy, engine| policy.initialize_data_model(engine));
+    /// Execute the policy's `initialize_data_model`, which establishes the
+    /// script session and fails when it cannot (docs/adr/0096).
+    pub(crate) fn initialize_data_model_dispatch(&mut self) -> Result<(), P::StartFailure> {
+        self.with_policy(|policy, engine| policy.initialize_data_model(engine))
     }
 
     // ════════════════════════════════════════
@@ -1809,41 +1839,60 @@ impl<P: StatePolicy> Engine<P> {
     /// [`initialize`](Self::initialize), for a host that refuses to start a
     /// machine needing a parent as a root ([`Self::root_start_refusal`]).
     ///
-    /// A refusal starts nothing: no datamodel is declared and no state is
-    /// entered, so the engine is as [`new`](Self::new) left it.
+    /// It refuses for either of two reasons: a machine that needs a parent,
+    /// before anything is established, and a machine whose script session
+    /// cannot be established ([`RootStartRefusal::ScriptSession`],
+    /// docs/adr/0096). A refusal starts nothing: no state is entered and no
+    /// executable content runs, so the engine is as [`new`](Self::new) left it.
     pub fn initialize_as_root(&mut self) -> Result<(), RootStartRefusal> {
         if let Some(refusal) = Self::root_start_refusal() {
             return Err(refusal);
         }
-        self.initialize();
-        Ok(())
+        self.initialize()
+            .map_err(|failure| RootStartRefusal::ScriptSession(failure.into()))
     }
 
     /// Enter the initial configuration and run the macrostep loop until stable.
     ///
     /// Matches C++ `StaticExecutionEngine::initialize()`. §scxml-5.3
     /// guarantees datamodel initialization happens before any state entry.
-    pub fn initialize(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// A machine with a script engine establishes its script session first,
+    /// and one whose session cannot be established is not started
+    /// (docs/adr/0096): the error names the step that failed, no state is
+    /// entered, no executable content runs, no event is taken and the engine is
+    /// not running. A machine without a script engine has
+    /// [`core::convert::Infallible`] as its
+    /// [`StartFailure`](StatePolicy::StartFailure), so its start cannot fail
+    /// and a host writes `let Ok(()) = engine.initialize();`.
+    #[must_use = "a start refused for its script session entered nothing, and the machine is not running"]
+    pub fn initialize(&mut self) -> Result<(), P::StartFailure> {
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
         // instant — see `begin_turn` for what reading the clock per `<send>`
         // did to two of them.
         let opened = self.begin_turn();
-        self.initialize_in_turn();
+        let started = self.initialize_in_turn();
         self.end_turn(opened);
+        started
     }
 
-    fn initialize_in_turn(&mut self) {
+    fn initialize_in_turn(&mut self) -> Result<(), P::StartFailure> {
+        // §scxml-5.3: Initialize datamodel before any state entry. It
+        // establishes the script session first, and a session that cannot be
+        // established refuses the start here, before the run is marked
+        // running, so nothing below is reached (docs/adr/0096).
+        if concepts::has_data_model_init::<P>() {
+            self.initialize_data_model_dispatch()?;
+        }
+
         self.core.main_loop.is_running = true;
         self.core.main_loop.terminal_state = None;
         self.core.interpreter_exited = false;
         #[cfg(feature = "std")]
         self.late_bound_states.clear();
-
-        // §scxml-5.3: Initialize datamodel before any state entry
-        if concepts::has_data_model_init::<P>() {
-            self.initialize_data_model_dispatch();
-        }
 
         // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
         // document's own initial transition, whose source is the `<scxml>`
@@ -1875,6 +1924,7 @@ impl<P: StatePolicy> Engine<P> {
                 cb();
             }
         }
+        Ok(())
     }
 
     /// Enter a configuration this machine was already in, WITHOUT running
@@ -1912,6 +1962,11 @@ impl<P: StatePolicy> Engine<P> {
     /// requested configuration is the one outcome this door must never produce,
     /// because a host has no way to detect it afterwards.
     ///
+    /// It also refuses a machine whose script session cannot be established,
+    /// with [`ConfigurationRejection::ScriptSessionUnavailable`] naming the step
+    /// that failed (docs/adr/0096): the session is established before anything
+    /// of the engine is touched, so that refusal too leaves the engine as it was.
+    ///
     /// # What it does not do
     ///
     /// - No `<onentry>`, and no `<onexit>`: no state is entered or left.
@@ -1940,9 +1995,14 @@ impl<P: StatePolicy> Engine<P> {
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
         // executable content — so it runs here for the same reason it runs in
         // `initialize`: a `cond` or an `assign` evaluated after this call would
-        // otherwise reference variables that were never declared.
+        // otherwise reference variables that were never declared. It
+        // establishes the script session first, and a session that cannot be
+        // established refuses the entry before anything of the engine is
+        // touched, as a configuration of another document is (docs/adr/0096).
         if concepts::has_data_model_init::<P>() {
-            self.initialize_data_model_dispatch();
+            self.initialize_data_model_dispatch().map_err(|failure| {
+                ConfigurationRejection::ScriptSessionUnavailable(failure.into())
+            })?;
         }
 
         self.core.current_state = P::state_id(current);

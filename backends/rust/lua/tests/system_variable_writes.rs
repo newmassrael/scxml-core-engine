@@ -171,7 +171,9 @@ fn a_write_to_a_system_variable_fails() {
     for (index, case) in cases.iter().enumerate() {
         // A fresh session per case: a write that landed must not decide the
         // cases after it.
-        engine.create_session(&session.id);
+        engine
+            .create_session(&session.id)
+            .expect("the session is created");
         engine
             .setup_system_variables(&session.id, &session.name, &session.io_processors)
             .expect("setup_system_variables");

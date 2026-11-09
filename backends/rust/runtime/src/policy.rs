@@ -267,6 +267,19 @@ pub trait StatePolicy: Sized + 'static {
     /// it.
     type Configuration: Bounded<Self::State>;
 
+    /// Why this machine's start can be refused (docs/adr/0096):
+    /// [`ScriptSessionFailure`](crate::ScriptSessionFailure) for a machine with a
+    /// script engine, whose session may not be established, and
+    /// [`core::convert::Infallible`] for one without, whose start cannot be
+    /// refused that way, so a host starts it with `let Ok(()) = engine.initialize();`.
+    ///
+    /// [`Engine::initialize`](crate::Engine::initialize) returns it as it is; the
+    /// refusals that hold every kind of failure ([`RootStartRefusal`](crate::RootStartRefusal),
+    /// [`ConfigurationRejection`](crate::ConfigurationRejection)) hold it as a
+    /// [`ScriptSessionFailure`](crate::ScriptSessionFailure), which is what the
+    /// `Into` bound is for.
+    type StartFailure: Into<crate::ScriptSessionFailure> + Debug;
+
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)
     //
@@ -281,9 +294,10 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether ECMAScript expression evaluation is required (guards, assigns, etc.).
     ///
     /// When `true`, the engine will call [`initialize_data_model`](StatePolicy::initialize_data_model)
-    /// during [`Engine::initialize`](crate::Engine::initialize) and the generated code
-    /// will lazy-initialize a script session against the `IScriptEngine` instance
-    /// the policy received via `Policy::new(script_engine)` (Engine DI Parity RFC).
+    /// during [`Engine::initialize`](crate::Engine::initialize), which establishes
+    /// the machine's script session against the `IScriptEngine` instance the
+    /// policy received via `Policy::new(script_engine)` (Engine DI Parity RFC).
+    /// That is the one place the session is made (docs/adr/0096).
     const NEEDS_SCRIPT_ENGINE: bool = false;
 
     /// Whether the document has any `<datamodel>` variables requiring script-engine initialization.
@@ -612,8 +626,17 @@ pub trait StatePolicy: Sized + 'static {
     /// Initialize the datamodel via the script engine (§scxml-5.3).
     ///
     /// Generated only when `NEEDS_DATA_MODEL_INIT` is `true`. Called from
-    /// [`Engine::initialize`](crate::Engine::initialize) before any state entry.
-    fn initialize_data_model(&mut self, _engine: &mut Engine<Self>) {}
+    /// [`Engine::initialize`](crate::Engine::initialize) and
+    /// [`Engine::enter_at`](crate::Engine::enter_at) before any state entry.
+    /// It establishes the script session first, and a session that cannot be
+    /// established is the error: the policy releases what the failed steps made,
+    /// and the engine refuses the start (docs/adr/0096).
+    fn initialize_data_model(
+        &mut self,
+        _engine: &mut Engine<Self>,
+    ) -> Result<(), Self::StartFailure> {
+        Ok(())
+    }
 
     /// Execute any pending `<invoke>` elements deferred during entry (§scxml-6.4).
     ///

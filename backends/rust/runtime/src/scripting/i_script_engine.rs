@@ -90,6 +90,12 @@ pub enum ScriptError {
     /// Engine-specific error (e.g., mlua error wrapper).
     #[error("engine error: {0}")]
     EngineError(String),
+
+    /// The shared library (ECMAScript semantics, JSON builtins, the DOM read
+    /// surface) did not load into a new session, which
+    /// [`IScriptEngine::create_session`] then did not keep (docs/adr/0096).
+    #[error("script library did not load: {0}")]
+    LibraryNotLoaded(String),
 }
 
 /// Convenience type alias.
@@ -315,10 +321,16 @@ pub trait IScriptEngine: Send + Sync {
     // Session Lifecycle (C++: inherited from ISessionLifecycle)
     // ════════════════════════════════════════
 
-    /// Create a new evaluation session.
+    /// Create a new evaluation session, with the shared library loaded into it.
     ///
     /// Each state machine instance has its own session with an isolated variable scope.
-    fn create_session(&self, session_id: &str);
+    /// Creating a session that already exists keeps it and succeeds.
+    ///
+    /// A session that cannot be created, or whose shared library does not load
+    /// ([`ScriptError::LibraryNotLoaded`]), is an error, and the engine keeps no
+    /// session under `session_id` then: the machine that asked refuses its start
+    /// (docs/adr/0096).
+    fn create_session(&self, session_id: &str) -> ScriptResult<()>;
 
     /// Destroy a session and release its resources.
     fn destroy_session(&self, session_id: &str);
