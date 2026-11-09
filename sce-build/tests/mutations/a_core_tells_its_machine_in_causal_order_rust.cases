@@ -79,8 +79,8 @@ PY
 
 mutation_case "An operation is signed without its context" <<'PY'
 edit("backends/rust/trust/src/message.rs",
-     "    part(&mut bytes, &link.context.len().to_string());\n    for (node, seq) in &link.context {\n        part(&mut bytes, &node.to_string());\n        part(&mut bytes, &seq.to_string());\n    }\n",
-     "")
+     "            (CONTEXT_FIELD.to_string(), cbor::Value::List(entries)),\n",
+     "            (CONTEXT_FIELD.to_string(), cbor::Value::List({ let _ = entries; Vec::new() })),\n")
 PY
 
 mutation_case "A context is read whatever order its nodes are written in" <<'PY'

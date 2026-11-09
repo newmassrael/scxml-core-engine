@@ -1,0 +1,91 @@
+# Mutation cases for the trust layer's side of a change of the shared list as one unit (docs/adr/0085,
+# sections 1 and 6, landing 4c): one `record_list.change` is one signed operation, its operations a
+# list of records written as deterministic CBOR, every one of them signed in its order; an empty
+# change and a change that writes one register twice are no change; each write of a change is sealed
+# under its register and the change's dot, and opened so; a change sent again leaves as the operation
+# made; and a device's changes are told apart by their dot, so a second content under one dot is
+# refused before it is signed.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_change_is_signed_and_sealed_as_one_unit_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --lib --test a_byte_format_does_not_drift --test a_host_admits_what_its_members_signed --test a_host_keeps_the_content_from_the_hub --test a_device_signs_one_operation_for_one_write_however_often_it_is_sent
+mutation_targets backends/rust/trust/src/message.rs backends/rust/trust/src/trust.rs backends/rust/trust/src/secrecy.rs
+mutation_oracles backends/rust/trust/tests/a_byte_format_does_not_drift.rs backends/rust/trust/tests/a_host_admits_what_its_members_signed.rs backends/rust/trust/tests/a_host_keeps_the_content_from_the_hub.rs backends/rust/trust/tests/a_device_signs_one_operation_for_one_write_however_often_it_is_sent.rs
+
+# ── What a change is signed as ─────────────────────────────────────────────────────────────────
+
+mutation_case "A change is signed with its first operation alone" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "                .map(|item| typed(item, elem, name))",
+     "                .take(1)\n                .map(|item| typed(item, elem, name))")
+PY
+
+mutation_case "A change is signed as its dot alone" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "    message.extend_from_slice(&payload);",
+     "    message.extend_from_slice(&subject);\n    let _ = payload;")
+PY
+
+mutation_case "An empty change is signed" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "        if ops.is_empty() {\n            return Err(MessageError::Empty);\n        }\n    }\n    let payload",
+     "        let _ = ops;\n    }\n    let payload")
+PY
+
+mutation_case "A change that writes one register twice is signed" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "        if writes.iter().any(|(_, held)| *held == stamp) {",
+     "        if false {")
+PY
+
+mutation_case "An event is signed under the domain of the parts" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "const DOMAIN: &str = \"sce-trust/event/3\";",
+     "const DOMAIN: &str = \"sce-trust/event/2\";")
+PY
+
+# ── What a write of a change is sealed under ───────────────────────────────────────────────────
+
+mutation_case "Two writes of one change are sealed under one nonce" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "    part(&mut stamp, &read_as(op, \"id\", Kind::Unsigned)?);\n    part(&mut stamp, &read_as(op, \"field\", Kind::Unsigned)?);\n",
+     "")
+PY
+
+mutation_case "A write of a change is sealed under the nonce of a write sent alone" <<'PY'
+edit("backends/rust/trust/src/secrecy.rs",
+     "const NONCE_DOMAIN: &str = \"sce-trust/nonce/2\";",
+     "const NONCE_DOMAIN: &str = \"sce-trust/nonce/1\";")
+PY
+
+mutation_case "A host seals the first write of a change alone" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        for (at, stamp) in writes {\n            let (number, text) =",
+     "        for (at, stamp) in writes.into_iter().take(1) {\n            let (number, text) =")
+PY
+
+mutation_case "A host opens the first write of a change alone" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    for (at, stamp) in writes {\n        let sealed = wire[\"ops\"][at]",
+     "    for (at, stamp) in writes.into_iter().take(1) {\n        let sealed = wire[\"ops\"][at]")
+PY
+
+# ── One change, one operation ──────────────────────────────────────────────────────────────────
+
+mutation_case "A change sent again is signed again" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if let Some(wire) = state.changes.get(&held) {",
+     "    if let Some(wire) = state.changes.get(&held).filter(|_| false) {")
+PY
+
+mutation_case "A device's changes are told apart by their content and not by their dot" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    let wid = signing.subject;",
+     "    let wid = key.clone();")
+PY

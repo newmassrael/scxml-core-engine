@@ -11,7 +11,7 @@ use sce_rust_trust::audit;
 use sce_rust_trust::backup::{self, Contents, Cost};
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{link_bytes, Body, Entry, Log, Profile};
-use sce_rust_trust::message::{Link, FLOOR_EVENT, SIGNED_EVENTS, SUPERSEDE_EVENT, WRITE_EVENT};
+use sce_rust_trust::message::{Link, CHANGE_EVENT, FLOOR_EVENT, SIGNED_EVENTS};
 use sce_rust_trust::{Checkpoint, Identity, PublicKey, Settlement, Trust};
 use serde_json::{json, Value};
 
@@ -62,9 +62,11 @@ fn publish(hosts: &[&Trust], body: Body) -> Entry {
     entry
 }
 
+/// A change of `author`'s at `wall` of one write, to row `id`.
 fn write(author: u64, id: u64, wall: i64) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "0", "text": "",
-           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": wall.to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": "",
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
@@ -115,32 +117,38 @@ fn corpus() -> Corpus {
         host.set_epoch_key(1, [5; 32]);
     }
 
-    // Operations: bob writes three sealed writes; the hub is given the first and carol all three.
-    // Alice writes over two of them: once alone, and once as a part of a change of two, which
-    // carries the change's size and stamp (docs/adr/0046).
+    // Operations: bob makes three changes of a sealed write each; the hub is given the first and
+    // carol all three. Alice writes over two of them: once alone, and once in a change that writes
+    // the field anew, two operations of one change (docs/adr/0085, section 1).
     let mut sealer = h2.clone();
     let mut operations: Vec<(String, String)> = (1..=3)
         .map(|n| {
             (
-                WRITE_EVENT.to_string(),
+                CHANGE_EVENT.to_string(),
                 sealer
-                    .seal("#s", WRITE_EVENT, &write(2, n, 1000 + n as i64))
+                    .seal("#s", CHANGE_EVENT, &write(2, n, 1000 + n as i64))
                     .unwrap()
                     .unwrap(),
             )
         })
         .collect();
-    let notes = [
-        json!({"id": 1, "field": 3, "wallTime": "1001", "counter": 0, "nodeId": "2", "by": "1"}),
-        json!({"id": 2, "field": 3, "wallTime": "1002", "counter": 0, "nodeId": "2", "by": "1",
-               "parts": 2, "atWallTime": "1003", "atCounter": 0}),
+    let write_over = |id: u64, wall: &str| {
+        json!({"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+               "wallTime": wall, "counter": 0, "nodeId": "2"})
+    };
+    let changes = [
+        json!({"by": "1", "wallTime": "2001", "counter": 0, "ops": [write_over(1, "1001")]}),
+        json!({"by": "1", "wallTime": "2002", "counter": 0, "ops": [
+            write_over(2, "1002"),
+            {"kind": 0, "id": 2, "field": 3, "value": "4", "text": "anew",
+             "wallTime": "0", "counter": 0, "nodeId": "0"}]}),
     ];
-    let mut note_sealer = h1.clone();
-    for note in notes {
+    let mut alice_sealer = h1.clone();
+    for change in changes {
         operations.push((
-            SUPERSEDE_EVENT.to_string(),
-            note_sealer
-                .seal("#s", SUPERSEDE_EVENT, &note.to_string())
+            CHANGE_EVENT.to_string(),
+            alice_sealer
+                .seal("#s", CHANGE_EVENT, &change.to_string())
                 .unwrap()
                 .unwrap(),
         ));

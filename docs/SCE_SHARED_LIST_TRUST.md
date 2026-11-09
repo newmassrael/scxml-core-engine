@@ -162,9 +162,11 @@ person's machine is told the role they have now (`Trust::role_events`).
 What a device sends is an **operation** of its chain: the event as it travels, the number it has
 among the device's operations (`seq`), the id of the one it follows (`prev`), the entry of the
 log it was made under (`mh`, and that entry's hash `mhh`), its causal context (`cx`, below), and
-the device's signature of all of it (`message::operation_bytes`, domain `sce-trust/operation/2`).
-Nothing in it is a time the device claims: what decides whether it holds is the entry it names and
-the number it has.
+the device's signature of all of it (`message::operation_bytes`, domain `sce-trust/operation/2`):
+the deterministic CBOR array of the domain, the event's signed bytes as a byte string, and the
+link as a map keyed as it travels (`seq`, `prev`, `mh`, `mhh`, `cx`), its context a list of maps
+of `node` and `seq` (docs/adr/0086, section 9). Nothing in it is a time the device claims: what
+decides whether it holds is the entry it names and the number it has.
 
 **The causal context** (docs/adr/0085, section 3.1) is, for each other device whose operations the
 author's machine had been told when the author signed, that device's node and the highest number
@@ -193,26 +195,27 @@ person signs, since the machine made what is signed. A machine that lost what it
 told everything again (`Trust::forget_delivered`, which a resync calls).
 
 **What an event is signed as** is written from the fields it carries and not from the text of
-its data: the domain `sce-trust/event/2`, the list's name, the event's name, then each field as
-the text of its value, every part with its length. The events and their fields, in order, are the
-standard record list's event schemas, which `message::SIGNED` states and a test of the world crate
+its data: the deterministic CBOR (RFC 8949 section 4.2.1; docs/adr/0086, section 9) of the array
+of the domain `sce-trust/event/3`, the list's name, the event's name, and the payload as a map of
+every field its schema declares, each by its type, keys in the order of their encodings; a key the
+schema does not declare is not signed. The one signed event is a change of the list, whole
+(docs/adr/0085, section 1), and its fields are the standard record list's event schemas, which
+`message::SIGNED` states and a test of the world crate
 (`the_trust_layer_signs_what_the_record_list_declares`) holds to the schemas:
 
-| Event | Signed by | Fields, in order |
+| Event | Signed by | Fields |
 |---|---|---|
-| `record_list.write` (`record_write`, revision 2) | `nodeId` | `id`, `field`, `value`, `text`, `wallTime`, `counter`, `nodeId`, `parts` |
-| `record_list.supersede` (`record_supersede`, revision 2) | `by` | `id`, `field`, `wallTime`, `counter`, `nodeId`, `by`, `parts`, `atWallTime`, `atCounter` |
+| `record_list.change` (`record_change`, revision 1) | `by` | `by`, `wallTime`, `counter`, `ops`: a list of `record_op` (`kind`, `id`, `field`, `value`, `text`, `wallTime`, `counter`, `nodeId`) |
 
-`parts`, `atWallTime` and `atCounter` are what a change of more than one operation travels with
-(docs/adr/0046, section 3), and they are signed: a relay that changed them could hold a change
-back from being whole, or make one part look like a change of its own. An event that leaves one
-out, as a change of one operation does, is signed as the default its schema gives (1, 0 and 0),
-so the two are one set of bytes; every field of the first revision is one every event carries.
-What a host keeps a write and a note by is what it is about (its register, its stamp and, for a
-write, its content), not the change it travelled in, so a copy that shares an operation alone on
-a resync sends on the operation its author signed as a part. The domain was `sce-trust/event/1`
-while the layer secured a test fixture's events by other names; a signature does not verify under
-two meanings, and there is no path that takes the first.
+A change holds at least one operation; one that holds none, or that writes one register twice, is
+no change and is not signed. Its operations are signed in their order, every one of them, so a
+relay can neither drop, add nor reorder one, and a receiver can neither be given nor build half of
+a change. What names a change is its dot, its author and its stamp (`Signing::subject`); what a
+host keeps a change by is the bytes it is signed as, its content opened, so the same change sent
+again leaves as the operation made. The second domain, `sce-trust/event/2`, signed each part of a
+change as an event of its own (`record_list.write`, `record_list.supersede`) as texts with their
+lengths, and the first secured a test fixture's events by other names; a signature does not
+verify under two meanings, and there is no path that takes either.
 
 A host admits an operation when the entry it names is the one the host holds, its author was a
 writer under that entry, the number is not past the end the log set for the device, the signature
@@ -224,17 +227,18 @@ predecessor; telling the machine does, above):
   held, are the device signing two histories. The host says so, holds both as proof, tells its
   machine nothing of the device from that number on (`Trust::equivocating`), and goes on with
   everyone else;
-- a write's stamp is its author's clock when it wrote it, and along one chain it does not go
-  back: a later write given an earlier stamp is a conflict of the same kind, held as proof by every
+- a change's stamp is its author's clock when it made it, and along one chain it does not go
+  back: a later change given an earlier stamp is a conflict of the same kind, held as proof by every
   host whatever order the two came in (the device's own host does not sign one);
-- **a stamp names one write**: the nonce a write is sealed under is made from the fields of its stamp,
-  so two writes of one device under one stamp would be sealed under one nonce, and what a relay knows
-  of one gives it the other. The device's own host does not sign a second content under a stamp, and a
-  host that is given two holds them as a conflict;
-- a write is judged by the **entry it names**: the list keeps content from the hub from the entry that
-  begins its first epoch, so a write that names an entry before it is in the clear and holds, whether the
-  host was given the entry that began the epoch before it or after, and one that names that entry or a
-  later one is sealed under an epoch that entry has begun, or it is refused;
+- **a dot names one change**: the nonce each write of a change is sealed under is made from its
+  register and the change's dot, so two changes of one device under one dot would seal their writes
+  under the same nonces, and what a relay knows of one gives it the other. The device's own host does
+  not sign a second content under a dot, and a host that is given two holds them as a conflict;
+- a change is judged by the **entry it names**: the list keeps content from the hub from the entry
+  that begins its first epoch, so a change whose writes are in the clear and that names an entry
+  before it holds, whether the host was given the entry that began the epoch before it or after, and
+  one that names that entry or a later one has every write sealed under an epoch that entry has
+  begun, or it is refused;
 - an operation that names an entry the host has not reached is refused until it has.
 
 What taking an operation in did is `Taken` (`Trust::take_operation`): whose it is, its number,
@@ -245,16 +249,16 @@ this operation froze it), and the operations held that it conflicts with, as the
 answers an operation by it (`docs/SCE_SHARED_LIST_RELAY.md` section 3), and a host given those
 operations finds the conflict itself.
 
-- **A write** (`record_list.write`) is an operation of the node that stamped it. A hub relays it as
-  the operation the member made (`Wire`), with its number and its signature; it cannot make one.
-- **A note that a write was written over** (`record_list.supersede`) is an operation of whoever wrote
-  over it, numbered in the same chain as the writes and cut with them. The host keeps who wrote
-  over what, and when a machine sends the tombstone again as itself (a resync), the host puts
-  back the operation of the person who really did.
-- **A settled instant** (`record_list.floor`) is the word on which every copy forgets the tombstones
-  up to an instant. It is accepted only with the members' settlement (below), because a hub that
-  could settle an instant its copies have not could bring back, with an old signed write, what
-  was deleted. A host that trusts its hub allows it without (`Trust::allow_unsigned`).
+- **A change** (`record_list.change`) is an operation of its author, `by`: its writes and the
+  values it writes over, in one operation. A host relays it as the operation the member made
+  (`Wire`), with its number and its signature; it cannot make one. Who wrote a value over is the
+  change's author, signed with it; no copy sends a write-over again as itself, so no host puts an
+  author back on one.
+- **A settled instant** (`record_list.floor`) is the core's word that an instant is settled, made
+  from the members' settlement (below). The list no longer reads it (docs/adr/0085, section 2.1:
+  it keeps no tombstones to forget), and the stable cut that replaces it is the core's, in its
+  landing 5; until then a host still accepts one only with the members' settlement, or when it
+  trusts its hub (`Trust::allow_unsigned`).
 
 ### Checkpoints, settlement and withholding
 
@@ -305,22 +309,25 @@ another route.
 
 ## 4. Keeping the content from the hub
 
-A host that holds keys seals the number and the text of every write under the key of the latest
-**epoch** it holds (XChaCha20-Poly1305). The nonce is made from the write's stamp, so a host
-needs no source of randomness and one write is one set of bytes; the stamp, the list and the
-epoch are the associated data, so sealed content does not move to another write, list or epoch.
+A host that holds keys seals the number and the text of every write of a change under the key of
+the latest **epoch** it holds (XChaCha20-Poly1305). The nonce is made from the write's stamp, its
+register and its change's dot (`message::write_stamp`, domains `sce-trust/nonce/2` and
+`sce-trust/content/2`: the first sealed a write sent alone), so a host needs no source of
+randomness and one write is one set of bytes; the stamp, the list and the epoch are the associated
+data, so sealed content does not move to another write, change, list or epoch. A write-over
+carries no content and is not sealed.
 A sealed text is `~` and the epoch and ciphertext in the URL alphabet, 84 characters for any
 text a person types (what is sealed is the number, the length, the text and zeros up to 32 bytes,
 so the size a relay sees says nothing of whether a write holds a number, a word or a line), which
 is why a write's `text` holds 96 (a person still types 32, held by the machine's `typed`).
 
-What the hub holds and relays is the **stamp** of each write (which row, which field, when, by
-whom) and the tombstones: it orders, merges, forgets and compares digests by them. It learns
-that a member changed a field at a time, and not to what. Its own agenda computation is
-meaningless over sealed values; the members' copies compute theirs.
+What the hub holds and relays is the **stamp** of each change (when, by whom) and the register of
+each of its operations (which row, which field), and of each write-over the dot it names. It
+learns that a member changed fields at a time, and not to what.
 
-A host that holds keys takes no write that is not sealed, and none sealed under an epoch it
-holds no key of (it says which; after it is given the key, a `record_list.resync` brings the write).
+A host that holds keys takes no change whose writes are not sealed, and none sealed under an epoch
+it holds no key of (it says which, `TakeError::NoKey`; a courier parks it and takes it again once
+it holds the key).
 
 **When content is sealed is the log's word**: from the entry that begins the list's first epoch,
 and a write that names an entry before it is in the clear and holds (section 3). A list is sealed
@@ -399,8 +406,8 @@ where it shows.
 ## 5. What a host keeps across a restart
 
 `Trust::to_text` is one text for the host's store (the key-value feature): the checkpoints it
-made or took in, every operation it holds (the writes it relays and the notes of who wrote
-over what, as they travel, with their signatures and numbers), and what its machine was told of
+made or took in, every operation it holds (the changes it made, took in and relays, as they
+travel, with their signatures and numbers), and what its machine was told of
 each device (the delivered vector), so that a host restored from it tells its machine nothing twice;
 a text written before it held the vector restores with none, and the next round tells the machine
 every operation held again, which the list takes in once each. It holds no key.
@@ -414,21 +421,18 @@ the text, the log and the rest, is sealed under a data key the host's platform k
 (`backup::seal_state`, below); the peer core keeps a device so (`docs/SCE_SHARED_LIST_PEER_ABI.md`
 section 6).
 
-### A machine that sends a write again
+### A machine that sends a change again
 
-A machine sends what it wrote again: a copy built again from its application's own log of commands
-sends every write and note it makes, as it made them, and a copy that shares what it holds on a resync
-sends alone an operation that was signed as a part of a change. The host signs each once
-(`Trust::seal_sent`, which the `Sealer` is, and `Trust::keep_sent`, which the relay's `keep` is): it
-keeps a write by its register, its stamp and its content, and a note by the write it is about, so the
-same one sent again, before a restart or after it, leaves as the operation the host holds, with its
-number, its signature and its sealed text, and is reported as not signed (`Sealed::signed`, and
-`Sent::Held`; one that waits to be signed waits once). What an operation travels in (`parts`,
-and a note's `by`, `atWallTime` and `atCounter`) is not what it is about, and does not make it another.
-A write of the host's person under a stamp the device signed with another value or text is refused
-before anything is sealed or signed, with that reason: one stamp names one write, and a second content
-under it would be the device signing two things for one write. So a device's chain does not grow by a
-replay, and it never signs two things at one number.
+A machine sends what it made again: a copy built again from its application's own log of commands
+sends every change it makes, as it made it. The host signs each once (`Trust::seal_sent`, which the
+`Sealer` is, and `Trust::keep_sent`, which the relay's `keep` is): it keeps a change by the bytes it
+is signed as, its content opened, so the same change sent again, before a restart or after it, leaves
+as the operation the host holds, with its number, its signature and its sealed texts, and is reported
+as not signed (`Sealed::signed`, and `Sent::Held`; one that waits to be signed waits once). A change
+of the host's person under a dot the device signed with another content is refused before anything
+is sealed or signed, with that reason: one dot names one change, and a second content under it would
+be the device signing two things for one change. So a device's chain does not grow by a replay, and
+it never signs two things at one number.
 
 ### A state that came back from a store
 
