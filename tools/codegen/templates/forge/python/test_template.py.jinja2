@@ -9,8 +9,9 @@
 # Do not edit — regenerate from the source SCXML file.
 {# The imports are read off the unit's text by the renderer: `Optional` where a
    type may hold no value, the profile's runtime where a text's characters are
-   counted, and the module of each document whose enum, record or template the
-   unit names, under the alias every Python unit imports a sibling by. #}
+   counted or a message's canonical form is written, and the module of each
+   document whose enum, record or template the unit names, under the alias every
+   Python unit imports a sibling by. #}
 {% if needs_optional %}
 
 from typing import Optional
@@ -18,6 +19,10 @@ from typing import Optional
 {% if text_length_import %}
 
 {{ text_length_import }}
+{% endif %}
+{% if canonical_import %}
+
+{{ canonical_import }}
 {% endif %}
 {% if python_imports %}
 
@@ -48,4 +53,21 @@ def value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %
     §6.2): every field it names at its value, every field it omits absent. It matches the
     template by ``matches``, given the same parameters."""
     return {{ value_expr }}
+{% endif %}
+{# Only a template over a record, the type of a message, writes the name of a
+   message's type and the canonical form of its value. #}
+{% if canonical_expr %}
+
+
+#: The name of the record ``Value`` is, as the types module of the suite's TTCN-3 export names it
+#: (docs/SCE_TEST_PROFILE.md §9.5): the ``type`` of a message of it in the test log (§12.5).
+TYPE = "{{ log_type | escape_python }}"
+
+
+def canonical(value: Value) -> {{ canonical_writers }}.CanonicalValue:
+    """``value`` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+    integer as the text of its digits, a byte string in upper-case hex, an enum by its declared
+    name, an absent field omitted. A send of this template carries it beside the value it sends
+    (``sce_runtime.testprofile.message_value``)."""
+    return {{ canonical_expr }}
 {% endif %}

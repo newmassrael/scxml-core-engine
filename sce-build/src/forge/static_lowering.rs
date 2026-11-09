@@ -13020,14 +13020,21 @@ impl StaticTarget for PythonTarget {
             ),
         })
     }
-    // The specific template's `value`, which the send hands its processor as
+    // The specific template's `value`, with the name of its record type and the
+    // unit's writer of its canonical form in the test log
+    // (docs/SCE_TEST_PROFILE.md §12.5), which the send hands its processor as
     // the request's value (`HostSendRequest.value`,
-    // `python/actions/send.py.jinja2`).
+    // `python/actions/send.py.jinja2`). A sent template is over the record of a
+    // message, so its unit writes both (`TYPE` and `canonical`,
+    // `forge/python/test_template.py.jinja2`).
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = |name: &str| python_test_template(&message.unit, name);
         Some(format!(
-            "{}({})",
-            python_test_template(&message.unit, "value"),
-            args.join(", ")
+            "{PYTHON_TEST_RUNTIME}.message_value({}({}), {}, {})",
+            unit("value"),
+            args.join(", "),
+            unit("TYPE"),
+            unit("canonical")
         ))
     }
     // The unit's module, imported as a stateless sibling's is, under the alias

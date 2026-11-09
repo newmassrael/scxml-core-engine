@@ -41,6 +41,7 @@ from integration.static_datamodel import (  # noqa: E402 -- path inserted above
     job_reply,
     job_request,
     ptc_keeper_sm,
+    reply_ok,
 )
 from sce_runtime.testprofile import (  # noqa: E402
     MTC_NAME,
@@ -113,7 +114,11 @@ class Responder:
         self._seen.requested.append(request.job)
         job = request.job if self._job is None else self._job
         reply = job_reply.JobReplyPayload(job=job, code=self._code)
-        self._pending.append((now + ANSWER_DELAY, Message(event=job_reply.EVENT_NAME, value=reply)))
+        # The reply's canonical form in the test log is the one the unit of a
+        # template over its record writes.
+        self._pending.append(
+            (now + ANSWER_DELAY, Message.of(job_reply.EVENT_NAME, reply, reply_ok.TYPE, reply_ok.canonical))
+        )
 
     def next_input(self) -> Optional[Instant]:
         return self._pending[0][0] if self._pending else None

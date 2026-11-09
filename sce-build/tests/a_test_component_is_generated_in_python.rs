@@ -157,7 +157,7 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
             "engine.register_event_processor(\"http://sce.dev/ext/test-port\", send)".to_string(),
             "raise RuntimeError(\"a test-port send carries its template's value\")".to_string(),
             "context.send(request.target, _sce_testprofile.Message(event=request.event_name, \
-             value=request.value))"
+             test_value=request.value))"
                 .to_string(),
             "engine.register_invoker(\"http://sce.dev/ext/test-component\", invoke)".to_string(),
             "context.create(event.start.invoke_id)".to_string(),
@@ -344,13 +344,15 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "\"job.request\"",
         "target=\"sut\",",
         "invoke_id=engine.current_event_invoke_id,",
-        "value=sce_request_of.value(self.v_job),",
+        "value=_sce_testprofile.message_value(sce_request_of.value(self.v_job), \
+         sce_request_of.TYPE, sce_request_of.canonical),",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`:\n{asker}");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value=sce_reply_of.value(self.v_requested, self.v_ok),",
+        "value=_sce_testprofile.message_value(sce_reply_of.value(self.v_requested, self.v_ok), \
+         sce_reply_of.TYPE, sce_reply_of.canonical),",
         "processor_type=\"http://sce.dev/ext/test-component\",",
         "invoke_id=\"answerer\",",
     ] {
@@ -422,7 +424,11 @@ fn a_template_argument_is_handed_over_as_the_machine_holds_it() {
     std::fs::write(&path, component).expect("the component is written");
     let code = text_at(&path);
     assert!(
-        code.contains("value=sce_job_report_of.value(self.v_elapsed, self.v_note, self.v_code),"),
+        code.contains(
+            "value=_sce_testprofile.message_value(\
+             sce_job_report_of.value(self.v_elapsed, self.v_note, self.v_code), \
+             sce_job_report_of.TYPE, sce_job_report_of.canonical),"
+        ),
         "{code}"
     );
     assert!(code.contains(&imported("job_report_of")), "{code}");

@@ -11,7 +11,10 @@
 //! where its text names it. The tests are joined in Python's words (`and`,
 //! `or`, `not`, `True`, `False`); a value that may be absent is tested by
 //! `is None` and read as it is. Python lowers no union (docs/adr/0092), so a
-//! template whose type reaches one is refused as C++ and Go refuse it.
+//! template whose type reaches one is refused as C++ and Go refuse it. A
+//! template over a record also declares `TYPE` and `canonical`, the name of its
+//! record type and its value's canonical form in the test log
+//! (docs/SCE_TEST_PROFILE.md §12.5).
 //!
 //! What the generated units do when they run is held by
 //! `backends/python/tests/integration/static_datamodel/test_a_test_template_matches_its_values.py`,
@@ -166,10 +169,18 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
             elapsed_at_most.as_str(),
         ],
     );
+    // The match alone, up to the two blank lines before the unit's next
+    // top-level declaration (a docstring holds one at most): the unit's
+    // `canonical` reads every field, the matched ones and the others alike.
+    let matches = text
+        .split_once("\ndef matches(")
+        .map(|(_, rest)| rest.split_once("\n\n\n").map_or(rest, |(body, _)| body))
+        .unwrap_or_else(|| panic!("no `matches` function:\n{text}"));
+    assert!(matches.contains("\n    return "), "{matches}");
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("value.tag"), "{text}");
+    assert!(!matches.contains("value.tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("value.codes[1]"), "{text}");
+    assert!(!matches.contains("value.codes[1]"), "{text}");
     // No connective of C's is left in the unit.
     assert!(!text.contains("&&"), "{text}");
     assert!(!text.contains("||"), "{text}");
@@ -194,8 +205,8 @@ fn a_specific_templates_value_is_its_record() {
             "value.tag is None and value.retry is None and value.count == 1",
         ],
     );
-    // No text is counted, so the runtime is not imported.
-    assert!(!report.contains("sce_runtime.testprofile"), "{report}");
+    // No text is counted, so the runtime's counter is not imported.
+    assert!(!report.contains(TEXT_LENGTH_IMPORT), "{report}");
 
     let report_of = unit_of(&profile_dir(), "job_report_of");
     holds_each(
@@ -277,6 +288,108 @@ fn a_range_bound_at_the_limit_is_left_out_and_a_text_length_counts_characters() 
     );
     assert!(!at_most.contains("\nfrom "), "{at_most}");
     assert!(!at_most.contains("\nimport "), "{at_most}");
+}
+
+/// The name the unit imports the runtime's writers of the canonical form of a
+/// value in the test log under.
+const CANONICAL: &str = "_sce_canonical";
+
+/// The import of the runtime's writers of the canonical form.
+const CANONICAL_IMPORT: &str =
+    "\nfrom sce_runtime.testprofile import canonical as _sce_canonical\n";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form in the test log by the types the
+/// schema declares, each field by its declared id, an optional one absent where
+/// it is; a template over another type writes none, and imports no writer. The
+/// type's name is the one the Rust unit writes for the same record.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, _) in templates() {
+        let text = unit(&path, name);
+        let over_record = !matches!(
+            name,
+            "elapsed_at_most" | "quantity_at_most" | "quantity_two"
+        );
+        assert_eq!(
+            text.contains(&format!(
+                "\ndef canonical(value: Value) -> {CANONICAL}.CanonicalValue:\n"
+            )),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        assert_eq!(
+            text.contains(CANONICAL_IMPORT),
+            over_record,
+            "{name}: the writers are imported exactly where the form is written:\n{text}"
+        );
+        // The unit names the SCE runtime exactly where it writes the form, and
+        // its header says so.
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("# Runtime: {runtime}\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        assert_eq!(
+            record.is_some(),
+            over_record,
+            "{name}: a record template is named here"
+        );
+        if let Some(record) = record {
+            holds_each(&text, &[format!("\nTYPE = \"{record}\"\n").as_str()]);
+        }
+    }
+    let report = unit_of(&profile_dir(), "job_report");
+    let c = CANONICAL;
+    let written = format!(
+        "\n    return {c}.record((\"elapsed_ms\", {c}.integer(value.elapsed_ms)), \
+         (\"note\", None if (present_0 := value.note) is None else {c}.text(present_0)), \
+         (\"codes\", {c}.list_of({c}.integer(item_0) for item_0 in value.codes)), \
+         (\"tag\", None if (present_0 := value.tag) is None else {c}.integer(present_0)), \
+         (\"retry\", None if (present_0 := value.retry) is None else {c}.integer(present_0)), \
+         (\"count\", {c}.integer(value.count)))\n"
+    );
+    holds_each(&report, &[written.as_str()]);
+}
+
+/// The canonical form of an enum, a byte string and a text: an enum by the name
+/// its document declares for the variant, read through the value's own
+/// `declared_name`, so the form names no module of the enum's document; a byte
+/// string through the writer of its octets.
+#[test]
+fn an_enum_a_byte_string_and_a_text_take_their_canonical_forms() {
+    let c = CANONICAL;
+    let exact = unit_of(&imports_dir(), "order_line_exact");
+    holds_each(
+        &exact,
+        &[format!(
+            "\n    return {c}.record((\"sku\", {c}.text(value.sku)), \
+             (\"quantity\", {c}.integer(value.quantity)), \
+             (\"color\", {c}.enumerated(value.color.declared_name())))\n"
+        )
+        .as_str()],
+    );
+    let voucher = unit_of(&imports_dir(), "voucher_is");
+    holds_each(
+        &voucher,
+        &[format!(
+            "\n    return {c}.record((\"voucher_code\", {c}.byte_string(value.voucher_code)))\n"
+        )
+        .as_str()],
+    );
 }
 
 /// The detail of a `generate/unsupported-feature` refusal.
@@ -449,6 +562,13 @@ fn a_byte_string_parameter_is_compared_by_its_octets_and_held_as_given() {
              code=param_code, spare=param_spare)",
             "\nfrom typing import Optional\n",
             imported("blob_record").as_str(),
+            // The canonical form: a `bool` a truth value, a byte string, held
+            // or that may be absent, its octets.
+            "\n    return _sce_canonical.record((\"ready\", _sce_canonical.boolean(value.ready)), \
+             (\"done\", _sce_canonical.boolean(value.done)), \
+             (\"code\", _sce_canonical.byte_string(value.code)), \
+             (\"spare\", None if (present_0 := value.spare) is None \
+             else _sce_canonical.byte_string(present_0)))\n",
         ],
     );
 }

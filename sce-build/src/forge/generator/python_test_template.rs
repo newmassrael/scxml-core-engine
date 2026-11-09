@@ -40,8 +40,8 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, CaseTest, Connectives, Held, JoinSpelling, Op, Position, Stands,
-    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, CanonicalSpelling, CaseTest, Connectives, Held, JoinSpelling, Op,
+    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -117,6 +117,11 @@ pub(super) fn render_test_template_python(
     if let Some(why) = refusal {
         return Err(walk.refused(why));
     }
+    // Only a template over a record, the type of a message, writes a message's
+    // type name and its canonical form (`TemplateWalk::message_form`). The form
+    // reads the value's fields and calls the profile's writers alone, so it
+    // names no document's module and is not read for the unit's imports.
+    let (log_type, canonical_expr) = walk.message_form(&PythonCanonical, &scope)?.unzip();
     let mut expressions = vec![match_expr.clone()];
     expressions.extend(value_expr.iter().cloned());
     let expressions = expressions.join("\n");
@@ -140,7 +145,147 @@ pub(super) fn render_test_template_python(
         "text_length_import".into(),
         serde_json::json!(uses_text_length.then(text_length_import)),
     );
+    ctx.insert(
+        "canonical_import".into(),
+        serde_json::json!(canonical_expr.is_some().then(canonical_import)),
+    );
+    ctx.insert("canonical_writers".into(), PYTHON_CANONICAL.into());
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
     l.render(env, "test_template", ctx)
+}
+
+/// The name the unit of a template over a record imports the writers of the
+/// canonical form of a value in the test log under, from the profile's runtime
+/// (`backends/python/runtime/sce_runtime/testprofile/canonical.py`): with a
+/// leading underscore, so it can never be the alias `sce_<document>` a sibling
+/// module is imported under ([`python_module_alias`]), and no formal parameter
+/// (`param_<id>`) or binding of the form (`item_<n>`, `present_<n>`) is it.
+const PYTHON_CANONICAL: &str = "_sce_canonical";
+
+/// The import that brings the writers of [`PYTHON_CANONICAL`] into the unit,
+/// from the profile's runtime ([`crate::std_imports::PYTHON_TEST_RUNTIME_PATH`]).
+fn canonical_import() -> String {
+    format!(
+        "from {} import canonical as {PYTHON_CANONICAL}",
+        crate::std_imports::PYTHON_TEST_RUNTIME_PATH
+    )
+}
+
+/// A value the canonical writer reads, in Python.
+struct CanonicalAt {
+    /// What names the value: `value`, a name a binding holds it under, or a
+    /// field of either.
+    expr: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+}
+
+/// The Python spelling of a value's canonical form in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), with the writers of
+/// `sce_runtime.testprofile.canonical`: a `str`, a `bool`, a `list` or a `dict`
+/// of them, which the runtime's `write_jcs` writes. The walk is the one every
+/// backend shares (`test_template_walk::canonical_value`, through
+/// `TemplateWalk::message_form`), and the whole form is one expression, the
+/// body of the unit's `canonical`: a list is a generator over its elements,
+/// and a field that may be absent is bound by an assignment expression and
+/// written only where it holds a value, `None`, which the record omits,
+/// where it holds none. Python lowers no union
+/// ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so the walk refuses one
+/// before it asks for its form, and the trait's refusal stands for it.
+struct PythonCanonical;
+
+impl CanonicalSpelling for PythonCanonical {
+    type At = CanonicalAt;
+
+    /// `canonical`'s parameter `value`.
+    fn root(&self) -> CanonicalAt {
+        CanonicalAt {
+            expr: "value".to_string(),
+            depth: 0,
+        }
+    }
+
+    fn field(&self, at: &CanonicalAt, id: &str) -> CanonicalAt {
+        CanonicalAt {
+            expr: format!(
+                "{}.{}",
+                at.expr,
+                event_schema_field_ident(id, Language::Python)
+            ),
+            depth: at.depth,
+        }
+    }
+
+    /// A generator binds each element of a list, and an assignment expression
+    /// the value of a field that may be absent.
+    fn bound(&self, at: &CanonicalAt, prefix: &str) -> (String, CanonicalAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = CanonicalAt {
+            expr: name.clone(),
+            depth: at.depth + 1,
+        };
+        (name, value)
+    }
+
+    fn boolean(&self, at: &CanonicalAt) -> String {
+        format!("{PYTHON_CANONICAL}.boolean({})", at.expr)
+    }
+
+    /// A number no variant of an open enum declares is the text of its
+    /// digits, which the writer of an open enum writes from the number.
+    fn enumerated(&self, at: &CanonicalAt, strict: bool) -> String {
+        if strict {
+            format!("{PYTHON_CANONICAL}.enumerated({}.declared_name())", at.expr)
+        } else {
+            format!(
+                "{PYTHON_CANONICAL}.open_enumerated({0}.declared_name(), {0}.to_underlying())",
+                at.expr
+            )
+        }
+    }
+
+    fn integer(&self, at: &CanonicalAt) -> String {
+        format!("{PYTHON_CANONICAL}.integer({})", at.expr)
+    }
+
+    fn text(&self, at: &CanonicalAt) -> String {
+        format!("{PYTHON_CANONICAL}.text({})", at.expr)
+    }
+
+    fn bytes(&self, at: &CanonicalAt) -> String {
+        format!("{PYTHON_CANONICAL}.byte_string({})", at.expr)
+    }
+
+    fn list(&self, at: &CanonicalAt, binding: &str, element: String) -> String {
+        format!(
+            "{PYTHON_CANONICAL}.list_of({element} for {binding} in {})",
+            at.expr
+        )
+    }
+
+    /// As it is: a field a record always holds is never `None`.
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// `None` where the field is absent, which the record omits; the value it
+    /// holds, read once, written otherwise.
+    fn optional_field(&self, field: &CanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "None if ({binding} := {}) is None else {written}",
+            field.expr
+        )
+    }
+
+    /// Each field a pair of its declared id and its form.
+    fn record(&self, fields: Vec<(String, String)>) -> String {
+        let fields: Vec<String> = fields
+            .into_iter()
+            .map(|(id, value)| format!("({}, {value})", filters::py_string_literal(id)))
+            .collect();
+        format!("{PYTHON_CANONICAL}.record({})", fields.join(", "))
+    }
 }
 
 /// The name the generated `matches` and `value` take the formal parameter `id`
