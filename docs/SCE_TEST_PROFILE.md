@@ -1955,9 +1955,13 @@ value are texts, so the log holds no number, and two logs agree exactly when the
 `TestCaseResult::canonical_log(suite, test_case)` and `CaseResult::canonical_log(suite)`, over the scheme's writer
 `sce_rust_runtime::json::write_canonical`. C++: `TestCaseResult::canonicalLog(suite, testCase)` and
 `CaseResult::canonicalLog(suite)`, the records of `sce/include/test/TestLog.h` written at the same points of the
-semantics, over the scheme's writer `SCE::Saved::writeCanonical` (`sce/include/saved/SavedJson.h`). The Rust runtime
-wrote the test log first and the C++ runtime writes the same one: the run of `answers_the_job` of the generated
-`runtime_suite` is held on both to one file,
+semantics, over the scheme's writer `SCE::Saved::writeCanonical` (`sce/include/saved/SavedJson.h`). Kotlin: the same
+two functions, the records of `com.sce.runtime.test.TestLogRecord` written at the same points, over the scheme's
+writer `com.sce.runtime.Json.writeJcs`; the unit of a template over a record declares `TYPE` and `canonical`, with the
+writers of `com.sce.runtime.test.Canonical`, and a send carries the value with both
+(`com.sce.runtime.test.messageValue`, a `TestValue` on `HostSendRequest.value`). The Rust runtime wrote the test log
+first and the C++ and Kotlin runtimes write the same one: the run of `answers_the_job` of the generated
+`runtime_suite` is held on all three to one file,
 `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is one set of
 bytes. Each other backend's runtime writes the same records, in the same text.
 
