@@ -1793,16 +1793,18 @@ class StaticScenarioTest {
     }
 
     // The standard shared record list (sce:std/shared/record_list.scxml), its scenarios'
-    // machine named by its library name: a person's copy, which sends its changes to the
-    // hub by `#hub`, and the hub, which passes every change on to the people by `#people`.
+    // machine named by its library name: a copy, which sends each change of its own
+    // whole by `#people` and takes its peers' changes whole (docs/adr/0085).
     @Test
     fun recordListIsAPersonsCopyOfASharedList() {
         replayRecordList(scenario("record_list_person"))
     }
 
+    // A change and the one it writes over, given in their causal order, the only order
+    // the list's delivery layer gives (docs/adr/0085, section 9.3).
     @Test
-    fun recordListIsTheHubItsPeopleSendTo() {
-        replayRecordList(scenario("record_list_hub"))
+    fun recordListTakesAChangeAfterTheOneItWritesOver() {
+        replayRecordList(scenario("record_list_out_of_causal_order_is_not_given"))
     }
 
     // A standard record list a host started has no parent: it tells no one of the
@@ -1819,8 +1821,8 @@ class StaticScenarioTest {
         replayRecordList(scenario("record_list_offline"))
     }
 
-    // A change is one unit: staged, stamped once, taken in whole, and sent as parts a
-    // copy holds until they are all there (docs/adr/0046).
+    // A change is one unit and one message: staged, stamped once, taken in whole, and
+    // sent whole as `record_list.change`, which a peer takes in whole (docs/adr/0085).
     @Test
     fun recordListTakesAChangeAsOneUnit() {
         replayRecordList(scenario("record_list_change"))
@@ -1871,11 +1873,24 @@ class StaticScenarioTest {
     // one round and what it tells reaches the parent in the next.
     @Test
     fun recordListParentIsToldWhatEachRegisterHolds() {
+        replayRecordListParent(scenario("record_list_parent"))
+    }
+
+    // Two changes that clear one value at once, given in both orders, leave the value
+    // gone with nothing held, and the parent is told each register a change moved once
+    // (docs/adr/0085, section 9.3).
+    @Test
+    fun recordListTakesTwoConcurrentClearsInEitherOrder() {
+        replayRecordListParent(scenario("record_list_concurrent_clears"))
+    }
+
+    /** One run of `record_list_parent`, which invokes the list as its child. */
+    private fun replayRecordListParent(scenario: JsonObject) {
         val sm = RecordListParentStateMachine()
         sm.initialize()
         try {
             replay(
-                scenario("record_list_parent"),
+                scenario,
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { repeat(SETTLE_TICKS) { sm.tick() } },
                 save = { sm.save() },
