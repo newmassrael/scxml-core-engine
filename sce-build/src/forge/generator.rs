@@ -31911,6 +31911,15 @@ const GO_PROCEDURE_RECEIVER: &str = "p";
 const GO_GENERATED_PACKAGE_NAMES: &[&str] = &["ValidationResult"];
 const GO_GENERATED_PACKAGE_PREFIXES: &[&str] = &["ForgeDomainTag"];
 
+/// The names a generated Go method binds and reads inside a body a document's
+/// local can stand in: the receiver `p` of a statechart's policy and of a
+/// procedure, through which every field is reached (`p.vX`), and the `engine`
+/// a statechart's executors are handed, through which content raises and sends.
+/// A `<foreach item="p">` in a transition's content hides the receiver for the
+/// loop's body, and every field the body reads is then read off the item (a
+/// `RecordListProvisionalRecord has no field vStanding` was the compile error).
+const GO_METHOD_BOUND_NAMES: &[&str] = &[GO_PROCEDURE_RECEIVER, "engine"];
+
 /// The methods a generated observer's struct declares. A monitor's state is a
 /// field of that struct, and Go keeps a field and a method of one name in one
 /// table, so a monitor called `Update` would declare it twice.
@@ -31953,6 +31962,7 @@ pub(crate) fn go_local_spelling_beside(id: &str, prefixes: &[&str]) -> String {
         || crate::std_imports::GO_PACKAGES.contains(&stem)
         || stem.starts_with(GO_GENERATED_PREFIX)
         || GO_GENERATED_PACKAGE_NAMES.contains(&stem)
+        || GO_METHOD_BOUND_NAMES.contains(&stem)
         || GO_GENERATED_PACKAGE_PREFIXES
             .iter()
             .any(|p| stem.starts_with(p))
@@ -47654,6 +47664,17 @@ mod tests {
         assert_eq!(go_local_spelling("max"), "max_");
         assert_eq!(go_local_spelling("clear"), "clear_");
         assert_eq!(go_local_spelling("any"), "any_");
+    }
+
+    /// A local named as the receiver or the engine a generated method binds is
+    /// shifted, so a `<foreach item="p">` cannot hide the receiver its body reads
+    /// every field through; the shift stays injective (`p_` is `p__`).
+    #[test]
+    fn go_escape_the_names_a_method_binds() {
+        assert_eq!(go_local_spelling("p"), "p_");
+        assert_eq!(go_local_spelling("p_"), "p__");
+        assert_eq!(go_local_spelling("engine"), "engine_");
+        assert_eq!(go_local_spelling("pp"), "pp");
     }
 
     #[test]
