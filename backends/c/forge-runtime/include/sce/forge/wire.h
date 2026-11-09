@@ -520,6 +520,31 @@ static inline void sce_forge_wire_refuse(sce_forge_wire_t *w) {
     w->overflow = true;
 }
 
+/* Where the next byte of the object will be written: the mark a writer takes
+ * before a value, so the text of that value alone can be read back after it
+ * (`sce_forge_wire_copy_since`). */
+static inline size_t sce_forge_wire_mark(const sce_forge_wire_t *w) {
+    return w->len;
+}
+
+/* The text written since `mark`, copied into `out` of `cap` bytes and
+ * terminated: the JSON of one value as the object carries it, which a request
+ * that carries each pair as text too hands on (a send a host serves). False,
+ * with `out` holding the empty string, when the object was refused or the text
+ * does not fit `out`; never a text cut short. */
+static inline bool sce_forge_wire_copy_since(const sce_forge_wire_t *w, size_t mark, char *out, size_t cap) {
+    if (cap == 0u) {
+        return false;
+    }
+    out[0] = '\0';
+    if (w->overflow || mark > w->len || w->len - mark >= cap) {
+        return false;
+    }
+    memcpy(out, w->buf + mark, w->len - mark);
+    out[w->len - mark] = '\0';
+    return true;
+}
+
 /* One value alone, as the JSON text of an event's data, written into `buf` of
  * `cap` bytes. False when it did not fit, and `buf` then holds the empty string,
  * never a truncated value (truncated JSON does not parse, so it would arrive as

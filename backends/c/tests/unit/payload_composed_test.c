@@ -717,6 +717,30 @@ static void check_a_composed_pair_is_written_part_by_part(void) {
         fprintf(stderr, "FAIL: a pair's key inside a container was written as `%s`\n", buf);
         failures++;
     }
+    /* The text of one composed value alone, read back from the object it was
+       written into, as a send a host serves carries each pair as text. */
+    char text[32];
+    sce_forge_wire_begin(&w, buf, sizeof(buf));
+    sce_forge_wire_pair(&w, "\"a\"", sce_forge_wire_uint(1));
+    sce_forge_wire_pair_key(&w, "\"b\"");
+    const size_t mark = sce_forge_wire_mark(&w);
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(7));
+    sce_forge_wire_close(&w);
+    if (!sce_forge_wire_copy_since(&w, mark, text, sizeof(text)) || strcmp(text, "[7]") != 0) {
+        fprintf(stderr, "FAIL: the text of a composed value reads `%s`\n", text);
+        failures++;
+    }
+    if (sce_forge_wire_copy_since(&w, mark, text, 3u) || text[0] != '\0') {
+        fprintf(stderr, "FAIL: the text of a composed value was cut to `%s`\n", text);
+        failures++;
+    }
+    sce_forge_wire_refuse(&w);
+    if (sce_forge_wire_copy_since(&w, mark, text, sizeof(text)) || text[0] != '\0') {
+        fprintf(stderr, "FAIL: the text of a refused object was read as `%s`\n", text);
+        failures++;
+    }
     sce_forge_wire_begin(&w, buf, sizeof(buf));
     sce_forge_wire_pair_key(&w, "\"v\"");
     sce_forge_wire_open_container(&w, '[');

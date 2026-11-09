@@ -352,6 +352,40 @@ fn a_send_writes_each_composed_field_where_its_pair_stands() {
             "const char *const sce_name = enum_signal_level_declared_name((*sce_item));",
         ],
     );
+    // A send to the machine itself hands no host its pairs.
+    assert!(!code.contains("sce_forge_wire_copy_since("), "{code}");
+}
+
+/// Pinned by the `native_writes` arm of `send_payload_json` under `host_texts`
+/// (`tools/codegen/templates/c/state_machine.c.jinja2`), `sce_forge_wire_mark`
+/// and `sce_forge_wire_copy_since` (`sce/forge/wire.h`), and the lowering of a
+/// `<send>`'s params (`sce-build/src/forge/static_lowering.rs`), which refuses
+/// no composed param of a send a host serves: a `<send>` to a Mesh peer, which
+/// a C11 machine hands its host, writes each composed value into the payload
+/// where its pair stands, and hands the host the value's JSON as the pair's
+/// text, read back from that payload into the row of the pair.
+#[test]
+fn a_send_a_host_serves_hands_it_each_composed_value_as_its_json() {
+    let text =
+        std::fs::read_to_string(fixtures().join("static_composed_send.scxml")).expect("fixture");
+    let to_a_peer = text.replace(
+        "<send event=\"batch.sent\" target=\"#_internal\">",
+        "<send event=\"batch.sent\" target=\"#peers\">",
+    );
+    assert_ne!(to_a_peer, text, "the fixture sends to the machine itself");
+    let code = c11_machine("static_composed_send.scxml", &to_a_peer);
+    holds(
+        &code,
+        &[
+            "sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\");\n                        \
+             const size_t sce_value_at = sce_forge_wire_mark(sce_wire);\n",
+            "if (sce_forge_wire_copy_since(sce_wire, sce_value_at,\n                                \
+             SCE_SCRATCH_BUF(pairs[1]), SCE_SCRATCH_CAP(pairs[1]))) {",
+            "_host_params[_host_param_count].name = \"items\";",
+            "_host_params[_host_param_count].name = \"spare\";",
+            "_host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[1]);",
+        ],
+    );
 }
 
 /// `sce-codegen <args> <file>` over `document` written as `name` in a
