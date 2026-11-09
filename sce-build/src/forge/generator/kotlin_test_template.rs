@@ -111,11 +111,6 @@ pub(super) fn render_test_template_kotlin(
 /// (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/test/Canonical.kt`).
 const CANONICAL: &str = "com.sce.runtime.test.Canonical";
 
-/// The prefix the shared walk (`test_template_walk::canonical_value`) binds a union's case
-/// under: in Kotlin the `when` binds the union itself, which each arm reads
-/// smart-cast to its case's class, whose record is its `value`.
-const CASE_PREFIX: &str = "case";
-
 /// A value the canonical writer reads, in Kotlin.
 struct CanonicalAt {
     /// What names the value: `value`, a lambda's parameter, the record of a
@@ -157,20 +152,23 @@ impl CanonicalSpelling for KotlinCanonical {
         }
     }
 
-    /// A lambda binds the value it is given; a union's `when` binds the union,
-    /// whose case's record is its `value` ([`CASE_PREFIX`]).
+    /// A lambda binds the value it is given, and a union's `when` the union.
     fn bound(&self, at: &CanonicalAt, prefix: &str) -> (String, CanonicalAt) {
         let name = format!("{prefix}_{}", at.depth);
-        let expr = if prefix == CASE_PREFIX {
-            format!("{name}.value")
-        } else {
-            name.clone()
-        };
         let value = CanonicalAt {
-            expr,
+            expr: name.clone(),
             depth: at.depth + 1,
         };
         (name, value)
+    }
+
+    /// The `when` binds the union itself, which each arm reads smart-cast to
+    /// its case's class, whose record is its `value`.
+    fn case_record(&self, bound: CanonicalAt) -> CanonicalAt {
+        CanonicalAt {
+            expr: format!("{}.value", bound.expr),
+            depth: bound.depth,
+        }
     }
 
     fn boolean(&self, at: &CanonicalAt) -> String {

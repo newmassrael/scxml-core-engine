@@ -1270,6 +1270,14 @@ pub(super) trait CanonicalSpelling {
     /// to, numbered by how many bindings `at` stands inside after `prefix`,
     /// and the value it binds.
     fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
+    /// The place that holds a union case's record, once the walk has bound the
+    /// case as `bound` ([`Self::bound`] with the prefix `case`). The bound value
+    /// itself by default, where a pattern binds the case's record; a backend
+    /// whose binding holds the union, read as the case's class, names the
+    /// record within it.
+    fn case_record(&self, bound: Self::At) -> Self::At {
+        bound
+    }
 
     /// A `bool`.
     fn boolean(&self, at: &Self::At) -> String;
@@ -1390,7 +1398,8 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                 .map(|case| {
                     let held = match &case.record {
                         Some(record) => {
-                            let (binding, held) = spelling.bound(at, "case");
+                            let (binding, bound) = spelling.bound(at, "case");
+                            let held = spelling.case_record(bound);
                             let written = canonical_value(
                                 spelling,
                                 &TypeOf::Record {
@@ -1533,5 +1542,70 @@ impl<S: JoinSpelling> JoinSpelling for LowersUnions<S> {
         negated: bool,
     ) -> String {
         self.0.case_test(at, union, variant, record, negated)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A spelling of the canonical form that keeps the default of every
+    /// method that has one, its positions the names it reads.
+    struct Plain;
+
+    impl CanonicalSpelling for Plain {
+        type At = String;
+
+        fn root(&self) -> String {
+            "value".to_string()
+        }
+        fn field(&self, at: &String, id: &str) -> String {
+            format!("{at}.{id}")
+        }
+        fn bound(&self, at: &String, prefix: &str) -> (String, String) {
+            let name = format!("{prefix}_of_{at}");
+            (name.clone(), name)
+        }
+        fn boolean(&self, at: &String) -> String {
+            at.clone()
+        }
+        fn enumerated(&self, at: &String, _strict: bool) -> String {
+            at.clone()
+        }
+        fn integer(&self, at: &String) -> String {
+            at.clone()
+        }
+        fn text(&self, at: &String) -> String {
+            at.clone()
+        }
+        fn bytes(&self, at: &String) -> String {
+            at.clone()
+        }
+        fn list(&self, at: &String, binding: &str, element: String) -> String {
+            format!("{at}[{binding}: {element}]")
+        }
+        fn held_field(&self, written: String) -> String {
+            written
+        }
+        fn optional_field(&self, field: &String, binding: &str, written: String) -> String {
+            format!("{field}?[{binding}: {written}]")
+        }
+        fn record(&self, fields: Vec<(String, String)>) -> String {
+            fields
+                .into_iter()
+                .map(|(id, value)| format!("{id}={value}"))
+                .collect::<Vec<String>>()
+                .join(",")
+        }
+    }
+
+    /// The record of a bound union case is, by default, the value the binding
+    /// names, which is where a pattern that binds the case's record puts it:
+    /// a backend that keeps the default writes what it wrote before the hook.
+    #[test]
+    fn a_case_record_is_the_bound_value_by_default() {
+        let (binding, bound) = Plain.bound(&Plain.root(), "case");
+        assert_eq!(binding, "case_of_value");
+        assert_eq!(Plain.case_record(bound.clone()), bound);
     }
 }
