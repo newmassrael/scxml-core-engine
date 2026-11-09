@@ -1,0 +1,91 @@
+# Mutation cases for "a causal group in the world repairs what a link lost, delivers each
+# change once and forgets it once every copy holds it" (docs/adr/0085, sections 3.2, 3.3,
+# 4 and 9.6; landing 4c), under the Rust runtime.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_causal_group_in_the_world_repairs_and_forgets_rust.cases`.
+#
+# The world tests of the shared to-do list (`todo_peer`) run its copies as the members of
+# one causal group (`delivery: causal`), where the list keeps only the effect of each
+# change and the Mesh core's causal layer below it does what the list's resync, digest
+# and settle did: it drops a change delivered already, holds one whose context is not
+# delivered, repairs what a vector lacks, and forgets a change at the stable cut. Each
+# case takes one of those away, in the generated rule, in the router the world is the
+# host of, or in the list, and the world tests that hold each property one layer down
+# must turn red: the repair at every wall time
+# (a_lost_change_is_repaired_at_every_wall_time_and_field_number), the cut
+# (a_shared_calendar_forgets_what_its_copies_agree_on), incarnations
+# (a_copy_restored_from_an_old_save_begins_a_new_incarnation), the room a copy keeps
+# (a_shared_calendar_outlives_the_room_a_copy_has) and the roster every copy judges
+# (a_shared_calendar_lets_a_member_do_what_its_role_says).
+#
+# The generated rule reaches the core only through the committed tree its regeneration
+# writes, so that tree is a declared target and the regeneration carries a mutated
+# document into it; the world builds `todo_peer` from its fixture as it is compiled.
+#
+# Anchors are literal slices of the documents; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-world --test a_lost_change_is_repaired_at_every_wall_time_and_field_number --test a_shared_calendar_forgets_what_its_copies_agree_on --test a_copy_restored_from_an_old_save_begins_a_new_incarnation --test a_shared_calendar_outlives_the_room_a_copy_has --test a_shared_calendar_lets_a_member_do_what_its_role_says
+mutation_targets stdlib/mesh/causal_admit.scxml
+mutation_targets stdlib/mesh/causal_lacks.scxml
+mutation_targets stdlib/mesh/causal_cut.scxml
+mutation_targets backends/rust/mesh/src/generated/causal_admit.rs
+mutation_targets backends/rust/mesh/src/generated/causal_lacks.rs
+mutation_targets backends/rust/mesh/src/generated/causal_cut.rs
+mutation_targets backends/rust/mesh/src/router.rs
+mutation_targets sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
+mutation_regen backends/rust/mesh/generate.sh
+mutation_oracles backends/rust/world/tests/a_lost_change_is_repaired_at_every_wall_time_and_field_number.rs backends/rust/world/tests/a_shared_calendar_forgets_what_its_copies_agree_on.rs backends/rust/world/tests/a_copy_restored_from_an_old_save_begins_a_new_incarnation.rs backends/rust/world/tests/a_shared_calendar_outlives_the_room_a_copy_has.rs backends/rust/world/tests/a_shared_calendar_lets_a_member_do_what_its_role_says.rs backends/rust/world/tests/common/repair.rs
+
+# ── The layer's rule, as the world exercises it ────────────────────
+
+mutation_case "a change delivered already is not dropped (<= becomes <)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''<sce:if cond="dot.seq &lt;= seen">''',
+     r'''<sce:if cond="dot.seq &lt; seen">''')
+PY
+
+mutation_case "a change whose context is not delivered is delivered (C[b] <= D[b] removed)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; needed.seq &gt; have''',
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; false''')
+PY
+
+mutation_case "a vector lacks nothing, so what a link lost is never sent again" <<'PY'
+edit("stdlib/mesh/causal_lacks.scxml",
+     r'''<sce:return expr="dot.seq &gt; seen"/>''',
+     r'''<sce:return expr="false"/>''')
+PY
+
+mutation_case "the cut is the maximum over the view, so a copy forgets what another lacks" <<'PY'
+edit("stdlib/mesh/causal_cut.scxml",
+     r'''<sce:if cond="value &lt; low">''',
+     r'''<sce:if cond="value &gt; low">''')
+PY
+
+# ── The router the world is the host of ────────────────────────────
+
+mutation_case "a layer with work is never woken for its vector, so a silent loss is never repaired" <<'PY'
+edit("backends/rust/mesh/src/router.rs",
+     r'''                if causal.layer.log_len() == 0 && causal.layer.held_len() == 0 {
+                    return None;
+                }''',
+     r'''                if causal.layer.log_len() < usize::MAX {
+                    return None;
+                }''')
+PY
+
+# ── The list above the layer ───────────────────────────────────────
+
+mutation_case "a write-over leaves the add it names among the adds" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/todo_peer.scxml",
+     r'''        <assign location="adds" expr="OrsetLive(adds, one)"/>''',
+     r'''        <assign location="adds" expr="adds"/>''')
+PY
+
+mutation_case "a peer's change is taken in whatever the roster says of its author" <<'PY'
+edit("sce-build/tests/fixtures/static_datamodel/todo_peer.scxml",
+     r'''          <if cond="m.node === _event.data.by &amp;&amp; m.role &gt;= 2">''',
+     r'''          <if cond="true">''')
+PY
