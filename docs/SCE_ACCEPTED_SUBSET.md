@@ -7581,8 +7581,9 @@ the to-do list without its schedule and its host's time zones, its events named
 (`record_change`, `record_op`, `record_edit`, `record_roster`, `register_values`
 and the rest), and every bound a `sce:limit` that defaults to the to-do list's number
 (`merge_entries`, `merge_values`, `merge_text`, `shared_typed_text`, `shared_roster`,
-`shared_moved`, and `shared_staged` and `shared_parts` for a change of several
-commands, docs/adr/0046). It names no peer: every copy sends each change of its own to
+`shared_moved`, `shared_staged` and `shared_parts` for a change of several
+commands, docs/adr/0046, and `shared_provisional` and `shared_undo` for the changes a copy
+holds provisionally, docs/adr/0093). It names no peer: every copy sends each change of its own to
 the route `#people`, one group every copy sends to and reads, which a deployment binds
 to the list's delivery layer (the peer core of a host that has one, or a Mesh binding
 with `delivery: causal`, docs/adr/0085), and no copy is a hub. The layer gives every
@@ -7602,6 +7603,34 @@ in whole and a parent is told it once on every copy (docs/adr/0085). A list a ho
 started keeps `announce` false and tells no one:
 `#_parent` names no session at the top level, and the send names it by an expression
 among its declared `sce:targets`, so the machine keeps the entry a host starts it by.
+A copy keeps a journal unless it is joined with `journal` false (`record_join` revision 2,
+docs/adr/0083, docs/adr/0093): it offers each change it closes to its host on the route
+`#journal` as one `record_list.made` (`record_made`: the change's author, stamp and
+operations, and the host's `command`, which `record_edit` revision 3 and `record_clear`
+and `record_retire` revision 2 carry), sends none of its own changes to `#people`, and
+takes the change in only at the verdict its host gives, `record_list.verdict`
+(`record_verdict`, a value of the enum `record_outcome` and, for a refusal, the layer's
+reason): accepted and held take it in, waiting takes it in provisionally with an undo
+record of what its write-overs took out (`record_provisional`, `record_undo`), and
+refused takes nothing in and tells the parent `record_list.refused` with the layer's
+reason, `noRoomForHistory` for a full log, or `peerRefused` when it gives none
+(`record_refusal` revision 2; `record_refused` revision 2 adds `command` and
+`withdrawn`). It then reports the outcome,
+`record_list.closed` (`record_closed`), which it reports at once for a change it refused
+itself or that named nothing. A provisional change is told to the parent as
+`record_list.pending` and settled by `record_list.confirm` (told as
+`record_list.confirmed`) or `record_list.withdraw`, which withdraws it and every
+provisional change after it, latest first, by their undo records; a write-over taken in
+after a provisional change that names a value its undo record holds strikes the value
+from the record. `record_list.raise` raises the clock to the highest stamp of the copy's
+own node its layer holds. A command given while an offer is outstanding, and a verdict,
+a confirmation or a withdrawal that names no change the copy holds, is refused and
+counted in `refusals`. A copy built again is given a stable state as
+`record_list.restore` (`record_restore`: live values, each at its own dot, and the
+state's clock) and every change after it as `record_list.recall` (`record_recall`:
+`record_made`'s fields and `provisional`), each taken in by the path a peer's change is,
+judged by no roster, and reported and sent to no one; a recalled change of the copy's
+own raises its clock to the change's stamp, a change of write-overs only included.
 Its scenarios name it by its library name (`"machine": "sce:std/shared/record_list"`),
 which every driver, regen script, build rule and the Interpreter's scan take as they
 take a fixture's stem, so no copy of the text stands in the fixture directory; the
@@ -7622,7 +7651,20 @@ peer's change taken in whole, the clock moved once by its stamp;
 write the retiring copy had not seen staying; `record_list_out_of_causal_order_is_not_given`
 is a change and the one it writes over in their causal order, the one order the layer
 gives; `record_list_concurrent_clears` is two changes that clear one value at once, in
-both orders, told once each; and `record_list_parent` is a statechart that invokes it and publishes what
+both orders, told once each; `record_list_journal` is a copy that keeps a journal, each
+change offered once and taken in at its verdict, accepted, held, waiting and refused
+for a full log, its outcome reported, a change refused by the copy and one that names nothing reported
+at once, a command and a verdict the host gave out of turn refused, and the same copy
+joined again without a journal; `record_list_provisional` is a change taken in
+provisionally, confirmed, and one withdrawn by its undo record after a peer's write-over
+struck a value from it, two withdrawn latest first, and the room of `shared_provisional`
+refusing a change past it; `record_list_raise` is the clock raised by the host's word
+and not lowered by it; `record_list_recall` is a copy built again by recall, its own
+changes and a peer's, a change of write-overs only raising the clock, no roster judging
+a recalled change, and a change recalled provisionally then withdrawn;
+`record_list_restore` is a stable state given in two parts, then the changes after its
+cut; every scenario of a copy a test throws away joins it with `journal` false;
+`record_list_verdict` is what a parent is told of each verdict; and `record_list_parent` is a statechart that invokes it and publishes what
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
 0, a write already held told nothing, the list's own change told once, a retired row told
