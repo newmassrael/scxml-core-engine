@@ -1042,9 +1042,11 @@ add_test(NAME SavedState COMMAND saved_state_test)
 # ============================================================================
 # How a byte string rides in a text (docs/adr/0005, decision 2): the Latin-1
 # spelling a typed payload's wire carries, in SCE::Latin1Bytes and the payload lift
-# that uses it. Linked against googletest alone: a generated machine compiles and
-# links against `sce/include` with no runtime library, and this is the target that
-# says the two headers still allow it.
+# that uses it. Linked against googletest and the header-only forge runtime alone:
+# a generated machine compiles and links against `sce/include` and the forge
+# runtime's bounded types it holds its places in (docs/adr/0086, section 7.4) with
+# no runtime library, and this is the target that says the two headers still
+# allow it.
 # ============================================================================
 add_executable(event_payload_bytes_test
     common/EventPayloadBytesTest.cpp
@@ -1060,6 +1062,7 @@ target_include_directories(event_payload_bytes_test
 
 target_link_libraries(event_payload_bytes_test
     PRIVATE
+        sce_forge_runtime
         GTest::gtest_main
 )
 
