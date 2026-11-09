@@ -87,6 +87,11 @@ fn text_at(path: &Path) -> String {
         .join("\n")
 }
 
+/// The component's start of its machine: a test component's datamodel has no
+/// script session whose failure could refuse it, so its uninhabited error is
+/// matched out (docs/adr/0096; `rust/state_machine.rs.jinja2`).
+const MACHINE_STARTS: &str = "machine.initialize().unwrap_or_else(|never| match never {});";
+
 /// Where `needle` first stands in `haystack`, which holds it.
 fn at(haystack: &str, needle: &str) -> usize {
     haystack
@@ -140,7 +145,7 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
         }
         let bound = at(&code, "policy.test_context = Some(context.clone());");
         assert!(
-            code[bound..].contains("machine.initialize();"),
+            code[bound..].contains(MACHINE_STARTS),
             "{name}: the context is bound before the machine starts"
         );
     }
@@ -458,7 +463,7 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
         "if !context.read_module_parameters(|given| policy.accept_module_parameters(given)) {",
     );
     let built = at(&code, "let mut machine = Engine::new(policy);");
-    let started = at(&code, "machine.initialize();");
+    let started = at(&code, MACHINE_STARTS);
     assert!(
         bound < read && read < built && built < started,
         "the parameters are read after the context is bound and before the machine starts"
