@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -173,6 +173,8 @@ type StaticPayloadEnumUnimportedRecordListRefusedPayload struct {
 	field uint16
 	kind StaticPayloadEnumUnimportedRecordCommandEnum
 	reason StaticPayloadEnumUnimportedWhyEnum
+	command uint64
+	withdrawn bool
 }
 
 // StaticPayloadEnumUnimportedRaiseRecordListRefused is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -180,17 +182,17 @@ type StaticPayloadEnumUnimportedRecordListRefusedPayload struct {
 // values in one call so the name↔type pairing cannot be constructed
 // inconsistently. Twin of the Rust `StaticPayloadEnumUnimportedInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func StaticPayloadEnumUnimportedRaiseRecordListRefused(e *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], id uint32, field uint16, kind StaticPayloadEnumUnimportedRecordCommandEnum, reason StaticPayloadEnumUnimportedWhyEnum) {
+func StaticPayloadEnumUnimportedRaiseRecordListRefused(e *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], id uint32, field uint16, kind StaticPayloadEnumUnimportedRecordCommandEnum, reason StaticPayloadEnumUnimportedWhyEnum, command uint64, withdrawn bool) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticPayloadEnumUnimportedEvent]{
 		Event:    StaticPayloadEnumUnimportedEventRecordListRefused,
 		Metadata: sce.EventMetadata{
 			EventType:    sce.EventTypeExternal,
-			TypedPayload: StaticPayloadEnumUnimportedRecordListRefusedPayload{id: id, field: field, kind: kind, reason: reason, },
+			TypedPayload: StaticPayloadEnumUnimportedRecordListRefusedPayload{id: id, field: field, kind: kind, reason: reason, command: command, withdrawn: withdrawn, },
 			// Both carriers are filled: the typed one a native guard reads,
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("kind", kind.String()), sce.Pair("reason", reason.String())),
+			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("kind", kind.String()), sce.Pair("reason", reason.String()), sce.Pair("command", sce.Uint64PayloadText(command)), sce.Pair("withdrawn", withdrawn)),
 		},
 	})
 }
@@ -208,6 +210,7 @@ const (
 	StaticPayloadEnumUnimportedWhyEnumChangeTooLarge StaticPayloadEnumUnimportedWhyEnum = 6
 	StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice StaticPayloadEnumUnimportedWhyEnum = 7
 	StaticPayloadEnumUnimportedWhyEnumClockExhausted StaticPayloadEnumUnimportedWhyEnum = 8
+	StaticPayloadEnumUnimportedWhyEnumPeerRefused StaticPayloadEnumUnimportedWhyEnum = 9
 )
 
 // String is the name the enum document declares for the value.
@@ -227,6 +230,8 @@ func (v StaticPayloadEnumUnimportedWhyEnum) String() string {
 		return "registerNamedTwice"
 	case StaticPayloadEnumUnimportedWhyEnumClockExhausted:
 		return "clockExhausted"
+	case StaticPayloadEnumUnimportedWhyEnumPeerRefused:
+		return "peerRefused"
 	}
 	return ""
 }
@@ -240,7 +245,7 @@ func (v StaticPayloadEnumUnimportedWhyEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) optional.Of[StaticPayloadEnumUnimportedWhyEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 6, 7, 8:
+	case 1, 2, 3, 4, 6, 7, 8, 9:
 		return optional.Some(StaticPayloadEnumUnimportedWhyEnum(raw))
 	}
 	return optional.None[StaticPayloadEnumUnimportedWhyEnum]()
@@ -272,6 +277,8 @@ func StaticPayloadEnumUnimportedWhyEnumFromSaved(value any, what string) (Static
 		return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil
 	case "clockExhausted":
 		return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil
+	case "peerRefused":
+		return StaticPayloadEnumUnimportedWhyEnumPeerRefused, nil
 	}
 	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Why", what, declared))
 }
@@ -341,6 +348,8 @@ type StaticPayloadEnumUnimportedRefusedRecord struct {
 	field uint16
 	kind StaticPayloadEnumUnimportedRecordCommandEnum
 	reason StaticPayloadEnumUnimportedWhyEnum
+	command uint64
+	withdrawn bool
 }
 
 // Id reports the `id` field.
@@ -363,6 +372,16 @@ func (r StaticPayloadEnumUnimportedRefusedRecord) Reason() StaticPayloadEnumUnim
 	return r.reason
 }
 
+// Command reports the `command` field.
+func (r StaticPayloadEnumUnimportedRefusedRecord) Command() uint64 {
+	return r.command
+}
+
+// Withdrawn reports the `withdrawn` field.
+func (r StaticPayloadEnumUnimportedRefusedRecord) Withdrawn() bool {
+	return r.withdrawn
+}
+
 // ToSaved is this value as a saved state writes it.
 func (r StaticPayloadEnumUnimportedRefusedRecord) ToSaved() any {
 	saved := sce.NewJSONObject()
@@ -370,6 +389,8 @@ func (r StaticPayloadEnumUnimportedRefusedRecord) ToSaved() any {
 	saved.Set("field", (sce.SavedWriteUint16)(r.field))
 	saved.Set("kind", (func(v StaticPayloadEnumUnimportedRecordCommandEnum) any { return v.ToSaved() })(r.kind))
 	saved.Set("reason", (func(v StaticPayloadEnumUnimportedWhyEnum) any { return v.ToSaved() })(r.reason))
+	saved.Set("command", (sce.SavedWriteUint64)(r.command))
+	saved.Set("withdrawn", (sce.SavedWriteBool)(r.withdrawn))
 	return saved
 }
 
@@ -412,6 +433,24 @@ func StaticPayloadEnumUnimportedRefusedRecordFromSaved(value any, what string) (
 			return record, err
 		}
 	}
+	{
+		saved, err := sce.SavedField(value, what, "command")
+		if err != nil {
+			return record, err
+		}
+		if record.command, err = (sce.SavedReadUint64)(saved, what + ".command"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "withdrawn")
+		if err != nil {
+			return record, err
+		}
+		if record.withdrawn, err = (sce.SavedReadBool)(saved, what + ".withdrawn"); err != nil {
+			return record, err
+		}
+	}
 	return record, nil
 }
 
@@ -451,9 +490,11 @@ var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
 	Records: []sce.RecordLineage{
 		{
 			Event:     "record_list.refused",
-			Revision:  1,
-			Revisions: []string{},
+			Revision:  2,
+			Revisions: []string{"d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"},
 			Added: []sce.AddedField{
+				{ID: "command", Since: 2, Default: "\"0\""},
+				{ID: "withdrawn", Since: 2, Default: "false"},
 			},
 			Widened: []sce.WidenedField{
 			},
@@ -475,9 +516,10 @@ var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
 		},
 		{
 			Key:       "enum:sce:std/shared/record_refusal.scxml",
-			Revision:  1,
-			Revisions: []string{},
+			Revision:  2,
+			Revisions: []string{"3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8"},
 			Added: []sce.AddedVariant{
+				{Name: "peerRefused", Since: 2},
 			},
 			Holders: []sce.EnumHolder{
 				{Variable: "last", List: false},
@@ -1031,7 +1073,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) LiftTypedPayload(event StaticPayload
 	}
 	switch event {
 	case StaticPayloadEnumUnimportedEventRecordListRefused:
-		fields, err := sce.LiftPayload(meta.Data)
+		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"command\":\"0\",\"withdrawn\":false}")
 		if err != nil {
 			return err
 		}
@@ -1045,7 +1087,13 @@ func (p *StaticPayloadEnumUnimportedPolicy) LiftTypedPayload(event StaticPayload
 		if payload.kind, err = func() (StaticPayloadEnumUnimportedRecordCommandEnum, error) { name, err := sce.PayloadString(fields, "kind"); if err != nil { return 0, err }; switch name { case "edit": return StaticPayloadEnumUnimportedRecordCommandEnumEdit, nil; case "clear": return StaticPayloadEnumUnimportedRecordCommandEnumClear, nil; case "retire": return StaticPayloadEnumUnimportedRecordCommandEnumRetire, nil; }; return 0, sce.PayloadUnknownVariant("kind", name, "record_command") }(); err != nil {
 			return err
 		}
-		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "Why") }(); err != nil {
+		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; case "peerRefused": return StaticPayloadEnumUnimportedWhyEnumPeerRefused, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "Why") }(); err != nil {
+			return err
+		}
+		if payload.command, err = sce.PayloadUnsigned64(fields, "command"); err != nil {
+			return err
+		}
+		if payload.withdrawn, err = sce.PayloadBool(fields, "withdrawn"); err != nil {
 			return err
 		}
 		p.pendingRecordListRefusedPayload = payload
@@ -1161,7 +1209,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteTransitionContent(source Stat
 
 	// SCE Accepted Subset §2.15: <sce:append target="kept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vKept) >= 2 { return true }; sceValue := scealgorithm.ElementOf(p.vKept, StaticPayloadEnumUnimportedRefusedRecord{id: p.pendingRecordListRefusedPayload.id, field: p.pendingRecordListRefusedPayload.field, kind: p.pendingRecordListRefusedPayload.kind, reason: p.pendingRecordListRefusedPayload.reason}); if sceFailure.Failed() { return true }; p.vKept = append(p.vKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vKept) >= 2 { return true }; sceValue := scealgorithm.ElementOf(p.vKept, StaticPayloadEnumUnimportedRefusedRecord{id: p.pendingRecordListRefusedPayload.id, field: p.pendingRecordListRefusedPayload.field, kind: p.pendingRecordListRefusedPayload.kind, reason: p.pendingRecordListRefusedPayload.reason, command: p.pendingRecordListRefusedPayload.command, withdrawn: p.pendingRecordListRefusedPayload.withdrawn}); if sceFailure.Failed() { return true }; p.vKept = append(p.vKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

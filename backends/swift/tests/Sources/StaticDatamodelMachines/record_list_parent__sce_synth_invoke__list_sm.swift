@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -80,35 +80,37 @@ private let documentInitialTargetsOfRecordListParentSceSynthInvokeList: [RecordL
 public enum RecordListParentSceSynthInvokeListEvent: Int, Hashable, Sendable {
     case errorCommunication = 0
     case errorExecution = 1
-    case recordListAck = 2
-    case recordListAnnounce = 3
-    case recordListArrive = 4
-    case recordListClear = 5
-    case recordListClose = 6
-    case recordListCompact = 7
-    case recordListEdit = 8
-    case recordListFloor = 9
-    case recordListJoin = 10
-    case recordListKeep = 11
-    case recordListNode = 12
-    case recordListPass = 13
-    case recordListPropose = 14
-    case recordListRefused = 15
-    case recordListRegister = 16
-    case recordListResync = 17
-    case recordListRetire = 18
-    case recordListRole = 19
-    case recordListRoom = 20
-    case recordListSettle = 21
-    case recordListShare = 22
-    case recordListSupersede = 23
-    case recordListTake = 24
-    case recordListTell = 25
-    case recordListValue = 26
-    case recordListVisit = 27
-    case recordListWrite = 28
+    case recordListAnnounce = 2
+    case recordListChange = 3
+    case recordListClear = 4
+    case recordListClose = 5
+    case recordListClosed = 6
+    case recordListConclude = 7
+    case recordListConfirm = 8
+    case recordListConfirmed = 9
+    case recordListDeliver = 10
+    case recordListEdit = 11
+    case recordListJoin = 12
+    case recordListMade = 13
+    case recordListOffer = 14
+    case recordListPass = 15
+    case recordListPending = 16
+    case recordListRaise = 17
+    case recordListRecall = 18
+    case recordListRefused = 19
+    case recordListRegister = 20
+    case recordListRestore = 21
+    case recordListRetire = 22
+    case recordListRole = 23
+    case recordListRoom = 24
+    case recordListTake = 25
+    case recordListTell = 26
+    case recordListUnwind = 27
+    case recordListValue = 28
+    case recordListVerdict = 29
+    case recordListWithdraw = 30
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 29
+    case null = 31
 }
 
 // ======================================================================
@@ -234,68 +236,6 @@ public struct RecordListParentSceSynthInvokeListValueRecord: Equatable, Sendable
     }
 }
 
-/// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
-public struct RecordListParentSceSynthInvokeListNodeRecord: Equatable, Sendable, SceDefault {
-    public var depth: UInt8 = 0
-    public var prefix: UInt64 = 0
-    public var hash: UInt32 = 0
-
-    public init() {}
-
-    public init(depth: UInt8, prefix: UInt64, hash: UInt32) {
-        self.depth = depth
-        self.prefix = prefix
-        self.hash = hash
-    }
-
-    /// This value as a saved state writes it.
-    public func toSaved() -> JSONValue {
-        SavedValues.record([
-            (key: "depth", value: SavedValues.of(depth)),
-            (key: "prefix", value: SavedValues.of(prefix)),
-            (key: "hash", value: SavedValues.of(hash)),
-        ])
-    }
-
-    /// The value a saved state holds, refused unless it is one.
-    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListNodeRecord {
-        RecordListParentSceSynthInvokeListNodeRecord(
-            depth: try SavedValues.uint8(try SavedValues.field(value, what, "depth"), "\(what).depth"),
-            prefix: try SavedValues.uint64(try SavedValues.field(value, what, "prefix"), "\(what).prefix"),
-            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
-        )
-    }
-}
-
-/// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-public struct RecordListParentSceSynthInvokeListAnswerRecord: Equatable, Sendable, SceDefault {
-    public var sender: UInt64 = 0
-    public var hash: UInt32 = 0
-
-    public init() {}
-
-    public init(sender: UInt64, hash: UInt32) {
-        self.sender = sender
-        self.hash = hash
-    }
-
-    /// This value as a saved state writes it.
-    public func toSaved() -> JSONValue {
-        SavedValues.record([
-            (key: "sender", value: SavedValues.of(sender)),
-            (key: "hash", value: SavedValues.of(hash)),
-        ])
-    }
-
-    /// The value a saved state holds, refused unless it is one.
-    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListAnswerRecord {
-        RecordListParentSceSynthInvokeListAnswerRecord(
-            sender: try SavedValues.uint64(try SavedValues.field(value, what, "sender"), "\(what).sender"),
-            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
-        )
-    }
-}
-
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
 public struct RecordListParentSceSynthInvokeListMemberRecord: Equatable, Sendable, SceDefault {
     public var node: UInt64 = 0
@@ -325,36 +265,22 @@ public struct RecordListParentSceSynthInvokeListMemberRecord: Equatable, Sendabl
     }
 }
 
-/// SCE Accepted Subset §2.15: a `record:Part` datamodel value.
-public struct RecordListParentSceSynthInvokeListPartRecord: Equatable, Sendable, SceDefault {
+/// SCE Accepted Subset §2.15: a `record:Staged` datamodel value.
+public struct RecordListParentSceSynthInvokeListStagedRecord: Equatable, Sendable, SceDefault {
     public var kind: UInt8 = 0
     public var id: UInt32 = 0
     public var field: UInt16 = 0
     public var value: Int64 = 0
     public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-    public var by: UInt64 = 0
-    public var atWallTime: Int64 = 0
-    public var atCounter: UInt32 = 0
-    public var parts: UInt32 = 0
 
     public init() {}
 
-    public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64, by: UInt64, atWallTime: Int64, atCounter: UInt32, parts: UInt32) {
+    public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String) {
         self.kind = kind
         self.id = id
         self.field = field
         self.value = value
         self.text = text
-        self.wallTime = wallTime
-        self.counter = counter
-        self.nodeId = nodeId
-        self.by = by
-        self.atWallTime = atWallTime
-        self.atCounter = atCounter
-        self.parts = parts
     }
 
     /// This value as a saved state writes it.
@@ -365,31 +291,17 @@ public struct RecordListParentSceSynthInvokeListPartRecord: Equatable, Sendable,
             (key: "field", value: SavedValues.of(field)),
             (key: "value", value: SavedValues.of(value)),
             (key: "text", value: SavedValues.of(text)),
-            (key: "wallTime", value: SavedValues.of(wallTime)),
-            (key: "counter", value: SavedValues.of(counter)),
-            (key: "nodeId", value: SavedValues.of(nodeId)),
-            (key: "by", value: SavedValues.of(by)),
-            (key: "atWallTime", value: SavedValues.of(atWallTime)),
-            (key: "atCounter", value: SavedValues.of(atCounter)),
-            (key: "parts", value: SavedValues.of(parts)),
         ])
     }
 
     /// The value a saved state holds, refused unless it is one.
-    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListPartRecord {
-        RecordListParentSceSynthInvokeListPartRecord(
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListStagedRecord {
+        RecordListParentSceSynthInvokeListStagedRecord(
             kind: try SavedValues.uint8(try SavedValues.field(value, what, "kind"), "\(what).kind"),
             id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
             field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
             value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
-            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
-            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
-            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
-            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId"),
-            by: try SavedValues.uint64(try SavedValues.field(value, what, "by"), "\(what).by"),
-            atWallTime: try SavedValues.int64(try SavedValues.field(value, what, "atWallTime"), "\(what).atWallTime"),
-            atCounter: try SavedValues.uint32(try SavedValues.field(value, what, "atCounter"), "\(what).atCounter"),
-            parts: try SavedValues.uint32(try SavedValues.field(value, what, "parts"), "\(what).parts")
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96)
         )
     }
 }
@@ -403,6 +315,7 @@ public enum RecordListParentSceSynthInvokeListRefusalEnum: UInt8, CaseIterable, 
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
+    case peerRefused = 9
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -414,6 +327,7 @@ public enum RecordListParentSceSynthInvokeListRefusalEnum: UInt8, CaseIterable, 
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
+        case .peerRefused: return "peerRefused"
         }
     }
 
@@ -438,6 +352,7 @@ public enum RecordListParentSceSynthInvokeListRefusalEnum: UInt8, CaseIterable, 
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
+        case "peerRefused": self = .peerRefused
         default: return nil
         }
     }
@@ -488,38 +403,227 @@ extension RecordListParentSceSynthInvokeListCommandEnum: SavedEnumeration {
     public static var savedAlias: String { "Command" }
 }
 
+/// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+public struct RecordListParentSceSynthInvokeListOpRecord: Equatable, Sendable, SceDefault {
+    public var kind: UInt8 = 0
+    public var id: UInt32 = 0
+    public var field: UInt16 = 0
+    public var value: Int64 = 0
+    public var text: String = ""
+    public var wallTime: Int64 = 0
+    public var counter: UInt32 = 0
+    public var nodeId: UInt64 = 0
+
+    public init() {}
+
+    public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
+        self.kind = kind
+        self.id = id
+        self.field = field
+        self.value = value
+        self.text = text
+        self.wallTime = wallTime
+        self.counter = counter
+        self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListOpRecord {
+        RecordListParentSceSynthInvokeListOpRecord(
+            kind: try SavedValues.uint8(try SavedValues.field(value, what, "kind"), "\(what).kind"),
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
+}
+
+/// SCE Accepted Subset §2.15: a `record:Provisional` datamodel value.
+public struct RecordListParentSceSynthInvokeListProvisionalRecord: Equatable, Sendable, SceDefault {
+    public var wallTime: Int64 = 0
+    public var counter: UInt32 = 0
+    public var command: UInt64 = 0
+    public var id: UInt32 = 0
+    public var field: UInt16 = 0
+    public var kind: RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnum.allCases[0]
+
+    public init() {}
+
+    public init(wallTime: Int64, counter: UInt32, command: UInt64, id: UInt32, field: UInt16, kind: RecordListParentSceSynthInvokeListCommandEnum) {
+        self.wallTime = wallTime
+        self.counter = counter
+        self.command = command
+        self.id = id
+        self.field = field
+        self.kind = kind
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "command", value: SavedValues.of(command)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "kind", value: SavedValues.of(kind)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListProvisionalRecord {
+        RecordListParentSceSynthInvokeListProvisionalRecord(
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            command: try SavedValues.uint64(try SavedValues.field(value, what, "command"), "\(what).command"),
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            kind: try SavedValues.enumeration(try SavedValues.field(value, what, "kind"), "\(what).kind", as: RecordListParentSceSynthInvokeListCommandEnum.self)
+        )
+    }
+}
+
+/// SCE Accepted Subset §2.15: a `record:Undo` datamodel value.
+public struct RecordListParentSceSynthInvokeListUndoRecord: Equatable, Sendable, SceDefault {
+    public var atWallTime: Int64 = 0
+    public var atCounter: UInt32 = 0
+    public var id: UInt64 = 0
+    public var field: UInt64 = 0
+    public var value: Int64 = 0
+    public var text: String = ""
+    public var wallTime: Int64 = 0
+    public var counter: UInt32 = 0
+    public var nodeId: UInt64 = 0
+
+    public init() {}
+
+    public init(atWallTime: Int64, atCounter: UInt32, id: UInt64, field: UInt64, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
+        self.atWallTime = atWallTime
+        self.atCounter = atCounter
+        self.id = id
+        self.field = field
+        self.value = value
+        self.text = text
+        self.wallTime = wallTime
+        self.counter = counter
+        self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "atWallTime", value: SavedValues.of(atWallTime)),
+            (key: "atCounter", value: SavedValues.of(atCounter)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentSceSynthInvokeListUndoRecord {
+        RecordListParentSceSynthInvokeListUndoRecord(
+            atWallTime: try SavedValues.int64(try SavedValues.field(value, what, "atWallTime"), "\(what).atWallTime"),
+            atCounter: try SavedValues.uint32(try SavedValues.field(value, what, "atCounter"), "\(what).atCounter"),
+            id: try SavedValues.uint64(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint64(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
+}
+
+/// SCE Accepted Subset §2.15: an `enum:Outcome` datamodel value.
+public enum RecordListParentSceSynthInvokeListOutcomeEnum: UInt8, CaseIterable, Sendable {
+    case none = 0
+    case accepted = 1
+    case held = 2
+    case waiting = 3
+    case refused = 4
+
+    /// The name the enum document declares for the value.
+    public var declaredName: String {
+        switch self {
+        case .none: return "none"
+        case .accepted: return "accepted"
+        case .held: return "held"
+        case .waiting: return "waiting"
+        case .refused: return "refused"
+        }
+    }
+
+    /// The number the enum document declares for the value.
+    public static func toUnderlying(_ value: RecordListParentSceSynthInvokeListOutcomeEnum) -> UInt8 {
+        value.rawValue
+    }
+
+    /// The variant that declares `raw`, and nil for a number no variant declares.
+    public static func fromUnderlying(_ raw: UInt8) -> RecordListParentSceSynthInvokeListOutcomeEnum? {
+        RecordListParentSceSynthInvokeListOutcomeEnum(rawValue: raw)
+    }
+
+    /// The variant the enum document gives `name`, and nil for a name it does not
+    /// declare.
+    public init?(declaredName: String) {
+        switch declaredName {
+        case "none": self = .none
+        case "accepted": self = .accepted
+        case "held": self = .held
+        case "waiting": self = .waiting
+        case "refused": self = .refused
+        default: return nil
+        }
+    }
+}
+
+extension RecordListParentSceSynthInvokeListOutcomeEnum: SavedEnumeration {
+    public static var savedAlias: String { "Outcome" }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
 enum RecordListParentSceSynthInvokeListPayloadTag {
     case none
-    case recordListAck
     case recordListAnnounce
+    case recordListChange
     case recordListClear
-    case recordListCompact
+    case recordListConfirm
     case recordListEdit
-    case recordListFloor
     case recordListJoin
-    case recordListKeep
-    case recordListNode
-    case recordListPropose
+    case recordListRaise
+    case recordListRecall
+    case recordListRestore
     case recordListRetire
     case recordListRole
     case recordListRoom
-    case recordListSettle
-    case recordListShare
-    case recordListSupersede
-    case recordListVisit
-    case recordListWrite
-}
-
-/// The typed `_event.data` payload of `record_list.ack` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListAckPayload {
-    var sender: UInt64 = 0
-    var before: Int64 = 0
-    var hash: UInt32 = 0
+    case recordListVerdict
+    case recordListWithdraw
 }
 
 /// The typed `_event.data` payload of `record_list.announce` (NL-to-IR Item C1 Path A): what a
@@ -530,6 +634,16 @@ struct RecordListParentSceSynthInvokeListRecordListAnnouncePayload {
     var field: UInt16 = 0
 }
 
+/// The typed `_event.data` payload of `record_list.change` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct RecordListParentSceSynthInvokeListRecordListChangePayload {
+    var by: UInt64 = 0
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var ops: [RecordListParentSceSynthInvokeListOpRecord] = []
+}
+
 /// The typed `_event.data` payload of `record_list.clear` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
@@ -538,13 +652,16 @@ struct RecordListParentSceSynthInvokeListRecordListClearPayload {
     var field: UInt16 = 0
     var now: Int64 = 0
     var more: Bool = false
+    var command: UInt64 = 0
 }
 
-/// The typed `_event.data` payload of `record_list.compact` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.confirm` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListCompactPayload {
-    var before: Int64 = 0
+struct RecordListParentSceSynthInvokeListRecordListConfirmPayload {
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var command: UInt64 = 0
 }
 
 /// The typed `_event.data` payload of `record_list.edit` (NL-to-IR Item C1 Path A): what a
@@ -557,14 +674,7 @@ struct RecordListParentSceSynthInvokeListRecordListEditPayload {
     var text: String = ""
     var now: Int64 = 0
     var more: Bool = false
-}
-
-/// The typed `_event.data` payload of `record_list.floor` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListFloorPayload {
-    var before: Int64 = 0
-    var hash: UInt32 = 0
+    var command: UInt64 = 0
 }
 
 /// The typed `_event.data` payload of `record_list.join` (NL-to-IR Item C1 Path A): what a
@@ -572,37 +682,38 @@ struct RecordListParentSceSynthInvokeListRecordListFloorPayload {
 /// values to the inject seam below.
 struct RecordListParentSceSynthInvokeListRecordListJoinPayload {
     var node: UInt64 = 0
-    var hub: Bool = false
+    var journal: Bool = false
 }
 
-/// The typed `_event.data` payload of `record_list.keep` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.raise` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListKeepPayload {
-    var kind: UInt8 = 0
-    var element: UInt64 = 0
+struct RecordListParentSceSynthInvokeListRecordListRaisePayload {
     var wallTime: Int64 = 0
     var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
+    var command: UInt64 = 0
 }
 
-/// The typed `_event.data` payload of `record_list.node` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.recall` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListNodePayload {
-    var sender: UInt64 = 0
-    var to: UInt64 = 0
-    var depth: UInt8 = 0
-    var prefix: UInt64 = 0
-    var hash: UInt32 = 0
-    var reply: Bool = false
+struct RecordListParentSceSynthInvokeListRecordListRecallPayload {
+    var by: UInt64 = 0
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var ops: [RecordListParentSceSynthInvokeListOpRecord] = []
+    var command: UInt64 = 0
+    var provisional: Bool = false
 }
 
-/// The typed `_event.data` payload of `record_list.propose` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.restore` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListProposePayload {
-    var before: Int64 = 0
+struct RecordListParentSceSynthInvokeListRecordListRestorePayload {
+    var by: UInt64 = 0
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var ops: [RecordListParentSceSynthInvokeListOpRecord] = []
 }
 
 /// The typed `_event.data` payload of `record_list.retire` (NL-to-IR Item C1 Path A): what a
@@ -612,6 +723,7 @@ struct RecordListParentSceSynthInvokeListRecordListRetirePayload {
     var id: UInt32 = 0
     var now: Int64 = 0
     var more: Bool = false
+    var command: UInt64 = 0
 }
 
 /// The typed `_event.data` payload of `record_list.role` (NL-to-IR Item C1 Path A): what a
@@ -631,59 +743,23 @@ struct RecordListParentSceSynthInvokeListRecordListRoomPayload {
     var digest: UInt32 = 0
 }
 
-/// The typed `_event.data` payload of `record_list.settle` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.verdict` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListSettlePayload {
-    var before: Int64 = 0
-    var members: UInt32 = 0
-}
-
-/// The typed `_event.data` payload of `record_list.share` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListSharePayload {
-    var to: UInt64 = 0
-    var minute: UInt64 = 0
-}
-
-/// The typed `_event.data` payload of `record_list.supersede` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListSupersedePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
+struct RecordListParentSceSynthInvokeListRecordListVerdictPayload {
     var wallTime: Int64 = 0
     var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var by: UInt64 = 0
-    var parts: UInt32 = 0
-    var atWallTime: Int64 = 0
-    var atCounter: UInt32 = 0
+    var outcome: RecordListParentSceSynthInvokeListOutcomeEnum = RecordListParentSceSynthInvokeListOutcomeEnum.allCases[0]
+    var reason: RecordListParentSceSynthInvokeListRefusalEnum? = nil
 }
 
-/// The typed `_event.data` payload of `record_list.visit` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.withdraw` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListVisitPayload {
-    var to: UInt64 = 0
-    var depth: UInt8 = 0
-    var prefix: UInt64 = 0
-    var reply: Bool = false
-}
-
-/// The typed `_event.data` payload of `record_list.write` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentSceSynthInvokeListRecordListWritePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
+struct RecordListParentSceSynthInvokeListRecordListWithdrawPayload {
     var wallTime: Int64 = 0
     var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var parts: UInt32 = 0
+    var command: UInt64 = 0
 }
 
 
@@ -699,21 +775,6 @@ private func call_HlcReceive__vv(_ p0: RecordListParentSceSynthInvokeListHlcReco
 private func call_HlcSend__v(_ p0: RecordListParentSceSynthInvokeListHlcRecord, _ p1: Int64, _ p2: UInt64) throws -> RecordListParentSceSynthInvokeListHlcRecord {
     let r = try HlcSend.hlcSend(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1, p2)
     return RecordListParentSceSynthInvokeListHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
-}
-
-private func call_MerkleChangeHash__i(_ p0: RecordListParentSceSynthInvokeListEntryRecord, _ p1: UInt8) throws -> UInt32 {
-    let r = try MerkleChangeHash.merkleChangeHash(OrsetEntryPayload(element: p0.element, wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1)
-    return r
-}
-
-private func call_MerkleChangeHash__v(_ p0: RecordListParentSceSynthInvokeListEntryRecord, _ p1: UInt8) throws -> UInt32 {
-    let r = try MerkleChangeHash.merkleChangeHash(OrsetEntryPayload(element: p0.element, wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1)
-    return r
-}
-
-private func call_MerkleInsert__v(_ p0: [RecordListParentSceSynthInvokeListNodeRecord], _ p1: Int64, _ p2: UInt32) throws -> [RecordListParentSceSynthInvokeListNodeRecord] {
-    let r = try MerkleInsert.merkleInsert(p0.map { MerkleNodePayload(depth: $0.depth, prefix: $0.prefix, hash: $0.hash) }, p1, p2)
-    return r.map { RecordListParentSceSynthInvokeListNodeRecord(depth: $0.depth, prefix: $0.prefix, hash: $0.hash) }
 }
 
 private func call_MvValueDrop__vv(_ p0: [RecordListParentSceSynthInvokeListValueRecord], _ p1: RecordListParentSceSynthInvokeListValueRecord) throws -> [RecordListParentSceSynthInvokeListValueRecord] {
@@ -746,11 +807,6 @@ private func call_RecordRoster__v(_ p0: [RecordListParentSceSynthInvokeListMembe
     return r.map { RecordListParentSceSynthInvokeListMemberRecord(node: $0.node, role: $0.role) }
 }
 
-private func call_RecordSettled__vv(_ p0: [RecordListParentSceSynthInvokeListEntryRecord], _ p1: [RecordListParentSceSynthInvokeListEntryRecord], _ p2: Int64) throws -> UInt32 {
-    let r = try RecordSettled.recordSettled(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p2)
-    return r
-}
-
 private func call_RegisterValues__v(_ p0: [RecordListParentSceSynthInvokeListValueRecord], _ p1: UInt64, _ p2: UInt64) throws -> [RecordListParentSceSynthInvokeListValueRecord] {
     let r = try RegisterValues.registerValues(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1, p2)
     return r.map { RecordListParentSceSynthInvokeListValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
@@ -777,95 +833,55 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: RecordListParentSceSynthInvokeListPayloadTag = .none
-    var pendingRecordListAckPayload = RecordListParentSceSynthInvokeListRecordListAckPayload()
     var pendingRecordListAnnouncePayload = RecordListParentSceSynthInvokeListRecordListAnnouncePayload()
+    var pendingRecordListChangePayload = RecordListParentSceSynthInvokeListRecordListChangePayload()
     var pendingRecordListClearPayload = RecordListParentSceSynthInvokeListRecordListClearPayload()
-    var pendingRecordListCompactPayload = RecordListParentSceSynthInvokeListRecordListCompactPayload()
+    var pendingRecordListConfirmPayload = RecordListParentSceSynthInvokeListRecordListConfirmPayload()
     var pendingRecordListEditPayload = RecordListParentSceSynthInvokeListRecordListEditPayload()
-    var pendingRecordListFloorPayload = RecordListParentSceSynthInvokeListRecordListFloorPayload()
     var pendingRecordListJoinPayload = RecordListParentSceSynthInvokeListRecordListJoinPayload()
-    var pendingRecordListKeepPayload = RecordListParentSceSynthInvokeListRecordListKeepPayload()
-    var pendingRecordListNodePayload = RecordListParentSceSynthInvokeListRecordListNodePayload()
-    var pendingRecordListProposePayload = RecordListParentSceSynthInvokeListRecordListProposePayload()
+    var pendingRecordListRaisePayload = RecordListParentSceSynthInvokeListRecordListRaisePayload()
+    var pendingRecordListRecallPayload = RecordListParentSceSynthInvokeListRecordListRecallPayload()
+    var pendingRecordListRestorePayload = RecordListParentSceSynthInvokeListRecordListRestorePayload()
     var pendingRecordListRetirePayload = RecordListParentSceSynthInvokeListRecordListRetirePayload()
     var pendingRecordListRolePayload = RecordListParentSceSynthInvokeListRecordListRolePayload()
     var pendingRecordListRoomPayload = RecordListParentSceSynthInvokeListRecordListRoomPayload()
-    var pendingRecordListSettlePayload = RecordListParentSceSynthInvokeListRecordListSettlePayload()
-    var pendingRecordListSharePayload = RecordListParentSceSynthInvokeListRecordListSharePayload()
-    var pendingRecordListSupersedePayload = RecordListParentSceSynthInvokeListRecordListSupersedePayload()
-    var pendingRecordListVisitPayload = RecordListParentSceSynthInvokeListRecordListVisitPayload()
-    var pendingRecordListWritePayload = RecordListParentSceSynthInvokeListRecordListWritePayload()
+    var pendingRecordListVerdictPayload = RecordListParentSceSynthInvokeListRecordListVerdictPayload()
+    var pendingRecordListWithdrawPayload = RecordListParentSceSynthInvokeListRecordListWithdrawPayload()
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
     var vNode: UInt64 = 0
-    /// W3C SCXML 5.2: the `hub` datamodel variable, published (`sce:direction="out"`).
-    var vHub: Bool = false
+    /// W3C SCXML 5.2: the `journal` datamodel variable.
+    var vJournal: Bool = true
     /// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
     var vClock: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
     var vStamp: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    /// W3C SCXML 5.2: the `dot` datamodel variable.
+    var vDot: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
     var vAdds: [RecordListParentSceSynthInvokeListEntryRecord] = []
-    /// W3C SCXML 5.2: the `tombstones` datamodel variable, published (`sce:direction="out"`).
-    var vTombstones: [RecordListParentSceSynthInvokeListEntryRecord] = []
     /// W3C SCXML 5.2: the `one` datamodel variable.
     var vOne: [RecordListParentSceSynthInvokeListEntryRecord] = []
-    /// W3C SCXML 5.2: the `stable` datamodel variable.
-    var vStable: [RecordListParentSceSynthInvokeListEntryRecord] = []
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     var vEntry: RecordListParentSceSynthInvokeListEntryRecord = RecordListParentSceSynthInvokeListEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
     var vValues: [RecordListParentSceSynthInvokeListValueRecord] = []
     /// W3C SCXML 5.2: the `held` datamodel variable.
     var vHeld: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
-    /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
-    var vDigest: [RecordListParentSceSynthInvokeListNodeRecord] = []
-    /// W3C SCXML 5.2: the `mine` datamodel variable.
-    var vMine: UInt32 = 0
     /// W3C SCXML 5.2: the `shareId` datamodel variable.
     var vShareId: UInt32 = 0
     /// W3C SCXML 5.2: the `shareField` datamodel variable.
     var vShareField: UInt16 = 0
-    /// W3C SCXML 5.2: the `known` datamodel variable.
-    var vKnown: Bool = false
     /// W3C SCXML 5.2: the `wasLive` datamodel variable.
     var vWasLive: Bool = false
-    /// W3C SCXML 5.2: the `isLive` datamodel variable.
-    var vIsLive: Bool = false
     /// W3C SCXML 5.2: the `present` datamodel variable.
     var vPresent: Bool = false
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     var vRefusals: UInt32 = 0
-    /// W3C SCXML 5.2: the `floor` datamodel variable, published (`sce:direction="out"`).
-    var vFloor: Int64 = 0
-    /// W3C SCXML 5.2: the `stale` datamodel variable, published (`sce:direction="out"`).
-    var vStale: Bool = false
-    /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: UInt32 = 0
-    /// W3C SCXML 5.2: the `frozenFor` datamodel variable.
-    var vFrozenFor: Int64 = -1
-    /// W3C SCXML 5.2: the `frozenHash` datamodel variable.
-    var vFrozenHash: UInt32 = 0
-    /// W3C SCXML 5.2: the `pending` datamodel variable.
-    var vPending: Int64 = -1
-    /// W3C SCXML 5.2: the `members` datamodel variable.
-    var vMembers: UInt32 = 0
-    /// W3C SCXML 5.2: the `agreeing` datamodel variable.
-    var vAgreeing: UInt32 = 0
-    /// W3C SCXML 5.2: the `answers` datamodel variable.
-    var vAnswers: [RecordListParentSceSynthInvokeListAnswerRecord] = []
-    /// W3C SCXML 5.2: the `answer` datamodel variable.
-    var vAnswer: RecordListParentSceSynthInvokeListAnswerRecord = RecordListParentSceSynthInvokeListAnswerRecord(sender: 0, hash: 0)
-    /// W3C SCXML 5.2: the `agreed` datamodel variable.
-    var vAgreed: UInt32 = 0
     /// W3C SCXML 5.2: the `roomValues` datamodel variable.
     var vRoomValues: UInt32 = 0
-    /// W3C SCXML 5.2: the `roomHistory` datamodel variable.
-    var vRoomHistory: UInt32 = 0
-    /// W3C SCXML 5.2: the `roomDigest` datamodel variable.
-    var vRoomDigest: UInt32 = 0
     /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
     var vFull: UInt32 = 0
     /// W3C SCXML 5.2: the `roster` datamodel variable.
@@ -891,7 +907,9 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     /// W3C SCXML 5.2: the `empty` datamodel variable.
     var vEmpty: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `staged` datamodel variable.
-    var vStaged: [RecordListParentSceSynthInvokeListPartRecord] = []
+    var vStaged: [RecordListParentSceSynthInvokeListStagedRecord] = []
+    /// W3C SCXML 5.2: the `staging` datamodel variable.
+    var vStaging: RecordListParentSceSynthInvokeListStagedRecord = RecordListParentSceSynthInvokeListStagedRecord(kind: 0, id: 0, field: 0, value: 0, text: "")
     /// W3C SCXML 5.2: the `holding` datamodel variable.
     var vHolding: Bool = false
     /// W3C SCXML 5.2: the `closingNow` datamodel variable.
@@ -917,33 +935,49 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     /// W3C SCXML 5.2: the `namedKind` datamodel variable.
     var vNamedKind: RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnum.edit
     /// W3C SCXML 5.2: the `taking` datamodel variable.
-    var vTaking: [RecordListParentSceSynthInvokeListPartRecord] = []
+    var vTaking: [RecordListParentSceSynthInvokeListOpRecord] = []
     /// W3C SCXML 5.2: the `took` datamodel variable.
     var vTook: UInt32 = 0
-    /// W3C SCXML 5.2: the `passing` datamodel variable.
-    var vPassing: [RecordListParentSceSynthInvokeListPartRecord] = []
-    /// W3C SCXML 5.2: the `passed` datamodel variable.
-    var vPassed: UInt32 = 0
-    /// W3C SCXML 5.2: the `waiting` datamodel variable.
-    var vWaiting: [RecordListParentSceSynthInvokeListPartRecord] = []
-    /// W3C SCXML 5.2: the `kept` datamodel variable.
-    var vKept: [RecordListParentSceSynthInvokeListPartRecord] = []
-    /// W3C SCXML 5.2: the `part` datamodel variable.
-    var vPart: RecordListParentSceSynthInvokeListPartRecord = RecordListParentSceSynthInvokeListPartRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0, by: 0, atWallTime: 0, atCounter: 0, parts: 1)
     /// W3C SCXML 5.2: the `op` datamodel variable.
-    var vOp: RecordListParentSceSynthInvokeListPartRecord = RecordListParentSceSynthInvokeListPartRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0, by: 0, atWallTime: 0, atCounter: 0, parts: 1)
-    /// W3C SCXML 5.2: the `already` datamodel variable.
-    var vAlready: Bool = false
-    /// W3C SCXML 5.2: the `count` datamodel variable.
-    var vCount: UInt32 = 0
+    var vOp: RecordListParentSceSynthInvokeListOpRecord = RecordListParentSceSynthInvokeListOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
+    /// W3C SCXML 5.2: the `restoring` datamodel variable.
+    var vRestoring: Bool = false
+    /// W3C SCXML 5.2: the `tentative` datamodel variable.
+    var vTentative: Bool = false
+    /// W3C SCXML 5.2: the `closingCommand` datamodel variable.
+    var vClosingCommand: UInt64 = 0
+    /// W3C SCXML 5.2: the `offered` datamodel variable.
+    var vOffered: [RecordListParentSceSynthInvokeListOpRecord] = []
+    /// W3C SCXML 5.2: the `offeredAt` datamodel variable.
+    var vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    /// W3C SCXML 5.2: the `refusedFor` datamodel variable.
+    var vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.peerRefused
+    /// W3C SCXML 5.2: the `closedOps` datamodel variable.
+    var vClosedOps: UInt32 = 0
+    /// W3C SCXML 5.2: the `closedFor` datamodel variable.
+    var vClosedFor: RecordListParentSceSynthInvokeListRefusalEnum? = nil
+    /// W3C SCXML 5.2: the `closedAt` datamodel variable.
+    var vClosedAt: RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    /// W3C SCXML 5.2: the `provisional` datamodel variable.
+    var vProvisional: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+    /// W3C SCXML 5.2: the `provisionalKept` datamodel variable.
+    var vProvisionalKept: [RecordListParentSceSynthInvokeListProvisionalRecord] = []
+    /// W3C SCXML 5.2: the `standing` datamodel variable.
+    var vStanding: RecordListParentSceSynthInvokeListProvisionalRecord = RecordListParentSceSynthInvokeListProvisionalRecord(wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnum.edit)
+    /// W3C SCXML 5.2: the `provisionalFound` datamodel variable.
+    var vProvisionalFound: Bool = false
+    /// W3C SCXML 5.2: the `withdrawFrom` datamodel variable.
+    var vWithdrawFrom: UInt32 = 0
+    /// W3C SCXML 5.2: the `undo` datamodel variable.
+    var vUndo: [RecordListParentSceSynthInvokeListUndoRecord] = []
+    /// W3C SCXML 5.2: the `undoKept` datamodel variable.
+    var vUndoKept: [RecordListParentSceSynthInvokeListUndoRecord] = []
+    /// W3C SCXML 5.2: the `undoing` datamodel variable.
+    var vUndoing: RecordListParentSceSynthInvokeListUndoRecord = RecordListParentSceSynthInvokeListUndoRecord(atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var node: UInt64 { vNode }
-
-    /// Reports what the published `hub` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var hub: Bool { vHub }
 
     /// Reports what the published `clock` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -953,33 +987,13 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var adds: [RecordListParentSceSynthInvokeListEntryRecord] { vAdds }
 
-    /// Reports what the published `tombstones` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var tombstones: [RecordListParentSceSynthInvokeListEntryRecord] { vTombstones }
-
     /// Reports what the published `values` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var values: [RecordListParentSceSynthInvokeListValueRecord] { vValues }
 
-    /// Reports what the published `digest` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var digest: [RecordListParentSceSynthInvokeListNodeRecord] { vDigest }
-
     /// Reports what the published `refusals` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var refusals: UInt32 { vRefusals }
-
-    /// Reports what the published `floor` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var floor: Int64 { vFloor }
-
-    /// Reports what the published `stale` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var stale: Bool { vStale }
-
-    /// Reports what the published `late` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var late: UInt32 { vLate }
 
     /// Reports what the published `full` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -1000,27 +1014,13 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     public struct InvokeParams {
         public init() {}
         public var vNode: UInt64? = nil
-        public var vHub: Bool? = nil
-        public var vMine: UInt32? = nil
+        public var vJournal: Bool? = nil
         public var vShareId: UInt32? = nil
         public var vShareField: UInt16? = nil
-        public var vKnown: Bool? = nil
         public var vWasLive: Bool? = nil
-        public var vIsLive: Bool? = nil
         public var vPresent: Bool? = nil
         public var vRefusals: UInt32? = nil
-        public var vFloor: Int64? = nil
-        public var vStale: Bool? = nil
-        public var vLate: UInt32? = nil
-        public var vFrozenFor: Int64? = nil
-        public var vFrozenHash: UInt32? = nil
-        public var vPending: Int64? = nil
-        public var vMembers: UInt32? = nil
-        public var vAgreeing: UInt32? = nil
-        public var vAgreed: UInt32? = nil
         public var vRoomValues: UInt32? = nil
-        public var vRoomHistory: UInt32? = nil
-        public var vRoomDigest: UInt32? = nil
         public var vFull: UInt32? = nil
         public var vDenied: UInt32? = nil
         public var vForbidden: Bool? = nil
@@ -1039,9 +1039,12 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         public var vNamedId: UInt32? = nil
         public var vNamedField: UInt16? = nil
         public var vTook: UInt32? = nil
-        public var vPassed: UInt32? = nil
-        public var vAlready: Bool? = nil
-        public var vCount: UInt32? = nil
+        public var vRestoring: Bool? = nil
+        public var vTentative: Bool? = nil
+        public var vClosingCommand: UInt64? = nil
+        public var vClosedOps: UInt32? = nil
+        public var vProvisionalFound: Bool? = nil
+        public var vWithdrawFrom: UInt32? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
@@ -1050,11 +1053,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         if let value = params.vNode {
             vNode = value
         }
-        if let value = params.vHub {
-            vHub = value
-        }
-        if let value = params.vMine {
-            vMine = value
+        if let value = params.vJournal {
+            vJournal = value
         }
         if let value = params.vShareId {
             vShareId = value
@@ -1062,14 +1062,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         if let value = params.vShareField {
             vShareField = value
         }
-        if let value = params.vKnown {
-            vKnown = value
-        }
         if let value = params.vWasLive {
             vWasLive = value
-        }
-        if let value = params.vIsLive {
-            vIsLive = value
         }
         if let value = params.vPresent {
             vPresent = value
@@ -1077,41 +1071,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         if let value = params.vRefusals {
             vRefusals = value
         }
-        if let value = params.vFloor {
-            vFloor = value
-        }
-        if let value = params.vStale {
-            vStale = value
-        }
-        if let value = params.vLate {
-            vLate = value
-        }
-        if let value = params.vFrozenFor {
-            vFrozenFor = value
-        }
-        if let value = params.vFrozenHash {
-            vFrozenHash = value
-        }
-        if let value = params.vPending {
-            vPending = value
-        }
-        if let value = params.vMembers {
-            vMembers = value
-        }
-        if let value = params.vAgreeing {
-            vAgreeing = value
-        }
-        if let value = params.vAgreed {
-            vAgreed = value
-        }
         if let value = params.vRoomValues {
             vRoomValues = value
-        }
-        if let value = params.vRoomHistory {
-            vRoomHistory = value
-        }
-        if let value = params.vRoomDigest {
-            vRoomDigest = value
         }
         if let value = params.vFull {
             vFull = value
@@ -1167,14 +1128,23 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         if let value = params.vTook {
             vTook = value
         }
-        if let value = params.vPassed {
-            vPassed = value
+        if let value = params.vRestoring {
+            vRestoring = value
         }
-        if let value = params.vAlready {
-            vAlready = value
+        if let value = params.vTentative {
+            vTentative = value
         }
-        if let value = params.vCount {
-            vCount = value
+        if let value = params.vClosingCommand {
+            vClosingCommand = value
+        }
+        if let value = params.vClosedOps {
+            vClosedOps = value
+        }
+        if let value = params.vProvisionalFound {
+            vProvisionalFound = value
+        }
+        if let value = params.vWithdrawFrom {
+            vWithdrawFrom = value
         }
     }
 
@@ -1308,60 +1278,64 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             return "error.communication"
         case .errorExecution:
             return "error.execution"
-        case .recordListAck:
-            return "record_list.ack"
         case .recordListAnnounce:
             return "record_list.announce"
-        case .recordListArrive:
-            return "record_list.arrive"
+        case .recordListChange:
+            return "record_list.change"
         case .recordListClear:
             return "record_list.clear"
         case .recordListClose:
             return "record_list.close"
-        case .recordListCompact:
-            return "record_list.compact"
+        case .recordListClosed:
+            return "record_list.closed"
+        case .recordListConclude:
+            return "record_list.conclude"
+        case .recordListConfirm:
+            return "record_list.confirm"
+        case .recordListConfirmed:
+            return "record_list.confirmed"
+        case .recordListDeliver:
+            return "record_list.deliver"
         case .recordListEdit:
             return "record_list.edit"
-        case .recordListFloor:
-            return "record_list.floor"
         case .recordListJoin:
             return "record_list.join"
-        case .recordListKeep:
-            return "record_list.keep"
-        case .recordListNode:
-            return "record_list.node"
+        case .recordListMade:
+            return "record_list.made"
+        case .recordListOffer:
+            return "record_list.offer"
         case .recordListPass:
             return "record_list.pass"
-        case .recordListPropose:
-            return "record_list.propose"
+        case .recordListPending:
+            return "record_list.pending"
+        case .recordListRaise:
+            return "record_list.raise"
+        case .recordListRecall:
+            return "record_list.recall"
         case .recordListRefused:
             return "record_list.refused"
         case .recordListRegister:
             return "record_list.register"
-        case .recordListResync:
-            return "record_list.resync"
+        case .recordListRestore:
+            return "record_list.restore"
         case .recordListRetire:
             return "record_list.retire"
         case .recordListRole:
             return "record_list.role"
         case .recordListRoom:
             return "record_list.room"
-        case .recordListSettle:
-            return "record_list.settle"
-        case .recordListShare:
-            return "record_list.share"
-        case .recordListSupersede:
-            return "record_list.supersede"
         case .recordListTake:
             return "record_list.take"
         case .recordListTell:
             return "record_list.tell"
+        case .recordListUnwind:
+            return "record_list.unwind"
         case .recordListValue:
             return "record_list.value"
-        case .recordListVisit:
-            return "record_list.visit"
-        case .recordListWrite:
-            return "record_list.write"
+        case .recordListVerdict:
+            return "record_list.verdict"
+        case .recordListWithdraw:
+            return "record_list.withdraw"
         case .null:
             return ""
         }
@@ -1374,60 +1348,64 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             return .errorCommunication
         case "error.execution":
             return .errorExecution
-        case "record_list.ack":
-            return .recordListAck
         case "record_list.announce":
             return .recordListAnnounce
-        case "record_list.arrive":
-            return .recordListArrive
+        case "record_list.change":
+            return .recordListChange
         case "record_list.clear":
             return .recordListClear
         case "record_list.close":
             return .recordListClose
-        case "record_list.compact":
-            return .recordListCompact
+        case "record_list.closed":
+            return .recordListClosed
+        case "record_list.conclude":
+            return .recordListConclude
+        case "record_list.confirm":
+            return .recordListConfirm
+        case "record_list.confirmed":
+            return .recordListConfirmed
+        case "record_list.deliver":
+            return .recordListDeliver
         case "record_list.edit":
             return .recordListEdit
-        case "record_list.floor":
-            return .recordListFloor
         case "record_list.join":
             return .recordListJoin
-        case "record_list.keep":
-            return .recordListKeep
-        case "record_list.node":
-            return .recordListNode
+        case "record_list.made":
+            return .recordListMade
+        case "record_list.offer":
+            return .recordListOffer
         case "record_list.pass":
             return .recordListPass
-        case "record_list.propose":
-            return .recordListPropose
+        case "record_list.pending":
+            return .recordListPending
+        case "record_list.raise":
+            return .recordListRaise
+        case "record_list.recall":
+            return .recordListRecall
         case "record_list.refused":
             return .recordListRefused
         case "record_list.register":
             return .recordListRegister
-        case "record_list.resync":
-            return .recordListResync
+        case "record_list.restore":
+            return .recordListRestore
         case "record_list.retire":
             return .recordListRetire
         case "record_list.role":
             return .recordListRole
         case "record_list.room":
             return .recordListRoom
-        case "record_list.settle":
-            return .recordListSettle
-        case "record_list.share":
-            return .recordListShare
-        case "record_list.supersede":
-            return .recordListSupersede
         case "record_list.take":
             return .recordListTake
         case "record_list.tell":
             return .recordListTell
+        case "record_list.unwind":
+            return .recordListUnwind
         case "record_list.value":
             return .recordListValue
-        case "record_list.visit":
-            return .recordListVisit
-        case "record_list.write":
-            return .recordListWrite
+        case "record_list.verdict":
+            return .recordListVerdict
+        case "record_list.withdraw":
+            return .recordListWithdraw
         default:
             return nil
         }
@@ -1480,36 +1458,33 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     public func populateEventMetadata(_ metadata: EventMetadata) {
         pendingPayloadTag = .none
         switch metadata.typedPayload {
-        case let payload as RecordListParentSceSynthInvokeListRecordListAckPayload:
-            pendingPayloadTag = .recordListAck
-            pendingRecordListAckPayload = payload
         case let payload as RecordListParentSceSynthInvokeListRecordListAnnouncePayload:
             pendingPayloadTag = .recordListAnnounce
             pendingRecordListAnnouncePayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListChangePayload:
+            pendingPayloadTag = .recordListChange
+            pendingRecordListChangePayload = payload
         case let payload as RecordListParentSceSynthInvokeListRecordListClearPayload:
             pendingPayloadTag = .recordListClear
             pendingRecordListClearPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListCompactPayload:
-            pendingPayloadTag = .recordListCompact
-            pendingRecordListCompactPayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListConfirmPayload:
+            pendingPayloadTag = .recordListConfirm
+            pendingRecordListConfirmPayload = payload
         case let payload as RecordListParentSceSynthInvokeListRecordListEditPayload:
             pendingPayloadTag = .recordListEdit
             pendingRecordListEditPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListFloorPayload:
-            pendingPayloadTag = .recordListFloor
-            pendingRecordListFloorPayload = payload
         case let payload as RecordListParentSceSynthInvokeListRecordListJoinPayload:
             pendingPayloadTag = .recordListJoin
             pendingRecordListJoinPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListKeepPayload:
-            pendingPayloadTag = .recordListKeep
-            pendingRecordListKeepPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListNodePayload:
-            pendingPayloadTag = .recordListNode
-            pendingRecordListNodePayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListProposePayload:
-            pendingPayloadTag = .recordListPropose
-            pendingRecordListProposePayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListRaisePayload:
+            pendingPayloadTag = .recordListRaise
+            pendingRecordListRaisePayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListRecallPayload:
+            pendingPayloadTag = .recordListRecall
+            pendingRecordListRecallPayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListRestorePayload:
+            pendingPayloadTag = .recordListRestore
+            pendingRecordListRestorePayload = payload
         case let payload as RecordListParentSceSynthInvokeListRecordListRetirePayload:
             pendingPayloadTag = .recordListRetire
             pendingRecordListRetirePayload = payload
@@ -1519,21 +1494,12 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
         case let payload as RecordListParentSceSynthInvokeListRecordListRoomPayload:
             pendingPayloadTag = .recordListRoom
             pendingRecordListRoomPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListSettlePayload:
-            pendingPayloadTag = .recordListSettle
-            pendingRecordListSettlePayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListSharePayload:
-            pendingPayloadTag = .recordListShare
-            pendingRecordListSharePayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListSupersedePayload:
-            pendingPayloadTag = .recordListSupersede
-            pendingRecordListSupersedePayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListVisitPayload:
-            pendingPayloadTag = .recordListVisit
-            pendingRecordListVisitPayload = payload
-        case let payload as RecordListParentSceSynthInvokeListRecordListWritePayload:
-            pendingPayloadTag = .recordListWrite
-            pendingRecordListWritePayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListVerdictPayload:
+            pendingPayloadTag = .recordListVerdict
+            pendingRecordListVerdictPayload = payload
+        case let payload as RecordListParentSceSynthInvokeListRecordListWithdrawPayload:
+            pendingPayloadTag = .recordListWithdraw
+            pendingRecordListWithdrawPayload = payload
         default:
             break
         }
@@ -1549,14 +1515,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             return
         }
         switch event {
-        case .recordListAck:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListAckPayload()
-            payload.sender = try fields.unsigned64("sender")
-            payload.before = try fields.signed64("before")
-            payload.hash = try fields.unsigned("hash")
-            pendingRecordListAckPayload = payload
-            pendingPayloadTag = .recordListAck
         case .recordListAnnounce:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = RecordListParentSceSynthInvokeListRecordListAnnouncePayload()
@@ -1564,23 +1522,35 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             payload.field = try fields.unsigned("field")
             pendingRecordListAnnouncePayload = payload
             pendingPayloadTag = .recordListAnnounce
-        case .recordListClear:
+        case .recordListChange:
             let fields = try PayloadFields.decode(metadata.data)
+            var payload = RecordListParentSceSynthInvokeListRecordListChangePayload()
+            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListParentSceSynthInvokeListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentSceSynthInvokeListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentSceSynthInvokeListOpRecord in try RecordListParentSceSynthInvokeListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            pendingRecordListChangePayload = payload
+            pendingPayloadTag = .recordListChange
+        case .recordListClear:
+            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
             var payload = RecordListParentSceSynthInvokeListRecordListClearPayload()
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.now = try fields.signed64("now")
             payload.more = try fields.truth("more")
+            payload.command = try fields.unsigned64("command")
             pendingRecordListClearPayload = payload
             pendingPayloadTag = .recordListClear
-        case .recordListCompact:
+        case .recordListConfirm:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListCompactPayload()
-            payload.before = try fields.signed64("before")
-            pendingRecordListCompactPayload = payload
-            pendingPayloadTag = .recordListCompact
+            var payload = RecordListParentSceSynthInvokeListRecordListConfirmPayload()
+            payload.wallTime = try fields.signed64("wallTime")
+            payload.counter = try fields.unsigned("counter")
+            payload.command = try fields.unsigned64("command")
+            pendingRecordListConfirmPayload = payload
+            pendingPayloadTag = .recordListConfirm
         case .recordListEdit:
-            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"more\":false}")
+            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"more\":false,\"command\":\"0\"}")
             var payload = RecordListParentSceSynthInvokeListRecordListEditPayload()
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
@@ -1588,55 +1558,51 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             payload.text = try fields.text("text", bound: 32)
             payload.now = try fields.signed64("now")
             payload.more = try fields.truth("more")
+            payload.command = try fields.unsigned64("command")
             pendingRecordListEditPayload = payload
             pendingPayloadTag = .recordListEdit
-        case .recordListFloor:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListFloorPayload()
-            payload.before = try fields.signed64("before")
-            payload.hash = try fields.unsigned("hash")
-            pendingRecordListFloorPayload = payload
-            pendingPayloadTag = .recordListFloor
         case .recordListJoin:
-            let fields = try PayloadFields.decode(metadata.data)
+            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"journal\":true}")
             var payload = RecordListParentSceSynthInvokeListRecordListJoinPayload()
             payload.node = try fields.unsigned64("node")
-            payload.hub = try fields.truth("hub")
+            payload.journal = try fields.truth("journal")
             pendingRecordListJoinPayload = payload
             pendingPayloadTag = .recordListJoin
-        case .recordListKeep:
+        case .recordListRaise:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListKeepPayload()
-            payload.kind = try fields.unsigned("kind")
-            payload.element = try fields.unsigned64("element")
+            var payload = RecordListParentSceSynthInvokeListRecordListRaisePayload()
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            pendingRecordListKeepPayload = payload
-            pendingPayloadTag = .recordListKeep
-        case .recordListNode:
+            payload.command = try fields.unsigned64("command")
+            pendingRecordListRaisePayload = payload
+            pendingPayloadTag = .recordListRaise
+        case .recordListRecall:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListNodePayload()
-            payload.sender = try fields.unsigned64("sender")
-            payload.to = try fields.unsigned64("to")
-            payload.depth = try fields.unsigned("depth")
-            payload.prefix = try fields.unsigned64("prefix")
-            payload.hash = try fields.unsigned("hash")
-            payload.reply = try fields.truth("reply")
-            pendingRecordListNodePayload = payload
-            pendingPayloadTag = .recordListNode
-        case .recordListPropose:
+            var payload = RecordListParentSceSynthInvokeListRecordListRecallPayload()
+            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListParentSceSynthInvokeListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentSceSynthInvokeListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentSceSynthInvokeListOpRecord in try RecordListParentSceSynthInvokeListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            payload.command = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("command"))
+            payload.provisional = try ({ (sceValue: PayloadValue) throws -> Bool in try sceValue.truth() })(fields.field("provisional"))
+            pendingRecordListRecallPayload = payload
+            pendingPayloadTag = .recordListRecall
+        case .recordListRestore:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListProposePayload()
-            payload.before = try fields.signed64("before")
-            pendingRecordListProposePayload = payload
-            pendingPayloadTag = .recordListPropose
+            var payload = RecordListParentSceSynthInvokeListRecordListRestorePayload()
+            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListParentSceSynthInvokeListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentSceSynthInvokeListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentSceSynthInvokeListOpRecord in try RecordListParentSceSynthInvokeListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            pendingRecordListRestorePayload = payload
+            pendingPayloadTag = .recordListRestore
         case .recordListRetire:
-            let fields = try PayloadFields.decode(metadata.data)
+            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
             var payload = RecordListParentSceSynthInvokeListRecordListRetirePayload()
             payload.id = try fields.unsigned("id")
             payload.now = try fields.signed64("now")
             payload.more = try fields.truth("more")
+            payload.command = try fields.unsigned64("command")
             pendingRecordListRetirePayload = payload
             pendingPayloadTag = .recordListRetire
         case .recordListRole:
@@ -1654,56 +1620,23 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             payload.digest = try fields.unsigned("digest")
             pendingRecordListRoomPayload = payload
             pendingPayloadTag = .recordListRoom
-        case .recordListSettle:
+        case .recordListVerdict:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListSettlePayload()
-            payload.before = try fields.signed64("before")
-            payload.members = try fields.unsigned("members")
-            pendingRecordListSettlePayload = payload
-            pendingPayloadTag = .recordListSettle
-        case .recordListShare:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListSharePayload()
-            payload.to = try fields.unsigned64("to")
-            payload.minute = try fields.unsigned64("minute")
-            pendingRecordListSharePayload = payload
-            pendingPayloadTag = .recordListShare
-        case .recordListSupersede:
-            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
-            var payload = RecordListParentSceSynthInvokeListRecordListSupersedePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
+            var payload = RecordListParentSceSynthInvokeListRecordListVerdictPayload()
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.by = try fields.unsigned64("by")
-            payload.parts = try fields.unsigned("parts")
-            payload.atWallTime = try fields.signed64("atWallTime")
-            payload.atCounter = try fields.unsigned("atCounter")
-            pendingRecordListSupersedePayload = payload
-            pendingPayloadTag = .recordListSupersede
-        case .recordListVisit:
+            payload.outcome = try { () throws -> RecordListParentSceSynthInvokeListOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListParentSceSynthInvokeListOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "Outcome") }; return variant }()
+            payload.reason = try fields.optional("reason") { fields in try { () throws -> RecordListParentSceSynthInvokeListRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentSceSynthInvokeListRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Refusal") }; return variant }() }
+            pendingRecordListVerdictPayload = payload
+            pendingPayloadTag = .recordListVerdict
+        case .recordListWithdraw:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentSceSynthInvokeListRecordListVisitPayload()
-            payload.to = try fields.unsigned64("to")
-            payload.depth = try fields.unsigned("depth")
-            payload.prefix = try fields.unsigned64("prefix")
-            payload.reply = try fields.truth("reply")
-            pendingRecordListVisitPayload = payload
-            pendingPayloadTag = .recordListVisit
-        case .recordListWrite:
-            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"parts\":1}")
-            var payload = RecordListParentSceSynthInvokeListRecordListWritePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 96)
+            var payload = RecordListParentSceSynthInvokeListRecordListWithdrawPayload()
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.parts = try fields.unsigned("parts")
-            pendingRecordListWritePayload = payload
-            pendingPayloadTag = .recordListWrite
+            payload.command = try fields.unsigned64("command")
+            pendingRecordListWithdrawPayload = payload
+            pendingPayloadTag = .recordListWithdraw
         default:
             break
         }
@@ -1800,7 +1733,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
             }
             if event == .recordListEdit {
-                do {
+                // W3C SCXML 5.9: cond="len(offered) > 0" lowered to Swift at build time
+                if (UInt32(truncatingIfNeeded: self.vOffered.count) > 0) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1811,7 +1745,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
             }
             if event == .recordListClear {
-                do {
+                // W3C SCXML 5.9: cond="len(offered) > 0" lowered to Swift at build time
+                if (UInt32(truncatingIfNeeded: self.vOffered.count) > 0) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1822,7 +1757,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
             }
             if event == .recordListRetire {
-                do {
+                // W3C SCXML 5.9: cond="len(offered) > 0" lowered to Swift at build time
+                if (UInt32(truncatingIfNeeded: self.vOffered.count) > 0) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1832,7 +1768,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListClose {
+            if event == .recordListEdit {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1843,7 +1779,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListTake {
+            if event == .recordListClear {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1854,7 +1790,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListPass {
+            if event == .recordListRetire {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1865,9 +1801,8 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListWrite {
-                // W3C SCXML 5.9: cond="floor > 0 && _event.data.wallTime <= floor" lowered to Swift at build time
-                if (self.pendingPayloadTag == .recordListWrite && (self.vFloor > 0 && self.pendingRecordListWritePayload.wallTime <= self.vFloor)) {
+            if event == .recordListClose {
+                do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1877,7 +1812,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListWrite {
+            if event == .recordListOffer {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1888,9 +1823,9 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListSupersede {
-                // W3C SCXML 5.9: cond="floor > 0 && _event.data.parts > 1 && _event.data.atWallTime <= floor" lowered to Swift at build time
-                if (self.pendingPayloadTag == .recordListSupersede && (self.vFloor > 0 && self.pendingRecordListSupersedePayload.parts > 1 && self.pendingRecordListSupersedePayload.atWallTime <= self.vFloor)) {
+            if event == .recordListVerdict {
+                // W3C SCXML 5.9: cond="len(offered) > 0 && _event.data.outcome !== Outcome.none && _event.data.wallTime === offeredAt.wallTime && _event.data.counter === offeredAt.counter" lowered to Swift at build time
+                if (self.pendingPayloadTag == .recordListVerdict && (UInt32(truncatingIfNeeded: self.vOffered.count) > 0 && self.pendingRecordListVerdictPayload.outcome != RecordListParentSceSynthInvokeListOutcomeEnum.none && self.pendingRecordListVerdictPayload.wallTime == self.vOfferedAt.wallTime && self.pendingRecordListVerdictPayload.counter == self.vOfferedAt.counter)) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1900,7 +1835,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListSupersede {
+            if event == .recordListVerdict {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1911,12 +1846,122 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListArrive {
+            if event == .recordListConclude {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
                         transitionIndex: 13,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListChange {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 14,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListRecall {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 15,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListDeliver {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 16,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListRestore {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 17,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListRaise {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 18,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListTake {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 19,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListPass {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 20,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListConfirm {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 21,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListWithdraw {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 22,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .recordListUnwind {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 23,
                         hasActions: true,
                         isInternal: true
                     )
@@ -1928,7 +1973,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 14,
+                        transitionIndex: 24,
                         hasActions: true,
                         isInternal: true
                     )
@@ -1937,116 +1982,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             if event == .recordListTell {
                 // W3C SCXML 5.9: cond="announce" lowered to Swift at build time
                 if (self.vAnnounce) {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 15,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListKeep {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 16,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListCompact {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 17,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListSettle {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 18,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListPropose {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 19,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListAck {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 20,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListFloor {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 21,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListResync {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 22,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListVisit {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 23,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListNode {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 24,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .recordListShare {
-                do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -2091,7 +2026,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                self.vHub = self.pendingRecordListJoinPayload.hub
+                self.vJournal = self.pendingRecordListJoinPayload.journal
 
                 }
             case 1:
@@ -2103,14 +2038,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 self.vRoomValues = self.pendingRecordListRoomPayload.values
-
-
-
-                self.vRoomHistory = self.pendingRecordListRoomPayload.history
-
-
-
-                self.vRoomDigest = self.pendingRecordListRoomPayload.digest
 
                 }
             case 2:
@@ -2129,9 +2056,43 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
             case 3:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 4:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 5:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 6:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
                     if pendingPayloadTag != .recordListEdit {
                         break sceBlock
                     }
+
+
+                self.vClosingCommand = self.pendingRecordListEditPayload.command
+
 
 
                 self.vHolding = self.pendingRecordListEditPayload.more
@@ -2156,23 +2117,23 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                self.vPart.kind = 0
+                self.vStaging.kind = 0
 
 
 
-                self.vPart.id = self.pendingRecordListEditPayload.id
+                self.vStaging.id = self.pendingRecordListEditPayload.id
 
 
 
-                self.vPart.field = self.pendingRecordListEditPayload.field
+                self.vStaging.field = self.pendingRecordListEditPayload.field
 
 
 
-                self.vPart.value = self.pendingRecordListEditPayload.value
+                self.vStaging.value = self.pendingRecordListEditPayload.value
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2183,7 +2144,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2212,12 +2173,16 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 4:
+            case 7:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListClear {
                         break sceBlock
                     }
+
+
+                self.vClosingCommand = self.pendingRecordListClearPayload.command
+
 
 
                 self.vHolding = self.pendingRecordListClearPayload.more
@@ -2246,30 +2211,30 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                self.vPart.kind = 1
+                self.vStaging.kind = 1
 
 
 
-                self.vPart.id = self.pendingRecordListClearPayload.id
+                self.vStaging.id = self.pendingRecordListClearPayload.id
 
 
 
-                self.vPart.field = self.pendingRecordListClearPayload.field
+                self.vStaging.field = self.pendingRecordListClearPayload.field
 
 
 
-                self.vPart.value = 0
+                self.vStaging.value = 0
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2298,12 +2263,16 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 5:
+            case 8:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListRetire {
                         break sceBlock
                     }
+
+
+                self.vClosingCommand = self.pendingRecordListRetirePayload.command
+
 
 
                 self.vHolding = self.pendingRecordListRetirePayload.more
@@ -2332,30 +2301,30 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                self.vPart.kind = 2
+                self.vStaging.kind = 2
 
 
 
-                self.vPart.id = self.pendingRecordListRetirePayload.id
+                self.vStaging.id = self.pendingRecordListRetirePayload.id
 
 
 
-                self.vPart.field = 0
+                self.vStaging.field = 0
 
 
 
-                self.vPart.value = 0
+                self.vStaging.value = 0
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2384,7 +2353,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 6:
+            case 9:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -2560,13 +2529,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed18 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0 && self.vRoomHistory > 0 && UInt32(truncatingIfNeeded: self.vTombstones.count) >= self.vRoomHistory; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && self.vJournal && Checked.add(sceFailure, self.vGone, self.vWrites) > 0 && UInt32(truncatingIfNeeded: self.vProvisional.count) >= 8; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }()) {
 
 
                 self.vSpoiled = true
@@ -2582,29 +2545,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed19 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0 && self.vRoomDigest > 0 && UInt32(truncatingIfNeeded: self.vDigest.count) >= self.vRoomDigest; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vSpoiled = true
-
-
-
-                self.vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.noRoomForDigest
-
-                }
-                if ifCondFailed19 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                var ifCondFailed20 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }()) {
 
 
                 self.vProbing = true
@@ -2645,14 +2586,14 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 for s in self.vStaged {
                     _ = s
 
-                var ifCondFailed21 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, a.element, 65536) == UInt64(s.id) && (s.kind == 2 || Checked.rem(sceFailure, a.element, 65536) == UInt64(s.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed21 = true; return false }; return sceValue }()) {
+                var ifCondFailed20 = false
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, a.element, 65536) == UInt64(s.id) && (s.kind == 2 || Checked.rem(sceFailure, a.element, 65536) == UInt64(s.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }()) {
 
 
                 self.vCovered = true
 
                 }
-                if ifCondFailed21 {
+                if ifCondFailed20 {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2661,64 +2602,46 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 if (self.vCovered) {
 
 
-                self.vPart.kind = 1
+                self.vOp.kind = 1
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, a.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.id'>: an integer operation overflowed or failed")); return true }; self.vPart.id = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, a.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; self.vOp.id = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, a.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.field'>: an integer operation overflowed or failed")); return true }; self.vPart.field = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, a.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; self.vOp.field = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                self.vPart.value = 0
+                self.vOp.value = 0
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                self.vPart.wallTime = a.wallTime
+                self.vOp.wallTime = a.wallTime
 
 
 
-                self.vPart.counter = a.counter
+                self.vOp.counter = a.counter
 
 
 
-                self.vPart.nodeId = a.nodeId
-
-
-
-                self.vPart.by = self.vNode
-
-
-
-                self.vPart.atWallTime = self.vStamp.wallTime
-
-
-
-                self.vPart.atCounter = self.vStamp.counter
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vGone, self.vWrites); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.parts'>: an integer operation overflowed or failed")); return true }; self.vPart.parts = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOp.nodeId = a.nodeId
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2733,60 +2656,42 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 if (s.kind == 0) {
 
 
-                self.vPart.kind = 0
+                self.vOp.kind = 0
 
 
 
-                self.vPart.id = s.id
+                self.vOp.id = s.id
 
 
 
-                self.vPart.field = s.field
+                self.vOp.field = s.field
 
 
 
-                self.vPart.value = s.value
+                self.vOp.value = s.value
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, s.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, s.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                self.vPart.wallTime = self.vStamp.wallTime
+                self.vOp.wallTime = 0
 
 
 
-                self.vPart.counter = self.vStamp.counter
+                self.vOp.counter = 0
 
 
 
-                self.vPart.nodeId = self.vNode
-
-
-
-                self.vPart.by = self.vNode
-
-
-
-                self.vPart.atWallTime = self.vStamp.wallTime
-
-
-
-                self.vPart.atCounter = self.vStamp.counter
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vGone, self.vWrites); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.parts'>: an integer operation overflowed or failed")); return true }; self.vPart.parts = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vOp.nodeId = 0
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2807,26 +2712,19 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 self.vClock = self.vStamp
 
 
-                // SCE Accepted Subset §2.15: <sce:clear target="passing">
 
-                self.vPassing.removeAll()
-
+                self.vDot = self.vStamp
 
 
-                self.vPassed = 0
+                if (!self.vJournal) {
 
 
-                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-                for t in self.vTaking {
-                    _ = t
+                self.vRestoring = false
 
-                // SCE Accepted Subset §2.15: <sce:append target="passing">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vPassing.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='passing'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vPassing, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='passing'>: an integer operation overflowed or failed")); return true }; self.vPassing.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
 
-                }
+                self.vTentative = false
+
 
                 // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
                 for t in self.vTaking {
@@ -2843,10 +2741,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
                 }
 
-                // W3C SCXML 4.6: <foreach array="passing" item="t">, a native loop over a sce-static list
-                for t in self.vPassing {
-                    _ = t
-
                 // W3C SCXML 6.2: send id="__send_4"
                 do {
                     let sendEventData = ""
@@ -2857,21 +2751,91 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListPass, metadata: sendMetadata))
                 }
                 }
+
+
+                if (self.vJournal) {
+
+                // SCE Accepted Subset §2.15: <sce:clear target="offered">
+
+                self.vOffered.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
+                    _ = t
+
+                // SCE Accepted Subset §2.15: <sce:append target="offered">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vOffered.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vOffered, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='offered'>: an integer operation overflowed or failed")); return true }; self.vOffered.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
-                if ifCondFailed20 {
+
+                }
+
+
+                self.vOfferedAt = self.vStamp
+
+
+                // W3C SCXML 6.2: send id="__send_5"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListOffer, metadata: sendMetadata))
+                }
+                }
+
+                }
+                if ifCondFailed19 {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
-                var ifCondFailed24 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed24 = true; return false }; return sceValue }()) {
+                var ifCondFailed25 = false
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false }; return sceValue }()) {
 
                 // SCE Accepted Subset §2.15: <sce:clear target="staged">
 
                 self.vStaged.removeAll()
 
+
+                if (self.vJournal) {
+
+
+                self.vClosedOps = 0
+
+
+
+                self.vClosedFor = nil
+
+
+
+                self.vClosedAt.wallTime = 0
+
+
+
+                self.vClosedAt.counter = 0
+
+
+
+                self.vClosedAt.nodeId = 0
+
+
+                // W3C SCXML 6.2: send id="__send_6"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListConclude, metadata: sendMetadata))
                 }
-                if ifCondFailed24 {
+                }
+
+                }
+                if ifCondFailed25 {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2887,9 +2851,43 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 self.vSpoiled = false
 
 
+                if (self.vJournal) {
+
+
+                self.vClosedOps = 0
+
+
+
+                self.vClosedFor = self.vSpoiledFor
+
+
+
+                self.vClosedAt.wallTime = 0
+
+
+
+                self.vClosedAt.counter = 0
+
+
+
+                self.vClosedAt.nodeId = 0
+
+
+                // W3C SCXML 6.2: send id="__send_7"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListConclude, metadata: sendMetadata))
+                }
+                }
+
+
                 if (self.vAnnounce) {
 
-                // W3C SCXML 6.2: send id="__send_5"
+                // W3C SCXML 6.2: send id="__send_8"
                 do {
                     var sendArgError = ""
                     // docs/adr/0005, decision 3: the target is a string computed from the
@@ -2912,7 +2910,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     }
                     if !sendArgError.isEmpty {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
-                        sendError.metadata.sendID = "__send_5"
+                        sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -2923,7 +2921,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-                        sendError.metadata.sendID = "__send_5"
+                        sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock
@@ -2949,6 +2947,14 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         let sceValue: WireValue = .text((self.vSpoiledFor).declaredName)
                         sendParts.append(PayloadPair("reason", sceValue))
                     }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vClosingCommand)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .truth(false)
+                        sendParts.append(PayloadPair("withdrawn", sceValue))
+                    }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
@@ -2960,20 +2966,20 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         target: sendTarget,
                         ownSessionID: self.sessionID,
                         delay: .zero,
-                        sendID: "__send_5",
+                        sendID: "__send_8",
                         eventData: sendEventData,
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
-                        sendError.metadata.sendID = "__send_5"
+                        sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
-                        sendError.metadata.sendID = "__send_5"
+                        sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -2989,7 +2995,824 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 7:
+            case 10:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+                // W3C SCXML 6.2: send id="__send_9"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
+                    // text each value spells, so a second reading of the data model cannot
+                    // disagree with the first.
+                    var sendForm: [String: [String]] = [:]
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vOfferedAt.nodeId)
+                        appendFormParam(&sendForm, "by", sceValue)
+                        sendParts.append(PayloadPair("by", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .signed64(self.vOfferedAt.wallTime)
+                        appendFormParam(&sendForm, "wallTime", sceValue)
+                        sendParts.append(PayloadPair("wallTime", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vOfferedAt.counter))
+                        appendFormParam(&sendForm, "counter", sceValue)
+                        sendParts.append(PayloadPair("counter", sceValue))
+                    }
+                    do {
+                        let sceFailure = Failure()
+                        let sceValue: WireValue = { () -> WireValue in if self.vOffered.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vOffered, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
+                        if !sceFailure.failed {
+                            appendFormParam(&sendForm, "ops", sceValue)
+                            sendParts.append(PayloadPair("ops", sceValue))
+                        } else {
+                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> failed to evaluate"))
+                            paramFailed = true
+                        }
+                    }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vClosingCommand)
+                        appendFormParam(&sendForm, "command", sceValue)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "record_list.made",
+                        target: "#journal",
+                        content: "",
+                        params: sendForm,
+                        sendID: "__send_9",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.performHostSend(sendRequest)
+
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+            case 11:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListVerdict {
+                        break sceBlock
+                    }
+
+
+                self.vStanding.wallTime = self.vOfferedAt.wallTime
+
+
+
+                self.vStanding.counter = self.vOfferedAt.counter
+
+
+
+                self.vStanding.command = self.vClosingCommand
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.atDefault(sceFailure, self.vOffered, 0).id; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; self.vStanding.id = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.atDefault(sceFailure, self.vOffered, 0).field; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; self.vStanding.field = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                var ifCondFailed30 = false
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.vOffered, 0).kind == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false }; return sceValue }()) {
+
+
+                self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.edit
+
+                } else {
+
+
+                self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.clear
+
+                }
+                if ifCondFailed30 {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vClosedAt = self.vOfferedAt
+
+
+                if (self.pendingRecordListVerdictPayload.outcome == RecordListParentSceSynthInvokeListOutcomeEnum.refused) {
+
+                if (self.pendingRecordListVerdictPayload.reason != nil) {
+
+
+                self.vRefusedFor = SceOptional.proven(self.pendingRecordListVerdictPayload.reason)
+
+                } else {
+
+
+                self.vRefusedFor = RecordListParentSceSynthInvokeListRefusalEnum.peerRefused
+
+                }
+
+
+
+                self.vClosedOps = 0
+
+
+
+                self.vClosedFor = self.vRefusedFor
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="offered">
+
+                self.vOffered.removeAll()
+
+
+                // W3C SCXML 6.2: send id="__send_10"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListConclude, metadata: sendMetadata))
+                }
+
+                if (self.vAnnounce) {
+
+                // W3C SCXML 6.2: send id="__send_11"
+                do {
+                    var sendArgError = ""
+                    // docs/adr/0005, decision 3: the target is a string computed from the
+                    // machine's fields now, and the send goes only by a route the document
+                    // declared as `sce:targets`. A value in none of them names no route this
+                    // send may take — an address nobody answers at, which is reported as
+                    // error.communication (W3C SCXML 6.2.4) — and an operation that fails
+                    // cannot be evaluated, the argument error.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+                        let sceRoute = "#_parent"
+                        switch sceRoute {
+                        case "#_parent":
+                            sendTarget = sceRoute
+                            sendTargetKnown = true
+                        default:
+                            break
+                        }
+                    }
+                    if !sendArgError.isEmpty {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        sendError.metadata.sendID = "__send_11"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
+                        // W3C SCXML C.1: a target that evaluates to no route, or to text that
+                        // names nothing (empty or "undefined"), is not reachable —
+                        // error.communication, nothing delivered, and the error ends the block
+                        // as any other would (W3C SCXML 4.9).
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        sendError.metadata.sendID = "__send_11"
+                        engine.raise(sendError)
+
+                        break sceBlock
+                    }
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.id))
+                        sendParts.append(PayloadPair("id", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.field))
+                        sendParts.append(PayloadPair("field", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .text((self.vStanding.kind).declaredName)
+                        sendParts.append(PayloadPair("kind", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .text((self.vRefusedFor).declaredName)
+                        sendParts.append(PayloadPair("reason", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vStanding.command)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .truth(false)
+                        sendParts.append(PayloadPair("withdrawn", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                    // the same value written in `target` is, at once or after the delay, by
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
+                    let sendRouted = engine.sendToTarget(
+                        event: engine.resolveEventByName("record_list.refused"),
+                        eventName: "record_list.refused",
+                        target: sendTarget,
+                        ownSessionID: self.sessionID,
+                        delay: .zero,
+                        sendID: "__send_11",
+                        eventData: sendEventData,
+                        sender: self.sessionID
+                    )
+                    if sendRouted == .notSupported {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        sendError.metadata.sendID = "__send_11"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendRouted == .notReachable {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        sendError.metadata.sendID = "__send_11"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+
+
+                if (self.pendingRecordListVerdictPayload.outcome != RecordListParentSceSynthInvokeListOutcomeEnum.refused) {
+
+
+                self.vClosedOps = UInt32(truncatingIfNeeded: self.vOffered.count)
+
+
+
+                self.vClosedFor = nil
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="taking">
+
+                self.vTaking.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="offered" item="t">, a native loop over a sce-static list
+                for t in self.vOffered {
+                    _ = t
+
+                // SCE Accepted Subset §2.15: <sce:append target="taking">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                self.vTook = 0
+
+
+
+                self.vDot = self.vOfferedAt
+
+
+
+                self.vRestoring = false
+
+
+
+                self.vTentative = self.pendingRecordListVerdictPayload.outcome == RecordListParentSceSynthInvokeListOutcomeEnum.waiting
+
+
+                if (self.vTentative) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisional">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="offered">
+
+                self.vOffered.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
+                    _ = t
+
+                // W3C SCXML 6.2: send id="__send_12"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
+                }
+                }
+
+                // W3C SCXML 6.2: send id="__send_13"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListConclude, metadata: sendMetadata))
+                }
+
+                if (self.vTentative && self.vAnnounce) {
+
+                // W3C SCXML 6.2: send id="__send_14"
+                do {
+                    var sendArgError = ""
+                    // docs/adr/0005, decision 3: the target is a string computed from the
+                    // machine's fields now, and the send goes only by a route the document
+                    // declared as `sce:targets`. A value in none of them names no route this
+                    // send may take — an address nobody answers at, which is reported as
+                    // error.communication (W3C SCXML 6.2.4) — and an operation that fails
+                    // cannot be evaluated, the argument error.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+                        let sceRoute = "#_parent"
+                        switch sceRoute {
+                        case "#_parent":
+                            sendTarget = sceRoute
+                            sendTargetKnown = true
+                        default:
+                            break
+                        }
+                    }
+                    if !sendArgError.isEmpty {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        sendError.metadata.sendID = "__send_14"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
+                        // W3C SCXML C.1: a target that evaluates to no route, or to text that
+                        // names nothing (empty or "undefined"), is not reachable —
+                        // error.communication, nothing delivered, and the error ends the block
+                        // as any other would (W3C SCXML 4.9).
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        sendError.metadata.sendID = "__send_14"
+                        engine.raise(sendError)
+
+                        break sceBlock
+                    }
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .signed64(self.vStanding.wallTime)
+                        sendParts.append(PayloadPair("wallTime", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.counter))
+                        sendParts.append(PayloadPair("counter", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vStanding.command)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                    // the same value written in `target` is, at once or after the delay, by
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
+                    let sendRouted = engine.sendToTarget(
+                        event: engine.resolveEventByName("record_list.pending"),
+                        eventName: "record_list.pending",
+                        target: sendTarget,
+                        ownSessionID: self.sessionID,
+                        delay: .zero,
+                        sendID: "__send_14",
+                        eventData: sendEventData,
+                        sender: self.sessionID
+                    )
+                    if sendRouted == .notSupported {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        sendError.metadata.sendID = "__send_14"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendRouted == .notReachable {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        sendError.metadata.sendID = "__send_14"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+
+                }
+            case 12:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 13:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+                // W3C SCXML 6.2: send id="__send_15"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
+                    // text each value spells, so a second reading of the data model cannot
+                    // disagree with the first.
+                    var sendForm: [String: [String]] = [:]
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vClosingCommand)
+                        appendFormParam(&sendForm, "command", sceValue)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vClosedOps))
+                        appendFormParam(&sendForm, "operations", sceValue)
+                        sendParts.append(PayloadPair("operations", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = (self.vClosedFor).map { (scePresent) in .text((scePresent).declaredName) } ?? WireValue.null
+                        appendFormParam(&sendForm, "reason", sceValue)
+                        sendParts.append(PayloadPair("reason", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .signed64(self.vClosedAt.wallTime)
+                        appendFormParam(&sendForm, "wallTime", sceValue)
+                        sendParts.append(PayloadPair("wallTime", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vClosedAt.counter))
+                        appendFormParam(&sendForm, "counter", sceValue)
+                        sendParts.append(PayloadPair("counter", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "record_list.closed",
+                        target: "#journal",
+                        content: "",
+                        params: sendForm,
+                        sendID: "__send_15",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.performHostSend(sendRequest)
+
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+            case 14:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListChange {
+                        break sceBlock
+                    }
+
+
+                self.vAuthorized = true
+
+
+                if (UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
+
+
+                self.vAuthorized = false
+
+
+                // W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
+                for m in self.vRoster {
+                    _ = m
+
+                if (m.node == self.pendingRecordListChangePayload.by && m.role >= 2) {
+
+
+                self.vAuthorized = true
+
+                }
+
+                }
+                }
+
+
+                if (!self.vAuthorized) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                if (self.vAuthorized) {
+
+
+                self.vTaking = self.pendingRecordListChangePayload.ops
+
+
+
+                self.vTook = 0
+
+
+
+                self.vDot.wallTime = self.pendingRecordListChangePayload.wallTime
+
+
+
+                self.vDot.counter = self.pendingRecordListChangePayload.counter
+
+
+
+                self.vDot.nodeId = self.pendingRecordListChangePayload.by
+
+
+
+                self.vRestoring = false
+
+
+
+                self.vTentative = false
+
+
+                // W3C SCXML 6.2: send id="__send_16"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListDeliver, metadata: sendMetadata))
+                }
+                }
+
+                }
+            case 15:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListRecall {
+                        break sceBlock
+                    }
+
+
+                self.vTaking = self.pendingRecordListRecallPayload.ops
+
+
+
+                self.vTook = 0
+
+
+
+                self.vDot.wallTime = self.pendingRecordListRecallPayload.wallTime
+
+
+
+                self.vDot.counter = self.pendingRecordListRecallPayload.counter
+
+
+
+                self.vDot.nodeId = self.pendingRecordListRecallPayload.by
+
+
+
+                self.vRestoring = false
+
+
+
+                self.vTentative = self.pendingRecordListRecallPayload.provisional && self.pendingRecordListRecallPayload.by == self.vNode
+
+
+                if (self.vTentative) {
+
+
+                self.vStanding.wallTime = self.pendingRecordListRecallPayload.wallTime
+
+
+
+                self.vStanding.counter = self.pendingRecordListRecallPayload.counter
+
+
+
+                self.vStanding.command = self.pendingRecordListRecallPayload.command
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.atDefault(sceFailure, self.vTaking, 0).id; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; self.vStanding.id = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.atDefault(sceFailure, self.vTaking, 0).field; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; self.vStanding.field = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                var ifCondFailed42 = false
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.vTaking, 0).kind == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false }; return sceValue }()) {
+
+
+                self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.edit
+
+                } else {
+
+
+                self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.clear
+
+                }
+                if ifCondFailed42 {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisional">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                // W3C SCXML 6.2: send id="__send_17"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListDeliver, metadata: sendMetadata))
+                }
+                }
+            case 16:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
+                    _ = t
+
+                // W3C SCXML 6.2: send id="__send_18"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
+                }
+                }
+
+                if (self.vDot.nodeId == self.vNode && (self.vDot.wallTime > self.vClock.wallTime || self.vDot.wallTime == self.vClock.wallTime && self.vDot.counter > self.vClock.counter)) {
+
+
+                self.vClock.wallTime = self.vDot.wallTime
+
+
+
+                self.vClock.counter = self.vDot.counter
+
+                }
+
+
+                if (self.vDot.nodeId != self.vNode) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+            case 17:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListRestore {
+                        break sceBlock
+                    }
+
+
+                self.vTaking = self.pendingRecordListRestorePayload.ops
+
+
+
+                self.vTook = 0
+
+
+
+                self.vRestoring = true
+
+
+
+                self.vTentative = false
+
+
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
+                    _ = t
+
+                // W3C SCXML 6.2: send id="__send_19"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
+                }
+                }
+
+                if (self.pendingRecordListRestorePayload.wallTime > self.vClock.wallTime || self.pendingRecordListRestorePayload.wallTime == self.vClock.wallTime && self.pendingRecordListRestorePayload.counter > self.vClock.counter) {
+
+
+                self.vClock.wallTime = self.pendingRecordListRestorePayload.wallTime
+
+
+
+                self.vClock.counter = self.pendingRecordListRestorePayload.counter
+
+                }
+
+                }
+            case 18:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListRaise {
+                        break sceBlock
+                    }
+
+                if (self.pendingRecordListRaisePayload.wallTime > self.vClock.wallTime || self.pendingRecordListRaisePayload.wallTime == self.vClock.wallTime && self.pendingRecordListRaisePayload.counter > self.vClock.counter) {
+
+
+                self.vClock.wallTime = self.pendingRecordListRaisePayload.wallTime
+
+
+
+                self.vClock.counter = self.pendingRecordListRaisePayload.counter
+
+                }
+
+                }
+            case 19:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -3005,48 +3828,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
 
-                if (self.vOp.kind == 0) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vOp.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (self.vOp.nodeId != self.vNode) {
-
-
-                self.vStamp.wallTime = self.vOp.wallTime
-
-
-
-                self.vStamp.counter = self.vOp.counter
-
-
-
-                self.vStamp.nodeId = self.vOp.nodeId
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vStamp, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.vOp.nodeId == self.vNode && (self.vOp.wallTime > self.vClock.wallTime || self.vOp.wallTime == self.vClock.wallTime && self.vOp.counter > self.vClock.counter)) {
-
-
-                self.vClock.wallTime = self.vOp.wallTime
-
-
-
-                self.vClock.counter = self.vOp.counter
-
-                }
-
-
 
                 self.vEntry.element = UInt64(self.vOp.id)
 
@@ -3057,36 +3838,71 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
 
-
-                self.vEntry.wallTime = self.vOp.wallTime
-
+                if (self.vOp.kind == 0) {
 
 
-                self.vEntry.counter = self.vOp.counter
-
-
-
-                self.vEntry.nodeId = self.vOp.nodeId
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vOp.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
 
 
 
-                self.vIsLive = true
+                self.vHeld.id = UInt64(self.vOp.id)
 
 
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
 
-                if (t.element == self.vEntry.element && t.wallTime == self.vEntry.wallTime && t.counter == self.vEntry.counter && t.nodeId == self.vEntry.nodeId) {
+                self.vHeld.field = UInt64(self.vOp.field)
 
 
-                self.vIsLive = false
+
+                self.vHeld.value = self.vOp.value
+
+
+
+                self.vHeld.wallTime = self.vDot.wallTime
+
+
+
+                self.vHeld.counter = self.vDot.counter
+
+
+
+                self.vHeld.nodeId = self.vDot.nodeId
+
+
+                if (self.vRestoring) {
+
+
+                self.vHeld.wallTime = self.vOp.wallTime
+
+
+
+                self.vHeld.counter = self.vOp.counter
+
+
+
+                self.vHeld.nodeId = self.vOp.nodeId
 
                 }
 
-                }
 
-                if (self.vIsLive) {
+
+                self.vEntry.wallTime = self.vHeld.wallTime
+
+
+
+                self.vEntry.counter = self.vHeld.counter
+
+
+
+                self.vEntry.nodeId = self.vHeld.nodeId
+
+
+
+                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
+
+
+                if (!self.vPresent) {
 
                 // SCE Accepted Subset §2.15: <sce:clear target="one">
 
@@ -3105,90 +3921,18 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-                }
-
-
-
-                self.vHeld.id = UInt64(self.vOp.id)
-
-
-
-                self.vHeld.field = UInt64(self.vOp.field)
-
-
-
-                self.vHeld.value = self.vOp.value
-
-
-
-                self.vHeld.wallTime = self.vOp.wallTime
-
-
-
-                self.vHeld.counter = self.vOp.counter
-
-
-
-                self.vHeld.nodeId = self.vOp.nodeId
-
-
-
-                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
-
-
-                if (self.vIsLive && !self.vPresent) {
 
 
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-
-                // W3C SCXML 6.2: send id="__send_6"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
                 }
 
 
-                if (self.vIsLive && !self.vPresent && self.vAnnounce) {
+                if (!self.vPresent && self.vAnnounce) {
 
-                // W3C SCXML 6.2: send id="__send_7"
+                // W3C SCXML 6.2: send id="__send_20"
                 do {
                     // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
                     // pair left out, and the message still goes; the error ends the block once
@@ -3222,38 +3966,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (self.vOp.kind == 1) {
 
-                if (self.vOp.atWallTime > 0 && self.vOp.by != self.vNode) {
-
-
-                self.vStamp.wallTime = self.vOp.atWallTime
-
-
-
-                self.vStamp.counter = self.vOp.atCounter
-
-
-
-                self.vStamp.nodeId = self.vOp.by
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vStamp, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-
-                self.vEntry.element = UInt64(self.vOp.id)
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.vOp.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
 
                 self.vEntry.wallTime = self.vOp.wallTime
 
@@ -3264,47 +3976,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 self.vEntry.nodeId = self.vOp.nodeId
-
-
-
-                self.vKnown = false
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.element == self.vEntry.element && t.wallTime == self.vEntry.wallTime && t.counter == self.vEntry.counter && t.nodeId == self.vEntry.nodeId) {
-
-
-                self.vKnown = true
-
-                }
-
-                }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="one">
-
-                self.vOne.removeAll()
-
-
-                // SCE Accepted Subset §2.15: <sce:append target="one">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vTombstones, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
 
 
 
@@ -3331,103 +4002,133 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 self.vWasLive = call_MvValueHolds__vv(self.vValues, self.vHeld)
 
 
+                if (self.vTentative && self.vWasLive) {
+
+                // W3C SCXML 4.6: <foreach array="values" item="v">, a native loop over a sce-static list
+                for v in self.vValues {
+                    _ = v
+
+                if (v.id == self.vHeld.id && v.field == self.vHeld.field && v.wallTime == self.vHeld.wallTime && v.counter == self.vHeld.counter && v.nodeId == self.vHeld.nodeId) {
+
+
+                self.vUndoing.id = v.id
+
+
+
+                self.vUndoing.field = v.field
+
+
+
+                self.vUndoing.value = v.value
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, v.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; self.vUndoing.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vUndoing.wallTime = v.wallTime
+
+
+
+                self.vUndoing.counter = v.counter
+
+
+
+                self.vUndoing.nodeId = v.nodeId
+
+                }
+
+                }
+
+
+                self.vUndoing.atWallTime = self.vDot.wallTime
+
+
+
+                self.vUndoing.atCounter = self.vDot.counter
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="undo">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, self.vUndoing); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                if (!self.vWasLive && UInt32(truncatingIfNeeded: self.vUndo.count) > 0) {
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undoKept">
+
+                self.vUndoKept.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undo" item="u">, a native loop over a sce-static list
+                for u in self.vUndo {
+                    _ = u
+
+                if (u.id != self.vHeld.id || u.field != self.vHeld.field || u.wallTime != self.vHeld.wallTime || u.counter != self.vHeld.counter || u.nodeId != self.vHeld.nodeId) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="undoKept">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undo">
+
+                self.vUndo.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undoKept" item="u">, a native loop over a sce-static list
+                for u in self.vUndoKept {
+                    _ = u
+
+                // SCE Accepted Subset §2.15: <sce:append target="undo">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+                }
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="one">
+
+                self.vOne.removeAll()
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="one">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
 
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueDrop__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
-                if (!self.vKnown) {
-
-                // W3C SCXML 6.2: send id="__send_8"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(1))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vWasLive) {
-
-                // W3C SCXML 6.2: send id="__send_9"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
                 if (self.vWasLive && self.vAnnounce) {
 
-                // W3C SCXML 6.2: send id="__send_10"
+                // W3C SCXML 6.2: send id="__send_21"
                 do {
                     // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
                     // pair left out, and the message still goes; the error ends the block once
@@ -3459,1165 +4160,780 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 8:
+            case 20:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vPassing, self.vPassed); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; self.vOp = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vPassed, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='passed'>: an integer operation overflowed or failed")); return true }; self.vPassed = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (self.vOp.kind == 0 && self.vOp.parts <= 1 && !self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_11"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.vOp.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_11",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 0 && self.vOp.parts > 1 && !self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_12"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.vOp.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.parts))
-                        appendFormParam(&sendForm, "parts", sceValue)
-                        sendParts.append(PayloadPair("parts", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_12",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 0 && self.vOp.parts <= 1 && self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_13"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.vOp.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_13",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 0 && self.vOp.parts > 1 && self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_14"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.vOp.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.parts))
-                        appendFormParam(&sendForm, "parts", sceValue)
-                        sendParts.append(PayloadPair("parts", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_14",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 1 && self.vOp.parts <= 1 && !self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_15"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_15",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 1 && self.vOp.parts > 1 && !self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_16"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.parts))
-                        appendFormParam(&sendForm, "parts", sceValue)
-                        sendParts.append(PayloadPair("parts", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.atWallTime)
-                        appendFormParam(&sendForm, "atWallTime", sceValue)
-                        sendParts.append(PayloadPair("atWallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.atCounter))
-                        appendFormParam(&sendForm, "atCounter", sceValue)
-                        sendParts.append(PayloadPair("atCounter", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_16",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 1 && self.vOp.parts <= 1 && self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_17"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_17",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vOp.kind == 1 && self.vOp.parts > 1 && self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_18"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vOp.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.parts))
-                        appendFormParam(&sendForm, "parts", sceValue)
-                        sendParts.append(PayloadPair("parts", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vOp.atWallTime)
-                        appendFormParam(&sendForm, "atWallTime", sceValue)
-                        sendParts.append(PayloadPair("atWallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vOp.atCounter))
-                        appendFormParam(&sendForm, "atCounter", sceValue)
-                        sendParts.append(PayloadPair("atCounter", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_18",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 9:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListWrite {
-                        break sceBlock
-                    }
-
-
-                self.vHeld.id = UInt64(self.pendingRecordListWritePayload.id)
-
-
-
-                self.vHeld.field = UInt64(self.pendingRecordListWritePayload.field)
-
-
-
-                self.vHeld.wallTime = self.pendingRecordListWritePayload.wallTime
-
-
-
-                self.vHeld.counter = self.pendingRecordListWritePayload.counter
-
-
-
-                self.vHeld.nodeId = self.pendingRecordListWritePayload.nodeId
-
-
-
-                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
-
-
-                if (!self.vPresent) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLate, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='late'>: an integer operation overflowed or failed")); return true }; self.vLate = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-            case 10:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListWrite {
-                        break sceBlock
-                    }
-
-
-                self.vAuthorized = true
-
-
-                if (self.vHub && UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
-
-
-                self.vAuthorized = false
-
-
-                // W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
-                for m in self.vRoster {
-                    _ = m
-
-                if (m.node == self.pendingRecordListWritePayload.nodeId && m.role >= 2) {
-
-
-                self.vAuthorized = true
-
-                }
-
-                }
-                }
-
-
-                if (!self.vAuthorized) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.vAuthorized) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListWritePayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vPart.kind = 0
-
-
-
-                self.vPart.id = self.pendingRecordListWritePayload.id
-
-
-
-                self.vPart.field = self.pendingRecordListWritePayload.field
-
-
-
-                self.vPart.value = self.pendingRecordListWritePayload.value
-
-
-
-                self.vPart.wallTime = self.pendingRecordListWritePayload.wallTime
-
-
-
-                self.vPart.counter = self.pendingRecordListWritePayload.counter
-
-
-
-                self.vPart.nodeId = self.pendingRecordListWritePayload.nodeId
-
-
-
-                self.vPart.by = self.pendingRecordListWritePayload.nodeId
-
-
-
-                self.vPart.atWallTime = self.pendingRecordListWritePayload.wallTime
-
-
-
-                self.vPart.atCounter = self.pendingRecordListWritePayload.counter
-
-
-
-                self.vPart.parts = self.pendingRecordListWritePayload.parts
-
-
-                // W3C SCXML 6.2: send id="__send_19"
-                do {
-                    let sendEventData = ""
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListArrive, metadata: sendMetadata))
-                }
-                }
-
-                }
-            case 11:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLate, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='late'>: an integer operation overflowed or failed")); return true }; self.vLate = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-            case 12:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListSupersede {
-                        break sceBlock
-                    }
-
-
-                self.vAuthorized = true
-
-
-                if (self.vHub && UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
-
-
-                self.vAuthorized = false
-
-
-                // W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
-                for m in self.vRoster {
-                    _ = m
-
-                if (m.node == self.pendingRecordListSupersedePayload.by && m.role >= 2) {
-
-
-                self.vAuthorized = true
-
-                }
-
-                }
-                }
-
-
-                if (!self.vAuthorized) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.vAuthorized) {
-
-
-                self.vPart.kind = 1
-
-
-
-                self.vPart.id = self.pendingRecordListSupersedePayload.id
-
-
-
-                self.vPart.field = self.pendingRecordListSupersedePayload.field
-
-
-
-                self.vPart.value = 0
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; self.vPart.text = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vPart.wallTime = self.pendingRecordListSupersedePayload.wallTime
-
-
-
-                self.vPart.counter = self.pendingRecordListSupersedePayload.counter
-
-
-
-                self.vPart.nodeId = self.pendingRecordListSupersedePayload.nodeId
-
-
-
-                self.vPart.by = self.pendingRecordListSupersedePayload.by
-
-
-
-                self.vPart.atWallTime = self.pendingRecordListSupersedePayload.atWallTime
-
-
-
-                self.vPart.atCounter = self.pendingRecordListSupersedePayload.atCounter
-
-
-
-                self.vPart.parts = self.pendingRecordListSupersedePayload.parts
-
-
-                // W3C SCXML 6.2: send id="__send_20"
-                do {
-                    let sendEventData = ""
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListArrive, metadata: sendMetadata))
-                }
-                }
-
-                }
-            case 13:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-
-                if (self.vPart.parts > 1) {
-
-
-                self.vEntry.element = UInt64(self.vPart.id)
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.vPart.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vEntry.wallTime = self.vPart.wallTime
-
-
-
-                self.vEntry.counter = self.vPart.counter
-
-
-
-                self.vEntry.nodeId = self.vPart.nodeId
-
-
-
-                self.vAlready = false
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.element == self.vEntry.element && t.wallTime == self.vEntry.wallTime && t.counter == self.vEntry.counter && t.nodeId == self.vEntry.nodeId) {
-
-
-                self.vAlready = true
-
-                }
-
-                }
-
-                if (self.vPart.kind == 0) {
-
-
-                self.vHeld.id = UInt64(self.vPart.id)
-
-
-
-                self.vHeld.field = UInt64(self.vPart.field)
-
-
-
-                self.vHeld.wallTime = self.vPart.wallTime
-
-
-
-                self.vHeld.counter = self.vPart.counter
-
-
-
-                self.vHeld.nodeId = self.vPart.nodeId
-
-
-
-                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
-
-
-                if (self.vPresent) {
-
-
-                self.vAlready = true
-
-                }
-
-                }
-
-
-
-                self.vListed = false
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                if (w.kind == self.vPart.kind && w.id == self.vPart.id && w.field == self.vPart.field && w.wallTime == self.vPart.wallTime && w.counter == self.vPart.counter && w.nodeId == self.vPart.nodeId) {
-
-
-                self.vListed = true
-
-                }
-
-                }
-
-                if (!self.vAlready && !self.vListed) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vWaiting.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vWaiting, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; self.vWaiting.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-
-                self.vCount = 0
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                if (w.atWallTime == self.vPart.atWallTime && w.atCounter == self.vPart.atCounter && w.by == self.vPart.by) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; self.vCount = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                if (self.vAlready || self.vCount >= self.vPart.parts) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-                self.vTaking.removeAll()
-
-
-
-                self.vTook = 0
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-                self.vKept.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                if (w.atWallTime == self.vPart.atWallTime && w.atCounter == self.vPart.atCounter && w.by == self.vPart.by) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="taking">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, w); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (w.atWallTime != self.vPart.atWallTime || w.atCounter != self.vPart.atCounter || w.by != self.vPart.by) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="kept">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vKept, w); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; self.vKept.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-                self.vWaiting.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-                for k in self.vKept {
-                    _ = k
-
-                // SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vWaiting.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vWaiting, k); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; self.vWaiting.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-                for t in self.vTaking {
-                    _ = t
-
-                // W3C SCXML 6.2: send id="__send_21"
-                do {
-                    let sendEventData = ""
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
-                }
-                }
-                }
-
-                }
-
-
-                if (self.vPart.parts <= 1) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-                self.vTaking.removeAll()
-
-
-
-                self.vTook = 0
-
-
-                // SCE Accepted Subset §2.15: <sce:append target="taking">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
 
                 // W3C SCXML 6.2: send id="__send_22"
                 do {
-                    let sendEventData = ""
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
+                    // text each value spells, so a second reading of the data model cannot
+                    // disagree with the first.
+                    var sendForm: [String: [String]] = [:]
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vDot.nodeId)
+                        appendFormParam(&sendForm, "by", sceValue)
+                        sendParts.append(PayloadPair("by", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .signed64(self.vDot.wallTime)
+                        appendFormParam(&sendForm, "wallTime", sceValue)
+                        sendParts.append(PayloadPair("wallTime", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vDot.counter))
+                        appendFormParam(&sendForm, "counter", sceValue)
+                        sendParts.append(PayloadPair("counter", sceValue))
+                    }
+                    do {
+                        let sceFailure = Failure()
+                        let sceValue: WireValue = { () -> WireValue in if self.vTaking.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
+                        if !sceFailure.failed {
+                            appendFormParam(&sendForm, "ops", sceValue)
+                            sendParts.append(PayloadPair("ops", sceValue))
+                        } else {
+                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> failed to evaluate"))
+                            paramFailed = true
+                        }
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
+                    // build. The send is dispatched and not refused, and the whole of it is the
+                    // host's: delivering the event locally as well would show the document the act
+                    // twice.
+                    let sendRequest = HostSendRequest(
+                        processorType: "sce:mesh",
+                        eventName: "record_list.change",
+                        target: "#people",
+                        content: "",
+                        params: sendForm,
+                        sendID: "__send_22",
+                        eventData: sendEventData,
+                        invokeID: engine.currentEventInvokeID
+                    )
+                    engine.performHostSend(sendRequest)
+
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
                 }
                 }
+            case 21:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListConfirm {
+                        break sceBlock
+                    }
 
 
-                if (self.vHub) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="passing">
-
-                self.vPassing.removeAll()
+                self.vProvisionalFound = false
 
 
+                // W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
+                for p in self.vProvisional {
+                    _ = p
 
-                self.vPassed = 0
+                if (p.wallTime == self.pendingRecordListConfirmPayload.wallTime && p.counter == self.pendingRecordListConfirmPayload.counter) {
 
 
-                // SCE Accepted Subset §2.15: <sce:append target="passing">
+                self.vProvisionalFound = true
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vPassing.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='passing'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vPassing, self.vPart); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='passing'>: an integer operation overflowed or failed")); return true }; self.vPassing.append(sceValue); return false }()) {
+
+
+                self.vStanding = p
+
+                }
+
+                }
+
+                if (!self.vProvisionalFound) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
+                }
+
+
+                if (self.vProvisionalFound) {
+
+                // SCE Accepted Subset §2.15: <sce:clear target="provisionalKept">
+
+                self.vProvisionalKept.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
+                for p in self.vProvisional {
+                    _ = p
+
+                if (p.wallTime != self.vStanding.wallTime || p.counter != self.vStanding.counter) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; self.vProvisionalKept.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="provisional">
+
+                self.vProvisional.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="provisionalKept" item="p">, a native loop over a sce-static list
+                for p in self.vProvisionalKept {
+                    _ = p
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisional">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undoKept">
+
+                self.vUndoKept.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undo" item="u">, a native loop over a sce-static list
+                for u in self.vUndo {
+                    _ = u
+
+                if (u.atWallTime != self.vStanding.wallTime || u.atCounter != self.vStanding.counter) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="undoKept">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undo">
+
+                self.vUndo.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undoKept" item="u">, a native loop over a sce-static list
+                for u in self.vUndoKept {
+                    _ = u
+
+                // SCE Accepted Subset §2.15: <sce:append target="undo">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                if (self.vAnnounce) {
 
                 // W3C SCXML 6.2: send id="__send_23"
+                do {
+                    var sendArgError = ""
+                    // docs/adr/0005, decision 3: the target is a string computed from the
+                    // machine's fields now, and the send goes only by a route the document
+                    // declared as `sce:targets`. A value in none of them names no route this
+                    // send may take — an address nobody answers at, which is reported as
+                    // error.communication (W3C SCXML 6.2.4) — and an operation that fails
+                    // cannot be evaluated, the argument error.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+                        let sceRoute = "#_parent"
+                        switch sceRoute {
+                        case "#_parent":
+                            sendTarget = sceRoute
+                            sendTargetKnown = true
+                        default:
+                            break
+                        }
+                    }
+                    if !sendArgError.isEmpty {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        sendError.metadata.sendID = "__send_23"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
+                        // W3C SCXML C.1: a target that evaluates to no route, or to text that
+                        // names nothing (empty or "undefined"), is not reachable —
+                        // error.communication, nothing delivered, and the error ends the block
+                        // as any other would (W3C SCXML 4.9).
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        sendError.metadata.sendID = "__send_23"
+                        engine.raise(sendError)
+
+                        break sceBlock
+                    }
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .signed64(self.vStanding.wallTime)
+                        sendParts.append(PayloadPair("wallTime", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.counter))
+                        sendParts.append(PayloadPair("counter", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vStanding.command)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                    // the same value written in `target` is, at once or after the delay, by
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
+                    let sendRouted = engine.sendToTarget(
+                        event: engine.resolveEventByName("record_list.confirmed"),
+                        eventName: "record_list.confirmed",
+                        target: sendTarget,
+                        ownSessionID: self.sessionID,
+                        delay: .zero,
+                        sendID: "__send_23",
+                        eventData: sendEventData,
+                        sender: self.sessionID
+                    )
+                    if sendRouted == .notSupported {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        sendError.metadata.sendID = "__send_23"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendRouted == .notReachable {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        sendError.metadata.sendID = "__send_23"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+
+                }
+            case 22:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .recordListWithdraw {
+                        break sceBlock
+                    }
+
+
+                self.vProvisionalFound = false
+
+
+                // W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
+                for (sceIndex, p) in self.vProvisional.enumerated() {
+                    let at = UInt32(truncatingIfNeeded: sceIndex); _ = at; _ = p
+
+                if (!self.vProvisionalFound && p.wallTime == self.pendingRecordListWithdrawPayload.wallTime && p.counter == self.pendingRecordListWithdrawPayload.counter) {
+
+
+                self.vProvisionalFound = true
+
+
+
+                self.vWithdrawFrom = at
+
+                }
+
+                }
+
+                if (!self.vProvisionalFound) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+
+                if (self.vProvisionalFound) {
+
+                // W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
+                for (sceIndex, p) in self.vProvisional.enumerated() {
+                    let at = UInt32(truncatingIfNeeded: sceIndex); _ = at; _ = p
+
+                if (at >= self.vWithdrawFrom) {
+
+                // W3C SCXML 6.2: send id="__send_24"
                 do {
                     let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.
                     var sendMetadata = EventMetadata.internalRaise()
                     sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListPass, metadata: sendMetadata))
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListUnwind, metadata: sendMetadata))
                 }
                 }
 
                 }
-            case 14:
+                }
+
+                }
+            case 23:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vProvisional, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vProvisional.count), 1)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; self.vStanding = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="one">
+
+                self.vOne.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="adds" item="a">, a native loop over a sce-static list
+                for a in self.vAdds {
+                    _ = a
+
+                if (a.wallTime == self.vStanding.wallTime && a.counter == self.vStanding.counter && a.nodeId == self.vNode) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="one">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, a); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // W3C SCXML 4.6: <foreach array="one" item="a">, a native loop over a sce-static list
+                for a in self.vOne {
+                    _ = a
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.div(sceFailure, a.element, 65536); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; self.vHeld.id = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.rem(sceFailure, a.element, 65536); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; self.vHeld.field = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vHeld.wallTime = a.wallTime
+
+
+
+                self.vHeld.counter = a.counter
+
+
+
+                self.vHeld.nodeId = a.nodeId
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueDrop__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                if (self.vAnnounce) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, a.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, a.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // W3C SCXML 6.2: send id="__send_25"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vShareId))
+                        sendParts.append(PayloadPair("id", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vShareField))
+                        sendParts.append(PayloadPair("field", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListAnnounce, metadata: sendMetadata))
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+
+                // W3C SCXML 4.6: <foreach array="undo" item="u">, a native loop over a sce-static list
+                for u in self.vUndo {
+                    _ = u
+
+                if (u.atWallTime == self.vStanding.wallTime && u.atCounter == self.vStanding.counter) {
+
+
+                self.vEntry.element = u.id
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), u.field); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vEntry.wallTime = u.wallTime
+
+
+
+                self.vEntry.counter = u.counter
+
+
+
+                self.vEntry.nodeId = u.nodeId
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="one">
+
+                self.vOne.removeAll()
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="one">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vHeld.id = u.id
+
+
+
+                self.vHeld.field = u.field
+
+
+
+                self.vHeld.value = u.value
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, u.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vHeld.wallTime = u.wallTime
+
+
+
+                self.vHeld.counter = u.counter
+
+
+
+                self.vHeld.nodeId = u.nodeId
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                if (self.vAnnounce) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, u.id, to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, u.field, to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // W3C SCXML 6.2: send id="__send_26"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vShareId))
+                        sendParts.append(PayloadPair("id", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vShareField))
+                        sendParts.append(PayloadPair("field", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListAnnounce, metadata: sendMetadata))
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undoKept">
+
+                self.vUndoKept.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undo" item="u">, a native loop over a sce-static list
+                for u in self.vUndo {
+                    _ = u
+
+                if (u.atWallTime != self.vStanding.wallTime || u.atCounter != self.vStanding.counter) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="undoKept">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="undo">
+
+                self.vUndo.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="undoKept" item="u">, a native loop over a sce-static list
+                for u in self.vUndoKept {
+                    _ = u
+
+                // SCE Accepted Subset §2.15: <sce:append target="undo">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="provisionalKept">
+
+                self.vProvisionalKept.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
+                for (sceIndex, p) in self.vProvisional.enumerated() {
+                    let at = UInt32(truncatingIfNeeded: sceIndex); _ = at; _ = p
+
+                var ifCondFailed72 = false
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.add(sceFailure, at, 1) < UInt32(truncatingIfNeeded: self.vProvisional.count); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false }; return sceValue }()) {
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; self.vProvisionalKept.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+                if ifCondFailed72 {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                // SCE Accepted Subset §2.15: <sce:clear target="provisional">
+
+                self.vProvisional.removeAll()
+
+
+                // W3C SCXML 4.6: <foreach array="provisionalKept" item="p">, a native loop over a sce-static list
+                for p in self.vProvisionalKept {
+                    _ = p
+
+                // SCE Accepted Subset §2.15: <sce:append target="provisional">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                if (self.vAnnounce) {
+
+                // W3C SCXML 6.2: send id="__send_27"
+                do {
+                    var sendArgError = ""
+                    // docs/adr/0005, decision 3: the target is a string computed from the
+                    // machine's fields now, and the send goes only by a route the document
+                    // declared as `sce:targets`. A value in none of them names no route this
+                    // send may take — an address nobody answers at, which is reported as
+                    // error.communication (W3C SCXML 6.2.4) — and an operation that fails
+                    // cannot be evaluated, the argument error.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+                        let sceRoute = "#_parent"
+                        switch sceRoute {
+                        case "#_parent":
+                            sendTarget = sceRoute
+                            sendTargetKnown = true
+                        default:
+                            break
+                        }
+                    }
+                    if !sendArgError.isEmpty {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        sendError.metadata.sendID = "__send_27"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
+                        // W3C SCXML C.1: a target that evaluates to no route, or to text that
+                        // names nothing (empty or "undefined"), is not reachable —
+                        // error.communication, nothing delivered, and the error ends the block
+                        // as any other would (W3C SCXML 4.9).
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        sendError.metadata.sendID = "__send_27"
+                        engine.raise(sendError)
+
+                        break sceBlock
+                    }
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.id))
+                        sendParts.append(PayloadPair("id", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.vStanding.field))
+                        sendParts.append(PayloadPair("field", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .text((self.vStanding.kind).declaredName)
+                        sendParts.append(PayloadPair("kind", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .text((RecordListParentSceSynthInvokeListRefusalEnum.peerRefused).declaredName)
+                        sendParts.append(PayloadPair("reason", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .unsigned64(self.vStanding.command)
+                        sendParts.append(PayloadPair("command", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .truth(true)
+                        sendParts.append(PayloadPair("withdrawn", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                    // the same value written in `target` is, at once or after the delay, by
+                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
+                    // too, to the child it names.
+                    let sendRouted = engine.sendToTarget(
+                        event: engine.resolveEventByName("record_list.refused"),
+                        eventName: "record_list.refused",
+                        target: sendTarget,
+                        ownSessionID: self.sessionID,
+                        delay: .zero,
+                        sendID: "__send_27",
+                        eventData: sendEventData,
+                        sender: self.sessionID
+                    )
+                    if sendRouted == .notSupported {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        sendError.metadata.sendID = "__send_27"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    if sendRouted == .notReachable {
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        sendError.metadata.sendID = "__send_27"
+                        engine.raise(sendError)
+
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    }
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+
+                }
+            case 24:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListAnnounce {
@@ -4653,7 +4969,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (UInt32(truncatingIfNeeded: self.vMoved.count) == 0) {
 
-                // W3C SCXML 6.2: send id="__send_24"
+                // W3C SCXML 6.2: send id="__send_28"
                 do {
                     let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
@@ -4676,7 +4992,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 }
 
                 }
-            case 15:
+            case 25:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -4704,7 +5020,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (UInt32(truncatingIfNeeded: self.vLive.count) == 0) {
 
-                // W3C SCXML 6.2: send id="__send_25"
+                // W3C SCXML 6.2: send id="__send_29"
                 do {
                     var sendArgError = ""
                     // docs/adr/0005, decision 3: the target is a string computed from the
@@ -4727,7 +5043,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     }
                     if !sendArgError.isEmpty {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
-                        sendError.metadata.sendID = "__send_25"
+                        sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -4738,7 +5054,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-                        sendError.metadata.sendID = "__send_25"
+                        sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
                         break sceBlock
@@ -4791,20 +5107,20 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         target: sendTarget,
                         ownSessionID: self.sessionID,
                         delay: .zero,
-                        sendID: "__send_25",
+                        sendID: "__send_29",
                         eventData: sendEventData,
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
-                        sendError.metadata.sendID = "__send_25"
+                        sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
-                        sendError.metadata.sendID = "__send_25"
+                        sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -4834,7 +5150,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (self.vOrdinal == 0) {
 
-                // W3C SCXML 6.2: send id="__send_26"
+                // W3C SCXML 6.2: send id="__send_30"
                 do {
                     var sendArgError = ""
                     // docs/adr/0005, decision 3: the target is a string computed from the
@@ -4857,7 +5173,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     }
                     if !sendArgError.isEmpty {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
-                        sendError.metadata.sendID = "__send_26"
+                        sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -4868,7 +5184,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-                        sendError.metadata.sendID = "__send_26"
+                        sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
                         break sceBlock
@@ -4921,20 +5237,20 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         target: sendTarget,
                         ownSessionID: self.sessionID,
                         delay: .zero,
-                        sendID: "__send_26",
+                        sendID: "__send_30",
                         eventData: sendEventData,
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
-                        sendError.metadata.sendID = "__send_26"
+                        sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
-                        sendError.metadata.sendID = "__send_26"
+                        sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -4950,7 +5266,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (self.vOrdinal != 0) {
 
-                // W3C SCXML 6.2: send id="__send_27"
+                // W3C SCXML 6.2: send id="__send_31"
                 do {
                     var sendArgError = ""
                     // docs/adr/0005, decision 3: the target is a string computed from the
@@ -4973,7 +5289,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     }
                     if !sendArgError.isEmpty {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
-                        sendError.metadata.sendID = "__send_27"
+                        sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -4984,7 +5300,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-                        sendError.metadata.sendID = "__send_27"
+                        sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
                         break sceBlock
@@ -5037,20 +5353,20 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         target: sendTarget,
                         ownSessionID: self.sessionID,
                         delay: .zero,
-                        sendID: "__send_27",
+                        sendID: "__send_31",
                         eventData: sendEventData,
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
-                        sendError.metadata.sendID = "__send_27"
+                        sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
-                        sendError.metadata.sendID = "__send_27"
+                        sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -5083,1535 +5399,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 self.vMoved.removeAll()
 
                 }
-            case 16:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListKeep {
-                        break sceBlock
-                    }
-
-
-                self.vEntry.element = self.pendingRecordListKeepPayload.element
-
-
-
-                self.vEntry.wallTime = self.pendingRecordListKeepPayload.wallTime
-
-
-
-                self.vEntry.counter = self.pendingRecordListKeepPayload.counter
-
-
-
-                self.vEntry.nodeId = self.pendingRecordListKeepPayload.nodeId
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__v(self.vEntry, self.pendingRecordListKeepPayload.kind) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, self.pendingRecordListKeepPayload.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-            case 17:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListCompact {
-                        break sceBlock
-                    }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-
-                self.vFrozenFor = -1
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingRecordListCompactPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__i(t, 1) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, t.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vTombstones, self.vStable) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (self.pendingRecordListCompactPayload.before > self.vFloor) {
-
-
-                self.vFloor = self.pendingRecordListCompactPayload.before
-
-                }
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-                self.vKept.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                if (w.atWallTime > self.pendingRecordListCompactPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="kept">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vKept, w); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; self.vKept.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-                self.vWaiting.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-                for k in self.vKept {
-                    _ = k
-
-                // SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vWaiting.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vWaiting, k); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; self.vWaiting.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-                }
-            case 18:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListSettle {
-                        break sceBlock
-                    }
-
-                if (self.vHub && self.pendingRecordListSettlePayload.before > self.vFloor) {
-
-
-                self.vPending = self.pendingRecordListSettlePayload.before
-
-
-
-                self.vMembers = self.pendingRecordListSettlePayload.members
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="answers">
-
-                self.vAnswers.removeAll()
-
-
-                if (self.vClock.wallTime <= self.pendingRecordListSettlePayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingRecordListSettlePayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // W3C SCXML 6.2: send id="__send_28"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingRecordListSettlePayload.before)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.propose",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_28",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 19:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListPropose {
-                        break sceBlock
-                    }
-
-                if (!self.vHub && self.pendingRecordListProposePayload.before > self.vFloor) {
-
-                if (self.vClock.wallTime <= self.pendingRecordListProposePayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingRecordListProposePayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingRecordListProposePayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.pendingRecordListProposePayload.before
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_RecordSettled__vv(self.vAdds, self.vTombstones, self.pendingRecordListProposePayload.before) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; self.vFrozenHash = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                // W3C SCXML 6.2: send id="__send_29"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingRecordListProposePayload.before)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vFrozenHash))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.ack",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_29",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 20:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListAck {
-                        break sceBlock
-                    }
-
-                if (self.vHub && self.pendingRecordListAckPayload.before == self.vPending) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_RecordSettled__vv(self.vAdds, self.vTombstones, self.vPending) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vKnown = false
-
-
-                // W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-                for a in self.vAnswers {
-                    _ = a
-
-                if (a.sender == self.pendingRecordListAckPayload.sender && a.hash == self.pendingRecordListAckPayload.hash) {
-
-
-                self.vKnown = true
-
-                }
-
-                }
-
-                if (!self.vKnown) {
-
-
-                self.vAnswer.sender = self.pendingRecordListAckPayload.sender
-
-
-
-                self.vAnswer.hash = self.pendingRecordListAckPayload.hash
-
-
-                // SCE Accepted Subset §2.15: <sce:append target="answers">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vAnswers.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='answers'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vAnswers, self.vAnswer); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='answers'>: an integer operation overflowed or failed")); return true }; self.vAnswers.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-
-                self.vAgreeing = 0
-
-
-                // W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-                for a in self.vAnswers {
-                    _ = a
-
-                if (a.hash == self.vMine) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAgreeing, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='agreeing'>: an integer operation overflowed or failed")); return true }; self.vAgreeing = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                if (self.vMembers > 0 && self.vAgreeing >= self.vMembers) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.vPending) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.vPending
-
-
-
-                self.vFrozenHash = self.vMine
-
-
-                // W3C SCXML 6.2: send id="__send_30"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vPending)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListFloor, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-
-                self.vPending = -1
-
-
-                // W3C SCXML 6.2: send id="__send_31"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vFrozenFor)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.floor",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_31",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.pendingRecordListAckPayload.hash != self.vMine && self.vFloor > 0) {
-
-                // W3C SCXML 6.2: send id="__send_32"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vFloor)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vAgreed))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.floor",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_32",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                }
-            case 21:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListFloor {
-                        break sceBlock
-                    }
-
-                if (self.pendingRecordListFloorPayload.before > self.vFloor) {
-
-                if (self.vFrozenFor != self.pendingRecordListFloorPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingRecordListFloorPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.pendingRecordListFloorPayload.before
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_RecordSettled__vv(self.vAdds, self.vTombstones, self.pendingRecordListFloorPayload.before) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; self.vFrozenHash = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.vFrozenHash == self.pendingRecordListFloorPayload.hash) {
-
-                if (self.vClock.wallTime <= self.pendingRecordListFloorPayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingRecordListFloorPayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // W3C SCXML 4.6: <foreach array="stable" item="t">, a native loop over a sce-static list
-                for t in self.vStable {
-                    _ = t
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__i(t, 1) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, t.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vTombstones, self.vStable) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vFloor = self.pendingRecordListFloorPayload.before
-
-
-
-                self.vAgreed = self.pendingRecordListFloorPayload.hash
-
-
-
-                self.vStale = false
-
-
-
-                self.vFrozenFor = -1
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-                self.vKept.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                if (w.atWallTime > self.pendingRecordListFloorPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="kept">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vKept, w); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; self.vKept.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-                self.vWaiting.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-                for k in self.vKept {
-                    _ = k
-
-                // SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vWaiting.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vWaiting, k); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; self.vWaiting.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-                }
-
-
-                if (self.vFrozenHash != self.pendingRecordListFloorPayload.hash) {
-
-
-                self.vStale = true
-
-                }
-
-                }
-
-                }
-            case 22:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-                self.vTaking.removeAll()
-
-
-
-                self.vTook = 0
-
-
-                // W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-                for w in self.vWaiting {
-                    _ = w
-
-                // SCE Accepted Subset §2.15: <sce:append target="taking">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, w); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-                self.vWaiting.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-                for t in self.vTaking {
-                    _ = t
-
-                // W3C SCXML 6.2: send id="__send_33"
-                do {
-                    let sendEventData = ""
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListTake, metadata: sendMetadata))
-                }
-                }
-
-                // W3C SCXML 6.2: send id="__send_34"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-            case 23:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListVisit {
-                        break sceBlock
-                    }
-
-
-                self.vMine = 0
-
-
-                // W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-                for n in self.vDigest {
-                    _ = n
-
-                if (n.depth == self.pendingRecordListVisitPayload.depth && n.prefix == self.pendingRecordListVisitPayload.prefix) {
-
-
-                self.vMine = n.hash
-
-                }
-
-                }
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_35"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        appendFormParam(&sendForm, "to", sceValue)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListVisitPayload.depth))
-                        appendFormParam(&sendForm, "depth", sceValue)
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListVisitPayload.prefix)
-                        appendFormParam(&sendForm, "prefix", sceValue)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingRecordListVisitPayload.reply)
-                        appendFormParam(&sendForm, "reply", sceValue)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.node",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_35",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_36"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListVisitPayload.to)
-                        appendFormParam(&sendForm, "to", sceValue)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListVisitPayload.depth))
-                        appendFormParam(&sendForm, "depth", sceValue)
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListVisitPayload.prefix)
-                        appendFormParam(&sendForm, "prefix", sceValue)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingRecordListVisitPayload.reply)
-                        appendFormParam(&sendForm, "reply", sceValue)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.node",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_36",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 24:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListNode {
-                        break sceBlock
-                    }
-
-                if (self.vHub || self.pendingRecordListNodePayload.to == 0 || self.pendingRecordListNodePayload.to == self.vNode) {
-
-
-                self.vMine = 0
-
-
-                // W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-                for n in self.vDigest {
-                    _ = n
-
-                if (n.depth == self.pendingRecordListNodePayload.depth && n.prefix == self.pendingRecordListNodePayload.prefix) {
-
-
-                self.vMine = n.hash
-
-                }
-
-                }
-
-                if (self.vMine != self.pendingRecordListNodePayload.hash && self.pendingRecordListNodePayload.depth < 30) {
-
-                // W3C SCXML 6.2: send id="__send_37"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingRecordListNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.mul(sceFailure, self.pendingRecordListNodePayload.prefix, 3))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_38"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingRecordListNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.add(sceFailure, Checked.mul(sceFailure, self.pendingRecordListNodePayload.prefix, 3), 1))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_39"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingRecordListNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.add(sceFailure, Checked.mul(sceFailure, self.pendingRecordListNodePayload.prefix, 3), 2))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vMine != self.pendingRecordListNodePayload.hash && self.pendingRecordListNodePayload.depth == 30) {
-
-                // W3C SCXML 6.2: send id="__send_40"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.prefix)
-                        sendParts.append(PayloadPair("minute", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListShare, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vMine != self.pendingRecordListNodePayload.hash && self.pendingRecordListNodePayload.depth == 30 && !self.pendingRecordListNodePayload.reply) {
-
-                // W3C SCXML 6.2: send id="__send_41"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(30))
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListNodePayload.prefix)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(true)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(RecordListParentSceSynthInvokeListEvent.recordListVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                }
-            case 25:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListShare {
-                        break sceBlock
-                    }
-
-                // W3C SCXML 4.6: <foreach array="values" item="v">, a native loop over a sce-static list
-                for v in self.vValues {
-                    _ = v
-
-                var ifCondFailed105 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, v.wallTime, 60000) == Int64(truncatingIfNeeded: self.pendingRecordListSharePayload.minute); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed105 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, v.id, to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, v.field, to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_42"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(v.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(v.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(v.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_42",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_43"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(v.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(v.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(v.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.write",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_43",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-                if ifCondFailed105 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                var ifCondFailed108 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, t.wallTime, 60000) == Int64(truncatingIfNeeded: self.pendingRecordListSharePayload.minute); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed108 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, t.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, t.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_44"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(t.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(t.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(t.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#hub",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_44",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_45"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(t.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(t.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(t.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "record_list.supersede",
-                        target: "#people",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_45",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-                if ifCondFailed108 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-                }
             case 26:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
@@ -6638,7 +5425,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 if (!self.vHolding) {
 
-                // W3C SCXML 6.2: send id="__send_46"
+                // W3C SCXML 6.2: send id="__send_32"
                 do {
                     let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
@@ -6661,24 +5448,6 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
     }}
 
 extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
-    /// Raises `record_list.ack` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListAck(sender: UInt64, before: Int64, hash: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListAck,
-                metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("sender", sender), .signed64("before", before), .integer("hash", hash)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListAckPayload(sender: sender, before: before, hash: hash)
-                )
-            )
-        )
-    }
-
     /// Raises `record_list.announce` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
@@ -6697,37 +5466,60 @@ extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
         )
     }
 
-    /// Raises `record_list.clear` with its payload, binding the event and the payload's
+    /// Raises `record_list.change` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListClear(id: UInt32, field: UInt16, now: Int64, more: Bool) {
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseRecordListChange(by: UInt64, wallTime: Int64, counter: UInt32, ops: [RecordListParentSceSynthInvokeListOpRecord]) throws {
+        try checkList("ops", ops, least: 1, bound: 64, { scePath0, sceValue0 in try checkText(scePath0 + "/text", sceValue0.text, bound: 96) })
+        let scePayload = RecordListParentSceSynthInvokeListRecordListChangePayload(by: by, wallTime: wallTime, counter: counter, ops: ops)
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListClear,
+                RecordListParentSceSynthInvokeListEvent.recordListChange,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("now", now), .truth("more", more)),
+                    data: recordJSON([PayloadPair.json("by", rawJSON: WireValue.unsigned64(scePayload.by).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(scePayload.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(scePayload.counter)).json), PayloadPair.json("ops", rawJSON: listJSON(scePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) }))]),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListClearPayload(id: id, field: field, now: now, more: more)
+                    typedPayload: scePayload
                 )
             )
         )
     }
 
-    /// Raises `record_list.compact` with its payload, binding the event and the payload's
+    /// Raises `record_list.clear` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListCompact(before: Int64) {
+    public func raiseRecordListClear(id: UInt32, field: UInt16, now: Int64, more: Bool, command: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListCompact,
+                RecordListParentSceSynthInvokeListEvent.recordListClear,
                 metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before)),
+                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("now", now), .truth("more", more), .unsigned64("command", command)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListCompactPayload(before: before)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListClearPayload(id: id, field: field, now: now, more: more, command: command)
+                )
+            )
+        )
+    }
+
+    /// Raises `record_list.confirm` with its payload, binding the event and the payload's
+    /// values in one call so the pairing of a name and a type cannot be
+    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
+    /// filled: the typed one a native expression reads, and `data`, which is what
+    /// every other reader of `_event.data` binds it from.
+    public func raiseRecordListConfirm(wallTime: Int64, counter: UInt32, command: UInt64) {
+        raiseExternalWithMeta(
+            EventWithMetadata(
+                RecordListParentSceSynthInvokeListEvent.recordListConfirm,
+                metadata: EventMetadata(
+                    data: payloadJSON(.signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("command", command)),
+                    eventType: .externalEvent,
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListConfirmPayload(wallTime: wallTime, counter: counter, command: command)
                 )
             )
         )
@@ -6738,32 +5530,14 @@ extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListEdit(id: UInt32, field: UInt16, value: Int64, text: String, now: Int64, more: Bool) {
+    public func raiseRecordListEdit(id: UInt32, field: UInt16, value: Int64, text: String, now: Int64, more: Bool, command: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 RecordListParentSceSynthInvokeListEvent.recordListEdit,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("value", value), .text("text", text), .signed64("now", now), .truth("more", more)),
+                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("value", value), .text("text", text), .signed64("now", now), .truth("more", more), .unsigned64("command", command)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListEditPayload(id: id, field: field, value: value, text: text, now: now, more: more)
-                )
-            )
-        )
-    }
-
-    /// Raises `record_list.floor` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListFloor(before: Int64, hash: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListFloor,
-                metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before), .integer("hash", hash)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListFloorPayload(before: before, hash: hash)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListEditPayload(id: id, field: field, value: value, text: text, now: now, more: more, command: command)
                 )
             )
         )
@@ -6774,68 +5548,78 @@ extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListJoin(node: UInt64, hub: Bool) {
+    public func raiseRecordListJoin(node: UInt64, journal: Bool) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 RecordListParentSceSynthInvokeListEvent.recordListJoin,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("node", node), .truth("hub", hub)),
+                    data: payloadJSON(.unsigned64("node", node), .truth("journal", journal)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListJoinPayload(node: node, hub: hub)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListJoinPayload(node: node, journal: journal)
                 )
             )
         )
     }
 
-    /// Raises `record_list.keep` with its payload, binding the event and the payload's
+    /// Raises `record_list.raise` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListKeep(kind: UInt8, element: UInt64, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
+    public func raiseRecordListRaise(wallTime: Int64, counter: UInt32, command: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListKeep,
+                RecordListParentSceSynthInvokeListEvent.recordListRaise,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("kind", kind), .unsigned64("element", element), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId)),
+                    data: payloadJSON(.signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("command", command)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListKeepPayload(kind: kind, element: element, wallTime: wallTime, counter: counter, nodeId: nodeId)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListRaisePayload(wallTime: wallTime, counter: counter, command: command)
                 )
             )
         )
     }
 
-    /// Raises `record_list.node` with its payload, binding the event and the payload's
+    /// Raises `record_list.recall` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListNode(sender: UInt64, to: UInt64, depth: UInt8, prefix: UInt64, hash: UInt32, reply: Bool) {
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseRecordListRecall(by: UInt64, wallTime: Int64, counter: UInt32, ops: [RecordListParentSceSynthInvokeListOpRecord], command: UInt64, provisional: Bool) throws {
+        try checkList("ops", ops, least: 1, bound: 64, { scePath0, sceValue0 in try checkText(scePath0 + "/text", sceValue0.text, bound: 96) })
+        let scePayload = RecordListParentSceSynthInvokeListRecordListRecallPayload(by: by, wallTime: wallTime, counter: counter, ops: ops, command: command, provisional: provisional)
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListNode,
+                RecordListParentSceSynthInvokeListEvent.recordListRecall,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("sender", sender), .unsigned64("to", to), .integer("depth", depth), .unsigned64("prefix", prefix), .integer("hash", hash), .truth("reply", reply)),
+                    data: recordJSON([PayloadPair.json("by", rawJSON: WireValue.unsigned64(scePayload.by).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(scePayload.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(scePayload.counter)).json), PayloadPair.json("ops", rawJSON: listJSON(scePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })), PayloadPair.json("command", rawJSON: WireValue.unsigned64(scePayload.command).json), PayloadPair.json("provisional", rawJSON: WireValue.truth(scePayload.provisional).json)]),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListNodePayload(sender: sender, to: to, depth: depth, prefix: prefix, hash: hash, reply: reply)
+                    typedPayload: scePayload
                 )
             )
         )
     }
 
-    /// Raises `record_list.propose` with its payload, binding the event and the payload's
+    /// Raises `record_list.restore` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListPropose(before: Int64) {
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseRecordListRestore(by: UInt64, wallTime: Int64, counter: UInt32, ops: [RecordListParentSceSynthInvokeListOpRecord]) throws {
+        try checkList("ops", ops, least: 1, bound: 64, { scePath0, sceValue0 in try checkText(scePath0 + "/text", sceValue0.text, bound: 96) })
+        let scePayload = RecordListParentSceSynthInvokeListRecordListRestorePayload(by: by, wallTime: wallTime, counter: counter, ops: ops)
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListPropose,
+                RecordListParentSceSynthInvokeListEvent.recordListRestore,
                 metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before)),
+                    data: recordJSON([PayloadPair.json("by", rawJSON: WireValue.unsigned64(scePayload.by).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(scePayload.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(scePayload.counter)).json), PayloadPair.json("ops", rawJSON: listJSON(scePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) }))]),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListProposePayload(before: before)
+                    typedPayload: scePayload
                 )
             )
         )
@@ -6846,14 +5630,14 @@ extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListRetire(id: UInt32, now: Int64, more: Bool) {
+    public func raiseRecordListRetire(id: UInt32, now: Int64, more: Bool, command: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 RecordListParentSceSynthInvokeListEvent.recordListRetire,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .signed64("now", now), .truth("more", more)),
+                    data: payloadJSON(.integer("id", id), .signed64("now", now), .truth("more", more), .unsigned64("command", command)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListRetirePayload(id: id, now: now, more: more)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListRetirePayload(id: id, now: now, more: more, command: command)
                 )
             )
         )
@@ -6895,91 +5679,37 @@ extension Engine where Policy == RecordListParentSceSynthInvokeListPolicy {
         )
     }
 
-    /// Raises `record_list.settle` with its payload, binding the event and the payload's
+    /// Raises `record_list.verdict` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListSettle(before: Int64, members: UInt32) {
+    public func raiseRecordListVerdict(wallTime: Int64, counter: UInt32, outcome: RecordListParentSceSynthInvokeListOutcomeEnum, reason: RecordListParentSceSynthInvokeListRefusalEnum?) {
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListSettle,
+                RecordListParentSceSynthInvokeListEvent.recordListVerdict,
                 metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before), .integer("members", members)),
+                    data: payloadJSON(.signed64("wallTime", wallTime), .integer("counter", counter), .text("outcome", outcome.declaredName), .raw("reason", json: optionalJSON(reason) { WireValue.text($0.declaredName).json })),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListSettlePayload(before: before, members: members)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListVerdictPayload(wallTime: wallTime, counter: counter, outcome: outcome, reason: reason)
                 )
             )
         )
     }
 
-    /// Raises `record_list.share` with its payload, binding the event and the payload's
+    /// Raises `record_list.withdraw` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListShare(to: UInt64, minute: UInt64) {
+    public func raiseRecordListWithdraw(wallTime: Int64, counter: UInt32, command: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListShare,
+                RecordListParentSceSynthInvokeListEvent.recordListWithdraw,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("to", to), .unsigned64("minute", minute)),
+                    data: payloadJSON(.signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("command", command)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListSharePayload(to: to, minute: minute)
-                )
-            )
-        )
-    }
-
-    /// Raises `record_list.supersede` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListSupersede(id: UInt32, field: UInt16, wallTime: Int64, counter: UInt32, nodeId: UInt64, by: UInt64, parts: UInt32, atWallTime: Int64, atCounter: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListSupersede,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId), .unsigned64("by", by), .integer("parts", parts), .signed64("atWallTime", atWallTime), .integer("atCounter", atCounter)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListSupersedePayload(id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, by: by, parts: parts, atWallTime: atWallTime, atCounter: atCounter)
-                )
-            )
-        )
-    }
-
-    /// Raises `record_list.visit` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListVisit(to: UInt64, depth: UInt8, prefix: UInt64, reply: Bool) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListVisit,
-                metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("to", to), .integer("depth", depth), .unsigned64("prefix", prefix), .truth("reply", reply)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListVisitPayload(to: to, depth: depth, prefix: prefix, reply: reply)
-                )
-            )
-        )
-    }
-
-    /// Raises `record_list.write` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListWrite(id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64, parts: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentSceSynthInvokeListEvent.recordListWrite,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("value", value), .text("text", text), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId), .integer("parts", parts)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentSceSynthInvokeListRecordListWritePayload(id: id, field: field, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId, parts: parts)
+                    typedPayload: RecordListParentSceSynthInvokeListRecordListWithdrawPayload(wallTime: wallTime, counter: counter, command: command)
                 )
             )
         )
@@ -6999,10 +5729,10 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
-            revised: "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
-            format2First: "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
-            format2Revised: "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
+            first: "54ae020ce3da36cbee2cb77e732b4a4d1632678b6aeefc2b1779783ccc1103af",
+            revised: "4bdb42f302b58cee24b7a9a585b8c61922676c367d9f9d9e2a85a4479016f03f",
+            format2First: "c6779279e566c8bceb786919ac42a1b6e825b9906726e5ea2e9970ab8dd06ac2",
+            format2Revised: "6de25742cdda2d2175b8af7453fd27733dbd4b9a54c816dcdeaa0a1c5375c98d",
             records: [
                 SavedRecordLineage(
                     event: "merge.hlc_timestamp", revision: 1,
@@ -7014,16 +5744,9 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
                     holders: [
                         SavedRecordHolder(variable: "clock", list: false),
                         SavedRecordHolder(variable: "stamp", list: false),
-                    ]),
-                SavedRecordLineage(
-                    event: "merge.merkle_node", revision: 1,
-                    revisions: [],
-                    added: [
-                    ],
-                    widened: [
-                    ],
-                    holders: [
-                        SavedRecordHolder(variable: "digest", list: true),
+                        SavedRecordHolder(variable: "dot", list: false),
+                        SavedRecordHolder(variable: "offeredAt", list: false),
+                        SavedRecordHolder(variable: "closedAt", list: false),
                     ]),
                 SavedRecordLineage(
                     event: "merge.mv_value", revision: 1,
@@ -7047,21 +5770,8 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
                     ],
                     holders: [
                         SavedRecordHolder(variable: "adds", list: true),
-                        SavedRecordHolder(variable: "tombstones", list: true),
                         SavedRecordHolder(variable: "one", list: true),
-                        SavedRecordHolder(variable: "stable", list: true),
                         SavedRecordHolder(variable: "entry", list: false),
-                    ]),
-                SavedRecordLineage(
-                    event: "record_list.answer", revision: 1,
-                    revisions: [],
-                    added: [
-                    ],
-                    widened: [
-                    ],
-                    holders: [
-                        SavedRecordHolder(variable: "answers", list: true),
-                        SavedRecordHolder(variable: "answer", list: false),
                     ]),
                 SavedRecordLineage(
                     event: "record_list.member", revision: 1,
@@ -7074,7 +5784,31 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
                         SavedRecordHolder(variable: "roster", list: true),
                     ]),
                 SavedRecordLineage(
-                    event: "record_list.part", revision: 1,
+                    event: "record_list.op", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "taking", list: true),
+                        SavedRecordHolder(variable: "op", list: false),
+                        SavedRecordHolder(variable: "offered", list: true),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.provisional", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "provisional", list: true),
+                        SavedRecordHolder(variable: "provisionalKept", list: true),
+                        SavedRecordHolder(variable: "standing", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.staged", revision: 1,
                     revisions: [],
                     added: [
                     ],
@@ -7082,12 +5816,19 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
                     ],
                     holders: [
                         SavedRecordHolder(variable: "staged", list: true),
-                        SavedRecordHolder(variable: "taking", list: true),
-                        SavedRecordHolder(variable: "passing", list: true),
-                        SavedRecordHolder(variable: "waiting", list: true),
-                        SavedRecordHolder(variable: "kept", list: true),
-                        SavedRecordHolder(variable: "part", list: false),
-                        SavedRecordHolder(variable: "op", list: false),
+                        SavedRecordHolder(variable: "staging", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.undo", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "undo", list: true),
+                        SavedRecordHolder(variable: "undoKept", list: true),
+                        SavedRecordHolder(variable: "undoing", list: false),
                     ]),
             ],
             enums: [
@@ -7098,15 +5839,21 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
                     ],
                     holders: [
                         SavedEnumHolder(variable: "namedKind", field: nil, list: false),
+                        SavedEnumHolder(variable: "provisional", field: "kind", list: true),
+                        SavedEnumHolder(variable: "provisionalKept", field: "kind", list: true),
+                        SavedEnumHolder(variable: "standing", field: "kind", list: false),
                     ]),
                 SavedEnumLineage(
-                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 1,
-                    revisions: [],
+                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 2,
+                    revisions: ["3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8"],
                     added: [
+                        SavedAddedVariant(name: "peerRefused", since: 2),
                     ],
                     holders: [
                         SavedEnumHolder(variable: "probe", field: nil, list: false),
                         SavedEnumHolder(variable: "spoiledFor", field: nil, list: false),
+                        SavedEnumHolder(variable: "refusedFor", field: nil, list: false),
+                        SavedEnumHolder(variable: "closedFor", field: nil, list: false),
                     ]),
             ])
     }
@@ -7116,39 +5863,21 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
             SavedEntry("node", SavedValues.of(vNode)),
-            SavedEntry("hub", SavedValues.of(vHub)),
+            SavedEntry("journal", SavedValues.of(vJournal)),
             SavedEntry("clock", vClock.toSaved()),
             SavedEntry("stamp", vStamp.toSaved()),
+            SavedEntry("dot", vDot.toSaved()),
             SavedEntry("adds", SavedValues.list(vAdds) { $0.toSaved() }),
-            SavedEntry("tombstones", SavedValues.list(vTombstones) { $0.toSaved() }),
             SavedEntry("one", SavedValues.list(vOne) { $0.toSaved() }),
-            SavedEntry("stable", SavedValues.list(vStable) { $0.toSaved() }),
             SavedEntry("entry", vEntry.toSaved()),
             SavedEntry("values", SavedValues.list(vValues) { $0.toSaved() }),
             SavedEntry("held", vHeld.toSaved()),
-            SavedEntry("digest", SavedValues.list(vDigest) { $0.toSaved() }),
-            SavedEntry("mine", SavedValues.of(vMine)),
             SavedEntry("shareId", SavedValues.of(vShareId)),
             SavedEntry("shareField", SavedValues.of(vShareField)),
-            SavedEntry("known", SavedValues.of(vKnown)),
             SavedEntry("wasLive", SavedValues.of(vWasLive)),
-            SavedEntry("isLive", SavedValues.of(vIsLive)),
             SavedEntry("present", SavedValues.of(vPresent)),
             SavedEntry("refusals", SavedValues.of(vRefusals)),
-            SavedEntry("floor", SavedValues.of(vFloor)),
-            SavedEntry("stale", SavedValues.of(vStale)),
-            SavedEntry("late", SavedValues.of(vLate)),
-            SavedEntry("frozenFor", SavedValues.of(vFrozenFor)),
-            SavedEntry("frozenHash", SavedValues.of(vFrozenHash)),
-            SavedEntry("pending", SavedValues.of(vPending)),
-            SavedEntry("members", SavedValues.of(vMembers)),
-            SavedEntry("agreeing", SavedValues.of(vAgreeing)),
-            SavedEntry("answers", SavedValues.list(vAnswers) { $0.toSaved() }),
-            SavedEntry("answer", vAnswer.toSaved()),
-            SavedEntry("agreed", SavedValues.of(vAgreed)),
             SavedEntry("roomValues", SavedValues.of(vRoomValues)),
-            SavedEntry("roomHistory", SavedValues.of(vRoomHistory)),
-            SavedEntry("roomDigest", SavedValues.of(vRoomDigest)),
             SavedEntry("full", SavedValues.of(vFull)),
             SavedEntry("roster", SavedValues.list(vRoster) { $0.toSaved() }),
             SavedEntry("denied", SavedValues.of(vDenied)),
@@ -7162,6 +5891,7 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
             SavedEntry("ordinal", SavedValues.of(vOrdinal)),
             SavedEntry("empty", vEmpty.toSaved()),
             SavedEntry("staged", SavedValues.list(vStaged) { $0.toSaved() }),
+            SavedEntry("staging", vStaging.toSaved()),
             SavedEntry("holding", SavedValues.of(vHolding)),
             SavedEntry("closingNow", SavedValues.of(vClosingNow)),
             SavedEntry("spoiled", SavedValues.of(vSpoiled)),
@@ -7176,14 +5906,24 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
             SavedEntry("namedKind", SavedValues.of(vNamedKind)),
             SavedEntry("taking", SavedValues.list(vTaking) { $0.toSaved() }),
             SavedEntry("took", SavedValues.of(vTook)),
-            SavedEntry("passing", SavedValues.list(vPassing) { $0.toSaved() }),
-            SavedEntry("passed", SavedValues.of(vPassed)),
-            SavedEntry("waiting", SavedValues.list(vWaiting) { $0.toSaved() }),
-            SavedEntry("kept", SavedValues.list(vKept) { $0.toSaved() }),
-            SavedEntry("part", vPart.toSaved()),
             SavedEntry("op", vOp.toSaved()),
-            SavedEntry("already", SavedValues.of(vAlready)),
-            SavedEntry("count", SavedValues.of(vCount)),
+            SavedEntry("restoring", SavedValues.of(vRestoring)),
+            SavedEntry("tentative", SavedValues.of(vTentative)),
+            SavedEntry("closingCommand", SavedValues.of(vClosingCommand)),
+            SavedEntry("offered", SavedValues.list(vOffered) { $0.toSaved() }),
+            SavedEntry("offeredAt", vOfferedAt.toSaved()),
+            SavedEntry("refusedFor", SavedValues.of(vRefusedFor)),
+            SavedEntry("closedOps", SavedValues.of(vClosedOps)),
+            SavedEntry("closedFor", SavedValues.optional(vClosedFor) { SavedValues.of($0) }),
+            SavedEntry("closedAt", vClosedAt.toSaved()),
+            SavedEntry("provisional", SavedValues.list(vProvisional) { $0.toSaved() }),
+            SavedEntry("provisionalKept", SavedValues.list(vProvisionalKept) { $0.toSaved() }),
+            SavedEntry("standing", vStanding.toSaved()),
+            SavedEntry("provisionalFound", SavedValues.of(vProvisionalFound)),
+            SavedEntry("withdrawFrom", SavedValues.of(vWithdrawFrom)),
+            SavedEntry("undo", SavedValues.list(vUndo) { $0.toSaved() }),
+            SavedEntry("undoKept", SavedValues.list(vUndoKept) { $0.toSaved() }),
+            SavedEntry("undoing", vUndoing.toSaved()),
         ]
     }
 
@@ -7191,144 +5931,130 @@ extension RecordListParentSceSynthInvokeListPolicy: SavedPolicy {
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
         let value0 = try SavedValues.uint64(try saved.variable("node"), "node")
-        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
+        let value1 = try SavedValues.bool(try saved.variable("journal"), "journal")
         let value2 = try RecordListParentSceSynthInvokeListHlcRecord.fromSaved(try saved.variable("clock"), "clock")
         let value3 = try RecordListParentSceSynthInvokeListHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
-        let value4 = try SavedValues.list(try saved.variable("adds"), "adds", capacity: 1024) { e, w in try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(e, w) }
-        let value5 = try SavedValues.list(try saved.variable("tombstones"), "tombstones", capacity: 1024) { e, w in try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(e, w) }
+        let value4 = try RecordListParentSceSynthInvokeListHlcRecord.fromSaved(try saved.variable("dot"), "dot")
+        let value5 = try SavedValues.list(try saved.variable("adds"), "adds", capacity: 1024) { e, w in try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(e, w) }
         let value6 = try SavedValues.list(try saved.variable("one"), "one", capacity: 1024) { e, w in try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(e, w) }
-        let value7 = try SavedValues.list(try saved.variable("stable"), "stable", capacity: 1024) { e, w in try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(e, w) }
-        let value8 = try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(try saved.variable("entry"), "entry")
-        let value9 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
-        let value10 = try RecordListParentSceSynthInvokeListValueRecord.fromSaved(try saved.variable("held"), "held")
-        let value11 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try RecordListParentSceSynthInvokeListNodeRecord.fromSaved(e, w) }
-        let value12 = try SavedValues.uint32(try saved.variable("mine"), "mine")
-        let value13 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
-        let value14 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
-        let value15 = try SavedValues.bool(try saved.variable("known"), "known")
-        let value16 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
-        let value17 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
-        let value18 = try SavedValues.bool(try saved.variable("present"), "present")
-        let value19 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
-        let value20 = try SavedValues.int64(try saved.variable("floor"), "floor")
-        let value21 = try SavedValues.bool(try saved.variable("stale"), "stale")
-        let value22 = try SavedValues.uint32(try saved.variable("late"), "late")
-        let value23 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
-        let value24 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
-        let value25 = try SavedValues.int64(try saved.variable("pending"), "pending")
-        let value26 = try SavedValues.uint32(try saved.variable("members"), "members")
-        let value27 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
-        let value28 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListAnswerRecord.fromSaved(e, w) }
-        let value29 = try RecordListParentSceSynthInvokeListAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
-        let value30 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
-        let value31 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
-        let value32 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
-        let value33 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
-        let value34 = try SavedValues.uint32(try saved.variable("full"), "full")
-        let value35 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListMemberRecord.fromSaved(e, w) }
-        let value36 = try SavedValues.uint32(try saved.variable("denied"), "denied")
-        let value37 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
-        let value38 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
-        let value39 = try SavedValues.bool(try saved.variable("announce"), "announce")
-        let value40 = try SavedValues.uint32(try saved.variable("announced"), "announced")
-        let value41 = try SavedValues.list(try saved.variable("moved"), "moved", capacity: 64) { e, w in try SavedValues.uint64(e, w) }
-        let value42 = try SavedValues.bool(try saved.variable("listed"), "listed")
-        let value43 = try SavedValues.list(try saved.variable("live"), "live", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
-        let value44 = try SavedValues.uint32(try saved.variable("ordinal"), "ordinal")
-        let value45 = try RecordListParentSceSynthInvokeListValueRecord.fromSaved(try saved.variable("empty"), "empty")
-        let value46 = try SavedValues.list(try saved.variable("staged"), "staged", capacity: 32) { e, w in try RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
-        let value47 = try SavedValues.bool(try saved.variable("holding"), "holding")
-        let value48 = try SavedValues.int64(try saved.variable("closingNow"), "closingNow")
-        let value49 = try SavedValues.bool(try saved.variable("spoiled"), "spoiled")
-        let value50 = try SavedValues.bool(try saved.variable("probing"), "probing")
-        let value51 = try SavedValues.uint32(try saved.variable("gone"), "gone")
-        let value52 = try SavedValues.uint32(try saved.variable("writes"), "writes")
-        let value53 = try SavedValues.bool(try saved.variable("covered"), "covered")
-        let value54 = try SavedValues.enumeration(try saved.variable("probe"), "probe", as: RecordListParentSceSynthInvokeListRefusalEnum.self)
-        let value55 = try SavedValues.enumeration(try saved.variable("spoiledFor"), "spoiledFor", as: RecordListParentSceSynthInvokeListRefusalEnum.self)
-        let value56 = try SavedValues.uint32(try saved.variable("namedId"), "namedId")
-        let value57 = try SavedValues.uint16(try saved.variable("namedField"), "namedField")
-        let value58 = try SavedValues.enumeration(try saved.variable("namedKind"), "namedKind", as: RecordListParentSceSynthInvokeListCommandEnum.self)
-        let value59 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
-        let value60 = try SavedValues.uint32(try saved.variable("took"), "took")
-        let value61 = try SavedValues.list(try saved.variable("passing"), "passing", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
-        let value62 = try SavedValues.uint32(try saved.variable("passed"), "passed")
-        let value63 = try SavedValues.list(try saved.variable("waiting"), "waiting", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
-        let value64 = try SavedValues.list(try saved.variable("kept"), "kept", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
-        let value65 = try RecordListParentSceSynthInvokeListPartRecord.fromSaved(try saved.variable("part"), "part")
-        let value66 = try RecordListParentSceSynthInvokeListPartRecord.fromSaved(try saved.variable("op"), "op")
-        let value67 = try SavedValues.bool(try saved.variable("already"), "already")
-        let value68 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value7 = try RecordListParentSceSynthInvokeListEntryRecord.fromSaved(try saved.variable("entry"), "entry")
+        let value8 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
+        let value9 = try RecordListParentSceSynthInvokeListValueRecord.fromSaved(try saved.variable("held"), "held")
+        let value10 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
+        let value11 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
+        let value12 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
+        let value13 = try SavedValues.bool(try saved.variable("present"), "present")
+        let value14 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value15 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
+        let value16 = try SavedValues.uint32(try saved.variable("full"), "full")
+        let value17 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListMemberRecord.fromSaved(e, w) }
+        let value18 = try SavedValues.uint32(try saved.variable("denied"), "denied")
+        let value19 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
+        let value20 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        let value21 = try SavedValues.bool(try saved.variable("announce"), "announce")
+        let value22 = try SavedValues.uint32(try saved.variable("announced"), "announced")
+        let value23 = try SavedValues.list(try saved.variable("moved"), "moved", capacity: 64) { e, w in try SavedValues.uint64(e, w) }
+        let value24 = try SavedValues.bool(try saved.variable("listed"), "listed")
+        let value25 = try SavedValues.list(try saved.variable("live"), "live", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
+        let value26 = try SavedValues.uint32(try saved.variable("ordinal"), "ordinal")
+        let value27 = try RecordListParentSceSynthInvokeListValueRecord.fromSaved(try saved.variable("empty"), "empty")
+        let value28 = try SavedValues.list(try saved.variable("staged"), "staged", capacity: 32) { e, w in try RecordListParentSceSynthInvokeListStagedRecord.fromSaved(e, w) }
+        let value29 = try RecordListParentSceSynthInvokeListStagedRecord.fromSaved(try saved.variable("staging"), "staging")
+        let value30 = try SavedValues.bool(try saved.variable("holding"), "holding")
+        let value31 = try SavedValues.int64(try saved.variable("closingNow"), "closingNow")
+        let value32 = try SavedValues.bool(try saved.variable("spoiled"), "spoiled")
+        let value33 = try SavedValues.bool(try saved.variable("probing"), "probing")
+        let value34 = try SavedValues.uint32(try saved.variable("gone"), "gone")
+        let value35 = try SavedValues.uint32(try saved.variable("writes"), "writes")
+        let value36 = try SavedValues.bool(try saved.variable("covered"), "covered")
+        let value37 = try SavedValues.enumeration(try saved.variable("probe"), "probe", as: RecordListParentSceSynthInvokeListRefusalEnum.self)
+        let value38 = try SavedValues.enumeration(try saved.variable("spoiledFor"), "spoiledFor", as: RecordListParentSceSynthInvokeListRefusalEnum.self)
+        let value39 = try SavedValues.uint32(try saved.variable("namedId"), "namedId")
+        let value40 = try SavedValues.uint16(try saved.variable("namedField"), "namedField")
+        let value41 = try SavedValues.enumeration(try saved.variable("namedKind"), "namedKind", as: RecordListParentSceSynthInvokeListCommandEnum.self)
+        let value42 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListOpRecord.fromSaved(e, w) }
+        let value43 = try SavedValues.uint32(try saved.variable("took"), "took")
+        let value44 = try RecordListParentSceSynthInvokeListOpRecord.fromSaved(try saved.variable("op"), "op")
+        let value45 = try SavedValues.bool(try saved.variable("restoring"), "restoring")
+        let value46 = try SavedValues.bool(try saved.variable("tentative"), "tentative")
+        let value47 = try SavedValues.uint64(try saved.variable("closingCommand"), "closingCommand")
+        let value48 = try SavedValues.list(try saved.variable("offered"), "offered", capacity: 64) { e, w in try RecordListParentSceSynthInvokeListOpRecord.fromSaved(e, w) }
+        let value49 = try RecordListParentSceSynthInvokeListHlcRecord.fromSaved(try saved.variable("offeredAt"), "offeredAt")
+        let value50 = try SavedValues.enumeration(try saved.variable("refusedFor"), "refusedFor", as: RecordListParentSceSynthInvokeListRefusalEnum.self)
+        let value51 = try SavedValues.uint32(try saved.variable("closedOps"), "closedOps")
+        let value52 = try SavedValues.optional(try saved.variable("closedFor"), "closedFor") { e, w in try SavedValues.enumeration(e, w, as: RecordListParentSceSynthInvokeListRefusalEnum.self) }
+        let value53 = try RecordListParentSceSynthInvokeListHlcRecord.fromSaved(try saved.variable("closedAt"), "closedAt")
+        let value54 = try SavedValues.list(try saved.variable("provisional"), "provisional", capacity: 8) { e, w in try RecordListParentSceSynthInvokeListProvisionalRecord.fromSaved(e, w) }
+        let value55 = try SavedValues.list(try saved.variable("provisionalKept"), "provisionalKept", capacity: 8) { e, w in try RecordListParentSceSynthInvokeListProvisionalRecord.fromSaved(e, w) }
+        let value56 = try RecordListParentSceSynthInvokeListProvisionalRecord.fromSaved(try saved.variable("standing"), "standing")
+        let value57 = try SavedValues.bool(try saved.variable("provisionalFound"), "provisionalFound")
+        let value58 = try SavedValues.uint32(try saved.variable("withdrawFrom"), "withdrawFrom")
+        let value59 = try SavedValues.list(try saved.variable("undo"), "undo", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListUndoRecord.fromSaved(e, w) }
+        let value60 = try SavedValues.list(try saved.variable("undoKept"), "undoKept", capacity: 512) { e, w in try RecordListParentSceSynthInvokeListUndoRecord.fromSaved(e, w) }
+        let value61 = try RecordListParentSceSynthInvokeListUndoRecord.fromSaved(try saved.variable("undoing"), "undoing")
         return { [self] in
             self.vNode = value0
-            self.vHub = value1
+            self.vJournal = value1
             self.vClock = value2
             self.vStamp = value3
-            self.vAdds = value4
-            self.vTombstones = value5
+            self.vDot = value4
+            self.vAdds = value5
             self.vOne = value6
-            self.vStable = value7
-            self.vEntry = value8
-            self.vValues = value9
-            self.vHeld = value10
-            self.vDigest = value11
-            self.vMine = value12
-            self.vShareId = value13
-            self.vShareField = value14
-            self.vKnown = value15
-            self.vWasLive = value16
-            self.vIsLive = value17
-            self.vPresent = value18
-            self.vRefusals = value19
-            self.vFloor = value20
-            self.vStale = value21
-            self.vLate = value22
-            self.vFrozenFor = value23
-            self.vFrozenHash = value24
-            self.vPending = value25
-            self.vMembers = value26
-            self.vAgreeing = value27
-            self.vAnswers = value28
-            self.vAnswer = value29
-            self.vAgreed = value30
-            self.vRoomValues = value31
-            self.vRoomHistory = value32
-            self.vRoomDigest = value33
-            self.vFull = value34
-            self.vRoster = value35
-            self.vDenied = value36
-            self.vForbidden = value37
-            self.vAuthorized = value38
-            self.vAnnounce = value39
-            self.vAnnounced = value40
-            self.vMoved = value41
-            self.vListed = value42
-            self.vLive = value43
-            self.vOrdinal = value44
-            self.vEmpty = value45
-            self.vStaged = value46
-            self.vHolding = value47
-            self.vClosingNow = value48
-            self.vSpoiled = value49
-            self.vProbing = value50
-            self.vGone = value51
-            self.vWrites = value52
-            self.vCovered = value53
-            self.vProbe = value54
-            self.vSpoiledFor = value55
-            self.vNamedId = value56
-            self.vNamedField = value57
-            self.vNamedKind = value58
-            self.vTaking = value59
-            self.vTook = value60
-            self.vPassing = value61
-            self.vPassed = value62
-            self.vWaiting = value63
-            self.vKept = value64
-            self.vPart = value65
-            self.vOp = value66
-            self.vAlready = value67
-            self.vCount = value68
+            self.vEntry = value7
+            self.vValues = value8
+            self.vHeld = value9
+            self.vShareId = value10
+            self.vShareField = value11
+            self.vWasLive = value12
+            self.vPresent = value13
+            self.vRefusals = value14
+            self.vRoomValues = value15
+            self.vFull = value16
+            self.vRoster = value17
+            self.vDenied = value18
+            self.vForbidden = value19
+            self.vAuthorized = value20
+            self.vAnnounce = value21
+            self.vAnnounced = value22
+            self.vMoved = value23
+            self.vListed = value24
+            self.vLive = value25
+            self.vOrdinal = value26
+            self.vEmpty = value27
+            self.vStaged = value28
+            self.vStaging = value29
+            self.vHolding = value30
+            self.vClosingNow = value31
+            self.vSpoiled = value32
+            self.vProbing = value33
+            self.vGone = value34
+            self.vWrites = value35
+            self.vCovered = value36
+            self.vProbe = value37
+            self.vSpoiledFor = value38
+            self.vNamedId = value39
+            self.vNamedField = value40
+            self.vNamedKind = value41
+            self.vTaking = value42
+            self.vTook = value43
+            self.vOp = value44
+            self.vRestoring = value45
+            self.vTentative = value46
+            self.vClosingCommand = value47
+            self.vOffered = value48
+            self.vOfferedAt = value49
+            self.vRefusedFor = value50
+            self.vClosedOps = value51
+            self.vClosedFor = value52
+            self.vClosedAt = value53
+            self.vProvisional = value54
+            self.vProvisionalKept = value55
+            self.vStanding = value56
+            self.vProvisionalFound = value57
+            self.vWithdrawFrom = value58
+            self.vUndo = value59
+            self.vUndoKept = value60
+            self.vUndoing = value61
         }
     }
 }

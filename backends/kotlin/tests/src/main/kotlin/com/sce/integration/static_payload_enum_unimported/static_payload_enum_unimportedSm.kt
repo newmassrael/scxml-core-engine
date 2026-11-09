@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum_unimported.scxml
@@ -34,7 +34,7 @@ sealed interface StaticPayloadEnumUnimportedEvent : Event {
 // StaticPayloadEnumUnimportedRecordListRefusedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.refused`. Consumers inject it via the `raiseRecordListRefused` seam
 // on the machine — they never name this class directly.
-data class StaticPayloadEnumUnimportedRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: StaticPayloadEnumUnimportedRecordCommandEnum, val reason: StaticPayloadEnumUnimportedWhyEnum)
+data class StaticPayloadEnumUnimportedRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: StaticPayloadEnumUnimportedRecordCommandEnum, val reason: StaticPayloadEnumUnimportedWhyEnum, val command: ULong, val withdrawn: Boolean)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
@@ -46,7 +46,8 @@ enum class StaticPayloadEnumUnimportedWhyEnum(val declaredName: String) {
     NO_ROOM_FOR_DIGEST("noRoomForDigest"),
     CHANGE_TOO_LARGE("changeTooLarge"),
     REGISTER_NAMED_TWICE("registerNamedTwice"),
-    CLOCK_EXHAUSTED("clockExhausted");
+    CLOCK_EXHAUSTED("clockExhausted"),
+    PEER_REFUSED("peerRefused");
 
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
@@ -60,6 +61,7 @@ enum class StaticPayloadEnumUnimportedWhyEnum(val declaredName: String) {
         CHANGE_TOO_LARGE -> 6u.toUByte()
         REGISTER_NAMED_TWICE -> 7u.toUByte()
         CLOCK_EXHAUSTED -> 8u.toUByte()
+        PEER_REFUSED -> 9u.toUByte()
     }
 
     companion object {
@@ -103,13 +105,13 @@ enum class StaticPayloadEnumUnimportedRecordCommandEnum(val declaredName: String
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Refused` datamodel value. */
-data class StaticPayloadEnumUnimportedRefusedRecord(val id: UInt, val field: UShort, val kind: StaticPayloadEnumUnimportedRecordCommandEnum, val reason: StaticPayloadEnumUnimportedWhyEnum) {
+data class StaticPayloadEnumUnimportedRefusedRecord(val id: UInt, val field: UShort, val kind: StaticPayloadEnumUnimportedRecordCommandEnum, val reason: StaticPayloadEnumUnimportedWhyEnum, val command: ULong, val withdrawn: Boolean) {
     /** This value as a saved state writes it. */
-    fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "field" to SavedValues.of(field), "kind" to kind.toSaved(), "reason" to reason.toSaved())
+    fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "field" to SavedValues.of(field), "kind" to kind.toSaved(), "reason" to reason.toSaved(), "command" to SavedValues.of(command), "withdrawn" to SavedValues.of(withdrawn))
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): StaticPayloadEnumUnimportedRefusedRecord = StaticPayloadEnumUnimportedRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = StaticPayloadEnumUnimportedRecordCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = StaticPayloadEnumUnimportedWhyEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"))
+        fun fromSaved(value: Any?, what: String): StaticPayloadEnumUnimportedRefusedRecord = StaticPayloadEnumUnimportedRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = StaticPayloadEnumUnimportedRecordCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = StaticPayloadEnumUnimportedWhyEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"), command = SavedValues.uint64(SavedValues.field(value, what, "command"), "$what.command"), withdrawn = SavedValues.bool(SavedValues.field(value, what, "withdrawn"), "$what.withdrawn"))
     }
 }
 // --- State Machine (W3C SCXML) ---
@@ -233,9 +235,11 @@ class StaticPayloadEnumUnimportedStateMachine(
         records = listOf(
             RecordLineage(
                 event = "record_list.refused",
-                revision = 1,
-                revisions = listOf(),
+                revision = 2,
+                revisions = listOf("d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"),
                 added = listOf(
+                    AddedField("command", 2, "\"0\""),
+                    AddedField("withdrawn", 2, "false"),
                 ),
                 widened = listOf(
                 ),
@@ -257,9 +261,10 @@ class StaticPayloadEnumUnimportedStateMachine(
             ),
             EnumLineage(
                 key = "enum:sce:std/shared/record_refusal.scxml",
-                revision = 1,
-                revisions = listOf(),
+                revision = 2,
+                revisions = listOf("3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8"),
                 added = listOf(
+                    AddedVariant("peerRefused", 2),
                 ),
                 holders = listOf(
                     EnumHolder("last", null, false),
@@ -381,8 +386,8 @@ class StaticPayloadEnumUnimportedStateMachine(
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticPayloadEnumUnimportedEvent.RecordList.Refused) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRefusedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> StaticPayloadEnumUnimportedRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> StaticPayloadEnumUnimportedWhyEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "Why") })
+                    val fields = EventPayload.decode(metadata.data, "{\"command\":\"0\",\"withdrawn\":false}")
+                    pendingRecordListRefusedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> StaticPayloadEnumUnimportedRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> StaticPayloadEnumUnimportedWhyEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "Why") }, fields.uint64("command"), fields.boolean("withdrawn"))
                 }
             }
         }
@@ -391,17 +396,17 @@ class StaticPayloadEnumUnimportedStateMachine(
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.refused` — binds the event name and the payload field values in one call.
-    fun raiseRecordListRefused(id: UInt, field: UShort, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum) {
+    fun raiseRecordListRefused(id: UInt, field: UShort, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum, command: ULong, withdrawn: Boolean) {
         send(
             StaticPayloadEnumUnimportedEvent.RecordList.Refused,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(id, field, kind, reason),
+                typedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload(id, field, kind, reason, command, withdrawn),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "kind" to kind.declaredName, "reason" to reason.declaredName))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "kind" to kind.declaredName, "reason" to reason.declaredName, "command" to command, "withdrawn" to withdrawn))
             )
         )
     }
@@ -563,7 +568,7 @@ class StaticPayloadEnumUnimportedStateMachine(
 
             vRow = pendingRecordListRefusedPayload!!.id
 
-            if (if (vKept.size < 2) { vKept = vKept + (StaticPayloadEnumUnimportedRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason)); false } else { true }) {
+            if (if (vKept.size < 2) { vKept = vKept + (StaticPayloadEnumUnimportedRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason, command = pendingRecordListRefusedPayload!!.command, withdrawn = pendingRecordListRefusedPayload!!.withdrawn)); false } else { true }) {
                 return
             }
 
