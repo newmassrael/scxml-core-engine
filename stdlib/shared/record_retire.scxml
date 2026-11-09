@@ -8,9 +8,9 @@
   `more`, whether the change goes on.
 
   The copy writes over every value it holds in any field of the row, and writes none, so
-  that once every copy has taken the change in and the copies have settled past it, the
-  row takes no room anywhere: its values and adds go at once, and its tombstones at the
-  settle. What the copy has not seen is not named: a value written to the row at the same
+  that once every copy has taken the change in, the row takes no room anywhere: its values
+  and adds go at once, and nothing is kept of them (docs/adr/0085, section 2.2). What the
+  copy has not seen is not named: a value written to the row at the same
   time by someone who had not seen the retire stays, on every copy, and the row then holds
   the fields such writes gave it and no others, which the statechart that invoked the list
   is told. A retire is a command of a change as an edit is (record_edit); a change that

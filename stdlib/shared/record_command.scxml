@@ -13,7 +13,7 @@
   - `retire`: record_list.retire (record_retire), every register of the row `id`
     written over.
 
-  The numbers are the ones the list numbers a staged command by (record_part's `kind`),
+  The numbers are the ones the list numbers a staged command by (record_staged's `kind`),
   so `Command.fromNumber` of a staged command's kind is the command it is.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
