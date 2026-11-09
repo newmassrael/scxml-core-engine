@@ -57,7 +57,7 @@ if (SCE_EXPECT_TRUE({{ action.cond_cpp_transformed }})) {
 if (SCE_EXPECT_TRUE({{ action.cond_cpp }})) {
 {% elif model.needs_script_engine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-this->ensureScriptEngine();
+this->assertScriptSession();
 auto& scriptEngine = getScriptEngine();
 if (SCE_EXPECT_TRUE(this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ action.cond | to_script_source_guard }}, engine, condFailed))) {
 {% else %}

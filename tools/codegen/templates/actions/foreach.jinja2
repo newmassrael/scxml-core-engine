@@ -75,7 +75,7 @@
 {% if action.actions and action.actions | length > 0 %}
 {
     // Execute foreach: array={{ action.array }}, item={{ action.item }}, index={{ action.index }}
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
     ::SCE::Core::ForeachOutcome foreachOutcome = ::SCE::Core::ForeachHelper::executeForeachWithActions(
@@ -150,7 +150,7 @@
 }
 {% else %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithoutBody(
         scriptEngine, sessionId_.value(),

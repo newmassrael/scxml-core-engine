@@ -33,7 +33,7 @@
 }
 {% elif action.sendidexpr %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto sendidResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.sendidexpr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(sendidResult)) {

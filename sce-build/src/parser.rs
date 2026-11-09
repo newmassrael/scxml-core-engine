@@ -11179,7 +11179,7 @@ mod tests {
         // `evaluateExpression` unconditionally, so `parse_invoke` must
         // flip `needs_script_engine` on every document that carries a
         // `MeshRpcTarget::SrcExpr`. Without the flag the generated code
-        // references a missing `ensureScriptEngine()` helper.
+        // references a missing `assertScriptSession()` helper.
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s">
                 <invoke type="sce:mesh-rpc" srcexpr="'#motor'">

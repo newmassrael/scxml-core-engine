@@ -18,7 +18,7 @@
 {{ indent }}bool {{ flag }} = true;
 {%- if invoke_info.idlocation %}
 {{ indent }}{
-{{ indent }}    ensureScriptEngine();
+{{ indent }}    assertScriptSession();
 {{ indent }}    {{ flag }} = ::SCE::AssignmentExecutionHelper::storeIdInLocation(
 {{ indent }}        getScriptEngine(), sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }}, {{ id_expr }},
 {{ indent }}        [&engine](const std::string &error) {

@@ -314,7 +314,7 @@ fn a_machine_with_no_data_model_names_no_engine() {
             .filter(|line| {
                 line.contains("sm->L")
                     || line.contains("luaL_dostring(")
-                    || line.contains("ensureScriptEngine();")
+                    || line.contains("assertScriptSession();")
                     || line.contains("ensure_script_engine();")
             })
             .collect();

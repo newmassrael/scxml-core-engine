@@ -313,7 +313,7 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
     }
     let read = at(&header, "if (!context.readModuleParameters(");
     let bound = at(&header, "machine_.bindTestContext(context);");
-    let started = at(&header, "machine_.initialize();");
+    let started = at(&header, "static_cast<void>(machine_.initialize());");
     assert!(
         bound < read && read < started,
         "the parameters are read after the context is bound and before the machine starts"

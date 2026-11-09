@@ -61,8 +61,8 @@ PY
 
 mutation_case "a hand-off wears a C++ raw string" <<'PY'
 edit("tools/codegen/templates/scriptengine_helpers.jinja2",
-     "scriptEngine.evaluateExpression(sessionId_.value(), {{ var.content | to_script_source_data_content }}).get();",
-     'scriptEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();')
+     'scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.content | to_script_source_data_content }},',
+     'scriptEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content | escape_cpp }})",')
 PY
 
 # ── The callee sits further away than the window reached ───────────

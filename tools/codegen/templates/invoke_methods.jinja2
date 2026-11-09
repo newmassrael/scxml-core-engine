@@ -26,7 +26,7 @@
 
                         // Step 1: Validate namelist variables before creating child
                         {
-                            ensureScriptEngine();
+                            assertScriptSession();
                             auto& scriptEngine = getScriptEngine();
 
                             bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
@@ -210,7 +210,7 @@
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
                         {% else %}
                         {
-                            ensureScriptEngine();
+                            assertScriptSession();
                             auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
                                 {% if child_keeps %}
@@ -249,6 +249,49 @@
                         {% endfor %}
                         {% endif %}
 {% endmacro %}
+{#
+    W3C SCXML B.1: the script engine the child in `slot` runs its datamodel in,
+    handed to it before anything asks for it. A parent with a script engine
+    hands the child its own, so a host that injected one engine reaches every
+    session of the tree through it; a parent without one hands the build's.
+#}
+{% macro hand_child_script_engine(slot, model) %}
+{% if model.needs_script_engine %}
+                        {{ slot }}->setScriptEngine(scriptEngine_);
+{% else %}
+                        {{ slot }}->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                            &::SCE::ScriptEngineProvider::getScriptEngine(),
+                            [](::SCE::IScriptEngine*){}));
+{% endif %}
+{% endmacro %}
+{#
+    docs/adr/0096: start the child in `slot`, the session the invoke
+    `invoke_info` is starting, which establishes its script session as the
+    first step of its start. A child whose session cannot be established is
+    not started and not kept: its Mesh router is told the session ended, it
+    leaves `activeInvokes_` and its slot, and the invoke ends without a child,
+    with error.execution on this session's internal queue naming the invoke and
+    the step that failed, and no done.invoke — the path a `src` or a namelist
+    that cannot be read takes (§scxml-6.4). `invoke_named` is the C++
+    expression naming the invoke: the id it was started under for one that
+    keeps it in an `idlocation`, the document's id otherwise.
+#}
+{% macro start_child_or_refuse(invoke_info, slot, invoke_named, model) %}
+                        if (const auto refused = {{ slot }}->initialize()) {
+                            SCE_LOG_ERROR("<invoke id='{}'> did not start its child: {}", {{ invoke_named }},
+                                          refused->describe());
+                            {{ slot }}->detachMesh();
+                            activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+                            {{ slot }}.reset();
+{% if 'error.execution' in model.events %}
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                                std::string("<invoke id='") + {{ invoke_named }} +
+                                "'> did not start: its child's script session failed at step '" +
+                                ::SCE::scriptSessionStageName(refused->stage) + "'"));
+{% endif %}
+                            return;
+                        }
+{% endmacro %}
 {% macro hybrid_child_start(invoke_info, child, cpp_ns_prefix, child_type, slot, model) %}
                         // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency).
                         // SCE_MESH §14 arch-debt #4 caveat: partition-naive
@@ -267,13 +310,11 @@
                         // the ones that engine invoked.
                         {{ slot }}->setClock(engine.clock());
 
-                        // W3C SCXML B.1: Forward the build-configured script
-                        // engine to the child before initialize() — generated
+                        // W3C SCXML B.1: Forward the script engine to the child
+                        // before initialize() — generated
                         // Policy::getScriptEngine() throws when unset.
                         {% if child.child_needs_script_engine %}
-                        {{ slot }}->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                            &::SCE::ScriptEngineProvider::getScriptEngine(),
-                            [](::SCE::IScriptEngine*){}));
+{{ hand_child_script_engine(slot, model) }}
                         {% endif %}
 
 {{ invoke_seed_child(invoke_info, child, slot, model) }}
@@ -301,7 +342,7 @@
                         engine.startChildMesh(*{{ slot }}, "{{ invoke_info.invoke_id }}", "{% if invoke_info.candidates %}{{ child.stem | escape_cpp }}{% endif %}");
 
                         // W3C SCXML 6.4: Initialize child state machine
-                        {{ slot }}->initialize();
+{{ start_child_or_refuse(invoke_info, slot, '"' ~ (invoke_info.invoke_id | escape_cpp) ~ '"', model) }}
                         if ({{ slot }}->isInFinalState()) {
                             // The session ended as it began: its Mesh router
                             // is told so.
@@ -410,16 +451,12 @@
                         // the ones that engine invoked.
                         child_{{ invoke_info.field_suffix }}_->setClock(engine.clock());
 
-                        // W3C SCXML B.1: Forward the build-configured script engine
-                        // to the child BEFORE namelist/params evaluation. The
-                        // child's setParamInScriptEngine() and downstream
-                        // initialize() both consult Policy::getScriptEngine(),
-                        // which throws when unset. Aliasing shared_ptr + no-op
-                        // deleter: lifetime is owned by ScriptEngineProvider.
+                        // W3C SCXML B.1: Forward the script engine to the child
+                        // before its initialize(), which establishes the child's
+                        // script session in it through Policy::getScriptEngine(),
+                        // which throws when unset.
                         {% if invoke_info.child_needs_script_engine %}
-                        child_{{ invoke_info.field_suffix }}_->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                            &::SCE::ScriptEngineProvider::getScriptEngine(),
-                            [](::SCE::IScriptEngine*){}));
+{{ hand_child_script_engine("child_" ~ invoke_info.field_suffix ~ "_", model) }}
                         {% endif %}
 
 {{ invoke_seed_child(invoke_info, invoke_info, "child_" ~ invoke_info.field_suffix ~ "_", model) }}
@@ -460,7 +497,7 @@
                         engine.startChildMesh(*child_{{ invoke_info.field_suffix }}_, "{{ invoke_info.invoke_id }}", "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name | escape_cpp }}{% endif %}");
 
                         // W3C SCXML 6.4: Initialize child state machine
-                        child_{{ invoke_info.field_suffix }}_->initialize();
+{{ start_child_or_refuse(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_", "pending.invokeId" if invoke_info.idlocation else ('"' ~ (invoke_info.invoke_id | escape_cpp) ~ '"'), model) }}
                         if (child_{{ invoke_info.field_suffix }}_->isInFinalState()) {
                             // The session ended as it began: its Mesh router
                             // is told so.
@@ -511,7 +548,7 @@
                         {% elif invoke_info.srcexpr %}
                         // W3C SCXML 6.4.3: Evaluate srcexpr at runtime (validation only — child is pre-generated AOT)
                         {
-                            ensureScriptEngine();
+                            assertScriptSession();
                             auto& scriptEngine = getScriptEngine();
                             auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
@@ -544,7 +581,7 @@
                         {% elif invoke_info.contentexpr %}
                         // W3C SCXML 6.4.2: Evaluate contentexpr at runtime (validation only — child is pre-generated AOT)
                         {
-                            ensureScriptEngine();
+                            assertScriptSession();
                             auto& scriptEngine = getScriptEngine();
                             auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
@@ -626,7 +663,7 @@
                         // other invoke kinds follow: an attribute that cannot
                         // be evaluated starts nothing, and a `<param>` that
                         // cannot is reported and left out (W3C SCXML 5.7.1).
-                        ensureScriptEngine();
+                        assertScriptSession();
                         auto& hostScript = getScriptEngine();
 {% endif %}
 {% if invoke_info.idlocation %}
@@ -1292,7 +1329,7 @@
             // Single Source of Truth for finalize execution shared with Interpreter
             std::string eventName = this->getEventName(eventWithMeta.event);
 
-            this->ensureScriptEngine();
+            this->assertScriptSession();
             auto& scriptEngine = getScriptEngine();
 
             ::SCE::FinalizeHelper::executeFinalizeWithEvent(

@@ -71,71 +71,38 @@
         basicHttpAccessUri_ = ::std::move(accessUri);
     }
 
-    // Helper: Ensure JSEngine is initialized (lazy initialization)
-    void ensureScriptEngine() const {
-        if (scriptEngineInitialized_) return;
-        ensureSessionId();
-        if (!sessionId_.has_value()) return;
-        auto& scriptEngine = getScriptEngine();
-        scriptEngine.createSession(sessionId_.value());
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper the Interpreter uses, so a machine reads the same entry
-        // names and the same addresses whichever engine runs it.
-        auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
-        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_cpp }}", ioProcessors).get();
-        if (!setupResult.isSuccess()) {
-            SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
-        }
-
-{# W3C SCXML 5.3: one block per declaration, so the local is not named after
-   the variable. A `<data id>` is an XML name — `screen-rules` is legal — and
-   was spelled into `initExpr_<id>` here, which is no C++ identifier; the id
-   reaches this code only as the string the engine keys the variable by. #}
-{% for var in model.variables %}
-{% if var.expr or var.content or var.type == 'runtime' %}
-        {
-{% if var.expr %}
-            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.expr | to_script_source_expr }}).get();
-{% elif var.content %}
-            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.content | to_script_source_data_content }}).get();
-{% else %}
-            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), "undefined").get();
-{% endif %}
-            if (!::SCE::ScriptResultUtils::isSuccess(initExpr)) {
-                SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id | escape_cpp_format }}");
-            } else {
-                scriptEngine.setVariable(sessionId_.value(), "{{ var.id | escape_cpp }}", initExpr.getInternalValue());
-            }
-        }
-{% endif %}
-{% endfor %}
-
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Register state query callback for In() predicate support
-        // ARCHITECTURE.md All-or-Nothing Strategy: Static AOT engines cannot hold StateMachine*
-        // pointers (no base class). Callback mechanism provides In() capability while maintaining
-        // compile-time static structure. isStateActive() uses InPredicateHelper for shared logic.
-        scriptEngine.setStateQueryCallback(
-            [this](const std::string& stateId) { return this->isStateActive(stateId); },
-            sessionId_.value()
-        );
-        AOT_DEBUG("AOT ensureScriptEngine: Registered state query callback for In() predicate");
-{% endif %}
-
-        scriptEngineInitialized_ = true;
+    // docs/adr/0096: the script session this machine's executable content runs
+    // in was established by its start (`initializeDataModel`), and a start
+    // whose session could not be established was refused before anything
+    // could reach here. Reaching here without one is a defect of the generated
+    // code, not a condition of the run.
+    void assertScriptSession() const {
+        assert(scriptEngineInitialized_ &&
+               "the script session is established by the start, before any executable content runs");
     }
 
     // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter)
-    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution if failed
-    // Called during StaticExecutionEngine::initialize() to ensure proper error event timing
+    // W3C SCXML 5.2/5.3 + docs/adr/0096: establish the script session, then
+    // initialize the datamodel in it, raising error.execution for a `<data>` or
+    // a top-level `<script>` that fails. Called from
+    // StaticExecutionEngine::initialize() and enterAt(), the first step of
+    // either, before any state is entered.
+    //
+    // This is the one place a session is made. It is three steps: create it
+    // (which loads the shared library into it), then bind the system
+    // variables. The session is named by the session's id (docs/adr/0045). A
+    // step that fails releases what the steps before it made and is the
+    // answer, so the start is refused with nothing half done.
     template <typename Engine>
-    void initializeDataModel([[maybe_unused]] Engine& engine) {
-        if (scriptEngineInitialized_) return;
+    [[nodiscard]] std::optional<::SCE::ScriptSessionFailure> initializeDataModel([[maybe_unused]] Engine& engine) {
+        if (scriptEngineInitialized_) return std::nullopt;
         ensureSessionId();
-        if (!sessionId_.has_value()) return;
         auto& scriptEngine = getScriptEngine();
-        scriptEngine.createSession(sessionId_.value());
+        if (auto failure = scriptEngine.createSessionChecked(sessionId_.value())) {
+            SCE_LOG_ERROR("AOT initializeDataModel: the script session '{}' could not be created: {}",
+                          sessionId_.value(), failure->describe());
+            return failure;
+        }
 
         // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
         // same helper the Interpreter uses, so a machine reads the same entry
@@ -144,7 +111,10 @@
         auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_cpp }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
+            scriptEngine.destroySession(sessionId_.value());
+            return ::SCE::ScriptSessionFailure{::SCE::ScriptSessionStage::SystemVariables, setupResult.getErrorMessage()};
         }
+        scriptEngineInitialized_ = true;
 {% if not model.variables and not (model.states.values() | selectattr('datamodel') | list) and not model.global_scripts %}
         // No variables or scripts to initialize
 {% endif %}
@@ -221,6 +191,21 @@
 {% endif %}
 {% endif %}
 
+        // §scxml-6.4.3: the invoke params the parent handed this session, applied
+        // after the `<data>` above so that each overrides the default its `<data>`
+        // gave, and before the top-level `<script>`, which reads the datamodel
+        // the invocation started it with. The parent hands them before this
+        // session's start (`setParamValueInScriptEngine`) and this session
+        // applies them, so the child's session is made by the child.
+        for (auto& [paramName, paramValue] : pendingParams_) {
+            auto applied = scriptEngine.setVariable(sessionId_.value(), paramName, paramValue).get();
+            if (!applied.isSuccess()) {
+                SCE_LOG_ERROR("AOT initializeDataModel: invoke param '{}' was not applied: {}", paramName,
+                              applied.getErrorMessage());
+            }
+        }
+        pendingParams_.clear();
+
 {% if model.global_scripts %}
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
         // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp execution order)
@@ -249,6 +234,6 @@
         AOT_DEBUG("AOT initializeDataModel: Registered state query callback for In() predicate");
 {% endif %}
 
-        scriptEngineInitialized_ = true;
+        return std::nullopt;
     }
 {% endif %}

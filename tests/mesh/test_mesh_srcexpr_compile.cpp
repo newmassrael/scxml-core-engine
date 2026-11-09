@@ -23,7 +23,7 @@
 //     per-field_suffix match is never paired with a real site.
 //   * `calling_runtime` — `srcexpr="target_name"` reads the
 //     datamodel variable and emits the full entry/exit srcexpr block
-//     including `ensureScriptEngine()`, `evaluateExpression(...)`,
+//     including `assertScriptSession()`, `evaluateExpression(...)`,
 //     `std::regex_match(...)`, the `_mesh_resolved_src_<suffix>_`
 //     stash, and the paired `performMeshCancel(resolved, ...)`.
 //

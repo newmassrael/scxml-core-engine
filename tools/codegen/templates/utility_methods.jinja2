@@ -45,9 +45,12 @@
         return *result;
     }
 
-    // §scxml-6.4.3: seed a `<data>` this session declares with the value the
-    // INVOKING session produced for an `<invoke>` `<param>` or namelist
-    // location.
+    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location, to seed the
+    // `<data>` of that name. The parent calls it before this session's start,
+    // and the start applies it once the session is established and its
+    // `<data>` initialized (`initializeDataModel`): the parent does not make
+    // this session's script session on its own stack (docs/adr/0096).
     //
     // This side only stores. It used to take the author's expression TEXT and
     // evaluate it here, which asks a different question — what does this
@@ -60,8 +63,7 @@
     // invoking session all along, so this is the AOT half catching up to a
     // reference that was already in the tree.
     void setParamValueInScriptEngine(const std::string& paramName, const ::ScriptValue& paramValue) {
-        ensureScriptEngine();
-        getScriptEngine().setVariable(sessionId_.value(), paramName, paramValue);
+        pendingParams_.emplace_back(paramName, paramValue);
     }
 {% endif %}
 
@@ -233,7 +235,7 @@ public:
                                 [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
 {% if model.needs_script_engine and (model.needs_event_name or model.needs_event_data) %}
         if (eventName.empty()) return ::SCE::PayloadReading::Absent;
-        ensureScriptEngine();
+        assertScriptSession();
         // §scxml-5.10.1: the caller hands the type the engine decided at
         // dequeue (`pendingEventType_`). It is empty only for a document that
         // never reads `_event.type`, where the name's own class is all that is

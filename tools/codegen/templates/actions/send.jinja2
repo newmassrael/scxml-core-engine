@@ -67,7 +67,7 @@ std::string contentText;  // the `<content expr>` value as the text a host takes
 // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
 {% if model.needs_script_engine or model.needs_event_origin %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     bool success = ::SCE::NamelistHelper::evaluateNamelist(
         scriptEngine, sessionId_.value(), "{{ action.namelist }}",
@@ -129,7 +129,7 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string({
 {{ param_eval_failed(param, '') }}
 {% elif model.needs_script_engine or model.needs_event_origin %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
@@ -167,7 +167,7 @@ eventData = contentData;
 // An expression of the document, evaluated now; the analysis counted it, so
 // the machine carries the engine.
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& contentScriptEngine = getScriptEngine();
     ::SCE::DoneDataHelper::evaluateContent(
         contentScriptEngine,
@@ -232,7 +232,7 @@ typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 // still goes, carrying "", and — like a failing <param> — the error ends the
 // block once it has (§scxml-4.9), which `paramFailed` is read for below.
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& contentScriptEngine = getScriptEngine();
     bool contentFailed = false;
     ::SCE::DoneDataHelper::evaluateContent(
@@ -392,7 +392,7 @@ ensureSessionId();
 // id is an argument that cannot be evaluated (W3C SCXML 5.9.2).
 {% if has_script %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     if (!::SCE::AssignmentExecutionHelper::storeIdInLocation(
             scriptEngine, sessionId_.value(), {{ action.idlocation | to_script_source_location }}, sendId,
@@ -412,7 +412,7 @@ ensureSessionId();
 std::string dynamicType;
 {% if has_script %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto typeResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.typeexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(typeResult)) {
@@ -455,7 +455,7 @@ if (eventName.empty()) {
 }
 {% elif has_script %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto eventResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.eventexpr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(eventResult)) {
@@ -503,7 +503,7 @@ std::string dynamicTarget;
 }
 {% elif has_script %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto targetResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.targetexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
@@ -564,7 +564,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 }
 {% elif has_script %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto delayResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.delayexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(delayResult)) {

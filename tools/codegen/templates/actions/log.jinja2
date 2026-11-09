@@ -16,7 +16,7 @@
 {% elif action.expr %}
 {% if model.needs_script_engine %}
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     auto logResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.expr | to_script_source_expr }}).get();
     if (::SCE::ScriptResultUtils::isSuccess(logResult)) {

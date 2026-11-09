@@ -1794,7 +1794,13 @@ struct TransportRouter {
                 &::SCE::ScriptEngineProvider::getScriptEngine(),
                 [](::SCE::IScriptEngine*){}));
 
-            adapter->engine().initialize();
+            // docs/adr/0096: a child whose script session cannot be
+            // established is not started. It is a failed bring-up, reported
+            // over the wire as one that threw is, and not registered.
+            if (const auto refused = adapter->engine().initialize()) {
+                reportFailedBringUp(invoke_uuid, invoke_id_str, session_id, refused->describe(), send_ctp);
+                return;
+            }
 
             if (adapter->isFinal()) {
                 emitWire18(*adapter, send_ctp);

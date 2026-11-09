@@ -64,7 +64,7 @@ public:
     template <typename Engine>
     void bindCurrentEvent([[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
 {%- if model.needs_script_engine %}
-        this->ensureScriptEngine();
+        this->assertScriptSession();
 {%- endif %}
 {%- if model.needs_event_name or model.needs_event_type %}
         if (event != Event()) {
@@ -117,7 +117,7 @@ public:
    match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
 {% if trans.cond or trans.native_guard %}
 {% if model.needs_script_engine and not trans.is_cpp_condition and not trans.is_pure_in_predicate and not trans.native_guard %}
-                this->ensureScriptEngine();
+                this->assertScriptSession();
                 [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
                 if ({{ guard_expr(trans) }}) {
@@ -161,7 +161,7 @@ public:
                 {
                     AOT_DEBUG("AOT executeTransitionActions: {{ state_id }} transition {{ trans.transition_index }}");
 {% if model.needs_script_engine %}
-                    this->ensureScriptEngine();
+                    this->assertScriptSession();
                     [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test

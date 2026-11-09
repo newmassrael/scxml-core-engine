@@ -7,7 +7,7 @@
 {% else %}
 // W3C SCXML 5.8: <script> via JSEngine
 {
-    this->ensureScriptEngine();
+    this->assertScriptSession();
     auto& scriptEngine = getScriptEngine();
     {% if action.content %}
     auto scriptResult = scriptEngine.executeScript(sessionId_.value(), {{ action.content | to_script_source_script }}).get();

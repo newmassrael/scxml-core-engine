@@ -261,7 +261,13 @@
 {% if model.needs_script_engine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
+// docs/adr/0096: the start establishes the script session or answers why it
+// could not, and what runs after it asserts the session is there.
+#include "common/ScriptSessionFailure.h"
+#include <cassert>
 #include <optional>
+#include <utility>
+#include <vector>
 #include "common/Logger.h"
 {% if model.invokes %}
 // W3C SCXML B.1: invoke child needs the build-configured engine handle
@@ -762,7 +768,12 @@ struct {{ model.name }}Policy {
     mutable ::std::optional<::std::string> sessionId_;
     {% endif %}
     {% if model.needs_script_engine %}
+    // docs/adr/0096: whether the start established the script session.
     mutable bool scriptEngineInitialized_ = false;
+    // §scxml-6.4.3: the invoke params the parent handed this session, which its
+    // start applies once its session is established and its `<data>`
+    // initialized.
+    std::vector<std::pair<std::string, ::ScriptValue>> pendingParams_;
     {% endif %}
     {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name storage for _event.name access (test318)
@@ -1013,7 +1024,9 @@ struct {{ model.name }}Policy {
            the engine is an `<invoke>` (a `sce-static` relay that starts a
            child) has no such call to make. #}
         {% if model.needs_script_engine %}
-        if (sessionId_.has_value()) {
+        // docs/adr/0096: only a start that established the session made one; a
+        // refused start released what it made before it answered.
+        if (scriptEngineInitialized_ && sessionId_.has_value()) {
             auto& scriptEngine = getScriptEngine();
             scriptEngine.destroySession(sessionId_.value());
         }
@@ -1219,10 +1232,10 @@ public:
 {% endif %}
 
 {% if model.needs_script_engine %}
-    // §scxml-6.4.3: wrapper for seeding an invoke param's VALUE into this
-    // session's data model (delegates to policy). The parent calls it on the
-    // child instance right after construction, which is why it lives on the
-    // machine rather than only on the policy.
+    // §scxml-6.4.3: wrapper for handing this session an invoke param's VALUE,
+    // which its start applies to its data model (delegates to policy). The
+    // parent calls it on the child instance right after construction, which is
+    // why it lives on the machine rather than only on the policy.
     void setParamValueInScriptEngine(const std::string& paramName, const ::ScriptValue& paramValue) {
         this->policy_.setParamValueInScriptEngine(paramName, paramValue);
     }
@@ -1697,7 +1710,12 @@ public:
                 }
                 return ::std::nullopt;
             });
-        machine_.initialize();
+        // A test component's datamodel is the static one (§11.2), so it has no
+        // script session whose failure could refuse its start (docs/adr/0096):
+        // the start answers nothing, which the assertion holds at compile time.
+        static_assert(!decltype(machine_)::START_MAY_BE_REFUSED,
+                      "a test component has no script session whose failure could refuse its start");
+        static_cast<void>(machine_.initialize());
     }
 
     // §3.2 step 3: the round's snapshot, on which the machine takes the first

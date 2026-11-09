@@ -2118,6 +2118,10 @@ add_executable(integration_tests
     integration/AChildReplyArrivesWithoutATickAotTest.cpp
     integration/AChildMaySendManyEventsInOneTickTest.cpp
     integration/AChildMaySendManyEventsInOneTickAotTest.cpp
+    # docs/adr/0096: the same machine over a script engine double that fails
+    # each step of establishing a session on request; a start it refuses
+    # enters nothing, and a child it refuses leaves its parent no child.
+    integration/AMachineWhoseScriptSessionFailsDoesNotStartAotTest.cpp
     integration/AnErrorInsideAForeachEndsItsBlockTest.cpp
     integration/AnErrorInsideAForeachEndsItsBlockAotTest.cpp
     integration/AnErrorEndsTheBlockItWasRaisedInTest.cpp
@@ -4691,7 +4695,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # srcexpr code sat "built but unconsumed" — the member declaration
     # was even trapped inside the scxml/hybrid guard until this session
     # moved it out. Compile-only test with sce_scripting linked so the
-    # generated `ensureScriptEngine()` + `evaluateExpression(...)` calls
+    # generated `assertScriptSession()` + `evaluateExpression(...)` calls
     # resolve without pulling a concrete engine at runtime.
     set(MESH_SRCEXPR_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_generated")
 
@@ -4716,8 +4720,8 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_SRCEXPR_OUTPUT_DIR}
     )
 
-    # The generated srcexpr entry block calls `ensureScriptEngine()`,
-    # which resolves through `ScriptEngineProvider::getScriptEngine()` in
+    # The generated srcexpr entry block evaluates in the script session the
+    # machine's start established, whose engine resolves through `ScriptEngineProvider::getScriptEngine()` in
     # sce_scripting — the tier this links, and nothing above it. It used
     # to link sce_runtime as well, because the scripting tier called back
     # into it (EventRaiserService, Event, StateMachine) and naming the
@@ -4751,7 +4755,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     #
     # Same linkage as mesh_srcexpr_compile_test (sce_base +
     # sce_scripting + sce_mesh_common): the script engine that
-    # ensureScriptEngine() pulls in, and no interpreter.
+    # machine's start establishes its session in, and no interpreter.
     set(MESH_SRCEXPR_MISS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_miss_generated")
 
     # The client with the deploy, the phantom binding's stub without one.

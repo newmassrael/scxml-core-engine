@@ -352,8 +352,11 @@ def emit_statechart_api(interface_path, target_path, interface, target, machine_
         a("        });")
     for i, ev in enumerate(events):
         a(f"        mEvents[{i}] = Policy::getEventFromName({cpp_string(ev)});")
+    a("        // A pure static machine has no script session whose failure could refuse")
+    a("        // its start (docs/adr/0096), so the start answers nothing.")
+    a("        static_assert(!Machine::START_MAY_BE_REFUSED, \"a static machine's start cannot be refused\");")
     a("        // What the machine sent on the way in belongs to no round.")
-    a("        mMachine.initialize();")
+    a("        static_cast<void>(mMachine.initialize());")
     a("        mSends.clear();")
     a("    }")
     for line in (f"{cls}(const {cls}&) = delete;", f"{cls}& operator=(const {cls}&) = delete;",
