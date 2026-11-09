@@ -106,7 +106,7 @@ impl StatePolicy for SessionPolicy {
     // cannot be established.
     type StartFailure = ScriptSessionFailure;
 
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[
             // root
             StateRow::new(None, StateKind::Compound, StateId(2), Some(TransitionId(1))),
