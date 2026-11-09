@@ -22,6 +22,19 @@ edit("sce-build/src/forge/static_datamodel.rs",
         Ok::<Option<u32>, crate::forge::value_type::Misfit>(None).map_err(''')
 PY
 
+# A scalar of a payload whose schema also holds a list is taken for one no schema
+# declares: the payload's scope is read off the view of one entry per field again,
+# which such a schema has none of.
+mutation_case "a scalar param of a payload that holds a list has no payload in scope" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     r'''        if crate::forge::expr::references_event_data_lexically(written)
+            && !self.payload_declared.get()
+        {''',
+     r'''        if crate::forge::expr::references_event_data_lexically(written)
+            && self.payload_schema.borrow().is_none()
+        {''')
+PY
+
 # A value that names no place is taken for the place it is not.
 mutation_case "a value that names no place is sent" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",

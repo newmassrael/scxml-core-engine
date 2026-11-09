@@ -303,9 +303,15 @@ fn a_value_that_may_not_fit_is_refused_naming_the_field_and_the_place() {
 }
 
 /// A statechart that holds the variables `data` and, on `go`, sends
-/// `counted.sent` (whose `kept` is a `list<uint8>[1..2]`, event_counted.scxml)
-/// with `kept` given by `expr`.
+/// `counted.sent` (whose `kept` is a `list<uint8>[1..2]` and `hops` a `uint8`,
+/// event_counted.scxml) with `kept` given by `expr` and `hops` by 1.
 fn counted_sender(data: &str, expr: &str) -> String {
+    counted_send(data, "go", expr, "1")
+}
+
+/// A statechart that holds the variables `data` and, on the event `on`, sends
+/// `counted.sent` with `kept` given by `kept` and `hops` by `hops`.
+fn counted_send(data: &str, on: &str, kept: &str, hops: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -315,15 +321,51 @@ fn counted_sender(data: &str, expr: &str) -> String {
     {data}
   </datamodel>
   <state id="idle">
-    <transition event="go" target="idle">
+    <transition event="{on}" target="idle">
       <send event="counted.sent" target="#_internal">
-        <param name="kept" expr="{expr}"/>
+        <param name="kept" expr="{kept}"/>
+        <param name="hops" expr="{hops}"/>
       </send>
     </transition>
   </state>
 </scxml>
 "##
     )
+}
+
+/// Pinned by `Judge::wire_param` (`sce-build/src/forge/static_datamodel.rs`),
+/// which puts a payload in scope for a scalar `<param>` where the transition's
+/// event declares a schema at all: a scalar field of a schema that also holds
+/// a list is a typed scalar like any other, and is sent on every backend that
+/// sends a composed value, beside the list forwarded by its name. Where the
+/// event declares no schema, a read of the payload is still refused.
+#[test]
+fn a_scalar_of_a_payload_that_holds_a_list_is_sent_as_any_scalar() {
+    let forward = counted_send("", "counted.sent", "_event.data.kept", "_event.data.hops");
+    for (language, row) in checked_backends() {
+        if row.sends {
+            let (ok, out) = run(&["check", "-l", language], &forward);
+            assert!(
+                ok,
+                "{language} forwards a scalar of a payload that holds a list:\n{out}"
+            );
+        }
+    }
+    let unscoped = counted_send(
+        r#"<data id="held" sce:type="list&lt;uint8&gt;[2]"/>"#,
+        "go",
+        "held",
+        "_event.data.hops",
+    );
+    let (ok, out) = run(&["check", "-l", "rust"], &unscoped);
+    assert!(
+        !ok,
+        "`go` declares no schema, so no payload is in scope:\n{out}"
+    );
+    assert!(
+        out.contains("the triggering event's payload is read only in a transition"),
+        "{out}"
+    );
 }
 
 /// Pinned by `fits_but_for_count` (`sce-build/src/forge/value_type.rs`), which
