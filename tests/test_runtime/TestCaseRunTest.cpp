@@ -19,7 +19,9 @@
 #include <utility>
 #include <vector>
 
+#include "saved/SavedJson.h"
 #include "saved/SavedValues.h"
+#include "test/Canonical.h"
 #include "test/Suite.h"
 #include "test/TestCaseRun.h"
 
@@ -86,6 +88,20 @@ struct Machines {
     }
 };
 
+/// A record that holds no field.
+struct Empty {};
+
+/// The canonical form of a message whose record holds no field.
+SCE::Saved::JsonValue noFields(const Empty &) {
+    return SCE::Saved::JsonValue(SCE::Saved::JsonObject{});
+}
+
+/// A message of the record `event` that holds no field: `{}` in the test log,
+/// of the record type `empty`.
+Message message(const std::string &event) {
+    return Message{event, SCE::Test::messageValue(Empty{}, "empty", noFields)};
+}
+
 /// A system adapter that replays a trace and records what was sent to it.
 class TraceAdapter : public SystemAdapter {
 public:
@@ -111,7 +127,7 @@ public:
     std::vector<std::pair<std::string, Message>> takeInputsDue(Instant now) override {
         std::vector<std::pair<std::string, Message>> due;
         while (next_ < trace_.size() && trace_[next_].at <= now) {
-            due.emplace_back(trace_[next_].systemPort, Message{trace_[next_].event, {}});
+            due.emplace_back(trace_[next_].systemPort, message(trace_[next_].event));
             ++next_;
         }
         return due;
@@ -123,10 +139,6 @@ private:
     std::vector<Input> trace_;
     std::size_t next_ = 0;
 };
-
-Message message(const std::string &event) {
-    return Message{event, {}};
-}
 
 bool logged(const TestCaseResult &result, const std::string &component, LogKind kind) {
     for (const auto &record : result.log) {
@@ -399,10 +411,12 @@ TEST(TestCaseRunTest, AReceiveWithATemplateMatchesOnlyItsRecordsValue) {
             std::vector<std::pair<std::string, Message>> due;
             if (now == 0 && !given_) {
                 given_ = true;
-                due.emplace_back("sut", Message{"number", std::string("7")});
-                due.emplace_back("sut", Message{"other", 7});
-                due.emplace_back("sut", Message{"number", 6});
-                due.emplace_back("sut", Message{"number", 7});
+                const auto written = [](const std::string &text) { return SCE::Test::Canonical::text(text); };
+                const auto number = [](const int &n) { return SCE::Test::Canonical::integer(n); };
+                due.emplace_back("sut", Message{"number", SCE::Test::messageValue(std::string("7"), "text", written)});
+                due.emplace_back("sut", Message{"other", SCE::Test::messageValue(7, "number", number)});
+                due.emplace_back("sut", Message{"number", SCE::Test::messageValue(6, "number", number)});
+                due.emplace_back("sut", Message{"number", SCE::Test::messageValue(7, "number", number)});
             }
             return due;
         }
@@ -625,6 +639,142 @@ TEST(TestSuiteRun, ATestCaseWithNoSystemAdapterIsAnError) {
         SCE::Test::runSuite(suite, {}, [](const std::string &) -> std::unique_ptr<SystemAdapter> { return nullptr; });
     ASSERT_EQ(results.size(), 1u);
     EXPECT_EQ(results[0].result.verdict, Verdict::Error);
+}
+
+// ── The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3) ─
+//
+// Each record written where the semantics places its event, in the order the
+// rounds produce them, and the whole log in its one canonical text. The twins
+// are the Rust runtime's, module `the_test_log` of
+// backends/rust/runtime/tests/a_test_case_runs_as_the_test_profile_says.rs,
+// whose logs these are byte for byte.
+
+/// An MTC and its echo, joined `p` to `q`; the MTC has two timers.
+Configuration pinging() {
+    Configuration configuration;
+    configuration.mtcType = "Tester";
+    configuration.ptcTypes = {{"echo", "Echo"}};
+    configuration.portsOfType = {{"Tester", {"p"}}, {"Echo", {"q"}}};
+    configuration.timersOfType = {{"Tester", {"t", "s"}}};
+    configuration.connections = {{{"mtc", "p"}, {"echo", "q"}}};
+    return configuration;
+}
+
+/// The ping's value, a record of one number of the record type `ping`, as the
+/// unit of a template over it writes it.
+Message ping(std::uint32_t n) {
+    return Message{"ping", SCE::Test::messageValue(n, "ping", [](const std::uint32_t &held) {
+                       return SCE::Test::Canonical::record({{"n", SCE::Test::Canonical::integer(held)}});
+                   })};
+}
+
+/// The MTC creates the echo, pings it, starts two timers and logs; at the first
+/// timer's timeout it stops the second, and the first again, which no longer
+/// runs, and passes. The echo takes the ping, passes with a reason, and
+/// terminates.
+Machines pingingMachines() {
+    Machines machines;
+    machines.types["Tester"] = {[](ComponentContext &context, Scripted &) {
+                                    context.create("echo");
+                                    context.send("p", ping(3));
+                                    context.startTimer("t", 10);
+                                    context.startTimer("s", 20);
+                                    context.log("asked \"echo\"");
+                                },
+                                [](ComponentContext &context, Scripted &self) {
+                                    if (context.timedOut("t")) {
+                                        context.timeout("t");
+                                        context.stopTimer("s");
+                                        context.stopTimer("t");
+                                        context.setverdict(Verdict::Pass, "");
+                                        self.end();
+                                    }
+                                }};
+    machines.types["Echo"] = {[](ComponentContext &, Scripted &) {},
+                              [](ComponentContext &context, Scripted &self) {
+                                  if (context.snapshotOf("q") != nullptr) {
+                                      context.receive("q");
+                                      context.setverdict(Verdict::Pass, "pinged");
+                                      self.end();
+                                  }
+                              }};
+    return machines;
+}
+
+/// A suite of the one test case @p testCase, named `logged_suite`.
+SCE::Test::Suite suiteOf(SCE::Test::TestCase testCase) {
+    SCE::Test::Suite suite;
+    suite.name = "logged_suite";
+    suite.executes.push_back(SCE::Test::Execute{std::move(testCase), std::nullopt, nullptr});
+    return suite;
+}
+
+/// P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the
+/// suite's runner. The echo's work comes in the round after the MTC's start, at
+/// NOW = 0, the timeout at 10; the stop of a timer that no longer runs, and the
+/// removal of the terminated echo when the MTC ends, write no record.
+TEST(TheTestLog, ARunWritesEachRecordWhereItsEventHappens) {
+    const SCE::Test::Suite suite =
+        suiteOf(SCE::Test::TestCase{"pings_the_echo", pinging(), pingingMachines().factory(), {}});
+    std::vector<std::string> built;
+    const auto results = SCE::Test::runSuite(suite, {}, tracing(built));
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(results[0].canonicalLog(suite.name),
+              "{\"records\":["
+              "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},"
+              "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\","
+              "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\","
+              "\"timer\":\"t\"},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\","
+              "\"timer\":\"s\"},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},"
+              "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\","
+              "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},"
+              "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\","
+              "\"verdict\":\"pass\"},"
+              "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},"
+              "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"t\"},"
+              "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"s\"},"
+              "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},"
+              "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},"
+              "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}"
+              "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+              "\"test_case\":\"pings_the_echo\",\"verdict\":\"pass\"}");
+}
+
+/// P13: an error the runtime sets is a verdict without the runtime's own
+/// reason, which another runtime would not write alike.
+TEST(TheTestLog, AnErrorTheRuntimeSetsIsLoggedWithoutItsCause) {
+    Machines machines;
+    machines.types["Waiter"] = {[](ComponentContext &, Scripted &) {}, [](ComponentContext &, Scripted &) {}};
+    TraceAdapter adapter;
+    const TestCaseResult result = TestCaseRun(lone("Waiter"), machines.factory(), adapter, 7).run();
+    EXPECT_EQ(result.verdict, Verdict::Error);
+    EXPECT_EQ(result.canonicalLog("logged_suite", "waits"),
+              "{\"records\":["
+              "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+              "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Waiter\"},"
+              "{\"at\":\"7\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"error\"},"
+              "{\"at\":\"7\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}"
+              "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+              "\"test_case\":\"waits\",\"verdict\":\"error\"}");
+}
+
+/// P13: a test case that cannot start, for want of an adapter, logs its start
+/// and its end alone, since no component was created.
+TEST(TheTestLog, ATestCaseThatCannotStartLogsItsStartAndEnd) {
+    const SCE::Test::Suite suite = suiteOf(SCE::Test::TestCase{"unplayed", pinging(), pingingMachines().factory(), {}});
+    const auto results =
+        SCE::Test::runSuite(suite, {}, [](const std::string &) -> std::unique_ptr<SystemAdapter> { return nullptr; });
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(results[0].canonicalLog(suite.name), "{\"records\":["
+                                                   "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                                                   "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}"
+                                                   "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+                                                   "\"test_case\":\"unplayed\",\"verdict\":\"error\"}");
 }
 
 }  // namespace

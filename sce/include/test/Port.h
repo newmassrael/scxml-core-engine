@@ -9,9 +9,12 @@
 #include <any>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+
+#include "saved/SavedJson.h"
 
 namespace SCE::Test {
 
@@ -22,16 +25,118 @@ using Instant = std::int64_t;
 /// A length of logical time, in microseconds.
 using Duration = std::int64_t;
 
+/// The writer of the canonical form of a value of `V` in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5): the `canonical` of the unit of a template
+/// over its record.
+template <typename V> using CanonicalWriter = SCE::Saved::JsonValue (*)(const V &);
+
+namespace detail {
+
+/// `T` itself, in a context no template argument is deduced from, so that a
+/// writer given as a lambda converts to the function pointer the value's type
+/// names rather than failing the deduction.
+template <typename T> struct Undeduced {
+    using type = T;
+};
+
+}  // namespace detail
+
+/**
+ * @brief A value a message carries, its type's name and its canonical form in
+ *        the test log (docs/SCE_TEST_PROFILE.md §12.5)
+ *
+ * The value is read back by its type (as()); its canonical form is written by
+ * the types its document declares (test/Canonical.h), which its C++ type alone
+ * does not say. messageValue() makes one of a value, its type's name and the
+ * writer of its form, which is what a generated send and a system adapter
+ * give.
+ *
+ * Shared rather than copied because it rides on a `HostSendRequest`, whose
+ * `value` holds it (`std::any`), and a request is copied; a value is never
+ * changed once sent, so every copy reads the same record. The Rust sibling is
+ * `sce_rust_runtime::test::MessageValue`.
+ */
+class MessageValue {
+public:
+    template <typename V>
+    MessageValue(V value, std::string typeName, typename detail::Undeduced<CanonicalWriter<V>>::type canonical)
+        : held_(std::make_shared<Held<V>>(std::move(value), canonical)), typeName_(std::move(typeName)) {}
+
+    /// The value, when it is a `V`; none when it is of another type, which a
+    /// template of `V` does not match.
+    template <typename V> const V *as() const {
+        const auto *held = dynamic_cast<const Held<V> *>(held_.get());
+        return held == nullptr ? nullptr : &held->value;
+    }
+
+    /// The value as a `V`, which the caller holds it is, as a receive branch
+    /// whose guard matched the message holds; std::bad_any_cast when it is of
+    /// another type.
+    template <typename V> const V &get() const {
+        const V *value = as<V>();
+        if (value == nullptr) {
+            throw std::bad_any_cast();
+        }
+        return *value;
+    }
+
+    /// The name of the value's record as the types module of the suite's
+    /// TTCN-3 export names it (docs/SCE_TEST_PROFILE.md §9.5): the unit name of
+    /// its `event-schema` document. A value in TCI always carries its type, and
+    /// so does a message of the test log.
+    const std::string &typeName() const {
+        return typeName_;
+    }
+
+    /// The value in the canonical form of the test log: built from texts, truth
+    /// values, arrays and objects alone (test/Canonical.h), so that the JSON
+    /// Canonicalization Scheme writes it as the same bytes on every runtime.
+    SCE::Saved::JsonValue canonical() const {
+        return held_->canonical();
+    }
+
+private:
+    struct Base {
+        virtual ~Base() = default;
+        virtual SCE::Saved::JsonValue canonical() const = 0;
+    };
+
+    template <typename V> struct Held final : Base {
+        Held(V held, CanonicalWriter<V> writer) : value(std::move(held)), write(writer) {}
+
+        SCE::Saved::JsonValue canonical() const override {
+            return write(value);
+        }
+
+        V value;
+        CanonicalWriter<V> write;
+    };
+
+    std::shared_ptr<const Base> held_;
+    std::string typeName_;
+};
+
+/// @p value as a message's value, of the record @p typeName, whose canonical
+/// form @p canonical writes: the `TYPE` and the `canonical` of the unit of a
+/// template over its record, as a generated send gives them
+/// (`<template>::TYPE`, `<template>::canonical`).
+template <typename V>
+MessageValue messageValue(V value, std::string typeName,
+                          typename detail::Undeduced<CanonicalWriter<V>>::type canonical) {
+    return MessageValue(std::move(value), std::move(typeName), canonical);
+}
+
 /**
  * @brief A message on a port: the event name of its record and the record's value
  *
- * The value is the record type the statechart generator writes for the
- * `event-schema` that declares it; a template's matcher reads it as that type.
- * Matching is on the value and never on an encoding (ADR 0091 C2).
+ * The value is of the record type the unit of its `event-schema` declares; a
+ * template's matcher reads it as that type (MessageValue::as()). Matching is on
+ * the value and never on an encoding (ADR 0091 C2), and so is the test log
+ * (MessageValue::canonical()).
  */
 struct Message {
     std::string event;
-    std::any value;
+    MessageValue value;
 };
 
 /**

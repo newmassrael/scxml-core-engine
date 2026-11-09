@@ -268,6 +268,9 @@ add_executable(sce_scxml_tests
     # The JSON Canonicalization Scheme (RFC 8785) the test log is written in
     # (docs/SCE_TEST_PROFILE.md §12.5).
     test_runtime/CanonicalJsonTest.cpp
+    # The test log's value form and records (docs/SCE_TEST_PROFILE.md §12.5),
+    # held to the schema it reads from SCE_PROJECT_ROOT.
+    test_runtime/TestLogTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
@@ -299,6 +302,12 @@ target_link_libraries(sce_scxml_tests
         sce_runtime
         GTest::gtest_main
         pthread
+)
+
+# The test log's wire schema, which TestLogTest reads its status and kinds from.
+target_compile_definitions(sce_scxml_tests
+    PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 # Apply SCE test policy (disable cout, etc.)

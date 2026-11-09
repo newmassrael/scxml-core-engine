@@ -19,9 +19,16 @@
 //! through `value_type` below an optional or a list, so an enum a nested record
 //! holds is named by the one declaration of it, whatever document imports it
 //! and under whatever alias.
+//!
+//! A template over a record also writes `TYPE` and `canonical`, the name and
+//! the canonical form of a message of it in the test log (§12.5), whose walk
+//! over the record's types every backend shares
+//! ([`super::test_template_walk::canonical_value`]); [`CppCanonical`] spells
+//! it with the writers of `test/Canonical.h`.
 
 use super::test_template_walk::{
-    integer_literal, Held, Position, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    integer_literal, CanonicalSpelling, Held, Position, TemplateFunction, TemplateSpelling,
+    TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations};
@@ -33,6 +40,13 @@ use crate::generator::Language;
 const TEXT_LENGTH_HEADER: &str = "test/Length.h";
 /// The function [`TEXT_LENGTH_HEADER`] declares.
 const TEXT_LENGTH: &str = "SCE::Test::textLength";
+
+/// The header of the test profile's runtime that declares the writers of the
+/// canonical form of a value in the test log, which the unit of a template over
+/// a record writes its `canonical` with (docs/SCE_TEST_PROFILE.md §12.5).
+const CANONICAL_HEADER: &str = "test/Canonical.h";
+/// The namespace of the writers [`CANONICAL_HEADER`] declares.
+const CANONICAL: &str = "::SCE::Test::Canonical";
 
 /// The unit of the test template `m`, whose imports are `imports`. Refused by
 /// name where the template's type or a parameter's reaches a union at any
@@ -79,6 +93,9 @@ pub(super) fn render_test_template_cpp(
     } else {
         None
     };
+    // Only a template over a record, the type of a message, writes a message's
+    // type name and its canonical form (`TemplateWalk::message_form`).
+    let (log_type, canonical_expr) = walk.message_form(&CppCanonical, &scope)?.unzip();
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("template_name".into(), m.name.clone().into());
@@ -87,6 +104,9 @@ pub(super) fn render_test_template_cpp(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
+    ctx.insert("canonical_header".into(), CANONICAL_HEADER.into());
     // The record, enum and referenced templates' units, each as the import
     // names it ([`forge_import_identity`]); a union was refused above.
     let type_includes: Vec<String> = imports.iter().map(|i| i.include_stmt.clone()).collect();
@@ -106,6 +126,112 @@ pub(super) fn render_test_template_cpp(
 /// (`Value`, `value`, `match`) or a keyword of the language.
 fn cpp_parameter(id: &str) -> String {
     format!("param_{id}")
+}
+
+/// A value the canonical writer reads, in C++.
+struct CppCanonicalAt {
+    /// What names the value: `value`, a lambda's parameter, or a field of
+    /// either; each is a `const` reference, so a field is read by `.`.
+    base: String,
+    /// How many lambdas the value stands inside: the next one's number.
+    depth: usize,
+}
+
+/// The C++ spelling of the canonical form of a value in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5): an `::SCE::Saved::JsonValue`, by the
+/// writers of [`CANONICAL`]. Which form each SCE type takes is the walk's
+/// ([`super::test_template_walk::canonical_value`]). A value inside a list or
+/// an optional field is bound by a generic lambda the writer calls; an enum's
+/// declared name and number are read by the free functions its unit declares
+/// beside it (`declared_name`, `to_underlying`), found by argument-dependent
+/// lookup through the enum's own namespace, whatever document declares it.
+/// C++ lowers no union, so the walk's refusal of one stands.
+struct CppCanonical;
+
+impl CanonicalSpelling for CppCanonical {
+    type At = CppCanonicalAt;
+
+    /// `canonical`'s parameter `value`, a `const Value &`.
+    fn root(&self) -> CppCanonicalAt {
+        CppCanonicalAt {
+            base: "value".to_string(),
+            depth: 0,
+        }
+    }
+
+    fn field(&self, at: &CppCanonicalAt, id: &str) -> CppCanonicalAt {
+        CppCanonicalAt {
+            base: format!(
+                "{}.{}",
+                at.base,
+                event_schema_field_ident(id, Language::Cpp)
+            ),
+            depth: at.depth,
+        }
+    }
+
+    fn bound(&self, at: &CppCanonicalAt, prefix: &str) -> (String, CppCanonicalAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = CppCanonicalAt {
+            base: name.clone(),
+            depth: at.depth + 1,
+        };
+        (name, value)
+    }
+
+    fn boolean(&self, at: &CppCanonicalAt) -> String {
+        format!("{CANONICAL}::boolean({})", at.base)
+    }
+
+    fn enumerated(&self, at: &CppCanonicalAt, strict: bool) -> String {
+        if strict {
+            format!("{CANONICAL}::enumerated(declared_name({}))", at.base)
+        } else {
+            format!(
+                "{CANONICAL}::openEnumerated(declared_name({0}), to_underlying({0}))",
+                at.base
+            )
+        }
+    }
+
+    fn integer(&self, at: &CppCanonicalAt) -> String {
+        format!("{CANONICAL}::integer({})", at.base)
+    }
+
+    fn text(&self, at: &CppCanonicalAt) -> String {
+        format!("{CANONICAL}::text({})", at.base)
+    }
+
+    fn bytes(&self, at: &CppCanonicalAt) -> String {
+        format!("{CANONICAL}::bytes({})", at.base)
+    }
+
+    fn list(&self, at: &CppCanonicalAt, binding: &str, element: String) -> String {
+        format!(
+            "{CANONICAL}::list({}, [](const auto &{binding}) {{ return {element}; }})",
+            at.base
+        )
+    }
+
+    /// As it is: a `std::optional` of the writer's value converts from it.
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    fn optional_field(&self, field: &CppCanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}::optional({}, [](const auto &{binding}) {{ return {written}; }})",
+            field.base
+        )
+    }
+
+    fn record(&self, fields: Vec<(String, String)>) -> String {
+        let fields: Vec<String> = fields
+            .into_iter()
+            .map(|(id, value)| format!("{{\"{}\", {value}}}", filters::escape_cpp(id)))
+            .collect();
+        format!("{CANONICAL}::record({{{}}})", fields.join(", "))
+    }
 }
 
 /// An integer literal of the profile as C++ writes it

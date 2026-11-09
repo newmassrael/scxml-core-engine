@@ -11,7 +11,6 @@
 
 #include <gtest/gtest.h>
 
-#include <any>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -22,6 +21,7 @@
 #include "asking_configuration.h"
 #include "job_reply.h"
 #include "job_request.h"
+#include "reply_ok.h"
 #include "runtime_suite.h"
 #include "saved/SavedValues.h"
 #include "test/Suite.h"
@@ -54,14 +54,18 @@ public:
     Responder(std::uint32_t code, std::vector<std::uint32_t> &requested) : code_(code), requested_(requested) {}
 
     void send(const std::string &systemPort, const Message &message, Instant now) override {
-        const auto *request = std::any_cast<Request>(&message.value);
+        const auto *request = message.value.as<Request>();
         ASSERT_EQ(systemPort, "sut");
         ASSERT_NE(request, nullptr) << "a request travels as its record's value";
         requested_.push_back(request->job);
         Reply reply{};
         reply.job = request->job;
         reply.code = code_;
-        pending_.emplace_back(now + ANSWER_DELAY, Message{SCE::Generated::JobReply::EVENT_NAME, reply});
+        // The reply's canonical form in the test log is the one the unit of a
+        // template over its record writes.
+        pending_.emplace_back(now + ANSWER_DELAY, Message{SCE::Generated::JobReply::EVENT_NAME,
+                                                          SCE::Test::messageValue(reply, SCE::Generated::ReplyOk::TYPE,
+                                                                                  SCE::Generated::ReplyOk::canonical)});
     }
 
     std::optional<Instant> nextInput() const override {

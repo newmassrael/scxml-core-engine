@@ -1251,7 +1251,8 @@ mod the_doors {
 /// The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3): each
 /// record written where the semantics places its event, in the order the
 /// rounds produce them, and the whole log in its one canonical text. The C++
-/// runtime's log follows in a later slice with the same records.
+/// runtime writes the same bytes of the same runs (`TheTestLog` in
+/// `tests/test_runtime/TestCaseRunTest.cpp`).
 mod the_test_log {
     use super::*;
 

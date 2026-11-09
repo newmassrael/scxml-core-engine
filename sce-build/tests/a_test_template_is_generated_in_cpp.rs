@@ -191,10 +191,17 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
     ] {
         assert!(text.contains(part), "`{part}` is not in:\n{text}");
     }
+    // The match alone: the unit's `canonical` reads every field, the matched
+    // ones and the others alike.
+    let matches = text
+        .split_once("inline bool match(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("no `match` function:\n{text}"));
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("value.tag"), "{text}");
+    assert!(!matches.contains("value.tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("value.codes[1]"), "{text}");
+    assert!(!matches.contains("value.codes[1]"), "{text}");
 }
 
 /// A specific template's value: every field in the order its schema declares
@@ -346,4 +353,91 @@ fn every_other_backend_refuses_a_template_by_name() {
         );
         assert!(detail.contains(NOT_GENERATED_YET), "{detail}");
     }
+}
+
+/// The runtime's writers of the canonical form of a value in the test log.
+const CANONICAL: &str = "::SCE::Test::Canonical";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its record's type name and its value's canonical form in the
+/// test log by the types the schema declares, each field by its declared id, an
+/// optional one absent where it is, and includes the runtime's writers; a
+/// template over another type writes neither and includes nothing more.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, _, _) in templates() {
+        let text = header(&path, name);
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        let over_record = record.is_some();
+        assert_eq!(
+            text.contains("inline ::SCE::Saved::JsonValue canonical(const Value &value) {"),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        assert_eq!(
+            text.contains("#include \"test/Canonical.h\""),
+            over_record,
+            "{name}: the writers are included exactly where the form is written:\n{text}"
+        );
+        // The unit names the SCE runtime exactly where it writes the form, and
+        // its header says so.
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("// Runtime: {runtime}\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        if let Some(record) = record {
+            let declared = format!("inline constexpr const char *TYPE = \"{record}\";");
+            assert!(text.contains(&declared), "{name}: `{declared}`:\n{text}");
+        }
+    }
+    let report = header_of(&profile_dir(), "job_report");
+    let c = CANONICAL;
+    let written = format!(
+        "return {c}::record({{{{\"elapsed_ms\", {c}::integer(value.elapsed_ms)}}, \
+         {{\"note\", {c}::optional(value.note, [](const auto &present_0) {{ \
+         return {c}::text(present_0); }})}}, \
+         {{\"codes\", {c}::list(value.codes, [](const auto &item_0) {{ \
+         return {c}::integer(item_0); }})}}, \
+         {{\"tag\", {c}::optional(value.tag, [](const auto &present_0) {{ \
+         return {c}::integer(present_0); }})}}, \
+         {{\"retry\", {c}::optional(value.retry, [](const auto &present_0) {{ \
+         return {c}::integer(present_0); }})}}, \
+         {{\"count\", {c}::integer(value.count)}}}});"
+    );
+    assert!(
+        report.contains(&written),
+        "`{written}` is not in:\n{report}"
+    );
+}
+
+/// The canonical form of a record that holds an enum, a text and a byte
+/// string: an enum by the name its unit declares for it, read through the
+/// enum's own namespace, and a byte string as its octets.
+#[test]
+fn a_records_canonical_form_reaches_an_enum_and_a_byte_string() {
+    let c = CANONICAL;
+    let exact = header_of(&imports_dir(), "order_line_exact");
+    let line = format!(
+        "return {c}::record({{{{\"sku\", {c}::text(value.sku)}}, \
+         {{\"quantity\", {c}::integer(value.quantity)}}, \
+         {{\"color\", {c}::enumerated(declared_name(value.color))}}}});"
+    );
+    assert!(exact.contains(&line), "`{line}` is not in:\n{exact}");
+    let voucher = header_of(&imports_dir(), "voucher_is");
+    let code =
+        format!("return {c}::record({{{{\"voucher_code\", {c}::bytes(value.voucher_code)}}}});");
+    assert!(voucher.contains(&code), "`{code}` is not in:\n{voucher}");
 }
