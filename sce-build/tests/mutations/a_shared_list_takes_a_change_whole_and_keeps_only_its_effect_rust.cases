@@ -1,0 +1,84 @@
+# Mutation cases for "a shared list takes a change whole and keeps only its effect"
+# (docs/adr/0085, sections 1, 2 and 9.6; landing 4c), under the Rust runtime.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_shared_list_takes_a_change_whole_and_keeps_only_its_effect_rust.cases`.
+#
+# The standard shared record list (stdlib/shared/record_list.scxml) is the effect of an
+# operation-based observed-remove set over a layer that delivers each change once, whole
+# and in causal order: a peer's change, `record_list.change`, queues every one of its
+# operations; a write's dot is its change's stamp; a write-over takes the add it names
+# out of `adds` and keeps nothing; a write whose value is held already moves nothing and
+# tells nothing; the clock is moved once by a peer's change; and the roster is judged on
+# every copy. Each case takes one of those away, and the scenarios replayed by
+# `static_scenarios` (record_list_change, record_list_person, record_list_retire,
+# record_list_parent, record_list_concurrent_clears and
+# record_list_out_of_causal_order_is_not_given) must turn red.
+#
+# The list reaches the Rust lane only through the committed tree its regeneration
+# writes, so the tree is a declared target and the regeneration carries a mutated
+# document into it.
+#
+# Anchors are literal slices of the document; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets stdlib/shared/record_list.scxml
+mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_sm.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_parent__sce_synth_invoke__list_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/record_list_concurrent_clears.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_out_of_causal_order_is_not_given.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_change.json
+
+# ── A change is taken whole ────────────────────────────────────────
+
+mutation_case "a peer's change takes in its first operation alone, as a part held for the rest" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''        <assign location="dot.nodeId" expr="_event.data.by"/>
+        <foreach array="taking" item="t">
+          <send target="#_internal" event="record_list.take"/>
+        </foreach>''',
+     '''        <assign location="dot.nodeId" expr="_event.data.by"/>
+        <send target="#_internal" event="record_list.take"/>''')
+PY
+
+mutation_case "a write is given the dot it carries, not its change's stamp" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="held.wallTime" expr="dot.wallTime"/>''',
+     '''<assign location="held.wallTime" expr="op.wallTime"/>''')
+PY
+
+# ── The effect keeps nothing but the live values ───────────────────
+
+mutation_case "a write-over leaves the add it names in adds" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="adds" expr="OrsetLive(adds, one)"/>''',
+     '''<assign location="adds" expr="adds"/>''')
+PY
+
+mutation_case "a write whose value is held already is taken in and told again" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="present" expr="MvValueHolds(values, held)"/>''',
+     '''<assign location="present" expr="false"/>''')
+PY
+
+mutation_case "a write-over of a value gone already is told as a move" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<if cond="wasLive &amp;&amp; announce">''',
+     '''<if cond="announce">''')
+PY
+
+# ── The clock and the roster ───────────────────────────────────────
+
+mutation_case "a peer's change does not move the clock" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="clock" expr="HlcReceive(clock, dot, clock.wallTime, node)"/>''',
+     '''<assign location="clock" expr="clock"/>''')
+PY
+
+mutation_case "a peer's change is not judged against the roster" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''      <if cond="len(roster) &gt; 0">
+        <assign location="authorized" expr="false"/>''',
+     '''      <if cond="false">
+        <assign location="authorized" expr="false"/>''')
+PY

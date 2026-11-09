@@ -2964,8 +2964,9 @@ STATIC_OPTIONAL_SCENARIO(static_lift, lift_states, lift_variables, static_lift_t
 // `test_static_large.c` replays it through at the bounds of a team.
 
 // record_list: the standard shared record list (sce:std/shared/record_list), the
-// generic part of todo_peer, read the way todo_peer is, as a person's copy and as the
-// hub, and started by a host, so that it tells no parent anything and
+// generic part of todo_peer, read the way todo_peer is, as a copy given its peers'
+// changes whole (`record_list.change`, whose `ops` is a list of records,
+// docs/adr/0085), and started by a host, so that it tells no parent anything and
 // `announced` stays 0.
 #define RECORD_LIST_VALUE_FIELDS(N, E)                                                                                 \
     E(id, wide_digits)                                                                                                 \
@@ -2975,10 +2976,7 @@ STATIC_OPTIONAL_SCENARIO(static_lift, lift_states, lift_variables, static_lift_t
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
-VARIABLE_READER(record_list, hub)
 VARIABLE_READER(record_list, refusals)
-VARIABLE_READER(record_list, stale)
-VARIABLE_READER(record_list, late)
 VARIABLE_READER(record_list, full)
 VARIABLE_READER(record_list, denied)
 VARIABLE_READER(record_list, announced)
@@ -2991,18 +2989,12 @@ static const char *record_list_text_text(sce_static_string_96_t text) {
 
 RECORD_READER(record_list, clock, record_list_record_hlc_t, HLC_FIELDS)
 RECORD_LIST_READER(record_list, adds, record_list_record_entry_view_t, record_list_record_entry_t, ORSET_ENTRY_FIELDS)
-RECORD_LIST_READER(record_list, tombstones, record_list_record_entry_view_t, record_list_record_entry_t,
-                   ORSET_ENTRY_FIELDS)
 RECORD_LIST_READER(record_list, values, record_list_record_value_view_t, record_list_record_value_t,
                    RECORD_LIST_VALUE_FIELDS)
-RECORD_LIST_READER(record_list, digest, record_list_record_node_view_t, record_list_record_node_t, MERKLE_NODE_FIELDS)
 
 static const char *record_list_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
         return wide_digits(record_list_get_node((const record_list_t *)sm));
-    }
-    if (strcmp(name, "floor") == 0) {
-        return wide_signed_digits(record_list_get_floor((const record_list_t *)sm));
     }
     return NULL;
 }
@@ -3011,18 +3003,15 @@ static const name_value_t record_list_states[] = {
     {"open", RECORD_LIST_STATE_OPEN},
 };
 static const variable_t record_list_variables[] = {
-    {"hub", record_list_read_hub},
     {"refusals", record_list_read_refusals},
-    {"stale", record_list_read_stale},
-    {"late", record_list_read_late},
     {"full", record_list_read_full},
     {"denied", record_list_read_denied},
     {"announced", record_list_read_announced},
 };
-static const record_variable_t record_list_records[] = {
-    RECORD_ROW(record_list, clock),           RECORD_LIST_ROW(record_list, adds),
-    RECORD_LIST_ROW(record_list, tombstones), RECORD_LIST_ROW(record_list, values),
-    RECORD_LIST_ROW(record_list, digest),     {NULL, NULL, NULL, NULL}};
+static const record_variable_t record_list_records[] = {RECORD_ROW(record_list, clock),
+                                                        RECORD_LIST_ROW(record_list, adds),
+                                                        RECORD_LIST_ROW(record_list, values),
+                                                        {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(record_list, record_list_states, record_list_variables, record_list_text, no_lists,
                        record_list_records)
 STATIC_SCENARIO_UNROUTED(record_list)
@@ -3353,13 +3342,14 @@ int main(void) {
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
     bad |= todo_peer_scenario("todo_peer_server", 13);
-    bad |= record_list_scenario("record_list_person", 29);
-    bad |= record_list_scenario("record_list_hub", 21);
+    bad |= record_list_scenario("record_list_person", 24);
     bad |= record_list_scenario("record_list_alone", 5);
-    bad |= record_list_unrouted_scenario("record_list_offline", 8);
-    bad |= record_list_scenario("record_list_change", 26);
-    bad |= record_list_scenario("record_list_retire", 15);
+    bad |= record_list_unrouted_scenario("record_list_offline", 5);
+    bad |= record_list_scenario("record_list_change", 15);
+    bad |= record_list_scenario("record_list_retire", 12);
+    bad |= record_list_scenario("record_list_out_of_causal_order_is_not_given", 5);
     bad |= record_list_parent_scenario("record_list_parent", 27);
+    bad |= record_list_parent_scenario("record_list_concurrent_clears", 7);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);

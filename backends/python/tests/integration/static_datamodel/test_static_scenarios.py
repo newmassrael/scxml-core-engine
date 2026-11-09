@@ -853,15 +853,16 @@ def test_a_shared_list_as_the_hub_its_copies_send_to() -> None:
 
 
 # The standard shared record list (sce:std/shared/record_list.scxml), named by its
-# library name as its scenarios' machine: a person's copy, which sends its changes to
-# the hub by `#hub`, and the hub, which passes every change on to the people by
-# `#people`.
+# library name as its scenarios' machine: a copy, which sends each change of its own
+# whole by `#people` and takes its peers' changes whole (docs/adr/0085).
 def test_the_standard_record_list_as_a_persons_copy() -> None:
     replay("record_list_person")
 
 
-def test_the_standard_record_list_as_the_hub_its_people_send_to() -> None:
-    replay("record_list_hub")
+# A change and the one it writes over, given in their causal order, the only order
+# the list's delivery layer gives (docs/adr/0085, section 9.3).
+def test_a_standard_record_list_takes_a_change_after_the_one_it_writes_over() -> None:
+    replay("record_list_out_of_causal_order_is_not_given")
 
 
 # A standard record list a host started has no parent: it tells no one of the
@@ -876,8 +877,8 @@ def test_a_standard_record_list_with_no_router_keeps_its_changes() -> None:
     replay("record_list_offline")
 
 
-# A change is one unit: staged, stamped once, taken in whole, and sent as parts a copy
-# holds until they are all there (docs/adr/0046).
+# A change is one unit and one message: staged, stamped once, taken in whole, and sent
+# whole as `record_list.change`, which a peer takes in whole (docs/adr/0085).
 def test_a_standard_record_list_takes_a_change_as_one_unit() -> None:
     replay("record_list_change")
 
@@ -894,6 +895,13 @@ def test_a_standard_record_list_clears_a_field_and_retires_a_row() -> None:
 # list already held.
 def test_a_parent_is_told_what_each_register_of_its_list_holds() -> None:
     replay("record_list_parent")
+
+
+# Two changes that clear one value at once, given in both orders, leave the value gone
+# with nothing held, and the parent is told each register a change moved once
+# (docs/adr/0085, section 9.3).
+def test_a_standard_record_list_takes_two_concurrent_clears_in_either_order() -> None:
+    replay("record_list_concurrent_clears")
 
 
 # One copy of the list of who is online, as each of the three that took part in one
