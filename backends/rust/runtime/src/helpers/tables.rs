@@ -427,19 +427,27 @@ impl Target {
     }
 }
 
-/// A document's tables.
+/// A document's tables, their rows borrowed for `'t`.
+///
+/// A generated machine's rows are constants of its program,
+/// `DocumentTables<'static>`, as `StatePolicy::TABLES` names them. A reader
+/// that builds the rows of a document it reads, and asks the procedures about
+/// it, lends rows it owns for the length of the question, and leaves nothing
+/// behind. The procedures a document is given by these rows,
+/// [`history`](Self::history) and [`parallel`](Self::parallel), are the
+/// runtime's own constants, so they are `'static` whoever owns the rows.
 #[derive(Debug)]
-pub struct DocumentTables {
+pub struct DocumentTables<'t> {
     /// One row for each state, by [`StateId`].
-    pub states: &'static [StateRow],
+    pub states: &'t [StateRow],
     /// One row for each `<history>`, by [`HistoryId`].
-    pub histories: &'static [HistoryRow],
+    pub histories: &'t [HistoryRow],
     /// One row for each transition, by [`TransitionId`].
-    pub transitions: &'static [TransitionRow],
+    pub transitions: &'t [TransitionRow],
     /// The lists of a transition with more than one target, each its length
     /// ([`Target::count`]) followed by its targets; a row names one by
     /// [`Target::list`] (docs/adr/0067).
-    pub targets: &'static [Target],
+    pub targets: &'t [Target],
     /// The document's initial transition, whose source is the `<scxml>`
     /// element.
     pub initial: TransitionId,
@@ -456,7 +464,7 @@ pub struct DocumentTables {
     /// when one matches nothing and bounds when an error handler raises
     /// another (docs/adr/0068). Written by the generator from the names, so
     /// the loop compares numbers and no machine carries a copy of the test.
-    pub error_events: &'static [EventId],
+    pub error_events: &'t [EventId],
     /// The procedures only a `<history>` reaches, `Some(&HISTORY)` exactly
     /// when the document has one (docs/adr/0066).
     pub history: Option<&'static HistoryProcedures>,
@@ -490,7 +498,7 @@ pub enum TablesFault {
     ProceduresMissing,
 }
 
-impl DocumentTables {
+impl DocumentTables<'_> {
     /// The row of `state`.
     #[inline]
     pub fn state(&self, state: StateId) -> &StateRow {
@@ -730,7 +738,7 @@ impl DocumentTables {
 /// The child states of one state, in document order: [`DocumentTables::children`].
 #[derive(Debug, Clone)]
 pub struct Children<'t> {
-    tables: &'t DocumentTables,
+    tables: &'t DocumentTables<'t>,
     next: u16,
     last: StateId,
 }

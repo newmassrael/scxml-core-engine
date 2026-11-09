@@ -199,7 +199,7 @@ impl<'a> Scratch<'a> {
 
     /// An empty set of the states of `tables` from the front, and the rest.
     #[inline]
-    fn take_set(self, tables: &DocumentTables) -> (StateSet<'a>, Scratch<'a>) {
+    fn take_set(self, tables: &DocumentTables<'_>) -> (StateSet<'a>, Scratch<'a>) {
         let words = state_words(tables.states.len());
         if words > self.sets.len() {
             workspace_too_small()
@@ -432,7 +432,7 @@ pub type WalkSlots = [MaybeUninit<WalkStep>];
 pub struct HistoryProcedures {
     /// getEffectiveTargetStates for a `<history>` target.
     effective: fn(
-        &DocumentTables,
+        &DocumentTables<'_>,
         RunStoreRef<'_>,
         HistoryId,
         &mut StateSet<'_>,
@@ -440,11 +440,11 @@ pub struct HistoryProcedures {
     ) -> Option<StateId>,
     /// addDescendantStatesToEnter for a `<history>` target: the list it
     /// enters, with the default content it owes put in the entry set.
-    descend: fn(&DocumentTables, RunStoreRef<'_>, HistoryId, &mut EntrySet<'_>) -> Listed,
+    descend: fn(&DocumentTables<'_>, RunStoreRef<'_>, HistoryId, &mut EntrySet<'_>) -> Listed,
     /// The first state a `<history>` recorded from a state on.
     recorded_from: fn(RunStoreRef<'_>, HistoryId, StateId) -> Option<StateId>,
     /// exitStates' records of the histories of the states it exits.
-    record: fn(&DocumentTables, RunStoreMut<'_>, StateSetRef<'_>),
+    record: fn(&DocumentTables<'_>, RunStoreMut<'_>, StateSetRef<'_>),
 }
 
 /// The procedures of Appendix D that only a `<parallel>` reaches, carried by the
@@ -453,12 +453,13 @@ pub struct HistoryProcedures {
 pub struct ParallelProcedures {
     /// The entry walk's defaults for the regions of a `<parallel>` nothing on
     /// the entry set goes into.
-    regions: fn(&DocumentTables, StateId, StateId, &mut SliceVec<'_, WalkStep>, StateSetRef<'_>),
+    regions:
+        fn(&DocumentTables<'_>, StateId, StateId, &mut SliceVec<'_, WalkStep>, StateSetRef<'_>),
     /// removeConflictingTransitions.
     remove_conflicting:
-        fn(&DocumentTables, RunStoreRef<'_>, &mut SliceVec<'_, TransitionId>, Scratch<'_>),
+        fn(&DocumentTables<'_>, RunStoreRef<'_>, &mut SliceVec<'_, TransitionId>, Scratch<'_>),
     /// isInFinalState of a `<parallel>`.
-    in_final: fn(&DocumentTables, StateId, StateSetRef<'_>) -> bool,
+    in_final: fn(&DocumentTables<'_>, StateId, StateSetRef<'_>) -> bool,
 }
 
 /// The `<history>` procedures, the value a generated table writes as
@@ -497,7 +498,7 @@ impl core::fmt::Debug for ParallelProcedures {
 
 /// The `<history>` procedures of `tables`, which reach a `<history>`.
 #[inline]
-fn history_procedures(tables: &DocumentTables) -> &'static HistoryProcedures {
+fn history_procedures(tables: &DocumentTables<'_>) -> &'static HistoryProcedures {
     match tables.history {
         Some(procedures) => procedures,
         None => procedures_missing(),
@@ -506,7 +507,7 @@ fn history_procedures(tables: &DocumentTables) -> &'static HistoryProcedures {
 
 /// The `<parallel>` procedures of `tables`, which reach a `<parallel>`.
 #[inline]
-fn parallel_procedures(tables: &DocumentTables) -> &'static ParallelProcedures {
+fn parallel_procedures(tables: &DocumentTables<'_>) -> &'static ParallelProcedures {
     match tables.parallel {
         Some(procedures) => procedures,
         None => procedures_missing(),
@@ -531,7 +532,7 @@ fn procedures_missing() -> ! {
 ///
 /// Leaves the optimal enabled transition set in `enabled`, in selection order.
 pub fn select_transitions(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     event: EventId,
     enabled: &mut SliceVec<'_, TransitionId>,
@@ -587,7 +588,7 @@ pub fn select_transitions(
 /// candidate is read before the slot a kept one is written to, which is never
 /// past it.
 pub fn remove_conflicting_transitions(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     enabled: &mut SliceVec<'_, TransitionId>,
     mut scratch: Scratch<'_>,
@@ -634,7 +635,11 @@ pub fn remove_conflicting_transitions(
 
 /// Whether `state` lies strictly below `ancestor`, both sources of transitions:
 /// the `<scxml>` element (`None`) is below nothing.
-fn descends(tables: &DocumentTables, state: Option<StateId>, ancestor: Option<StateId>) -> bool {
+fn descends(
+    tables: &DocumentTables<'_>,
+    state: Option<StateId>,
+    ancestor: Option<StateId>,
+) -> bool {
     match (state, ancestor) {
         (Some(state), Some(ancestor)) => tables.is_descendant(state, ancestor),
         _ => false,
@@ -660,7 +665,7 @@ pub enum ExitScope {
 impl ExitScope {
     /// Whether a transition of this scope exits `state` when it is active.
     #[inline]
-    pub fn contains(self, tables: &DocumentTables, state: StateId) -> bool {
+    pub fn contains(self, tables: &DocumentTables<'_>, state: StateId) -> bool {
         match self {
             ExitScope::Nothing => false,
             ExitScope::All => true,
@@ -676,7 +681,7 @@ impl ExitScope {
     /// exits, or none: whether the configuration holds a state of one range.
     pub fn meets(
         self,
-        tables: &DocumentTables,
+        tables: &DocumentTables<'_>,
         other: ExitScope,
         configuration: StateSetRef<'_>,
     ) -> bool {
@@ -702,7 +707,7 @@ impl ExitScope {
 /// Appendix D's computeExitSet for one transition, as the scope a
 /// configuration is read through: the active proper descendants of its domain.
 pub fn compute_exit_set(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     transition: TransitionId,
     scratch: Scratch<'_>,
@@ -731,7 +736,7 @@ pub fn compute_exit_set(
 /// and so the exit set, is a question about these. Returns the first of them
 /// the list names, which is where the machine's current state is read from.
 pub fn effective_target_states_on(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     targets: &[Target],
     effective: &mut StateSet<'_>,
@@ -761,7 +766,7 @@ pub fn effective_target_states_on(
 ///
 /// A [`HistoryProcedures`] procedure ([`HISTORY`]).
 fn effective_history_targets(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     history: HistoryId,
     effective: &mut StateSet<'_>,
@@ -813,7 +818,7 @@ fn effective_history_targets(
 /// `None` when it is the `<scxml>` element — always so for the document's
 /// initial transition (`source` `None`).
 pub fn transition_domain(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     source: Option<StateId>,
     targets: StateSetRef<'_>,
     is_internal: bool,
@@ -850,7 +855,7 @@ pub fn transition_domain(
 /// can only widen the domain. A parent's id is below its child's, so the walk
 /// up ends.
 fn find_lcca(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     head: StateId,
     first: StateId,
     last: StateId,
@@ -887,7 +892,7 @@ pub struct Entered {
 
 /// Appendix D's microstep: exit, run the transitions' content, enter.
 pub fn microstep(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
     mut scratch: Scratch<'_>,
@@ -903,7 +908,7 @@ pub fn microstep(
 /// Appendix D's computeExitSet over the microstep's transitions — the states
 /// exitStates exits — read off the configuration into `states_to_exit`.
 pub fn compute_states_to_exit(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     transitions: &[TransitionId],
     states_to_exit: &mut StateSet<'_>,
@@ -942,7 +947,7 @@ pub fn compute_states_to_exit(
 /// them, for 12 and 54 bytes of code.
 #[inline(never)]
 pub fn exit_states(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
     scratch: Scratch<'_>,
@@ -994,7 +999,7 @@ pub fn exit_interpreter(machine: &mut dyn Behaviour) {
 
 /// Appendix D's executeTransitionContent.
 pub fn execute_transition_content(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
 ) {
@@ -1012,7 +1017,7 @@ pub fn execute_transition_content(
 /// the document's initial transition alone, which is the whole of the
 /// appendix's entry into the initial configuration (§scxml-D-interpret).
 pub fn enter_states(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     machine: &mut dyn Behaviour,
     transitions: &[TransitionId],
     scratch: Scratch<'_>,
@@ -1054,7 +1059,7 @@ fn enter_entry_set(machine: &mut dyn Behaviour, entry: &EntrySet<'_>) {
 /// ([`EntrySet::last_target`]), then down through the configuration to an
 /// atomic state, taking the first active region of a `<parallel>` in document
 /// order. The answer every backend gives as the machine's current state.
-fn current_state(tables: &DocumentTables, store: RunStoreRef<'_>, target: StateId) -> StateId {
+fn current_state(tables: &DocumentTables<'_>, store: RunStoreRef<'_>, target: StateId) -> StateId {
     let mut current = target;
     let configuration = store.configuration();
     // The configuration is what the microstep entered, so a descent through it
@@ -1127,7 +1132,7 @@ impl EntrySet<'_> {
 /// `<parallel>`: `enter_states` 200 -> 160 bytes, this 136 on top, the
 /// worst-case stack 760 -> 856.
 pub fn compute_entry_set<'a>(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     transitions: &[TransitionId],
     scratch: Scratch<'a>,
@@ -1160,7 +1165,7 @@ pub fn compute_entry_set<'a>(
 /// One transition's part of Appendix D's computeEntrySet: what it adds to the
 /// entry set.
 fn add_transition_to_entry_set(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     transition: TransitionId,
     stack: &mut SliceVec<'_, WalkStep>,
@@ -1226,7 +1231,7 @@ impl<T> SliceVec<'_, T> {
 /// since the regions of a `<parallel>` are judged against what the entry set
 /// holds when each is reached.
 fn walk_entry(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     first: WalkStep,
     stack: &mut SliceVec<'_, WalkStep>,
@@ -1342,7 +1347,7 @@ fn walk_entry(
 /// position; what a `<history>` recorded is a set, read in document order from
 /// the state `cursor` names.
 fn listed_target(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     source: Listed,
     cursor: u16,
@@ -1363,7 +1368,7 @@ fn listed_target(
 /// The state the ancestors of `source`'s targets are entered up to, not
 /// including it: the compound state itself for its initial targets, the
 /// `<history>`'s parent for a history's.
-fn listed_stop(tables: &DocumentTables, source: Listed) -> StateId {
+fn listed_stop(tables: &DocumentTables<'_>, source: Listed) -> StateId {
     match source {
         Listed::Initial(state) => state,
         Listed::Recorded(history) | Listed::Defaults(history) => tables.history(history).parent(),
@@ -1380,7 +1385,7 @@ fn listed_stop(tables: &DocumentTables, source: Listed) -> StateId {
 /// is each one's parent in turn, which [`WalkStep::AncestorsFrom`] reads off the
 /// tables as it goes.
 fn first_proper_ancestor(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     target: Target,
     stop: Option<StateId>,
 ) -> Option<StateId> {
@@ -1404,7 +1409,7 @@ fn first_proper_ancestor(
 /// default, with a step for the regions after it put down first. A
 /// [`ParallelProcedures`] procedure ([`PARALLEL`]).
 fn default_regions(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     parallel: StateId,
     next: StateId,
     stack: &mut SliceVec<'_, WalkStep>,
@@ -1454,7 +1459,7 @@ fn set_default_history_content(
 /// the walk enters, and the default content it owes put in `entry`. A
 /// [`HistoryProcedures`] procedure ([`HISTORY`]).
 fn descend_into_history(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     store: RunStoreRef<'_>,
     history: HistoryId,
     entry: &mut EntrySet<'_>,
@@ -1493,7 +1498,11 @@ fn history_recorded_from(
 /// Appendix D's exitStates, its history half over every `<history>`: each
 /// whose parent is in `exited` records what it records. A
 /// [`HistoryProcedures`] procedure ([`HISTORY`]).
-fn record_histories(tables: &DocumentTables, mut store: RunStoreMut<'_>, exited: StateSetRef<'_>) {
+fn record_histories(
+    tables: &DocumentTables<'_>,
+    mut store: RunStoreMut<'_>,
+    exited: StateSetRef<'_>,
+) {
     // §scxml-D-exitStates: every history of every state exited is recorded
     // from the configuration as it stood before the first exit.
     for (index, history) in tables.histories.iter().enumerate() {
@@ -1519,7 +1528,7 @@ fn record_histories(tables: &DocumentTables, mut store: RunStoreMut<'_>, exited:
 /// exits any state, so every history of one microstep reads the same
 /// configuration. Only `parent`'s subtree, a range of ids, is read.
 pub fn recorded_history(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     parent: StateId,
     deep: bool,
     configuration_before_exit: StateSetRef<'_>,
@@ -1558,7 +1567,7 @@ pub fn recorded_history(
 /// `state`, and a subtree is a range of ids, so this is one pass over the range
 /// that skips the subtree of every state it has answered for: no stack.
 pub fn is_in_final_state(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     state: StateId,
     configuration: StateSetRef<'_>,
 ) -> bool {
@@ -1572,7 +1581,7 @@ pub fn is_in_final_state(
 /// [`is_in_final_state`] of the `<parallel>` `state`. A [`ParallelProcedures`]
 /// procedure ([`PARALLEL`]).
 fn parallel_in_final_state(
-    tables: &DocumentTables,
+    tables: &DocumentTables<'_>,
     state: StateId,
     configuration: StateSetRef<'_>,
 ) -> bool {
@@ -1596,7 +1605,11 @@ fn parallel_in_final_state(
 }
 
 /// Whether one of the `<final>` children of the compound state `state` is active.
-fn in_final_child(tables: &DocumentTables, state: StateId, configuration: StateSetRef<'_>) -> bool {
+fn in_final_child(
+    tables: &DocumentTables<'_>,
+    state: StateId,
+    configuration: StateSetRef<'_>,
+) -> bool {
     tables
         .children(state)
         .any(|child| tables.is_final(child) && configuration.contains(child))

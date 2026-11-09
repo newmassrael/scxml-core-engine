@@ -231,7 +231,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// The document's tables: its states in document order, its histories, its
     /// transitions and the bounds its buffers are sized by.
-    const TABLES: &'static DocumentTables;
+    const TABLES: &'static DocumentTables<'static>;
 
     /// The states, by [`StateId`]: `STATES[state_id(s).index()] == s`.
     const STATES: &'static [Self::State];

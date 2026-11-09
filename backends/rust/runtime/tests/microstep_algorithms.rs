@@ -123,7 +123,7 @@ fn row_targets(pool: &mut Vec<Target>, targets: &[Target]) -> Target {
 /// transition last. The procedures read a row's source and targets and nothing
 /// about where it sits, and `DocumentTables::check` holds the rows to the rules
 /// the procedures assume.
-fn tables_of(doc: &Plain) -> &'static DocumentTables {
+fn tables_of(doc: &Plain) -> &'static DocumentTables<'static> {
     let n = doc.parent.len();
 
     // A parent's id is below its children's, so walking down the ids from the
@@ -549,8 +549,8 @@ fn chart_plain() -> Plain {
 }
 
 /// The document's tables.
-fn chart_tables() -> &'static DocumentTables {
-    static TABLES: OnceLock<&'static DocumentTables> = OnceLock::new();
+fn chart_tables() -> &'static DocumentTables<'static> {
+    static TABLES: OnceLock<&'static DocumentTables<'static>> = OnceLock::new();
     TABLES.get_or_init(|| tables_of(&chart_plain()))
 }
 
@@ -1462,8 +1462,8 @@ fn cid(state: C) -> StateId {
 
 /// `run` with `form` and a state of it, and `checks` with both its regions and a
 /// state of each: 8 states, 3 of them atomic, 4 levels down, no `<history>`.
-fn completion_tables() -> &'static DocumentTables {
-    static TABLES: OnceLock<&'static DocumentTables> = OnceLock::new();
+fn completion_tables() -> &'static DocumentTables<'static> {
+    static TABLES: OnceLock<&'static DocumentTables<'static>> = OnceLock::new();
     TABLES.get_or_init(|| {
         for (index, &(state, ..)) in COMPLETION_TREE.iter().enumerate() {
             assert_eq!(cid(state).index(), index, "the tree is in document order");
@@ -1991,7 +1991,7 @@ const ROUNDS: u16 = 8;
 /// histories recorded.
 struct RandomDocument {
     plain: Plain,
-    tables: &'static DocumentTables,
+    tables: &'static DocumentTables<'static>,
     records: Vec<Option<Vec<StateId>>>,
     /// Levels, a `<history>` counting as one below its parent.
     depth: usize,
