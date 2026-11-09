@@ -848,3 +848,58 @@ Decided while landing 4c (2026-11-09), under the same rule and open to the owner
   with the ABI's next number. Removing them here would move the six lanes' bindings twice for one landing.
 - **The ABI is version 7.** What `sce_peer_outbound` takes and the events an outcome holds change shape, which the
   ABI's rule makes a new number; the lanes that pin the number (Python, Kotlin) move with the header.
+
+Decided while landing 4c, the to-do list and the world tests of the Mesh route (2026-11-09), under the same rule and
+open to the owner's review:
+
+- **`todo_peer` speaks the standard list's wire.** It imports `record_change` and `record_op` and sends and takes
+  `record_list.change` itself, not a change of a schema of its own: one fact has one shape on every wire (section
+  1.4). Its effect is the standard list's (section 2), with no hub, digest, walk, settle, floor or tombstone; its
+  commands keep the host's names (`todo.join`, `todo.edit`, `todo.room`, `todo.role`) and an edit is a change of
+  its own, as before. The second copy of the effect stays until ADR 0042 step 2 has the to-do list invoke the
+  standard one; the world replay holds the two to one run, and maps commands only. `todo_join` retires the hub flag
+  as `record_join` did, and `todo_room` keeps `values` alone: the rooms of the tombstones and the digest went with
+  them, and no parent forwards it.
+- **The world is the host of a causal binding.** `World::group` is one name every member sends to and reads,
+  received by the group's binding; a link that goes down tells no binding anything (the group is reached over the
+  links that are up) and one that comes back tells both ends the group is ready, which a causal binding answers with
+  its vector. The world commits each change the layer accepts at once, keeping no journal a crash could lose a
+  record of, and wakes for the vector a layer with work is owed (`Router::next_announce_due_ms`: a log that keeps a
+  change not yet stable, or a change held). A layer at rest asks for no wake, so a world is quiet exactly when every
+  copy delivered every change and knows every other did, which the tests assert.
+- **The copies are alice, bob and carol**, each one machine on a device of its own (the view `phone/alice`,
+  `laptop/bob`, `tablet/carol`). No copy is a hub, so the third copy is no longer `server`, and its recorded
+  scenario is `todo_peer_carol.json`.
+- **The Mesh tests hold their properties one layer down.** `a_resync_reaches_every_wall_time_and_every_field_number`
+  names a mechanism that is gone and becomes `a_lost_change_is_repaired_at_every_wall_time_and_field_number`: repair
+  by vector at every wall time and number, only what a copy lacked sent again, copies that agree exchanging vectors
+  and no change, a change given again dropped, and a negative arm on a plain route that ends with the copies apart.
+  `a_copy_restored_from_an_old_save_is_repaired_by_resync` becomes
+  `a_copy_restored_from_an_old_save_begins_a_new_incarnation`: what holds of a restored copy until landing 7 is
+  section 3.3.2, no dot naming two contents, its old incarnation's changes delivered and its column holding the cut;
+  it is not repaired, since a second identity for a member is not delivered before view changes land (section
+  3.3.4). Its negative arm, a copy that goes on from the number its reachable peer reports, ends with one dot naming
+  two contents and the copies apart. `a_shared_calendar_forgets_what_its_copies_agree_on` keeps its name: the cut,
+  held back by a copy that lacks a change or is away, and a change given again after the cut taken in once.
+- **The forging test moves onto a causal binding**, not the core: what it proves is the hosts in front of and behind
+  copies with no core (`Trust` as the endpoint's admission and sealer), and the core's forging relay is held by the
+  devices of `common/devices.rs`. A forging host is a member's host that sends a change in another's name; every
+  other host refuses it. Every copy on the route is told the roster as a hub's machine was (`hub_role_events`): a
+  repair brings a change as late as it may, which its host judges by the grant of its time, and a machine told
+  only the present would refuse what its host admitted. The two settle tests leave the file: the list reads no
+  floor, and the trust layer's refusal of an unsigned one is held in `sce-rust-trust`. A change a link did not pass
+  on is fetched from another member by the vectors and checked as from its author.
+- **A copy whose host carries every change itself has no hub machine either.** `record_world` is three copies bound
+  to `#people` by a plain binding the host's sealer takes everything from, and links no one; `record_hub`,
+  `record_person` and the hub route are gone.
+- **A crowd of the list is at most a view.** A view holds 64 members, the bound of the envelope's vector, so the
+  list's crowd test runs 64 copies; the sheet's hundred stays on its hub.
+- **A WebSocket has no topic**, so the real-socket test realises the group as section 3.2 says, by a relay node that
+  forwards every envelope to every other member as it came: the test binary's relay mode, which runs no machine. Its
+  copy started again from nothing would be a new incarnation, cut off until landing 7; the test asks instead that
+  what a copy made while every link was closed reaches the others when a relay is back.
+- **The roles test asserts every copy's judgement** (section 2.4), and the test of a hub's host forbidding a member's
+  link leaves: a group's binding carries every member, and members are told apart there by signatures.
+- **The room test loses its control**, a list that runs out of room without a settle, which no longer exists: a copy
+  holds only what is current. What grows is the layer's log, whose refusal past its room the world reports (landing
+  4d tells it to the list).
