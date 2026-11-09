@@ -94,9 +94,10 @@ fn stamped(
     wall: i64,
     content: &str,
 ) -> (String, [u8; 32]) {
-    let mut value = json!({"id": id.to_string(), "field": "3", "value": content, "text": "",
-        "wallTime": wall.to_string(), "counter": "0", "nodeId": node.to_string()});
-    let signing = message::signing(LIST, "record_list.write", &value)
+    let mut value = json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": "0",
+        "ops": [{"kind": 0, "id": id.to_string(), "field": "3", "value": content, "text": "",
+                 "wallTime": "0", "counter": "0", "nodeId": "0"}]});
+    let signing = message::signing(LIST, "record_list.change", &value)
         .unwrap()
         .unwrap();
     let (log, log_hash) = tip(host);
@@ -114,7 +115,7 @@ fn stamped(
 }
 
 fn refused(host: &Trust, data: &str) -> String {
-    match host.take_operation("record_list.write", data) {
+    match host.take_operation("record_list.change", data) {
         Err(TakeError::Refused(reason)) => reason,
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -129,7 +130,7 @@ fn a_chain_begins_at_one_and_the_first_operation_names_nothing_before_it() {
     let (first, _) = operation(&host, &key(1), 1, 1, [9; 32], 2);
     assert!(refused(&host, &first).contains("names an operation before it"));
     let (good, _) = operation(&host, &key(1), 1, 1, NO_OPERATION, 3);
-    assert!(host.take_operation("record_list.write", &good).is_ok());
+    assert!(host.take_operation("record_list.change", &good).is_ok());
 }
 
 #[test]
@@ -138,8 +139,8 @@ fn a_new_key_does_not_reuse_the_numbers_of_the_chain_the_old_key_ended() {
     grant(&host, 1, 2, 1);
     let (first, first_id) = operation(&host, &key(1), 1, 1, NO_OPERATION, 1);
     let (second, _) = operation(&host, &key(1), 1, 2, first_id, 2);
-    host.take_operation("record_list.write", &first).unwrap();
-    host.take_operation("record_list.write", &second).unwrap();
+    host.take_operation("record_list.change", &first).unwrap();
+    host.take_operation("record_list.change", &second).unwrap();
     // The device's key is replaced, and its chain ended at 2.
     publish(
         &host,
@@ -159,7 +160,7 @@ fn a_new_key_does_not_reuse_the_numbers_of_the_chain_the_old_key_ended() {
     );
     // Numbered past it, it begins the new chain, which names nothing before it.
     let (fresh, _) = operation(&host, &key(21), 1, 3, NO_OPERATION, 6);
-    assert!(host.take_operation("record_list.write", &fresh).is_ok());
+    assert!(host.take_operation("record_list.change", &fresh).is_ok());
 }
 
 #[test]
@@ -168,7 +169,7 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     let host_a = host();
     grant(&host_a, 1, 2, 1);
     let (first, first_id) = operation(&host_a, &key(1), 1, 1, NO_OPERATION, 1);
-    host_a.take_operation("record_list.write", &first).unwrap();
+    host_a.take_operation("record_list.change", &first).unwrap();
     let (wrong_prev, _) = operation(&host_a, &key(1), 1, 2, [7; 32], 2);
     assert!(held_as_proof(&host_a, &wrong_prev));
     assert_eq!(host_a.equivocating(), vec![(1, 1)]);
@@ -182,8 +183,8 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
     let (three, _) = operation(&host_b, &key(1), 1, 3, two_id, 3);
     // The host holds the first and the third (which names the true second), and then is given another
     // second.
-    host_b.take_operation("record_list.write", &one).unwrap();
-    host_b.take_operation("record_list.write", &three).unwrap();
+    host_b.take_operation("record_list.change", &one).unwrap();
+    host_b.take_operation("record_list.change", &three).unwrap();
     let (other_two, _) = operation(&host_b, &key(1), 1, 2, one_id, 9);
     assert!(held_as_proof(&host_b, &other_two));
     assert_eq!(host_b.equivocating(), vec![(1, 2)]);
@@ -199,7 +200,7 @@ fn a_chain_that_does_not_follow_itself_is_the_device_signing_two_histories() {
 /// it is held, and the machine is told nothing of the device from the first conflict on.
 fn held_as_proof(host: &Trust, data: &str) -> bool {
     let taken = host
-        .take_operation("record_list.write", data)
+        .take_operation("record_list.change", data)
         .expect("held as proof, not refused");
     !taken.applied
 }
@@ -362,7 +363,7 @@ fn an_amendment_is_not_shown_by_the_device_taken_off_or_by_a_checkpoint_made_aft
 /// conflict with nothing. A relay answers by it (ADR 0083 section 4).
 #[test]
 fn an_operation_that_conflicts_says_where_with_what_and_whether_it_froze_its_device() {
-    const WRITE: &str = "record_list.write";
+    const WRITE: &str = "record_list.change";
     let parsed = |data: &str| serde_json::from_str::<Value>(data).unwrap();
     let with = |taken: &sce_rust_trust::Taken| -> Vec<Value> {
         let conflict = taken.conflict.as_ref().expect("it conflicts");

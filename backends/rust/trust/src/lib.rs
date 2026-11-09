@@ -36,18 +36,19 @@
 //!   to it, the head of every chain it has in full), signed; and the settlement the checkpoints
 //!   of every writer make together, which a host checks alone, with no administrator, and which
 //!   shows a relay that withholds an operation.
-//! * [`message`] - the bytes a write is signed as, written from the event's own fields and the
-//!   list's name, so a signature neither moves to another write nor to another list; the events
-//!   are those of the standard shared record list (`sce:std/shared/record_list.scxml`), with the
-//!   fields its event schemas declare.
+//! * [`message`] - the bytes a change is signed as, written from the event's own fields and the
+//!   list's name as deterministic CBOR, so a signature neither moves to another change nor to
+//!   another list; the event is the standard shared record list's change
+//!   (`sce:std/shared/record_list.scxml`, `record_list.change`), with the fields its event schemas
+//!   declare, its operations among them.
 //! * [`secrecy`] - keeping the content of a write from the hub: a key for each epoch of the
-//!   list, held by its members, seals the number and the text of a write under its stamp, and is
-//!   given to a member sealed under what their key and the giver's agree on. What the hub holds
-//!   is the stamp and a text it cannot read.
-//! * [`trust`] - the rule a host puts in front of its machine and behind it: a write leaves
+//!   list, held by its members, seals the number and the text of each write of a change under its
+//!   register and the change's dot, and is given to a member sealed under what their key and the
+//!   giver's agree on. What the hub holds is the stamp and a text it cannot read.
+//! * [`trust`] - the rule a host puts in front of its machine and behind it: a change leaves
 //!   with its author's signature, and one that arrives is admitted when its author is a member
 //!   who may write and the signature is true. The signature is written into an event as it
-//!   leaves and taken out as it arrives, so no machine holds one; a host that relays a write
+//!   leaves and taken out as it arrives, so no machine holds one; a host that relays a change
 //!   it did not make keeps the signature it arrived with, to send it on.
 //!
 //! The roles a grant carries are the ones the machine knows (1 may read, 2 may also write, 3 may
