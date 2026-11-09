@@ -23,9 +23,9 @@
 //     they prove the engine-free entry/exit path and that an eventless-only
 //     action still gets a generated interface method;
 //   - an event raised BY NAME carries no typed payload, and the arg-bearing
-//     action must not fire against a zero value it would take for data. That
-//     last one is the half a configuration assertion cannot see: the machine
-//     moves either way.
+//     action must not fire against a zero value it would take for data. The
+//     door refuses that delivery whole (docs/adr/0086, section 4.5), and the
+//     host's record is what shows the refusal reached no action.
 
 package statechart_native_action
 
@@ -120,16 +120,17 @@ func TestNativeActionDispatchesTypedPayloadToHostInterface(t *testing.T) {
 	}
 }
 
-// An event raised by NAME carries no typed payload. The transition still
-// fires — the guard is the event name — but the arg-bearing action has
-// nothing to read, and handing the host a zeroed buffer it would take for
-// data is the one outcome this seam must never produce.
+// An event raised by NAME carries no typed payload, so it does not fit its
+// schema, and the door refuses it whole where it is taken (docs/adr/0086,
+// section 4.5): its transition does not run, the arg-bearing action is never
+// reached, and handing the host a zeroed buffer it would take for data is the
+// one outcome this seam must never produce.
 //
 // Asserted on the host's record AND on the configuration: the record says the
 // host was not handed a value it would take for data, and `faulted` says the
 // machine reported it rather than swallowing it. §scxml-3.12.2 makes the second
-// half a contract — `error.execution` covers errors "arising from expression
-// evaluation", and the processor MUST place it on the internal event queue.
+// half a contract — `error.execution` takes the refused delivery's place, and
+// `idle`, where the delivery found the machine, answers it.
 func TestNativeActionDoesNotFireWithoutItsTypedPayload(t *testing.T) {
 	s := newStarted()
 
@@ -142,13 +143,14 @@ func TestNativeActionDoesNotFireWithoutItsTypedPayload(t *testing.T) {
 	if got := s.engine.GetCurrentState(); got != StatechartNativeActionStateFaulted {
 		t.Fatalf("state after untyped fragment.received = %v, want Faulted", got)
 	}
-	// The eventless effects still ran: they read no payload, so nothing about
-	// this delivery should have stopped them.
+	// The entry effect ran once, on the initial entry. The refused delivery
+	// took no transition, so the machine never entered `assembling` and its
+	// exit effect never ran.
 	if s.host.idleEntries != 1 {
 		t.Fatalf("on_idle_entry fired %d times, want 1", s.host.idleEntries)
 	}
-	if s.host.assemblingExits != 1 {
-		t.Fatalf("on_assembling_exit fired %d times, want 1", s.host.assemblingExits)
+	if s.host.assemblingExits != 0 {
+		t.Fatalf("on_assembling_exit fired %d times, want 0: a refused delivery takes no transition", s.host.assemblingExits)
 	}
 }
 

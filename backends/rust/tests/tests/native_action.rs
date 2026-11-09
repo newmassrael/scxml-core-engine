@@ -122,18 +122,18 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
     );
 }
 
-/// An event raised by NAME carries no typed payload. The transition still
-/// fires — the guard is the event name — but the arg-bearing action has
-/// nothing to read, and handing the host a value it would take for data is the
-/// one outcome this seam must never produce.
+/// An event raised by NAME carries no typed payload, so it does not fit its
+/// schema, and the door refuses it whole where it is taken (docs/adr/0086,
+/// section 4.5): its transition does not run, the arg-bearing action is never
+/// reached, and handing the host a value it would take for data is the one
+/// outcome this seam must never produce.
 ///
 /// Asserted on the host's record AND on the configuration, because the two
 /// answer different halves: the record says the host was not handed a value it
 /// would take for data, and `faulted` says the machine said so instead of
 /// swallowing it. §scxml-3.12.2 is what makes the second half a contract rather
-/// than a nicety — `error.execution` covers errors "arising from expression
-/// evaluation", the processor MUST place it on the internal event queue, and
-/// this document answers it.
+/// than a nicety — `error.execution` takes the refused delivery's place, and
+/// `idle`, where the delivery found the machine, answers it.
 ///
 /// The refusal and the proof that the site is live are asserted on ONE engine:
 /// the untyped delivery leaves the host untouched, then the SAME machine takes
@@ -177,8 +177,8 @@ fn native_action_does_not_fire_without_its_typed_payload() {
     );
     assert_eq!(
         log.borrow().assembling_exits,
-        1,
-        "answering error.execution leaves assembling, so its <onexit> runs"
+        0,
+        "a refused delivery takes no transition, so assembling is never entered"
     );
 
     // Lower bound, on the same engine: recover to `idle` and deliver the event

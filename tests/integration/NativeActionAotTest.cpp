@@ -25,9 +25,9 @@
 //     prove the engine-free entry/exit path and that an eventless-only action
 //     still gets a generated interface method;
 //   * an event raised BY NAME carries no typed payload, and the arg-bearing
-//     action must not fire against a value it would take for data. That last
-//     one is the half a configuration assertion cannot see: the machine
-//     reaches `assembling` either way.
+//     action must not fire against a value it would take for data. The door
+//     refuses that delivery whole (docs/adr/0086, section 4.5), and the host's
+//     record is what shows the refusal reached no action.
 
 #include "statechart_native_action_sm.h"
 
@@ -113,16 +113,17 @@ TEST_F(NativeActionAotTest, NativeActionDispatchesTypedPayloadToHostInterface) {
     EXPECT_EQ(host.idleEntries, 2) << "re-entering idle must fire its <onentry> again";
 }
 
-/// An event raised by NAME carries no typed payload. The transition still
-/// fires — the guard is the event name — but the arg-bearing action has
-/// nothing to read, and handing the host a value it would take for data is the
-/// one outcome this seam must never produce.
+/// An event raised by NAME carries no typed payload, so it does not fit its
+/// schema, and the door refuses it whole where it is taken (docs/adr/0086,
+/// section 4.5): its transition does not run, the arg-bearing action is never
+/// reached, and handing the host a value it would take for data is the one
+/// outcome this seam must never produce.
 ///
 /// Asserted on the host's record AND on the configuration: the record says the
 /// host was not handed a value it would take for data, and `Faulted` says the
 /// machine reported it rather than swallowing it. §scxml-3.12.2 makes the second
-/// half a contract — `error.execution` covers errors "arising from expression
-/// evaluation", and the processor MUST place it on the internal event queue.
+/// half a contract — `error.execution` takes the refused delivery's place, and
+/// `idle`, where the delivery found the machine, answers it.
 TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
     Recorder host;
     Machine sm(host);
@@ -137,10 +138,11 @@ TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
     EXPECT_EQ(host.appended.size(), 0u) << "appendFragmentPayload fired without a typed payload to read";
     EXPECT_EQ(sm.getCurrentState(), State::Faulted)
         << "the unreadable argument must reach the document as error.execution";
-    // The eventless effects still ran: they read no payload, so nothing about
-    // this delivery should have stopped them.
+    // The entry effect ran once, on the initial entry. The refused delivery
+    // took no transition, so the machine never entered `assembling` and its
+    // exit effect never ran.
     EXPECT_EQ(host.idleEntries, 1);
-    EXPECT_EQ(host.assemblingExits, 1) << "answering error.execution leaves assembling, so its <onexit> runs";
+    EXPECT_EQ(host.assemblingExits, 0) << "a refused delivery takes no transition, so assembling is never entered";
 }
 
 /// The same arm, reached with NO host mistake at all: `<raise

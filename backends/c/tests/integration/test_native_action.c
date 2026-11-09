@@ -23,8 +23,9 @@
 //     an interface does everywhere else;
 //   * an event raised BY NAME carries no typed payload, and the
 //     arg-bearing action must not fire against a zeroed buffer it would
-//     take for data. The machine reaches `assembling` either way, so
-//     only the host's record can tell the two apart.
+//     take for data. The door refuses that delivery whole
+//     (docs/adr/0086, section 4.5), and the host's record is what shows
+//     the refusal reached no action.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -144,10 +145,11 @@ static int a_host_receives_every_declared_act(void) {
     return bad;
 }
 
-// An event raised by NAME carries no typed payload. The transition still
-// fires — the guard is the event name — but the arg-bearing action has
-// nothing to read, and handing the host a zeroed buffer it would take
-// for data is the one outcome this seam must never produce.
+// An event raised by NAME carries no typed payload, so it does not fit its
+// schema, and the door refuses it whole where it is taken (docs/adr/0086,
+// section 4.5): its transition does not run, the arg-bearing action is
+// never reached, and handing the host a zeroed buffer it would take for
+// data is the one outcome this seam must never produce.
 static int an_untyped_delivery_does_not_fire_the_arg_bearing_act(void) {
     recorder_t r;
     memset(&r, 0, sizeof(r));
@@ -170,15 +172,16 @@ static int an_untyped_delivery_does_not_fire_the_arg_bearing_act(void) {
     // the host was not handed a value it would take for data, and
     // `faulted` says the machine reported it rather than swallowing it.
     // §scxml-3.12.2 makes the second half a contract - `error.execution`
-    // covers errors "arising from expression evaluation", and the
-    // processor MUST place it on the internal event queue.
+    // takes the refused delivery's place, and `idle`, where the delivery
+    // found the machine, answers it.
     bad |= check("untyped", "append_fragment_payload calls", r.append_calls, 0);
     bad |= check("untyped", "in faulted",
                  statechart_native_action_in_state(&sm, STATECHART_NATIVE_ACTION_STATE_FAULTED), 1);
-    // The eventless effects still ran: they read no payload, so nothing
-    // about this delivery should have stopped them.
+    // The entry effect ran once, on the initial entry. The refused delivery
+    // took no transition, so the machine never entered `assembling` and its
+    // exit effect never ran.
     bad |= check("untyped", "on_idle_entry", r.idle_entries, 1);
-    bad |= check("untyped", "on_assembling_exit", r.assembling_exits, 1);
+    bad |= check("untyped", "on_assembling_exit", r.assembling_exits, 0);
 
     statechart_native_action_destroy(&sm);
     return bad;

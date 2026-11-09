@@ -18,9 +18,9 @@ What the cases measure:
   prove the engine-free entry/exit path and that an eventless-only action still
   gets a generated Protocol method;
 * an event sent BY NAME carries no typed payload, and the arg-bearing action
-  must not fire against a zero value it would take for data. That one is the
-  half a configuration assertion cannot see — the machine reaches
-  ``assembling`` either way.
+  must not fire against a zero value it would take for data. The door refuses
+  that delivery whole (docs/adr/0086, section 4.5), and the host's record is
+  what shows the refusal reached no action.
 
 Regeneration (after fixture or template edit):
   ``scripts/regen_native_action.sh``
@@ -105,15 +105,16 @@ def test_native_action_dispatches_typed_payload_to_host_protocol():
 def test_native_action_does_not_fire_without_its_typed_payload():
     """An event sent by NAME carries no typed payload.
 
-    The transition still fires — the guard is the event name — but the
-    arg-bearing action has nothing to read, and handing the host a zeroed
-    buffer it would take for data is the one outcome this seam must never
-    produce. Asserted on the host's record AND on the configuration: the
-    record says the host was not handed a value it would take for data, and
-    ``faulted`` says the machine reported it rather than swallowing it.
-    §scxml-3.12.2 makes the second half a contract — ``error.execution``
-    covers errors "arising from expression evaluation", and the processor
-    MUST place it on the internal event queue.
+    It does not fit its schema, so the door refuses it whole where it is
+    taken (docs/adr/0086, section 4.5): its transition does not run, the
+    arg-bearing action is never reached, and handing the host a zeroed buffer
+    it would take for data is the one outcome this seam must never produce.
+    Asserted on the host's record AND on the configuration: the record says
+    the host was not handed a value it would take for data, and ``faulted``
+    says the machine reported it rather than swallowing it. §scxml-3.12.2
+    makes the second half a contract — ``error.execution`` takes the refused
+    delivery's place, and ``idle``, where the delivery found the machine,
+    answers it.
     """
     host = Recorder()
     engine = _started(host)
@@ -124,10 +125,11 @@ def test_native_action_does_not_fire_without_its_typed_payload():
         "append_fragment_payload fired without a typed payload to read"
     )
     assert engine.current_state == _sm.StatechartNativeActionState.FAULTED
-    # The eventless effects still ran: they read no payload, so nothing about
-    # this delivery should have stopped them.
+    # The entry effect ran once, on the initial entry. The refused delivery
+    # took no transition, so the machine never entered `assembling` and its
+    # exit effect never ran.
     assert host.idle_entries == 1
-    assert host.assembling_exits == 1
+    assert host.assembling_exits == 0, "a refused delivery takes no transition"
 
 
 def test_native_action_answers_a_document_raised_event_with_error_execution():
