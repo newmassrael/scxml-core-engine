@@ -35,7 +35,8 @@ use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 
 use super::module_parameters::ModuleParameters;
 use super::port::{Duration, Instant, Message, Port};
-use super::timer::Timer;
+use super::test_log::{TestLogEvent, TestLogRecord};
+use super::timer::{Timer, TimerStatus};
 use super::verdict::{worse, Verdict};
 use crate::saved_state::StateRefusal;
 
@@ -86,7 +87,10 @@ pub struct Configuration {
     pub mappings: Vec<(Endpoint, String)>,
 }
 
-/// What the test log records of a run (§12.5).
+/// What a line of the run's log records (§12.5): the run as a reader follows
+/// it, with the removals of PTCs and the cause of an `error` in the runtime's
+/// words. The test log, which two runtimes compare, is
+/// [`TestCaseResult::records`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogKind {
     /// The MTC was created and started.
@@ -111,7 +115,7 @@ pub enum LogKind {
     Error,
 }
 
-/// One line of the test log.
+/// One line of the run's log.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogRecord {
     /// `NOW` when it was recorded.
@@ -125,16 +129,20 @@ pub struct LogRecord {
     pub detail: String,
 }
 
-/// The outcome of one test case: its verdict, the instant it ended at, and its
-/// log.
+/// The outcome of one test case: its verdict, the instant it ended at, the
+/// lines of its log, and its test log.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TestCaseResult {
     /// The test case verdict (P14).
     pub verdict: Verdict,
     /// `NOW` when the run ended.
     pub ended_at: Instant,
-    /// The test log.
+    /// The lines of the run's log, for a reader.
     pub log: Vec<LogRecord>,
+    /// The test log (docs/adr/0091, C3): the records of TCI's test logging
+    /// interface, in the order the run produced them, which
+    /// [`TestCaseResult::canonical_log`] writes.
+    pub records: Vec<TestLogRecord>,
 }
 
 /// The SUT's side of the mapped ports (§12.2).
@@ -348,6 +356,11 @@ impl RunState {
             return;
         }
         entity.terminated = true;
+        let verdict = entity.state.verdict;
+        self.trace(TestLogEvent::ComponentDone {
+            component: name.to_string(),
+            verdict,
+        });
         if name == MTC_NAME {
             self.mtc_terminated = true;
             return;
@@ -385,6 +398,7 @@ impl RunState {
         }
         self.result.verdict = verdict;
         self.result.ended_at = self.now;
+        self.trace(TestLogEvent::TestCaseEnded { verdict });
         released
     }
 
@@ -421,6 +435,10 @@ impl RunState {
             LogKind::Create
         };
         self.record(name, kind, component_type.to_string());
+        self.trace(TestLogEvent::ComponentCreated {
+            component: name.to_string(),
+            component_type: component_type.to_string(),
+        });
         self.created
     }
 
@@ -476,6 +494,11 @@ impl RunState {
 
     fn send(&mut self, sender: &str, port: &str, message: Message) {
         self.record(sender, LogKind::Send, format!("{port} {}", message.event));
+        self.trace(TestLogEvent::MessageSent {
+            component: sender.to_string(),
+            port: port.to_string(),
+            value: message.canonical_value(),
+        });
         let peer = self.configuration.connections.iter().find_map(|(a, b)| {
             if a.is(sender, port) {
                 Some(b.clone())
@@ -574,6 +597,11 @@ impl RunState {
         };
         let message = queue.remove_head();
         self.record(name, LogKind::Receive, format!("{port} {}", message.event));
+        self.trace(TestLogEvent::MessageReceived {
+            component: name.to_string(),
+            port: port.to_string(),
+            value: message.canonical_value(),
+        });
         message
     }
 
@@ -585,6 +613,10 @@ impl RunState {
         };
         binding.timeout_taken();
         self.record(name, LogKind::Timeout, timer.to_string());
+        self.trace(TestLogEvent::TimerTimedOut {
+            component: name.to_string(),
+            timer: timer.to_string(),
+        });
     }
 
     fn setverdict(&mut self, name: &str, serial: u64, verdict: Verdict, reason: &str) {
@@ -596,14 +628,25 @@ impl RunState {
             format!("{} {reason}", verdict.name())
         };
         self.record(name, LogKind::Verdict, detail);
+        self.trace(TestLogEvent::VerdictSet {
+            component: name.to_string(),
+            verdict,
+            reason: (!reason.is_empty()).then(|| reason.to_string()),
+        });
     }
 
     // ── The verdict and the log (§5, §12.5) ──────────────────────────
 
-    /// A dynamic error (P13): the run ends with `error`.
+    /// A dynamic error (P13): the run ends with `error`. The test log records
+    /// the verdict without `why`, which is this runtime's own prose.
     fn fail(&mut self, component: &str, why: String) {
         self.error = true;
         self.record(component, LogKind::Error, why);
+        self.trace(TestLogEvent::VerdictSet {
+            component: component.to_string(),
+            verdict: Verdict::Error,
+            reason: None,
+        });
     }
 
     fn record(&mut self, component: &str, kind: LogKind, detail: String) {
@@ -612,6 +655,14 @@ impl RunState {
             component: component.to_string(),
             kind,
             detail,
+        });
+    }
+
+    /// A record of the test log, at `NOW`.
+    fn trace(&mut self, event: TestLogEvent) {
+        self.result.records.push(TestLogRecord {
+            at: self.now,
+            event,
         });
     }
 }
@@ -796,22 +847,40 @@ impl ComponentContext {
             .entry(timer.to_string())
             .or_default()
             .start(now, duration);
+        state.trace(TestLogEvent::TimerStarted {
+            component: self.name.clone(),
+            timer: timer.to_string(),
+            duration,
+        });
     }
 
-    /// `<sce:stop-timer>` (P7).
+    /// `<sce:stop-timer>` (P7). The test log records the stop of a running
+    /// timer; the stop of one that is not running changes nothing.
     pub fn stop_timer(&self, timer: &str) {
-        self.lock()
+        let mut state = self.lock();
+        let binding = state
             .component_mut(&self.name, self.serial)
             .timers
             .entry(timer.to_string())
-            .or_default()
-            .stop();
+            .or_default();
+        let running = binding.status() == TimerStatus::Running;
+        binding.stop();
+        if running {
+            state.trace(TestLogEvent::TimerStopped {
+                component: self.name.clone(),
+                timer: timer.to_string(),
+            });
+        }
     }
 
     /// A `<log>` (P8): recorded in the test log with `NOW` and the component.
     pub fn log(&self, text: &str) {
-        self.lock()
-            .record(&self.name, LogKind::Log, text.to_string());
+        let mut state = self.lock();
+        state.record(&self.name, LogKind::Log, text.to_string());
+        state.trace(TestLogEvent::Log {
+            component: self.name.clone(),
+            text: text.to_string(),
+        });
     }
 
     // ── Doors (§12.3) ────────────────────────────────────────────────
@@ -930,9 +999,13 @@ impl TestCaseRun {
         }
     }
 
-    /// Runs the test case to its end and returns its verdict and log.
+    /// Runs the test case to its end and returns its verdict and logs.
     pub fn run(self) -> TestCaseResult {
-        let mtc_type = lock(&self.run, MTC_NAME).configuration.mtc_type.clone();
+        let mtc_type = {
+            let mut state = lock(&self.run, MTC_NAME);
+            state.trace(TestLogEvent::TestCaseStarted);
+            state.configuration.mtc_type.clone()
+        };
         create_entity(&self.run, MTC_NAME, &mtc_type);
         while !ended(&self.run) {
             round(&self.run);

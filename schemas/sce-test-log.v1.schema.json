@@ -1,0 +1,216 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-test-log.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE test log (wire schema v1)",
+  "description": "The test log of one run of one test case of the test profile (docs/adr/0091 C3 and answer 8; docs/SCE_TEST_PROFILE.md section 12.5): the test verdict and the records of TCI's test logging interface (ETSI ES 201 873-6), each written where the profile's semantics places its event, in the order the round scheduler produces them. Both runtimes of a suite write it, the native one and the TTCN-3 one, and a run of the same suite against the same input trace must give the same log on both sides; a disagreement is the test case's error. The text is the JSON Canonicalization Scheme (RFC 8785) of the log, and the log holds no number: an instant, a duration and every integer of a value are the text of their decimal digits, since a 64-bit integer is past what a reader that holds numbers as doubles reads exactly. Two logs therefore agree exactly when their bytes do. A message's value is in the canonical form of the profile's types: an integer the text of its digits, a bool a truth value, a value of an enum the name its document declares, a text a text, a byte string its octets in upper-case hex, a record an object of its fields by their declared ids with an absent field omitted, a list an array, and a value of a union an object of one member, its case's variant, whose value is the case's record or the empty object. Authoritative producer is backends/rust/runtime/src/test/test_log.rs over the runs of backends/rust/runtime/src/test/run.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "type": "object",
+  "required": ["schema", "suite", "test_case", "verdict", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "The name of this shape. Changed only on a breaking shape change.",
+      "const": "sce-test-log.v1"
+    },
+    "suite": {
+      "description": "The name of the test suite the test case was run in.",
+      "type": "string",
+      "minLength": 1
+    },
+    "test_case": {
+      "description": "The name of the test case.",
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "description": "The test case verdict.",
+      "$ref": "#/definitions/verdict"
+    },
+    "records": {
+      "description": "The records of the run, in the order the round scheduler produced them. The first is the test case's start and the last its end.",
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/definitions/record" }
+    }
+  },
+  "definitions": {
+    "verdict": {
+      "description": "A test verdict, spelled as TTCN-3 spells it.",
+      "enum": ["none", "pass", "inconc", "fail", "error"]
+    },
+    "count": {
+      "description": "A whole number of microseconds, at least 0, as the text of its decimal digits.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "name": {
+      "description": "The name of a component (`mtc` or a PTC's name in its configuration), a component type, a port or a timer.",
+      "type": "string",
+      "minLength": 1
+    },
+    "value": {
+      "description": "A value in the canonical form of the profile's types: a text, a truth value, an array of values, or an object of values. Never a number and never null.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/definitions/value" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/value" }
+        }
+      ]
+    },
+    "record": {
+      "description": "One record: `at`, NOW when it was written, `kind`, the TCI event in kebab case, and the members of its kind.",
+      "oneOf": [
+        { "$ref": "#/definitions/test-case-started" },
+        { "$ref": "#/definitions/test-case-ended" },
+        { "$ref": "#/definitions/component-created" },
+        { "$ref": "#/definitions/component-done" },
+        { "$ref": "#/definitions/message-sent" },
+        { "$ref": "#/definitions/message-received" },
+        { "$ref": "#/definitions/timer-started" },
+        { "$ref": "#/definitions/timer-stopped" },
+        { "$ref": "#/definitions/timer-timed-out" },
+        { "$ref": "#/definitions/verdict-set" },
+        { "$ref": "#/definitions/log" }
+      ]
+    },
+    "test-case-started": {
+      "description": "The test case started, at NOW 0 (P11).",
+      "type": "object",
+      "required": ["at", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "test-case-started" }
+      }
+    },
+    "test-case-ended": {
+      "description": "The test case ended with its verdict (P14).",
+      "type": "object",
+      "required": ["at", "kind", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "test-case-ended" },
+        "verdict": { "$ref": "#/definitions/verdict" }
+      }
+    },
+    "component-created": {
+      "description": "A component was created: the MTC as the test case starts, a PTC when the invocation that creates it starts (P9).",
+      "type": "object",
+      "required": ["at", "kind", "component", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "component-created" },
+        "component": { "$ref": "#/definitions/name" },
+        "type": { "$ref": "#/definitions/name" }
+      }
+    },
+    "component-done": {
+      "description": "A component terminated, with its local verdict then (P10).",
+      "type": "object",
+      "required": ["at", "kind", "component", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "component-done" },
+        "component": { "$ref": "#/definitions/name" },
+        "verdict": { "$ref": "#/definitions/verdict" }
+      }
+    },
+    "message-sent": {
+      "description": "A component sent a message on one of its ports (P6).",
+      "type": "object",
+      "required": ["at", "kind", "component", "port", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "message-sent" },
+        "component": { "$ref": "#/definitions/name" },
+        "port": { "$ref": "#/definitions/name" },
+        "value": { "$ref": "#/definitions/value" }
+      }
+    },
+    "message-received": {
+      "description": "A receive branch took the head of a port's queue: the message was received and matched (P4).",
+      "type": "object",
+      "required": ["at", "kind", "component", "port", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "message-received" },
+        "component": { "$ref": "#/definitions/name" },
+        "port": { "$ref": "#/definitions/name" },
+        "value": { "$ref": "#/definitions/value" }
+      }
+    },
+    "timer-started": {
+      "description": "A component started a timer for a duration in microseconds (P7).",
+      "type": "object",
+      "required": ["at", "kind", "component", "timer", "duration_us"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "timer-started" },
+        "component": { "$ref": "#/definitions/name" },
+        "timer": { "$ref": "#/definitions/name" },
+        "duration_us": { "$ref": "#/definitions/count" }
+      }
+    },
+    "timer-stopped": {
+      "description": "A component stopped a running timer (P7). The stop of a timer that is not running changes nothing and is not recorded.",
+      "type": "object",
+      "required": ["at", "kind", "component", "timer"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "timer-stopped" },
+        "component": { "$ref": "#/definitions/name" },
+        "timer": { "$ref": "#/definitions/name" }
+      }
+    },
+    "timer-timed-out": {
+      "description": "A timeout branch took a timer that had timed out (P4).",
+      "type": "object",
+      "required": ["at", "kind", "component", "timer"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "timer-timed-out" },
+        "component": { "$ref": "#/definitions/name" },
+        "timer": { "$ref": "#/definitions/name" }
+      }
+    },
+    "verdict-set": {
+      "description": "A component's local verdict was set, by the document (P12) or to error by the runtime (P13). The reason is the document's, omitted where it gave none; the runtime's error carries none.",
+      "type": "object",
+      "required": ["at", "kind", "component", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "verdict-set" },
+        "component": { "$ref": "#/definitions/name" },
+        "verdict": { "$ref": "#/definitions/verdict" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "log": {
+      "description": "A component's log statement (P8).",
+      "type": "object",
+      "required": ["at", "kind", "component", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "$ref": "#/definitions/count" },
+        "kind": { "const": "log" },
+        "component": { "$ref": "#/definitions/name" },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}
