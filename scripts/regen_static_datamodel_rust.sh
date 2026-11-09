@@ -132,8 +132,8 @@ STD_ALGORITHMS+=(time/utc_from_local)
 STD_ALGORITHMS+=(merge/sheet_value merge/sheet_shown merge/sheet_apply merge/sheet_settle merge/sheet_show)
 # The standard shared record list's own rules (sce:std/shared/record_list, a
 # scenario's machine, and the child record_list_parent invokes): the roster and the member record it
-# keeps, the hash a settle compares, and a register's values in the order of their dots.
-STD_ALGORITHMS+=(shared/record_member shared/record_roster shared/record_settled shared/register_values)
+# keeps, and a register's values in the order of their dots.
+STD_ALGORITHMS+=(shared/record_member shared/record_roster shared/register_values)
 # static_forge_calls's: a condition, a transform, two lookups, an interpolation and a
 # validator, which it calls as the functions of their inputs they are
 # (docs/adr/0048). A machine's import names each as `super::<name>`, so it is

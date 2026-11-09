@@ -188,8 +188,8 @@ fn a_number_is_sent_where_the_child_reads_a_number() {
     assert!(ok, "a uint32 sent to an int64 field is accepted:\n{out}");
 }
 
-/// A statechart that holds a written record of the list (`record_write`, whose text
-/// is 96 bytes, `merge_text`) and a string of `capacity` bytes, and on `moved` sends
+/// A statechart that holds an operation of the list (`record_op`, whose text is 96
+/// bytes, `merge_text`) and a string of `capacity` bytes, and on `moved` sends
 /// the list `record_list.edit` (whose text is 32, `shared_typed_text`) with `text` as
 /// its text.
 fn text_parent(capacity: u32, text: &str) -> String {
@@ -199,10 +199,11 @@ fn text_parent(capacity: u32, text: &str) -> String {
        version="1.0" initial="holding" datamodel="sce-static" name="probe">
   <sce:import kind="event-schema" src="probe_moved.scxml" as="Moved"/>
   <sce:import kind="enum" src="probe_status.scxml" as="Status"/>
-  <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
   <datamodel>
     <data id="note" sce:type="string" sce:capacity="{capacity}" expr="'x'"/>
-    <data id="written" sce:type="record:Write">
+    <data id="written" sce:type="record:Op">
+      <sce:set name="kind" expr="0"/>
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
       <sce:set name="value" expr="0"/>
@@ -210,7 +211,6 @@ fn text_parent(capacity: u32, text: &str) -> String {
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
-      <sce:set name="parts" expr="1"/>
     </data>
   </datamodel>
   <state id="holding">

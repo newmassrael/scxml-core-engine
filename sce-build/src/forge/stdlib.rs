@@ -224,7 +224,8 @@ mod tests {
         let reached = closure(import_sources(parent).into_iter().map(PathBuf::from));
         for name in [
             "sce:std/shared/record_list.scxml",
-            "sce:std/shared/record_write.scxml",
+            "sce:std/shared/record_change.scxml",
+            "sce:std/shared/record_op.scxml",
             "sce:std/merge/mv_value.scxml",
         ] {
             assert!(reached.contains_key(name), "{name} is not reached");
