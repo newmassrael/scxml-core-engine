@@ -33,7 +33,6 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 
 /// The directory of the components the runtime's end-to-end test runs.
@@ -964,11 +963,12 @@ fn a_component_that_declares_a_host_action_is_refused_on_swift() {
     );
 }
 
-/// docs/adr/0092, section 7: a component whose template reaches a union is
-/// refused on Swift, which generates no unit of that template, by the union's
-/// own refusal, as on C++, Go, Python and C11.
+/// docs/adr/0092, section 7: Swift lowers a union (`UNION_BACKENDS`), so a
+/// component whose template reaches one is generated, its branch matched by the
+/// template's unit, where C++, Go, Python and C11 refuse it by the union's own
+/// refusal.
 #[test]
-fn a_component_whose_template_reaches_a_union_is_refused_on_swift() {
+fn a_component_whose_template_reaches_a_union_is_generated_on_swift() {
     let dir = tempfile::tempdir().expect("a directory");
     let imports = imports_dir();
     let port = format!(
@@ -1004,7 +1004,7 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_swift() {
     std::fs::write(dir.path().join("order_port.scxml"), port).expect("the port type is written");
     let path = dir.path().join("order_watcher.scxml");
     std::fs::write(&path, component).expect("the component is written");
-    let detail = refused(&path, "order_watcher");
-    assert!(detail.contains("`union:Payment`: "), "{detail}");
-    assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
+    let files = generate(&path).unwrap_or_else(|err| panic!("order_watcher on Swift: {err:?}"));
+    let code: String = files.into_iter().map(|(_, text)| text).collect();
+    assert!(code.contains("OrderPlacedMatch.matches("), "{code}");
 }
