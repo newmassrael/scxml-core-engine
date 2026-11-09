@@ -10,7 +10,9 @@ fn test_240() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = sce_rust_tests::generated::test240::Test240Policy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     let completed = engine.run_until_completion(Duration::from_secs(5), Duration::from_millis(10));
     assert!(completed, "Test 240 timed out");
     assert_eq!(

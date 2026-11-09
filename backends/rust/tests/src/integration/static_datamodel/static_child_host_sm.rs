@@ -769,7 +769,20 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
                 // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
                 // enters the tree's directory before its first macrostep.
                 engine.share_tree_inboxes_with(&mut child_engine);
-                child_engine.initialize();
+                if let Err(failure) =
+                    sce_rust_runtime::helpers::invoke_processing::start_child(&mut child_engine)
+                {
+                    ::sce_rust_runtime::sce_log_error!(
+                        "<invoke id='{}'> did not start its child: {}",
+                        "worker",
+                        failure
+                    );
+                    self.active_invokes.remove("worker");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticChildHostEvent::ErrorExecution,
+                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "worker", failure.stage)));
+                    continue;
+                }
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_worker = Some(Box::new(child_engine));
@@ -1092,10 +1105,18 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         0,
     >;
     type Configuration = StaticChildHostConfiguration;
+    // docs/adr/0096: what refuses this machine's start. One with a script
+    // engine is refused when its script session cannot be established; one
+    // without cannot be refused that way, so its host starts it with
+    // `engine.initialize().unwrap_or_else(|never| match never {})`.
+    type StartFailure = ::core::convert::Infallible;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
+    // Exactly when there is a script engine: the datamodel's initialization is
+    // where the script session is established (docs/adr/0096), so a machine
+    // with a session to establish always has it run at its start.
     const NEEDS_DATA_MODEL_INIT: bool = false;
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns

@@ -10,7 +10,9 @@ fn test_505() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = sce_rust_tests::generated::test505::Test505Policy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     assert!(completed, "Test 505 timed out");
     assert_eq!(
