@@ -9769,7 +9769,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (530 codes)
+## Appendix — `DiagnosticCode` index (531 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9887,6 +9887,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `test-profile/module-parameter-written` | Validation |
 | `test-profile/port-direction` | Validation |
 | `test-profile/specific-template` | Validation |
+| `test-profile/export-name` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

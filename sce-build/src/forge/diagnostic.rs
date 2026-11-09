@@ -995,6 +995,11 @@ pub enum DiagnosticCode {
     /// A send whose template is not specific (docs/SCE_TEST_PROFILE.md §6.2).
     #[serde(rename = "test-profile/specific-template")]
     TestProfileSpecificTemplate,
+    /// A name the TTCN-3 export would write as it is written and cannot: no
+    /// TTCN-3 identifier, a reserved word of TTCN-3, or one identifier with
+    /// another name in its scope (docs/SCE_TEST_PROFILE.md §9.5).
+    #[serde(rename = "test-profile/export-name")]
+    TestProfileExportName,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3975,6 +3980,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TestProfileModuleParameterWritten,
         TestProfilePortDirection,
         TestProfileSpecificTemplate,
+        TestProfileExportName,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4752,6 +4758,7 @@ impl DiagnosticCode {
                 Some("SCE Test Profile §11.5")
             }
             TestProfileSpecificTemplate => Some("SCE Test Profile §6.2"),
+            TestProfileExportName => Some("SCE Test Profile §9.5"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5693,6 +5700,7 @@ impl DiagnosticCode {
             | TestProfileModuleParameterWritten
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
+            | TestProfileExportName
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6222,6 +6230,7 @@ impl DiagnosticCode {
             TestProfileModuleParameterWritten => "test-profile/module-parameter-written",
             TestProfilePortDirection => "test-profile/port-direction",
             TestProfileSpecificTemplate => "test-profile/specific-template",
+            TestProfileExportName => "test-profile/export-name",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8569,6 +8578,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 }
                 TestProfileRule::PortDirection => DiagnosticCode::TestProfilePortDirection,
                 TestProfileRule::SpecificTemplate => DiagnosticCode::TestProfileSpecificTemplate,
+                TestProfileRule::ExportName => DiagnosticCode::TestProfileExportName,
             },
             stage: Stage::Validation,
             expected: None,
@@ -14611,6 +14621,24 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:e4abee1ecb50b99d","code":"test-profile/specific-template","stage":"validation","spec":"SCE Test Profile §6.2","message":"test-component 'job_tester': <send> sends the template 'EveryMatcher', which holds a matching mechanism, itself or in a template it references: a send's template is specific, values alone, every parameter bound (docs/SCE_TEST_PROFILE.md §6.2)","actual":"EveryMatcher"}"#,
             ),
             (
+                // A name the TTCN-3 export cannot write as it is written
+                // (docs/SCE_TEST_PROFILE.md §9.5): the name is `actual`.
+                "forge/test-profile-export-name",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::ExportName,
+                    kind: ForgeKind::Enum,
+                    document: "result".into(),
+                    actual: "error".into(),
+                    detail: "the variant 'error' is a reserved word of TTCN-3 (ES 201 873-1 \
+                             Annex A): the export writes every name as it is written \
+                             (docs/SCE_TEST_PROFILE.md §9.5), so a name it cannot write is \
+                             refused rather than renamed"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:a6b276729c62ac25","code":"test-profile/export-name","stage":"validation","spec":"SCE Test Profile §9.5","message":"enum 'result': the variant 'error' is a reserved word of TTCN-3 (ES 201 873-1 Annex A): the export writes every name as it is written (docs/SCE_TEST_PROFILE.md §9.5), so a name it cannot write is refused rather than renamed","actual":"error"}"#,
+            ),
+            (
                 "forge/mesh-rpc-reserved-param",
                 ValidationError::MeshRpcReservedParam {
                     param: "_mesh_event".into(),
@@ -20537,6 +20565,7 @@ mod tests {
             | TestProfileModuleParameterWritten
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
+            | TestProfileExportName
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -21546,6 +21575,7 @@ mod tests {
                 | TestProfileBranch | TestProfileDoneBranch
                 | TestProfileModuleParameterWritten | TestProfilePortDirection
                 | TestProfileSpecificTemplate
+                | TestProfileExportName
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21965,9 +21995,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            530,
+            531,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 530 distinct variants to match the DiagnosticCode \
+             expected 531 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22646,6 +22676,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | TestProfileModuleParameterWritten
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
+            | TestProfileExportName
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

@@ -952,6 +952,7 @@ references against a real document and drift silently.
 | `test-profile/datamodel` | `validation` | no | SCE Test Profile §11.2 |
 | `test-profile/done-branch` | `validation` | no | SCE Test Profile §8.2 |
 | `test-profile/duration` | `validation` | no | SCE Test Profile §4.7 |
+| `test-profile/export-name` | `validation` | no | SCE Test Profile §9.5 |
 | `test-profile/invoke` | `validation` | no | SCE Test Profile §8.2 |
 | `test-profile/literal` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/matcher-type` | `validation` | no | SCE Test Profile §11.4 |

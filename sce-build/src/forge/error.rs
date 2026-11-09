@@ -706,6 +706,11 @@ pub enum TestProfileRule {
     /// §6.2 and §11.5: a send whose template is not specific. Wire code
     /// `test-profile/specific-template`.
     SpecificTemplate,
+    /// §9.5: a name the TTCN-3 export writes as it is written, which is no
+    /// TTCN-3 identifier, is a reserved word of TTCN-3, or is one identifier
+    /// with another name the export writes in the same scope. Wire code
+    /// `test-profile/export-name`.
+    ExportName,
 }
 
 /// Semantic validation errors from kind-specific parsing.

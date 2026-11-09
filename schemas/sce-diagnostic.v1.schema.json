@@ -123,6 +123,7 @@
         "test-profile/module-parameter-written",
         "test-profile/port-direction",
         "test-profile/specific-template",
+        "test-profile/export-name",
         "validation/mesh-rpc-reserved-param",
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",
