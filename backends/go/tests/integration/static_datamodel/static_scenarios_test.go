@@ -2477,6 +2477,21 @@ func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	})
 }
 
+// A copy that keeps a journal offers each change to its host and takes it in at the
+// verdict of its delivery layer, reporting the outcome; a change taken in
+// provisionally is confirmed or withdrawn by its undo record, the suffix after it with
+// it; the host's word of the highest own stamp its layer holds raises the clock; and a
+// copy built again is given back what was made, a stable state and then the changes
+// after its cut, and sends nothing while it is (docs/adr/0083, docs/adr/0085 section
+// 7, docs/adr/0093).
+func TestACopyOfTheStandardRecordListKeepsAJournalAndIsBuiltAgainFromIt(t *testing.T) {
+	t.Run("a journal", func(t *testing.T) { replay(t, "record_list_journal", recordListCopy()) })
+	t.Run("provisional", func(t *testing.T) { replay(t, "record_list_provisional", recordListCopy()) })
+	t.Run("a raise", func(t *testing.T) { replay(t, "record_list_raise", recordListCopy()) })
+	t.Run("a recall", func(t *testing.T) { replay(t, "record_list_recall", recordListCopy()) })
+	t.Run("a restore", func(t *testing.T) { replay(t, "record_list_restore", recordListCopy()) })
+}
+
 // registerRecord is a `record:Register` (sce:std/shared/record_register) as a host
 // reads it: what a shared record list told the statechart that invoked it of one
 // register, its count and its first live value with the dot of its write.
@@ -2537,6 +2552,14 @@ func TestAListTakesTwoConcurrentClearsInEitherOrder(t *testing.T) {
 	replay(t, "record_list_concurrent_clears", recordListParent())
 }
 
+// A statechart that invokes a list that keeps a journal is told each change's verdict:
+// its registers once it is accepted or held, `peerRefused` once when it is refused, and
+// a provisional change as pending, then confirmed or withdrawn (docs/adr/0093,
+// section 3.3).
+func TestAParentIsToldEachVerdictOfItsList(t *testing.T) {
+	replay(t, "record_list_verdict", recordListParent())
+}
+
 // recordListParent is one run of record_list_parent, which invokes the list as its
 // child, as a scenario reads it.
 func recordListParent() machine {
@@ -2548,7 +2571,9 @@ func recordListParent() machine {
 		"others": func() any { return registerValuesJSON(policy.Others()) },
 		// The last change the list refused, absent until there is one: the command at
 		// fault and the reason, each by the name its enum declares, record_command and
-		// record_refusal (docs/adr/0046, docs/adr/0055).
+		// record_refusal (docs/adr/0046, docs/adr/0055), the host's name for the command
+		// and whether the change was withdrawn (record_refused's second revision,
+		// docs/adr/0093).
 		"refused": func() any {
 			refused, ok := policy.Refused().Get()
 			if !ok {
@@ -2556,10 +2581,13 @@ func recordListParent() machine {
 			}
 			return map[string]any{
 				"id": refused.Id(), "field": refused.Field(), "kind": refused.Kind().String(),
-				"reason": refused.Reason().String(),
+				"reason": refused.Reason().String(), "command": digits(refused.Command()),
+				"withdrawn": refused.Withdrawn(),
 			}
 		},
-		"refusedCount": func() any { return policy.RefusedCount() },
+		"refusedCount":   func() any { return policy.RefusedCount() },
+		"pendingCount":   func() any { return policy.PendingCount() },
+		"confirmedCount": func() any { return policy.ConfirmedCount() },
 	})
 }
 

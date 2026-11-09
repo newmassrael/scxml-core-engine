@@ -888,6 +888,36 @@ def test_a_standard_record_list_clears_a_field_and_retires_a_row() -> None:
     replay("record_list_retire")
 
 
+# A copy that keeps a journal offers each change to its host and takes it in at the
+# verdict of its delivery layer, reporting the outcome (docs/adr/0083, docs/adr/0093).
+def test_a_standard_record_list_offers_each_change_to_its_journal() -> None:
+    replay("record_list_journal")
+
+
+# A change taken in provisionally is confirmed or withdrawn by its undo record, the
+# suffix after it with it, latest first (docs/adr/0093, section 3.4).
+def test_a_standard_record_list_withdraws_a_provisional_change_by_its_undo_record() -> None:
+    replay("record_list_provisional")
+
+
+# The host's word of the highest own stamp its layer holds raises the clock, and the
+# next stamp is after it (docs/adr/0093, section 4.3).
+def test_a_standard_record_list_is_raised_to_its_own_highest_stamp() -> None:
+    replay("record_list_raise")
+
+
+# A copy built again is given back what was made, whole, and sends nothing while it is
+# (docs/adr/0083, section 1.5; docs/adr/0085, section 7.2).
+def test_a_standard_record_list_is_built_again_by_recall() -> None:
+    replay("record_list_recall")
+
+
+# A stable state is handed over, then the changes after its cut (docs/adr/0085,
+# section 4.4).
+def test_a_standard_record_list_is_built_again_from_a_stable_state() -> None:
+    replay("record_list_restore")
+
+
 # A statechart that invokes the standard record list by its library name is told what
 # each register a change moved holds: its count and its values in the order of their
 # dots, a count of 0 when every value was written over, and nothing for a write the
@@ -901,6 +931,14 @@ def test_a_parent_is_told_what_each_register_of_its_list_holds() -> None:
 # (docs/adr/0085, section 9.3).
 def test_a_standard_record_list_takes_two_concurrent_clears_in_either_order() -> None:
     replay("record_list_concurrent_clears")
+
+
+# A statechart that invokes a list that keeps a journal is told each change's verdict:
+# its registers once it is accepted or held, `peerRefused` once when it is refused, and
+# a provisional change as pending, then confirmed or withdrawn (docs/adr/0093,
+# section 3.3).
+def test_a_parent_is_told_each_verdict_of_its_list() -> None:
+    replay("record_list_verdict")
 
 
 # One copy of the list of who is online, as each of the three that took part in one

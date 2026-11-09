@@ -37,6 +37,19 @@
   holds no refusal at all, and not one whose reason stands for none (docs/adr/0055).
   The document names no variant of either enum, so it imports neither: the record holds
   each in the type of the enum document the schema imports (docs/adr/0054).
+
+  The join is passed on with `journal` as the host gave it (docs/adr/0083, docs/adr/0093),
+  and so are the host's names for its commands (`command`). A list that keeps a journal
+  takes a change of its own in only at the verdict of its delivery layer, which the host
+  gives the parent as `record_list.verdict` and the parent passes on, with the host's
+  later `record_list.confirm` and `record_list.withdraw` of a change the layer answered
+  `waiting`. Such a change is told to the parent as its registers and
+  `record_list.pending`, and then as `record_list.confirmed`, or, withdrawn, as the
+  registers the withdrawal moved and `record_list.refused` with `withdrawn`; a change the
+  layer refused is told as `record_list.refused` with the reason `peerRefused`. The parent
+  counts what it is told of pending and confirmed changes (`pendingCount`,
+  `confirmedCount`). A scenario's host that throws the list away when it ends joins it
+  with `journal` false, and one that plays the host of a journal joins it with true.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
@@ -55,6 +68,13 @@
   <!-- A refusal the list tells, whose command and reason are values of the enums the
        schema imports. -->
   <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
+  <!-- The host's words of a change's verdict, passed on, and what the list tells of a
+       change taken in provisionally. -->
+  <sce:import kind="event-schema" src="sce:std/shared/record_verdict.scxml" as="Verdict"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_confirm.scxml" as="Confirm"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_withdraw.scxml" as="Withdraw"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_pending.scxml" as="Pending"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_confirmed.scxml" as="Confirmed"/>
   <datamodel>
     <data id="told" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="shown" sce:type="record:Told" sce:direction="out">
@@ -80,6 +100,8 @@
     </data>
     <data id="refused" sce:type="optional&lt;record:Refused&gt;" expr="null" sce:direction="out"/>
     <data id="refusedCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="pendingCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="confirmedCount" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="holding">
     <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml">
@@ -90,6 +112,7 @@
     <transition event="record_list.join" type="internal">
       <send target="#_list" event="record_list.join">
         <param name="node" expr="_event.data.node"/>
+        <param name="journal" expr="_event.data.journal"/>
       </send>
     </transition>
     <transition event="record_list.edit" type="internal">
@@ -100,6 +123,7 @@
         <param name="text" expr="_event.data.text"/>
         <param name="now" expr="_event.data.now"/>
         <param name="more" expr="_event.data.more"/>
+        <param name="command" expr="_event.data.command"/>
       </send>
     </transition>
     <transition event="record_list.clear" type="internal">
@@ -108,6 +132,7 @@
         <param name="field" expr="_event.data.field"/>
         <param name="now" expr="_event.data.now"/>
         <param name="more" expr="_event.data.more"/>
+        <param name="command" expr="_event.data.command"/>
       </send>
     </transition>
     <transition event="record_list.retire" type="internal">
@@ -115,6 +140,31 @@
         <param name="id" expr="_event.data.id"/>
         <param name="now" expr="_event.data.now"/>
         <param name="more" expr="_event.data.more"/>
+        <param name="command" expr="_event.data.command"/>
+      </send>
+    </transition>
+    <!-- The verdict of the list's delivery layer on a change it offered, and the host's
+         later word on one the layer answered `waiting`. -->
+    <transition event="record_list.verdict" type="internal">
+      <send target="#_list" event="record_list.verdict">
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="outcome" expr="_event.data.outcome"/>
+        <param name="reason" expr="_event.data.reason"/>
+      </send>
+    </transition>
+    <transition event="record_list.confirm" type="internal">
+      <send target="#_list" event="record_list.confirm">
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="command" expr="_event.data.command"/>
+      </send>
+    </transition>
+    <transition event="record_list.withdraw" type="internal">
+      <send target="#_list" event="record_list.withdraw">
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="command" expr="_event.data.command"/>
       </send>
     </transition>
     <transition event="record_list.role" type="internal">
@@ -173,6 +223,14 @@
     <transition event="record_list.refused" type="internal">
       <assign location="refused" expr="_event.data"/>
       <assign location="refusedCount" expr="refusedCount + 1"/>
+    </transition>
+
+    <!-- A change of the list's own taken in provisionally, and one of them carried now. -->
+    <transition event="record_list.pending" type="internal">
+      <assign location="pendingCount" expr="pendingCount + 1"/>
+    </transition>
+    <transition event="record_list.confirmed" type="internal">
+      <assign location="confirmedCount" expr="confirmedCount + 1"/>
     </transition>
   </state>
 </scxml>

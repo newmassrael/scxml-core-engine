@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_pending.scxml — what a copy of a shared record list tells the
+  statechart that invoked it when its delivery layer answered a change `waiting`
+  (docs/adr/0093, section 3.3): the copy took the change in provisionally and told the
+  registers it moved, and the change may yet be withdrawn (record_list.refused with
+  `withdrawn`) or confirmed (record_list.confirmed, record_confirmed). A parent shows
+  such a change as not yet carried.
+
+  The fields are record_confirm's (the shape `record_stamp` of docs/adr/0093, section
+  5): the change's stamp (`wallTime`, `counter`) and `command`, the host's name for the
+  command that ended it. A list a host started has no parent and tells no one.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_pending"
+       sce:event-name="record_list.pending">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

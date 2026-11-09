@@ -777,7 +777,15 @@ impl Devices {
             }
             let sent = Sends::default();
             world.set_sealer(name, Box::new(ToTheCore(sent.clone())));
-            world.raise(name, "record_list.join", &format!(r#"{{"node":"{node}"}}"#));
+            // Joined with `journal` false (docs/adr/0083, docs/adr/0093): this host gives its
+            // core what the machine sends to `#people` (`Peer::outbound`), which a copy that
+            // keeps a journal does not send; a host that gives its core each offered change
+            // and its copy the verdict comes with the core's `Peer::made`.
+            world.raise(
+                name,
+                "record_list.join",
+                &format!(r#"{{"node":"{node}","journal":false}}"#),
+            );
             devices.push(Device {
                 name,
                 node,

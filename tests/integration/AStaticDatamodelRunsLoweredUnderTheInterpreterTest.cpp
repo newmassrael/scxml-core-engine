@@ -864,8 +864,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // person's copy, a list a host started, when it tells no parent anything, and a
     // change and the one it writes over in their causal order, each change one message
     // whose operations are a list of records (docs/adr/0085) ...
-    for (const char *copy : {"record_list_person", "record_list_alone", "record_list_offline", "record_list_change",
-                             "record_list_retire", "record_list_out_of_causal_order_is_not_given"}) {
+    for (const char *copy :
+         {"record_list_person", "record_list_alone", "record_list_offline", "record_list_change", "record_list_retire",
+          "record_list_out_of_causal_order_is_not_given", "record_list_journal", "record_list_provisional",
+          "record_list_raise", "record_list_recall", "record_list_restore"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }
@@ -873,7 +875,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // `src` is lowered as a document of its own and written beside its parent, whose
     // `src` is rewritten to the name it is written under, so the Interpreter loads
     // the lowered list from the directory the set stands in.
-    for (const char *invoking : {"record_list_parent", "record_list_concurrent_clears"}) {
+    for (const char *invoking : {"record_list_parent", "record_list_concurrent_clears", "record_list_verdict"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), invoking), replayed.end())
             << invoking << " was not replayed: a child named by `src` has no lowering for the Interpreter";
     }

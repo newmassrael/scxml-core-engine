@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_withdraw.scxml — the host's word to a copy of a shared record
+  list that its delivery layer dropped a change the copy took in provisionally
+  (docs/adr/0093, section 3.4), given once the host journalled the withdrawal. It names
+  the earliest change withdrawn, by its stamp (`wallTime`, `counter`), and the copy
+  withdraws that change and every provisional change after it, latest first: each was
+  prepared on a state that held the one before it, and the layer withdraws the same
+  suffix. A change is withdrawn by its undo record, never by building the copy again:
+  the values its writes added go, and the values its write-overs took out and no later
+  change took out come back. The copy tells its parent each register the withdrawals
+  moved, once, and record_list.refused (record_refused) with `peerRefused` and
+  `withdrawn` for each change withdrawn.
+
+  The fields are record_confirm's (the shape `record_stamp` of docs/adr/0093, section
+  5); `command` is not read here. A withdrawal that names no change the copy holds
+  provisionally changes nothing and is counted in `refusals`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_withdraw"
+       sce:event-name="record_list.withdraw">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
