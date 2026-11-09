@@ -965,6 +965,13 @@ PROBE_MB=$(( KOTLIN_BUDGET_MB * 2 / 3 ))
 # which of two the Kotlin plugin keeps when it parses them is its choice, and
 # a probe that silently ran at the full budget would pass every time.
 PROBE_JVMARGS="$(sed -E 's/(^|[[:space:]])-Xmx[^[:space:]]+//g' <<<"$KOTLIN_JVMARGS") -Xmx${PROBE_MB}m"
+# ⚠ No leading space. Taking `-Xmx3g` out of the front of the declared
+# arguments leaves one, and the Kotlin plugin reads an empty argument as a bare
+# `-`, which the compile daemon's JVM refuses ("Unrecognized option: -"), so the
+# daemon never starts. Until the probe's daemon directory was its own it never
+# started a daemon at all, only found the rows', and the fault stayed hidden
+# (hosted run 42561820597, 2026-11-09).
+PROBE_JVMARGS="${PROBE_JVMARGS#"${PROBE_JVMARGS%%[![:space:]]*}"}"
 PROBE_GC_LOG="$LOG/kotlin-headroom-gc.log"
 PROBE_RUN_FILES="$LOG/kotlin-headroom-daemon"
 PROBE_GC_FLAG="$(gc_log_flag "$PROBE_GC_LOG" uptime,pid,level,tags)"
