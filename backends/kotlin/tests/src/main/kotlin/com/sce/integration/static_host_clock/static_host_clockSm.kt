@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_clock.scxml
@@ -369,7 +369,8 @@ class StaticHostClockStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticHostClockEvent, metadata: EventMetadata) {
@@ -383,10 +384,10 @@ class StaticHostClockStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticHostClockEvent.Done.Invoke.Now) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeNowPayload = StaticHostClockDoneInvokeNowPayload(fields.string("error"), fields.int64("utc_ms"), fields.int64("monotonic_ms"))
+                    pendingDoneInvokeNowPayload = StaticHostClockDoneInvokeNowPayload(fields.string("error", 24), fields.int64("utc_ms"), fields.int64("monotonic_ms"))
                 } else if (event == StaticHostClockEvent.Done.Invoke.Zone) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeZonePayload = StaticHostClockDoneInvokeZonePayload(fields.string("error"), fields.string("zone_id"), fields.int32("utc_offset_s"))
+                    pendingDoneInvokeZonePayload = StaticHostClockDoneInvokeZonePayload(fields.string("error", 24), fields.string("zone_id", 64), fields.int32("utc_offset_s"))
                 }
             }
         }

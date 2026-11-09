@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 26e5bf730b3c2b04bc64b3f3339bd11d68362c63297741a6a051afa4c6cd0d1b
+// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
-// SCE-MAP: record_list.scxml:209 :: _machine
+#![doc = "SCE-MAP: record_list.scxml:210 :: _machine"]
+// SCE-MAP: record_list.scxml:210 :: _machine
 
 use super::hlc_receive;
 use super::hlc_send;
@@ -832,7 +832,6 @@ pub enum RecordListRefusalEnum {
     NoRoomForValue,
     NoRoomForHistory,
     NoRoomForDigest,
-    TextTooLong,
     ChangeTooLarge,
     RegisterNamedTwice,
     ClockExhausted,
@@ -847,7 +846,6 @@ impl RecordListRefusalEnum {
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
             Self::NoRoomForDigest => "noRoomForDigest",
-            Self::TextTooLong => "textTooLong",
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
@@ -862,7 +860,6 @@ impl RecordListRefusalEnum {
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
             Self::NoRoomForDigest => 4,
-            Self::TextTooLong => 5,
             Self::ChangeTooLarge => 6,
             Self::RegisterNamedTwice => 7,
             Self::ClockExhausted => 8,
@@ -877,7 +874,6 @@ impl RecordListRefusalEnum {
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
             4 => Some(Self::NoRoomForDigest),
-            5 => Some(Self::TextTooLong),
             6 => Some(Self::ChangeTooLarge),
             7 => Some(Self::RegisterNamedTwice),
             8 => Some(Self::ClockExhausted),
@@ -1416,7 +1412,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListRefusalEnum {
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
                 Self::NoRoomForDigest => "noRoomForDigest",
-                Self::TextTooLong => "textTooLong",
                 Self::ChangeTooLarge => "changeTooLarge",
                 Self::RegisterNamedTwice => "registerNamedTwice",
                 Self::ClockExhausted => "clockExhausted",
@@ -1435,7 +1430,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListRefusalEnum {
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
                 "noRoomForDigest" => Ok(Self::NoRoomForDigest),
-                "textTooLong" => Ok(Self::TextTooLong),
                 "changeTooLarge" => Ok(Self::ChangeTooLarge),
                 "registerNamedTwice" => Ok(Self::RegisterNamedTwice),
                 "clockExhausted" => Ok(Self::ClockExhausted),
@@ -1854,10 +1848,10 @@ impl RecordListPersist for Engine<RecordListPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
-            revised: "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
-            format2_first: "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
-            format2_revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
+            first: "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
+            revised: "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
+            format2_first: "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
+            format2_revised: "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "merge.hlc_timestamp",
@@ -2096,10 +2090,6 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                 (
                     "values".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.values),
-                ),
-                (
-                    "typed".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.typed),
                 ),
                 (
                     "held".to_string(),
@@ -2395,11 +2385,6 @@ impl RecordListPersist for Engine<RecordListPolicy> {
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("values")?,
                 "values",
-            )?;
-        let _: ::sce_rust_runtime::portable::SceString<32> =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-                saved.variable("typed")?,
-                "typed",
             )?;
         let _: RecordListValueRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
@@ -2701,10 +2686,6 @@ impl RecordListPersist for Engine<RecordListPolicy> {
             saved.variable("values")?,
             "values",
         )?;
-        policy.typed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
-            saved.variable("typed")?,
-            "typed",
-        )?;
         policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("held")?,
             "held",
@@ -2950,7 +2931,6 @@ impl RecordListPersist for Engine<RecordListPolicy> {
 pub struct RecordListInvokeParams {
     pub node: Option<u64>,
     pub hub: Option<bool>,
-    pub typed: Option<::sce_rust_runtime::portable::SceString<32>>,
     pub mine: Option<u32>,
     pub share_id: Option<u32>,
     pub share_field: Option<u16>,
@@ -3025,8 +3005,6 @@ pub struct RecordListPolicy {
     entry: RecordListEntryRecord,
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
     values: ::sce_rust_runtime::portable::BoundedList<RecordListValueRecord, 512>,
-    /// W3C SCXML 5.2: the `typed` datamodel variable.
-    typed: ::sce_rust_runtime::portable::SceString<32>,
     /// W3C SCXML 5.2: the `held` datamodel variable.
     held: RecordListValueRecord,
     /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
@@ -3198,8 +3176,6 @@ impl RecordListPolicy {
         };
         let values: ::sce_rust_runtime::portable::BoundedList<RecordListValueRecord, 512> =
             ::sce_rust_runtime::portable::BoundedList::new();
-        let typed: ::sce_rust_runtime::portable::SceString<32> =
-            ::sce_rust_runtime::portable::sce_text!(32, "");
         let held: RecordListValueRecord = RecordListValueRecord {
             id: 0,
             field: 0,
@@ -3324,7 +3300,6 @@ impl RecordListPolicy {
             stable,
             entry,
             values,
-            typed,
             held,
             digest,
             mine,
@@ -3451,9 +3426,6 @@ impl RecordListPolicy {
         }
         if let Some(value) = params.hub {
             self.hub = value;
-        }
-        if let Some(value) = params.typed {
-            self.typed = value;
         }
         if let Some(value) = params.mine {
             self.mine = value;
@@ -3937,7 +3909,8 @@ impl StatePolicy for RecordListPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -3994,7 +3967,7 @@ impl StatePolicy for RecordListPolicy {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 32)?,
                         now: fields.signed64("now")?,
                         more: fields.truth("more")?,
                     });
@@ -4127,7 +4100,7 @@ impl StatePolicy for RecordListPolicy {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 96)?,
                         wallTime: fields.signed64("wallTime")?,
                         counter: fields.unsigned::<u32>("counter")?,
                         nodeId: fields.unsigned64("nodeId")?,
@@ -4156,8 +4129,8 @@ impl StatePolicy for RecordListPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:210 :: _machine"]
+    // SCE-MAP: record_list.scxml:210 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -4173,8 +4146,8 @@ impl StatePolicy for RecordListPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:210 :: _machine"]
+    // SCE-MAP: record_list.scxml:210 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -4192,8 +4165,8 @@ impl StatePolicy for RecordListPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:210 :: _machine"]
+    // SCE-MAP: record_list.scxml:210 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -4375,8 +4348,8 @@ impl StatePolicy for RecordListPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: record_list.scxml:209 :: _machine"]
-    // SCE-MAP: record_list.scxml:209 :: _machine
+    #[doc = "SCE-MAP: record_list.scxml:210 :: _machine"]
+    // SCE-MAP: record_list.scxml:210 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -4385,7 +4358,7 @@ impl StatePolicy for RecordListPolicy {
         match transition.0 {
             // open, transition 0
             0 => {
-                // SCE-MAP: record_list.scxml:433 :: open :: _transition_0
+                // SCE-MAP: record_list.scxml:429 :: open :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListJoin(ev) => ev.clone(),
@@ -4402,7 +4375,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 1
             1 => {
-                // SCE-MAP: record_list.scxml:440 :: open :: _transition_1
+                // SCE-MAP: record_list.scxml:436 :: open :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListRoom(ev) => ev.clone(),
@@ -4422,7 +4395,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 2
             2 => {
-                // SCE-MAP: record_list.scxml:451 :: open :: _transition_2
+                // SCE-MAP: record_list.scxml:447 :: open :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListRole(ev) => ev.clone(),
@@ -4451,7 +4424,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 3
             3 => {
-                // SCE-MAP: record_list.scxml:462 :: open :: _transition_3
+                // SCE-MAP: record_list.scxml:459 :: open :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListEdit(ev) => ev.clone(),
@@ -4475,24 +4448,6 @@ impl StatePolicy for RecordListPolicy {
 
                         // W3C SCXML 5.3: <assign location="probing">
                         self.probing = true;
-
-                        // W3C SCXML 5.3: <assign location="probe">
-                        self.probe = RecordListRefusalEnum::TextTooLong;
-
-                        // W3C SCXML 5.3: <assign location="typed">
-                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
-    self.typed = ::sce_rust_runtime::portable::SceString::<32>::from_text(&&ev.text[..])?;
-    Ok(())
-})() {
-    Ok(()) => false,
-    Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='typed'>: an integer operation overflowed or failed"));
-        true
-    }
-};
-                        if sce_failed {
-                            break 'action_block; // W3C SCXML 4.9: the error ends the block
-                        }
 
                         // W3C SCXML 5.3: <assign location="part.kind">
                         self.part.kind = 0;
@@ -4569,7 +4524,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 4
             4 => {
-                // SCE-MAP: record_list.scxml:489 :: open :: _transition_4
+                // SCE-MAP: record_list.scxml:484 :: open :: _transition_4
                 // W3C SCXML 3.13: Transition 4 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListClear(ev) => ev.clone(),
@@ -4669,7 +4624,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 5
             5 => {
-                // SCE-MAP: record_list.scxml:514 :: open :: _transition_5
+                // SCE-MAP: record_list.scxml:509 :: open :: _transition_5
                 // W3C SCXML 3.13: Transition 5 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListRetire(ev) => ev.clone(),
@@ -4769,7 +4724,7 @@ impl StatePolicy for RecordListPolicy {
             }
             // open, transition 6
             6 => {
-                // SCE-MAP: record_list.scxml:556 :: open :: _transition_6
+                // SCE-MAP: record_list.scxml:551 :: open :: _transition_6
                 // W3C SCXML 3.13: Transition 6 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -5617,7 +5572,7 @@ self.staged.clear();}
             }
             // open, transition 7
             7 => {
-                // SCE-MAP: record_list.scxml:708 :: open :: _transition_7
+                // SCE-MAP: record_list.scxml:703 :: open :: _transition_7
                 // W3C SCXML 3.13: Transition 7 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -6384,7 +6339,7 @@ self.staged.clear();}
             }
             // open, transition 8
             8 => {
-                // SCE-MAP: record_list.scxml:844 :: open :: _transition_8
+                // SCE-MAP: record_list.scxml:839 :: open :: _transition_8
                 // W3C SCXML 3.13: Transition 8 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -7357,7 +7312,7 @@ self.staged.clear();}
             }
             // open, transition 9
             9 => {
-                // SCE-MAP: record_list.scxml:947 :: open :: _transition_9
+                // SCE-MAP: record_list.scxml:942 :: open :: _transition_9
                 // W3C SCXML 3.13: Transition 9 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListWrite(ev) => ev.clone(),
@@ -7404,7 +7359,7 @@ self.staged.clear();}
             }
             // open, transition 10
             10 => {
-                // SCE-MAP: record_list.scxml:970 :: open :: _transition_10
+                // SCE-MAP: record_list.scxml:965 :: open :: _transition_10
                 // W3C SCXML 3.13: Transition 10 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListWrite(ev) => ev.clone(),
@@ -7522,7 +7477,7 @@ self.staged.clear();}
             }
             // open, transition 11
             11 => {
-                // SCE-MAP: record_list.scxml:1005 :: open :: _transition_11
+                // SCE-MAP: record_list.scxml:1000 :: open :: _transition_11
                 // W3C SCXML 3.13: Transition 11 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -7545,7 +7500,7 @@ self.staged.clear();}
             }
             // open, transition 12
             12 => {
-                // SCE-MAP: record_list.scxml:1012 :: open :: _transition_12
+                // SCE-MAP: record_list.scxml:1007 :: open :: _transition_12
                 // W3C SCXML 3.13: Transition 12 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListSupersede(ev) => ev.clone(),
@@ -7663,7 +7618,7 @@ self.staged.clear();}
             }
             // open, transition 13
             13 => {
-                // SCE-MAP: record_list.scxml:1052 :: open :: _transition_13
+                // SCE-MAP: record_list.scxml:1047 :: open :: _transition_13
                 // W3C SCXML 3.13: Transition 13 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -7981,7 +7936,7 @@ self.staged.clear();}
             }
             // open, transition 14
             14 => {
-                // SCE-MAP: record_list.scxml:1131 :: open :: _transition_14
+                // SCE-MAP: record_list.scxml:1126 :: open :: _transition_14
                 // W3C SCXML 3.13: Transition 14 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListAnnounce(ev) => ev.clone(),
@@ -8068,7 +8023,7 @@ self.staged.clear();}
             }
             // open, transition 15
             15 => {
-                // SCE-MAP: record_list.scxml:1154 :: open :: _transition_15
+                // SCE-MAP: record_list.scxml:1149 :: open :: _transition_15
                 // W3C SCXML 3.13: Transition 15 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -8686,7 +8641,7 @@ self.staged.clear();}
             }
             // open, transition 16
             16 => {
-                // SCE-MAP: record_list.scxml:1209 :: open :: _transition_16
+                // SCE-MAP: record_list.scxml:1204 :: open :: _transition_16
                 // W3C SCXML 3.13: Transition 16 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListKeep(ev) => ev.clone(),
@@ -8748,7 +8703,7 @@ self.staged.clear();}
             }
             // open, transition 17
             17 => {
-                // SCE-MAP: record_list.scxml:1226 :: open :: _transition_17
+                // SCE-MAP: record_list.scxml:1221 :: open :: _transition_17
                 // W3C SCXML 3.13: Transition 17 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListCompact(ev) => ev.clone(),
@@ -8884,7 +8839,7 @@ self.staged.clear();}
             }
             // open, transition 18
             18 => {
-                // SCE-MAP: record_list.scxml:1260 :: open :: _transition_18
+                // SCE-MAP: record_list.scxml:1255 :: open :: _transition_18
                 // W3C SCXML 3.13: Transition 18 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListSettle(ev) => ev.clone(),
@@ -8994,7 +8949,7 @@ self.staged.clear();}
             }
             // open, transition 19
             19 => {
-                // SCE-MAP: record_list.scxml:1281 :: open :: _transition_19
+                // SCE-MAP: record_list.scxml:1276 :: open :: _transition_19
                 // W3C SCXML 3.13: Transition 19 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListPropose(ev) => ev.clone(),
@@ -9148,7 +9103,7 @@ self.staged.clear();}
             }
             // open, transition 20
             20 => {
-                // SCE-MAP: record_list.scxml:1311 :: open :: _transition_20
+                // SCE-MAP: record_list.scxml:1306 :: open :: _transition_20
                 // W3C SCXML 3.13: Transition 20 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListAck(ev) => ev.clone(),
@@ -9466,7 +9421,7 @@ self.staged.clear();}
             }
             // open, transition 21
             21 => {
-                // SCE-MAP: record_list.scxml:1375 :: open :: _transition_21
+                // SCE-MAP: record_list.scxml:1370 :: open :: _transition_21
                 // W3C SCXML 3.13: Transition 21 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListFloor(ev) => ev.clone(),
@@ -9655,7 +9610,7 @@ self.staged.clear();}
             }
             // open, transition 22
             22 => {
-                // SCE-MAP: record_list.scxml:1425 :: open :: _transition_22
+                // SCE-MAP: record_list.scxml:1420 :: open :: _transition_22
                 // W3C SCXML 3.13: Transition 22 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -9770,7 +9725,7 @@ self.staged.clear();}
             }
             // open, transition 23
             23 => {
-                // SCE-MAP: record_list.scxml:1445 :: open :: _transition_23
+                // SCE-MAP: record_list.scxml:1440 :: open :: _transition_23
                 // W3C SCXML 3.13: Transition 23 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListVisit(ev) => ev.clone(),
@@ -9981,7 +9936,7 @@ self.staged.clear();}
             }
             // open, transition 24
             24 => {
-                // SCE-MAP: record_list.scxml:1482 :: open :: _transition_24
+                // SCE-MAP: record_list.scxml:1477 :: open :: _transition_24
                 // W3C SCXML 3.13: Transition 24 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListNode(ev) => ev.clone(),
@@ -10383,7 +10338,7 @@ self.staged.clear();}
             }
             // open, transition 25
             25 => {
-                // SCE-MAP: record_list.scxml:1531 :: open :: _transition_25
+                // SCE-MAP: record_list.scxml:1526 :: open :: _transition_25
                 // W3C SCXML 3.13: Transition 25 actions
                 let ev = match &self.pending_payload {
                     RecordListPayload::RecordListShare(ev) => ev.clone(),
@@ -10812,7 +10767,7 @@ if self.hub {
             }
             // open, transition 26
             26 => {
-                // SCE-MAP: record_list.scxml:1593 :: open :: _transition_26
+                // SCE-MAP: record_list.scxml:1590 :: open :: _transition_26
                 // W3C SCXML 3.13: Transition 26 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {

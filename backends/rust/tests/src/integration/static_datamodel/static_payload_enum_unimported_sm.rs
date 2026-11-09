@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -255,7 +255,6 @@ impl StaticPayloadEnumUnimportedInject
                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue => "noRoomForValue",
                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForHistory => "noRoomForHistory",
                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForDigest => "noRoomForDigest",
-                StaticPayloadEnumUnimportedWhyEnum::TextTooLong => "textTooLong",
                 StaticPayloadEnumUnimportedWhyEnum::ChangeTooLarge => "changeTooLarge",
                 StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice => "registerNamedTwice",
                 StaticPayloadEnumUnimportedWhyEnum::ClockExhausted => "clockExhausted",
@@ -277,7 +276,6 @@ pub enum StaticPayloadEnumUnimportedWhyEnum {
     NoRoomForValue,
     NoRoomForHistory,
     NoRoomForDigest,
-    TextTooLong,
     ChangeTooLarge,
     RegisterNamedTwice,
     ClockExhausted,
@@ -292,7 +290,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
             Self::NoRoomForDigest => "noRoomForDigest",
-            Self::TextTooLong => "textTooLong",
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
@@ -307,7 +304,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
             Self::NoRoomForDigest => 4,
-            Self::TextTooLong => 5,
             Self::ChangeTooLarge => 6,
             Self::RegisterNamedTwice => 7,
             Self::ClockExhausted => 8,
@@ -322,7 +318,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
             4 => Some(Self::NoRoomForDigest),
-            5 => Some(Self::TextTooLong),
             6 => Some(Self::ChangeTooLarge),
             7 => Some(Self::RegisterNamedTwice),
             8 => Some(Self::ClockExhausted),
@@ -443,7 +438,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
                 Self::NoRoomForDigest => "noRoomForDigest",
-                Self::TextTooLong => "textTooLong",
                 Self::ChangeTooLarge => "changeTooLarge",
                 Self::RegisterNamedTwice => "registerNamedTwice",
                 Self::ClockExhausted => "clockExhausted",
@@ -462,7 +456,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
                 "noRoomForDigest" => Ok(Self::NoRoomForDigest),
-                "textTooLong" => Ok(Self::TextTooLong),
                 "changeTooLarge" => Ok(Self::ChangeTooLarge),
                 "registerNamedTwice" => Ok(Self::RegisterNamedTwice),
                 "clockExhausted" => Ok(Self::ClockExhausted),
@@ -646,10 +639,10 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
-            revised: "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
-            format2_first: "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
-            format2_revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
+            first: "e6e710c3ee5576e7e59b057043abc9705709080a5d6e7853feb927052dd5aa2f",
+            revised: "2eb56b96e592c1915bf2275169ed4dce44aa7f9b45a8734b0fc33514f13ba0ae",
+            format2_first: "86d1575a4d0b03a30cf0d461c3b32f1e1d79f8134d1688c0c727c6fb7689e956",
+            format2_revised: "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418",
             records: &[::sce_rust_runtime::saved_state::RecordLineage {
                 event: "record_list.refused",
                 revision: 1,
@@ -1150,7 +1143,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -1168,7 +1162,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                     StaticPayloadEnumUnimportedRecordListRefusedPayload {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
-                        kind: match fields.text("kind")?.as_str() {
+                        kind: match fields.field("kind")?.name()? {
                             "edit" => StaticPayloadEnumUnimportedRecordCommandEnum::Edit,
                             "clear" => StaticPayloadEnumUnimportedRecordCommandEnum::Clear,
                             "retire" => StaticPayloadEnumUnimportedRecordCommandEnum::Retire,
@@ -1176,7 +1170,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                                 return Err(fields.unknown_variant("kind", other, "record_command"))
                             }
                         },
-                        reason: match fields.text("reason")?.as_str() {
+                        reason: match fields.field("reason")?.name()? {
                             "notWriter" => StaticPayloadEnumUnimportedWhyEnum::NotWriter,
                             "noRoomForValue" => StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue,
                             "noRoomForHistory" => {
@@ -1185,7 +1179,6 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                             "noRoomForDigest" => {
                                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForDigest
                             }
-                            "textTooLong" => StaticPayloadEnumUnimportedWhyEnum::TextTooLong,
                             "changeTooLarge" => StaticPayloadEnumUnimportedWhyEnum::ChangeTooLarge,
                             "registerNamedTwice" => {
                                 StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice

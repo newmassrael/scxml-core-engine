@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -713,12 +713,12 @@ impl StatePolicy for StaticDonedataRecordPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // Proven depth 2: one microstep enqueues at most 2 internal event(s), and
+    // Proven depth 1: one microstep enqueues at most 1 internal event(s), and
     // at most 1 + 0 microstep(s) run before the first internal event is taken,
-    // so 2 x (1 + 0) = 2.
-    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 2>;
+    // so 1 x (1 + 0) = 1.
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 1>;
     // The same bound, held to every run a test build makes (docs/adr/0076).
-    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(2);
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(1);
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire

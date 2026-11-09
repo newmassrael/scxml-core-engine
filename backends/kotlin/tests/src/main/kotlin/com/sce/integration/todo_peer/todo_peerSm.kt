@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/todo_peer.scxml
@@ -1145,7 +1145,8 @@ class TodoPeerStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: TodoPeerEvent, metadata: EventMetadata) {
@@ -1198,7 +1199,7 @@ class TodoPeerStateMachine(
                     pendingTodoCompactPayload = TodoPeerTodoCompactPayload(fields.int64("before"))
                 } else if (event == TodoPeerEvent.Todo.Edit) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingTodoEditPayload = TodoPeerTodoEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"))
+                    pendingTodoEditPayload = TodoPeerTodoEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 32), fields.int64("now"))
                 } else if (event == TodoPeerEvent.Todo.Floor) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoFloorPayload = TodoPeerTodoFloorPayload(fields.int64("before"), fields.uint32("hash"))
@@ -1234,7 +1235,7 @@ class TodoPeerStateMachine(
                     pendingTodoVisitPayload = TodoPeerTodoVisitPayload(fields.uint64("to"), fields.uint8("depth"), fields.uint64("prefix"), fields.boolean("reply"))
                 } else if (event == TodoPeerEvent.Todo.Write) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingTodoWritePayload = TodoPeerTodoWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
+                    pendingTodoWritePayload = TodoPeerTodoWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
                 } else if (event == TodoPeerEvent.Todo.Zone) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingTodoZonePayload = TodoPeerTodoZonePayload(fields.uint8("zone"), fields.int64("start"), fields.int32("offset"))

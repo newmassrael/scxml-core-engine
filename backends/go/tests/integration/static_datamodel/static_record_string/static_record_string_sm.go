@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_record_string.scxml:25 :: _machine
+// SCE-MAP: static_record_string.scxml:28 :: _machine
 
 package static_record_string
 
@@ -902,8 +902,8 @@ func (p *StaticRecordStringPolicy) PopulateEventMetadata(meta *sce.EventMetadata
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticRecordStringPolicy) LiftTypedPayload(event StaticRecordStringEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -920,7 +920,7 @@ func (p *StaticRecordStringPolicy) LiftTypedPayload(event StaticRecordStringEven
 		if payload.sensor, err = sce.PayloadUnsigned[uint8](fields, "sensor"); err != nil {
 			return err
 		}
-		if payload.label, err = sce.PayloadString(fields, "label"); err != nil {
+		if payload.label, err = sce.PayloadText(fields, "label", 8); err != nil {
 			return err
 		}
 		p.pendingLabelledTakenPayload = payload
@@ -945,7 +945,7 @@ func (p *StaticRecordStringPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) ExecuteEntryActions(state StaticRecordStringState, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -958,7 +958,7 @@ func (p *StaticRecordStringPolicy) ExecuteEntryActions(state StaticRecordStringS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -966,7 +966,7 @@ func (p *StaticRecordStringPolicy) ExecuteHistoryDefaultContent(history sce.Hist
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) ExecuteExitActions(state StaticRecordStringState, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent], configurationBeforeExit []StaticRecordStringState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -983,7 +983,7 @@ func (p *StaticRecordStringPolicy) ExecuteExitActions(state StaticRecordStringSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) BindCurrentEvent(event StaticRecordStringEvent, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -993,7 +993,7 @@ func (p *StaticRecordStringPolicy) BindCurrentEvent(event StaticRecordStringEven
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStringState, event StaticRecordStringEvent, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent]) (sce.EnabledTransition[StaticRecordStringState, sce.HistoryID], bool) {
 	switch state {
 	case StaticRecordStringStateIdle:
@@ -1081,7 +1081,10 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			}
 		}
 		if event == StaticRecordStringEventLabelledTaken {
-			{
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "_event.data.sensor >= 100" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.pendingPayloadTag == StaticRecordStringPayloadTagLabelledTaken && (p.pendingLabelledTakenPayload.sensor >= 100) {
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 8,
@@ -1090,7 +1093,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventKeep {
+		if event == StaticRecordStringEventLabelledTaken {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -1100,7 +1103,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventTally {
+		if event == StaticRecordStringEventKeep {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -1110,7 +1113,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventPeek {
+		if event == StaticRecordStringEventTally {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
@@ -1120,11 +1123,21 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 				}, true
 			}
 		}
-		if event == StaticRecordStringEventPeeklast {
+		if event == StaticRecordStringEventPeek {
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 12,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticRecordStringEventPeeklast {
+			{
+				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 13,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1137,7 +1150,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vLabels[:], int64(0)).label == "whole"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed")); return false }; return sceValue }() {
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 13,
+					TransitionIndex: 14,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1147,7 +1160,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 14,
+					TransitionIndex: 15,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1157,7 +1170,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 15,
+					TransitionIndex: 16,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1167,7 +1180,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 16,
+					TransitionIndex: 17,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1177,7 +1190,7 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 			{
 				return sce.EnabledTransition[StaticRecordStringState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 17,
+					TransitionIndex: 18,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1189,13 +1202,13 @@ func (p *StaticRecordStringPolicy) FirstEnabledTransition(state StaticRecordStri
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_record_string.scxml:25
+//line static_record_string.scxml:28
 func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordStringState, transitionIndex int, engine *sce.Engine[StaticRecordStringState, StaticRecordStringEvent]) {
 	switch source {
 	case StaticRecordStringStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_record_string.scxml:38
+//line static_record_string.scxml:41
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1206,7 +1219,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 1:
-//line static_record_string.scxml:41
+//line static_record_string.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1217,7 +1230,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 2:
-//line static_record_string.scxml:44
+//line static_record_string.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1228,7 +1241,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 3:
-//line static_record_string.scxml:47
+//line static_record_string.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1239,7 +1252,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 4:
-//line static_record_string.scxml:50
+//line static_record_string.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1250,7 +1263,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 5:
-//line static_record_string.scxml:53
+//line static_record_string.scxml:56
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1261,7 +1274,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 6:
-//line static_record_string.scxml:56
+//line static_record_string.scxml:59
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1272,7 +1285,7 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 7:
-//line static_record_string.scxml:62
+//line static_record_string.scxml:65
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordStringPayloadTagLabelledTaken {
@@ -1293,7 +1306,21 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 
 			}()
 		case 8:
-//line static_record_string.scxml:66
+//line static_record_string.scxml:74
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticRecordStringPayloadTagLabelledTaken {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingLabelledTakenPayload.label, 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordStringEventErrorExecution, "<assign location='note'>: an integer operation overflowed or failed")); return true }; p.vNote = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 9:
+//line static_record_string.scxml:77
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticRecordStringPayloadTagLabelledTaken {
@@ -1310,8 +1337,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLast.sensor = p.pendingLabelledTakenPayload.sensor
 
 			}()
-		case 9:
-//line static_record_string.scxml:73
+		case 10:
+//line static_record_string.scxml:84
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1322,8 +1349,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 10:
-//line static_record_string.scxml:76
+		case 11:
+//line static_record_string.scxml:87
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1339,8 +1366,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 11:
-//line static_record_string.scxml:86
+		case 12:
+//line static_record_string.scxml:97
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1350,8 +1377,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 12:
-//line static_record_string.scxml:89
+		case 13:
+//line static_record_string.scxml:100
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1361,8 +1388,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 13:
-//line static_record_string.scxml:92
+		case 14:
+//line static_record_string.scxml:103
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1372,8 +1399,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 14:
-//line static_record_string.scxml:99
+		case 15:
+//line static_record_string.scxml:110
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1383,8 +1410,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 15:
-//line static_record_string.scxml:102
+		case 16:
+//line static_record_string.scxml:113
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1394,8 +1421,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	}
 
 			}()
-		case 16:
-//line static_record_string.scxml:105
+		case 17:
+//line static_record_string.scxml:116
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1404,8 +1431,8 @@ func (p *StaticRecordStringPolicy) ExecuteTransitionContent(source StaticRecordS
 	p.vLabels = p.vLabels[:0]
 
 			}()
-		case 17:
-//line static_record_string.scxml:108
+		case 18:
+//line static_record_string.scxml:119
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

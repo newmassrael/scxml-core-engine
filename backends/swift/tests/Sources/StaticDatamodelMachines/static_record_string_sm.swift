@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_record_string.scxml:25 :: _machine
+// SCE-MAP: static_record_string.scxml:28 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -496,7 +496,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticRecordStringLabelledTakenPayload()
             payload.sensor = try fields.unsigned("sensor")
-            payload.label = try fields.text("label")
+            payload.label = try fields.text("label", bound: 8)
             pendingLabelledTakenPayload = payload
             pendingPayloadTag = .labelledTaken
         default:
@@ -651,7 +651,8 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
             }
             if event == .labelledTaken {
-                do {
+                // W3C SCXML 5.9: cond="_event.data.sensor >= 100" lowered to Swift at build time
+                if (self.pendingPayloadTag == .labelledTaken && (self.pendingLabelledTakenPayload.sensor >= 100)) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -661,7 +662,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .keep {
+            if event == .labelledTaken {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -672,7 +673,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .tally {
+            if event == .keep {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -683,7 +684,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .peek {
+            if event == .tally {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -694,12 +695,23 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .peeklast {
+            if event == .peek {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
                         transitionIndex: 12,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .peeklast {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 13,
                         hasActions: true,
                         isInternal: true
                     )
@@ -711,7 +723,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 13,
+                        transitionIndex: 14,
                         hasActions: true,
                         isInternal: true
                     )
@@ -722,7 +734,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 14,
+                        transitionIndex: 15,
                         hasActions: true,
                         isInternal: true
                     )
@@ -733,7 +745,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 15,
+                        transitionIndex: 16,
                         hasActions: true,
                         isInternal: true
                     )
@@ -744,7 +756,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 16,
+                        transitionIndex: 17,
                         hasActions: true,
                         isInternal: true
                     )
@@ -755,7 +767,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 17,
+                        transitionIndex: 18,
                         hasActions: true,
                         isInternal: true
                     )
@@ -871,6 +883,19 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     }
 
 
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 9:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .labelledTaken {
+                        break sceBlock
+                    }
+
+
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
@@ -880,7 +905,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 self.vLast.sensor = self.pendingLabelledTakenPayload.sensor
 
                 }
-            case 9:
+            case 10:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -891,7 +916,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 10:
+            case 11:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -906,7 +931,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
 
                 }
                 }
-            case 11:
+            case 12:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -916,7 +941,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 12:
+            case 13:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -926,7 +951,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 13:
+            case 14:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -936,7 +961,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 14:
+            case 15:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -946,7 +971,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 15:
+            case 16:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -956,7 +981,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 }
 
                 }
-            case 16:
+            case 17:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -965,7 +990,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 self.vLabels.removeAll()
 
                 }
-            case 17:
+            case 18:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

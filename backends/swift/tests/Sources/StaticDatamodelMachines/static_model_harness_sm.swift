@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -172,7 +172,7 @@ public struct StaticModelHarnessTransition: Hashable, Sendable {
 
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
-    public static let sourceHash = "9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1"
+    public static let sourceHash = "39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e"
 
     /// Every transition of the machine. Each id is written with its type, so a
     /// state or an event the document calls `none` is never read as `nil`.
@@ -977,13 +977,13 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
         case .doneInvokeGen:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticModelHarnessDoneInvokeGenPayload()
-            payload.error = try fields.text("error")
-            payload.text = try fields.text("text")
+            payload.error = try fields.text("error", bound: 24)
+            payload.text = try fields.text("text", bound: 4096)
             payload.constrained = try fields.truth("constrained")
-            payload.model = try fields.text("model")
+            payload.model = try fields.text("model", bound: 128)
             payload.prompt_tokens = try fields.unsigned("prompt_tokens")
             payload.answer_tokens = try fields.unsigned("answer_tokens")
-            payload.finish = try fields.text("finish")
+            payload.finish = try fields.text("finish", bound: 16)
             pendingDoneInvokeGenPayload = payload
             pendingPayloadTag = .doneInvokeGen
         case .harnessOffer:
@@ -995,7 +995,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
         case .harnessStart:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticModelHarnessHarnessStartPayload()
-            payload.request = try fields.text("request")
+            payload.request = try fields.text("request", bound: 512)
             pendingHarnessStartPayload = payload
             pendingPayloadTag = .harnessStart
         default:

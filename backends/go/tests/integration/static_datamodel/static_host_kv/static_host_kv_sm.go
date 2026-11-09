@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1800,8 +1800,8 @@ func (p *StaticHostKvPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -1815,7 +1815,7 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvDoneInvokeDelPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadText(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.existed, err = sce.PayloadBool(fields, "existed"); err != nil {
@@ -1829,13 +1829,13 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvDoneInvokeGetPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadText(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.found, err = sce.PayloadBool(fields, "found"); err != nil {
 			return err
 		}
-		if payload.value, err = sce.PayloadString(fields, "value"); err != nil {
+		if payload.value, err = sce.PayloadText(fields, "value", 4096); err != nil {
 			return err
 		}
 		p.pendingDoneInvokeGetPayload = payload
@@ -1846,7 +1846,7 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvDoneInvokePutPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadText(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.replaced, err = sce.PayloadBool(fields, "replaced"); err != nil {
@@ -1860,13 +1860,13 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvDoneInvokeWalkPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadText(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.found, err = sce.PayloadBool(fields, "found"); err != nil {
 			return err
 		}
-		if payload.key, err = sce.PayloadString(fields, "key"); err != nil {
+		if payload.key, err = sce.PayloadText(fields, "key", 256); err != nil {
 			return err
 		}
 		p.pendingDoneInvokeWalkPayload = payload
@@ -1877,7 +1877,7 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvHostKvDeleteRequestPayload
-		if payload.key, err = sce.PayloadString(fields, "key"); err != nil {
+		if payload.key, err = sce.PayloadText(fields, "key", 256); err != nil {
 			return err
 		}
 		p.pendingHostKvDeleteRequestPayload = payload
@@ -1888,7 +1888,7 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvHostKvGetRequestPayload
-		if payload.key, err = sce.PayloadString(fields, "key"); err != nil {
+		if payload.key, err = sce.PayloadText(fields, "key", 256); err != nil {
 			return err
 		}
 		p.pendingHostKvGetRequestPayload = payload
@@ -1899,10 +1899,10 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvHostKvNextKeyRequestPayload
-		if payload.after, err = sce.PayloadString(fields, "after"); err != nil {
+		if payload.after, err = sce.PayloadText(fields, "after", 256); err != nil {
 			return err
 		}
-		if payload.prefix, err = sce.PayloadString(fields, "prefix"); err != nil {
+		if payload.prefix, err = sce.PayloadText(fields, "prefix", 256); err != nil {
 			return err
 		}
 		p.pendingHostKvNextKeyRequestPayload = payload
@@ -1913,10 +1913,10 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 			return err
 		}
 		var payload StaticHostKvHostKvPutRequestPayload
-		if payload.key, err = sce.PayloadString(fields, "key"); err != nil {
+		if payload.key, err = sce.PayloadText(fields, "key", 256); err != nil {
 			return err
 		}
-		if payload.value, err = sce.PayloadString(fields, "value"); err != nil {
+		if payload.value, err = sce.PayloadText(fields, "value", 4096); err != nil {
 			return err
 		}
 		p.pendingHostKvPutRequestPayload = payload

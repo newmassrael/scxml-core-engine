@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_notify.scxml
@@ -525,7 +525,8 @@ class StaticHostNotifyStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticHostNotifyEvent, metadata: EventMetadata) {
@@ -549,25 +550,25 @@ class StaticHostNotifyStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticHostNotifyEvent.Done.Invoke.Ask) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeAskPayload = StaticHostNotifyDoneInvokeAskPayload(fields.string("error"), fields.string("state"))
+                    pendingDoneInvokeAskPayload = StaticHostNotifyDoneInvokeAskPayload(fields.string("error", 24), fields.string("state", 16))
                 } else if (event == StaticHostNotifyEvent.Done.Invoke.Cancel) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeCancelPayload = StaticHostNotifyDoneInvokeCancelPayload(fields.string("error"), fields.boolean("existed"))
+                    pendingDoneInvokeCancelPayload = StaticHostNotifyDoneInvokeCancelPayload(fields.string("error", 24), fields.boolean("existed"))
                 } else if (event == StaticHostNotifyEvent.Done.Invoke.Far) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeFarPayload = StaticHostNotifyDoneInvokeFarPayload(fields.string("error"), fields.string("status"))
+                    pendingDoneInvokeFarPayload = StaticHostNotifyDoneInvokeFarPayload(fields.string("error", 24), fields.string("status", 16))
                 } else if (event == StaticHostNotifyEvent.Done.Invoke.Post) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokePostPayload = StaticHostNotifyDoneInvokePostPayload(fields.string("error"), fields.string("status"))
+                    pendingDoneInvokePostPayload = StaticHostNotifyDoneInvokePostPayload(fields.string("error", 24), fields.string("status", 16))
                 } else if (event == StaticHostNotifyEvent.Done.Invoke.Prompt) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokePromptPayload = StaticHostNotifyDoneInvokePromptPayload(fields.string("error"), fields.string("state"))
+                    pendingDoneInvokePromptPayload = StaticHostNotifyDoneInvokePromptPayload(fields.string("error", 24), fields.string("state", 16))
                 } else if (event == StaticHostNotifyEvent.Host.Notify.Cancel.Request) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingHostNotifyCancelRequestPayload = StaticHostNotifyHostNotifyCancelRequestPayload(fields.string("id"))
+                    pendingHostNotifyCancelRequestPayload = StaticHostNotifyHostNotifyCancelRequestPayload(fields.string("id", 64))
                 } else if (event == StaticHostNotifyEvent.Host.Notify.Post.Request) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingHostNotifyPostRequestPayload = StaticHostNotifyHostNotifyPostRequestPayload(fields.string("id"), fields.string("title"), fields.string("body"), fields.int64("at_ms"))
+                    pendingHostNotifyPostRequestPayload = StaticHostNotifyHostNotifyPostRequestPayload(fields.string("id", 64), fields.string("title", 128), fields.string("body", 512), fields.int64("at_ms"))
                 }
             }
         }

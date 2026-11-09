@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_http.scxml
@@ -365,7 +365,8 @@ class StaticHostHttpStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticHostHttpEvent, metadata: EventMetadata) {
@@ -379,10 +380,10 @@ class StaticHostHttpStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticHostHttpEvent.Done.Invoke.Fetch) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeFetchPayload = StaticHostHttpDoneInvokeFetchPayload(fields.string("error"), fields.uint16("status"), fields.string("headers"), fields.string("body"))
+                    pendingDoneInvokeFetchPayload = StaticHostHttpDoneInvokeFetchPayload(fields.string("error", 24), fields.uint16("status"), fields.string("headers", 4096), fields.string("body", 16384))
                 } else if (event == StaticHostHttpEvent.Host.Http.Fetch.Request) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingHostHttpFetchRequestPayload = StaticHostHttpHostHttpFetchRequestPayload(fields.string("method"), fields.string("url"), fields.string("headers"), fields.string("body"))
+                    pendingHostHttpFetchRequestPayload = StaticHostHttpHostHttpFetchRequestPayload(fields.string("method", 8), fields.string("url", 2048), fields.string("headers", 2048), fields.string("body", 16384))
                 }
             }
         }

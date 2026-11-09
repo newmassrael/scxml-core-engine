@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
-// SCE-MAP: static_record_string.scxml:25 :: _machine
+#![doc = "SCE-MAP: static_record_string.scxml:28 :: _machine"]
+// SCE-MAP: static_record_string.scxml:28 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -218,11 +218,13 @@ pub const STATIC_RECORD_STRING_TABLES: ::sce_rust_runtime::DocumentTables = {
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 17: idle, transition 17
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 18: the document's initial transition
+            // 18: idle, transition 18
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 19: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(18),
+        initial: TransitionId(19),
         default_state: ::sce_rust_runtime::StateId(StaticRecordStringState::Idle as u16),
         null_event: ::sce_rust_runtime::EventId(17),
         error_events: &[::sce_rust_runtime::EventId(0)],
@@ -1028,7 +1030,8 @@ impl StatePolicy for StaticRecordStringPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -1045,7 +1048,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                 self.pending_payload = StaticRecordStringPayload::LabelledTaken(
                     StaticRecordStringLabelledTakenPayload {
                         sensor: fields.unsigned::<u8>("sensor")?,
-                        label: fields.text("label")?,
+                        label: fields.text("label", 8)?,
                     },
                 );
             }
@@ -1059,8 +1062,8 @@ impl StatePolicy for StaticRecordStringPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
-    // SCE-MAP: static_record_string.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_record_string.scxml:28 :: _machine"]
+    // SCE-MAP: static_record_string.scxml:28 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1076,8 +1079,8 @@ impl StatePolicy for StaticRecordStringPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
-    // SCE-MAP: static_record_string.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_record_string.scxml:28 :: _machine"]
+    // SCE-MAP: static_record_string.scxml:28 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1095,8 +1098,8 @@ impl StatePolicy for StaticRecordStringPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
-    // SCE-MAP: static_record_string.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_record_string.scxml:28 :: _machine"]
+    // SCE-MAP: static_record_string.scxml:28 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1155,33 +1158,40 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
                 if event == StaticRecordStringEvent::LabelledTaken {
+                    if matches!(&self.pending_payload, StaticRecordStringPayload::LabelledTaken(ev) if ev.sensor >= 100)
                     {
                         // idle, transition 8
                         return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
-                if event == StaticRecordStringEvent::Keep {
+                if event == StaticRecordStringEvent::LabelledTaken {
                     {
                         // idle, transition 9
                         return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
-                if event == StaticRecordStringEvent::Tally {
+                if event == StaticRecordStringEvent::Keep {
                     {
                         // idle, transition 10
                         return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
-                if event == StaticRecordStringEvent::Peek {
+                if event == StaticRecordStringEvent::Tally {
                     {
                         // idle, transition 11
                         return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
-                if event == StaticRecordStringEvent::Peeklast {
+                if event == StaticRecordStringEvent::Peek {
                     {
                         // idle, transition 12
                         return Some(::sce_rust_runtime::TransitionId(12));
+                    }
+                }
+                if event == StaticRecordStringEvent::Peeklast {
+                    {
+                        // idle, transition 13
+                        return Some(::sce_rust_runtime::TransitionId(13));
                     }
                 }
                 if event == StaticRecordStringEvent::Isfirst {
@@ -1194,32 +1204,32 @@ impl StatePolicy for StaticRecordStringPolicy {
                             false
                         }
                     } {
-                        // idle, transition 13
-                        return Some(::sce_rust_runtime::TransitionId(13));
-                    }
-                }
-                if event == StaticRecordStringEvent::Take {
-                    {
                         // idle, transition 14
                         return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
-                if event == StaticRecordStringEvent::Takelast {
+                if event == StaticRecordStringEvent::Take {
                     {
                         // idle, transition 15
                         return Some(::sce_rust_runtime::TransitionId(15));
                     }
                 }
-                if event == StaticRecordStringEvent::Forget {
+                if event == StaticRecordStringEvent::Takelast {
                     {
                         // idle, transition 16
                         return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
-                if event == StaticRecordStringEvent::ErrorExecution {
+                if event == StaticRecordStringEvent::Forget {
                     {
                         // idle, transition 17
                         return Some(::sce_rust_runtime::TransitionId(17));
+                    }
+                }
+                if event == StaticRecordStringEvent::ErrorExecution {
+                    {
+                        // idle, transition 18
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 None
@@ -1231,8 +1241,8 @@ impl StatePolicy for StaticRecordStringPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_record_string.scxml:25 :: _machine"]
-    // SCE-MAP: static_record_string.scxml:25 :: _machine
+    #[doc = "SCE-MAP: static_record_string.scxml:28 :: _machine"]
+    // SCE-MAP: static_record_string.scxml:28 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1241,7 +1251,7 @@ impl StatePolicy for StaticRecordStringPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_record_string.scxml:38 :: idle :: _transition_0
+                // SCE-MAP: static_record_string.scxml:41 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1267,7 +1277,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_record_string.scxml:41 :: idle :: _transition_1
+                // SCE-MAP: static_record_string.scxml:44 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1291,7 +1301,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_record_string.scxml:44 :: idle :: _transition_2
+                // SCE-MAP: static_record_string.scxml:47 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1315,7 +1325,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 3
             3 => {
-                // SCE-MAP: static_record_string.scxml:47 :: idle :: _transition_3
+                // SCE-MAP: static_record_string.scxml:50 :: idle :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1339,7 +1349,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 4
             4 => {
-                // SCE-MAP: static_record_string.scxml:50 :: idle :: _transition_4
+                // SCE-MAP: static_record_string.scxml:53 :: idle :: _transition_4
                 // W3C SCXML 3.13: Transition 4 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1364,7 +1374,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 5
             5 => {
-                // SCE-MAP: static_record_string.scxml:53 :: idle :: _transition_5
+                // SCE-MAP: static_record_string.scxml:56 :: idle :: _transition_5
                 // W3C SCXML 3.13: Transition 5 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1390,7 +1400,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 6
             6 => {
-                // SCE-MAP: static_record_string.scxml:56 :: idle :: _transition_6
+                // SCE-MAP: static_record_string.scxml:59 :: idle :: _transition_6
                 // W3C SCXML 3.13: Transition 6 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1415,7 +1425,7 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 7
             7 => {
-                // SCE-MAP: static_record_string.scxml:62 :: idle :: _transition_7
+                // SCE-MAP: static_record_string.scxml:65 :: idle :: _transition_7
                 // W3C SCXML 3.13: Transition 7 actions
                 let ev = match &self.pending_payload {
                     StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
@@ -1479,8 +1489,37 @@ impl StatePolicy for StaticRecordStringPolicy {
             }
             // idle, transition 8
             8 => {
-                // SCE-MAP: static_record_string.scxml:66 :: idle :: _transition_8
+                // SCE-MAP: static_record_string.scxml:74 :: idle :: _transition_8
                 // W3C SCXML 3.13: Transition 8 actions
+                let ev = match &self.pending_payload {
+                    StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="note">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.note = ::sce_rust_runtime::portable::SceString::<16>::from_text(
+                                &&ev.label[..],
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 9
+            9 => {
+                // SCE-MAP: static_record_string.scxml:77 :: idle :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
                 let ev = match &self.pending_payload {
                     StaticRecordStringPayload::LabelledTaken(ev) => ev.clone(),
                     _ => return,
@@ -1510,10 +1549,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     self.last.sensor = ev.sensor;
                 }
             }
-            // idle, transition 9
-            9 => {
-                // SCE-MAP: static_record_string.scxml:73 :: idle :: _transition_9
-                // W3C SCXML 3.13: Transition 9 actions
+            // idle, transition 10
+            10 => {
+                // SCE-MAP: static_record_string.scxml:84 :: idle :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:append target="labels">
@@ -1530,10 +1569,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 10
-            10 => {
-                // SCE-MAP: static_record_string.scxml:76 :: idle :: _transition_10
-                // W3C SCXML 3.13: Transition 10 actions
+            // idle, transition 11
+            11 => {
+                // SCE-MAP: static_record_string.scxml:87 :: idle :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     for l in self.labels.clone() {
@@ -1556,10 +1595,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 11
-            11 => {
-                // SCE-MAP: static_record_string.scxml:86 :: idle :: _transition_11
-                // W3C SCXML 3.13: Transition 11 actions
+            // idle, transition 12
+            12 => {
+                // SCE-MAP: static_record_string.scxml:97 :: idle :: _transition_12
+                // W3C SCXML 3.13: Transition 12 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="note">
@@ -1581,10 +1620,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 12
-            12 => {
-                // SCE-MAP: static_record_string.scxml:89 :: idle :: _transition_12
-                // W3C SCXML 3.13: Transition 12 actions
+            // idle, transition 13
+            13 => {
+                // SCE-MAP: static_record_string.scxml:100 :: idle :: _transition_13
+                // W3C SCXML 3.13: Transition 13 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="note">
@@ -1613,10 +1652,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 13
-            13 => {
-                // SCE-MAP: static_record_string.scxml:92 :: idle :: _transition_13
-                // W3C SCXML 3.13: Transition 13 actions
+            // idle, transition 14
+            14 => {
+                // SCE-MAP: static_record_string.scxml:103 :: idle :: _transition_14
+                // W3C SCXML 3.13: Transition 14 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="note">
@@ -1637,10 +1676,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 14
-            14 => {
-                // SCE-MAP: static_record_string.scxml:99 :: idle :: _transition_14
-                // W3C SCXML 3.13: Transition 14 actions
+            // idle, transition 15
+            15 => {
+                // SCE-MAP: static_record_string.scxml:110 :: idle :: _transition_15
+                // W3C SCXML 3.13: Transition 15 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="last">
@@ -1668,10 +1707,10 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 15
-            15 => {
-                // SCE-MAP: static_record_string.scxml:102 :: idle :: _transition_15
-                // W3C SCXML 3.13: Transition 15 actions
+            // idle, transition 16
+            16 => {
+                // SCE-MAP: static_record_string.scxml:113 :: idle :: _transition_16
+                // W3C SCXML 3.13: Transition 16 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="last">
@@ -1699,20 +1738,20 @@ impl StatePolicy for StaticRecordStringPolicy {
                     }
                 }
             }
-            // idle, transition 16
-            16 => {
-                // SCE-MAP: static_record_string.scxml:105 :: idle :: _transition_16
-                // W3C SCXML 3.13: Transition 16 actions
+            // idle, transition 17
+            17 => {
+                // SCE-MAP: static_record_string.scxml:116 :: idle :: _transition_17
+                // W3C SCXML 3.13: Transition 17 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // SCE Accepted Subset §2.15: <sce:clear target="labels">
                     self.labels.clear();
                 }
             }
-            // idle, transition 17
-            17 => {
-                // SCE-MAP: static_record_string.scxml:108 :: idle :: _transition_17
-                // W3C SCXML 3.13: Transition 17 actions
+            // idle, transition 18
+            18 => {
+                // SCE-MAP: static_record_string.scxml:119 :: idle :: _transition_18
+                // W3C SCXML 3.13: Transition 18 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="errors">

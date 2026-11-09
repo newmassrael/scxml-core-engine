@@ -384,11 +384,11 @@ impl StatePolicy for StatechartLiftedPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // No depth is proven, so it is the external queue's: the transition of
-    // `waiting` on `error.execution` takes `error.execution`, an event the
-    // internal queue can hold, so an internal event can start a microstep that
-    // raises more.
-    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
+    // Proven depth 0: nothing this document does can put an event on its
+    // internal queue.
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 0>;
+    // The same bound, held to every run a test build makes (docs/adr/0076).
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
@@ -544,7 +544,8 @@ impl StatePolicy for StatechartLiftedPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,

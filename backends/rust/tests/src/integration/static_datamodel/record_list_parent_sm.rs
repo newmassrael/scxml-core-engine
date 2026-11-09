@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -467,7 +467,6 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
                 RecordListParentRecordRefusalEnum::NoRoomForValue => "noRoomForValue",
                 RecordListParentRecordRefusalEnum::NoRoomForHistory => "noRoomForHistory",
                 RecordListParentRecordRefusalEnum::NoRoomForDigest => "noRoomForDigest",
-                RecordListParentRecordRefusalEnum::TextTooLong => "textTooLong",
                 RecordListParentRecordRefusalEnum::ChangeTooLarge => "changeTooLarge",
                 RecordListParentRecordRefusalEnum::RegisterNamedTwice => "registerNamedTwice",
                 RecordListParentRecordRefusalEnum::ClockExhausted => "clockExhausted",
@@ -631,7 +630,6 @@ pub enum RecordListParentRecordRefusalEnum {
     NoRoomForValue,
     NoRoomForHistory,
     NoRoomForDigest,
-    TextTooLong,
     ChangeTooLarge,
     RegisterNamedTwice,
     ClockExhausted,
@@ -646,7 +644,6 @@ impl RecordListParentRecordRefusalEnum {
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
             Self::NoRoomForDigest => "noRoomForDigest",
-            Self::TextTooLong => "textTooLong",
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
@@ -661,7 +658,6 @@ impl RecordListParentRecordRefusalEnum {
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
             Self::NoRoomForDigest => 4,
-            Self::TextTooLong => 5,
             Self::ChangeTooLarge => 6,
             Self::RegisterNamedTwice => 7,
             Self::ClockExhausted => 8,
@@ -676,7 +672,6 @@ impl RecordListParentRecordRefusalEnum {
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
             4 => Some(Self::NoRoomForDigest),
-            5 => Some(Self::TextTooLong),
             6 => Some(Self::ChangeTooLarge),
             7 => Some(Self::RegisterNamedTwice),
             8 => Some(Self::ClockExhausted),
@@ -801,7 +796,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRecordRefus
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
                 Self::NoRoomForDigest => "noRoomForDigest",
-                Self::TextTooLong => "textTooLong",
                 Self::ChangeTooLarge => "changeTooLarge",
                 Self::RegisterNamedTwice => "registerNamedTwice",
                 Self::ClockExhausted => "clockExhausted",
@@ -820,7 +814,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRecordRefus
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
                 "noRoomForDigest" => Ok(Self::NoRoomForDigest),
-                "textTooLong" => Ok(Self::TextTooLong),
                 "changeTooLarge" => Ok(Self::ChangeTooLarge),
                 "registerNamedTwice" => Ok(Self::RegisterNamedTwice),
                 "clockExhausted" => Ok(Self::ClockExhausted),
@@ -1082,10 +1075,10 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "d29628f9cc18dfa690b968ce10709031b7e718b8f8e45573c79d78466a4fc1cf",
-            revised: "4c3e62bd1e2a8511315643a001a26fd69249ba1130d0128413aa2164e09adae4",
-            format2_first: "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a",
-            format2_revised: "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde",
+            first: "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
+            revised: "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
+            format2_first: "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
+            format2_revised: "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "record_list.refused",
@@ -2024,7 +2017,8 @@ impl StatePolicy for RecordListParentPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -2058,7 +2052,7 @@ impl StatePolicy for RecordListParentPolicy {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 32)?,
                         now: fields.signed64("now")?,
                         more: fields.truth("more")?,
                     },
@@ -2079,7 +2073,7 @@ impl StatePolicy for RecordListParentPolicy {
                     RecordListParentRecordListRefusedPayload {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
-                        kind: match fields.text("kind")?.as_str() {
+                        kind: match fields.field("kind")?.name()? {
                             "edit" => RecordListParentRecordCommandEnum::Edit,
                             "clear" => RecordListParentRecordCommandEnum::Clear,
                             "retire" => RecordListParentRecordCommandEnum::Retire,
@@ -2087,14 +2081,13 @@ impl StatePolicy for RecordListParentPolicy {
                                 return Err(fields.unknown_variant("kind", other, "record_command"))
                             }
                         },
-                        reason: match fields.text("reason")?.as_str() {
+                        reason: match fields.field("reason")?.name()? {
                             "notWriter" => RecordListParentRecordRefusalEnum::NotWriter,
                             "noRoomForValue" => RecordListParentRecordRefusalEnum::NoRoomForValue,
                             "noRoomForHistory" => {
                                 RecordListParentRecordRefusalEnum::NoRoomForHistory
                             }
                             "noRoomForDigest" => RecordListParentRecordRefusalEnum::NoRoomForDigest,
-                            "textTooLong" => RecordListParentRecordRefusalEnum::TextTooLong,
                             "changeTooLarge" => RecordListParentRecordRefusalEnum::ChangeTooLarge,
                             "registerNamedTwice" => {
                                 RecordListParentRecordRefusalEnum::RegisterNamedTwice
@@ -2119,7 +2112,7 @@ impl StatePolicy for RecordListParentPolicy {
                         field: fields.unsigned::<u16>("field")?,
                         count: fields.unsigned::<u32>("count")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 96)?,
                         wallTime: fields.signed64("wallTime")?,
                         counter: fields.unsigned::<u32>("counter")?,
                         nodeId: fields.unsigned64("nodeId")?,
@@ -2183,7 +2176,7 @@ impl StatePolicy for RecordListParentPolicy {
                         field: fields.unsigned::<u16>("field")?,
                         ordinal: fields.unsigned::<u32>("ordinal")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 96)?,
                         wallTime: fields.signed64("wallTime")?,
                         counter: fields.unsigned::<u32>("counter")?,
                         nodeId: fields.unsigned64("nodeId")?,
@@ -2201,7 +2194,7 @@ impl StatePolicy for RecordListParentPolicy {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
                         value: fields.signed64("value")?,
-                        text: fields.text("text")?,
+                        text: fields.text("text", 96)?,
                         wallTime: fields.signed64("wallTime")?,
                         counter: fields.unsigned::<u32>("counter")?,
                         nodeId: fields.unsigned64("nodeId")?,
