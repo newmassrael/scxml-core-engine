@@ -168,9 +168,10 @@ fn no_fields(_: &()) -> Value {
     Value::Object(Vec::new())
 }
 
-/// A message of the record `event` that holds no field: `{}` in the test log.
+/// A message of the record `event` that holds no field: `{}` in the test log,
+/// of the record type `empty`.
 fn message(event: &str) -> Message {
-    Message::new(event, (), no_fields)
+    Message::new(event, (), "empty", no_fields)
 }
 
 fn logged(result: &TestCaseResult, component: &str, kind: LogKind) -> bool {
@@ -588,11 +589,20 @@ mod test_case_run_test {
             vec![
                 (
                     "sut".to_string(),
-                    Message::new("number", "7".to_string(), written),
+                    Message::new("number", "7".to_string(), "text", written),
                 ),
-                ("sut".to_string(), Message::new("other", 7_i32, number)),
-                ("sut".to_string(), Message::new("number", 6_i32, number)),
-                ("sut".to_string(), Message::new("number", 7_i32, number)),
+                (
+                    "sut".to_string(),
+                    Message::new("other", 7_i32, "number", number),
+                ),
+                (
+                    "sut".to_string(),
+                    Message::new("number", 6_i32, "number", number),
+                ),
+                (
+                    "sut".to_string(),
+                    Message::new("number", 7_i32, "number", number),
+                ),
             ]
         }
     }
@@ -1145,7 +1155,7 @@ mod the_doors {
             send(HostSendRequest {
                 event_name: "ping".to_string(),
                 target: "p".to_string(),
-                value: Some(message_value(Ping { n: 3 }, ping_canonical)),
+                value: Some(message_value(Ping { n: 3 }, "ping", ping_canonical)),
                 ..HostSendRequest::default()
             });
             context.start_timer("reply", 10);
@@ -1257,10 +1267,10 @@ mod the_test_log {
         }
     }
 
-    /// The ping's value, a record of one number, as the unit of a template
-    /// over it writes it.
+    /// The ping's value, a record of one number of the record type `ping`, as
+    /// the unit of a template over it writes it.
     fn ping(n: u32) -> Message {
-        Message::new("ping", n, |n| {
+        Message::new("ping", n, "ping", |n| {
             canonical::record([("n", Some(canonical::integer(*n)))])
         })
     }
@@ -1348,14 +1358,14 @@ mod the_test_log {
                 "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
                 "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
                 "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\",",
-                "\"value\":{\"n\":\"3\"}},",
+                "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
                 "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
                 "\"timer\":\"t\"},",
                 "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\",",
                 "\"timer\":\"s\"},",
                 "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},",
                 "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\",",
-                "\"value\":{\"n\":\"3\"}},",
+                "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
                 "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\",",
                 "\"verdict\":\"pass\"},",
                 "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",

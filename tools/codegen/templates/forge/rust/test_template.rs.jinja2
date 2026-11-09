@@ -38,9 +38,14 @@ pub fn value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.las
     {{ value_expr }}
 }
 {% endif %}
-{# Only a template over a record, the type of a message, writes the canonical
-   form of a message's value. #}
+{# Only a template over a record, the type of a message, writes the name of a
+   message's type and the canonical form of its value. #}
 {% if canonical_expr %}
+
+/// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+/// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+#[allow(dead_code)]
+pub const TYPE: &str = "{{ log_type | escape_rust }}";
 
 /// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
 /// integer as the text of its digits, a byte string in upper-case hex, an enum and a case

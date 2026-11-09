@@ -1896,8 +1896,8 @@ the points of the semantics this table names:
 |---|---|---|---|
 | `test-case-started` | | as the run starts, at `NOW = 0`, before the MTC is created | P11 |
 | `component-created` | `component`, `type` | when the run creates a component, before its machine starts: the MTC as the test case starts, a PTC when the invocation that creates it starts | P9 |
-| `message-sent` | `component`, `port`, `value` | when a component sends, before the message is appended to the connected port or handed to the system adapter | P6 |
-| `message-received` | `component`, `port`, `value` | when a receive branch removes the head of its port, before the branch's content runs: the message was received and matched | P4 step 1 |
+| `message-sent` | `component`, `port`, `type`, `value` | when a component sends, before the message is appended to the connected port or handed to the system adapter | P6 |
+| `message-received` | `component`, `port`, `type`, `value` | when a receive branch removes the head of its port, before the branch's content runs: the message was received and matched | P4 step 1 |
 | `timer-started` | `component`, `timer`, `duration_us` | at `<sce:start-timer>`, a restart of a running timer included | P7 |
 | `timer-stopped` | `component`, `timer` | at `<sce:stop-timer>` of a running timer. The stop of one that is not running changes nothing and writes nothing | P7 |
 | `timer-timed-out` | `component`, `timer` | when a timeout branch takes its timer, before the branch's content runs. An expiry no branch takes writes nothing | P4 step 1 |
@@ -1911,6 +1911,11 @@ statements run, and the components of a round in their creation order. A test ca
 `test-case-started` and `test-case-ended` with `error` alone, since no component was created. The `error` of a dynamic
 error carries no reason, because its cause is the runtime's own prose, which the other side would not write alike; the
 lines of the result keep it.
+
+**The message's type.** A value in TCI always carries its type, so a message's `type` is the name of its record as the
+types module of the export names it (rule E1, §9.5): the unit name of its `event-schema` document, the stem of the
+document's file in lower snake case. Two records of one shape are then two types in the log, as they are on the TTCN-3
+side.
 
 **The value form.** A message's `value` is in the canonical form of the profile's types (§6.3), built from texts, truth
 values, arrays and objects alone:
@@ -1927,10 +1932,10 @@ values, arrays and objects alone:
 | `union:X` | an object of one member, named by its case's variant, whose value is the case's record, or `{}` for a case that holds none |
 
 The form is the type's, not the language's: a byte string and a list of `uint8` are one Rust type and take two forms.
-So the generated unit of every template over a record writes its value's form by the types its document declares
-(Rust: `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a send carries the value with the
-writer of its form (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a `TestValue`). A system
-adapter gives the writer of each value it hands the run.
+So the generated unit of every template over a record writes its record's type name and its value's form by the types
+its document declares (Rust: `TYPE` and `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a
+send carries the value with both (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a
+`TestValue`). A system adapter gives the type name and the writer of each value it hands the run.
 
 **The text.** A log is written in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of each object
 sorted by their names as UTF-16 code units, each text escaped as ECMAScript's `JSON.stringify` escapes it, which is the

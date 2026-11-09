@@ -87,14 +87,21 @@ pub(super) fn render_test_template_rust(
         None
     };
     // A message is a record of an event schema (§11.3), so only a template over
-    // one writes a message's canonical form.
-    let canonical_expr = match &m.template_type {
-        TypeOf::Record { .. } => Some(
-            canonical_value(&m.template_type, &Canonical::root(), &scope)
-                .map_err(|why| walk.refused(why))?,
-        ),
+    // one writes a message's type name and its canonical form.
+    let message = match &m.template_type {
+        TypeOf::Record { alias } => {
+            let record = scope.records.get(alias).ok_or_else(|| {
+                walk.refused(format!(
+                    "`record:{alias}` names no record the document imports"
+                ))
+            })?;
+            let written = canonical_value(&m.template_type, &Canonical::root(), &scope)
+                .map_err(|why| walk.refused(why))?;
+            Some((log_type_name(record), written))
+        }
         _ => None,
     };
+    let (log_type, canonical_expr) = message.unzip();
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("template_name".into(), m.name.clone().into());
@@ -104,7 +111,22 @@ pub(super) fn render_test_template_rust(
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
     ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
     l.render(env, "test_template", ctx)
+}
+
+/// The name the types module of the suite's TTCN-3 export gives the record
+/// `record` (rule E1, docs/SCE_TEST_PROFILE.md §9.5): the unit name of its
+/// document's file ([`crate::ttcn3_export::names::unit_name`]), which is what a
+/// message of it carries as its `type` in the test log (§12.5). A record read
+/// with no document falls back to the name the document gives itself.
+fn log_type_name(record: &ScopedRecord) -> String {
+    let stem = std::path::Path::new(&record.identity)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(&record.name);
+    crate::ttcn3_export::names::unit_name(stem)
 }
 
 /// The writers of the canonical form of a value in the test log, in the

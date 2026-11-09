@@ -70,6 +70,8 @@ pub enum TestLogEvent {
         component: String,
         /// The port it sent on.
         port: String,
+        /// The name of the message's record type ([`super::TestValue::type_name`]).
+        message_type: String,
         /// The message's value in canonical form.
         value: Value,
     },
@@ -80,6 +82,8 @@ pub enum TestLogEvent {
         component: String,
         /// The port it took the message from.
         port: String,
+        /// The name of the message's record type ([`super::TestValue::type_name`]).
+        message_type: String,
         /// The message's value in canonical form.
         value: Value,
     },
@@ -182,15 +186,18 @@ impl TestLogRecord {
             TestLogEvent::MessageSent {
                 component,
                 port,
+                message_type,
                 value,
             }
             | TestLogEvent::MessageReceived {
                 component,
                 port,
+                message_type,
                 value,
             } => {
                 members.push(text_member("component", component));
                 members.push(text_member("port", port));
+                members.push(text_member("type", message_type));
                 members.push(member("value", value.clone()));
             }
             TestLogEvent::TimerStarted {
@@ -303,12 +310,14 @@ mod tests {
             TestLogEvent::MessageSent {
                 component: String::new(),
                 port: String::new(),
+                message_type: String::new(),
                 value: Value::Null,
             }
             .kind(),
             TestLogEvent::MessageReceived {
                 component: String::new(),
                 port: String::new(),
+                message_type: String::new(),
                 value: Value::Null,
             }
             .kind(),
@@ -389,10 +398,11 @@ mod tests {
             written(TestLogEvent::MessageReceived {
                 component: "mtc".to_string(),
                 port: "sut".to_string(),
+                message_type: "job_reply".to_string(),
                 value: canonical::record([("job", Some(canonical::integer(7_u32)))]),
             }),
             "{\"at\":\"250\",\"component\":\"mtc\",\"kind\":\"message-received\",\
-             \"port\":\"sut\",\"value\":{\"job\":\"7\"}}"
+             \"port\":\"sut\",\"type\":\"job_reply\",\"value\":{\"job\":\"7\"}}"
         );
     }
 
