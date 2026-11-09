@@ -7,7 +7,9 @@
 //! (§6.2), `Specific`, the one value it sends. Go keeps a package's types and
 //! functions in one namespace, so the function a specific template's value is
 //! built by cannot be `Value` beside the type, as it is `value` on the other
-//! backends.
+//! backends. A template over a record, the type of a message, declares too the
+//! name of its record type in the test log, `TYPE`, and `Canonical`, its
+//! value's canonical form there (§12.5, [`GoCanonical`]).
 //!
 //! What each matcher holds is decided by the walk every backend shares
 //! ([`super::test_template_walk`]), and its tests are joined as every backend
@@ -40,8 +42,8 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands,
-    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalSpelling, CaseTest, Held, JoinSpelling, Op,
+    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -111,8 +113,12 @@ pub(super) fn render_test_template_go(
     if let Some(why) = refusal {
         return Err(walk.refused(why));
     }
+    // Only a template over a record, the type of a message, writes a message's
+    // type name and its canonical form (`TemplateWalk::message_form`).
+    let (log_type, canonical_expr) = walk.message_form(&GoCanonical, &scope)?.unzip();
     spelled.push(match_expr.clone());
     spelled.extend(value_expr.iter().cloned());
+    spelled.extend(canonical_expr.iter().cloned());
     let go_imports = spelling.imports(&spelled.join("\n"), options)?;
 
     let mut ctx = l.base_context(&m.name);
@@ -122,8 +128,153 @@ pub(super) fn render_test_template_go(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
     ctx.insert("go_imports".into(), serde_json::json!(go_imports));
     l.render(env, "test_template", ctx)
+}
+
+/// The package of the test profile's Go runtime whose functions write the
+/// canonical form of a value in the test log
+/// (`backends/go/runtime/testprofile/canonical/canonical.go`), imported under
+/// its own name, [`CANONICAL`].
+const CANONICAL_PATH: &str = "github.com/newmassrael/sce-go-runtime/testprofile/canonical";
+
+/// The name a unit names the writers of [`CANONICAL_PATH`] by.
+const CANONICAL: &str = "canonical";
+
+/// A value the canonical writer reads, in Go.
+struct GoCanonicalAt {
+    /// What names the value: `value`, an element of a list by the index a
+    /// closure binds, the value of an optional field, or a field of any of
+    /// them.
+    expr: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+}
+
+/// The Go spelling of a value's canonical form in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), with the writers of the profile runtime's
+/// package `canonical`: a `string`, a `bool`, a `[]any` or a
+/// `*sce.JSONObject` of them, which the runtime's `sce.WriteJCS` writes. The
+/// walk is the one every backend shares (`test_template_walk::canonical_value`,
+/// through `TemplateWalk::message_form`).
+///
+/// A Go function literal names the type of each parameter, which the walk does
+/// not hand a spelling, so a closure binds no value of the record: a list is
+/// written through a closure over the index of each element
+/// (`CanonicalSpelling::list_element`), and an optional field through a
+/// closure of no parameter that reads the field's value where it is present
+/// (`CanonicalSpelling::optional_value`), which the runtime calls only there,
+/// since what an absent field holds is no value of its type.
+struct GoCanonical;
+
+impl CanonicalSpelling for GoCanonical {
+    type At = GoCanonicalAt;
+
+    /// `Canonical`'s parameter `value`.
+    fn root(&self) -> GoCanonicalAt {
+        GoCanonicalAt {
+            expr: "value".to_string(),
+            depth: 0,
+        }
+    }
+
+    fn field(&self, at: &GoCanonicalAt, id: &str) -> GoCanonicalAt {
+        GoCanonicalAt {
+            expr: format!("{}.{}", at.expr, event_schema_field_ident(id, Language::Go)),
+            depth: at.depth,
+        }
+    }
+
+    /// The name a closure binds, numbered by depth: the index of a list's
+    /// element, or, for an optional field, a name nothing binds, which only
+    /// numbers the bindings inside it.
+    fn bound(&self, at: &GoCanonicalAt, prefix: &str) -> (String, GoCanonicalAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = GoCanonicalAt {
+            expr: name.clone(),
+            depth: at.depth + 1,
+        };
+        (name, value)
+    }
+
+    /// The list indexed by the closure's parameter.
+    fn list_element(&self, list: &GoCanonicalAt, bound: GoCanonicalAt) -> GoCanonicalAt {
+        GoCanonicalAt {
+            expr: format!("{}[{}]", list.expr, bound.expr),
+            depth: bound.depth,
+        }
+    }
+
+    /// The field's value, read by `Proven` where the closure runs: only for a
+    /// field that holds one.
+    fn optional_value(&self, field: &GoCanonicalAt, bound: GoCanonicalAt) -> GoCanonicalAt {
+        GoCanonicalAt {
+            expr: format!("{}.Proven()", field.expr),
+            depth: bound.depth,
+        }
+    }
+
+    fn boolean(&self, at: &GoCanonicalAt) -> String {
+        format!("{CANONICAL}.Boolean({})", at.expr)
+    }
+
+    /// A Go value of an enum's type answers its declared name, or none, by
+    /// `DeclaredName`; a number no variant of an open enum declares is the
+    /// text of its carrier's digits.
+    fn enumerated(&self, at: &GoCanonicalAt, strict: bool) -> String {
+        if strict {
+            format!("{CANONICAL}.Enumerated({}.DeclaredName())", at.expr)
+        } else {
+            format!(
+                "{CANONICAL}.OpenEnumerated({0}.DeclaredName(), {0}.ToUnderlying())",
+                at.expr
+            )
+        }
+    }
+
+    fn integer(&self, at: &GoCanonicalAt) -> String {
+        format!("{CANONICAL}.Integer({})", at.expr)
+    }
+
+    fn text(&self, at: &GoCanonicalAt) -> String {
+        format!("{CANONICAL}.Text({})", at.expr)
+    }
+
+    fn bytes(&self, at: &GoCanonicalAt) -> String {
+        format!("{CANONICAL}.Bytes({})", at.expr)
+    }
+
+    fn list(&self, at: &GoCanonicalAt, binding: &str, element: String) -> String {
+        format!(
+            "{CANONICAL}.List(len({}), func({binding} int) any {{ return {element} }})",
+            at.expr
+        )
+    }
+
+    /// As it is: a field a record always holds is never nil.
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// Nil where the field is absent, which the record omits.
+    fn optional_field(&self, field: &GoCanonicalAt, _binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}.Optional({}.IsPresent(), func() any {{ return {written} }})",
+            field.expr
+        )
+    }
+
+    fn record(&self, fields: Vec<(String, String)>) -> String {
+        let fields: Vec<String> = fields
+            .into_iter()
+            .map(|(id, value)| {
+                format!("{CANONICAL}.Field(\"{}\", {value})", filters::escape_go(id))
+            })
+            .collect();
+        format!("{CANONICAL}.Record({})", fields.join(", "))
+    }
 }
 
 /// The name the generated `Matches` and `Specific` take the formal parameter
@@ -222,8 +373,9 @@ impl GoSpelling {
     }
 
     /// The import specs of the unit whose text is `text`: the standard
-    /// `bytes`, the profile's runtime and the package of each document a
-    /// spelling named, each kept only where the text names it, since Go
+    /// `bytes`, the profile's runtime, its writers of the canonical form
+    /// ([`CANONICAL_PATH`]) and the package of each document a spelling
+    /// named, each kept only where the text names it, since Go
     /// refuses a file that imports a package it never names. A document's
     /// package is the one every Go unit imports it by
     /// ([`forge_import_identity`]), below `options`' `go_module_prefix`, which
@@ -236,6 +388,7 @@ impl GoSpelling {
         let mut candidates = vec![
             format!("\"{BYTES_PACKAGE}\""),
             format!("\"{TEST_RUNTIME_PATH}\""),
+            format!("\"{CANONICAL_PATH}\""),
         ];
         let named = self.named.borrow();
         if !named.is_empty() {

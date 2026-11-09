@@ -190,9 +190,10 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
             "machine.RegisterEventProcessor(\"http://sce.dev/ext/test-port\", func(request \
              sce.HostSendRequest) []sce.HostSendResponse {"
                 .to_string(),
+            "value, carried := request.Value.(scetestprofile.TestValue)".to_string(),
             "panic(\"a test-port send carries its template's value\")".to_string(),
             "context.Send(request.Target, scetestprofile.Message{Event: request.EventName, \
-             Value: request.Value})"
+             Value: value})"
                 .to_string(),
             "machine.RegisterInvoker(\"http://sce.dev/ext/test-component\", func(event \
              sce.HostInvokeEvent) *sce.HostInvokeResponse {"
@@ -365,13 +366,15 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "\"job.request\"",
         "\"sut\",",
         "InvokeID: p.pendingEventInvokeid,",
-        "Value: sce_request_of.Specific(p.vJob),",
+        "Value: scetestprofile.MessageValue(sce_request_of.Specific(p.vJob), \
+         sce_request_of.TYPE, sce_request_of.Canonical),",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "Value: sce_reply_of.Specific(p.vRequested, p.vOk),",
+        "Value: scetestprofile.MessageValue(sce_reply_of.Specific(p.vRequested, p.vOk), \
+         sce_reply_of.TYPE, sce_reply_of.Canonical),",
         "ProcessorType: \"http://sce.dev/ext/test-component\",",
         "InvokeID:      \"answerer\",",
     ] {
@@ -439,7 +442,11 @@ fn a_template_argument_is_handed_over_as_the_machine_holds_it() {
     std::fs::write(&path, component).expect("the component is written");
     let code = text_at(&path);
     assert!(
-        code.contains("Value: sce_job_report_of.Specific(p.vElapsed, p.vNote, p.vCode),"),
+        code.contains(
+            "Value: scetestprofile.MessageValue(\
+             sce_job_report_of.Specific(p.vElapsed, p.vNote, p.vCode), \
+             sce_job_report_of.TYPE, sce_job_report_of.Canonical),"
+        ),
         "{code}"
     );
     assert!(code.contains(&imported("job_report_of")), "{code}");

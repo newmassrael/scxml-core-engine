@@ -35,6 +35,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_reply"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_request"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/ptc_keeper"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/reply_ok"
 )
 
 // componentMillisecond is a millisecond of `NOW`, which counts microseconds.
@@ -111,9 +112,11 @@ func (r *componentResponder) Send(systemPort string, message testprofile.Message
 		job = r.job
 	}
 	reply := job_reply.JobReplyPayload{Job: job, Code: r.code}
+	// The reply's canonical form in the test log is the one the unit of a
+	// template over its record writes.
 	r.pending = append(r.pending, componentPending{
 		at:      now + componentAnswerDelay,
-		message: testprofile.Message{Event: job_reply.EventName, Value: reply},
+		message: testprofile.NewMessage(job_reply.EventName, reply, reply_ok.TYPE, reply_ok.Canonical),
 	})
 }
 

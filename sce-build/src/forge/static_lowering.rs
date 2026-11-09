@@ -10488,8 +10488,8 @@ fn go_text(text: &str) -> String {
     format!("\"{}\"", filters::escape_go(text.to_string()))
 }
 
-/// The declaration `name` (`Value`, `Matches`, `Specific`) of the Go unit of the
-/// test template named `unit`, by the alias every Go unit imports a sibling
+/// The declaration `name` (`Value`, `Matches`, `Specific`, `TYPE`, `Canonical`)
+/// of the Go unit of the test template named `unit`, by the alias every Go unit imports a sibling
 /// package under ([`crate::forge::generator::go_package_alias`]), which the
 /// machine's import of the unit binds ([`StaticTarget::test_template_import`]).
 fn go_test_template(unit: &str, name: &str) -> String {
@@ -11889,13 +11889,20 @@ impl StaticTarget for GoTarget<'_> {
             ),
         })
     }
-    // The specific template's `Specific`, which the send hands its processor as
+    // The specific template's `Specific`, with the name of its record type and
+    // the unit's writer of its canonical form in the test log
+    // (docs/SCE_TEST_PROFILE.md §12.5), which the send hands its processor as
     // the request's value (`HostSendRequest.Value`, `go/actions/send.go.jinja2`).
+    // A sent template is over the record of a message, so its unit writes both
+    // (`TYPE` and `Canonical`, `forge/go/test_template.go.jinja2`).
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = |name: &str| go_test_template(&message.unit, name);
         Some(format!(
-            "{}({})",
-            go_test_template(&message.unit, "Specific"),
-            args.join(", ")
+            "{GO_TEST_RUNTIME}.MessageValue({}({}), {}, {})",
+            unit("Specific"),
+            args.join(", "),
+            unit("TYPE"),
+            unit("Canonical")
         ))
     }
     // The unit's package, imported as a stateless sibling's is, under the alias

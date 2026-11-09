@@ -34,6 +34,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/asking_configuration"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_reply"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_request"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/reply_ok"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/runtime_suite"
 )
 
@@ -77,9 +78,11 @@ func (r *suiteResponder) Send(systemPort string, message testprofile.Message, no
 	}
 	*r.requested = append(*r.requested, request.Job)
 	reply := job_reply.JobReplyPayload{Job: request.Job, Code: r.code}
+	// The reply's canonical form in the test log is the one the unit of a
+	// template over its record writes.
 	r.pending = append(r.pending, suitePending{
 		at:      now + suiteAnswerDelay,
-		message: testprofile.Message{Event: job_reply.EventName, Value: reply},
+		message: testprofile.NewMessage(job_reply.EventName, reply, reply_ok.TYPE, reply_ok.Canonical),
 	})
 }
 

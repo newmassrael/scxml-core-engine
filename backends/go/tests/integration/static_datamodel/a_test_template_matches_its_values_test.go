@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/newmassrael/sce-forge-runtime/optional"
+	sce "github.com/newmassrael/sce-go-runtime"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/card_payment"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/card_within"
@@ -313,5 +314,57 @@ func TestATestTemplateMatchesItsValues_AByteStringLiteralIsItsOctets(t *testing.
 	other[3] = 0xa1
 	if voucher_is.Matches(voucher_payment.VoucherPaymentPayload{VoucherCode: other}) {
 		t.Error("other octets match")
+	}
+}
+
+// docs/SCE_TEST_PROFILE.md §12.5: a unit's Canonical writes a value by the
+// types its documents declare, in the JSON Canonicalization Scheme: every
+// integer as the text of its digits, a closed enum by its declared name, a byte
+// string in upper-case hex, a list in order, an absent field omitted and a
+// present one written. TYPE is the unit name of the record's event schema. The
+// Kotlin twin, anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare,
+// writes an order, which holds a union that Go does not lower, so this one
+// writes the records of the templates Go generates.
+func TestATestTemplateMatchesItsValues_AValuesCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare(t *testing.T) {
+	jcs := func(value any) string {
+		t.Helper()
+		text, err := sce.WriteJCS(value)
+		if err != nil {
+			t.Fatalf("a canonical value is written: %v", err)
+		}
+		return text
+	}
+	tagged := profileMatching()
+	tagged.Tag = optional.Some[uint8](4)
+	for _, c := range []struct {
+		name, typeName, wantType, got, want string
+	}{
+		{
+			"job_report", job_report.TYPE, "job_status",
+			jcs(job_report.Canonical(job_report.Specific())),
+			`{"codes":["7"],"count":"1","elapsed_ms":"0","note":"started on time"}`,
+		},
+		{
+			"every_matcher", every_matcher.TYPE, "job_status",
+			jcs(every_matcher.Canonical(tagged)),
+			`{"codes":["3","9","5"],"count":"100","elapsed_ms":"1","tag":"4"}`,
+		},
+		{
+			"order_line_exact", order_line_exact.TYPE, "order_line",
+			jcs(order_line_exact.Canonical(order_line_exact.Specific())),
+			`{"color":"red","quantity":"2","sku":"A-1"}`,
+		},
+		{
+			"voucher_is", voucher_is.TYPE, "voucher_payment",
+			jcs(voucher_is.Canonical(voucher_is.Specific())),
+			`{"voucher_code":"00FF10A0"}`,
+		},
+	} {
+		if c.typeName != c.wantType {
+			t.Errorf("%s: TYPE is %q, not %q", c.name, c.typeName, c.wantType)
+		}
+		if c.got != c.want {
+			t.Errorf("%s: wrote %s, want %s", c.name, c.got, c.want)
+		}
 	}
 }
