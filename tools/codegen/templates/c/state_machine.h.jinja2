@@ -699,6 +699,18 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
 {% endfor %}
     };
 {% endfor %}
+{% if static_scratch_members %}
+    /* docs/adr/0082: the storage of the machine's calls of algorithms and of its
+       loops, which it holds and not the stack: the destination a call writes its
+       list into, the copy of the machine's records an adapter hands over, and the
+       copy of the list a <foreach> walks (§scxml-4.6). One union for the calls
+       and one for each depth of loop, since no two members of one union are live
+       at once; each apart from the colours above, since a loop's copy is live
+       through a <send> its body makes. */
+{% for member in static_scratch_members %}
+{{ member }}
+{% endfor %}
+{% endif %}
 } {{ csym_prefix }}{{ model.name }}_scratch_t;
 
 {% if model.needs_event_scheduler %}
@@ -1134,16 +1146,10 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        (docs/adr/0086, section 8.5 (a) and (d)). */
     {{ csym_prefix }}{{ model.name }}_queued_event_t current_internal;
     {{ csym_prefix }}{{ model.name }}_queued_event_t current_external;
+    /* The machine's one scratch: the roles of its slot and the storage of its
+       calls and loops (docs/adr/0086, section 8.5 (d); docs/adr/0082). */
     {{ csym_prefix }}{{ model.name }}_scratch_t scratch;
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
-{% if static_scratch_member %}
-    /* docs/adr/0082: the storage of the machine's calls of algorithms and of its
-       loops, which it holds and not the stack: the destination a call writes its list
-       into, the copy of the machine's records an adapter hands over, and the copy of
-       the list a <foreach> walks (§scxml-4.6). One union for the calls and one for
-       each depth of loop, since no two members of one union are live at once. */
-    {{ static_scratch_member }}
-{% endif %}
     bool is_running;
     /* §scxml-D-enterStates: the top-level <final> the run ended in, valid
        when `has_terminal_state` — set on entering it, zero when a run starts.
