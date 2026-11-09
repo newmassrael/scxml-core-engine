@@ -49,12 +49,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // arm's codec with the rest of the arm where the arm's own header holds it
     // (a peek byte), or, where its caller hands it, written by the caller,
     // which derives it from the arm the value holds and hands it to the decode
-    // (`tag()`). One with an arm a build feature decides is not yet.
+    // (`tag()`).
+    // An arm a build feature decides (docs/adr/0072) is an alternative, a case
+    // and a test of the build that has it ([`Alternatives`]).
     if m.variant.is_some() {
         for arm in &plan.arms {
-            if arm.feature.is_some() {
-                forms.push(format!("`{}`, an arm a build feature decides", arm.codec));
-            }
             if !held_printed(imports, arm.codec) {
                 forms.push(format!(
                     "`{}`, an arm of a codec the printer does not print",
@@ -441,12 +440,8 @@ fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Opt
         // value holds gives it (docs/adr/0065 §6 R4c).
         (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => None,
         // The tag of the arm each embedded body's variant holds, masked to the
-        // flag's bits; an arm a build feature decides is not yet.
-        (ElementId::Flag { .. }, Derive::ParentTag(tag)) => tag
-            .terms
-            .iter()
-            .any(|term| term.arms.iter().any(|arm| arm.feature.is_some()))
-            .then(|| format!("`{element}`, a tag an arm a build feature decides fills")),
+        // flag's bits, an arm a build feature decides in the build that has it.
+        (ElementId::Flag { .. }, Derive::ParentTag(_)) => None,
         (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
         _ => Some(format!("`{element}`, a flag the encode derives")),
     }
@@ -707,8 +702,9 @@ fn arm_said_input(
         .arms
         .iter()
         .enumerate()
-        .filter_map(|(index, (held, tag))| {
+        .filter_map(|(i, (held, tag))| {
             let input = arms.get(&held.alias)?;
+            let index = variant.index(i);
             let arm = match tag {
                 Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
                 None => format!("std::get_if<{index}>(&_r_body)->body"),
@@ -726,7 +722,14 @@ fn arm_said_input(
             } else {
                 read
             };
-            Some(format!("_r_body.index() == {index} ? {read} : "))
+            // An arm a build may lack is a term of the build that has it, on
+            // lines of its own inside its guard.
+            let term = format!("_r_body.index() == {index} ? {read} : ");
+            Some(if variant.alternatives.macros[i].is_some() {
+                format!("\n{}", variant.guarded(i, &format!("{term}\n")))
+            } else {
+                term
+            })
         })
         .collect()
 }
@@ -838,11 +841,13 @@ fn named_entry(plan: &EncodePlan<'_>, imports: &[ImportContext], chain: &str, ke
                 (1u64 << flag.width) - 1
             };
             let tag = key.checked_shr(flag.bit).unwrap_or(0) & mask;
-            let index = variant
+            let i = variant
                 .arms
                 .iter()
                 .position(|a| a.value == tag)
                 .expect("a bare entry's tag selects an arm");
+            let index =
+                Alternatives::of(variant.arms.iter().map(|a| a.feature.as_deref())).index(i);
             format!(", {class}Variant{{std::in_place_index<{index}>}}")
         }
     };
@@ -1101,14 +1106,88 @@ struct AlignedLists {
     second_namespace: String,
 }
 
+/// Where each alternative of a C++ `std::variant` of a codec's arms sits in
+/// every build (docs/adr/0072): the arms in declaration order, then the
+/// catch-all's wrapper. An arm compiled under a build feature is an
+/// alternative only where its macro is 1, so each alternative after it sits
+/// one place later there; its place is a constant expression of the macros of
+/// the gated arms before it, which the header defines to 0 or 1, and the lines
+/// that name a gated arm are inside the guard of its macro.
+struct Alternatives {
+    /// The macro each alternative is guarded by, `None` for one every build
+    /// holds.
+    macros: Vec<Option<String>>,
+}
+
+impl Alternatives {
+    fn of<'f>(features: impl Iterator<Item = Option<&'f str>>) -> Self {
+        Alternatives {
+            macros: features
+                .map(|feature| feature.map(super::c_feature_macro))
+                .collect(),
+        }
+    }
+
+    /// The place of alternative `i` among the alternatives of a build.
+    fn index(&self, i: usize) -> String {
+        let before = &self.macros[..i];
+        let gated: Vec<&str> = before.iter().filter_map(|m| m.as_deref()).collect();
+        if gated.is_empty() {
+            return i.to_string();
+        }
+        let held = before.len() - gated.len();
+        format!("({held} + {})", gated.join(" + "))
+    }
+
+    /// Whether a build feature decides some alternative.
+    fn any_gated(&self) -> bool {
+        self.macros.iter().any(Option::is_some)
+    }
+
+    /// How many alternatives a build holds.
+    fn count(&self) -> String {
+        let n = self.macros.len();
+        let gated: Vec<&str> = self.macros.iter().filter_map(|m| m.as_deref()).collect();
+        if gated.is_empty() {
+            return n.to_string();
+        }
+        format!("({} + {})", n - gated.len(), gated.join(" + "))
+    }
+
+    /// `lines`, each ending in a new line, as a build holds them: inside the
+    /// guard of alternative `i`'s macro where it has one.
+    fn guarded(&self, i: usize, lines: &str) -> String {
+        match &self.macros[i] {
+            Some(m) => format!("#if {m}\n{lines}#endif\n"),
+            None => lines.to_string(),
+        }
+    }
+
+    /// `first`, then each item of alternative `i` (`items[i]`) with `separator`
+    /// before it. The item of an alternative a build may lack is inside the
+    /// guard of its macro, on lines of its own with its separator, so no
+    /// build's list has a stray separator.
+    fn joined(&self, first: &str, separator: &str, items: &[String]) -> String {
+        let mut out = first.to_string();
+        for (i, item) in items.iter().enumerate() {
+            match &self.macros[i] {
+                Some(m) => out.push_str(&format!("\n#if {m}\n{separator}{item}\n#endif\n")),
+                None => out.push_str(&format!("{separator}{item}")),
+            }
+        }
+        out
+    }
+}
+
 /// The variant of a printed codec: the type the value holds the arm in (the
 /// template's `{Codec}Variant`, a `std::variant` of each arm's value in the
 /// plan's order, the catch-all `{Codec}Default` last), each arm's codec and the
-/// tag it names (`None` for the catch-all, which holds its tag), and the arm a
-/// value made by default holds.
+/// tag it names (`None` for the catch-all, which holds its tag), where each
+/// sits in every build, and the arm a value made by default holds.
 struct VariantPart {
     type_name: String,
     arms: Vec<(HeldCodec, Option<u64>)>,
+    alternatives: Alternatives,
     default_index: Option<usize>,
 }
 
@@ -1132,19 +1211,31 @@ impl VariantPart {
         Some(VariantPart {
             type_name: format!("{struct_name}Variant"),
             arms,
+            alternatives: Alternatives::of(plan.arms.iter().map(|arm| arm.feature)),
             default_index: variant.arms.iter().position(|arm| arm.is_default),
         })
+    }
+
+    /// The place of arm `i` among the alternatives of a build.
+    fn index(&self, i: usize) -> String {
+        self.alternatives.index(i)
+    }
+
+    /// `lines` as a build holds them: inside the guard of arm `i`'s feature
+    /// where it has one.
+    fn guarded(&self, i: usize, lines: &str) -> String {
+        self.alternatives.guarded(i, lines)
     }
 
     /// The trait, of the codec's namespace, that says whether what a source
     /// presents as the body is a `std::variant` of a source of each arm's codec
     /// in turn, the catch-all one holding its `tag` and its `body`.
     fn traits(&self) -> String {
-        let n = self.arms.len();
+        let n = self.alternatives.count();
         let mut out = String::new();
         let mut each: Vec<String> = Vec::new();
-        for (index, (held, tag)) in self.arms.iter().enumerate() {
-            let alt = format!("std::variant_alternative_t<{index}, R>");
+        for (i, (held, tag)) in self.arms.iter().enumerate() {
+            let alt = format!("std::variant_alternative_t<{}, R>", self.index(i));
             match tag {
                 Some(_) => each.push(format!("{}::is_source<{alt}>", held.namespace)),
                 None => {
@@ -1171,7 +1262,13 @@ impl VariantPart {
              template <class R>\n\
              struct is_body<R, std::enable_if_t<::SCE::Forge::Detail::IsVariantOf<R, {n}>::value>>\n\
              \x20   : std::conjunction<{}> {{}};\n\n",
-            each.join(", ")
+            // A list whose first arm a build may lack starts with what every
+            // conjunction holds, so no build's list starts with a separator.
+            if self.alternatives.any_gated() {
+                self.alternatives.joined("std::true_type", ", ", &each)
+            } else {
+                each.join(", ")
+            }
         ));
         out
     }
@@ -1181,13 +1278,17 @@ impl VariantPart {
     /// times, so the `0` after the switch is not reached.
     fn tag_accessor(&self, body: &str) -> String {
         let mut cases = String::new();
-        for (index, (_, tag)) in self.arms.iter().enumerate() {
-            cases.push_str(&match tag {
-                Some(tag) => format!("            case {index}: return {tag};\n"),
-                None => format!(
-                    "            case {index}: return static_cast<std::uint8_t>(std::get_if<{index}>(&{body})->tag);\n"
-                ),
-            });
+        for (i, (_, tag)) in self.arms.iter().enumerate() {
+            let index = self.index(i);
+            cases.push_str(&self.guarded(
+                i,
+                &match tag {
+                    Some(tag) => format!("            case {index}: return {tag};\n"),
+                    None => format!(
+                        "            case {index}: return static_cast<std::uint8_t>(std::get_if<{index}>(&{body})->tag);\n"
+                    ),
+                },
+            ));
         }
         format!(
             "    /// The tag of the arm the value holds: the one the arm declares, or the\n\
@@ -1207,9 +1308,9 @@ impl VariantPart {
     fn nothrow_requirement(&self) -> String {
         let read = "source::body(std::declval<const S&>())";
         let body = format!("std::decay_t<decltype({read})>");
-        let mut parts = vec![format!("noexcept({read})")];
-        for (index, (held, tag)) in self.arms.iter().enumerate() {
-            let alt = format!("std::variant_alternative_t<{index}, {body}>");
+        let mut parts = Vec::new();
+        for (i, (held, tag)) in self.arms.iter().enumerate() {
+            let alt = format!("std::variant_alternative_t<{}, {body}>", self.index(i));
             parts.push(match tag {
                 Some(_) => format!("{}::is_nothrow_source<{alt}>::value", held.namespace),
                 None => format!(
@@ -1218,7 +1319,8 @@ impl VariantPart {
                 ),
             });
         }
-        parts.join(" && ")
+        self.alternatives
+            .joined(&format!("noexcept({read})"), " && ", &parts)
     }
 }
 
@@ -3275,7 +3377,7 @@ pub(super) fn render(
                         let mut cases = String::new();
                         for said in arms {
                             let (held, tag) = &variant.arms[said.arm];
-                            let index = said.arm;
+                            let index = variant.index(said.arm);
                             let arm = match tag {
                                 Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
                                 None => format!("std::get_if<{index}>(&_r_body)->body"),
@@ -3284,10 +3386,13 @@ pub(super) fn render(
                                 .as_ref()
                                 .map(|t| format!(" {t} = true;"))
                                 .unwrap_or_default();
-                            cases.push_str(&format!(
-                                "            case {index}: {local} = static_cast<std::size_t>({}::input_{}({arm}));{mark} break;\n",
-                                held.namespace,
-                                input_name(&said.input)
+                            cases.push_str(&variant.guarded(
+                                said.arm,
+                                &format!(
+                                    "            case {index}: {local} = static_cast<std::size_t>({}::input_{}({arm}));{mark} break;\n",
+                                    held.namespace,
+                                    input_name(&said.input)
+                                ),
                             ));
                         }
                         before.push_str(&format!("        std::size_t {local} = 0;\n"));
@@ -3375,15 +3480,19 @@ pub(super) fn render(
                     .as_ref()
                     .expect("a variant's tag is derived only where the codec has one");
                 let mut cases = String::new();
-                for (index, (_, tag)) in variant.arms.iter().enumerate() {
-                    cases.push_str(&match tag {
-                        Some(tag) => format!(
-                            "            case {index}: _t_body = {tag}ull; break;\n"
-                        ),
-                        None => format!(
-                            "            case {index}: _t_body = static_cast<std::uint64_t>(std::get_if<{index}>(&_r_body)->tag); break;\n"
-                        ),
-                    });
+                for (i, (_, tag)) in variant.arms.iter().enumerate() {
+                    let index = variant.index(i);
+                    cases.push_str(&variant.guarded(
+                        i,
+                        &match tag {
+                            Some(tag) => format!(
+                                "            case {index}: _t_body = {tag}ull; break;\n"
+                            ),
+                            None => format!(
+                                "            case {index}: _t_body = static_cast<std::uint64_t>(std::get_if<{index}>(&_r_body)->tag); break;\n"
+                            ),
+                        },
+                    ));
                 }
                 before.push_str(&format!(
                     "        std::uint64_t _t_body = 0;\n\
@@ -3452,15 +3561,28 @@ pub(super) fn render(
                         .body
                         .as_ref()
                         .expect("a parent tag is filled by an embedded body");
+                    // The body's alternatives in every build: its arms, an arm a
+                    // build feature decides only where its macro is 1, then the
+                    // catch-all, which every build holds.
+                    let alternatives = Alternatives::of(
+                        term.arms
+                            .iter()
+                            .map(|arm| arm.feature.as_deref())
+                            .chain(term.catch_all.then_some(None)),
+                    );
                     let mut cases = String::new();
-                    for (index, arm) in term.arms.iter().enumerate() {
-                        cases.push_str(&format!(
-                            "                case {index}: {local} |= 0x{:X}ull; break;\n",
-                            arm.tag
+                    for (i, arm) in term.arms.iter().enumerate() {
+                        let index = alternatives.index(i);
+                        cases.push_str(&alternatives.guarded(
+                            i,
+                            &format!(
+                                "                case {index}: {local} |= 0x{:X}ull; break;\n",
+                                arm.tag
+                            ),
                         ));
                     }
                     if term.catch_all {
-                        let index = term.arms.len();
+                        let index = alternatives.index(term.arms.len());
                         cases.push_str(&format!(
                             "                case {index}: {local} |= static_cast<std::uint64_t>(std::get_if<{index}>(&_v)->tag) & 0x{:X}ull; break;\n",
                             term.mask
@@ -3894,17 +4016,21 @@ pub(super) fn render(
                     .as_ref()
                     .expect("a variant's arm is written only where the codec has one");
                 let mut cases = String::new();
-                for (index, (held, tag)) in variant.arms.iter().enumerate() {
+                for (i, (held, tag)) in variant.arms.iter().enumerate() {
+                    let index = variant.index(i);
                     let arm = match tag {
                         Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
                         None => format!("std::get_if<{index}>(&_r_body)->body"),
                     };
-                    cases.push_str(&format!(
-                        "            case {index}:\n\
-                         \x20               if (auto _e = {}::Wire::encode_source({arm}, w{}); _e) return _e;\n\
-                         \x20               break;\n",
-                        held.namespace,
-                        handed(&held.alias)
+                    cases.push_str(&variant.guarded(
+                        i,
+                        &format!(
+                            "            case {index}:\n\
+                             \x20               if (auto _e = {}::Wire::encode_source({arm}, w{}); _e) return _e;\n\
+                             \x20               break;\n",
+                            held.namespace,
+                            handed(&held.alias)
+                        ),
                     ));
                 }
                 before.push_str(&format!(
@@ -4174,8 +4300,10 @@ pub(super) fn render(
         // A value made by default holds the arm marked `default="true"`, which
         // encodes its own tag; else the first.
         if let Some(variant) = &variant {
+            // The arm marked default is never under a feature, but one before
+            // it may be, so its place is that of a build.
             let init = match variant.default_index {
-                Some(index) => format!("{{std::in_place_index_t<{index}>{{}}}}"),
+                Some(i) => format!("{{std::in_place_index_t<{}>{{}}}}", variant.index(i)),
                 None => "{}".to_string(),
             };
             private.push_str(&format!(

@@ -17,12 +17,16 @@
 // 0x01 to arm A (the default arm), 0x02 to arm B, which names the feature
 // `gated-arm`, and anything else to the catch-all, whose body is arm A's
 // codec. codec_feature_gated_arm_no_catch_all dispatches on one bit: 0x00 to
-// its arm A, 0x01 to its arm B under the same feature, and has no catch-all.
+// its arm A, 0x01 to its arm B under the same feature, and has no catch-all;
+// codec_feature_gated_arm_held likewise, over arms that hold a byte string of
+// a stated length. Each is printed from its plan (docs/adr/0081 step 4): a
+// gated arm is an alternative, a case and a test of the build that has it.
 // Where the macro is 0, a frame of arm B is refused: decode returns
 // std::nullopt and the cursor records CodecError::VariantArmNotBuilt, since
 // the tag is one the document names and the catch-all must not read it.
 
 #include "codec_feature_gated_arm.h"
+#include "codec_feature_gated_arm_held.h"
 #include "codec_feature_gated_arm_no_catch_all.h"
 
 #include <cstdint>
@@ -54,6 +58,7 @@ using GatedVariant = ::SCE::Generated::CodecFeatureGatedArm::CodecFeatureGatedAr
 using GatedDefault = ::SCE::Generated::CodecFeatureGatedArm::CodecFeatureGatedArmDefault;
 using NoCatchAll = ::SCE::Generated::CodecFeatureGatedArmNoCatchAll::CodecFeatureGatedArmNoCatchAll;
 using NoCatchAllVariant = ::SCE::Generated::CodecFeatureGatedArmNoCatchAll::CodecFeatureGatedArmNoCatchAllVariant;
+using Held = ::SCE::Generated::CodecFeatureGatedArmHeld::CodecFeatureGatedArmHeld;
 using ArmA = ::SCE::Generated::CodecDefaultMarkerArmA::CodecDefaultMarkerArmA;
 using PeekArmA = ::SCE::Generated::CodecPeekArmA::CodecPeekArmA;
 #if SCE_FEATURE_GATED_ARM
@@ -81,7 +86,7 @@ const std::vector<std::uint8_t> kPeekArmBFrame{0x01, 0x12, 0x34};
 // by its type, and it decodes back into arm A.
 void the_default_arm_is_held_by_every_build() {
     const Gated original{};
-    CHECK(std::holds_alternative<ArmA>(original.body), "a default value holds arm A");
+    CHECK(std::holds_alternative<ArmA>(original.body()), "a default value holds arm A");
     const std::vector<std::uint8_t> bytes = original.encode_to_vec();
     CHECK((bytes == std::vector<std::uint8_t>{0x01, 0x00}),
           "the default value is arm A's (header 0x01, one payload byte)");
@@ -92,11 +97,11 @@ void the_default_arm_is_held_by_every_build() {
         return;
     }
     CHECK(cursor.remaining() == 0, "arm A reads the whole frame");
-    const ArmA *a = std::get_if<ArmA>(&decoded->body);
+    const ArmA *a = std::get_if<ArmA>(&decoded->body());
     CHECK(a != nullptr && a->header() == 0x01 && a->payload() == 0x00, "tag 0x01 decodes into arm A");
 
     const NoCatchAll peek_original{};
-    CHECK(std::holds_alternative<PeekArmA>(peek_original.body), "a default value holds the peek-byte arm A");
+    CHECK(std::holds_alternative<PeekArmA>(peek_original.body()), "a default value holds the peek-byte arm A");
 }
 
 // A tag no arm names reaches the catch-all in every build.
@@ -108,7 +113,7 @@ void a_tag_the_document_does_not_name_reaches_the_catch_all() {
     if (!decoded.has_value()) {
         return;
     }
-    const GatedDefault *d = std::get_if<GatedDefault>(&decoded->body);
+    const GatedDefault *d = std::get_if<GatedDefault>(&decoded->body());
     CHECK(d != nullptr && d->tag == 0x03 && d->body.header() == 0x03 && d->body.payload() == 0x07,
           "tag 0x03 reaches the catch-all, which keeps the tag");
     CHECK(!cursor.last_refusal().has_value(), "a frame the catch-all reads is not refused");
@@ -123,11 +128,37 @@ void without_a_catch_all_the_ungated_arm_decodes_in_every_build() {
     if (!decoded.has_value()) {
         return;
     }
-    const PeekArmA *a = std::get_if<PeekArmA>(&decoded->body);
+    const PeekArmA *a = std::get_if<PeekArmA>(&decoded->body());
     CHECK(a != nullptr && a->header() == 0x00 && a->payload() == 0x07, "tag 0x00 decodes into arm A");
 }
 
+// Decode `frame` as `Codec` and write the value back; nothing where the frame
+// does not decode whole.
+template <class Codec> std::optional<std::vector<std::uint8_t>> round_trip(const std::vector<std::uint8_t> &frame) {
+    SceCursor cursor(frame.data(), frame.size());
+    const std::optional<Codec> decoded = Codec::decode(cursor);
+    if (!decoded.has_value() || cursor.remaining() != 0) {
+        return std::nullopt;
+    }
+    return decoded->encode_to_vec();
+}
+
+// codec_feature_gated_arm_held dispatches on bit 0 of its arms' own header, the
+// arm holding a byte string of a stated length: arm A (0x00) in every build,
+// and arm B (0x01) where the feature is on, each written back byte for byte.
+const std::vector<std::uint8_t> kHeldArmAFrame{0x00, 0x02, 0xAA, 0xBB};
+const std::vector<std::uint8_t> kHeldArmBFrame{0x01, 0x01, 0xCC};
+
+void the_arm_every_build_holds_is_written_back() {
+    CHECK(round_trip<Held>(kHeldArmAFrame) == kHeldArmAFrame, "the held arm A's frame is written back");
+}
+
 #if SCE_FEATURE_GATED_ARM
+
+// Where the feature is on, the gated arm of the held codec is written back too.
+void where_the_feature_is_on_the_gated_arm_is_written_back() {
+    CHECK(round_trip<Held>(kHeldArmBFrame) == kHeldArmBFrame, "the held arm B's frame is written back");
+}
 
 // With the feature on, tag 0x02 decodes into arm B, which reads its two-byte
 // payload, and the frame re-encodes byte for byte.
@@ -139,7 +170,7 @@ void where_the_feature_is_on_its_tag_decodes_into_its_arm() {
         return;
     }
     CHECK(cursor.remaining() == 0, "arm B reads the whole frame");
-    const ArmB *b = std::get_if<ArmB>(&decoded->body);
+    const ArmB *b = std::get_if<ArmB>(&decoded->body());
     CHECK(b != nullptr && b->header() == 0x02 && b->payload() == 0x1234, "tag 0x02 decodes into arm B");
     CHECK(decoded->encode_to_vec() == kArmBFrame, "arm B's frame re-encodes byte for byte");
 }
@@ -153,7 +184,7 @@ void without_a_catch_all_the_feature_on_decodes_the_gated_arm() {
         return;
     }
     CHECK(cursor.remaining() == 0, "arm B reads the whole frame");
-    const PeekArmB *b = std::get_if<PeekArmB>(&decoded->body);
+    const PeekArmB *b = std::get_if<PeekArmB>(&decoded->body());
     CHECK(b != nullptr && b->header() == 0x01 && b->payload() == 0x1234, "tag 0x01 decodes into arm B");
 }
 
@@ -178,6 +209,14 @@ void without_a_catch_all_the_feature_off_refuses_the_gated_arms_tag() {
           "the refusal is VariantArmNotBuilt, not a frame short of bytes");
 }
 
+// Where the feature is off, the held codec refuses the gated arm's tag.
+void where_the_feature_is_off_the_held_codec_refuses_the_gated_tag() {
+    SceCursor cursor(kHeldArmBFrame.data(), kHeldArmBFrame.size());
+    CHECK(!Held::decode(cursor).has_value(), "the held arm B's tag is refused where gated-arm is off");
+    CHECK(cursor.last_refusal() == std::optional<CodecError>(CodecError::VariantArmNotBuilt),
+          "the refusal is VariantArmNotBuilt");
+}
+
 #endif
 
 }  // namespace
@@ -186,12 +225,15 @@ int main() {
     the_default_arm_is_held_by_every_build();
     a_tag_the_document_does_not_name_reaches_the_catch_all();
     without_a_catch_all_the_ungated_arm_decodes_in_every_build();
+    the_arm_every_build_holds_is_written_back();
 #if SCE_FEATURE_GATED_ARM
     where_the_feature_is_on_its_tag_decodes_into_its_arm();
     without_a_catch_all_the_feature_on_decodes_the_gated_arm();
+    where_the_feature_is_on_the_gated_arm_is_written_back();
 #else
     where_the_feature_is_off_its_tag_is_refused();
     without_a_catch_all_the_feature_off_refuses_the_gated_arms_tag();
+    where_the_feature_is_off_the_held_codec_refuses_the_gated_tag();
 #endif
 
     if (failures != 0) {

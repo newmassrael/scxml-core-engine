@@ -443,6 +443,9 @@ set(GATED_ARM_DOCUMENTS
     "${RESOURCE_DIR}/codec_peek_arm_b.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_feature_gated_arm.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_feature_gated_arm_no_catch_all.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_gated_held_a.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_gated_held_b.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_feature_gated_arm_held.scxml"
 )
 set(GATED_ARM_GENERATED_HEADERS "")
 foreach(_gated_document IN LISTS GATED_ARM_DOCUMENTS)

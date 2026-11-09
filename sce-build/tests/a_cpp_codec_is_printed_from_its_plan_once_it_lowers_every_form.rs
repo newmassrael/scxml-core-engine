@@ -211,9 +211,6 @@ fn codec_documents_under(dir: &Path, out: &mut Vec<PathBuf>) {
 /// is empty the template's encode prints a codec somewhere, and so cannot be
 /// removed (docs/adr/0081 §6); a landing that moves one removes it here.
 const KEPT_ELSEWHERE: &[&str] = &[
-    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm.scxml",
-    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm_held.scxml",
-    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm_no_catch_all.scxml",
     "../backends/rust/forge-conformance/fixtures/codec_some_arms_say_parent.scxml",
     "tests/fixtures/cbor_codec/codec_cbor_record_list.scxml",
 ];

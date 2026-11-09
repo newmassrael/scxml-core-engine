@@ -300,17 +300,19 @@ fn the_cpp_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
     assert_holds(&text, &method, "the C++ codec does not return its tag");
 }
 
-/// An arm under a build feature is a test inside the guard of its macro.
+/// An arm under a build feature is a case inside the guard of its macro.
 #[test]
 fn the_cpp_codec_guards_the_test_of_a_gated_arm() {
     let text = code("tg_gated", Language::Cpp);
     let method = [
         "    [[nodiscard]] std::uint8_t tag() const noexcept {",
-        "        if (std::get_if<::SCE::Generated::TgSmall::TgSmall>(&body) != nullptr) return 1;",
+        "        switch (body_.index()) {",
+        "            case 0: return 1;",
         "#if SCE_FEATURE_TG_GATE",
-        "        if (std::get_if<::SCE::Generated::TgLarge::TgLarge>(&body) != nullptr) return 2;",
+        "            case 1: return 2;",
         "#endif",
-        "        return 0;",
+        "            default: return 0;",
+        "        }",
         "    }",
     ]
     .join("\n");
