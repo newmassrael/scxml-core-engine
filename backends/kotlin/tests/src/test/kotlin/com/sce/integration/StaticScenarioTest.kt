@@ -1725,10 +1725,11 @@ class StaticScenarioTest {
     }
 
     // One copy of a shared to-do list, as each of the three that took part in one
-    // run of it was driven: a person's copy stamps a change with its clock and
-    // sends it to the hub, the hub passes a write on to every copy but the one it
-    // came from, and each field of each to-do keeps the later write whatever order
-    // the writes arrive in. Every step states what the copy sent its peers.
+    // run of it was driven: a copy stamps a change with its clock, takes it in and
+    // sends it whole to its group (`record_list.change` by `#people`), takes in each
+    // peer's change whole as its delivery layer gives it, and each field of each to-do
+    // keeps the values nobody has written over. Every step states what the copy sent
+    // its peers.
     @Test
     fun todoPeerIsAlicesCopyOfASharedList() {
         replayTodoPeer(scenario("todo_peer_alice"))
@@ -1740,8 +1741,8 @@ class StaticScenarioTest {
     }
 
     @Test
-    fun todoPeerIsTheHubTheCopiesOfASharedListSendTo() {
-        replayTodoPeer(scenario("todo_peer_server"))
+    fun todoPeerIsCarolsCopyOfASharedList() {
+        replayTodoPeer(scenario("todo_peer_carol"))
     }
 
     // A child session that talks to a Mesh peer is given a router of its own by the

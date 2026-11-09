@@ -1671,8 +1671,8 @@ private func recordBytes() -> Machine {
     replay("todo_peer_bob", todoPeer())
 }
 
-@Test func aToDoCopyOfTheServerAnswersAsTheWorldSawIt() {
-    replay("todo_peer_server", todoPeer())
+@Test func aToDoCopyOfCarolAnswersAsTheWorldSawIt() {
+    replay("todo_peer_carol", todoPeer())
 }
 
 @Test func aSheetCopyOfAliceAnswersAsTheWorldSawIt() {

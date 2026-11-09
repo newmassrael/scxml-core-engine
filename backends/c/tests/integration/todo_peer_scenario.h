@@ -15,11 +15,11 @@
 
 // todo_peer: one copy of a shared to-do list, replayed through the afternoon the
 // world simulation ran it through, as each of the three that took part saw it.
-// A to-do's fields are values the copy keeps, each stamped; an observed-remove set
-// of entries (`adds`, `tombstones`) decides which stamp of a field is live, merged
-// by the standard `orset_union`, `orset_live` and `orset_observed`. Stamps are
-// 64-bit and cross as their digits; a field's text travels with its value; and
-// what a copy sends the hub, and the hub the other copies, is held send by send.
+// A to-do's fields are values the copy keeps, each stamped; the adds no write-over
+// removed (`adds`) say which stamp of a field is live, merged by the standard
+// `orset_union` and `orset_live`. Stamps are 64-bit and cross as their digits; a
+// field's text travels with its value; and each change a copy sends its group is
+// held send by send.
 #define TODO_VALUE_FIELDS(N, E)                                                                                        \
     E(id, wide_digits)                                                                                                 \
     E(field, wide_digits)                                                                                              \
@@ -28,11 +28,8 @@
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
-VARIABLE_READER(todo_peer, hub)
 VARIABLE_READER(todo_peer, refusals)
 VARIABLE_READER(todo_peer, agendaNext)
-VARIABLE_READER(todo_peer, stale)
-VARIABLE_READER(todo_peer, late)
 VARIABLE_READER(todo_peer, full)
 VARIABLE_READER(todo_peer, denied)
 
@@ -44,18 +41,13 @@ static const char *todo_peer_text_text(sce_static_string_96_t text) {
 
 RECORD_READER(todo_peer, clock, todo_peer_record_hlc_t, HLC_FIELDS)
 RECORD_LIST_READER(todo_peer, adds, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
-RECORD_LIST_READER(todo_peer, tombstones, todo_peer_record_entry_view_t, todo_peer_record_entry_t, ORSET_ENTRY_FIELDS)
 RECORD_LIST_READER(todo_peer, values, todo_peer_record_value_view_t, todo_peer_record_value_t, TODO_VALUE_FIELDS)
-RECORD_LIST_READER(todo_peer, digest, todo_peer_record_node_view_t, todo_peer_record_node_t, MERKLE_NODE_FIELDS)
 RECORD_LIST_READER(todo_peer, agenda, todo_peer_record_occurrence_view_t, todo_peer_record_occurrence_t,
                    OCCURRENCE_FIELDS)
 
 static const char *todo_peer_text(void *sm, const char *name) {
     if (strcmp(name, "node") == 0) {
         return wide_digits(todo_peer_get_node((const todo_peer_t *)sm));
-    }
-    if (strcmp(name, "floor") == 0) {
-        return wide_signed_digits(todo_peer_get_floor((const todo_peer_t *)sm));
     }
     return NULL;
 }
@@ -64,15 +56,14 @@ static const name_value_t todo_peer_states[] = {
     {"open", TODO_PEER_STATE_OPEN},
 };
 static const variable_t todo_peer_variables[] = {
-    {"hub", todo_peer_read_hub},       {"refusals", todo_peer_read_refusals}, {"agendaNext", todo_peer_read_agendaNext},
-    {"stale", todo_peer_read_stale},   {"late", todo_peer_read_late},         {"full", todo_peer_read_full},
+    {"refusals", todo_peer_read_refusals},
+    {"agendaNext", todo_peer_read_agendaNext},
+    {"full", todo_peer_read_full},
     {"denied", todo_peer_read_denied},
 };
 static const record_variable_t todo_peer_records[] = {RECORD_ROW(todo_peer, clock),
                                                       RECORD_LIST_ROW(todo_peer, adds),
-                                                      RECORD_LIST_ROW(todo_peer, tombstones),
                                                       RECORD_LIST_ROW(todo_peer, values),
-                                                      RECORD_LIST_ROW(todo_peer, digest),
                                                       RECORD_LIST_ROW(todo_peer, agenda),
                                                       {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(todo_peer, todo_peer_states, todo_peer_variables, todo_peer_text, no_lists, todo_peer_records)

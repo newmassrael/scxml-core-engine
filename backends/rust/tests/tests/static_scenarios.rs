@@ -1411,7 +1411,7 @@ a_copy_does_what_it_did_in_the_world! {
     presence_peer_does_what_the_hub_did: presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual => "static_datamodel/scenarios/presence_peer_server.json";
     todo_peer_does_what_alice_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_alice.json";
     todo_peer_does_what_bob_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_bob.json";
-    todo_peer_does_what_the_hub_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_server.json";
+    todo_peer_does_what_carol_did: todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist} => "static_datamodel/scenarios/todo_peer_carol.json";
     sheet_peer_does_what_alice_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_alice.json";
     sheet_peer_does_what_bob_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_bob.json";
     sheet_peer_does_what_the_hub_did: sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist} => "static_datamodel/scenarios/sheet_peer_server.json";

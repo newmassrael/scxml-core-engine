@@ -1,28 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   datamodel="sce-static": a sender of the shared to-do list that holds a title to 128
-  bytes where the list holds it to 96 (todo_write) — a copy of the app from before the
-  bound was set, or one built with a wider one. It has no copy of the list: `todo.shout`
-  sends the hub one write of a title and keeps nothing, which is what a hub has to be
-  able to refuse without having first merged part of it.
+  bytes where the list holds a write's text to 96 (record_op) — a copy of the app from
+  before the bound was set, or one built with a wider one. It has no copy of the list:
+  `todo.shout` sends its group one change of one write of a title and keeps nothing,
+  which is what a copy has to be able to refuse without having first merged part of it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="open" datamodel="sce-static" name="todo_wide_sender">
   <sce:import kind="event-schema" src="todo_shout.scxml" as="Shout"/>
+  <sce:import kind="event-schema" src="todo_wide_change.scxml" as="WideChange"/>
+  <sce:import kind="event-schema" src="todo_wide_op.scxml" as="WideOp"/>
   <datamodel>
     <data id="sent" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="ops" sce:type="list&lt;record:WideOp&gt;[64]"/>
+    <data id="op" sce:type="record:WideOp">
+      <sce:set name="kind" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="1"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
   </datamodel>
   <state id="open">
     <transition event="todo.shout" type="internal">
       <assign location="sent" expr="sent + 1"/>
-      <send target="#server" event="todo.write">
-        <param name="id" expr="_event.data.id"/>
-        <param name="field" expr="1"/>
-        <param name="value" expr="0"/>
-        <param name="text" expr="_event.data.text"/>
+      <assign location="op.id" expr="_event.data.id"/>
+      <assign location="op.text" expr="_event.data.text"/>
+      <sce:clear target="ops"/>
+      <sce:append target="ops" expr="op"/>
+      <send target="#people" event="record_list.change">
+        <param name="by" expr="1"/>
         <param name="wallTime" expr="500"/>
         <param name="counter" expr="0"/>
-        <param name="nodeId" expr="1"/>
+        <param name="ops" expr="ops"/>
       </send>
     </transition>
   </state>

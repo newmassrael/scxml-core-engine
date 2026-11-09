@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A change of the shared list as the wide sender (todo_wide_sender) sends it: the fields of
+  record_change, its operations of the wider kind (todo_wide_op).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_wide_change"
+       sce:event-name="record_list.change">
+  <sce:import kind="event-schema" src="todo_wide_op.scxml" as="WideOp"/>
+  <datamodel>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="ops" sce:type="list&lt;record:WideOp&gt;[1..64]" sce:direction="in"/>
+  </datamodel>
+</scxml>
