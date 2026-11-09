@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   What the host tells a copy of the shared to-do list when it starts: the node id its
-  stamps carry, and whether this copy is the hub the others send to.
+  stamps carry.
+
+  No copy is a hub: every copy sends its changes to one group every copy reads, and the
+  layer below the list delivers them (docs/adr/0085, section 3.2), so a copy has no role
+  of its own to be told. The flag that once named the hub is retired with the hub's
+  relay; a key the schema does not declare is stepped over where the event is read, so a
+  host that still sends it changes nothing.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -11,6 +17,5 @@
        sce:event-name="todo.join">
   <datamodel>
     <data id="node" sce:type="uint64" sce:direction="in"/>
-    <data id="hub" sce:type="bool" sce:direction="in"/>
   </datamodel>
 </scxml>

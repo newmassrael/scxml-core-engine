@@ -3,9 +3,9 @@
 //
 // The shared to-do list (`todo_peer`) built as C at the bounds of a team, a calendar of twenty
 // people with a great many events (`sce-codegen --limit merge_values=65536 --limit
-// merge_entries=65536 --limit merge_digest=262144`, the bounds of the Rust world's `large`
-// build), replayed through the three scenarios `test_static_scalars.c` replays it through at the
-// bounds its document writes (docs/adr/0082 §5).
+// merge_entries=65536`, the bounds of the Rust world's `large` build), replayed through the
+// three scenarios `test_static_scalars.c` replays it through at the bounds its document writes
+// (docs/adr/0082 §5).
 //
 // What a failing run would say: a C11 machine holds some list of a bound, or a copy of one, where
 // a call or a loop of it runs, and a bound a team needs is a stack that is gone at the call. The
@@ -21,13 +21,12 @@
 // the same scenarios and pass, and prove nothing about a large one.
 _Static_assert(TODO_PEER_LIMIT_MERGE_VALUES == UINT32_C(65536), "todo_peer is built at a team's merge_values");
 _Static_assert(TODO_PEER_LIMIT_MERGE_ENTRIES == UINT32_C(65536), "todo_peer is built at a team's merge_entries");
-_Static_assert(TODO_PEER_LIMIT_MERGE_DIGEST == UINT32_C(262144), "todo_peer is built at a team's merge_digest");
 
 int main(void) {
     int bad = 0;
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
-    bad |= todo_peer_scenario("todo_peer_server", 13);
+    bad |= todo_peer_scenario("todo_peer_carol", 13);
     if (bad != 0) {
         return 1;
     }

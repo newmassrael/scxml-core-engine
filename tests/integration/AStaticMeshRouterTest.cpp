@@ -42,16 +42,16 @@ TEST(AStaticMeshRouterTest, AChildGivenNoMeshRouterHasItsSendRefused) {
 
 // A send to a peer from a machine whose host registered no Mesh router is a configuration
 // fault of the host and raises error.execution, as it does on every other backend. It does
-// not go to the sender's own queue: todo_peer takes what a peer sends it as a write to its
-// own list, so an event that came back would be taken for the peer's, and the one the
-// machine sent itself over `#_internal` is the only write it holds.
+// not go to the sender's own queue: todo_peer takes what a peer sends it as a change to its
+// own list, so an event that came back would be taken for the peer's, and the change the
+// machine took in over `#_internal` is the only one it holds.
 TEST(AStaticMeshRouterTest, ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution) {
     G::todo_peer::todo_peer machine;
     machine.initialize();
-    machine.raiseExternal("todo.join", R"({"node":"1","hub":false})");
+    machine.raiseExternal("todo.join", R"({"node":"1"})");
     machine.raiseExternal("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     machine.step();
-    EXPECT_EQ(machine.refusals(), 1u) << "the send to #server was refused, once, as error.execution";
+    EXPECT_EQ(machine.refusals(), 1u) << "the send to #people was refused, once, as error.execution";
 }
 
 }  // namespace
