@@ -532,8 +532,21 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    | Go | `[]T` | `string` / `[]byte` | the backend's optional (ADR 0055) | struct |
    | Python | `list[T]` | `str` / `bytes` | `Optional[T]` | the record class, checked in `__post_init__` |
    | Swift | `[T]` | `String` / `[UInt8]` | `T?` | struct |
-   | C11 | `{ uint32_t len; T items[N]; }` | `sce_static_string_<N>_t` / `{ uint32_t len; uint8_t data[N]; }` | `{ bool present; T value; }` | struct |
+   | C11 (schema unit) | `{ uint32_t len; T items[N]; }` | `sce_static_string_<N>_t` / `{ uint32_t len; uint8_t data[N]; }` | `{ bool present; T value; }` | struct |
+   | C11 (machine) | `{ size_t len; T data[N]; }` | `sce_static_string_<N>_t` / `sce_static_bytes_<N>_t` | `{ bool present; T value; }` | the machine's record |
    | Interpreter | array | string | `null` or the value | plain object |
+
+   *As landed (step 3, C11, 2026-11-09).* The C11 machine holds a list in `{ size_t len; T data[N]; }`, the
+   shape its list variables already had, and not in the schema unit's `{ uint32_t len; T items[N]; }`. A C11
+   expression reads a list by `.len` and `.data` whichever place holds it (`len(x)`, `x[i]`, a `<foreach>`'s
+   copy), since the type an expression is typed by tells a variable's list from a payload's no more than its
+   element; and a list variable and a payload's list of one shape have to be one type, so a list taken whole
+   from one into the other is the assignment of a struct, or, into a larger bound, the constructor its
+   declaration holds (`<type>_of`). The machine's list types are named by their shape
+   (`sce_static_list_uint8_2_t`, `<machine>_record_item_list_3_t`, `sce_static_string_8_list_4_t`) and
+   declared under a guard of that name (`c11_list_type`, `c11_list_def` in
+   `sce-build/src/forge/static_lowering.rs`), apart from the schema unit's `sce_list_*` names, so a program that
+   includes both declares neither twice.
 
 2. **C11 lays out every composition statically.** Each distinct composition is one named type, its name mangled
    from its structure (`sce_list_3_list_4_string_8_t`), declared once under a guard as `sce_static_string_<N>_t` is
