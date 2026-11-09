@@ -74,6 +74,69 @@ fn every_declared_tree_is_the_committed_tree() {
     );
 }
 
+/// Every file under `dir`, relative to it, with its bytes.
+fn files_of(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in std::fs::read_dir(&current).expect("read a materialized directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = std::fs::read(&path).expect("read a materialized file");
+                files.insert(
+                    path.strip_prefix(dir)
+                        .expect("under the tree")
+                        .to_path_buf(),
+                    bytes,
+                );
+            }
+        }
+    }
+    files
+}
+
+/// What makes a cache sound (ADR 0097, section 5): an action is a function of
+/// what it declares, so two runs of it give the same bytes. Each tree is
+/// materialized twice, each time from an empty cache, so every action runs,
+/// into two directories at different paths, so an output that carried where
+/// it was written would differ; every file of the one is the other's.
+#[test]
+fn every_declared_tree_is_the_same_from_two_runs() {
+    let root = repo_root();
+    let manifests = trees(&root).expect("the tree manifests read");
+    let mut report = Vec::new();
+    for manifest in &manifests {
+        let name = &manifest.tree.name;
+        let (cache_a, cache_b) = (
+            tempfile::tempdir().expect("a cache"),
+            tempfile::tempdir().expect("a cache"),
+        );
+        let into_a = tempfile::tempdir().expect("a directory");
+        let into_b = tempfile::tempdir().expect("a directory");
+        let deeper = into_b.path().join("a/longer/path");
+        materialize(name, into_a.path(), cache_a.path());
+        materialize(name, &deeper, cache_b.path());
+        let (a, b) = (files_of(into_a.path()), files_of(&deeper));
+        for path in a
+            .keys()
+            .chain(b.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            if a.get(path) != b.get(path) {
+                report.push(format!("{name}: {}", path.display()));
+            }
+        }
+    }
+    assert!(
+        report.is_empty(),
+        "two runs of the same actions wrote different trees ({} file(s)):\n{}",
+        report.len(),
+        report.join("\n")
+    );
+}
+
 /// The cache, end to end: a tree materialized a second time through the same
 /// cache runs nothing, and writes the same bytes.
 #[test]
