@@ -11,10 +11,11 @@
   (`record_list.register`), then each further value with its place
   (`record_list.value`). The host's words are the list's own events, and the parent
   passes each to its child (`#_list`) as it was given, the way an application turns a
-  command into what it sends the list: the host's `record_list.join`, a write and a
-  supersede of a peer, and a person's `record_list.edit`. The list is a person's copy
-  until the host names it the hub; a hub's own edit is relayed to the people and sent to
-  no hub, so the edit runs whole in a child no Mesh route is given.
+  command into what it sends the list: the host's `record_list.join`, a peer's change
+  (`record_list.change`, whose operations are forwarded whole as the list they are,
+  docs/adr/0086, section 5.2), and a person's `record_list.edit`. A change of the list's
+  own is taken in before it is sent, so it runs whole in a child no Mesh route is given,
+  and the send that has no route fails alone (docs/adr/0046, section 4).
 
   The parent keeps the last register it was told of (`shown`) and the further values
   told after it (`others`, cleared by each register), and counts every event it was
@@ -41,8 +42,8 @@
        version="1.0" initial="holding" datamodel="sce-static" name="record_list_parent">
   <sce:import kind="event-schema" src="sce:std/shared/record_join.scxml" as="Join"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_edit.scxml" as="Edit"/>
-  <sce:import kind="event-schema" src="sce:std/shared/record_write.scxml" as="Write"/>
-  <sce:import kind="event-schema" src="sce:std/shared/record_supersede.scxml" as="Supersede"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_change.scxml" as="Change"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_clear.scxml" as="Clear"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_retire.scxml" as="Retire"/>
   <!-- The records are named for what the list told, and not `Register`: a generated
@@ -89,7 +90,6 @@
     <transition event="record_list.join" type="internal">
       <send target="#_list" event="record_list.join">
         <param name="node" expr="_event.data.node"/>
-        <param name="hub" expr="_event.data.hub"/>
       </send>
     </transition>
     <transition event="record_list.edit" type="internal">
@@ -130,25 +130,14 @@
         <param name="digest" expr="_event.data.digest"/>
       </send>
     </transition>
-    <transition event="record_list.write" type="internal">
-      <send target="#_list" event="record_list.write">
-        <param name="id" expr="_event.data.id"/>
-        <param name="field" expr="_event.data.field"/>
-        <param name="value" expr="_event.data.value"/>
-        <param name="text" expr="_event.data.text"/>
-        <param name="wallTime" expr="_event.data.wallTime"/>
-        <param name="counter" expr="_event.data.counter"/>
-        <param name="nodeId" expr="_event.data.nodeId"/>
-      </send>
-    </transition>
-    <transition event="record_list.supersede" type="internal">
-      <send target="#_list" event="record_list.supersede">
-        <param name="id" expr="_event.data.id"/>
-        <param name="field" expr="_event.data.field"/>
-        <param name="wallTime" expr="_event.data.wallTime"/>
-        <param name="counter" expr="_event.data.counter"/>
-        <param name="nodeId" expr="_event.data.nodeId"/>
+    <!-- A peer's change, forwarded whole: its operations are a part of the payload,
+         named as the list they are. -->
+    <transition event="record_list.change" type="internal">
+      <send target="#_list" event="record_list.change">
         <param name="by" expr="_event.data.by"/>
+        <param name="wallTime" expr="_event.data.wallTime"/>
+        <param name="counter" expr="_event.data.counter"/>
+        <param name="ops" expr="_event.data.ops"/>
       </send>
     </transition>
 

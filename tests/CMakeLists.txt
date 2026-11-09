@@ -724,9 +724,9 @@ foreach(_STD_MERGE_RULE hlc_send hlc_receive hlc_compare lww_write rga_insert rg
 endforeach()
 # The standard shared record list's own rules (sce:std/shared/record_list, a
 # scenario's machine, and the child record_list_parent invokes): the member record its roster rule
-# takes, the roster, the hash a settle compares, and a register's values in the order
-# of their dots. The merge rules it shares with todo_peer are generated above.
-foreach(_STD_SHARED_DOCUMENT record_member record_roster record_settled register_values)
+# takes, the roster, and a register's values in the order of their dots. The merge rules it
+# shares with todo_peer are generated above.
+foreach(_STD_SHARED_DOCUMENT record_member record_roster register_values)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/shared/${_STD_SHARED_DOCUMENT}.scxml
