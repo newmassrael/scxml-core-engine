@@ -3,8 +3,9 @@
 //
 // What a relay does with an operation of one author at a number where it holds another, and with
 // every other operation a device set up again with no state could give it (ADR 0083 section 4):
-// the same operation given again, the next one, one past a gap, a second note of the author naming
-// a write it noted already, another operation at a number the relay holds one at, and a third
+// the same operation given again, the next one, one past a gap, a second change of the author
+// writing over a write it wrote over already, another operation at a number the relay holds one at,
+// and a third
 // there. Each is given by the author's own session and by a member's courier, in each version of
 // the protocol the relay speaks, and held to one oracle written apart from the relay: what it
 // keeps, what it answers, what its heads say of the author after, what it logs, and what a host
@@ -26,8 +27,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const CAROL: u64 = 3;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 
 fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
@@ -82,19 +82,19 @@ fn authority() -> Authority {
     Authority::new([7; 32], "relay-a")
 }
 
-/// A write of alice's to field 3 of row `id`, stamped at `wall`.
+/// A change of alice's stamped at `wall` of one write, to field 3 of row `id`.
 fn write(id: u32, wall: i64) -> String {
-    json!({"id": id, "field": 3, "value": id.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()})
+    json!({"by": ALICE.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": id, "field": 3, "value": id.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
-/// Alice's note that she wrote over her write of row `id` stamped at `wall`, in a change stamped
-/// `at`.
+/// Alice's change stamped at `at` that writes over her write of row `id` stamped at `wall`.
 fn note(id: u32, wall: i64, at: i64) -> String {
-    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": ALICE.to_string(), "by": ALICE.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
+    json!({"by": ALICE.to_string(), "wallTime": at.to_string(), "counter": 0, "ops": [
+        {"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+         "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()}]})
     .to_string()
 }
 
@@ -145,8 +145,8 @@ fn sorted(operations: &[(String, String)]) -> Vec<(String, Value)> {
     all
 }
 
-/// A relay that holds the log and three operations of alice's: a write (1), her note that she
-/// wrote over it (2), and a second write (3).
+/// A relay that holds the log and three operations of alice's: a change that writes (1), her
+/// change that writes it over (2), and a second change that writes (3).
 struct World {
     relay: Relay<MemoryStore>,
     alice: Trust,
@@ -167,9 +167,9 @@ fn world() -> World {
     }
     let alice = host(ALICE);
     let held = vec![
-        sealed(&alice, WRITE, &write(1, 1000)),
-        sealed(&alice, SUPERSEDE, &note(1, 1000, 1001)),
-        sealed(&alice, WRITE, &write(2, 1002)),
+        sealed(&alice, CHANGE, &write(1, 1000)),
+        sealed(&alice, CHANGE, &note(1, 1000, 1001)),
+        sealed(&alice, CHANGE, &write(2, 1002)),
     ];
     for op in &held {
         let (answer, _) = ask(&mut relay, ALICE, &submit(op), VERSION);
@@ -206,7 +206,8 @@ enum Given {
     OtherAtANumber,
     /// Another third with other bytes, given once the relay holds two.
     ThirdAtANumber,
-    /// A fourth that is a second note of hers over the write her second operation noted.
+    /// A fourth that is a second change of hers over the write her second operation wrote over
+    /// (docs/adr/0085, section 7.4).
     SecondNote,
 }
 
@@ -235,7 +236,8 @@ fn oracle(given: Given) -> Oracle {
         Given::Next => (true, false, 4),
         // Kept; the head is where the chain is whole from 1.
         Given::PastAGap => (true, false, 3),
-        // Two notes of one author over one write are two true statements, links of one chain.
+        // Two changes of one author whose write-overs name one dot are two true statements, links
+        // of one chain.
         Given::SecondNote => (true, false, 4),
         // Two operations at 3: kept as proof, and the head stops below them.
         Given::OtherAtANumber | Given::ThirdAtANumber => (true, true, 2),
@@ -252,17 +254,17 @@ fn oracle(given: Given) -> Oracle {
 fn make(world: &mut World, given: Given) -> ((String, String), u64, Vec<(String, String)>) {
     match given {
         Given::Again => (world.held[2].clone(), 3, Vec::new()),
-        Given::Next => (sealed(&world.alice, WRITE, &write(3, 1003)), 4, Vec::new()),
+        Given::Next => (sealed(&world.alice, CHANGE, &write(3, 1003)), 4, Vec::new()),
         Given::PastAGap => {
-            let _never_given = sealed(&world.alice, WRITE, &write(3, 1003));
-            (sealed(&world.alice, WRITE, &write(4, 1004)), 5, Vec::new())
+            let _never_given = sealed(&world.alice, CHANGE, &write(3, 1003));
+            (sealed(&world.alice, CHANGE, &write(4, 1004)), 5, Vec::new())
         }
         Given::OtherAtANumber => {
-            let other = lost_state(world, &[0, 1], WRITE, &write(9, 1009));
+            let other = lost_state(world, &[0, 1], CHANGE, &write(9, 1009));
             (other, 3, vec![world.held[2].clone()])
         }
         Given::ThirdAtANumber => {
-            let other = lost_state(world, &[0, 1], WRITE, &write(9, 1009));
+            let other = lost_state(world, &[0, 1], CHANGE, &write(9, 1009));
             let (answer, _) = ask(&mut world.relay, ALICE, &submit(&other), VERSION);
             assert!(
                 matches!(
@@ -274,11 +276,11 @@ fn make(world: &mut World, given: Given) -> ((String, String), u64, Vec<(String,
                 ),
                 "{answer:?}"
             );
-            let third = lost_state(world, &[0, 1], WRITE, &write(10, 1010));
+            let third = lost_state(world, &[0, 1], CHANGE, &write(10, 1010));
             (third, 3, vec![world.held[2].clone(), other])
         }
         Given::SecondNote => {
-            let again = lost_state(world, &[0, 2], SUPERSEDE, &note(1, 1000, 1005));
+            let again = lost_state(world, &[0, 2], CHANGE, &note(1, 1000, 1005));
             (again, 4, Vec::new())
         }
     }

@@ -453,7 +453,7 @@ mod tests {
 
     fn op(n: u32) -> Record {
         Record::Operation {
-            event: "record_list.write".to_string(),
+            event: "record_list.change".to_string(),
             data: format!("{{\"n\":{n}}}"),
         }
     }

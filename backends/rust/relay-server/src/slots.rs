@@ -163,7 +163,7 @@ mod tests {
 
     fn record() -> Record {
         Record::Operation {
-            event: "record_list.write".to_string(),
+            event: "record_list.change".to_string(),
             data: "{}".to_string(),
         }
     }

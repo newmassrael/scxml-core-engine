@@ -597,12 +597,13 @@ fn a_device_that_holds_a_list_that_lapsed_creates_it_again_and_every_device_read
     let (alice, bob) = (device(1), device(2));
     let write = |trust: &Trust, id: u32, node: u64| {
         let data = format!(
-            "{{\"id\":{id},\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"{}\",\
-             \"counter\":0,\"nodeId\":\"{node}\"}}",
+            "{{\"by\":\"{node}\",\"wallTime\":\"{}\",\"counter\":0,\"ops\":[\
+             {{\"kind\":0,\"id\":{id},\"field\":3,\"value\":\"1\",\"text\":\"\",\
+             \"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}}]}}",
             1000 * id
         );
         assert!(matches!(
-            keep(trust, "record_list.write", &data),
+            keep(trust, "record_list.change", &data),
             Kept::Taken
         ));
     };
