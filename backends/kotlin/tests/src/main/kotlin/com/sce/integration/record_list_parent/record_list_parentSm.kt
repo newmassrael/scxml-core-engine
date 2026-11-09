@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/record_list_parent.scxml
@@ -159,7 +159,6 @@ enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
     NO_ROOM_FOR_VALUE("noRoomForValue"),
     NO_ROOM_FOR_HISTORY("noRoomForHistory"),
     NO_ROOM_FOR_DIGEST("noRoomForDigest"),
-    TEXT_TOO_LONG("textTooLong"),
     CHANGE_TOO_LARGE("changeTooLarge"),
     REGISTER_NAMED_TWICE("registerNamedTwice"),
     CLOCK_EXHAUSTED("clockExhausted");
@@ -173,7 +172,6 @@ enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
         NO_ROOM_FOR_VALUE -> 2u.toUByte()
         NO_ROOM_FOR_HISTORY -> 3u.toUByte()
         NO_ROOM_FOR_DIGEST -> 4u.toUByte()
-        TEXT_TOO_LONG -> 5u.toUByte()
         CHANGE_TOO_LARGE -> 6u.toUByte()
         REGISTER_NAMED_TWICE -> 7u.toUByte()
         CLOCK_EXHAUSTED -> 8u.toUByte()
@@ -331,10 +329,10 @@ class RecordListParentStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "d29628f9cc18dfa690b968ce10709031b7e718b8f8e45573c79d78466a4fc1cf",
-        revised = "4c3e62bd1e2a8511315643a001a26fd69249ba1130d0128413aa2164e09adae4",
-        format2First = "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a",
-        format2Revised = "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde",
+        first = "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
+        revised = "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
+        format2First = "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
+        format2Revised = "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
         records = listOf(
             RecordLineage(
                 event = "record_list.refused",
@@ -526,7 +524,8 @@ class RecordListParentStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: RecordListParentEvent, metadata: EventMetadata) {
@@ -561,7 +560,7 @@ class RecordListParentStateMachine(
                     pendingRecordListClearPayload = RecordListParentRecordListClearPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListParentEvent.RecordList.Edit) {
                     val fields = EventPayload.decode(metadata.data, "{\"more\":false}")
-                    pendingRecordListEditPayload = RecordListParentRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"), fields.boolean("more"))
+                    pendingRecordListEditPayload = RecordListParentRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 32), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListParentEvent.RecordList.Join) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload(fields.uint64("node"), fields.boolean("hub"))
@@ -570,7 +569,7 @@ class RecordListParentStateMachine(
                     pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> RecordListParentRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> RecordListParentRecordRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "record_refusal") })
                 } else if (event == RecordListParentEvent.RecordList.Register) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRegisterPayload = RecordListParentRecordListRegisterPayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("count"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
+                    pendingRecordListRegisterPayload = RecordListParentRecordListRegisterPayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("count"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
                 } else if (event == RecordListParentEvent.RecordList.Retire) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRetirePayload = RecordListParentRecordListRetirePayload(fields.uint32("id"), fields.int64("now"), fields.boolean("more"))
@@ -585,10 +584,10 @@ class RecordListParentStateMachine(
                     pendingRecordListSupersedePayload = RecordListParentRecordListSupersedePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint64("by"), fields.uint32("parts"), fields.int64("atWallTime"), fields.uint32("atCounter"))
                 } else if (event == RecordListParentEvent.RecordList.Value) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListValuePayload = RecordListParentRecordListValuePayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("ordinal"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
+                    pendingRecordListValuePayload = RecordListParentRecordListValuePayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("ordinal"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
                 } else if (event == RecordListParentEvent.RecordList.Write) {
                     val fields = EventPayload.decode(metadata.data, "{\"parts\":1}")
-                    pendingRecordListWritePayload = RecordListParentRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
+                    pendingRecordListWritePayload = RecordListParentRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
                 }
             }
         }

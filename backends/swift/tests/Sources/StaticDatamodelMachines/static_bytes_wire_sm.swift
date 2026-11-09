@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -428,14 +428,14 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticBytesWireFramedRelayedPayload()
             payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame")
+            payload.frame = try fields.bytes("frame", capacity: 8)
             pendingFramedRelayedPayload = payload
             pendingPayloadTag = .framedRelayed
         case .framedTaken:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticBytesWireFramedTakenPayload()
             payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame")
+            payload.frame = try fields.bytes("frame", capacity: 8)
             pendingFramedTakenPayload = payload
             pendingPayloadTag = .framedTaken
         default:

@@ -631,8 +631,8 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy) PopulateEvent
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy) LiftTypedPayload(event ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event, meta *sce.EventMetadata) error {
 	// This document lowered no typed guard, so no event carries a typed view.
 	return nil

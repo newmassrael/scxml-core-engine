@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml
@@ -102,7 +102,7 @@ data class StaticModelHarnessTransition(
 
 object StaticModelHarnessTransitions {
     /** The digest of the source set this machine was generated from: the `source-hash` of the file's own header, as a value. */
-    const val SOURCE_HASH: String = "9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1"
+    const val SOURCE_HASH: String = "39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e"
 
     /** Every transition of the machine. */
     val all: List<StaticModelHarnessTransition> = listOf(
@@ -727,7 +727,8 @@ class StaticModelHarnessStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticModelHarnessEvent, metadata: EventMetadata) {
@@ -743,13 +744,13 @@ class StaticModelHarnessStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticModelHarnessEvent.Done.Invoke.Gen) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeGenPayload = StaticModelHarnessDoneInvokeGenPayload(fields.string("error"), fields.string("text"), fields.boolean("constrained"), fields.string("model"), fields.uint32("prompt_tokens"), fields.uint32("answer_tokens"), fields.string("finish"))
+                    pendingDoneInvokeGenPayload = StaticModelHarnessDoneInvokeGenPayload(fields.string("error", 24), fields.string("text", 4096), fields.boolean("constrained"), fields.string("model", 128), fields.uint32("prompt_tokens"), fields.uint32("answer_tokens"), fields.string("finish", 16))
                 } else if (event == StaticModelHarnessEvent.Harness.Offer) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingHarnessOfferPayload = StaticModelHarnessHarnessOfferPayload(fields.uint32("id"))
                 } else if (event == StaticModelHarnessEvent.Harness.Start) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingHarnessStartPayload = StaticModelHarnessHarnessStartPayload(fields.string("request"))
+                    pendingHarnessStartPayload = StaticModelHarnessHarnessStartPayload(fields.string("request", 512))
                 }
             }
         }

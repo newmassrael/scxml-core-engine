@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -470,19 +470,19 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
         case .doneInvokeFetch:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostHttpDoneInvokeFetchPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.status = try fields.unsigned("status")
-            payload.headers = try fields.text("headers")
-            payload.body = try fields.text("body")
+            payload.headers = try fields.text("headers", bound: 4096)
+            payload.body = try fields.text("body", bound: 16384)
             pendingDoneInvokeFetchPayload = payload
             pendingPayloadTag = .doneInvokeFetch
         case .hostHttpFetchRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostHttpHostHttpFetchRequestPayload()
-            payload.method = try fields.text("method")
-            payload.url = try fields.text("url")
-            payload.headers = try fields.text("headers")
-            payload.body = try fields.text("body")
+            payload.method = try fields.text("method", bound: 8)
+            payload.url = try fields.text("url", bound: 2048)
+            payload.headers = try fields.text("headers", bound: 2048)
+            payload.body = try fields.text("body", bound: 16384)
             pendingHostHttpFetchRequestPayload = payload
             pendingPayloadTag = .hostHttpFetchRequest
         default:

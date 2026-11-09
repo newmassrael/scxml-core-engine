@@ -674,12 +674,12 @@ impl StatePolicy for ParamAskerPolicy {
     // itself during a macrostep, so its no_std depth is the bound the
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
-    // Proven depth 4: one microstep enqueues at most 2 internal event(s), and
+    // Proven depth 2: one microstep enqueues at most 1 internal event(s), and
     // at most 1 + 1 microstep(s) run before the first internal event is taken,
-    // so 2 x (1 + 1) = 4.
-    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 4>;
+    // so 1 x (1 + 1) = 2.
+    type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 2>;
     // The same bound, held to every run a test build makes (docs/adr/0076).
-    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(4);
+    const INTERNAL_QUEUE_BOUND: Option<usize> = Some(2);
 
     // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
     // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
@@ -841,7 +841,8 @@ impl StatePolicy for ParamAskerPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -93,7 +93,6 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
     case noRoomForValue = 2
     case noRoomForHistory = 3
     case noRoomForDigest = 4
-    case textTooLong = 5
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
@@ -105,7 +104,6 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
         case .noRoomForValue: return "noRoomForValue"
         case .noRoomForHistory: return "noRoomForHistory"
         case .noRoomForDigest: return "noRoomForDigest"
-        case .textTooLong: return "textTooLong"
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
@@ -130,7 +128,6 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
         case "noRoomForValue": self = .noRoomForValue
         case "noRoomForHistory": self = .noRoomForHistory
         case "noRoomForDigest": self = .noRoomForDigest
-        case "textTooLong": self = .textTooLong
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
@@ -682,10 +679,10 @@ extension StaticPayloadEnumUnimportedPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
-            revised: "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
-            format2First: "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
-            format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
+            first: "e6e710c3ee5576e7e59b057043abc9705709080a5d6e7853feb927052dd5aa2f",
+            revised: "2eb56b96e592c1915bf2275169ed4dce44aa7f9b45a8734b0fc33514f13ba0ae",
+            format2First: "86d1575a4d0b03a30cf0d461c3b32f1e1d79f8134d1688c0c727c6fb7689e956",
+            format2Revised: "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418",
             records: [
                 SavedRecordLineage(
                     event: "record_list.refused", revision: 1,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -622,50 +622,50 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
         case .doneInvokeAsk:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyDoneInvokeAskPayload()
-            payload.error = try fields.text("error")
-            payload.state = try fields.text("state")
+            payload.error = try fields.text("error", bound: 24)
+            payload.state = try fields.text("state", bound: 16)
             pendingDoneInvokeAskPayload = payload
             pendingPayloadTag = .doneInvokeAsk
         case .doneInvokeCancel:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyDoneInvokeCancelPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.existed = try fields.truth("existed")
             pendingDoneInvokeCancelPayload = payload
             pendingPayloadTag = .doneInvokeCancel
         case .doneInvokeFar:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyDoneInvokeFarPayload()
-            payload.error = try fields.text("error")
-            payload.status = try fields.text("status")
+            payload.error = try fields.text("error", bound: 24)
+            payload.status = try fields.text("status", bound: 16)
             pendingDoneInvokeFarPayload = payload
             pendingPayloadTag = .doneInvokeFar
         case .doneInvokePost:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyDoneInvokePostPayload()
-            payload.error = try fields.text("error")
-            payload.status = try fields.text("status")
+            payload.error = try fields.text("error", bound: 24)
+            payload.status = try fields.text("status", bound: 16)
             pendingDoneInvokePostPayload = payload
             pendingPayloadTag = .doneInvokePost
         case .doneInvokePrompt:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyDoneInvokePromptPayload()
-            payload.error = try fields.text("error")
-            payload.state = try fields.text("state")
+            payload.error = try fields.text("error", bound: 24)
+            payload.state = try fields.text("state", bound: 16)
             pendingDoneInvokePromptPayload = payload
             pendingPayloadTag = .doneInvokePrompt
         case .hostNotifyCancelRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyHostNotifyCancelRequestPayload()
-            payload.id = try fields.text("id")
+            payload.id = try fields.text("id", bound: 64)
             pendingHostNotifyCancelRequestPayload = payload
             pendingPayloadTag = .hostNotifyCancelRequest
         case .hostNotifyPostRequest:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostNotifyHostNotifyPostRequestPayload()
-            payload.id = try fields.text("id")
-            payload.title = try fields.text("title")
-            payload.body = try fields.text("body")
+            payload.id = try fields.text("id", bound: 64)
+            payload.title = try fields.text("title", bound: 128)
+            payload.body = try fields.text("body", bound: 512)
             payload.at_ms = try fields.signed64("at_ms")
             pendingHostNotifyPostRequestPayload = payload
             pendingPayloadTag = .hostNotifyPostRequest

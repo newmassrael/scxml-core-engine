@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+// SCE-MAP: static_payload_bytes.scxml:28 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -447,7 +447,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticPayloadBytesFramedTakenPayload()
             payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame")
+            payload.frame = try fields.bytes("frame", capacity: 8)
             pendingFramedTakenPayload = payload
             pendingPayloadTag = .framedTaken
         default:
@@ -561,11 +561,35 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 }
             }
             if event == .framedTaken {
-                do {
+                // W3C SCXML 5.9: cond="_event.data.sensor >= 50" lowered to Swift at build time
+                if (self.pendingPayloadTag == .framedTaken && (self.pendingFramedTakenPayload.sensor >= 50)) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
                         transitionIndex: 4,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .framedTaken {
+                // W3C SCXML 5.9: cond="_event.data.sensor >= 40" lowered to Swift at build time
+                if (self.pendingPayloadTag == .framedTaken && (self.pendingFramedTakenPayload.sensor >= 40)) {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 5,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .framedTaken {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 6,
                         hasActions: true,
                         isInternal: true
                     )
@@ -576,7 +600,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 5,
+                        transitionIndex: 7,
                         hasActions: true,
                         isInternal: true
                     )
@@ -659,6 +683,27 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                     }
 
 
+                self.vSize = UInt32(truncatingIfNeeded: self.pendingFramedTakenPayload.frame.count)
+
+                }
+            case 5:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vMisses, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; self.vMisses = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 6:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .framedTaken {
+                        break sceBlock
+                    }
+
+
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue: [UInt8] = Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; self.vLast.frame = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
@@ -668,7 +713,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 self.vLast.sensor = self.pendingFramedTakenPayload.sensor
 
                 }
-            case 5:
+            case 7:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

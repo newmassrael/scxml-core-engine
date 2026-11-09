@@ -1179,8 +1179,8 @@ func (p *StatechartHostInvokerOptionalPolicy) PopulateEventMetadata(meta *sce.Ev
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StatechartHostInvokerOptionalPolicy) LiftTypedPayload(event StatechartHostInvokerOptionalEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -1203,7 +1203,7 @@ func (p *StatechartHostInvokerOptionalPolicy) LiftTypedPayload(event StatechartH
 		if payload.at, err = optional.Lift(fields, "at", func() (int64, error) { return sce.PayloadSigned64(fields, "at") }); err != nil {
 			return err
 		}
-		if payload.label, err = optional.Lift(fields, "label", func() (string, error) { return sce.PayloadString(fields, "label") }); err != nil {
+		if payload.label, err = optional.Lift(fields, "label", func() (string, error) { return sce.PayloadText(fields, "label", 16) }); err != nil {
 			return err
 		}
 		if payload.hit, err = optional.Lift(fields, "hit", func() (bool, error) { return sce.PayloadBool(fields, "hit") }); err != nil {

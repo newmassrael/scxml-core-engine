@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_model.scxml
@@ -602,7 +602,8 @@ class StaticHostModelStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticHostModelEvent, metadata: EventMetadata) {
@@ -616,10 +617,10 @@ class StaticHostModelStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticHostModelEvent.Done.Invoke.Gen) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeGenPayload = StaticHostModelDoneInvokeGenPayload(fields.string("error"), fields.string("text"), fields.boolean("constrained"), fields.string("model"), fields.uint32("prompt_tokens"), fields.uint32("answer_tokens"), fields.string("finish"))
+                    pendingDoneInvokeGenPayload = StaticHostModelDoneInvokeGenPayload(fields.string("error", 24), fields.string("text", 4096), fields.boolean("constrained"), fields.string("model", 128), fields.uint32("prompt_tokens"), fields.uint32("answer_tokens"), fields.string("finish", 16))
                 } else if (event == StaticHostModelEvent.Host.Model.Generate.Request) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingHostModelGenerateRequestPayload = StaticHostModelHostModelGenerateRequestPayload(fields.string("prompt"), fields.string("answer_schema"), fields.uint32("max_tokens"), fields.uint16("temperature_milli"))
+                    pendingHostModelGenerateRequestPayload = StaticHostModelHostModelGenerateRequestPayload(fields.string("prompt", 8192), fields.string("answer_schema", 128), fields.uint32("max_tokens"), fields.uint16("temperature_milli"))
                 }
             }
         }
