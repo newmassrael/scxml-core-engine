@@ -91,7 +91,7 @@ impl StatePolicy for Test144Policy {
     // C++ `getParent` answers `std::nullopt` for all: four children of the
     // `<scxml>` element, two of them `<final>`. The document's initial
     // transition, last, is `<scxml initial="s0">`.
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[
             StateRow::new(None, StateKind::Atomic, StateId(0), None),
             StateRow::new(None, StateKind::Atomic, StateId(1), None),

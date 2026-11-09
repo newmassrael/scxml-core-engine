@@ -719,8 +719,9 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             // carry the procedures of both (docs/adr/0066).
             "history: Some(&::sce_rust_runtime::HISTORY),\n        \
              parallel: Some(&::sce_rust_runtime::PARALLEL),\n    }\n};",
-            "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables = {",
-            "const TABLES: &'static ::sce_rust_runtime::DocumentTables = \
+            "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables<'static> \
+             = {",
+            "const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = \
              &PARALLEL_HISTORY_PROBE_TABLES;",
             "type Workspace = ::sce_rust_runtime::Workspace<\
              { ::sce_rust_runtime::state_scratch(12) }, 4, 17, 2>;",
@@ -1027,8 +1028,8 @@ fn rust_template_builds_a_bare_metal_machine_in_a_constant_expression() {
         "default_state: ::sce_rust_runtime::StateId(PlainConstState::",
         // The tables are a constant the policy refers to (docs/adr/0064): a
         // `static` could not be, on the toolchain the runtime supports.
-        "pub const PLAIN_CONST_TABLES: ::sce_rust_runtime::DocumentTables = {",
-        "const TABLES: &'static ::sce_rust_runtime::DocumentTables = &PLAIN_CONST_TABLES;",
+        "pub const PLAIN_CONST_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {",
+        "const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &PLAIN_CONST_TABLES;",
     ] {
         assert!(
             bare.contains(expected),

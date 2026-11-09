@@ -96,7 +96,7 @@ impl StatePolicy for ParallelPolicy {
 
     // The transitions: `a1 --advance--> a2`, then the initial transitions of
     // the compound states `ra` and `rb`, then the document's.
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[
             // p
             StateRow::new(None, StateKind::Parallel, StateId(5), None),
@@ -301,7 +301,7 @@ impl StatePolicy for LinearPolicy {
 
     // The transitions: `x1 --go--> x2`, then `root`'s initial transition, then
     // the document's.
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[
             // root
             StateRow::new(None, StateKind::Compound, StateId(2), Some(TransitionId(1))),

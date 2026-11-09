@@ -61,7 +61,7 @@ impl StatePolicy for HttpPolicy {
 
     // One child of the `<scxml>` element and no transition of its own: the
     // only row of the transitions table is the document's initial transition.
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[StateRow::new(None, StateKind::Atomic, StateId(0), None)],
         histories: &[],
         transitions: &[TransitionRow::new(

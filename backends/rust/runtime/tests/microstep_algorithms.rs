@@ -606,7 +606,7 @@ fn a_row_reads_back_what_it_holds_and_a_list_past_the_pool_is_refused() {
 
     // One atomic state; the document's initial transition names a list of
     // two targets the pool only claims to hold.
-    const TABLES: DocumentTables = DocumentTables {
+    const TABLES: DocumentTables<'static> = DocumentTables {
         states: &[StateRow::new(None, StateKind::Atomic, StateId(0), None)],
         histories: &[],
         transitions: &[TransitionRow::new(None, Target::list(0), false, false)],
