@@ -23,7 +23,7 @@ use super::generation::{GenerationError, Generator, Provenance};
 use super::input_root::{input_root, InputFile};
 use super::reapi::{platform, Action, ActionResult, Command, Digest, OutputFile, Property};
 use super::store::ContentStore;
-use super::tree::{leaf, matching, wildcard, ExpandedTree, FormatTool, Kind};
+use super::tree::{matching, wildcard, ExpandedTree, FormatTool, Kind};
 
 /// What a materialization did.
 #[derive(Clone, Debug, Default)]
@@ -95,7 +95,12 @@ pub fn materialize(
             if !kept(&placed_generation.keep, relative) {
                 continue;
             }
-            let path = format!("{}/{relative}", placed_generation.place);
+            // A generation that writes at the paths its files have under the
+            // root (`generate-w3c` into an output root) is placed at the root.
+            let path = match placed_generation.place.as_str() {
+                "" | "." => relative.clone(),
+                place => format!("{place}/{relative}"),
+            };
             if let Some((digest, first)) = placed.get(&path) {
                 if *digest != file.digest {
                     return Err(MaterializeError::Collision {
@@ -271,32 +276,30 @@ impl Formatter {
             })
     }
 
-    /// Format every `.rs` directly in `dir` as rustfmt does, from `store` when
-    /// it holds the result. `None` when the directory holds no `.rs`.
+    /// Format the `.rs` files directly in `dir` as rustfmt does, from `store`
+    /// when it holds the result. `None` when the directory holds none.
+    ///
+    /// rustfmt formats a file and every module file it declares out of line,
+    /// at any depth (a `mod.rs` naming `test144` reaches `test144/*.rs`). So
+    /// the action's inputs and outputs are every `.rs` under `dir`, and the
+    /// files it is handed are those directly in it.
     fn rustfmt(
         &self,
         store: &dyn ContentStore,
         dir: &Path,
     ) -> Result<Option<Provenance>, FormatError> {
         let (version, edition) = self.rustfmt_settings()?.clone();
-        let mut names: Vec<String> = Vec::new();
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.file_type()?.is_file() && name.ends_with(".rs") {
-                names.push(name);
-            }
-        }
+        let all = rust_files_under(dir)?;
+        let names: Vec<String> = all.iter().filter(|p| !p.contains('/')).cloned().collect();
         if names.is_empty() {
             return Ok(None);
         }
-        names.sort();
         let mut files = BTreeMap::new();
-        for name in &names {
+        for path in &all {
             files.insert(
-                name.clone(),
+                path.clone(),
                 InputFile {
-                    digest: Digest::of(&fs::read(dir.join(name))?),
+                    digest: Digest::of(&fs::read(dir.join(path))?),
                     is_executable: false,
                 },
             );
@@ -321,7 +324,7 @@ impl Formatter {
             environment_variables: Vec::new(),
             platform: Some(platform(properties.clone())),
             working_directory: String::new(),
-            output_paths: names.clone(),
+            output_paths: all.clone(),
         };
         let (command_digest, command_bytes) = Digest::of_message(&command);
         let key = Digest::of_message(&Action {
@@ -348,9 +351,11 @@ impl Formatter {
                     }
                 }
             }
-            if formatted.len() == names.len() {
-                for (name, bytes) in formatted {
-                    write_file(&dir.join(leaf(&name)), &bytes, false)?;
+            let complete = formatted.len() == all.len()
+                && formatted.iter().all(|(path, _)| all.contains(path));
+            if complete {
+                for (path, bytes) in formatted {
+                    write_file(&dir.join(&path), &bytes, false)?;
                 }
                 return Ok(Some(Provenance::Hit));
             }
@@ -367,10 +372,10 @@ impl Formatter {
             });
         }
         let mut output_files = Vec::new();
-        for name in &names {
-            let digest = store.write_blob(&fs::read(dir.join(name))?)?;
+        for path in &all {
+            let digest = store.write_blob(&fs::read(dir.join(path))?)?;
             output_files.push(OutputFile {
-                path: name.clone(),
+                path: path.clone(),
                 digest: Some(digest),
                 is_executable: false,
             });
@@ -478,6 +483,32 @@ fn files_under(base: &Path, dir: &str) -> io::Result<Vec<String>> {
             if kind.is_dir() {
                 pending.push(path);
             } else if kind.is_file() {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// Every `.rs` file under `dir`, by its path relative to `dir` with `/`
+/// between components, sorted.
+fn rust_files_under(dir: &Path) -> io::Result<Vec<String>> {
+    let mut found = Vec::new();
+    let mut pending = vec![String::new()];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(dir.join(&current))? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let path = if current.is_empty() {
+                name.clone()
+            } else {
+                format!("{current}/{name}")
+            };
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file() && name.ends_with(".rs") {
                 found.push(path);
             }
         }

@@ -4777,9 +4777,15 @@ fn reads_refusal(command: &Commands) -> Option<String> {
         Commands::Generate(_) | Commands::Orchestrate(_) | Commands::GenerateConformance { .. } => {
             None
         }
+        Commands::GenerateW3c(args) if args.clean || args.list => Some(
+            "--reads cannot apply to generate-w3c --clean or --list: neither generates a file, \
+             so there is no generation for the list to describe"
+                .to_string(),
+        ),
+        Commands::GenerateW3c(_) => None,
         _ => Some(
             "--reads applies only to the commands that record what they read: generate, \
-             orchestrate and generate-conformance"
+             orchestrate, generate-conformance and generate-w3c"
                 .to_string(),
         ),
     }
@@ -8804,6 +8810,92 @@ impl DepfileEntry {
     }
 }
 
+/// The templates a render for `lang` from `template_dir` can read.
+///
+/// Taken from the loader rather than from a second walk of our own.
+/// `loader_template_files` is what `load_templates` registers, so the depfile
+/// cannot name a smaller set than the render can reach. Walking `template_dir`
+/// alone — the shape this used to have — silently dropped the shared
+/// `_macros/` family for every backend scoped to a subdirectory (rust,
+/// kotlin, go, python): editing `_macros/sce_map_marker.jinja2` left their
+/// output stale while the build reported success. C++ and C11 hid it, their
+/// scope being the whole tree.
+///
+/// Then minus the templates belonging to other backends. Over-declaring only
+/// costs a spurious rebuild, but the cost is real: the hand-kept list this
+/// replaced named only rust/kotlin/go, so a C++ build declared 18 templates it
+/// cannot render and a C11 build 65, and one Rust template edit regenerated
+/// all 270 C11 outputs. Removing them is safe because they are outside what
+/// this backend's render reads — which `codegen_depfile_content` proves by
+/// pruning every undeclared template and re-rendering.
+fn language_template_files(template_dir: &Path, lang: Language) -> Vec<PathBuf> {
+    let foreign = lang.foreign_template_prefixes();
+    sce_build::generator::loader_template_files(template_dir)
+        .into_iter()
+        .filter(|(name, _)| {
+            // Matched against the loader-registered name, which is relative
+            // to the template root — the frame the prefixes are defined in.
+            // Matching the path on disk instead let every component of the
+            // checkout prefix take part, so a tree under `/home/go/…` or
+            // `/srv/c/…` classified its own templates as another backend's
+            // and wrote an empty depfile. `codegen_depfile_path_independence`
+            // holds the two frames apart by rendering from a relocated tree.
+            //
+            // Component-wise within that name, not substring: a directory
+            // named `go_helpers` must not read as `go`, and `forge/rust/` is
+            // as foreign to C++ as `rust/` is — a plain prefix test would keep
+            // the whole `forge/` half of the other five backends.
+            !name.split('/').any(|c| foreign.contains(&c))
+        })
+        .map(|(_, path)| path)
+        .collect()
+}
+
+/// The sce-codegen binary as a prerequisite (a rebuild of the binary covers
+/// every change to the generator's own sources; more precise than listing
+/// them), when it can name itself.
+fn this_program() -> Option<PathBuf> {
+    std::env::current_exe().ok().filter(|exe| exe.exists())
+}
+
+/// What a `generate-w3c` run reads (`--reads`): the registry; every file of
+/// the resources directory, since the source set every machine's
+/// `source-hash` covers is all of its documents, and each test's children,
+/// includes and metadata are files of it too; and the templates of the
+/// backend's language. The whole directory rather than the files the tests
+/// of this run happened to open, because that is the set the run's drift
+/// context already folds into every file it writes.
+fn w3c_reads(lang: Language, registry: &Path, resources: &Path) -> DepfileEntry {
+    let mut prerequisites = vec![registry.to_path_buf()];
+    let mut pending = vec![resources.to_path_buf()];
+    let mut found = Vec::new();
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => pending.push(path),
+                Ok(kind) if kind.is_file() => found.push(path),
+                _ => {}
+            }
+        }
+    }
+    found.sort();
+    prerequisites.extend(found);
+    prerequisites.extend(language_template_files(
+        &sce_build::find_template_dir_for(lang),
+        lang,
+    ));
+    prerequisites.extend(this_program());
+    DepfileEntry {
+        outputs: Vec::new(),
+        self_written: Vec::new(),
+        prerequisites,
+    }
+}
+
 /// The entry one generation's `inputs` describe — see [`DepfileEntry`] for
 /// why each family is a prerequisite.
 fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
@@ -8847,56 +8939,8 @@ fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
     // the spec puts on that header enforceable by the build.
     deps.extend(source_set.iter().cloned());
 
-    // Template dependencies, taken from the loader rather than from a
-    // second walk of our own. `loader_template_files` is what
-    // `load_templates` registers, so the depfile cannot name a smaller
-    // set than the render can reach. Walking `template_dir` alone — the
-    // shape this used to have — silently dropped the shared `_macros/`
-    // family for every backend scoped to a subdirectory (rust, kotlin,
-    // go, python): editing `_macros/sce_map_marker.jinja2` left their
-    // output stale while the build reported success. C++ and C11 hid it,
-    // their scope being the whole tree.
-    //
-    // Then minus the templates belonging to other backends. Over-
-    // declaring only costs a spurious rebuild, but the cost is real: the
-    // hand-kept list this replaced named only rust/kotlin/go, so a C++
-    // build declared 18 templates it cannot render and a C11 build 65,
-    // and one Rust template edit regenerated all 270 C11 outputs.
-    // Removing them is safe because they are outside what this backend's
-    // render reads — which `codegen_depfile_content` proves by pruning
-    // every undeclared template and re-rendering.
-    let foreign = lang.foreign_template_prefixes();
-    deps.extend(
-        sce_build::generator::loader_template_files(template_dir)
-            .into_iter()
-            .filter(|(name, _)| {
-                // Matched against the loader-registered name, which is
-                // relative to the template root — the frame the prefixes
-                // are defined in. Matching the path on disk instead let
-                // every component of the checkout prefix take part, so a
-                // tree under `/home/go/…` or `/srv/c/…` classified its
-                // own templates as another backend's and wrote an empty
-                // depfile. `codegen_depfile_path_independence` holds the
-                // two frames apart by rendering from a relocated tree.
-                //
-                // Component-wise within that name, not substring: a
-                // directory named `go_helpers` must not read as `go`,
-                // and `forge/rust/` is as foreign to C++ as `rust/` is —
-                // a plain prefix test would keep the whole `forge/`
-                // half of the other five backends.
-                !name.split('/').any(|c| foreign.contains(&c))
-            })
-            .map(|(_, path)| path),
-    );
-
-    // Add sce-codegen binary as a dependency (rebuilds if binary itself changes,
-    // which covers all Rust source changes). More precise than listing all .rs files.
-    let exe_path = std::env::current_exe().ok();
-    if let Some(ref exe) = exe_path {
-        if exe.exists() {
-            deps.push(exe.clone());
-        }
-    }
+    deps.extend(language_template_files(template_dir, lang));
+    deps.extend(this_program());
 
     DepfileEntry {
         outputs: output_paths.to_vec(),
@@ -9213,6 +9257,9 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         list,
         &cpp_formatter,
     );
+    if !clean && !list {
+        write_reads(Some(&w3c_reads(lang, &registry_file, &resources_dir)));
+    }
 }
 
 /// Decide what the emitted suite calls itself and whether it has to
