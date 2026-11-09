@@ -1198,6 +1198,217 @@ impl<B: TemplateSpelling> TemplateWalk<'_, B> {
             built
         })
     }
+
+    /// What the unit of a template over a record writes of a message of it in
+    /// the test log (docs/SCE_TEST_PROFILE.md §12.5): the name of its record
+    /// type ([`log_type_name`]) and the expression of its value's canonical
+    /// form, spelled by `canonical` ([`canonical_value`]). None for a template
+    /// over another type: a message is a record of an event schema (§11.3), so
+    /// only such a template's unit writes one
+    /// ([`TestTemplateModel::is_over_record`]), which is also what puts the
+    /// document's unit on the SCE runtime its header states
+    /// (`ForgeDocument::runtime_dep`).
+    pub(super) fn message_form<C: CanonicalSpelling>(
+        &self,
+        canonical: &C,
+        scope: &TypeScope,
+    ) -> Result<Option<(String, String)>, ForgeError> {
+        let TypeOf::Record { alias } = &self.template.template_type else {
+            return Ok(None);
+        };
+        let record = scope.records.get(alias).ok_or_else(|| {
+            self.refused(format!(
+                "`record:{alias}` names no record the document imports"
+            ))
+        })?;
+        let written = canonical_value(
+            canonical,
+            &self.template.template_type,
+            &canonical.root(),
+            scope,
+        )
+        .map_err(|why| self.refused(why))?;
+        Ok(Some((log_type_name(record), written)))
+    }
+}
+
+/// The name the types module of the suite's TTCN-3 export gives the record
+/// `record` (rule E1, docs/SCE_TEST_PROFILE.md §9.5): the unit name of its
+/// document's file ([`crate::ttcn3_export::names::unit_name`]), which is what a
+/// message of it carries as its `type` in the test log (§12.5). A record read
+/// with no document falls back to the name the document gives itself.
+pub(super) fn log_type_name(record: &ScopedRecord) -> String {
+    let stem = std::path::Path::new(&record.identity)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(&record.name);
+    crate::ttcn3_export::names::unit_name(stem)
+}
+
+/// A case of a union in the canonical form: the variant it is for, by its
+/// declared name, and, where the case holds a record, the name the record is
+/// bound to and its written form.
+pub(super) type CanonicalCase = (String, Option<(String, String)>);
+
+/// How a backend spells the canonical form of a value in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5) with the writers of its runtime: one
+/// expression of the backend's language per value, of the form the SCE type
+/// takes rather than the language's type, since a byte string and a list of
+/// `uint8` are one type in several languages and take two forms. The walk over
+/// the type, which form each type takes and which scope each record and union
+/// is read in, is [`canonical_value`], written once for every backend.
+pub(super) trait CanonicalSpelling {
+    /// The backend's spelling of the value the writer reads at one position.
+    type At;
+
+    /// The unit's `canonical`'s parameter, the template's own value.
+    fn root(&self) -> Self::At;
+    /// The field `id` of the record at `at`.
+    fn field(&self, at: &Self::At, id: &str) -> Self::At;
+    /// The name a function or a pattern binds a value inside the one at `at`
+    /// to, numbered by how many bindings `at` stands inside after `prefix`,
+    /// and the value it binds.
+    fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
+
+    /// A `bool`.
+    fn boolean(&self, at: &Self::At) -> String;
+    /// A value of an enum, by the name its document declares for its variant;
+    /// `strict` is false for an enum of an open set, whose number no variant
+    /// declares is written as its digits.
+    fn enumerated(&self, at: &Self::At, strict: bool) -> String;
+    /// An integer of any width.
+    fn integer(&self, at: &Self::At) -> String;
+    /// A text.
+    fn text(&self, at: &Self::At) -> String;
+    /// A byte string.
+    fn bytes(&self, at: &Self::At) -> String;
+    /// The list at `at`, each element bound to `binding` and written as
+    /// `element`.
+    fn list(&self, at: &Self::At, binding: &str, element: String) -> String;
+
+    /// A field the record always holds, written as `written`.
+    fn held_field(&self, written: String) -> String;
+    /// A field that may be absent, at `field`: the value it holds bound to
+    /// `binding` and written as `written`, and nothing where it holds none.
+    fn optional_field(&self, field: &Self::At, binding: &str, written: String) -> String;
+    /// A record of `fields`, each its declared id and its field as
+    /// [`Self::held_field`] or [`Self::optional_field`] wrote it, in the order
+    /// the schema declares them.
+    fn record(&self, fields: Vec<(String, String)>) -> String;
+
+    /// The value of the union `union` at `at`, one of `cases`, each its
+    /// variant and, where the case holds a record, the name the record is bound
+    /// to and its written form. Asked only of a backend that lowers a union
+    /// (`TemplateSpelling::lowers_unions`); one that does not keeps this
+    /// refusal, which the walk of its matcher has given first.
+    fn union(
+        &self,
+        _at: &Self::At,
+        union: &ScopedUnion,
+        _cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        Err(crate::forge::value_type::union_unlowered(&union.name))
+    }
+}
+
+/// The expression that writes the value `at`, of the type `ty` read in
+/// `scope`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
+/// §12.5), spelled by `spelling`. The form is the SCE type's, never the
+/// language's. Each record and union is read in the scope of its own document,
+/// as the walk of its matcher reads it. Refused, naming why: a number that is
+/// no integer, and an optional value anywhere but as a field of a record, which
+/// omits it where it is absent.
+pub(super) fn canonical_value<S: CanonicalSpelling>(
+    spelling: &S,
+    ty: &ValueType,
+    at: &S::At,
+    scope: &TypeScope,
+) -> Result<String, String> {
+    Ok(match ty {
+        TypeOf::Scalar(SceType::Bool) => spelling.boolean(at),
+        TypeOf::Scalar(SceType::Enum(reference)) => {
+            let declared = scope.enums.get(&reference.alias).ok_or_else(|| {
+                format!(
+                    "`enum:{}` names no enum the document imports",
+                    reference.alias
+                )
+            })?;
+            spelling.enumerated(at, declared.strict)
+        }
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => spelling.integer(at),
+        TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
+        TypeOf::Text { .. } => spelling.text(at),
+        TypeOf::Bytes { .. } => spelling.bytes(at),
+        TypeOf::Optional { .. } => {
+            return Err(format!(
+                "a value of {ty} has a form in the test log only as a field of a record, \
+                 which omits it where it is absent"
+            ))
+        }
+        TypeOf::List { elem, .. } => {
+            let (binding, element) = spelling.bound(at, "item");
+            let written = canonical_value(spelling, elem, &element, scope)?;
+            spelling.list(at, &binding, written)
+        }
+        TypeOf::Record { alias } => {
+            let record = scope
+                .records
+                .get(alias)
+                .ok_or_else(|| format!("`record:{alias}` names no record the document imports"))?;
+            let fields = record
+                .fields
+                .iter()
+                .map(|(id, field_type)| {
+                    let field = spelling.field(at, id);
+                    let value = match field_type {
+                        TypeOf::Optional { elem } => {
+                            let (binding, present) = spelling.bound(&field, "present");
+                            let written = canonical_value(spelling, elem, &present, &record.scope)?;
+                            spelling.optional_field(&field, &binding, written)
+                        }
+                        other => spelling.held_field(canonical_value(
+                            spelling,
+                            other,
+                            &field,
+                            &record.scope,
+                        )?),
+                    };
+                    Ok((id.clone(), value))
+                })
+                .collect::<Result<Vec<(String, String)>, String>>()?;
+            spelling.record(fields)
+        }
+        TypeOf::Union { alias } => {
+            let union = scope
+                .unions
+                .get(alias)
+                .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))?;
+            let cases = union
+                .cases
+                .iter()
+                .map(|case| {
+                    let held = match &case.record {
+                        Some(record) => {
+                            let (binding, held) = spelling.bound(at, "case");
+                            let written = canonical_value(
+                                spelling,
+                                &TypeOf::Record {
+                                    alias: record.clone(),
+                                },
+                                &held,
+                                &union.scope,
+                            )?;
+                            Some((binding, written))
+                        }
+                        None => None,
+                    };
+                    Ok((case.variant.name.clone(), held))
+                })
+                .collect::<Result<Vec<CanonicalCase>, String>>()?;
+            spelling.union(at, union, cases)?
+        }
+    })
 }
 
 /// A backend's spelling that lowers a union whatever
