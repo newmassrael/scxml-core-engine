@@ -494,9 +494,11 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    profiles (`SceOwnedList`'s `N` is advisory under `alloc`), and a text in a type that refuses past its bound; the
    nested type is the composition of those (`BoundedList<BoundedList<SceString<8>, 4>, 3>`; the text type is
    `SceString<N>` since section 7.4, which folded `BoundedText<N>` into it). Kotlin and Python check
-   in the record's constructor (`init`, `__post_init__`), recursively through a generated check per composition. Go,
-   C++ and Swift have no checked constructor on a plain struct; the generated `raise_<event>` runs the same generated
-   check before it encodes. C11's encode refuses a `len` past a bound at any depth.
+   in the record's constructor (`init`, `__post_init__`), recursively through a generated check per composition. Go
+   and Swift have no checked constructor on a plain struct; the generated `raise_<event>` runs the same generated
+   check before it encodes. C++ holds every upper bound in its type since section 7.4's amendment of 2026-11-09
+   (`OwnedList<T, N>`, `OwnedText<N>`, `OwnedBytes<N>`), so its `raise<Event>` checks only a list's lower count,
+   which no type holds. C11's encode refuses a `len` past a bound at any depth.
 
 ### 6. A statechart reads a composed payload as it reads a variable of the same type
 
@@ -523,7 +525,8 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    | Rust (schema unit) | `BoundedList<T, N>` | bounded text / `SceBytes<N>` checked | `Option<T>` | struct, `Clone` |
    | Rust (machine) | `sce_portable_bytes::BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
    | Kotlin | `List<T>` | `String` / `ByteArray` | `T?` | data class, checked in `init` |
-   | C++ | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | struct |
+   | C++ (schema unit) | `SCE::Forge::OwnedList<T, N>` | `OwnedText<N>` / `std::vector<uint8_t>` (entry), `OwnedBytes<N>` (composed) | `std::optional<T>` | struct |
+   | C++ (machine) | `SCE::Forge::OwnedList<T, N>` | `OwnedText<N>` / `OwnedBytes<N>` | `std::optional<T>` | the machine's record |
    | Go | `[]T` | `string` / `[]byte` | the backend's optional (ADR 0055) | struct |
    | Python | `list[T]` | `str` / `bytes` | `Optional[T]` | the record class, checked in `__post_init__` |
    | Swift | `[T]` | `String` / `[UInt8]` | `T?` | struct |
@@ -600,6 +603,27 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    in a later landing; this amendment does not change C++. **Kotlin, Go, Python and Swift keep the rows of the
    table**, a checked constructor or a bound kept by the machine: none of their type systems has a constant
    parameter a bound could be, so a bound in the type has no spelling there.
+
+   **A C++ machine holds every bound in its type too** (amended 2026-11-09, the later landing answer G names). C++
+   holds exactly what Rust holds, in C++ spellings: the owned forms of the forge runtime's `Bounded<L, Max, Min>`
+   (`backends/cpp/forge-runtime/include/sce/forge/bounded.h`), the counterparts of the views `Text`, `Bytes` and
+   `List` a codec presents, are `SCE::Forge::OwnedText<N>` (`Bounded<std::string, N>`, Rust's `SceString<N>`),
+   `SCE::Forge::OwnedBytes<N>` (`Bounded<std::vector<std::uint8_t>, N>`, `SceBytes<N>`) and
+   `SCE::Forge::OwnedList<T, N>` (`Bounded<std::vector<T>, N>`, `BoundedList<T, N>`). A machine's variable, its
+   record's field and a composed payload's place are one of them, and the schema unit's `string[N]` field and every
+   composition it holds are too, so a CBOR codec's list of records with a text field is held within every bound by
+   its types on C++ as on Rust and is printed with an encode that refuses nothing. Every write goes through the
+   runtime's checked construction (`SCE::Forge::Checked::held<B>`, `heldList<N>`), which records the capacity
+   failure an assignment past the bound raises as `error.execution`, and never cuts a value; an append through the
+   list's own `push`, which refuses past `N`; a literal through `literal`, whose length the compiler judges against
+   the bound (`static_assert`), so a literal past it does not compile; a copy the judge proved to fit through the
+   widening constructor, which exists only where the bounds hold (`widenedMap` for a list of a converted element);
+   an id a `<send idlocation>` or an `<invoke idlocation>` generates through the variable's type's `make`, refused
+   whole past the bound, as on Rust. A host is lent the plain value a place holds (`const std::string &`,
+   `const std::vector<T> &`) and builds a value for a payload through `make` or `literal`. The type has no mutable
+   access to an element, throws nothing of its own, and is C++17. What waits for section 4.4 on Rust waits on C++
+   alike: an entry event's payload struct and a host-run invocation's records keep the wire's `std::string` and
+   `std::vector<std::uint8_t>`, the bound held where a value is written into a machine's place.
 
 ### 8. C11 sizes each machine's slot, and `SCE_MAX_DATA_LEN` is retired
 
@@ -1113,7 +1137,8 @@ The owner reviewed the first landing of step 3 on 2026-11-04 and answered:
   schema unit hold one type and convert nothing between them, each proven fit is checked again by rustc through a
   widening conversion whose bounds are const parameters, and the types are inline without an allocator, so the
   `rust no_std` refusal of a composed value goes. C++ is the next target of the same reasoning, with bounded
-  container templates in its runtime, in a later landing; Kotlin, Go, Python and Swift keep checked constructors and
+  container templates in its runtime, in a later landing (landed 2026-11-09: section 7.4, `OwnedText<N>`,
+  `OwnedBytes<N>`, `OwnedList<T, N>`); Kotlin, Go, Python and Swift keep checked constructors and
   bounds kept by the machine, having no constant parameter for a bound. The change of the generated public types is
   a consumer's migration, recorded with the landing (landing step 4).
 

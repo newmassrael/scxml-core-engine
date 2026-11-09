@@ -1185,15 +1185,17 @@ list past its bound cannot be made and the encode refuses nothing for its count.
 The source interface lends the list by reference, and the owned mirror holds it as
 the view does.
 
-C++ prints a map whose records hold only booleans and unsigned integers from its
-plan (docs/adr/0081 step 4): the value presents the list as
+C++ prints a map whose records hold only booleans, unsigned integers and texts
+from its plan (docs/adr/0081 step 4): the value presents the list as
 `::SCE::Forge::List<<Schema>Payload, N>`, a view within its count, holds it in
 `Bounded<std::vector<<Schema>Payload>, N>`, and reads and writes a record by the
 static members of the codec's `Records` struct. A list past its bound has no
-view (`make` refuses it), so the encode refuses nothing for its count. A record
-with a text or a byte string field is held by the schema's C++ unit in a
-`std::string` or a `std::vector` with no bound, so a map that holds a list of it
-keeps the template's struct below, and its encode refuses a field past its bound.
+view (`make` refuses it), so the encode refuses nothing for its count. A record's
+text is held by the schema's C++ unit in the `OwnedText<N>` of its bound
+(docs/adr/0086, section 7.4), so its write refuses nothing either. A record with
+a byte string field is held by the schema's C++ unit in a `std::vector` with no
+bound, so a map that holds a list of it keeps the template's struct below, and
+its encode refuses a field past its bound.
 
 A backend whose language's list, string and byte array carry no bound generates
 the list in its own list of the schema's payload, read and written by functions
@@ -2252,7 +2254,7 @@ The fields are written in the SCHEMA's order whatever order the author gave them
 |---------|-----------------------------|------------------------|----------------------|----------|
 | Rust | `sce_portable_bytes::SceString<N>` — fixed-capacity (`heapless::String<N>`) on the no-alloc profile, a `String` under `alloc`, `N` a hard bound on both (docs/adr/0086, section 7.4) | `sce_text!(N, "…")`, which compares the literal's length with `N` at build time | `SceString::<N>::widened(&x.text)`, where a source bound past `N` is a build error | `a.text.as_str() == b.text.as_str()` |
 | C11 | `sce_static_string_<N>_t` — `{ char data[N + 1]; }`, the type a `sce-static` statechart holds the same text in, declared under one guard by the event-schema header and the machine's, so a record is still copied by assignment | `sce_static_string_<N>_of("…")` | `sce_static_string_<N>_of(x.text.data)` | `strcmp(a.text.data, b.text.data) == 0` |
-| C++ | `std::string` | the literal | `x.text` | `==` |
+| C++ | `SCE::Forge::OwnedText<N>` (`sce/forge/bounded.h`, `Bounded<std::string, N>`), the type a `sce-static` statechart holds the same text in, `N` a hard bound (docs/adr/0086, section 7.4) | `OwnedText<N>::literal("…")`, whose length a `static_assert` compares with `N` at build time | `OwnedText<N>(x.text)`, a widening that does not compile where the source bound is past `N` | `==` |
 | Go | `string` | the literal | `x.Text` | `==` |
 | Python | `str` | the literal | `x.text` | `==` |
 | Kotlin | `String` | the literal | `x.text` | `==` |

@@ -4227,7 +4227,11 @@ Rust holds a string variable in a `SceString<N>`, its bound in its type
 constructor — `SceString::<N>::from_text(&"busy".to_string())?`, a read of another
 variable copied the same way — so a text past the bound fails the assignment as
 any other failure does; a string handed to a host action stays borrowed (`&str`).
-Kotlin has one `String` for both.
+C++ holds it in an `SCE::Forge::OwnedText<N>` (docs/adr/0086, section 7.4), written
+through the runtime's checked construction
+(`SCE::Forge::Checked::held<OwnedText<N>>(sce_failure_, value)`), which records the
+capacity failure past the bound, and lent to a host as the `const std::string &`
+it holds. Kotlin has one `String` for both.
 
 **Generated send ids.** A `<send>` with an `idlocation` has the machine generate
 its id (§scxml-6.2.4), and the document keeps it in a variable a later `<cancel
@@ -5132,8 +5136,10 @@ the same value too, and a saved string is read back through the runtime's bounde
 reader. In Python the record is a frozen dataclass changed a field at a time by
 replacement, so a copy is the same value, and a saved string is read back through the
 runtime's bounded reader too. In C++ the record
-is an aggregate with a `std::string` member, copied by value, and a saved string is
-read back through the runtime's bounded reader (`savedBoundedString`). In C11 the field is a buffer of the bound, `sce_static_string_<N>_t`, the type
+is an aggregate with an `SCE::Forge::OwnedText<N>` member, its bound in its type
+(docs/adr/0086, section 7.4), copied by value, written through the type's checked
+construction, and a saved string is read back into that type
+(`savedOwnedText<N>`). In C11 the field is a buffer of the bound, `sce_static_string_<N>_t`, the type
 a string variable of that bound is held in, so the record is a struct that is still
 copied by assignment: an expression reads the field as the buffer's text
 (`last.label.data`), a write copies the text and its terminator into it, a record
@@ -5182,7 +5188,8 @@ Latin-1 text, each byte the character of that code point, and reads it back only
 Latin-1 text of at most the bound: a character past U+00FF is no byte and is refused,
 not cut. **Rust** holds a `bytes` variable as a `SceBytes<N>`, its bound in its type
 (docs/adr/0086, section 7.4), **Kotlin** as a `ByteArray`,
-**Go** as a `[]byte`, **Python** as a `bytes`, **C++** as a `std::vector<uint8_t>` and
+**Go** as a `[]byte`, **Python** as a `bytes`, **C++** as an `SCE::Forge::OwnedBytes<N>`,
+its bound in its type as on Rust, and
 **C11** as a buffer of the bound and the length it holds
 (`scenarios/static_bytes.json`), and the **Interpreter**'s data model, which holds no
 types, as the text of its bytes, one character to a byte, held to its bound by
@@ -5240,8 +5247,8 @@ the bound its schema declares. A Go record keeps its fields unexported and answe
 through a reader, which for a byte string is a copy; the machine replaces a slice and
 never writes into it, so a copy of a record shares it safely. A Python record is a frozen
 dataclass of immutable `bytes`, so a host is handed the value itself and two records of
-the same bytes are equal. A C++ record holds a `std::vector<uint8_t>`, is handed to a host
-by value (a copy), and a list of records is lent as a constant reference, both asserted
+the same bytes are equal. A C++ record holds an `SCE::Forge::OwnedBytes<N>`, is handed to a
+host by value (a copy), and a list of records is lent as a constant reference, both asserted
 where the test is compiled. A C11 record holds the buffer of the bound and the length it
 holds, the same type a `bytes` variable of that bound has, declared before the record and
 shared by every field and variable of the bound; it is handed to a host by value and a list
@@ -5406,25 +5413,26 @@ name on Python, which holds no union yet (docs/adr/0092, section 7).
 
 The C++ backend reads a composed payload as the Rust and Kotlin backends do
 (docs/adr/0086, section 7.1, the C++ row): its payload struct holds each field in
-`std::vector<T>`, `std::string`, `std::vector<uint8_t>`, `std::optional<T>` and
-the machine's struct, each record it names declared once as plain data a host
-builds by position in the schema's order; the lift reads each field by one lambda
-per constructor over the runtime's `EventPayloadValue` (`readList`,
-`readListWithin`, `readOptional`, `readRecord`, `readText`, ...) and refuses the
-delivery whole, naming the path, at the first value outside its type; and `len`,
-an index, a field of a record element and a `<foreach>` over a list the payload or
-an enclosing loop's item holds lower at any depth. A C++ struct has no constructor
-that could refuse a value, so the inject seam, `raise<Event>`, holds what a host
-hands it to every bound its type declares, at any depth, before it builds anything
-(docs/adr/0086, section 5.4), by the runtime's `EventPayloadBounds`: it answers the
-refusal as a `std::string` naming the path (`'items/0/tags' holds 5 elements, past
-the 4 its type declares`) and raises nothing, and answers an empty one where it
-raised the event, whose payload it writes as the JSON a lift reads back. A list a
-place holds is taken whole into a list variable whose type it fits by the
-assignment, which copies the vector by value at every depth: no C++ type carries a
-bound yet, so the two places are one type, and the variable shares nothing with the
-place. A payload that holds a union, at any depth, is refused by name on C++, which
-holds no union yet (docs/adr/0092, section 7).
+`SCE::Forge::OwnedList<T, N>`, `OwnedText<N>`, `OwnedBytes<N>`, `std::optional<T>`
+and the machine's struct, each bound in its type (section 7.4), each record it
+names declared once as plain data a host builds by position in the schema's order;
+the lift reads each field by one lambda per constructor over the runtime's
+`EventPayloadValue` (`readList`, `readListWithin`, `readOptional`, `readRecord`,
+`readText`, ...) and refuses the delivery whole, naming the path, at the first
+value outside its type; and `len`, an index, a field of a record element and a
+`<foreach>` over a list the payload or an enclosing loop's item holds lower at any
+depth. A host cannot build a value past a bound, since none is a value of its
+type, so the inject seam, `raise<Event>`, checks only what no type holds, a list's
+lower count, at any depth, before it builds anything (docs/adr/0086, section 5.4),
+by the runtime's `EventPayloadBounds`: where a list states one it answers the
+refusal as a `std::string` naming the path (`'items/0/tags' holds 1 elements,
+fewer than the 2 its type declares`) and raises nothing, and answers an empty one
+where it raised the event; where none does it returns nothing. Either way it writes
+the payload as the JSON a lift reads back. A list a place holds is taken whole into
+a list variable whose type it fits, each element copied into a list of the place's
+bound by a widening the build proved (`widenedMap`), so the variable shares nothing
+with the place. A payload that holds a union, at any depth, is refused by name on
+C++, which holds no union yet (docs/adr/0092, section 7).
 
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section

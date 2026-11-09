@@ -1585,3 +1585,46 @@ regenerates every Mesh tree from `stdlib/mesh`).
   their `JSON_SCHEMA` text moves with the regenerated standard library. A consumer that holds that text or its
   digest as a fixture replaces it; a consumer that parses the schema sees the same schema.
 
+## A C++ machine holds a list, a text and a byte string in types that hold their bounds (ADR 0086 §7.4)
+
+Landing: the commits that add this section and the forge runtime's owned forms (`sce/forge/bounded.h`); the C++
+trees are generated where they are built, and every committed tree whose template hash covers the C++ templates is
+regenerated after it.
+
+- The forge runtime names the owned forms of `Bounded<L, Max, Min>`: `SCE::Forge::OwnedText<N>`
+  (`Bounded<std::string, N>`), `SCE::Forge::OwnedBytes<N>` (`Bounded<std::vector<std::uint8_t>, N>`) and
+  `SCE::Forge::OwnedList<T, N>` (`Bounded<std::vector<T>, N>`). Each is made by `make(list)`, which answers
+  `std::nullopt` past the bound (and for a text that is not UTF-8), by `literal("…")` or `literal({…})`, whose length
+  a `static_assert` judges against the bound, or by a widening from a tighter bound. A list grows by `push(value)`,
+  which answers `false` once it holds `N` and leaves it as it was, and is emptied by `clear()`. Nothing throws, and
+  no element is reached mutably.
+- A generated `sce-static` machine holds a `list<T>[N]` variable in `OwnedList<T, N>`, a `string[N]` variable in
+  `OwnedText<N>` and a `bytes[N]` variable in `OwnedBytes<N>`, an optional one in `std::optional` of the same; a
+  record the machine declares holds its `string[N]` and `bytes[N]` fields the same way, and a composed payload
+  (a payload whose schema holds a list, a record or an optional over either) holds every text, byte string and
+  list at any depth so. A reader a host calls is unchanged: it lends the plain value (`const std::string &`,
+  `const std::vector<uint8_t> &`, `const std::vector<T> &`). A record a host reads compares its text with a
+  `const char *`, a `std::string` and a text of any bound, and lends it wherever a `const std::string &` or a
+  `std::string_view` is taken.
+- A composed payload's `raise<Event>` takes each field in its bounded type and, where no list of the payload states a
+  lower count, returns `void` and refuses nothing: a value past a bound is no value of its type, so build it through
+  `make` and handle its `std::nullopt` where you make it. A payload whose list states a lower count still answers
+  the refusal of a list short of it, as before.
+- An event schema's unit holds a `string[N]` field in `OwnedText<N>` and every composition in the owned forms
+  (`OwnedList<T, N>`, `OwnedBytes<N>`); an entry `bytes[N]` field stays `std::vector<uint8_t>`. A host that wrote
+  `payload.title = "beta"` writes `payload.title = decltype(payload.title)::literal("beta")`, or `make` of a text
+  built at run time. A test template's unit takes a `string[N]` parameter as `const OwnedText<N> &`.
+- A printed C++ CBOR map whose list's records hold a text is printed from its plan now, as one whose records hold
+  only booleans and unsigned integers is: its encode refuses nothing.
+- An entry event's payload struct and a host-run invocation's request and result records are unchanged: they keep
+  `std::string` and `std::vector<uint8_t>`, as on Rust, until ADR 0086 section 4.4 lands on every lane.
+- `SCE::Forge::Checked::bounded` is gone: no generated code calls it. Write
+  `SCE::Forge::Checked::held<OwnedText<N>>(failure, value)` (or `held<OwnedBytes<N>>`), or
+  `SCE::Forge::Checked::heldList<N>(failure, list)`, which record `CapacityExceeded` and answer the empty value past
+  the bound, as `bounded` did, and never cut the value.
+- `SCE::Forge::otherwise` over an `OwnedText<N>` or `OwnedBytes<N>` answers the plain `std::string` or
+  `std::vector<uint8_t>`, so a default of another bound or a literal is read as the text it is.
+- An id a `<send idlocation>` or an `<invoke idlocation>` writes into a string variable is held to that variable's
+  bound as any text written to it is: one past it is refused whole, raises `error.execution`, and the send sends
+  nothing or the invocation does not start.
+
