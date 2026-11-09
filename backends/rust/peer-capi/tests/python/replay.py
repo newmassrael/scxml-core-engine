@@ -14,7 +14,7 @@ import ctypes
 import json
 import sys
 
-ABI_VERSION = 6
+ABI_VERSION = 7
 OK = 0
 KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3, "waiting": 4}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}

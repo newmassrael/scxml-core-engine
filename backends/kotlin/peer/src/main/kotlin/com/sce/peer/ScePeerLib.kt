@@ -21,7 +21,7 @@ import com.sun.jna.ptr.LongByReference
 /** The numbers of `include/sce_peer.h`, by the names it gives them without `SCE_PEER_`. */
 object ScePeerAbi {
     /** `SCE_PEER_ABI_VERSION`: the ABI this binding declares. */
-    const val VERSION = 6
+    const val VERSION = 7
 
     const val OK = 0
     const val ERR_NOTHING_ASKED = 1
