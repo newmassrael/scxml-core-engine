@@ -84,6 +84,27 @@ pub struct Source {
     pub line: Option<u32>,
 }
 
+impl Source {
+    /// The construct the rule translated: this source without its rule.
+    pub fn construct(&self) -> Construct {
+        Construct {
+            document: self.document.clone(),
+            node: self.node.clone(),
+            line: self.line,
+        }
+    }
+}
+
+/// A construct of a document, named as a [`Source`] names it: the document,
+/// the node and the row of the node. A state is the node `state 'id'`, or
+/// `final 'id'` where it is a `<final>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Construct {
+    pub document: String,
+    pub node: String,
+    pub line: Option<u32>,
+}
+
 /// A module parameter of the behaviour module, as
 /// `modulepar T name := value;` (-1 §8.2.1): one the suite declares (§11.8),
 /// with its default, or the one of a feature of the suite's feature model
@@ -259,13 +280,49 @@ pub enum Statement {
     },
 }
 
+impl Statement {
+    /// The construct the statement was translated from, and its rule.
+    pub fn source(&self) -> &Source {
+        match self {
+            Statement::Label { source, .. }
+            | Statement::Goto { source, .. }
+            | Statement::Return { source }
+            | Statement::Send { source, .. }
+            | Statement::StartTimer { source, .. }
+            | Statement::StopTimer { source, .. }
+            | Statement::Setverdict { source, .. }
+            | Statement::Log { source, .. }
+            | Statement::Assign { source, .. }
+            | Statement::If { source, .. }
+            | Statement::Create { source, .. }
+            | Statement::Kill { source, .. }
+            | Statement::Alt { source, .. } => source,
+        }
+    }
+}
+
 /// One alternative of an `alt` (E7, E8).
 #[derive(Debug, Clone, Serialize)]
 pub struct Branch {
     pub guard: Option<String>,
     pub event: BranchEvent,
     pub block: Vec<Statement>,
+    /// The states taking the branch from its atomic state exits, in the
+    /// order the block exits them: the exit set the core computed.
+    pub exited: Vec<Construct>,
+    /// The states it enters, in the order the block enters them: the entry
+    /// set the core computed.
+    pub entered: Vec<Construct>,
     pub source: Source,
+}
+
+/// What taking a transition from an atomic state writes: the statements of
+/// its block, and the states it exits and enters, each in the order the
+/// block does so.
+struct Block {
+    statements: Vec<Statement>,
+    exited: Vec<Construct>,
+    entered: Vec<Construct>,
 }
 
 /// What an alternative waits for (P2).
@@ -989,6 +1046,28 @@ impl<'r> Writer<'r> {
         self.component.model.states.get(id)
     }
 
+    /// The node of the state `id`: the element by its kind and id,
+    /// `final 'id'` for a `<final>` and `state 'id'` for every other state.
+    fn state_node(&self, id: &str) -> String {
+        if self.state(id).is_some_and(|state| state.is_final) {
+            format!("final '{id}'")
+        } else {
+            format!("state '{id}'")
+        }
+    }
+
+    /// The state `id` as a construct of the component.
+    fn state_construct(&self, id: &str) -> Construct {
+        Construct {
+            document: self.component.label.clone(),
+            node: self.state_node(id),
+            line: self
+                .state(id)
+                .and_then(|state| state.source_location.as_ref())
+                .and_then(|l| l.line),
+        }
+    }
+
     /// `leaf` and each of its ancestors, innermost first.
     fn chain(&self, leaf: &str) -> Vec<&'r State> {
         let mut chain: Vec<&'r State> =
@@ -1038,7 +1117,7 @@ impl<'r> Writer<'r> {
                     };
                     let line = state.source_location.as_ref().and_then(|l| l.line);
                     for (position, block) in state.on_exit_blocks.iter().enumerate() {
-                        let node = format!("state '{id}' / onexit {}", position + 1);
+                        let node = format!("{} / onexit {}", self.state_node(id), position + 1);
                         statements.extend(self.actions(block, None, &node, line)?);
                     }
                     for invocation in self.invocations().iter().filter(|i| &i.state == id) {
@@ -1059,13 +1138,13 @@ impl<'r> Writer<'r> {
                     else {
                         continue;
                     };
-                    let node = format!("state '{state}' / transition {}", index + 1);
+                    let node = format!("{} / transition {}", self.state_node(state), index + 1);
                     let line = transition.source_location.as_ref().and_then(|l| l.line);
                     statements.extend(self.actions(&transition.actions, message, &node, line)?);
                 }
                 Step::Content(Content::Initial(id)) => {
                     if let Some(state) = self.state(id) {
-                        let node = format!("state '{id}' / initial");
+                        let node = format!("{} / initial", self.state_node(id));
                         let line = state.source_location.as_ref().and_then(|l| l.line);
                         statements.extend(self.actions(
                             &state.initial_transition_actions,
@@ -1082,11 +1161,11 @@ impl<'r> Writer<'r> {
                     };
                     let line = state.source_location.as_ref().and_then(|l| l.line);
                     for (position, block) in state.on_entry_blocks.iter().enumerate() {
-                        let node = format!("state '{id}' / onentry {}", position + 1);
+                        let node = format!("{} / onentry {}", self.state_node(id), position + 1);
                         statements.extend(self.actions(block, None, &node, line)?);
                     }
                     if *default {
-                        let node = format!("state '{id}' / initial");
+                        let node = format!("{} / initial", self.state_node(id));
                         statements.extend(self.actions(
                             &state.initial_transition_actions,
                             None,
@@ -1116,7 +1195,7 @@ impl<'r> Writer<'r> {
                 .and_then(|s| s.source_location.as_ref())
                 .and_then(|l| l.line);
             statements.push(Statement::Return {
-                source: self.source("E12", format!("final '{}'", taken.leaf), line),
+                source: self.source("E12", self.state_node(&taken.leaf), line),
             });
             return Ok(statements);
         }
@@ -1126,15 +1205,18 @@ impl<'r> Writer<'r> {
         }])
     }
 
-    /// What taking the `index`-th transition of `state` from `leaf` does.
+    /// What taking the `index`-th transition of `state` from `leaf` does:
+    /// the block, and the states it exits and enters on the way, as the
+    /// core computed them. The exits of a halt that follows the entry of a
+    /// top-level `<final>` are E12's, and are not among them.
     fn take(
         &self,
         leaf: &str,
         state: &State,
         index: usize,
         message: Option<&Message>,
-    ) -> Result<Vec<Statement>, Located<ForgeError>> {
-        let node = format!("state '{}' / transition {}", state.id, index + 1);
+    ) -> Result<Block, Located<ForgeError>> {
+        let node = format!("{} / transition {}", self.state_node(&state.id), index + 1);
         let line = state.transitions[index]
             .source_location
             .as_ref()
@@ -1145,7 +1227,20 @@ impl<'r> Writer<'r> {
         })?;
         let mut statements = self.steps(&taken.steps, message)?;
         statements.extend(self.ending(&taken, &node, line)?);
-        Ok(statements)
+        let mut exited = Vec::new();
+        let mut entered = Vec::new();
+        for step in &taken.steps {
+            match step {
+                Step::Exit(id) => exited.push(self.state_construct(id)),
+                Step::Enter { state: id, .. } => entered.push(self.state_construct(id)),
+                Step::Content(_) => {}
+            }
+        }
+        Ok(Block {
+            statements,
+            exited,
+            entered,
+        })
     }
 
     /// The function the component runs in `configuration`, or in every
@@ -1212,7 +1307,7 @@ impl<'r> Writer<'r> {
             labels.push((leaf.id.clone(), line));
             body.push(Statement::Label {
                 name: leaf.id.clone(),
-                source: self.source("E6", format!("state '{}'", leaf.id), line),
+                source: self.source("E6", self.state_node(&leaf.id), line),
             });
             let chain = self.chain(&leaf.id);
             let mut ended = false;
@@ -1221,8 +1316,8 @@ impl<'r> Writer<'r> {
                     if !transition.event.is_empty() || transition.test_branch.is_some() {
                         continue;
                     }
-                    let block = self.take(&leaf.id, state, index, None)?;
-                    let node = format!("state '{}' / transition {}", state.id, index + 1);
+                    let block = self.take(&leaf.id, state, index, None)?.statements;
+                    let node = format!("{} / transition {}", self.state_node(&state.id), index + 1);
                     let tline = transition.source_location.as_ref().and_then(|l| l.line);
                     if transition.cond.trim().is_empty() {
                         body.extend(block);
@@ -1259,7 +1354,7 @@ impl<'r> Writer<'r> {
             }
             body.push(Statement::Alt {
                 branches,
-                source: self.source("E7", format!("state '{}'", leaf.id), line),
+                source: self.source("E7", self.state_node(&leaf.id), line),
             });
         }
         for (variable, (record, line)) in &messages {
@@ -1308,7 +1403,7 @@ impl<'r> Writer<'r> {
         index: usize,
         transition: &Transition,
     ) -> Result<Option<Alternative>, Located<ForgeError>> {
-        let node = format!("state '{}' / transition {}", state.id, index + 1);
+        let node = format!("{} / transition {}", self.state_node(&state.id), index + 1);
         let line = transition.source_location.as_ref().and_then(|l| l.line);
         let site = self.site(&node, line);
         let profile_branch = transition.test_branch.as_ref();
@@ -1317,7 +1412,7 @@ impl<'r> Writer<'r> {
             return Ok(None);
         }
         let message = self.message(transition);
-        let block = self.take(leaf, state, index, message.as_ref())?;
+        let taken = self.take(leaf, state, index, message.as_ref())?;
         let guard = if transition.cond.trim().is_empty() {
             None
         } else {
@@ -1351,7 +1446,9 @@ impl<'r> Writer<'r> {
             branch: Branch {
                 guard,
                 event,
-                block,
+                block: taken.statements,
+                exited: taken.exited,
+                entered: taken.entered,
                 source: self.source("E8", node, line),
             },
             stored,

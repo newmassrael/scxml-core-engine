@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-ttcn3-witness.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE TTCN-3 correspondence witness (wire schema v1)",
+  "description": "The correspondence witness the TTCN-3 export of a test suite writes beside its two modules, `<suite>.witness.json` beside `<suite>_Types.ttcn` and `<suite>.ttcn` (docs/adr/0091 answer 12; docs/SCE_TEST_PROFILE.md sections 9.4 and 9.5). It relates each construct of the suite's documents to the TTCN-3 it became: one entry per construct and rule of section 9.2 that translated it, and in each entry every place of the modules that rule wrote for it. Every definition, member of a component type and statement the export writes is the place of exactly one location of exactly one entry, and every construct and rule has exactly one entry, so a validator that does not depend on the exporter checks the three bullets of section 9.4 from this file, the suite's documents and the two modules. The witness is the model the modules are written from, serialized, never read again from their text. An `alt` and each of its alternatives state what the validator computes again on its own: the order of the alternatives, and the states each alternative's block exits and enters. A document is named by its path relative to the directory of the suite's document, `.` and `..` folded and `/` its separator, or by its `sce:std/` name, so the witness is the same bytes wherever the suite is read from. Entries stand in the order of their construct's document, row, node and rule; the places of an entry in the order of the modules, the types module first. Like the types manifest, the witness names nothing of the run that wrote it, no generator commit and no source hash: the modules' own headers name the inputs. Authoritative producer is sce-build/src/ttcn3_export/witness.rs over the models of sce-build/src/ttcn3_export. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "type": "object",
+  "required": ["schema", "suite", "modules", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "The name of this shape. Changed only on a breaking shape change.",
+      "const": "sce-ttcn3-witness.v1"
+    },
+    "suite": {
+      "description": "The suite's unit name: the stem of its document's file in lower snake case, which names its modules.",
+      "$ref": "#/definitions/identifier"
+    },
+    "modules": {
+      "description": "The two modules the witness relates the documents to: the types module, `<suite>_Types`, then the behaviour module, `<suite>`.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/definitions/identifier" }
+    },
+    "entries": {
+      "description": "One entry per construct and rule, in the order of the construct's document, row (an absent row first), node and rule.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/entry" }
+    }
+  },
+  "definitions": {
+    "identifier": {
+      "description": "A TTCN-3 identifier: an ASCII letter, then ASCII letters, digits and underscores.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "index": {
+      "description": "A position, from 0.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "construct": {
+      "description": "A construct of a document: the document, the node, as an element by its kind and id and a child by its kind and position from 1 (`state 'requesting' / transition 1 / send 2`; a document translated whole is its root, `scxml`; a `<final>` is `final 'id'`), and the row of the node where the documents keep one.",
+      "type": "object",
+      "required": ["document", "node", "line"],
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "description": "The document's path relative to the directory of the suite's document, or its `sce:std/` name; never absolute.",
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "^/" }
+        },
+        "node": { "type": "string", "minLength": 1 },
+        "line": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "rule": {
+      "description": "A rule of docs/SCE_TEST_PROFILE.md section 9.2.",
+      "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15"]
+    },
+    "entry": {
+      "description": "One construct, translated by one rule, and every place that rule wrote for it.",
+      "type": "object",
+      "required": ["construct", "rule", "produced"],
+      "additionalProperties": false,
+      "properties": {
+        "construct": { "$ref": "#/definitions/construct" },
+        "rule": { "$ref": "#/definitions/rule" },
+        "produced": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/location" }
+        }
+      }
+    },
+    "location": {
+      "description": "A place of a module: the module, and the path from its top, a definition first and then the steps into it.",
+      "type": "object",
+      "required": ["module", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "module": { "$ref": "#/definitions/identifier" },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": [{ "$ref": "#/definitions/definitionSegment" }],
+          "additionalItems": { "$ref": "#/definitions/innerSegment" }
+        },
+        "claim": { "$ref": "#/definitions/claim" }
+      }
+    },
+    "definitionSegment": {
+      "description": "A definition of a module, as an object of one member, its kind, whose value is its name: in the types module a `type` or an `external-function` (a codec function); in the behaviour module a `port-type`, `template`, `modulepar`, `component-type` (a test component's or a configuration's system component type), `function`, `testcase`, or the `control` part, named by its module.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "type": { "$ref": "#/definitions/identifier" },
+        "external-function": { "$ref": "#/definitions/identifier" },
+        "port-type": { "$ref": "#/definitions/identifier" },
+        "template": { "$ref": "#/definitions/identifier" },
+        "modulepar": { "$ref": "#/definitions/identifier" },
+        "component-type": { "$ref": "#/definitions/identifier" },
+        "function": { "$ref": "#/definitions/identifier" },
+        "testcase": { "$ref": "#/definitions/identifier" },
+        "control": { "$ref": "#/definitions/identifier" }
+      }
+    },
+    "innerSegment": {
+      "description": "A step into a definition, as an object of one member, its kind. In a component type a `port`, `timer` or `var`, by its name. In a function a `local`, by its name; a `label`, by its atomic state's id, which opens the statements after it up to the next label; and a `statement`, from 0, of the statements the step before it opens: a function's own (those before its first label), a label's, an alternative's block, or the `execute`s of the control part. In a statement `then` and `else`, a statement from 0 of an `if`'s two blocks, and `alternative`, an alternative of an `alt` from 0 in textual order, which opens its block.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "port": { "$ref": "#/definitions/identifier" },
+        "timer": { "$ref": "#/definitions/identifier" },
+        "var": { "$ref": "#/definitions/identifier" },
+        "local": { "$ref": "#/definitions/identifier" },
+        "label": { "$ref": "#/definitions/identifier" },
+        "statement": { "$ref": "#/definitions/index" },
+        "then": { "$ref": "#/definitions/index" },
+        "else": { "$ref": "#/definitions/index" },
+        "alternative": { "$ref": "#/definitions/index" }
+      }
+    },
+    "claim": {
+      "description": "What a place states about the documents beyond the rule that wrote it, for the validator to compute again on its own. An `alt` (E7) states the atomic state it is in and the transition each alternative is, in textual order, which P3 orders. An alternative (E8) states the atomic state its `alt` is in, the transition it is, and the states its block exits and enters, each in the order the block does so: the exit and entry sets of that transition taken from that atomic state. The exits of the halt that follows the entry of a top-level `<final>` belong to E12 and are not among them.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "state", "alternatives"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "alt" },
+            "state": { "$ref": "#/definitions/construct" },
+            "alternatives": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/construct" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "state", "transition", "exited", "entered"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "branch" },
+            "state": { "$ref": "#/definitions/construct" },
+            "transition": { "$ref": "#/definitions/construct" },
+            "exited": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/construct" }
+            },
+            "entered": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/construct" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

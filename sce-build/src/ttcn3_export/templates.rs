@@ -20,6 +20,7 @@
 
 use serde::Serialize;
 
+use super::behaviour::Source;
 use super::names::{Declared, Namespace};
 use super::reach::{Reach, Reached};
 use super::types::{type_expr, Site, TypeExpr};
@@ -38,6 +39,8 @@ pub struct TemplateView {
     pub ty: TypeExpr,
     pub parameters: Vec<ParameterView>,
     pub matcher: MatcherView,
+    /// The template's document, which E2 translates whole.
+    pub source: Source,
 }
 
 /// A formal parameter: its name, its type, and whether it may be `omit`.
@@ -214,6 +217,7 @@ fn template_view(
         ty,
         parameters,
         matcher: matcher(&reading, &template.matcher, &root)?,
+        source: document.source("E2"),
     })
 }
 

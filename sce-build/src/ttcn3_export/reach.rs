@@ -21,6 +21,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use super::behaviour::Source;
 use super::names::{unit_name, Origin};
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::import_source::{type_scope, ImportSource};
@@ -63,6 +64,17 @@ impl Reached {
             kind: self.parsed.document.kind(),
             document: self.parsed.document.name().to_string(),
             label: self.label.clone(),
+            line: root_line(&self.parsed.document),
+        }
+    }
+
+    /// The document as the construct `rule` translates whole: its root,
+    /// `scxml`, on the row of its root element.
+    pub(super) fn source(&self, rule: &'static str) -> Source {
+        Source {
+            rule,
+            document: self.label.clone(),
+            node: "scxml".to_string(),
             line: root_line(&self.parsed.document),
         }
     }

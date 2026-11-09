@@ -12,6 +12,7 @@
 
 use serde::Serialize;
 
+use super::behaviour::Source;
 use super::names::{Declared, Namespace};
 use super::reach::Reach;
 use super::types::{type_expr, Site, TypeExpr};
@@ -24,6 +25,8 @@ use crate::forge::value_type::TypeOf;
 pub struct PortTypeView {
     pub name: String,
     pub messages: Vec<MessageView>,
+    /// The port type's document, which E3 translates whole.
+    pub source: Source,
 }
 
 /// One message of a port type: its direction (`in`, `out` or `inout`) and
@@ -74,6 +77,7 @@ pub(super) fn port_types(
         views.push(PortTypeView {
             name: document.name.clone(),
             messages,
+            source: document.source("E3"),
         });
     }
     Ok(views)

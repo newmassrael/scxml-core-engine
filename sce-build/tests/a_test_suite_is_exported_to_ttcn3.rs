@@ -7,7 +7,8 @@
 //! (`schemas/sce-ttcn3-types-manifest.v1.schema.json`), and the behaviour
 //! module: the port types (E3), the templates (E2), the module parameters,
 //! the component types and functions (E4 to E13), the test cases (E14) and
-//! the control part (E15).
+//! the control part (E15); and the correspondence witness of both modules
+//! (§9.4, `schemas/sce-ttcn3-witness.v1.schema.json`).
 //!
 //! The goldens are the export of the suites the profile's fixtures and the
 //! kind examples hold, and of `fixtures/ttcn3_export/orders_suite.scxml`,
@@ -374,13 +375,14 @@ fn an_export_is_the_same_bytes_every_time() {
         );
         assert_eq!(first.test_cases, second.test_cases, "{}", suite.display());
         assert_eq!(first.control, second.control, "{}", suite.display());
+        assert_eq!(first.witness, second.witness, "{}", suite.display());
     }
 }
 
-/// The files the export writes are the types module, its manifest and the
-/// behaviour module, each named by the suite.
+/// The files the export writes are the types module, its manifest, the
+/// behaviour module and the witness, each named by the suite.
 #[test]
-fn an_export_writes_its_two_modules_and_the_manifest() {
+fn an_export_writes_its_two_modules_the_manifest_and_the_witness() {
     let export = exported(&job_suite());
     assert_eq!(export.types_module_name(), "job_suite_Types");
     assert_eq!(
@@ -398,6 +400,7 @@ fn an_export_writes_its_two_modules_and_the_manifest() {
                 "job_suite.ttcn".to_string(),
                 export.behaviour_module.clone()
             ),
+            ("job_suite.witness.json".to_string(), export.witness.clone()),
         ]
     );
 }
@@ -1261,11 +1264,16 @@ fn wire_schema() -> serde_json::Value {
 
 /// Why `instance` is not a manifest the export writes; empty when it is one.
 fn wire_violations(instance: &serde_json::Value) -> Vec<String> {
-    let schema = wire_schema();
+    violations(&wire_schema(), instance)
+}
+
+/// Why `instance` is not an instance of the draft-07 `schema`; empty when it
+/// is one.
+fn violations(schema: &serde_json::Value, instance: &serde_json::Value) -> Vec<String> {
     let validator = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft7)
-        .compile(&schema)
-        .expect("the manifest's schema compiles");
+        .compile(schema)
+        .expect("the schema compiles");
     let outcome = validator.validate(instance);
     match outcome {
         Ok(()) => Vec::new(),
@@ -1448,6 +1456,448 @@ fn the_wire_schema_rejects_what_the_export_does_not_write() {
     for (what, instance) in changes {
         assert!(
             !wire_violations(&instance).is_empty(),
+            "the schema accepts {what}: {instance}"
+        );
+    }
+}
+
+// ── The witness ────────────────────────────────────────────────
+
+fn witness_schema() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../schemas/sce-ttcn3-witness.v1.schema.json"
+    ))
+    .expect("the witness's schema is JSON")
+}
+
+fn witness_of(export: &Ttcn3Export) -> serde_json::Value {
+    serde_json::from_str(&export.witness).expect("a witness is JSON")
+}
+
+fn entries(witness: &serde_json::Value) -> &Vec<serde_json::Value> {
+    witness["entries"].as_array().expect("entries")
+}
+
+/// One place of a witness: its module, its path, and the rule of its entry.
+struct Place {
+    module: String,
+    path: serde_json::Value,
+    rule: String,
+}
+
+/// Every place of `witness`, entry by entry.
+fn places(witness: &serde_json::Value) -> Vec<Place> {
+    entries(witness)
+        .iter()
+        .flat_map(|entry| {
+            entry["produced"]
+                .as_array()
+                .expect("produced")
+                .iter()
+                .map(move |location| Place {
+                    module: location["module"].as_str().expect("a module").to_string(),
+                    path: location["path"].clone(),
+                    rule: entry["rule"].as_str().expect("a rule").to_string(),
+                })
+        })
+        .collect()
+}
+
+/// The statements `body` holds, every statement inside them, and each
+/// alternative of an `alt`.
+fn statements_in(body: &[Statement]) -> usize {
+    body.iter()
+        .map(|statement| {
+            1 + match statement {
+                Statement::If {
+                    then, otherwise, ..
+                } => statements_in(then) + statements_in(otherwise),
+                Statement::Alt { branches, .. } => branches
+                    .iter()
+                    .map(|branch| 1 + statements_in(&branch.block))
+                    .sum::<usize>(),
+                _ => 0,
+            }
+        })
+        .sum()
+}
+
+/// A definition of a module as the witness names it: the module, the kind
+/// and the name of the definition, and the rule that wrote it.
+type Named = (String, String, String, String);
+
+/// Every witness the export writes is one the wire schema states, of the
+/// suite and the two modules beside it.
+#[test]
+fn every_witness_the_export_writes_validates_against_the_wire_schema() {
+    let schema = witness_schema();
+    for suite in suites() {
+        let export = exported(&suite);
+        let witness = witness_of(&export);
+        assert_eq!(
+            violations(&schema, &witness),
+            Vec::<String>::new(),
+            "{}",
+            suite.display()
+        );
+        assert_eq!(witness["schema"], "sce-ttcn3-witness.v1");
+        assert_eq!(witness["suite"], export.suite.as_str());
+        assert_eq!(
+            witness["modules"],
+            serde_json::json!([export.types_module_name(), export.suite])
+        );
+    }
+}
+
+/// Every definition, member of a component type and statement the export
+/// writes is one place of the witness, counted from the model the modules
+/// are written from, and no place is named twice; each definition of the two
+/// modules is named, by the rule of its kind (docs/SCE_TEST_PROFILE.md §9.4).
+#[test]
+fn every_definition_and_statement_has_one_place_in_the_witness() {
+    for suite in suites() {
+        let export = exported(&suite);
+        let manifest = manifest_of(&export);
+        let witness = witness_of(&export);
+        let found = places(&witness);
+
+        let types = manifest["types"].as_array().expect("types");
+        let codec = manifest["codec"].as_array().expect("codec");
+        let components: usize = export
+            .behaviour
+            .component_types
+            .iter()
+            .chain(&export.execution.system_types)
+            .map(|c| 1 + c.ports.len() + c.timers.len() + c.variables.len())
+            .sum();
+        let functions: usize = export
+            .behaviour
+            .functions
+            .iter()
+            .map(|f| 1 + f.locals.len() + statements_in(&f.body))
+            .sum();
+        let expected = types.len()
+            + 2 * codec.len()
+            + export.port_types.len()
+            + export.templates.len()
+            + export.module_parameters.len()
+            + export.feature_parameters.len()
+            + components
+            + functions
+            + export.test_cases.len()
+            + 1
+            + export.execution.control.executes.len();
+        assert_eq!(found.len(), expected, "{}", suite.display());
+
+        let mut unique: Vec<(String, String)> = found
+            .iter()
+            .map(|place| (place.module.clone(), place.path.to_string()))
+            .collect();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            found.len(),
+            "{}: a place is named twice",
+            suite.display()
+        );
+
+        let mut definitions: Vec<Named> = found
+            .iter()
+            .filter(|place| place.path.as_array().is_some_and(|p| p.len() == 1))
+            .map(|place| {
+                let (kind, name) = place.path[0]
+                    .as_object()
+                    .and_then(|segment| segment.iter().next())
+                    .expect("a segment of one member");
+                (
+                    place.module.clone(),
+                    kind.clone(),
+                    name.as_str().expect("a name").to_string(),
+                    place.rule.clone(),
+                )
+            })
+            .collect();
+        definitions.sort();
+        let types_module = export.types_module_name();
+        let module = export.suite.clone();
+        let named = |module: &str, kind: &str, name: &str, rule: &str| -> Named {
+            (
+                module.to_string(),
+                kind.to_string(),
+                name.to_string(),
+                rule.to_string(),
+            )
+        };
+        let mut stated: Vec<Named> = Vec::new();
+        for ty in types {
+            stated.push(named(
+                &types_module,
+                "type",
+                ty["name"].as_str().expect("a name"),
+                "E1",
+            ));
+        }
+        for function in codec {
+            for side in ["encode", "decode"] {
+                stated.push(named(
+                    &types_module,
+                    "external-function",
+                    function[side].as_str().expect("a name"),
+                    "E1",
+                ));
+            }
+        }
+        let groups: [(&[Definition], &str, &str); 8] = [
+            (&export.port_types, "port-type", "E3"),
+            (&export.templates, "template", "E2"),
+            (&export.module_parameters, "modulepar", "E15"),
+            (&export.feature_parameters, "modulepar", "E15"),
+            (&export.component_types, "component-type", "E4"),
+            (&export.system_types, "component-type", "E14"),
+            (&export.functions, "function", "E5"),
+            (&export.test_cases, "testcase", "E14"),
+        ];
+        for (group, kind, rule) in groups {
+            for definition in group {
+                stated.push(named(&module, kind, &definition.name, rule));
+            }
+        }
+        stated.push(named(&module, "control", &module, "E15"));
+        stated.sort();
+        assert_eq!(definitions, stated, "{}", suite.display());
+    }
+}
+
+/// Every construct and rule has one entry, in the order of the document,
+/// the row, the node and the rule, and every document is named relative to
+/// the suite's directory, though the suite is read by an absolute path.
+#[test]
+fn every_construct_and_rule_has_one_entry() {
+    type Key = (String, Option<u64>, String, String);
+    for suite in suites() {
+        let witness = witness_of(&exported(&suite));
+        let keys: Vec<Key> = entries(&witness)
+            .iter()
+            .map(|entry| {
+                let construct = &entry["construct"];
+                (
+                    construct["document"]
+                        .as_str()
+                        .expect("a document")
+                        .to_string(),
+                    construct["line"].as_u64(),
+                    construct["node"].as_str().expect("a node").to_string(),
+                    entry["rule"].as_str().expect("a rule").to_string(),
+                )
+            })
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(keys, sorted, "{}", suite.display());
+        for (document, ..) in &keys {
+            assert!(
+                !Path::new(document).is_absolute(),
+                "{}: {document} is named by an absolute path",
+                suite.display()
+            );
+        }
+    }
+    let witness = witness_of(&exported(&job_suite()));
+    let documents: Vec<&str> = entries(&witness)
+        .iter()
+        .map(|entry| entry["construct"]["document"].as_str().expect("a document"))
+        .collect();
+    assert!(documents.contains(&"job_suite.scxml"), "{documents:?}");
+    assert!(documents.contains(&"job_tester.scxml"), "{documents:?}");
+}
+
+/// The witness of the job tester's `requesting` state, as the export writes
+/// it: the label (E6); the alt (E7), which claims the transitions of its two
+/// alternatives in textual order; and the receive branch (E8), whose entry
+/// holds the alternative, which claims the exit of `requesting` and the
+/// entry of `settling`, and the `goto` that ends its block. The timeout
+/// branch enters the `<final>` `failed`, which ends the component (E12).
+#[test]
+fn the_witness_states_the_alt_of_the_job_testers_requesting_state() {
+    let witness = witness_of(&exported(&job_suite()));
+    let entry = |node: &str, rule: &str| {
+        entries(&witness)
+            .iter()
+            .find(|e| e["construct"]["node"] == node && e["rule"] == rule)
+            .cloned()
+            .unwrap_or_else(|| panic!("no entry ({node}, {rule})"))
+    };
+    let tester = |node: &str, line: u32| serde_json::json!({"document": "job_tester.scxml", "node": node, "line": line});
+    let function = serde_json::json!({"function": "f_job_tester_in_tester_and_helper"});
+    let requesting = tester("state 'requesting'", 23);
+    let receive = tester("state 'requesting' / transition 1", 29);
+    let timeout = tester("state 'requesting' / transition 2", 35);
+
+    assert_eq!(
+        entry("state 'requesting'", "E6"),
+        serde_json::json!({
+            "construct": requesting,
+            "rule": "E6",
+            "produced": [
+                {"module": "job_suite", "path": [function, {"label": "requesting"}]}
+            ]
+        })
+    );
+    assert_eq!(
+        entry("state 'requesting'", "E7"),
+        serde_json::json!({
+            "construct": requesting,
+            "rule": "E7",
+            "produced": [{
+                "module": "job_suite",
+                "path": [function, {"label": "requesting"}, {"statement": 1}],
+                "claim": {
+                    "kind": "alt",
+                    "state": requesting,
+                    "alternatives": [receive, timeout]
+                }
+            }]
+        })
+    );
+    assert_eq!(
+        entry("state 'requesting' / transition 1", "E8"),
+        serde_json::json!({
+            "construct": receive,
+            "rule": "E8",
+            "produced": [
+                {
+                    "module": "job_suite",
+                    "path": [
+                        function, {"label": "requesting"}, {"statement": 1}, {"alternative": 0}
+                    ],
+                    "claim": {
+                        "kind": "branch",
+                        "state": requesting,
+                        "transition": receive,
+                        "exited": [requesting],
+                        "entered": [tester("state 'settling'", 39)]
+                    }
+                },
+                {
+                    "module": "job_suite",
+                    "path": [
+                        function, {"label": "requesting"}, {"statement": 1}, {"alternative": 0},
+                        {"statement": 5}
+                    ]
+                }
+            ]
+        })
+    );
+    let timed_out = entry("state 'requesting' / transition 2", "E8");
+    assert_eq!(
+        timed_out["produced"][0]["claim"]["entered"],
+        serde_json::json!([tester("final 'failed'", 48)])
+    );
+    assert_eq!(
+        entry("final 'failed'", "E12")["produced"],
+        serde_json::json!([{
+            "module": "job_suite",
+            "path": [
+                function, {"label": "requesting"}, {"statement": 1}, {"alternative": 1},
+                {"statement": 2}
+            ]
+        }])
+    );
+}
+
+/// The wire schema refuses a witness one member away from one the export
+/// wrote, for each member a validator reads.
+#[test]
+fn the_witness_schema_rejects_what_the_export_does_not_write() {
+    let schema = witness_schema();
+    let valid = witness_of(&exported(&job_suite()));
+    assert_eq!(violations(&schema, &valid), Vec::<String>::new());
+    let position = |rule: &str| {
+        entries(&valid)
+            .iter()
+            .position(|e| e["rule"] == rule && e["produced"][0].get("claim").is_some())
+            .unwrap_or_else(|| panic!("no entry of {rule} that claims"))
+    };
+    let alt = position("E7");
+    let branch = position("E8");
+    let changed = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut instance = valid.clone();
+        change(&mut instance);
+        instance
+    };
+    let changes: Vec<(&str, serde_json::Value)> = vec![
+        (
+            "another shape",
+            changed(&|w| w["schema"] = serde_json::json!("sce-ttcn3-witness.v2")),
+        ),
+        (
+            "one module",
+            changed(&|w| w["modules"] = serde_json::json!(["job_suite"])),
+        ),
+        (
+            "a rule the profile does not have",
+            changed(&|w| w["entries"][0]["rule"] = serde_json::json!("E16")),
+        ),
+        (
+            "an entry that produced nothing",
+            changed(&|w| w["entries"][0]["produced"] = serde_json::json!([])),
+        ),
+        (
+            "a construct without its row",
+            changed(&|w| {
+                w["entries"][0]["construct"]
+                    .as_object_mut()
+                    .expect("a construct")
+                    .remove("line");
+            }),
+        ),
+        (
+            "a document named by an absolute path",
+            changed(&|w| {
+                w["entries"][0]["construct"]["document"] =
+                    serde_json::json!("/work/completes_in_time.scxml")
+            }),
+        ),
+        (
+            "a path that opens with a statement",
+            changed(&|w| {
+                w["entries"][alt]["produced"][0]["path"][0] = serde_json::json!({"statement": 0})
+            }),
+        ),
+        (
+            "a segment of two members",
+            changed(&|w| {
+                w["entries"][alt]["produced"][0]["path"][1] =
+                    serde_json::json!({"label": "requesting", "statement": 1})
+            }),
+        ),
+        (
+            "a position below 0",
+            changed(&|w| {
+                w["entries"][alt]["produced"][0]["path"][2] = serde_json::json!({"statement": -1})
+            }),
+        ),
+        (
+            "an alt's claim under the kind of an alternative's",
+            changed(&|w| {
+                w["entries"][alt]["produced"][0]["claim"]["kind"] = serde_json::json!("branch")
+            }),
+        ),
+        (
+            "an alternative's claim without the states it enters",
+            changed(&|w| {
+                w["entries"][branch]["produced"][0]["claim"]
+                    .as_object_mut()
+                    .expect("a claim")
+                    .remove("entered");
+            }),
+        ),
+    ];
+    for (what, instance) in changes {
+        assert!(
+            !violations(&schema, &instance).is_empty(),
             "the schema accepts {what}: {instance}"
         );
     }

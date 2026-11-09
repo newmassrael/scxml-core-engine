@@ -3722,8 +3722,9 @@ enum Commands {
     },
     /// Export a test suite to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
     /// §9.5): the suite's types module, `<suite>_Types.ttcn`, the structural
-    /// manifest of it, `<suite>_Types.manifest.json`, and the behaviour
-    /// module, `<suite>.ttcn`, written to `--output-dir`.
+    /// manifest of it, `<suite>_Types.manifest.json`, the behaviour module,
+    /// `<suite>.ttcn`, and the correspondence witness of the two modules,
+    /// `<suite>.witness.json` (§9.4), written to `--output-dir`.
     ///
     /// `<suite>` is the unit name of the suite's document, its file's stem in
     /// lower snake case. The suite and every document it reaches are first
@@ -14672,10 +14673,11 @@ const PAYLOAD_SCHEMA_READS: &str = "payload-schema reads an event schema \
 // ── Subcommand: export-ttcn3 ───────────────────────────────────
 //
 // A test suite exported to TTCN-3 (docs/SCE_TEST_PROFILE.md §9.5): the types
-// module, its manifest and the behaviour module, computed whole by the
-// library before any file is written, so a refused suite leaves no file
-// behind. Each module carries the §synth-6.2.6 header over the suite's source
-// set, as every generated source does; the manifest, JSON, carries none.
+// module, its manifest, the behaviour module and the witness of the two,
+// computed whole by the library before any file is written, so a refused
+// suite leaves no file behind. Each module carries the §synth-6.2.6 header
+// over the suite's source set, as every generated source does; the manifest
+// and the witness, JSON, carry none.
 
 fn cmd_export_ttcn3(
     scxml_path: &str,

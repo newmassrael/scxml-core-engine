@@ -217,12 +217,7 @@ pub(super) fn execution(
             system: configuration.name.clone(),
             maps,
             function: function_name(configuration.mtc, configuration),
-            source: Source {
-                rule: "E14",
-                document: e.case.label.clone(),
-                node: "scxml".to_string(),
-                line: e.case.origin().line,
-            },
+            source: e.case.source("E14"),
         });
     }
 
@@ -362,12 +357,7 @@ fn system_type(
         ports,
         timers: Vec::new(),
         variables: Vec::new(),
-        source: Source {
-            rule: "E14",
-            document: document.label.clone(),
-            node: "scxml".to_string(),
-            line: document.origin().line,
-        },
+        source: document.source("E14"),
     })
 }
 

@@ -23,7 +23,11 @@
 //!   the suite declares and those of its features, each test component's type
 //!   and behaviour (E4 to E13, [`behaviour`]), the system component type of
 //!   each configuration a test case runs in, the test cases (E14) and the
-//!   control part (E15, [`execution`]).
+//!   control part (E15, [`execution`]);
+//! - `S.witness.json`, the correspondence witness of §9.4 ([`witness`]): the
+//!   model both modules are written from, serialized, relating each construct
+//!   of the documents and the rule that translated it to every place of the
+//!   modules that rule wrote for it.
 //!
 //! Every name the export writes is a name of the documents, written as it is
 //! written ([`names`]). Nothing is written before the whole export is
@@ -42,6 +46,7 @@ mod reach;
 mod render;
 pub mod templates;
 pub mod types;
+pub mod witness;
 
 use std::path::{Path, PathBuf};
 
@@ -65,6 +70,9 @@ pub struct Ttcn3Export {
     /// The behaviour module, `<suite>.ttcn`: every definition below, in the
     /// order docs/SCE_TEST_PROFILE.md §9.5 gives.
     pub behaviour_module: String,
+    /// The correspondence witness of both modules, `<suite>.witness.json`
+    /// (docs/SCE_TEST_PROFILE.md §9.4).
+    pub witness: String,
     /// Each port type the suite reaches (E3), as the behaviour module holds
     /// it, in the order of their names.
     pub port_types: Vec<Definition>,
@@ -118,8 +126,8 @@ impl Ttcn3Export {
     }
 
     /// The files the export writes, each its name and its text, in the order
-    /// it writes them: the types module, its manifest and the behaviour
-    /// module.
+    /// it writes them: the types module, its manifest, the behaviour module
+    /// and the witness.
     pub fn files(&self) -> Vec<(String, String)> {
         let module = self.types_module_name();
         vec![
@@ -129,6 +137,7 @@ impl Ttcn3Export {
                 format!("{}.ttcn", self.suite),
                 self.behaviour_module.clone(),
             ),
+            (format!("{}.witness.json", self.suite), self.witness.clone()),
         ]
     }
 }
@@ -331,6 +340,19 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     .map_err(in_suite)?;
     let control =
         render::render(&env, render::CONTROL, "control", &execution.control).map_err(in_suite)?;
+    let witness = witness::witness_text(&witness::witness(&witness::Parts {
+        suite: &name,
+        base: dir,
+        types: &module,
+        port_types: &port_type_views,
+        templates: &template_views,
+        module_parameters: &parameter_views,
+        behaviour: &behaviour,
+        execution: &execution,
+    }))
+    .map_err(|e| {
+        in_suite(GenerateError::TemplateRender(format!("the witness of {name}: {e}")).into())
+    })?;
     let behaviour_module = render::render(
         &env,
         render::BEHAVIOUR_MODULE,
@@ -357,6 +379,7 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
         types_module,
         manifest,
         behaviour_module,
+        witness,
         port_types,
         templates,
         module_parameters,

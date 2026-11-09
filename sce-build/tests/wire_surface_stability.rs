@@ -55,6 +55,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-transition-table.v1.schema.json",
     "schemas/sce-payload-schema.v1.schema.json",
     "schemas/sce-ttcn3-types-manifest.v1.schema.json",
+    "schemas/sce-ttcn3-witness.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -276,6 +277,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_manifest_the_export_writes_validates_against_the_wire_schema",
         "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
     ),
+    (
+        "schemas/sce-ttcn3-witness.v1.schema.json",
+        "every_witness_the_export_writes_validates_against_the_wire_schema",
+        "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -374,6 +380,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
     (
         "schemas/sce-ttcn3-types-manifest.v1.schema.json",
         "the_wire_schema_rejects_what_the_export_does_not_write",
+        "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
+    ),
+    (
+        "schemas/sce-ttcn3-witness.v1.schema.json",
+        "the_witness_schema_rejects_what_the_export_does_not_write",
         "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
     ),
 ];
@@ -495,6 +506,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          structure of the module and nothing of the run; the module's header \
          names its inputs.",
         "TTCN-3 types manifest deliberately does",
+    ),
+    (
+        "schemas/sce-ttcn3-witness.v1.schema.json",
+        "written beside the two modules it relates the documents to, as part \
+         of an export a consumer commits and regenerates expecting no diff: a \
+         commit stamp would change it on every commit with no construct \
+         changed. It states the correspondence and nothing of the run; the \
+         modules' headers name their inputs.",
+        "TTCN-3 correspondence witness deliberately does",
     ),
 ];
 

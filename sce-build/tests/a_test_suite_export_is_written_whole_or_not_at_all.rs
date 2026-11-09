@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-//! `sce-codegen export-ttcn3` writes a suite's types module, its manifest and
-//! its behaviour module, the text the library exports, each module under the
-//! header every generated source carries, or, when the suite or the document
-//! is refused, no file at all (docs/SCE_TEST_PROFILE.md §9.5).
+//! `sce-codegen export-ttcn3` writes a suite's types module, its manifest,
+//! its behaviour module and the correspondence witness of the two modules,
+//! the text the library exports, each module under the header every
+//! generated source carries, or, when the suite or the document is refused,
+//! no file at all (docs/SCE_TEST_PROFILE.md §9.4, §9.5).
 
 mod common;
 
@@ -70,8 +71,9 @@ fn below_the_header(path: &Path) -> String {
     lines.next().unwrap_or_default().to_string()
 }
 
-/// The files are the library's export: each module after its two header
-/// lines, and the manifest as it is, each ending in a newline.
+/// The files are the library's export, all four: each module after its two
+/// header lines, and the manifest and the witness as they are, each ending
+/// in a newline.
 #[test]
 fn a_suite_is_written_as_the_library_exports_it() {
     let out = tempfile::tempdir().expect("a scratch directory");
@@ -85,6 +87,7 @@ fn a_suite_is_written_as_the_library_exports_it() {
         listing(out.path()),
         [
             "job_suite.ttcn",
+            "job_suite.witness.json",
             "job_suite_Types.manifest.json",
             "job_suite_Types.ttcn"
         ]
@@ -103,6 +106,10 @@ fn a_suite_is_written_as_the_library_exports_it() {
     assert_eq!(
         read(&out.path().join("job_suite_Types.manifest.json")),
         format!("{}\n", library.manifest)
+    );
+    assert_eq!(
+        read(&out.path().join("job_suite.witness.json")),
+        format!("{}\n", library.witness)
     );
 }
 

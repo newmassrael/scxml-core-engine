@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
+use super::behaviour::Source;
 use super::names::{unit_name, written, Declared, Namespace, Origin};
 use super::reach::{Reach, Reached};
 use crate::forge::error::{ForgeError, GenerateError, Located, SourceLocation};
@@ -69,6 +70,10 @@ pub enum TypeDef {
         name: String,
         min: String,
         max: String,
+        /// The suite, whose types module states every integer type of the
+        /// type grammar (E1). Not in the manifest, which states structure.
+        #[serde(skip)]
+        source: Source,
     },
     /// `type enumerated <name> { <variant>(<value>), … }`: an enum, its
     /// variants in declared order with their declared numbers.
@@ -76,6 +81,9 @@ pub enum TypeDef {
     Enumerated {
         name: String,
         variants: Vec<Variant>,
+        /// The enum's document (E1).
+        #[serde(skip)]
+        source: Source,
     },
     /// `type record <name> { … }`: an event schema, its fields in declared
     /// order, and the event its messages travel under.
@@ -84,6 +92,9 @@ pub enum TypeDef {
         name: String,
         event: String,
         fields: Vec<Field>,
+        /// The event schema's document (E1).
+        #[serde(skip)]
+        source: Source,
     },
     /// `type union <name> { … }`: a union, one alternative per case in its
     /// tag enum's order, named by its variant.
@@ -91,7 +102,32 @@ pub enum TypeDef {
     Union {
         name: String,
         alternatives: Vec<Alternative>,
+        /// The union's document (E1).
+        #[serde(skip)]
+        source: Source,
     },
+}
+
+impl TypeDef {
+    /// The definition's name.
+    pub fn name(&self) -> &str {
+        match self {
+            TypeDef::Integer { name, .. }
+            | TypeDef::Enumerated { name, .. }
+            | TypeDef::Record { name, .. }
+            | TypeDef::Union { name, .. } => name,
+        }
+    }
+
+    /// The construct the definition was translated from, and its rule, E1.
+    pub fn source(&self) -> &Source {
+        match self {
+            TypeDef::Integer { source, .. }
+            | TypeDef::Enumerated { source, .. }
+            | TypeDef::Record { source, .. }
+            | TypeDef::Union { source, .. } => source,
+        }
+    }
 }
 
 /// A variant of an enumerated type: its name and its number, the number as
@@ -160,6 +196,11 @@ pub struct Codec {
     /// `external function <decode>(inout octetstring octets, out <type> msg)
     /// return integer`.
     pub decode: String,
+    /// The type's document, whose E1 form the codec is part of, or the
+    /// suite where no event schema of that name is reached. Not in the
+    /// manifest.
+    #[serde(skip)]
+    pub source: Source,
 }
 
 /// Where a type is read, as a refusal of it says: the document, and what in
@@ -265,6 +306,14 @@ pub(super) fn types_module(
     names: &mut Namespace,
     at: &Origin,
 ) -> Result<TypesModule, Located<ForgeError>> {
+    // The integer types translate no document's construct: the types module
+    // of every suite states them (§6.3), so the witness names the suite.
+    let suite_source = Source {
+        rule: "E1",
+        document: at.label.clone(),
+        node: "scxml".to_string(),
+        line: at.line,
+    };
     let mut types = Vec::new();
     for scalar in &INTEGERS {
         let name = scalar.as_attr();
@@ -276,6 +325,7 @@ pub(super) fn types_module(
             name,
             min: min.to_string(),
             max: max.to_string(),
+            source: suite_source.clone(),
         });
     }
     for document in reach.sorted() {
@@ -286,7 +336,7 @@ pub(super) fn types_module(
             _ => {}
         }
     }
-    let codec = codec(reach, names, at)?;
+    let codec = codec(reach, names, at, &suite_source)?;
     Ok(TypesModule {
         v: MANIFEST_VERSION,
         suite: suite.to_string(),
@@ -333,6 +383,7 @@ fn enumerated(
     Ok(TypeDef::Enumerated {
         name: document.name.clone(),
         variants,
+        source: document.source("E1"),
     })
 }
 
@@ -365,6 +416,7 @@ fn record(
         name: document.name.clone(),
         event: schema.event_name.clone(),
         fields,
+        source: document.source("E1"),
     })
 }
 
@@ -415,15 +467,18 @@ fn union(
     Ok(TypeDef::Union {
         name: document.name.clone(),
         alternatives,
+        source: document.source("E1"),
     })
 }
 
 /// The codec functions of every type a port type of the suite carries, in
-/// the order of the types' names, each placed at the type's document.
+/// the order of the types' names, each placed at the type's document, or at
+/// the suite, `at`, translated by `suite_source`, where none is reached.
 fn codec(
     reach: &Reach,
     names: &mut Namespace,
     at: &Origin,
+    suite_source: &Source,
 ) -> Result<Vec<Codec>, Located<ForgeError>> {
     for parameter in CODEC_PARAMETERS {
         names.nested(parameter, Declared::made("the codec parameter", at.clone()))?;
@@ -455,14 +510,11 @@ fn codec(
     }
     let mut codec = Vec::new();
     for ty in messages {
-        let origin = reach
-            .sorted()
-            .into_iter()
-            .find(|document| {
-                document.name == ty
-                    && matches!(document.parsed.document, ForgeDocument::EventSchema(_))
-            })
-            .map_or_else(|| at.clone(), Reached::origin);
+        let record = reach.sorted().into_iter().find(|document| {
+            document.name == ty && matches!(document.parsed.document, ForgeDocument::EventSchema(_))
+        });
+        let origin = record.map_or_else(|| at.clone(), Reached::origin);
+        let source = record.map_or_else(|| suite_source.clone(), |document| document.source("E1"));
         let encode = format!("enc_{ty}");
         let decode = format!("dec_{ty}");
         names.definition(
@@ -470,7 +522,12 @@ fn codec(
             Declared::made("the encoding function", origin.clone()),
         )?;
         names.definition(&decode, Declared::made("the decoding function", origin))?;
-        codec.push(Codec { ty, encode, decode });
+        codec.push(Codec {
+            ty,
+            encode,
+            decode,
+            source,
+        });
     }
     Ok(codec)
 }
