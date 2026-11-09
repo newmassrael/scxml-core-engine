@@ -1,7 +1,8 @@
 # SCE test profile — operational semantics
 
-- Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), and the
-  structure of the native runtime of step 3 (§12).
+- Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), the
+  structure of the native runtime of step 3 (§12), and the structure of the exporter of step 4, with its types
+  module, its manifest and its name contract (§9.5).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -341,14 +342,14 @@ module (ADR 0091 C2) as:
 
 | SCE type | TTCN-3 type | Note |
 |---|---|---|
-| `intN`, `uintN` | `integer (min .. max)` of the width | |
+| `intN`, `uintN` | the type `intN` or `uintN` of the types module, `type integer uint8 (0 .. 255)` and so on | its range is the width's; it is named because TTCN-3 writes no range on the element of a `record of` in place (§9.5) |
 | `bool` | `boolean` | |
-| `enum:X` | `enumerated` with the declared names, in declared order | |
+| `enum:X` | `enumerated` with the declared names, in declared order, each with its declared number | an enum of an open set has no form (§9.5) |
 | `string[N]` | `universal charstring` | SCE bounds a string by UTF-8 bytes; -1 length restrictions count characters. The bound is held by the codec and stated in the types module as a comment, not as a length restriction |
 | `optional<T>` | an `optional` field of type T | |
 | `bytes[N]` | `octetstring` | the bound is stated as for `string[N]`; for octets the two counts agree |
 | `record:X` | the `record` type of the event schema `X` | |
-| `list<T>[B]` | `record length (0 .. B) of T` | |
+| `list<T>[M..B]` | `record length (M .. B) of T` | M is 0 where the type writes no lower count; a list of `optional<T>` has no form, since the elements of a `record of` are never omitted |
 | `union:X` | `union` with one alternative per case of `X`, named by its variant; a case that holds no record is an empty `record {}` | the tag is the alternative chosen, as ADR 0092 §1 makes it |
 | `float32`, `float64` | none | not in the profile (§8.1) |
 | an `event-schema` | `record` with one field per declared field, in declared order | |
@@ -480,6 +481,102 @@ that:
 
 Each check is local to one entry or one state, so it is decidable, and the validator does not compare the runs of
 two programs.
+
+### 9.5 The exporter
+
+The export is the translation `T` of §9.1, written by `sce-build/src/ttcn3_export` and run by
+`sce-codegen export-ttcn3`. It is not a backend: it is in no `Language`, it holds no W3C obligation, and it reads
+the documents of the profile alone (ADR 0091 §8).
+
+- **Input.** One `test-suite` document and every document it reaches through the imports of its test cases, their
+  configurations, the components those name, and the port types, templates, event schemas, enums and unions below
+  them. A feature model, and a document of any other kind a component imports, is not read: no rule of §9.2
+  translates one. Every document read is first held to the rules of its kind that no backend decides, the ones
+  `check` holds it to before a language is asked, so the export translates no document `check` refuses.
+- **Output.** For a suite whose unit name is `S`, its file's stem in lower snake case as every unit of a document
+  is named: `S_Types.ttcn`, the types module (E1; ADR 0091 C2), and `S_Types.manifest.json`, its structural
+  manifest. The behaviour module `S.ttcn` holds the port types (E3), the templates (E2) and the definitions of E4 to
+  E15. The export computes the port types and the templates on every run and refuses a suite whose port types or
+  templates it cannot write, but it writes no part of that module, nor the witness of §9.4, until every rule of the
+  module is written. Nothing is written before the whole export is computed, so a refused suite leaves no file. The
+  module carries the header of every generated source (`source-hash`); the manifest carries none.
+- **Text.** The TTCN-3 is written by the templates under `tools/codegen/templates/ttcn3/`, through the door every
+  template passes, read as TTCN-3: a value written into a comment is encoded for it, and a text value is written as
+  a character string, a `"` twice and each character outside printable ASCII concatenated as its quadruple
+  `char(g, p, r, c)` (-1 §6.1.1), so a module is ASCII whatever its values hold. The output is a function of the
+  documents and the generator (`docs/SCE_CODEGEN_DETERMINISM.md`).
+
+**The name contract.** Every name the export writes is a name of the documents, written as it is written: a
+document by its unit name; a field, a variant, a union's alternative and a formal parameter by its own. A name the
+export cannot write so is refused (`test-profile/export-name`) and never renamed, so that a consumer's own types
+module, the test log and the witness need no mapping between two names of one thing. A name is refused when:
+
+- it is not a TTCN-3 identifier, an ASCII letter followed by ASCII letters, digits and underscores (-1 Annex A);
+- it is a word the export reserves: the keywords of TTCN-3, those of its real-time and object-oriented packages,
+  and the names of its predefined functions (`ttcn3_export::names::RESERVED`). The list is wider than one tool
+  needs on purpose: a refused name is renamed in its document once, where a reserved name written is a module that
+  does not compile;
+- it is one identifier with another name of a scope that sees both (-1 §5.2.2). The definitions of the two
+  modules are one scope, since the behaviour module imports the types module whole; an enumerated value may repeat
+  among enumerated types and is no other name; a formal parameter may repeat among definitions and is no definition
+  and no enumerated value. The names the export makes are in the same scopes: the eight integer types, the modules
+  `S` and `S_Types`, the codec functions and their parameters `msg` and `octets`. Where a made name and a written
+  one collide, the written one is refused.
+
+**Types (E1).** The types module holds, in this order:
+
+- the integer types of the type grammar, each under its own name, from `type integer uint8 (0 .. 255)` to
+  `type integer int64 (-9223372036854775808 .. 9223372036854775807)`;
+- each enum, event schema and union the suite reaches, in the order of their names: an enum as
+  `type enumerated E { v(n), … }`, its variants in declared order with their declared numbers; an event schema as
+  `type record R { … }`, its fields in declared order, an `optional<T>` field `optional`, a text's and a byte
+  string's bound in bytes stated as a comment (§6.3), a list `record length (m .. n) of T`; a union as
+  `type union U { … }`, one alternative per case in its tag enum's order, named by its variant, the empty case
+  `record {}`;
+- for each type a port of the suite carries, in the order of the types' names, its codec:
+  `external function enc_R(in R msg) return octetstring;` and
+  `external function dec_R(inout octetstring octets, out R msg) return integer;`. The export declares them and does
+  not implement them (ADR 0091 C2, answer 1). `dec_R` reports as -1's `decvalue` does: 0 when it decoded a message
+  and took its octets from the front of `octets`, 1 when it could not, 2 when the octets end before the message
+  does.
+
+An enum of an open set (`sce:strict-variants="false"`), whose values an `enumerated` cannot hold, a float, which the
+profile leaves out (§8.1), and a list of values that may be absent are refused by name
+(`generate/unsupported-feature`).
+
+**Templates (E2).** Each template is `template T name(parameters) := body;`, in the order of the templates' names.
+Its type and each value parameter's are named as the types module names them, and a parameter of `optional<T>` is
+`template (omit) T p` (-1 §15.8), a value or `omit`. A template or a parameter of a list type is refused by name:
+TTCN-3 declares a template and a parameter by a type's name, and a list of the documents has none. Each mechanism
+of §6.1 is written as -1 Annex B.1 writes it:
+
+| Matcher | TTCN-3 |
+|---|---|
+| `specific` | the value: an integer's digits, `true` or `false`, the variant's name, a text as a character string, a byte string `'…'O` in upper-case hex; a formal parameter by its name |
+| `record-match` | `{ f := m, … }` in the record's field order; at the root of a template, a field to a line |
+| `list-match` | `{ m, … }` |
+| `union-match` | `{ v := m }`, and `{ v := {} }` for a case that holds no record |
+| `value-list` | `(m, …)` |
+| `complement` | `complement(m, …)` |
+| `any-value` | `?` |
+| `any-value-or-none` | `*` |
+| `value-range` | `(lower .. upper)`, a bound not written `-infinity` or `infinity` |
+| `omit` | `omit` |
+| `template-ref` | the template's name, with its arguments `(p, …)` where it binds any |
+| `length-min`, `length-max` | `length(m .. n)` after the matcher, 0 for a lower count not written and `infinity` for an upper |
+| `ifpresent` | `ifpresent`, after the length |
+
+**Port types (E3).** Each port type is `type port P message { d T; … }`, each message in document order with its
+direction, `in`, `out` or `inout`, so its `in` and `out` lists are stated explicitly, as Eclipse Titan requires
+(ADR 0091 answer 1).
+
+**The manifest.** `S_Types.manifest.json` is the model the types module is written from, serialized
+(`schemas/sce-ttcn3-types-manifest.v1.schema.json`, `pre-release`, a row of `SCE_WIRE_CONTRACTS.md`): every
+definition by its name, its kind and its structure, and the codec functions. A consumer that replaces the types
+module with one written apart from SCE, with a codec of its own, holds that module to it: the same names and kinds,
+the same fields in the same order with the same optionality, the same bounds, lengths, variants, numbers and
+alternatives, the same functions. The validator of ADR 0091 answer 12 is a crate of its own that does not depend on
+the exporter, and reads the manifest as such a consumer does.
 
 ## 10. What the conformance lane requires of the TTCN-3 tool
 

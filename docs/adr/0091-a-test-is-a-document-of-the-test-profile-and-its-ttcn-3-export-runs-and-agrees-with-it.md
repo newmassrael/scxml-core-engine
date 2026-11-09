@@ -36,6 +36,11 @@
   where TTCN-3's control part writes it. Module parameters are declared by the suite (§2). The type grammar the
   templates match now includes the lists of ADR 0086 and the unions of ADR 0092; `float32` and `float64` are left out
   of the profile until a rule matches IEEE 754 values against -1's `float`.
+
+  Amended 2026-11-09 when the exporter's types module and manifest were written (`docs/SCE_TEST_PROFILE.md` §9.5,
+  order of work step 4). C2's stable name contract is identity: every name the export writes is the documents' own,
+  and one TTCN-3 cannot take is refused (`test-profile/export-name`), never renamed. The external codec functions
+  have one stated form, and the manifest is a wire surface of its own.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer

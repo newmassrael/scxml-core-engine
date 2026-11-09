@@ -660,6 +660,14 @@ shape codes (`validation/duplicate-id`, `validation/invalid-attribute`,
 `validation/missing-attribute`); a verdict's `reason` that is not a string is refused by
 the expression codes, where every expression of the data model is typed.
 
+A suite exported to TTCN-3 (`sce-codegen export-ttcn3`, `docs/SCE_TEST_PROFILE.md` §9.5)
+is first held to every rule above, and then writes every name of its documents as they
+write it: a name that is no TTCN-3 identifier, is a word the export reserves, or is one
+identifier with another name of a scope that sees both is `test-profile/export-name`,
+never renamed. An enum of an open set, a float, a list of values that may be absent, and
+a template or a formal parameter of a list type have no TTCN-3 form there and are
+`generate/unsupported-feature`.
+
 `union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
 told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
 tag: the `id` is the key the tag is written under, and the `sce:type` an
