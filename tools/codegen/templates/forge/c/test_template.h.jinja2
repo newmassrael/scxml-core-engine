@@ -21,6 +21,9 @@
 {% if counts_characters %}
 #include "{{ text_length_header }}"
 {% endif %}
+{% if views_bytes %}
+#include "sce/forge/bytes.h"  /* the view a byte string is compared and filled through */
+{% endif %}
 {% if canonical_body %}
 #include "{{ canonical_header }}"
 {% endif %}
@@ -29,11 +32,16 @@
 {% endfor %}
 
 {# The buffer of each text bound the template's type and its parameters hold,
-   the optional value of each element the runtime does not declare, and each
+   the buffer of each byte string they hold beside its length, the optional
+   value of each element the runtime does not declare, and each
    composition, inner before outer, each under the guard every unit that
    declares it shares, as the unit of an event schema declares them
    (docs/adr/0086, section 7.2). #}
 {% for def in c_text_defs %}
+{{ def }}
+
+{% endfor %}
+{% for def in c_bytes_defs %}
 {{ def }}
 
 {% endfor %}

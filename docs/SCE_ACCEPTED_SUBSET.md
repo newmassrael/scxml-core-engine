@@ -543,9 +543,9 @@ generate a template too, one whose type reaches a union among them, a `union-mat
 holding where the union is in the case its `variant` names. Go and Python generate a
 template too, and refuse one whose type reaches a union as C++ does. C11 generates a
 template too, refuses one whose type reaches a union as C++ does, and refuses with
-`generate/unsupported-feature` one that compares, counts or builds a byte string of one
-entry, which its event schema unit holds as a pointer with no length, and one that
-references, inside a list, a template of an optional type. Swift generates a template
+`generate/unsupported-feature` one that references, inside a list, a template of an
+optional type; its event schema unit holds a byte string of one entry in the buffer of
+its bound beside its length, which a template compares, counts and builds. Swift generates a template
 too, so every backend generates one; it refuses one whose type reaches a union as C++
 does, and refuses with `generate/unsupported-feature` one whose type, or a formal
 parameter's, holds at any depth a record or an enum whose own Swift unit is not written
