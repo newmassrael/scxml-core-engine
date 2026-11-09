@@ -1552,8 +1552,11 @@ string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_SELECTED_ENGINE)
 if(_SCE_SELECTED_ENGINE STREQUAL "lua")
     # REQUIRED here and nowhere else: this target cannot be assembled without
     # the fixture, and a silently skipped gate is the failure mode the whole
-    # lane exists to remove. A quickjs tree never reaches this branch.
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    # lane exists to remove. A quickjs tree never reaches this branch. 3.7 is
+    # the oldest interpreter the generator runs on (`from __future__ import
+    # annotations`): an older one found first on PATH is passed over, and a
+    # machine with none newer is refused here by name, not by a SyntaxError.
+    find_package(Python3 3.7 REQUIRED COMPONENTS Interpreter)
 
     set(_SCE_LOWERED_FIXTURE_GENERATOR
         "${CMAKE_SOURCE_DIR}/tools/generate_lowered_ecma262_fixture.py")
