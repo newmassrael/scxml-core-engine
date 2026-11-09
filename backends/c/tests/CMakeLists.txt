@@ -2928,10 +2928,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # by that name, which the parent's generation writes beside it. Its schemas and rules are the
     # library's, named by the generator, so nothing is staged beside it; the merge rules
     # it shares with todo_peer are generated above, and its own here: the member record
-    # its roster rule takes, the roster, the hash a settle compares, and a register's
-    # values in the order of their dots.
+    # its roster rule takes, the roster, and a register's values in the order of their
+    # dots.
     set(_STATIC_SHARED_HEADERS "")
-    foreach(_SHARED_HEADER record_member record_roster record_settled register_values)
+    foreach(_SHARED_HEADER record_member record_roster register_values)
         sce_c_integration_generation(_SHARED_ONE "sce:std/shared/${_SHARED_HEADER}.scxml")
         list(APPEND _STATIC_SHARED_HEADERS ${_SHARED_ONE_HEADERS})
     endforeach()
