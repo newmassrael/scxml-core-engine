@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_staged.scxml — one command of a change to a shared record list
+  (record_list, docs/adr/0046), as a copy holds it until the change ends: the record type
+  of the commands a change stages. It travels in no message (the event it names is never
+  sent): a change that ends is turned into its operations (record_op) and sent as one
+  change (record_change).
+
+  `kind` is the command, numbered as record_command numbers it, so `Command.fromNumber`
+  of a staged command's kind is the command it is: 0 an edit (the register `id`, `field`
+  given `value` and `text`), 1 a clear (the register written over and given nothing)
+  and 2 a retire (every register of the row `id` written over; `field` is 0). A clear's
+  and a retire's `value` and `text` are not read, and are 0 and empty.
+
+  A command is not an operation: a clear and a retire name what is to be written over,
+  and the values they write over are the ones the copy holds when the change ends, which
+  only then become write-overs. So the commands a change stages and the operations it is
+  made of are two records.
+
+  `text` is bounded as an operation's is, `merge_text`, so an edit's text is kept here
+  whole until it is written.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_staged"
+       sce:event-name="record_list.staged">
+  <datamodel>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string[merge_text=96]" sce:direction="in"/>
+  </datamodel>
+</scxml>

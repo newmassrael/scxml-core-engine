@@ -6,14 +6,14 @@
   shared record list, as the host or the statechart that invoked the list hands it to a
   copy: which row, which field, the number or the text, and `now`, the host's wall clock
   in milliseconds (a machine reads no clock of its own). The copy turns it into a write
-  stamped to sort after everything it has seen (record_write).
+  stamped to sort after everything it has seen (record_op).
 
   `text` is what a person typed: at most 32 bytes of UTF-8 as written, a bound a build
   moves by giving the limit `shared_typed_text` another number. The bound is the type's,
   and is held where the edit is read: an edit whose text is past it is refused whole
   there, with error.execution, and never reaches the copy (docs/adr/0086, section 4.4),
   and a statechart cannot send one (docs/adr/0050). A write carries more
-  (record_write), for what a host puts there in place of the text.
+  (record_op), for what a host puts there in place of the text.
 
   `more`, added by the second revision, says that the change goes on: the edit is held
   with the commands before it, and the first command that does not say `more` ends the
