@@ -1,33 +1,45 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// A shared list whose hub is run by someone its members do not trust. Every copy's host holds
-// the administrator's certificates (sce-rust-trust): a write leaves its author's host with the
-// author's signature, and arrives at the next host only when its author is a member who may
-// write and the signature is true. The copies are the standard shared record list
+// A shared list whose members do not trust one another's hosts. Every copy's host holds the
+// administrator's certificates (sce-rust-trust): a change leaves its author's host with the
+// author's signature, and reaches the next copy only when its author is a member who may write
+// and the signature is true. The copies are the standard shared record list
 // (sce:std/shared/record_list.scxml), the document the trust layer secures, each run by its host
 // as the scenarios run it, and know nothing of it; the hosts put the rule in front of them and
-// behind them.
+// behind them. Below the list is the Mesh core's causal route (`delivery: causal`, docs/adr/0085
+// section 3.2), one group every copy sends to and reads: it tags, orders and repairs what the
+// hosts signed, and signs nothing of its own.
 //
 // What is asked here is that members who are told nothing of signatures go on agreeing on one
-// list through a hub that signs nothing of its own; that a write the hub made up in a member's
-// name reaches no copy, though the hub holds it; that a write by a member the certificates
-// make a reader reaches no copy, though that member's own copy holds it; that a member taken
-// off by a later certificate is refused from then on; and that the word that an instant is
-// settled, which carries no signature and makes a copy forget, is not taken from the hub
-// unless a host was told to.
+// list through a layer that signs nothing; that a change a forging host made up in a member's
+// name reaches no copy, though the forger's own machine holds what it made; that a change by a
+// member the certificates make a reader reaches no copy but that member's own; that a member
+// taken off by a later certificate is refused from then on, while what they wrote before still
+// reaches a copy that is given it late; that a change a link did not pass on is fetched from
+// another member and checked as from its author; and that what members write travels sealed,
+// and a member taken off opens nothing written after the next epoch.
+//
+// There is no hub: no machine passes changes on, and no host is told a word that makes a copy
+// forget, since the list keeps nothing it could forget (docs/adr/0085, section 4). The host's
+// own refusal of an unsigned word that a copy should forget (`record_list.floor`) is held where
+// the trust layer is, in
+// backends/rust/trust/tests/a_host_refuses_a_chain_a_settlement_or_an_amendment_that_does_not_hold_together.rs.
 
 mod common;
 
+use common::repair::changes_carried_since;
 use common::*;
-use sce_rust_mesh::endpoint::{Admission, Sealer};
+use sce_rust_mesh::endpoint::Sealer;
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
-use sce_rust_trust::{Divergence, Identity, Trust};
+use sce_rust_trust::{Identity, Trust};
 use sce_rust_world::{Outcome, World};
+use serde_json::{json, Value};
 
 const CALENDAR: &str = "home";
 const ALICE: u64 = 1;
 const BOB: u64 = 2;
+const CAROL: u64 = 3;
 
 fn quiet(world: &mut World) {
     assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet);
@@ -41,13 +53,13 @@ fn key_of(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
 }
 
-/// The hosts of alice, bob and the hub, in that order. Each holds the membership log (alice a
-/// writer and bob with `bob_role`, the entries signed by the administrator), and is installed in
-/// front of and behind its machine; the machines of `told` are given the roster the log makes.
+/// The hosts of alice, bob and carol. Each holds the membership log (alice and carol writers and
+/// bob with `bob_role`, the entries signed by the administrator), and is installed in front of
+/// and behind its machine; the machines of `told` are given the roster the log makes.
 struct Hosts {
     alice: Trust,
     bob: Trust,
-    hub: Trust,
+    carol: Trust,
 }
 
 impl Hosts {
@@ -55,14 +67,19 @@ impl Hosts {
         match who {
             "alice" => &self.alice,
             "bob" => &self.bob,
-            _ => &self.hub,
+            "carol" => &self.carol,
+            other => panic!("{other} has no host here"),
         }
+    }
+
+    fn all(&self) -> [&Trust; 3] {
+        [&self.alice, &self.bob, &self.carol]
     }
 
     /// An entry the administrator signs reaches every host.
     fn publish(&self, body: Body) -> Entry {
-        let entry = self.hub.draft(body).sign(&administrator()).finish();
-        for host in [&self.alice, &self.bob, &self.hub] {
+        let entry = self.alice.draft(body).sign(&administrator()).finish();
+        for host in self.all() {
             host.append(&entry).unwrap();
         }
         entry
@@ -78,45 +95,43 @@ impl Hosts {
         });
     }
 
-    /// The administrator takes the device of `node` off, ending its chain at the last operation the
-    /// hub has seen of it.
+    /// The administrator takes the device of `node` off, ending its chain at the last operation
+    /// alice's host has seen of it.
     fn remove(&self, node: u64) {
         self.publish(Body::Grant {
             node,
             role: 0,
             key: key_of(node).public(),
-            final_seq: Some(self.hub.last_seq(node)),
+            final_seq: Some(self.alice.last_seq(node)),
         });
     }
 
-    /// The list begins epoch `epoch`, and the hosts of the persons hold its key `fill`.
+    /// The list begins epoch `epoch`, and every member's host holds its key `fill`.
     fn begin_epoch(&self, epoch: u32, fill: u8) {
         self.publish(Body::Epoch { epoch });
-        for person in [&self.alice, &self.bob] {
-            person.set_epoch_key(epoch, [fill; 32]);
+        for host in self.all() {
+            host.set_epoch_key(epoch, [fill; 32]);
         }
     }
 
-    /// The host tells the machine of `who` the roster the certificates make.
-    /// The hub's machine is told who ever wrote, a person's the role they have now.
+    /// The host tells the machine of `who` the roster the certificates make. A copy on a causal
+    /// route is given a change as late as a repair brings it, which its host judges by the
+    /// grant of the time the change was made at; the machine has no time to judge by, so it is
+    /// told that a member who could write at some time is a writer still
+    /// (`Trust::hub_role_events`), and does not refuse what its host let through.
     fn tell(&self, world: &mut World, who: &str) {
-        let events = if who == RECORD_HUB {
-            self.of(who).hub_role_events()
-        } else {
-            self.of(who).role_events()
-        };
-        for (event, data) in events {
+        for (event, data) in self.of(who).hub_role_events() {
             world.raise(who, &event, &data);
         }
     }
 }
 
 fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
-    let mut world = record_world(seed, 20);
+    let mut world = record_group_world(seed, 20);
     let hosts = Hosts {
         alice: Trust::open(CALENDAR),
         bob: Trust::open(CALENDAR),
-        hub: Trust::open(CALENDAR),
+        carol: Trust::open(CALENDAR),
     };
     let genesis = Log::genesis_draft(
         CALENDAR,
@@ -128,14 +143,16 @@ fn untrusting_world(seed: u64, bob_role: u8, told: &[&str]) -> (World, Hosts) {
     )
     .sign(&administrator())
     .finish();
-    for host in [&hosts.alice, &hosts.bob, &hosts.hub] {
+    for host in hosts.all() {
         host.append(&genesis).unwrap();
     }
     hosts.alice.set_identity(ALICE, key_of(ALICE));
     hosts.bob.set_identity(BOB, key_of(BOB));
+    hosts.carol.set_identity(CAROL, key_of(CAROL));
     hosts.grant(ALICE, 2);
     hosts.grant(BOB, bob_role);
-    for who in ["alice", "bob", RECORD_HUB] {
+    hosts.grant(CAROL, 2);
+    for who in COPIES {
         world.set_admission(who, Box::new(hosts.of(who).clone()));
         world.set_sealer(who, Box::new(hosts.of(who).clone()));
     }
@@ -154,85 +171,102 @@ fn refused(world: &mut World, what: &str) -> usize {
         .count()
 }
 
-/// What the copies of alice and bob hold, and that they hold one list and one digest.
-fn agree(world: &mut World) -> usize {
-    let list = agreed_records(world);
-    let digest = record_variables_of(world, RECORD_HUB)["digest"].clone();
-    for who in ["alice", "bob"] {
-        assert_eq!(record_variables_of(world, who)["digest"], digest, "{who}");
-    }
-    list.len()
+/// The text of every envelope the network carried, as one string, to be searched for what must
+/// not travel in the clear.
+fn the_wire(world: &World) -> String {
+    world
+        .trace()
+        .iter()
+        .map(|line| String::from_utf8_lossy(&line.bytes).into_owned())
+        .collect()
 }
 
-/// A write of a number to a field, in a member's name, as a hub that made it up would write it.
-fn forged_write(node: u64, id: u64, value: i64) -> String {
-    format!(
-        r#"{{"id":{id},"field":{DUE},"value":"{value}","text":"","wallTime":"5000","counter":0,"nodeId":"{node}"}}"#
-    )
-}
-
-/// Members who were told nothing of signatures agree on one list through a hub that signs
-/// nothing of its own, and the hub's machine, which is the only copy told what arrives,
-/// holds what it would hold with no host at all.
+/// Members who were told nothing of signatures agree on one list through a layer that signs
+/// nothing of its own, and no host refused anything honest.
 #[test]
-fn members_agree_through_a_hub_that_signs_nothing() {
-    let (mut world, _hosts) = untrusting_world(1, 2, &["alice", "bob", RECORD_HUB]);
+fn members_agree_through_a_layer_that_signs_nothing() {
+    let (mut world, _hosts) = untrusting_world(1, 2, &COPIES);
     record_set(&mut world, "alice", 1, DUE, 10);
     record_set(&mut world, "bob", 2, DUE, 20);
-    record_title(&mut world, "alice", 3, "write it down");
+    record_title(&mut world, "carol", 3, "write it down");
     quiet(&mut world);
-    assert_eq!(agree(&mut world), 3);
+    assert_eq!(agreed_records(&mut world, &COPIES).len(), 3);
     assert!(world.host_errors().is_empty(), "nothing honest was refused");
-    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
 }
 
-/// A write the hub made up in a member's name is believed by the hub's own machine and by no
-/// copy: it leaves the hub with no signature, and a host that checks refuses it.
+/// A host that forges: what its machine sends leaves as a change in another member's name, with
+/// no signature of that member's.
+struct Forger {
+    in_the_name_of: u64,
+}
+
+impl Sealer for Forger {
+    fn seal(&mut self, _target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
+        if event != "record_list.change" {
+            return Ok(None);
+        }
+        let mut change: Value = serde_json::from_str(data).map_err(|error| error.to_string())?;
+        change["by"] = json!(self.in_the_name_of.to_string());
+        Ok(Some(change.to_string()))
+    }
+}
+
+/// A change a forging host made up in a member's name reaches no copy: it leaves the forger with
+/// no signature of the member it names, and every host that checks refuses it. The forger's own
+/// machine holds what it made, and nothing else moves.
 #[test]
-fn a_write_the_hub_made_up_in_a_members_name_reaches_no_copy() {
-    let (mut world, _hosts) = untrusting_world(2, 2, &["alice", "bob", RECORD_HUB]);
+fn a_change_a_host_made_up_in_a_members_name_reaches_no_copy() {
+    let (mut world, _hosts) = untrusting_world(2, 2, &COPIES);
     record_set(&mut world, "alice", 1, DUE, 10);
     quiet(&mut world);
-    world.host_errors();
+    assert!(world.host_errors().is_empty());
 
-    world.raise(RECORD_HUB, "record_list.write", &forged_write(ALICE, 7, 99));
+    world.set_sealer(
+        "carol",
+        Box::new(Forger {
+            in_the_name_of: ALICE,
+        }),
+    );
+    record_set(&mut world, "carol", 7, DUE, 99);
     quiet(&mut world);
 
     assert!(
-        records_of(&mut world, RECORD_HUB).contains_key(&(7, DUE)),
-        "the hub's own machine believed it"
+        records_of(&mut world, "carol").contains_key(&(7, DUE)),
+        "the forger's own machine holds what it made"
     );
     for who in ["alice", "bob"] {
         let held = records_of(&mut world, who);
         assert!(
             !held.contains_key(&(7, DUE)),
-            "{who} holds the made-up write"
+            "{who} holds the made-up change"
         );
         assert!(held.contains_key(&(1, DUE)), "{who} lost a real one");
     }
-    let errors = world.host_errors();
     assert!(
-        errors
-            .iter()
-            .any(|error| error.contains("signs none in their name")),
-        "the hub's own host did not send what it holds no signature for: {errors:?}"
+        refused(&mut world, "EventNotAdmitted") >= 2,
+        "the hosts of alice and bob refused the made-up change"
     );
 }
 
-/// A member the certificates make a reader signs a write with the key their certificate
-/// gave, and the hub's host refuses it: the member's own copy, which was not told the roster,
-/// holds it, and no other does.
+/// A member the certificates make a reader signs a change with the key their certificate gave,
+/// and every other member's host refuses it: the reader's own copy, which was not told the
+/// roster, holds it, and no other does.
 #[test]
-fn a_write_by_a_reader_reaches_no_copy_but_the_readers_own() {
-    let (mut world, _hosts) = untrusting_world(3, 1, &["alice", RECORD_HUB]);
+fn a_change_by_a_reader_reaches_no_copy_but_the_readers_own() {
+    let (mut world, _hosts) = untrusting_world(3, 1, &["alice", "carol"]);
     record_set(&mut world, "alice", 1, DUE, 10);
     record_set(&mut world, "bob", 2, DUE, 20);
     quiet(&mut world);
 
     assert!(records_of(&mut world, "bob").contains_key(&(2, DUE)));
-    assert!(!records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
-    assert!(!records_of(&mut world, "alice").contains_key(&(2, DUE)));
-    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(1, DUE)));
+    for who in ["alice", "carol"] {
+        let held = records_of(&mut world, who);
+        assert!(
+            !held.contains_key(&(2, DUE)),
+            "{who} holds the reader's change"
+        );
+        assert!(held.contains_key(&(1, DUE)), "{who}");
+    }
     assert!(refused(&mut world, "may not write") >= 1);
 }
 
@@ -240,286 +274,154 @@ fn a_write_by_a_reader_reaches_no_copy_but_the_readers_own() {
 /// host that holds it, and what was admitted before stays.
 #[test]
 fn a_member_taken_off_by_a_later_certificate_is_refused_from_then_on() {
-    let (mut world, hosts) = untrusting_world(4, 2, &["alice", "bob", RECORD_HUB]);
+    let (mut world, hosts) = untrusting_world(4, 2, &COPIES);
     record_set(&mut world, "bob", 1, DUE, 1);
     quiet(&mut world);
-    assert_eq!(agree(&mut world), 1);
+    assert_eq!(agreed_records(&mut world, &COPIES).len(), 1);
 
     hosts.remove(BOB);
     record_set(&mut world, "bob", 2, DUE, 2);
     quiet(&mut world);
 
-    let hub = records_of(&mut world, RECORD_HUB);
-    assert!(hub.contains_key(&(1, DUE)), "what was admitted stays");
-    assert!(!hub.contains_key(&(2, DUE)), "bob was taken off");
-    assert!(!records_of(&mut world, "alice").contains_key(&(2, DUE)));
+    for who in ["alice", "carol"] {
+        let held = records_of(&mut world, who);
+        assert!(
+            held.contains_key(&(1, DUE)),
+            "{who}: what was admitted stays"
+        );
+        assert!(!held.contains_key(&(2, DUE)), "{who}: bob was taken off");
+    }
     assert!(
         refused(&mut world, "may not write") >= 1,
         "bob's certificate now says role 0"
     );
 }
 
-/// The word that an instant is settled makes a copy forget, and carries no signature: a host
-/// that trusts nobody does not take it from the hub, so that the hub cannot have a copy forget
-/// a tombstone and take in again, with an old signed write, what was deleted. A host told to
-/// take it from the hub it trusts does.
+/// What a member wrote before they were taken off still reaches a copy that is given it late:
+/// carol's links lose everything while bob writes and alice writes over him, bob is taken off,
+/// and then the layer repairs carol. Her host judges each of bob's changes by the grant of the
+/// time it was made at and admits it, her machine, told that whoever could write is a writer,
+/// takes it, and the copies hold one list. What bob signs afterwards is refused. Red if a copy's
+/// machine is told the roster of the present (`Trust::role_events`): carol's would refuse bob's
+/// change though her host let it through, and hold another list.
 #[test]
-fn the_hub_cannot_settle_an_instant_for_a_host_that_trusts_nobody() {
-    let (mut world, hosts) = untrusting_world(5, 2, &["alice", "bob", RECORD_HUB]);
-    record_set(&mut world, "alice", 1, DUE, 10);
-    record_set(&mut world, "bob", 2, DUE, 20);
+fn what_a_member_wrote_before_they_were_taken_off_still_reaches_a_copy_given_it_late() {
+    let (mut world, hosts) = untrusting_world(7, 2, &COPIES);
+    for other in ["alice", "bob"] {
+        world.degrade("carol", other, 100, 0);
+    }
+    record_set(&mut world, "bob", 1, DUE, 1);
+    world.advance_ms(1_000);
+    // Alice writes over bob's value: one change of a write-over and a write.
+    record_set(&mut world, "alice", 1, DUE, 2);
+    record_set(&mut world, "bob", 2, DUE, 5);
+    world.advance_ms(1_000);
+    assert!(!records_of(&mut world, "carol").contains_key(&(2, DUE)));
+
+    hosts.remove(BOB);
+    for who in COPIES {
+        hosts.tell(&mut world, who);
+    }
+    for other in ["alice", "bob"] {
+        world.degrade("carol", other, 0, 0);
+    }
     quiet(&mut world);
-    world.advance_ms(60_000);
-    world.host_errors();
+    let errors = world.host_errors();
+    assert!(errors.is_empty(), "nothing true was refused: {errors:?}");
+    let list = agreed_records(&mut world, &COPIES);
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[&(1, DUE)].value, 2);
+    assert_eq!(list[&(2, DUE)].value, 5);
 
-    let settle = |world: &mut World, before: i64| {
-        world.raise(
-            RECORD_HUB,
-            "record_list.settle",
-            &format!(r#"{{"before":"{before}","members":2}}"#),
-        );
-        quiet(world);
-    };
-    settle(&mut world, 30_000);
-    assert!(
-        refused(&mut world, "record_list.floor") >= 2,
-        "both persons' hosts refused it"
-    );
-    for who in ["alice", "bob"] {
-        assert_eq!(
-            whole(&record_variables_of(&mut world, who)["floor"]),
-            0,
+    record_set(&mut world, "bob", 3, DUE, 9);
+    quiet(&mut world);
+    for who in ["alice", "carol"] {
+        assert!(
+            !records_of(&mut world, who).contains_key(&(3, DUE)),
             "{who}"
         );
     }
-
-    // The hub settled it for itself; a later instant is a round of its own.
-    hosts.alice.allow_unsigned(&["record_list.floor"]);
-    hosts.bob.allow_unsigned(&["record_list.floor"]);
-    settle(&mut world, 40_000);
-    for who in ["alice", "bob"] {
-        assert_eq!(
-            whole(&record_variables_of(&mut world, who)["floor"]),
-            40_000,
-            "{who}"
-        );
-    }
-    assert_eq!(agree(&mut world), 2);
+    assert!(refused(&mut world, "may not write") >= 1);
 }
 
-/// An instant is settled for hosts that trust nobody when the members settle it, and no
-/// administrator is asked: each member's host signs a checkpoint of the instant and the hash its
-/// own copy held of it, the hub's host holds them, and sends the hub's floor on with the
-/// settlement they make. A checkpoint of another hash or another instant, and the word of one
-/// member alone, settle nothing. The run is deterministic, so a first run learns the hash the
-/// second is told by the members.
+/// A change a link did not pass on is fetched from another member that holds it, as the
+/// envelope its author's host signed, and the copy's host checks it as it would from its author:
+/// alice's link to bob loses everything, carol answers bob's vector with alice's changes, and bob
+/// holds them with nothing refused.
 #[test]
-fn an_instant_the_members_settled_is_settled_for_every_host() {
-    let run = |members: &[(&str, i64, u32)]| {
-        let (mut world, hosts) = untrusting_world(6, 2, &["alice", "bob", RECORD_HUB]);
-        record_set(&mut world, "alice", 1, DUE, 10);
-        record_set(&mut world, "bob", 2, DUE, 20);
-        quiet(&mut world);
-        world.advance_ms(60_000);
-        world.host_errors();
-        for (who, before, hash) in members {
-            let checkpoint = hosts.of(who).checkpoint(*before, *hash).unwrap();
-            hosts.hub.take_checkpoint(&checkpoint).unwrap();
-        }
-        world.raise(
-            RECORD_HUB,
-            "record_list.settle",
-            r#"{"before":"30000","members":2}"#,
-        );
-        quiet(&mut world);
-        world
-    };
-    let floor_of = |world: &mut World, who: &str| whole(&record_variables_of(world, who)["floor"]);
-
-    let mut first = run(&[]);
-    let hash = whole(&record_variables_of(&mut first, "alice")["frozenHash"]) as u32;
-    for who in ["alice", "bob"] {
-        assert_eq!(floor_of(&mut first, who), 0, "no member said anything");
-    }
-
-    for (what, members) in [
-        ("one member alone", vec![("alice", 30_000, hash)]),
-        (
-            "another hash",
-            vec![("alice", 30_000, hash), ("bob", 30_000, hash ^ 1)],
-        ),
-        (
-            "another instant",
-            vec![("alice", 20_000, hash), ("bob", 20_000, hash)],
-        ),
-    ] {
-        let mut world = run(&members);
-        for who in ["alice", "bob"] {
-            assert_eq!(floor_of(&mut world, who), 0, "{who} took {what}");
-        }
-    }
-
-    let mut world = run(&[("alice", 30_000, hash), ("bob", 30_000, hash)]);
-    for who in ["alice", "bob"] {
-        assert_eq!(floor_of(&mut world, who), 30_000, "{who}");
-    }
-    assert_eq!(agree(&mut world), 2);
-    assert!(world.host_errors().is_empty(), "nothing honest was refused");
-}
-
-/// A relay that withholds a member's operation from another is seen by the members' checkpoints:
-/// bob's copy lacks what alice's host made, her checkpoint names it, and the hub's host that
-/// holds it gives it to bob's host, which checks it as it would from anyone.
-#[test]
-fn an_operation_a_hub_did_not_pass_on_is_seen_and_fetched() {
-    let (mut world, mut hosts) = untrusting_world(7, 2, &["alice", "bob", RECORD_HUB]);
-    // The hub's host leaves the second write it sends to the people out, and says nothing of it:
-    // alice holds what she made, and bob is not given it.
-    world.set_sealer(
-        RECORD_HUB,
-        Box::new(Withholding {
-            inner: hosts.hub.clone(),
-            toward: "#people",
-            seen: 0,
-            withhold: 2,
-        }),
-    );
+fn a_change_a_link_did_not_pass_on_is_fetched_from_another_member_and_checked() {
+    let (mut world, _hosts) = untrusting_world(7, 2, &COPIES);
+    world.degrade("alice", "bob", 100, 0);
+    let mark = world.trace().len();
     record_set(&mut world, "alice", 1, DUE, 10);
     record_set(&mut world, "alice", 2, DUE, 20);
-    quiet(&mut world);
-    world.host_errors();
-    assert_ne!(
-        records_of(&mut world, "alice"),
-        records_of(&mut world, "bob"),
-        "bob was not given the second"
-    );
+    world.advance_ms(10_000);
 
-    // Alice's checkpoint names her chain in full, and bob's host sees what it lacks.
-    assert!(hosts.bob.divergences().is_empty());
-    hosts
-        .bob
-        .take_checkpoint(&hosts.alice.checkpoint(30_000, 7).unwrap())
-        .unwrap();
-    let seen = hosts.bob.divergences();
-    let [Divergence::Missing {
-        node: ALICE,
-        held,
-        named,
-        by: ALICE,
-    }] = &seen[..]
-    else {
-        panic!("{seen:?}");
-    };
-    assert_eq!((*held, *named), (1, 2));
-
-    // Any host that holds it gives it: the hub's here, and bob's host checks it as it would
-    // from anyone before its machine is told.
-    for (event, data) in hosts.hub.operations(ALICE, held + 1, *named) {
-        let told = hosts
-            .bob
-            .admit(RECORD_HUB, &event, &data)
-            .unwrap()
-            .expect("an operation is told to the machine");
-        world.raise("bob", &event, &told);
-    }
-    quiet(&mut world);
-    assert!(hosts.bob.divergences().is_empty());
-    assert_eq!(
-        records_of(&mut world, "alice"),
-        records_of(&mut world, "bob")
-    );
+    let bob = records_of(&mut world, "bob");
+    assert!(bob.contains_key(&(1, DUE)) && bob.contains_key(&(2, DUE)));
+    let from_carol = changes_carried_since(&world, mark)
+        .into_iter()
+        .filter(|carried| carried.from == "carol" && carried.to == "bob")
+        .count();
+    assert!(from_carol > 0, "bob was given alice's changes by carol");
     let errors = world.host_errors();
     assert!(errors.is_empty(), "{errors:?}");
+
+    world.degrade("alice", "bob", 0, 0);
+    quiet(&mut world);
+    assert_eq!(agreed_records(&mut world, &COPIES).len(), 2);
 }
 
-/// A hub's host that keeps one write back from the people: what a relay that withholds does.
-struct Withholding {
-    inner: Trust,
-    toward: &'static str,
-    seen: usize,
-    withhold: usize,
-}
-
-impl Sealer for Withholding {
-    fn seal(&mut self, target: &str, event: &str, data: &str) -> Result<Option<String>, String> {
-        if target == self.toward && event == "record_list.write" {
-            self.seen += 1;
-            if self.seen == self.withhold {
-                return Err("withheld".to_string());
-            }
-        }
-        self.inner.seal(target, event, data)
-    }
-}
-
-/// The members hold a key the hub does not, and what they write reaches the hub sealed: its
-/// machine holds the stamp of each write and a text it cannot read, relays it as it is, and the
-/// members' copies hold what was written and agree on one list, over a resync as well.
+/// The members hold a key the layer below them does not, and what they write travels sealed:
+/// no envelope on the network holds a text or a number a member wrote, every member's copy holds
+/// what was written, and the copies agree on one list, over a repair as well.
 #[test]
-fn the_hub_holds_what_its_members_wrote_without_being_able_to_read_it() {
-    let (mut world, hosts) = untrusting_world(8, 2, &["alice", "bob", RECORD_HUB]);
+fn what_members_write_travels_sealed_and_every_member_reads_it() {
+    let (mut world, hosts) = untrusting_world(8, 2, &COPIES);
     hosts.begin_epoch(1, 5);
     record_title(&mut world, "alice", 1, "buy milk");
     record_set(&mut world, "bob", 2, DUE, 987_654_321);
+    quiet(&mut world);
+    world.partition("carol", "alice");
+    world.partition("carol", "bob");
     record_title(&mut world, "bob", 3, "call dad");
+    world.advance_ms(1_000);
+    world.heal("carol", "alice");
+    world.heal("carol", "bob");
     quiet(&mut world);
 
-    let hub = record_variables_of(&mut world, RECORD_HUB);
-    let held = hub["values"].as_array().expect("values are a list");
-    assert_eq!(held.len(), 3);
-    for value in held {
-        assert!(value["text"].as_str().unwrap().starts_with('~'), "{value}");
-        assert_eq!(whole(&value["value"]), 0, "{value}");
-    }
-    let hub_text = hub.to_string();
+    let wire = the_wire(&world);
     for secret in ["buy milk", "call dad", "987654321"] {
-        assert!(!hub_text.contains(secret), "the hub holds {secret}");
+        assert!(!wire.contains(secret), "{secret} travelled in the clear");
     }
-
-    for round in 0..2 {
-        assert_eq!(
-            records_of(&mut world, "alice"),
-            records_of(&mut world, "bob"),
-            "round {round}"
-        );
-        for who in ["alice", "bob"] {
-            let copy = record_variables_of(&mut world, who).to_string();
-            for secret in ["buy milk", "call dad", "987654321"] {
-                assert!(copy.contains(secret), "{who} lost {secret}");
-            }
-            assert_eq!(
-                record_variables_of(&mut world, who)["digest"],
-                hub["digest"],
-                "{who}"
-            );
+    assert_eq!(agreed_records(&mut world, &COPIES).len(), 3);
+    for who in COPIES {
+        let copy = record_variables_of(&mut world, who).to_string();
+        for secret in ["buy milk", "call dad", "987654321"] {
+            assert!(copy.contains(secret), "{who} lost {secret}");
         }
-        for who in ["alice", "bob", RECORD_HUB] {
-            world.raise(who, "record_list.resync", "");
-        }
-        quiet(&mut world);
     }
     let errors = world.host_errors();
     assert!(errors.is_empty(), "{errors:?}");
 }
 
-/// A member is taken off and an administrator begins a new epoch for the members left: what alice
-/// writes afterwards reaches the hub (sealed) and the one member that is left, and bob's copy,
-/// which was given no key of it, holds none of it, while what was written before is still what
-/// his copy holds.
+/// A member is taken off and an administrator begins a new epoch for the members left: what
+/// alice writes afterwards reaches carol and travels sealed, and bob's copy, which was given no
+/// key of it, holds none of it, while what was written before is still what his copy holds.
 #[test]
 fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
-    let (mut world, hosts) = untrusting_world(9, 2, &["alice", "bob", RECORD_HUB]);
+    let (mut world, hosts) = untrusting_world(9, 2, &COPIES);
     hosts.begin_epoch(1, 5);
     record_title(&mut world, "alice", 1, "before");
     quiet(&mut world);
     assert_eq!(records_of(&mut world, "bob").len(), 1);
-    world.host_errors();
+    assert!(world.host_errors().is_empty());
 
     // The administrator's host takes bob off and begins epoch 2 for who is left.
     world.advance_ms(1_000);
     hosts.remove(BOB);
     let administrator = Trust::open(CALENDAR);
-    for entry in hosts.hub.entries() {
+    for entry in hosts.alice.entries() {
         administrator.append(&entry).unwrap();
     }
     administrator.set_epoch_key(1, [5; 32]);
@@ -528,22 +430,37 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
         .into_iter()
         .map(|(_, key)| key)
         .collect();
-    assert_eq!(left, vec![key_of(ALICE).public()]);
+    assert_eq!(left.len(), 2, "alice and carol are left");
+    assert!(!left.contains(&key_of(BOB).public()));
     let rotation = administrator
         .rotate_epoch(&self::administrator(), &left)
         .unwrap();
-    for host in [&hosts.alice, &hosts.bob, &hosts.hub] {
+    for host in hosts.all() {
         assert_eq!(host.append(&rotation.entry), Ok(true));
     }
-    assert_eq!(hosts.alice.receive_grant(&rotation.grants[0].1), Ok(2));
+    for (to, grant) in &rotation.grants {
+        let host = if *to == key_of(ALICE).public() {
+            &hosts.alice
+        } else {
+            &hosts.carol
+        };
+        assert_eq!(host.receive_grant(grant), Ok(2));
+    }
 
     world.advance_ms(1_000);
     record_title(&mut world, "alice", 2, "after");
     quiet(&mut world);
 
-    assert!(records_of(&mut world, "alice").contains_key(&(2, TITLE)));
-    let hub = record_variables_of(&mut world, RECORD_HUB).to_string();
-    assert!(!hub.contains("after"), "the hub holds the text");
+    for who in ["alice", "carol"] {
+        assert!(
+            records_of(&mut world, who).contains_key(&(2, TITLE)),
+            "{who}"
+        );
+    }
+    assert!(
+        !the_wire(&world).contains("after"),
+        "the text travelled in the clear"
+    );
     let bob = records_of(&mut world, "bob");
     assert!(
         !bob.contains_key(&(2, TITLE)),
@@ -554,44 +471,4 @@ fn a_member_taken_off_reads_nothing_written_after_the_next_epoch() {
         refused(&mut world, "no key of epoch 2") >= 1,
         "bob's host says why"
     );
-}
-
-/// What a member wrote before they were taken off stays: when everyone resyncs afterwards, the
-/// hub sends their values to the copies and the tombstone of the one a person wrote over (as
-/// itself, and alone, which the host puts who really wrote over it and the change it was a part
-/// of back on), and no host refuses any of it, so that the copies still hold one list. What the
-/// member signs after they were taken off is refused.
-#[test]
-fn what_a_member_wrote_before_they_were_taken_off_still_reaches_every_copy() {
-    let (mut world, hosts) = untrusting_world(7, 2, &["alice", RECORD_HUB]);
-    record_set(&mut world, "bob", 1, DUE, 1);
-    quiet(&mut world);
-    world.advance_ms(1_000);
-    // Alice writes over bob's value: one change of two parts, a note that carries her and the
-    // change's stamp and the write, each the next operation of her chain.
-    record_set(&mut world, "alice", 1, DUE, 2);
-    record_set(&mut world, "bob", 2, DUE, 5);
-    quiet(&mut world);
-    assert_eq!(agree(&mut world), 2);
-    world.host_errors();
-
-    world.advance_ms(1_000);
-    hosts.remove(BOB);
-    for who in ["alice", RECORD_HUB] {
-        hosts.tell(&mut world, who);
-    }
-    world.advance_ms(1_000);
-    for who in ["alice", "bob", RECORD_HUB] {
-        world.raise(who, "record_list.resync", "");
-    }
-    quiet(&mut world);
-    let errors = world.host_errors();
-    assert!(errors.is_empty(), "nothing true was refused: {errors:?}");
-    assert_eq!(agree(&mut world), 2);
-    assert!(records_of(&mut world, RECORD_HUB).contains_key(&(2, DUE)));
-
-    record_set(&mut world, "bob", 3, DUE, 9);
-    quiet(&mut world);
-    assert!(!records_of(&mut world, RECORD_HUB).contains_key(&(3, DUE)));
-    assert!(refused(&mut world, "may not write") >= 1);
 }
