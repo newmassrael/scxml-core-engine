@@ -69,6 +69,11 @@ pub enum MaterializeError {
     },
 }
 
+/// The exit status of `generate/unsupported-feature`: the backend declines a
+/// document it does not lower yet, by name (the exit statuses of
+/// SCE_ERROR_CONTRACT.md).
+const UNSUPPORTED_FEATURE: i32 = 7;
+
 /// Write `tree` into `into` from its actions, through `store`.
 pub fn materialize(
     generator: &Generator,
@@ -81,12 +86,24 @@ pub fn materialize(
     let mut placed: BTreeMap<String, (Digest, String)> = BTreeMap::new();
     for placed_generation in &tree.generations {
         let shown = placed_generation.generation.arguments.join(" ");
-        let produced = generator
-            .produce(store, &placed_generation.generation)
-            .map_err(|source| MaterializeError::Generation {
-                tree: name(),
-                source,
-            })?;
+        let produced = match generator.produce(store, &placed_generation.generation) {
+            Ok(produced) => produced,
+            // The backend declines the member by name: it lowers some of what
+            // the set holds and says which, so the member is not the tree's.
+            Err(GenerationError::Refused {
+                status: UNSUPPORTED_FEATURE,
+                ..
+            }) if placed_generation.skip_unsupported => {
+                report.runs += 1;
+                continue;
+            }
+            Err(source) => {
+                return Err(MaterializeError::Generation {
+                    tree: name(),
+                    source,
+                })
+            }
+        };
         match produced.provenance {
             Provenance::Hit => report.hits += 1,
             Provenance::Ran => report.runs += 1,
@@ -125,21 +142,30 @@ pub fn materialize(
     }
 
     for index in &tree.indexes {
-        let modules = matching(into, &index.modules, Kind::File).map_err(|detail| {
+        let dirs = matching(into, &index.directories, Kind::Directory).map_err(|detail| {
             MaterializeError::Invalid {
                 tree: name(),
                 detail,
             }
         })?;
-        let mut text = index.header.clone();
-        for module in &modules {
-            if *module == index.path {
-                continue;
+        for dir in dirs.iter().filter(|d| !index.except.contains(d)) {
+            let mut text = index.header.clone();
+            let mut names: Vec<String> = fs::read_dir(into.join(dir))?
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .filter(|name| *name != index.file)
+                .collect();
+            names.sort();
+            for entry in &index.entries {
+                for name in names.iter().filter(|n| wildcard(&entry.files, n)) {
+                    text.push_str(&entry.line.replace("{module}", super::tree::stem(name)));
+                }
             }
-            text.push_str(&index.line.replace("{module}", super::tree::stem(module)));
+            let path = format!("{dir}/{}", index.file);
+            write_file(&into.join(&path), text.as_bytes(), false)?;
+            report.files.insert(path);
         }
-        write_file(&into.join(&index.path), text.as_bytes(), false)?;
-        report.files.insert(index.path.clone());
     }
 
     let formatter = Formatter::new(generator.root());
@@ -395,6 +421,55 @@ impl Formatter {
     }
 }
 
+/// Remove from `into` every generated file under `tree`'s roots that
+/// `report`'s materialization did not write, and every directory that leaves
+/// empty: what a tree materialized over an older copy of itself (the
+/// checkout, while the tree is committed) needs to be that tree and nothing
+/// more. A file written by hand beside the generated ones is not the tree's
+/// ([`is_generated_file`]) and stays. Returns the files removed, relative to
+/// `into`.
+pub fn remove_unproduced(
+    tree: &ExpandedTree,
+    into: &Path,
+    report: &Report,
+) -> Result<Vec<String>, MaterializeError> {
+    let invalid = |detail: String| MaterializeError::Invalid {
+        tree: tree.name.clone(),
+        detail,
+    };
+    let mut removed = Vec::new();
+    for pattern in &tree.roots {
+        for dir in matching(into, pattern, Kind::Directory).map_err(invalid)? {
+            if tree.except.contains(&dir) {
+                continue;
+            }
+            for file in files_under(into, &dir)? {
+                if !report.files.contains(&file) && is_generated_file(&into.join(&file))? {
+                    fs::remove_file(into.join(&file))?;
+                    removed.push(file);
+                }
+            }
+            remove_empty_directories(&into.join(&dir))?;
+        }
+    }
+    Ok(removed)
+}
+
+/// Remove every empty directory under `dir`, and `dir` itself when that
+/// leaves it empty.
+fn remove_empty_directories(dir: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            remove_empty_directories(&entry.path())?;
+        }
+    }
+    if fs::read_dir(dir)?.next().is_none() {
+        fs::remove_dir(dir)?;
+    }
+    Ok(())
+}
+
 /// How a materialized tree differs from a committed one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Difference {
@@ -432,16 +507,25 @@ pub fn compare(
     };
     let mut committed = BTreeSet::new();
     let mut produced = BTreeSet::new();
+    let owned = |dir: &String| !tree.except.contains(dir);
     for pattern in &tree.roots {
-        for dir in matching(root, pattern, Kind::Directory).map_err(invalid)? {
-            for file in files_under(root, &dir)? {
+        for dir in matching(root, pattern, Kind::Directory)
+            .map_err(invalid)?
+            .iter()
+            .filter(|d| owned(d))
+        {
+            for file in files_under(root, dir)? {
                 if is_generated_file(&root.join(&file))? {
                     committed.insert(file);
                 }
             }
         }
-        for dir in matching(into, pattern, Kind::Directory).map_err(invalid)? {
-            produced.extend(files_under(into, &dir)?);
+        for dir in matching(into, pattern, Kind::Directory)
+            .map_err(invalid)?
+            .iter()
+            .filter(|d| owned(d))
+        {
+            produced.extend(files_under(into, dir)?);
         }
     }
     let mut differences = Vec::new();

@@ -457,7 +457,7 @@ impl Generator {
             }
             Err(e) => return Err(e.into()),
         };
-        let reads = self.read_set_of_run(&listed, &shown)?;
+        let reads = self.read_set_of_run(&listed, &out, &shown)?;
         for path in &reads.present {
             let modified = fs::metadata(self.root.join(path))?.modified().ok();
             if modified.is_some_and(|m| m > started) {
@@ -530,9 +530,17 @@ impl Generator {
     }
 
     /// The read set a run listed, relative to the root. The generator itself
-    /// is named by the identity and left out; anything else outside the
-    /// checkout is refused.
-    fn read_set_of_run(&self, listed: &str, shown: &str) -> Result<ReadSet, GenerationError> {
+    /// is named by the identity and left out, and so is every file under the
+    /// run's output directory `out`: it was empty when the run began, so what
+    /// the run read there it wrote itself (a child document a `--children` run
+    /// generates from). Anything else outside the checkout is refused.
+    fn read_set_of_run(
+        &self,
+        listed: &str,
+        out: &Path,
+        shown: &str,
+    ) -> Result<ReadSet, GenerationError> {
+        let out = out.canonicalize()?;
         let mut reads = ReadSet::default();
         for line in listed.lines().filter(|l| !l.is_empty()) {
             let (absent, path) = match line.strip_prefix('?') {
@@ -540,6 +548,9 @@ impl Generator {
                 None => (false, Path::new(line)),
             };
             if !absent && path.canonicalize().ok().as_deref() == Some(self.binary.as_path()) {
+                continue;
+            }
+            if path.starts_with(&out) || path.canonicalize().is_ok_and(|p| p.starts_with(&out)) {
                 continue;
             }
             let Ok(relative) = path.strip_prefix(&self.root) else {

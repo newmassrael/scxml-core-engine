@@ -764,6 +764,13 @@ name = "a_declared_tree_reproduces_its_committed_tree"
 path = "tests/a_declared_tree_reproduces_its_committed_tree.rs"
 required-features = ["cli"]
 
+# `generate --children`: one run writes a document's machine and its
+# children's, which makes them one action of the cache (ADR 0097).
+[[test]]
+name = "a_generation_writes_its_children_when_asked"
+path = "tests/a_generation_writes_its_children_when_asked.rs"
+required-features = ["cli"]
+
 # Forge AST export wire-format drift guard. Reads the checked-in
 # `apis/forge-ast.v1.schema.json` and round-trips every emittable
 # kind through `forge::ast_export::write_envelope`, validating each

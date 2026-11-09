@@ -1371,8 +1371,14 @@ struct GenerateReport {
     /// build to generate by a run of their own ([`child_documents`]): a
     /// hybrid `<invoke>`'s stub, a candidate, a `src` child. Read by
     /// `--plan-children` ([`plan_child_generations`]), which plans each one's
-    /// generation; nothing else reads it.
+    /// generation, and `--children` ([`generate_child_generations`]), which
+    /// runs it.
     child_documents: Vec<PathBuf>,
+    /// Of [`Self::child_documents`], the ones this run staged as copies of a
+    /// document in the checkout (a `src` child, a candidate), keyed by the
+    /// copy's path ([`tree_key`]), each with the document it copies
+    /// ([`copy_static_invoke_children`]).
+    staged_children: BTreeMap<PathBuf, PathBuf>,
     /// The documents of the in-line children this run writes that its deploy
     /// placed on a partition of their own ([`peer_documents`]), each a
     /// machine of the deploy that the run of that partition generates. Read
@@ -2021,6 +2027,21 @@ struct GenerateArgs {
     /// flag is a no-op for those languages.
     #[arg(long)]
     parent_stem: Option<String>,
+    /// Generate, in this run and into the same output directory, each child
+    /// document the run writes (a hybrid `<invoke>`'s stub, a `src` child)
+    /// and the children those write in turn: the generations `--plan
+    /// --plan-children` names, run here instead of by a build. Each is
+    /// generated `--as-child` of this document (`--parent-stem`), so a
+    /// Kotlin or Go child joins its package as `generate-w3c` places it, and
+    /// over this run's input root, so every file of the run carries one
+    /// source set. A child's document is the run's own output, named by its
+    /// path in the output directory.
+    ///
+    /// What makes the run one action (ADR 0097): every file of a document
+    /// and its children comes from one invocation, whose reads (`--reads`)
+    /// cover the children's.
+    #[arg(long)]
+    children: bool,
     /// Write CMake DEPFILE for incremental builds
     #[arg(long)]
     write_deps: Option<String>,
@@ -4028,6 +4049,13 @@ enum Commands {
         /// Where the tree is written.
         #[arg(long, value_name = "DIR")]
         into: PathBuf,
+        /// Make the tree under `--into` exactly the one its actions produce:
+        /// also remove each generated file under the tree's roots that they
+        /// no longer write. For a directory that holds an earlier copy of the
+        /// tree, the checkout while a tree is still committed; files written
+        /// by hand beside it stay.
+        #[arg(long)]
+        replace: bool,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
@@ -4695,7 +4723,11 @@ fn main() {
             deploy,
         } => cmd_verify(&out_dir, &input_root, deploy.as_deref(), error_format),
         Commands::VerifyGenerator { root } => cmd_verify_generator(root.as_deref(), error_format),
-        Commands::Materialize { tree, into } => cmd_materialize(&tree, &into, error_format),
+        Commands::Materialize {
+            tree,
+            into,
+            replace,
+        } => cmd_materialize(&tree, &into, replace, error_format),
         Commands::Addr2Sce {
             sourcemap_dir,
             symbol,
@@ -6772,6 +6804,13 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 /// `--with-imports`, every document a set reaches.
 fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
     if args.with_imports {
+        if args.children {
+            cli_exit(CliError::Usage {
+                detail: "--children generates the child documents of one document's \
+                         generation; a `--with-imports` run generates several"
+                    .to_string(),
+            });
+        }
         if plans_children() {
             cli_exit(CliError::Usage {
                 detail: "--plan-children plans the child documents of one document's \
@@ -6791,15 +6830,48 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
             ),
         });
     }
+    if args.children {
+        if output_mode() == OutputMode::Plan {
+            cli_exit(CliError::Usage {
+                detail: "--children generates a run's children; a plan plans them, with \
+                         --plan-children"
+                    .to_string(),
+            });
+        }
+        if args.write_deps.is_some() {
+            cli_exit(CliError::Usage {
+                detail: "--write-deps names the prerequisites of one generation's build step, \
+                         and a --children run is several; --reads lists what all of them read"
+                    .to_string(),
+            });
+        }
+    }
+    // A child of a `--children` run is a document the run wrote into its output
+    // directory, so it is named by its path there (`OUTPUT_ROOT`), never by
+    // where that directory happens to be.
+    if args.children {
+        let _ = OUTPUT_ROOT.set(PathBuf::from(&args.output_dir));
+    }
     let depfile = args.write_deps.clone();
     let children_of = plans_children().then(|| args.clone());
+    let generates_children = args.children.then(|| args.clone());
     let mut report = cmd_generate(args, error_format);
-    write_sourcemaps(std::mem::take(&mut report.sourcemaps));
+    let mut shares = std::mem::take(&mut report.sourcemaps);
+    if generates_children.is_none() {
+        write_sourcemaps(std::mem::take(&mut shares));
+    }
     write_run_depfile(depfile.as_deref(), &report);
     let mut read = report.depfile.clone();
     if let Some(args) = children_of {
         let children_read = plan_child_generations(&args, &report, error_format);
         read = joined_reads(read, children_read);
+    }
+    if let Some(args) = generates_children {
+        let (children_read, children_shares) =
+            generate_child_generations(&args, &report, error_format);
+        read = joined_reads(read, children_read);
+        shares.extend(children_shares);
+        write_sourcemaps(shares);
     }
     write_reads(read.as_ref());
     emit_generate_manifest(&report);
@@ -6871,8 +6943,85 @@ impl ChildGeneration {
         child.emit_ast = None;
         child.profile = None;
         child.with_imports = false;
+        child.children = false;
         child
     }
+}
+
+/// The generations a run's report asks for: the children in its process
+/// first, then the ones on partitions of their own. One answer for a plan
+/// that plans them ([`plan_child_generations`]) and a run that generates
+/// them ([`generate_child_generations`]).
+fn child_generations_asked_by(report: &GenerateReport) -> Vec<(PathBuf, ChildGeneration)> {
+    let in_process = report
+        .child_documents
+        .iter()
+        .map(|path| (tree_key(path), ChildGeneration::InItsParentsProcess));
+    let on_partitions = report
+        .peer_documents
+        .iter()
+        .map(|path| (tree_key(path), ChildGeneration::OnItsOwnPartition));
+    in_process.chain(on_partitions).collect()
+}
+
+/// `--children`: after a run of `args` has written its document's files,
+/// generate each child document it wrote and each child those write in turn,
+/// in this run, into its output directory: the generations `--plan
+/// --plan-children` names ([`ChildGeneration`]), with two things a build's own
+/// steps leave to it decided here. A child its parent starts in its own
+/// process joins the run document's package (`--parent-stem`, the layout
+/// `generate-w3c` gives a test's children), and every child is generated over
+/// the run's input root, so the run's files carry one source set.
+///
+/// Returns what every generation read, joined, and the sourcemap shares of
+/// every child, for the caller to write with the run's own as one sidecar per
+/// directory: a child's machines land beside the run's.
+fn generate_child_generations(
+    args: &GenerateArgs,
+    report: &GenerateReport,
+    error_format: ErrorFormat,
+) -> (Option<DepfileEntry>, Vec<SourcemapShare>) {
+    let document = args.scxml.first().map(String::as_str).unwrap_or_default();
+    let input_root = args.input_root.clone().unwrap_or_else(|| {
+        containing_dir(Path::new(document))
+            .to_string_lossy()
+            .into_owned()
+    });
+    let parent_stem = Path::new(document)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned());
+    let mut pending: std::collections::VecDeque<(PathBuf, ChildGeneration)> =
+        child_generations_asked_by(report).into();
+    let mut generated: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut staged: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    let mut read = Some(DepfileEntry::default());
+    let mut shares = Vec::new();
+    while let Some((child, kind)) = pending.pop_front() {
+        // A child the run names and wrote no document for has nothing to be
+        // generated from, as a plan does not plan it.
+        if !child.is_file() || !generated.insert(child.clone()) {
+            continue;
+        }
+        // A child the run staged as a copy of a document in the checkout is
+        // generated from that document, so its files name where its author
+        // wrote it; a stub the run wrote exists only in the output directory.
+        let staged_from = report
+            .staged_children
+            .get(&child)
+            .or_else(|| staged.get(&child))
+            .cloned();
+        let document = staged_from.as_deref().unwrap_or(&child);
+        let mut child_args = kind.of(document, args, &input_root);
+        if kind == ChildGeneration::InItsParentsProcess {
+            child_args.parent_stem = parent_stem.clone();
+        }
+        let mut child_report = cmd_generate(child_args, error_format);
+        staged.extend(std::mem::take(&mut child_report.staged_children));
+        read = joined_reads(read, child_report.depfile.take());
+        shares.append(&mut child_report.sourcemaps);
+        pending.extend(child_generations_asked_by(&child_report));
+    }
+    (read, shares)
 }
 
 /// `--plan-children`: after a `--plan` run of `args`, plan the generation of
@@ -6915,19 +7064,7 @@ fn plan_child_generations(
             .to_string_lossy()
             .into_owned()
     });
-    // The generations a run's report asks for: the children in its process
-    // first, then the ones on partitions of their own.
-    fn asked_by(report: &GenerateReport) -> Vec<(PathBuf, ChildGeneration)> {
-        let in_process = report
-            .child_documents
-            .iter()
-            .map(|path| (tree_key(path), ChildGeneration::InItsParentsProcess));
-        let on_partitions = report
-            .peer_documents
-            .iter()
-            .map(|path| (tree_key(path), ChildGeneration::OnItsOwnPartition));
-        in_process.chain(on_partitions).collect()
-    }
+    let asked_by = child_generations_asked_by;
     // Every document a generation produced so far, for the next to read.
     fn hold(tree: &PendingTree, held: &mut BTreeMap<PathBuf, String>) {
         let documents = tree
@@ -7157,6 +7294,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         include_dir,
         // Decided by `run_generate`, which calls this once per document.
         with_imports: _,
+        children: _,
     } = args;
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
@@ -8270,7 +8408,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 .parse_file(&child.to_string_lossy())
                 .ok()
         };
-        copy_static_invoke_children(
+        report.staged_children = copy_static_invoke_children(
             &model,
             Path::new(scxml_path),
             &drift_input_root,
@@ -8524,23 +8662,33 @@ fn peer_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
 /// ([`child_documents_to_stage`]): the generation of the staged copy reads it
 /// from the output directory, where none of the documents it names is beside
 /// it unless this run put it there.
+///
+/// Returns each copy staged, by its path in the output directory, with the
+/// document it is a copy of: a run that generates its children itself
+/// (`--children`) generates a staged child from where its author wrote it, so
+/// the child's files name that document and not the copy.
 fn copy_static_invoke_children(
     model: &SCXMLModel,
     scxml_path: &Path,
     input_root: &Path,
     output_dir: &Path,
     parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
-) {
+) -> BTreeMap<PathBuf, PathBuf> {
+    let mut staged = BTreeMap::new();
     for child in child_documents_to_stage(model, scxml_path, input_root, parse) {
         let dest = output_dir.join(&child.file_name);
-        if let Err(e) = stage_child_document(&child.from, &dest) {
-            eprintln!(
+        match stage_child_document(&child.from, &dest) {
+            Ok(()) => {
+                staged.insert(tree_key(&dest), child.from);
+            }
+            Err(e) => eprintln!(
                 "Warning: Cannot copy {} {} to output: {e}",
                 child.reference.what(),
                 child.from.display()
-            );
+            ),
         }
     }
+    staged
 }
 
 /// How an `<invoke>` names a child document a run stages.
@@ -14746,8 +14894,9 @@ fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
 
 /// `materialize`: write the tree `tree` declares into `into` from its actions
 /// (ADR 0097), through this machine's action cache, and say on stderr how
-/// many actions the cache answered and how many ran.
-fn cmd_materialize(tree: &str, into: &Path, error_format: ErrorFormat) {
+/// many actions the cache answered and how many ran. With `replace`, also
+/// remove the generated files under the tree's roots that it did not write.
+fn cmd_materialize(tree: &str, into: &Path, replace: bool, error_format: ErrorFormat) {
     use sce_build::action::{generation, identity, materialize, store, tree as trees};
     let fail = |detail: String| -> ! {
         error_format.emit_and_exit(
@@ -14777,6 +14926,13 @@ fn cmd_materialize(tree: &str, into: &Path, error_format: ErrorFormat) {
         .unwrap_or_else(|e| fail(e.to_string()));
     let report = materialize::materialize(&generator, &store, &expanded, into)
         .unwrap_or_else(|e| fail(e.to_string()));
+    if replace {
+        let removed = materialize::remove_unproduced(&expanded, into, &report)
+            .unwrap_or_else(|e| fail(e.to_string()));
+        for file in &removed {
+            eprintln!("materialize {tree}: removed {file}, which the tree no longer writes");
+        }
+    }
     eprintln!(
         "materialize {tree}: {} file(s) into {}; {} action(s) from the cache, {} run",
         report.files.len(),

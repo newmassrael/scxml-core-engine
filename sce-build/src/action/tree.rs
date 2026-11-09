@@ -53,14 +53,16 @@ pub struct TreeManifest {
     pub format: Vec<FormatRule>,
 }
 
-/// The name of a tree and the directories it owns, relative to the root. A
-/// root may hold one `*` in its last component (`sce-specs/src/*/generated`
-/// is not that: `*` may stand only for a whole component).
+/// The name of a tree and the directories it owns, relative to the root,
+/// each a pattern whose components may hold `*`; a directory `except` names
+/// is another tree's, though a pattern of this one matches it.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TreeHead {
     pub name: String,
     pub roots: Vec<String>,
+    #[serde(default)]
+    pub except: Vec<String>,
 }
 
 /// One generation, or one for each member of a set.
@@ -80,6 +82,12 @@ pub struct GenerationRule {
     /// their paths relative to the output directory; every file when empty.
     #[serde(default)]
     pub keep: Vec<String>,
+    /// Whether a member the generator refuses by name (exit status 7,
+    /// `generate/unsupported-feature`: the backend does not lower it yet) is
+    /// left out of the tree rather than failing it. Any other refusal fails
+    /// the tree.
+    #[serde(default)]
+    pub skip_unsupported: bool,
 }
 
 /// The members a rule is repeated for, each named `{<as>}` in it. Exactly one
@@ -97,41 +105,96 @@ pub struct Each {
     /// The values written.
     #[serde(default)]
     pub list: Option<Vec<String>>,
+    /// Of the files a pattern matches, only those holding this text.
+    #[serde(default)]
+    pub containing: Option<String>,
+    /// Members left out: a rule of their own generates them.
+    #[serde(default)]
+    pub except: Vec<String>,
     /// The name a member is written by, `{<as>}`.
     pub r#as: String,
 }
 
 impl Each {
-    /// The members, in byte order for a pattern and as written for a list.
+    /// The members, in byte order for a pattern and as written for a list,
+    /// less those `except` names.
     fn members(&self, root: &Path) -> Result<Vec<String>, String> {
-        match (&self.directories, &self.files, &self.list) {
-            (Some(pattern), None, None) => matching(root, pattern, Kind::Directory)
-                .map(|paths| paths.iter().map(|p| leaf(p).to_string()).collect()),
-            (None, Some(pattern), None) => matching(root, pattern, Kind::File)
-                .map(|paths| paths.iter().map(|p| stem(p).to_string()).collect()),
-            (None, None, Some(list)) => Ok(list.clone()),
-            _ => Err(format!(
-                "the set named `{}` has to say exactly one of `directories`, `files` and \
-                 `list`",
+        if self.containing.is_some() && self.files.is_none() {
+            return Err(format!(
+                "the set named `{}` filters by content, which only `files` have",
                 self.r#as
-            )),
+            ));
         }
+        let members: Vec<String> = match (&self.directories, &self.files, &self.list) {
+            (Some(pattern), None, None) => matching(root, pattern, Kind::Directory)?
+                .iter()
+                .map(|p| leaf(p).to_string())
+                .collect(),
+            (None, Some(pattern), None) => {
+                let mut kept = Vec::new();
+                for path in matching(root, pattern, Kind::File)? {
+                    if let Some(text) = &self.containing {
+                        let content = fs::read_to_string(root.join(&path))
+                            .map_err(|e| format!("{path}: {e}"))?;
+                        if !content.contains(text.as_str()) {
+                            continue;
+                        }
+                    }
+                    kept.push(stem(&path).to_string());
+                }
+                kept
+            }
+            (None, None, Some(list)) => list.clone(),
+            _ => {
+                return Err(format!(
+                    "the set named `{}` has to say exactly one of `directories`, `files` and \
+                     `list`",
+                    self.r#as
+                ))
+            }
+        };
+        for name in &self.except {
+            if !members.contains(name) {
+                return Err(format!(
+                    "the set named `{}` excepts `{name}`, which is not one of its members",
+                    self.r#as
+                ));
+            }
+        }
+        Ok(members
+            .into_iter()
+            .filter(|m| !self.except.contains(m))
+            .collect())
     }
 }
 
-/// An index file of a directory: one line for each module the directory
-/// holds, under a fixed header, in byte order.
+/// The index file each of some directories holds: a header, then a line for
+/// each module the directory holds, entry by entry, each entry's modules in
+/// byte order.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndexRule {
-    /// The index file, relative to the root.
-    pub path: String,
+    /// The directories, relative to the root, a pattern whose components may
+    /// hold `*`.
+    pub directories: String,
+    /// Directories the pattern matches that are not indexed this way.
+    #[serde(default)]
+    pub except: Vec<String>,
+    /// The index file's name in each directory.
+    pub file: String,
     /// The text before the first module, written as it is.
     pub header: String,
-    /// The modules: the files a pattern matches, relative to the root, each
-    /// named by its stem.
-    pub modules: String,
-    /// The line written for each module, `{module}` its name.
+    pub entries: Vec<IndexEntry>,
+}
+
+/// The modules of one kind an index names.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IndexEntry {
+    /// The files of the directory that are modules of this kind, a pattern
+    /// on their names, each module named by its stem.
+    pub files: String,
+    /// The line written for each, `{module}` its name.
     pub line: String,
 }
 
@@ -219,6 +282,8 @@ pub struct PlacedGeneration {
     pub generation: Generation,
     pub place: String,
     pub keep: Vec<String>,
+    /// [`GenerationRule::skip_unsupported`].
+    pub skip_unsupported: bool,
 }
 
 /// A tree with every rule expanded against a checkout.
@@ -226,6 +291,8 @@ pub struct PlacedGeneration {
 pub struct ExpandedTree {
     pub name: String,
     pub roots: Vec<String>,
+    /// [`TreeHead::except`].
+    pub except: Vec<String>,
     pub generations: Vec<PlacedGeneration>,
     pub indexes: Vec<IndexRule>,
     pub formats: Vec<FormatRule>,
@@ -277,12 +344,14 @@ impl TreeManifest {
                     },
                     place: fill(&rule.place),
                     keep: rule.keep.clone(),
+                    skip_unsupported: rule.skip_unsupported,
                 });
             }
         }
         Ok(ExpandedTree {
             name: self.tree.name.clone(),
             roots: self.tree.roots.clone(),
+            except: self.tree.except.clone(),
             generations,
             indexes: self.index.clone(),
             formats: self.format.clone(),

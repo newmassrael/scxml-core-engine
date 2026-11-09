@@ -213,6 +213,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "prefixes emitted C symbols",
     ),
     f(
+        "--children",
+        Reach::Emission,
+        Some(&["--children"]),
+        "rust",
+        "generates, in the same run, the child documents the run writes; each \
+         is judged by the `generate` of its own document, so the parent's \
+         verdict is the one `check` reaches",
+    ),
+    f(
         "--const-fold-budget",
         Reach::Verdict,
         None,
