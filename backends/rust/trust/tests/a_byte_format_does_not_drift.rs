@@ -8,11 +8,17 @@
 // vectors are the guard: each is a fixed input and the bytes it must give, written down, so that
 // a change shows as a difference here and is a decision, not an accident.
 //
-// The vectors of a write, a note and an operation were made again, once, when the layer moved to
-// the standard shared record list (docs/adr/0042, step 3): the event domain became
-// `sce-trust/event/2`, the events are named `record_list.*`, and the fields the second revision of
-// the list's schemas added are signed (docs/adr/0046). They are new pins of that decision; the
-// sealed stamp, the checkpoint and the entries of the log did not move.
+// The vectors of a change and of the operation that carries it were made again, once, when a
+// change of the list became one signed unit (docs/adr/0085, landing 4c): the event domain became
+// `sce-trust/event/3`, the one signed event is `record_list.change`, and an event and an operation
+// are written as deterministic CBOR (docs/adr/0086, section 9), where the second domain wrote one
+// event per part of a change as length-prefixed texts. The sealed text moved with the nonce and
+// content domains (`sce-trust/nonce/2`, `sce-trust/content/2`): a write is one of a change's. The
+// stamp a write is sealed under, its register and its change's dot, is the bytes it was. They are
+// new pins of that decision, made by an encoder written apart from this crate's (deterministic
+// CBOR by hand, SHA-256, Ed25519 and XChaCha20-Poly1305 of another library), which gave the
+// vectors of the second domain back first; the checkpoint and the entries of the log did not
+// move.
 
 use sce_rust_trust::checkpoint::{Checkpoint, Head};
 use sce_rust_trust::encoding;
@@ -34,12 +40,12 @@ fn bob() -> Identity {
     Identity::from_seed([2; 32])
 }
 
-fn write() -> serde_json::Value {
-    json!({"id":1,"field":3,"value":"10","text":"","wallTime":"1000","counter":0,"nodeId":"1"})
-}
-
-fn note() -> serde_json::Value {
-    json!({"id":1,"field":3,"wallTime":"1000","counter":0,"nodeId":"2","by":"1"})
+/// A change of node 1: it writes over the value node 2 wrote of row 1, field 3, at 900, and writes
+/// the field anew.
+fn change() -> serde_json::Value {
+    json!({"by":"1","wallTime":"1000","counter":0,"ops":[
+        {"kind":1,"id":1,"field":3,"value":"0","text":"","wallTime":"900","counter":0,"nodeId":"2"},
+        {"kind":0,"id":1,"field":3,"value":"10","text":"","wallTime":"0","counter":0,"nodeId":"0"}]})
 }
 
 fn link() -> message::Link {
@@ -53,27 +59,27 @@ fn link() -> message::Link {
 }
 
 /// The operation domain is the second since its link holds the operation's causal context
-/// (docs/adr/0085, landing 4b): the bytes of the first form, with the context's count and each
-/// entry's node and number after the log's hash. These were made once, for that decision, and
-/// the vector of the first form they replace was
-/// `JInVDbQHgBWrzZxfJ9gmcgelmJ9Abr2ZLLVzY5bzdIY` as its id.
+/// (docs/adr/0085, landing 4b), and it is the CBOR array of the domain, the change's bytes as a
+/// byte string and the link as a map, its context a list of records of a node and a number. The id
+/// of the first form, which wrote texts with their lengths and no context, was
+/// `JInVDbQHgBWrzZxfJ9gmcgelmJ9Abr2ZLLVzY5bzdIY`.
 #[test]
 fn an_operation_is_signed_and_named_as_it_always_was() {
-    let signing = message::signing("home", "record_list.write", &write())
+    let signing = message::signing("home", "record_list.change", &change())
         .unwrap()
         .unwrap();
     let operation = message::operation_bytes(&signing.message, &link());
     assert_eq!(
         hex(&operation),
-        "00000000000000157363652d74727573742f6f7065726174696f6e2f32000000000000008900000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000117265636f72645f6c6973742e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131000000000000000131000000000000000133000000000000002b42776348427763484277634842776348427763484277634842776348427763484277634842776348427763000000000000000134000000000000002b43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b4a43516b000000000000000131000000000000000132000000000000000135"
+        "83757363652d74727573742f6f7065726174696f6e2f3258c084717363652d74727573742f6576656e742f3364686f6d65727265636f72645f6c6973742e6368616e6765a462627901636f707382a862696401646b696e6401647465787460656669656c64036576616c756500666e6f646549640267636f756e746572006877616c6c54696d65190384a862696401646b696e6400647465787460656669656c64036576616c75650a666e6f646549640067636f756e746572006877616c6c54696d650067636f756e746572006877616c6c54696d651903e8a562637881a26373657105646e6f646502626d6804636d6868582009090909090909090909090909090909090909090909090909090909090909096373657103647072657658200707070707070707070707070707070707070707070707070707070707070707"
     );
     assert_eq!(
         encoding::encode(&message::operation_id(&operation)),
-        "3IKUEOQFYxgYjE3NRQ6bXrkFcdP8tzBr7v61ZqoLM80"
+        "CxkFoklhMKlxvF1aTa-9WQqov8RxmBtoYvYZ6X3GboU"
     );
     assert_eq!(
         encoding::encode(&alice().sign(&operation)),
-        "RhfXzqxFw6jbfS2fPIiLcEbfSXtWM2Q_dkLfTXpmW012TOlOA0AZbrGTHP3_lx375-WQafL11OAJ0UTqyfgBCQ"
+        "TlMQ5ueEMyOZ5FB100C48CdkEsa2RlcZgriymAHbW97PgZhaHe1RMMM07uxWQr35wGgrW7jI0iZI60T-0g9NBA"
     );
 }
 
@@ -85,46 +91,22 @@ fn a_public_key_is_written_the_same_way() {
     );
 }
 
+/// A change is the CBOR array of the event domain, the list, the event and its payload, a map of
+/// every field `record_change` declares keyed in the order of their encodings (`by`, `ops`,
+/// `counter`, `wallTime`), its operations an array of maps of every field `record_op` declares, in
+/// the order the change holds them.
 #[test]
-fn the_bytes_a_write_is_signed_as_do_not_move() {
-    let signing = message::signing("home", "record_list.write", &write())
+fn the_bytes_a_change_is_signed_as_do_not_move() {
+    let signing = message::signing("home", "record_list.change", &change())
         .unwrap()
         .unwrap();
     assert_eq!(
         hex(&signing.message),
-        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000117265636f72645f6c6973742e7772697465000000000000000131000000000000000133000000000000000231300000000000000000000000000000000431303030000000000000000130000000000000000131000000000000000131"
+        "84717363652d74727573742f6576656e742f3364686f6d65727265636f72645f6c6973742e6368616e6765a462627901636f707382a862696401646b696e6401647465787460656669656c64036576616c756500666e6f646549640267636f756e746572006877616c6c54696d65190384a862696401646b696e6400647465787460656669656c64036576616c75650a666e6f646549640067636f756e746572006877616c6c54696d650067636f756e746572006877616c6c54696d651903e8"
     );
     assert_eq!(
         encoding::encode(&alice().sign(&signing.message)),
-        "nrtDDo5FiFhAw3jHc-A1M0jiupWF-n4ZL3Sn59p55cxlvgM8QInK6Pjhn2U-XSd9WUP_dPTNH8dMdJqFm7KHAg"
-    );
-}
-
-#[test]
-fn the_bytes_a_note_is_signed_as_do_not_move() {
-    let signing = message::signing("home", "record_list.supersede", &note())
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        hex(&signing.message),
-        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000157265636f72645f6c6973742e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131000000000000000131000000000000000130000000000000000130"
-    );
-}
-
-/// A note that is one part of a change of more carries the change's size and stamp, and they are
-/// signed in the order the schema declares them, after `by`.
-#[test]
-fn the_bytes_a_part_of_a_change_is_signed_as_do_not_move() {
-    let mut part = note();
-    part["parts"] = json!(2);
-    part["atWallTime"] = json!("2000");
-    part["atCounter"] = json!(1);
-    let signing = message::signing("home", "record_list.supersede", &part)
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        hex(&signing.message),
-        "00000000000000117363652d74727573742f6576656e742f320000000000000004686f6d6500000000000000157265636f72645f6c6973742e737570657273656465000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000132000000000000000131000000000000000132000000000000000432303030000000000000000131"
+        "FBAQ8-TDg4Dwq5gBTSfxnweTouiBcnChHaDuYkms1dJnoGRDPGBiakMj4x48CD1TJnjXiATcEx4AHnyKSYHwDA"
     );
 }
 
@@ -231,14 +213,16 @@ fn the_entries_of_the_membership_log_are_signed_and_named_as_they_always_were() 
 
 #[test]
 fn sealed_content_and_a_wrapped_key_are_written_the_same_way() {
-    let stamp = message::write_stamp(&write()).unwrap();
+    let change = change();
+    let stamp = message::write_stamp(&change, &change["ops"][1]).unwrap();
     assert_eq!(
         hex(&stamp),
-        "000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000131"
+        "000000000000000131000000000000000133000000000000000431303030000000000000000130000000000000000131",
+        "the write's register (1, 3) and its change's dot (1000, 0, node 1)"
     );
     assert_eq!(
         secrecy::seal("home", 2, &[7; 32], &stamp, -42, "buy milk"),
-        "~AAAAAnNxtIUL1OyQihxj0hPpffYTNYe5LDXx-J_TiFDSbvPeQjjxUObsr9p9qncyyKg541lfLarzNyxFifo"
+        "~AAAAAjEhBfGkf5VTLxQdIkXvVG5zNJhHbV_WoUPtnSa_zY1trIoG82vyhTeW1J_2ooyqqvKdOwAETDzt2gg"
     );
     let shared = alice().agree(&bob().public()).unwrap();
     assert_eq!(

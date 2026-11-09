@@ -78,9 +78,11 @@ fn host(own: Option<u64>) -> Trust {
     host_with(&standard(), own)
 }
 
+/// A change of `author`'s at `wall_time` of one write, to row `id`.
 fn write_at(author: u64, id: u64, wall_time: i64) -> String {
-    json!({"id":id.to_string(),"field":"3","value":"1","text":"",
-           "wallTime":wall_time.to_string(),"counter":"0","nodeId":author.to_string()})
+    json!({"by":author.to_string(),"wallTime":wall_time.to_string(),"counter":"0","ops":[
+        {"kind":0,"id":id.to_string(),"field":"3","value":"1","text":"",
+         "wallTime":"0","counter":"0","nodeId":"0"}]})
     .to_string()
 }
 
@@ -225,7 +227,7 @@ fn a_hub_cannot_make_a_settlement_out_of_what_is_not_the_writers() {
 fn a_checkpoint_that_is_forged_or_foreign_is_not_taken_in() {
     let hub = host(None);
     let mut alice = host(Some(1));
-    sent(&mut alice, "record_list.write", &write_at(1, 1, 1000));
+    sent(&mut alice, "record_list.change", &write_at(1, 1, 1000));
     let genuine = alice.checkpoint(30_000, 7).unwrap();
     assert_eq!(genuine.heads.len(), 1);
 
@@ -301,28 +303,28 @@ fn a_checkpoint_that_is_forged_or_foreign_is_not_taken_in() {
 fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere() {
     let mut alice = host(Some(1));
     let ops = [
-        sent(&mut alice, "record_list.write", &write_at(1, 1, 1000)),
-        sent(&mut alice, "record_list.write", &write_at(1, 2, 1001)),
-        sent(&mut alice, "record_list.write", &write_at(1, 3, 1002)),
+        sent(&mut alice, "record_list.change", &write_at(1, 1, 1000)),
+        sent(&mut alice, "record_list.change", &write_at(1, 2, 1001)),
+        sent(&mut alice, "record_list.change", &write_at(1, 3, 1002)),
     ];
     let mut honest_relay = host(None);
     let mut withholding_relay = host(None);
     for op in &ops {
         honest_relay
-            .admit("alice", "record_list.write", op)
+            .admit("alice", "record_list.change", op)
             .unwrap();
     }
     // The relay that withholds passes on the first and the last, and not the one between.
     withholding_relay
-        .admit("alice", "record_list.write", &ops[0])
+        .admit("alice", "record_list.change", &ops[0])
         .unwrap();
     withholding_relay
-        .admit("alice", "record_list.write", &ops[2])
+        .admit("alice", "record_list.change", &ops[2])
         .unwrap();
 
     let mut bob = host(Some(2));
     for op in [&ops[0], &ops[2]] {
-        bob.admit("withholding", "record_list.write", op).unwrap();
+        bob.admit("withholding", "record_list.change", op).unwrap();
     }
     assert_eq!(bob.heads().iter().map(|h| h.seq).collect::<Vec<_>>(), [1]);
     assert_eq!(bob.divergences(), vec![], "nothing is named yet");
@@ -345,7 +347,7 @@ fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere(
     assert_eq!(fetched.len(), 2);
     assert_eq!(honest_relay.operations(1, 3, 2), Vec::new());
     for (event, data) in &fetched {
-        assert_eq!(event, "record_list.write");
+        assert_eq!(event, "record_list.change");
         bob.admit("honest", event, data).unwrap();
     }
     assert_eq!(bob.divergences(), vec![]);
@@ -353,9 +355,9 @@ fn a_member_sees_the_operations_a_relay_did_not_give_and_fetches_them_elsewhere(
 
     // What a relay hands over is checked: a changed operation is not taken in.
     let mut altered: Value = serde_json::from_str(&fetched[0].1).unwrap();
-    altered["value"] = json!("2");
+    altered["ops"][0]["value"] = json!("2");
     assert!(host(Some(2))
-        .admit("honest", "record_list.write", &altered.to_string())
+        .admit("honest", "record_list.change", &altered.to_string())
         .is_err());
 }
 
@@ -366,11 +368,11 @@ fn a_checkpoint_that_names_another_operation_is_a_difference_and_settles_nothing
     // Two hosts hold alice's key, as a copy of her device that forked would.
     let mut first = host(Some(1));
     let mut second = host(Some(1));
-    let one = sent(&mut first, "record_list.write", &write_at(1, 1, 1000));
-    sent(&mut second, "record_list.write", &write_at(1, 9, 1000));
+    let one = sent(&mut first, "record_list.change", &write_at(1, 1, 1000));
+    sent(&mut second, "record_list.change", &write_at(1, 9, 1000));
 
     let mut bob = host(Some(2));
-    bob.admit("relay", "record_list.write", &one).unwrap();
+    bob.admit("relay", "record_list.change", &one).unwrap();
     bob.take_checkpoint(&second.checkpoint(30_000, 7).unwrap())
         .unwrap();
     assert_eq!(
@@ -438,19 +440,19 @@ fn the_head_of_a_chain_is_the_last_number_held_with_every_one_before_it() {
         .map(|n| {
             sent(
                 &mut alice,
-                "record_list.write",
+                "record_list.change",
                 &write_at(1, n, 1000 + n as i64),
             )
         })
         .collect();
     let mut hub = host(None);
     assert_eq!(hub.heads(), Vec::new());
-    hub.admit("a", "record_list.write", &ops[2]).unwrap();
+    hub.admit("a", "record_list.change", &ops[2]).unwrap();
     assert_eq!(hub.heads(), Vec::new(), "3 without 1 is no head");
-    hub.admit("a", "record_list.write", &ops[0]).unwrap();
+    hub.admit("a", "record_list.change", &ops[0]).unwrap();
     assert_eq!(hub.heads().len(), 1);
     assert_eq!(hub.heads()[0].seq, 1);
-    hub.admit("a", "record_list.write", &ops[1]).unwrap();
+    hub.admit("a", "record_list.change", &ops[1]).unwrap();
     assert_eq!(hub.heads()[0].seq, 3);
     assert_eq!(alice.heads(), hub.heads(), "the same chain, the same head");
 }
