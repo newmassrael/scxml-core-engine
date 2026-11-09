@@ -162,9 +162,11 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
             "        let machine = Engine(policy: policy)\n".to_string(),
             "try machine.registerEventProcessor(\"http://sce.dev/ext/test-port\") { request in\n"
                 .to_string(),
+            "guard let sent = request.value?.value as? any SceTestProfile.TestValue else {\n"
+                .to_string(),
             "preconditionFailure(\"a test-port send carries its template's value\")".to_string(),
             "context.send(request.target, SceTestProfile.Message(event: request.eventName, \
-             value: sent.value))"
+             value: sent))"
                 .to_string(),
             "try machine.registerInvoker(\"http://sce.dev/ext/test-component\") { event in\n"
                 .to_string(),
@@ -336,7 +338,9 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
 /// in whole microseconds and a timer's own where the statement writes none,
 /// a verdict as the runtime's case; a send names its record's event and
 /// carries its specific template's value to the test-port processor as a
-/// `HostSendValue`; a PTC is started through the host invoker.
+/// `HostSendValue`, with the name of its record type and the unit's writer of
+/// its canonical form in the test log (§12.5); a PTC is started through the
+/// host invoker.
 #[test]
 fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     let asker = text("asker");
@@ -349,13 +353,15 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "eventName: \"job.request\",",
         "target: \"sut\",",
         "invokeID: engine.currentEventInvokeID,\n",
-        "value: HostSendValue(RequestOf.value(self.vJob))\n",
+        "value: HostSendValue(SceTestProfile.messageValue(RequestOf.value(self.vJob), \
+         RequestOf.TYPE, { sceSent in RequestOf.canonical(sceSent) }))\n",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`:\n{asker}");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value: HostSendValue(ReplyOf.value(self.vRequested, self.vOk))\n",
+        "value: HostSendValue(SceTestProfile.messageValue(ReplyOf.value(self.vRequested, \
+         self.vOk), ReplyOf.TYPE, { sceSent in ReplyOf.canonical(sceSent) }))\n",
         "processorType: \"http://sce.dev/ext/test-component\",",
         "invokeID: \"answerer\",",
     ] {
@@ -464,7 +470,9 @@ fn a_template_argument_is_handed_over_as_the_machine_holds_it() {
     let code = text_at(&path);
     assert!(
         code.contains(
-            "value: HostSendValue(JobReportOf.value(self.vElapsed, self.vNote, self.vCode))"
+            "value: HostSendValue(SceTestProfile.messageValue(\
+             JobReportOf.value(self.vElapsed, self.vNote, self.vCode), JobReportOf.TYPE, \
+             { sceSent in JobReportOf.canonical(sceSent) }))"
         ),
         "{code}"
     );

@@ -5,10 +5,13 @@
 //! §11.9, §12.2): a caseless enum named by the document, as an algorithm's
 //! unit is, which declares `Value`, the type the template matches; `matches`,
 //! whether a value matches it (ES 201 873-1 Annex B.1); and, for a specific
-//! template (§6.2), `value`, the one value it sends. Every unit of a run is a
-//! file of one module, so the three are members of the enum: two templates
-//! never declare one name twice, and a template another references is called
-//! through its enum (`<Name>.matches`, `<Name>.value`).
+//! template (§6.2), `value`, the one value it sends. A template over a record,
+//! the type of a message, declares `TYPE` and `canonical` besides, the name of
+//! its record and the canonical form of its value in the test log (§12.5,
+//! [`SwiftCanonical`]). Every unit of a run is a file of one module, so these
+//! are members of the enum: two templates never declare one name twice, and a
+//! template another references is called through its enum (`<Name>.matches`,
+//! `<Name>.value`).
 //!
 //! What each matcher holds is decided by the walk every backend shares
 //! ([`super::test_template_walk`]), and its tests are joined as every backend
@@ -53,8 +56,8 @@
 //! reaches one is refused by the walk before anything is spelled.
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands,
-    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
+    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::composed_lowering::{swift_case_ident, swift_case_read, SWIFT_UNION_KIND};
@@ -119,6 +122,9 @@ pub(super) fn render_test_template_swift(
     } else {
         None
     };
+    // Only a template over a record, the type of a message, writes a message's
+    // type name and its canonical form (`TemplateWalk::message_form`).
+    let (log_type, canonical_expr) = walk.message_form(&SwiftCanonical, &scope)?.unzip();
     // A value counts no text: only a test does, so the match is what is read. A
     // text literal that holds the same characters reads as a call too, which
     // costs the unit an import of a module its target links, and nothing more.
@@ -132,10 +138,197 @@ pub(super) fn render_test_template_swift(
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
     ctx.insert(
-        "test_runtime_import".into(),
-        serde_json::json!(counts_text.then_some(SWIFT_TEST_RUNTIME_MODULE)),
+        "unit_imports".into(),
+        serde_json::json!(unit_imports(counts_text, canonical_expr.is_some())),
     );
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
+    ctx.insert("canonical_value".into(), CANONICAL_VALUE.into());
     l.render(env, "test_template", ctx)
+}
+
+/// The modules a template's unit imports, in the order it imports them: the
+/// profile's runtime where a length restriction counts a text's characters
+/// through it, or where the unit writes a message's canonical form with its
+/// writers ([`CANONICAL`]), and then the runtime whose `JSONValue` that form is
+/// ([`CANONICAL_VALUE`]) too. Every enum, record and referenced template is a
+/// file of the unit's own module, so nothing else is imported.
+fn unit_imports(counts_text: bool, writes_canonical: bool) -> Vec<&'static str> {
+    if writes_canonical {
+        vec![SWIFT_RUNTIME_MODULE, SWIFT_TEST_RUNTIME_MODULE]
+    } else if counts_text {
+        vec![SWIFT_TEST_RUNTIME_MODULE]
+    } else {
+        Vec::new()
+    }
+}
+
+/// The module of the Swift runtime whose `JSONValue` a canonical form is.
+const SWIFT_RUNTIME_MODULE: &str = "SceRuntime";
+
+/// The type of a value's canonical form in the test log, named by its module
+/// so that no declaration of the unit's own module can hide it.
+const CANONICAL_VALUE: &str = "SceRuntime.JSONValue";
+
+/// The enum of the profile's Swift runtime whose functions write the canonical
+/// form of a value in the test log
+/// (`backends/swift/runtime/Sources/SceTestProfile/Canonical.swift`), named by
+/// its module as [`text_length_call`] names its function.
+const CANONICAL: &str = "SceTestProfile.Canonical";
+
+/// A value the canonical writer reads, in Swift.
+struct CanonicalAt {
+    /// What names the value: `value`, a closure's parameter, the record a
+    /// union's case pattern bound, or a field of any of them.
+    expr: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+}
+
+/// The Swift spelling of a value's canonical form in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), with the writers of
+/// `SceTestProfile.Canonical`: a `JSONValue` of texts, truth values, arrays and
+/// objects, which the runtime's `writeCanonicalJSON` writes. The walk is the
+/// one every backend shares (`test_template_walk::canonical_value`, through
+/// `TemplateWalk::message_form`); an optional field is its `map`, whose
+/// closure is handed the present value and whose `nil` the record omits, a list
+/// its `map`, and a union a `switch` over its enum's cases, each pattern
+/// binding the case's record, in a closure called where it stands so that it
+/// is one expression wherever a value is. Each closure states its result, as a
+/// matcher's does, so the type checker reads no more than the closure to type
+/// it. Since the pattern binds the record itself, the default
+/// [`CanonicalSpelling::case_record`] names it.
+struct SwiftCanonical;
+
+impl CanonicalSpelling for SwiftCanonical {
+    type At = CanonicalAt;
+
+    /// `canonical`'s parameter `value`.
+    fn root(&self) -> CanonicalAt {
+        CanonicalAt {
+            expr: "value".to_string(),
+            depth: 0,
+        }
+    }
+
+    fn field(&self, at: &CanonicalAt, id: &str) -> CanonicalAt {
+        CanonicalAt {
+            expr: format!(
+                "{}.{}",
+                at.expr,
+                event_schema_field_ident(id, Language::Swift)
+            ),
+            depth: at.depth,
+        }
+    }
+
+    /// A closure binds the value it is given, and a case pattern the case's
+    /// record, numbered by how many it stands inside, so an inner one never
+    /// hides an outer one's.
+    fn bound(&self, at: &CanonicalAt, prefix: &str) -> (String, CanonicalAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = CanonicalAt {
+            expr: name.clone(),
+            depth: at.depth + 1,
+        };
+        (name, value)
+    }
+
+    fn boolean(&self, at: &CanonicalAt) -> String {
+        format!("{CANONICAL}.boolean({})", at.expr)
+    }
+
+    /// A strict enum's `declaredName`; an open one's, which is nil for a
+    /// number no variant declares, beside its number. A record that holds an
+    /// enum of an open set is refused on Swift before the walk
+    /// ([`refuse_unwritten_types`]), so only a later lowering of one reads
+    /// the second form.
+    fn enumerated(&self, at: &CanonicalAt, strict: bool) -> String {
+        if strict {
+            format!("{CANONICAL}.enumerated({}.declaredName)", at.expr)
+        } else {
+            format!(
+                "{CANONICAL}.openEnumerated({0}.declaredName, {0}.rawValue)",
+                at.expr
+            )
+        }
+    }
+
+    fn integer(&self, at: &CanonicalAt) -> String {
+        format!("{CANONICAL}.integer({})", at.expr)
+    }
+
+    fn text(&self, at: &CanonicalAt) -> String {
+        format!("{CANONICAL}.text({})", at.expr)
+    }
+
+    fn bytes(&self, at: &CanonicalAt) -> String {
+        format!("{CANONICAL}.bytes({})", at.expr)
+    }
+
+    fn list(&self, at: &CanonicalAt, binding: &str, element: String) -> String {
+        format!(
+            "{CANONICAL}.list({}.map {{ {binding} -> {CANONICAL_VALUE} in {element} }})",
+            at.expr
+        )
+    }
+
+    /// As it is: a `JSONValue` stands where the record takes an optional one.
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field's `map`, nil where the field is absent, which the record
+    /// omits.
+    fn optional_field(&self, field: &CanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{}.map {{ {binding} -> {CANONICAL_VALUE} in {written} }}",
+            field.expr
+        )
+    }
+
+    fn record(&self, fields: Vec<(String, String)>) -> String {
+        let fields: Vec<String> = fields
+            .into_iter()
+            .map(|(id, value)| format!("(\"{}\", {value})", filters::escape_swift(id)))
+            .collect();
+        format!("{CANONICAL}.record({})", fields.join(", "))
+    }
+
+    /// A `switch` on one line, a case per variant through the union's enum,
+    /// the pattern binding the case's record where the case holds one, in a
+    /// closure called where it stands. The `switch` names every case, so it is
+    /// exhaustive.
+    fn union(
+        &self,
+        at: &CanonicalAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let arms: Vec<String> = cases
+            .into_iter()
+            .map(|(variant, held)| {
+                let case = format!(
+                    "{}.{}",
+                    swift_union_type(union),
+                    swift_union_case(union, &variant)
+                );
+                let name = filters::escape_swift(variant);
+                match held {
+                    Some((binding, written)) => format!(
+                        "case {case}(let {binding}): return {CANONICAL}.unionCase(\"{name}\", \
+                         {written})"
+                    ),
+                    None => format!("case {case}: return {CANONICAL}.unionCase(\"{name}\", nil)"),
+                }
+            })
+            .collect();
+        Ok(format!(
+            "{{ () -> {CANONICAL_VALUE} in switch {} {{ {} }} }}()",
+            at.expr,
+            arms.join("; ")
+        ))
+    }
 }
 
 /// The text `text` as a Swift string literal. The default a suite gives a

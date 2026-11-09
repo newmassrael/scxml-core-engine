@@ -41,8 +41,9 @@
                         invokeID: engine.currentEventInvokeID,
 {# docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the value of
    its specific template, handed to the test-port processor as a value and
-   never as an encoding (docs/adr/0091, C2). Every other send leaves it nil and
-   carries `eventData`. #}
+   never as an encoding (docs/adr/0091, C2), with the writer of its canonical
+   form in the test log (§12.5). Every other send leaves it nil and carries
+   `eventData`. #}
                         value: HostSendValue({{ value }})
 {% else %}
                         invokeID: engine.currentEventInvokeID

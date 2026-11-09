@@ -8,11 +8,15 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 {# The profile's runtime is imported where a length restriction counts a text's
-   characters through it, and nowhere else: every enum, record and referenced
-   template is a file of the same module, named as it is declared. #}
-{% if test_runtime_import %}
+   characters through it, or where the unit writes a message's canonical form
+   with its writers, which is a `JSONValue` of the Swift runtime, imported then
+   too; nothing else is: every enum, record and referenced template is a file of
+   the same module, named as it is declared. #}
+{% if unit_imports %}
 
-import {{ test_runtime_import }}
+{% for module in unit_imports %}
+import {{ module }}
+{% endfor %}
 {% endif %}
 
 /// The test template `{{ template_name }}` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of
@@ -38,6 +42,22 @@ public enum {{ struct_name }} {
     /// given the same parameters.
     public static func value({% for p in parameters %}_ {{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) -> Value {
         return {{ value_expr }}
+    }
+{% endif %}
+{# Only a template over a record, the type of a message, writes the name of a
+   message's type and the canonical form of its value. #}
+{% if canonical_expr %}
+
+    /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+    /// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+    public static let TYPE: String = "{{ log_type | escape_swift }}"
+
+    /// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each integer
+    /// as the text of its digits, a byte string in upper-case hex, an enum and a case of a union by
+    /// their declared names, an absent field omitted. A send of this template carries it beside the
+    /// value it sends (`SceTestProfile.messageValue`).
+    public static func canonical(_ value: Value) -> {{ canonical_value }} {
+        return {{ canonical_expr }}
     }
 {% endif %}
 }
