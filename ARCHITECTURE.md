@@ -557,7 +557,7 @@ section of `sce-build/src/forge/static_lowering.rs`. A lane edits only its own s
 
 - **Static Structure**: States, events, transitions compiled to C++ enums and switch statements
 - **Dynamic Expressions**: Conditionals, guards, assignments evaluated via JSEngine or LuaEngine
-- **Lazy Initialization**: Script engine session created only when needed (RAII)
+- **Established at the start**: a session is made once, at the start (create it, load the shared library, bind the system variables), before any state is entered; a session that cannot be established refuses the start and the host is told the step that failed (docs/adr/0096). Rust holds this; the other backends follow in the order the ADR lands them
 - **Zero Duplication**: Expression evaluation helpers shared between engines
 
 **Detection**: Code generator automatically detects ECMAScript features:
