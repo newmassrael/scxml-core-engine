@@ -1275,6 +1275,38 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
     }
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.2, §12.5: a template over a record, the type of
+/// a message, is on the SCE runtime, since its unit writes the message's type
+/// name and canonical form in the test log with the profile's runtime; a
+/// template over another type names no runtime, and neither does a port type,
+/// which writes no file. The kind's bound is the larger of the two.
+#[test]
+fn a_template_over_a_record_is_on_the_sce_runtime_and_another_on_none() {
+    for (name, over_record) in [
+        ("job_report.scxml", true),
+        ("every_matcher.scxml", true),
+        ("elapsed_at_most.scxml", false),
+        ("shape_is_circle.scxml", false),
+    ] {
+        let parsed = parse(name);
+        let ForgeDocument::TestTemplate(template) = &parsed.document else {
+            panic!("{name}: a template, got {:?}", parsed.document.kind());
+        };
+        assert_eq!(template.is_over_record(), over_record, "{name}");
+        let tier = if over_record {
+            RuntimeDep::SceRuntime
+        } else {
+            RuntimeDep::None
+        };
+        assert_eq!(parsed.document.runtime_dep(), tier, "{name}");
+        assert!(parsed.document.runtime_dep() <= ForgeKind::TestTemplate.max_runtime_dep());
+    }
+    assert_eq!(
+        parse("job_port.scxml").document.runtime_dep(),
+        RuntimeDep::None
+    );
+}
+
 /// docs/SCE_TEST_PROFILE.md §11.9: a backend refuses a document of the
 /// profile by name until its runtime lands there for the document's kind, the
 /// declaration kinds at the forge dispatch and the test component where a
@@ -1310,10 +1342,14 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
         assert!(!kind.needs_instance(), "{kind:?}");
         assert!(!kind.is_inline_eligible(), "{kind:?}");
         // A component's machine is a statechart's, on the SCE runtime, and the
-        // tables of a test name those machines and the profile's runner.
+        // tables of a test name those machines and the profile's runner. A
+        // template over a record writes its message's canonical form with the
+        // profile's runtime, so the template kind's bound is the SCE runtime
+        // too; a port type writes no file.
         let tier = if matches!(
             kind,
-            ForgeKind::TestComponent
+            ForgeKind::TestTemplate
+                | ForgeKind::TestComponent
                 | ForgeKind::TestConfiguration
                 | ForgeKind::TestCase
                 | ForgeKind::TestSuite

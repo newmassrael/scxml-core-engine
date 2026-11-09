@@ -87,7 +87,10 @@ pub(super) fn render_test_template_rust(
         None
     };
     // A message is a record of an event schema (§11.3), so only a template over
-    // one writes a message's type name and its canonical form.
+    // one writes a message's type name and its canonical form
+    // ([`TestTemplateModel::is_over_record`]); that is also what puts the
+    // document's unit on the SCE runtime, which its header states
+    // (`ForgeDocument::runtime_dep`).
     let message = match &m.template_type {
         TypeOf::Record { alias } => {
             let record = scope.records.get(alias).ok_or_else(|| {
@@ -112,16 +115,6 @@ pub(super) fn render_test_template_rust(
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
     ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
     ctx.insert("log_type".into(), serde_json::json!(log_type));
-    // A unit that writes a message's canonical form names the SCE runtime's
-    // test module, and its header says so, as the units of a configuration, a
-    // test case and a suite do; the kind's own tier is the one a unit that
-    // names nothing of a runtime states.
-    if log_type.is_some() {
-        ctx.insert(
-            "runtime_dep".into(),
-            RuntimeDep::SceRuntime.to_string().into(),
-        );
-    }
     l.render(env, "test_template", ctx)
 }
 
