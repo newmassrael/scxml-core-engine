@@ -288,14 +288,19 @@ done
 # named by the document, generated as a file of the same target beside the records and enums their
 # units name; ATestTemplateMatchesItsValuesTests.swift matches them against values. The Rust,
 # Kotlin, Go, Python and C11 trees generate the same templates (scripts/regen_static_datamodel_rust.sh
-# and its siblings), Rust and Kotlin the two over a union besides, which the Swift generator writes
-# too (sce-build/tests/a_test_template_is_generated_in_swift.rs) and this tree does not generate.
+# and its siblings); Swift, which lowers a union as Rust and Kotlin do, generates the two over a
+# union besides, as those two trees do, with the union, the tag's enum and the records each names.
 # They are not swept by the directory reads above: the fixture directory of the
 # profile holds documents refused on purpose, so the documents generated are the ones named here.
 TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
-TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within shape_is_circle)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
+# ... and the union shape_is_circle matches, with its tag's enum and its cases' records, read from
+# the union kind's fixtures.
+UNION_DIR="sce-build/tests/fixtures/union"
+UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 # The test components ATestComponentRunsThroughItsDoorsTests.swift runs through the profile's
 # runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine with the component the
 # runtime drives beside it, generated as a fixture's machine is, beside the records and the
@@ -354,6 +359,9 @@ for document in "${TEST_PROFILE[@]}"; do
 done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l swift -o "$TMP/profile_$document/"
+done
+for document in "${UNIONS[@]}"; do
+    "$CODEGEN" generate "$UNION_DIR/$document.scxml" -l swift -o "$TMP/union_$document/"
 done
 for document in "${TEST_PROFILE_RUNTIME[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l swift -o "$TMP/runtime_$document/"
@@ -463,6 +471,18 @@ for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
         fi
         cp "$generated" "$GENERATED_DIR/"
         UNIT_FROM[$unit]="$TEST_PROFILE_DIR/$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
+for document in "${UNIONS[@]}"; do
+    for generated in "$TMP/union_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the union fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$UNION_DIR/$document"
         TEST_PROFILE_UNITS+=("$unit")
     done
 done
