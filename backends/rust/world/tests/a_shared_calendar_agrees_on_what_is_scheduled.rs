@@ -317,19 +317,20 @@ fn an_event_removed_while_another_edits_it_shows_nothing() {
     assert_eq!(agreed_todos(&mut world), todo_oracle(&world));
 }
 
-/// A person on a cut link schedules an event and moves it twice; the other changes it as
-/// well, from the hub's side. When the link is back every copy shows one agenda.
+/// A person cut off from the others schedules an event. When the links are back every copy
+/// shows one agenda.
 #[test]
 fn an_event_scheduled_offline_is_shown_when_the_link_is_back() {
     let mut world = todo_world(5, 20);
-    world.partition("alice", "server");
+    world.partition("alice", "bob");
+    world.partition("alice", "carol");
     schedule_todo(
         &mut world,
         "alice",
         8,
         &Plan::once(instant(2026, 4, 6, 9, 0), HOUR_MS).repeating(WEEKLY, 1),
     );
-    assert_eq!(world.run_until_quiet(500), Outcome::Quiet);
+    world.advance_ms(500);
     let (from, to) = (instant(2026, 4, 1, 0, 0), instant(2026, 5, 1, 0, 0));
     assert_eq!(
         agenda_of(&mut world, "alice", 8, from, to).len(),
@@ -338,7 +339,8 @@ fn an_event_scheduled_offline_is_shown_when_the_link_is_back() {
     );
     assert!(agenda_of(&mut world, "bob", 8, from, to).is_empty());
 
-    world.heal("alice", "server");
+    world.heal("alice", "bob");
+    world.heal("alice", "carol");
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     let agenda = agreed_agenda(&mut world, 8, from, to);
     assert_eq!(agenda.len(), 4);
@@ -353,15 +355,15 @@ fn a_random_week_of_schedule_changes_ends_with_one_agenda() {
         let mut world = todo_world(seed, 5);
         let mut rng = Rng::new(seed);
         assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-        world.jitter("alice", "server", 40);
-        world.jitter("bob", "server", 40);
-        world.reorder("alice", "server");
-        world.reorder("bob", "server");
-        world.degrade("alice", "server", 0, 20);
-        world.degrade("bob", "server", 0, 20);
-        let mut cut = [false, false];
+        let links = links_of(&COPIES);
+        for &(a, b) in &links {
+            world.jitter(a, b, 40);
+            world.reorder(a, b);
+            world.degrade(a, b, 0, 20);
+        }
+        let mut cut = vec![false; links.len()];
         for _ in 0..60 {
-            let who = if rng.below(2) == 0 { "alice" } else { "bob" };
+            let who = COPIES[rng.below(3) as usize];
             let id = 1 + rng.below(3);
             let (field, value) = match rng.below(7) {
                 0 => {
@@ -379,20 +381,20 @@ fn a_random_week_of_schedule_changes_ends_with_one_agenda() {
             };
             todo_set(&mut world, who, id, field, value);
             if rng.below(6) == 0 {
-                let which = usize::from(rng.below(2) == 1);
-                let name = ["alice", "bob"][which];
+                let which = rng.below(links.len() as u64) as usize;
+                let (a, b) = links[which];
                 if cut[which] {
-                    world.heal(name, "server");
+                    world.heal(a, b);
                 } else {
-                    world.partition(name, "server");
+                    world.partition(a, b);
                 }
                 cut[which] = !cut[which];
             }
             world.run_until_quiet(rng.below(60) as i64 + 1);
         }
-        for (which, name) in ["alice", "bob"].into_iter().enumerate() {
+        for (which, &(a, b)) in links.iter().enumerate() {
             if cut[which] {
-                world.heal(name, "server");
+                world.heal(a, b);
             }
         }
         assert_eq!(
@@ -401,7 +403,7 @@ fn a_random_week_of_schedule_changes_ends_with_one_agenda() {
             "seed {seed}"
         );
 
-        for who in ["alice", "bob", "server"] {
+        for who in COPIES {
             assert_eq!(
                 todo_variables_of(&mut world, who)["refusals"],
                 0,

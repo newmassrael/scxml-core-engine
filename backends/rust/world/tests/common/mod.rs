@@ -10,7 +10,9 @@
 use std::collections::BTreeMap;
 
 use sce_forge_runtime::codec::SceCursor;
+use sce_rust_mesh::causal::{CausalGroup, Replica, Start};
 use sce_rust_mesh::generated::envelope::Envelope;
+use sce_rust_mesh::generated::pattern_kind::PatternKind;
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::outbound::{OutboundBuffer, RetryPolicy};
 use sce_rust_mesh::router::{PeerConfig, Router};
@@ -32,7 +34,7 @@ pub mod crowd;
 pub mod devices;
 pub mod kotlin;
 pub mod presence;
-pub mod resync;
+pub mod repair;
 
 /// How the binding to a peer is configured: envelopes delivered once, with those
 /// written while the link is down kept until it is back. `ordered` asks the Mesh
@@ -845,11 +847,160 @@ fn agreed_order(world: &mut World, order_of: OrderOf, what: &str) -> (Vec<u64>, 
     (order, gone)
 }
 
+// ── A causal group (docs/adr/0085, section 3.2) ─────────────────────────────
+//
+// The copies of a shared list send to one route, `#people`, which a deployment binds with
+// `delivery: causal`: the Mesh core's causal layer tags each change, delivers it to every copy
+// once and only after what it follows, repairs what a link lost by exchanging vectors, and
+// forgets a change once every copy holds it. Here every copy's router binds the group, every
+// two copies are linked, and the world is the host that commits what the layer accepts.
+
+/// The route every copy of a shared list sends to and reads (`#people`).
+pub const PEOPLE: &str = "people";
+
+/// The copies of the to-do list, each a person's machine on a device of its own.
+pub const COPIES: [&str; 3] = ["alice", "bob", "carol"];
+
+/// The group of the to-do list's copies, and the view of its epoch 0: each copy one machine,
+/// named apart, on a device of its own (`<device>/<machine>`).
+pub const TRIO: CausalGroup = CausalGroup {
+    name: PEOPLE,
+    epoch: 0,
+    view: &["phone/alice", "laptop/bob", "tablet/carol"],
+};
+
+/// How often a causal layer sends its vector, in the world's milliseconds.
+pub const VECTOR_EVERY_MS: i64 = 1_000;
+
+/// The most changes a causal layer keeps not yet stable: more than any run here makes.
+pub const LAYER_ROOM: usize = 100_000;
+
+/// A copy's binding to its group: `delivery: causal`, with no buffer and no retry, since a
+/// group is reached over every link that is up and a change one link lost is repaired by the
+/// layer, not sent again by the binding.
+pub fn causal_peer(group: CausalGroup) -> PeerConfig {
+    PeerConfig {
+        transport: "wss",
+        buffer: None,
+        retry: None,
+        stamp_sequence: false,
+        delivery: Delivery {
+            dedup: false,
+            ordered: false,
+        },
+        responders: &[PEOPLE],
+        deadline_ms: None,
+        reply_events: &[],
+        causal: Some(group),
+    }
+}
+
+/// The router of a copy of a shared list on a causal route: bound to its group alone.
+pub fn member(name: &str, group: CausalGroup) -> Router {
+    let mut router = Router::new(name, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
+    router.add_peer(PEOPLE, causal_peer(group));
+    router
+}
+
+/// The replica identity of incarnation `incarnation` of the copy `who` (docs/adr/0085, section
+/// 3.3): a UUID v7 a host draws when an incarnation begins, drawn here from the copy's name and
+/// the incarnation, so a run is the same run each time and no two incarnations share one.
+pub fn replica_of(who: &str, incarnation: u8) -> Replica {
+    let hash = who.bytes().fold(0xCBF2_9CE4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3)
+    });
+    let mut id = [0u8; 16];
+    id[..8].copy_from_slice(&hash.to_be_bytes());
+    id[6] = 0x70 | (id[6] & 0x0F);
+    id[8] = 0x80;
+    id[9] = incarnation;
+    Replica(id)
+}
+
+/// Start the causal layer of `who` as the incarnation `incarnation` its host draws.
+pub fn start_layer(world: &mut World, who: &str, incarnation: u8) {
+    world.start_causal(
+        who,
+        PEOPLE,
+        Start::NewIncarnation(replica_of(who, incarnation)),
+        LAYER_ROOM,
+        VECTOR_EVERY_MS,
+    );
+}
+
+/// A world of `copies`, each added by `add` with its router bound to `group`, every two linked
+/// `latency_ms` apart, each layer started as its first incarnation, and the group declared.
+pub fn group_world_of(
+    seed: u64,
+    latency_ms: i64,
+    copies: &[&str],
+    group: CausalGroup,
+    add: impl Fn(&mut World, &str, Router),
+) -> World {
+    let mut world = World::new(seed);
+    for &who in copies {
+        add(&mut world, who, member(who, group));
+    }
+    for (a, b) in links_of(copies) {
+        world.link(a, b, latency_ms);
+    }
+    for &who in copies {
+        start_layer(&mut world, who, 0);
+    }
+    world.group(PEOPLE, copies);
+    world
+}
+
+/// Every link between two of `copies`, each once.
+pub fn links_of<'a>(copies: &[&'a str]) -> Vec<(&'a str, &'a str)> {
+    let mut links = Vec::new();
+    for (at, a) in copies.iter().enumerate() {
+        for b in &copies[at + 1..] {
+            links.push((*a, *b));
+        }
+    }
+    links
+}
+
+/// Every change of a shared list a copy sent on the network, once each, in the order it was
+/// first sent: the data of each `record_list.change`, read off the envelopes the network
+/// recorded rather than off any copy. A change the layer sent again in a repair, or a link
+/// delivered twice, is the change it was, and is read once.
+pub fn changes_sent(world: &World) -> Vec<Value> {
+    let mut seen: Vec<(i128, i128, i128)> = Vec::new();
+    let mut changes = Vec::new();
+    for line in world.trace() {
+        if !matches!(line.fate, Fate::Sent { .. }) {
+            continue;
+        }
+        let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&line.bytes)) else {
+            continue;
+        };
+        if envelope.pattern == PatternKind::CausalVector
+            || envelope.event_type != "record_list.change"
+        {
+            continue;
+        }
+        let change: Value =
+            serde_json::from_slice(envelope.data.into_inner()).expect("a change's data is JSON");
+        let dot = (
+            whole(&change["by"]),
+            whole(&change["wallTime"]),
+            whole(&change["counter"]),
+        );
+        if !seen.contains(&dot) {
+            seen.push(dot);
+            changes.push(change);
+        }
+    }
+    changes
+}
+
 // ── The shared to-do list (the fixture `todo_peer.scxml`) ───────────────────
 
-/// The world of the to-do list: alice (node 1) and bob (node 2), each `latency_ms` from
-/// the hub, over links that may reorder what they carry. Writes to a field do not depend
-/// on the ones before it, so no binding orders.
+/// The world of the to-do list: alice (node 1), bob (node 2) and carol (node 3), every two
+/// `latency_ms` apart, over links that may reorder what they carry, each copy a member of the
+/// group its changes go to (`#people`, `delivery: causal`).
 pub fn todo_world(seed: u64, latency_ms: i64) -> World {
     todo_world_with(seed, latency_ms, false)
 }
@@ -870,24 +1021,41 @@ fn todo_world_with(seed: u64, latency_ms: i64, recorded: bool) -> World {
     })
 }
 
-/// The world of the to-do list with each of its three actors added by `add`, which is
-/// given the world, the actor's name and its router: what differs between a world of
+/// The world of the to-do list with each of its three copies added by `add`, which is
+/// given the world, the copy's name and its router: what differs between a world of
 /// Rust copies and one with a copy that is another process's is only how a copy is added.
 pub fn todo_world_of(seed: u64, latency_ms: i64, add: impl Fn(&mut World, &str, Router)) -> World {
-    let mut world = World::new(seed);
-    for (who, router) in [
-        ("alice", person("alice", false)),
-        ("bob", person("bob", false)),
-        ("server", hub(false)),
-    ] {
-        add(&mut world, who, router);
+    let mut world = group_world_of(seed, latency_ms, &COPIES, TRIO, add);
+    for who in COPIES {
+        world.raise(
+            who,
+            "todo.join",
+            &format!(r#"{{"node":"{}"}}"#, todo_node_of(who)),
+        );
     }
-    world.link("alice", "server", latency_ms);
-    world.link("bob", "server", latency_ms);
-    world.raise("alice", "todo.join", r#"{"node":"1","hub":false}"#);
-    world.raise("bob", "todo.join", r#"{"node":"2","hub":false}"#);
-    world.raise("server", "todo.join", r#"{"node":"100","hub":true}"#);
+    at_rest(&mut world);
     world
+}
+
+/// Run a world that has just been made until it rests: each copy takes the join its host gave
+/// it, and each causal layer's first vector, which a layer sends as it starts, reaches the
+/// others. A world handed to a test is at rest, with nothing in flight.
+pub fn at_rest(world: &mut World) {
+    assert_eq!(
+        world.run_until_quiet(60_000),
+        Outcome::Quiet,
+        "a world just made comes to rest"
+    );
+}
+
+/// The node a copy of the to-do list stamps its changes with.
+pub fn todo_node_of(who: &str) -> u64 {
+    match who {
+        "alice" => 1,
+        "bob" => 2,
+        "carol" => 3,
+        other => panic!("{other} is not a copy of the to-do list"),
+    }
 }
 
 /// The fields of a to-do, by the numbers the host gives them.
@@ -1023,53 +1191,63 @@ fn fields_of(variables: &Value, who: &str) -> BTreeMap<(u64, u64), Field> {
 
 /// The three copies hold one list of to-dos; which.
 pub fn agreed_todos(world: &mut World) -> BTreeMap<(u64, u64), Field> {
-    let server = todos_of(world, "server");
-    for who in ["alice", "bob"] {
+    agreed_todos_of(world, &COPIES)
+}
+
+/// The copies `copies` hold one list of to-dos; which.
+pub fn agreed_todos_of(world: &mut World, copies: &[&str]) -> BTreeMap<(u64, u64), Field> {
+    let first = todos_of(world, copies[0]);
+    for who in &copies[1..] {
         assert_eq!(
             todos_of(world, who),
-            server,
-            "{who} and the hub hold different to-do lists"
+            first,
+            "{who} and {} hold different to-do lists",
+            copies[0]
         );
     }
-    server
+    first
 }
 
 /// A write someone wrote over: the field it was written to, and its stamp.
 type Superseded = ((u64, u64), (u64, u64, u64));
 
-/// What the list should hold, read from the network and not from the copies: of every
-/// write a person sent the hub, the ones no person sent a supersede for are the values
-/// of its field, and the latest of them is the one a single reader takes.
-pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
+/// What a shared list should hold, read from `changes` (each the data of a
+/// `record_list.change`) and not from the copies: of every write a change made, the ones no
+/// change wrote over are the values of its field, and the latest of them is the one a single
+/// reader takes. A write's dot is its change's stamp, with its author as the node.
+pub fn list_oracle(changes: &[Value]) -> BTreeMap<(u64, u64), Field> {
     let mut written: BTreeMap<(u64, u64), Vec<TodoValue>> = BTreeMap::new();
     let mut superseded: Vec<Superseded> = Vec::new();
-    for (event, write) in sent_to_the_hub(world) {
-        // The digest's nodes a resync walks are not changes.
-        if event != "todo.write" && event != "todo.supersede" {
-            continue;
-        }
-        let number = |name: &str| whole(&write[name]);
-        let key = (number("id") as u64, number("field") as u64);
-        let stamp = (
-            number("wallTime") as u64,
-            number("counter") as u64,
-            number("nodeId") as u64,
+    for change in changes {
+        let dot = (
+            whole(&change["wallTime"]) as u64,
+            whole(&change["counter"]) as u64,
+            whole(&change["by"]) as u64,
         );
-        match event.as_str() {
-            "todo.write" => {
-                let one = TodoValue {
-                    value: number("value") as i64,
-                    text: (key.1 == TITLE)
-                        .then(|| write["text"].as_str().expect("a text").to_string()),
-                    stamp,
-                };
-                let held = written.entry(key).or_default();
-                if held.iter().all(|other| other.stamp != stamp) {
-                    held.push(one);
-                }
+        for op in change["ops"]
+            .as_array()
+            .expect("a change's operations are a list")
+        {
+            let number = |name: &str| whole(&op[name]);
+            let key = (number("id") as u64, number("field") as u64);
+            if number("kind") == 1 {
+                let named = (
+                    number("wallTime") as u64,
+                    number("counter") as u64,
+                    number("nodeId") as u64,
+                );
+                superseded.push((key, named));
+                continue;
             }
-            "todo.supersede" => superseded.push((key, stamp)),
-            _ => {}
+            let one = TodoValue {
+                value: number("value") as i64,
+                text: (key.1 == TITLE).then(|| op["text"].as_str().expect("a text").to_string()),
+                stamp: dot,
+            };
+            let held = written.entry(key).or_default();
+            if held.iter().all(|other| other.stamp != dot) {
+                held.push(one);
+            }
         }
     }
     written
@@ -1082,6 +1260,33 @@ pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
             (!live.is_empty()).then(|| (key, Field::of(live)))
         })
         .collect()
+}
+
+/// Every copy of `copies` has its causal layer at rest: it holds no change it cannot deliver
+/// yet, and its log keeps no change not yet stable, so every copy delivered every change and
+/// knows that every other did (docs/adr/0085, sections 3 and 4.2).
+pub fn assert_layers_rest(world: &mut World, copies: &[&str], context: &str) {
+    for who in copies {
+        let layer = world
+            .causal_layer(who, PEOPLE)
+            .unwrap_or_else(|| panic!("{context}: {who} has no causal layer"));
+        assert_eq!(
+            layer.held_len(),
+            0,
+            "{context}: {who} holds a change it cannot deliver"
+        );
+        assert_eq!(
+            layer.log_len(),
+            0,
+            "{context}: {who} keeps a change not yet stable"
+        );
+    }
+}
+
+/// What the to-do list should hold, read from the network: [`list_oracle`] of every change a
+/// copy sent ([`changes_sent`]).
+pub fn todo_oracle(world: &World) -> BTreeMap<(u64, u64), Field> {
+    list_oracle(&changes_sent(world))
 }
 
 /// An afternoon of changes to a few to-dos at random times, links cut and restored,
@@ -1100,15 +1305,15 @@ pub fn todo_afternoon(
     // The copies take the join the host gave them before anything can kill one: a
     // process killed before it has read its first event comes back without it.
     assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-    world.jitter("alice", "server", 40);
-    world.jitter("bob", "server", 40);
-    world.reorder("alice", "server");
-    world.reorder("bob", "server");
-    world.degrade("alice", "server", 0, 20);
-    world.degrade("bob", "server", 0, 20);
-    let mut cut = [false, false];
+    let links = links_of(&COPIES);
+    for &(a, b) in &links {
+        world.jitter(a, b, 40);
+        world.reorder(a, b);
+        world.degrade(a, b, 0, 20);
+    }
+    let mut cut = vec![false; links.len()];
     for _ in 0..60 {
-        let who = if rng.below(2) == 0 { "alice" } else { "bob" };
+        let who = COPIES[usize::try_from(rng.below(3)).unwrap()];
         let id = 1 + rng.below(4);
         match rng.below(4) {
             0 => {
@@ -1126,25 +1331,26 @@ pub fn todo_afternoon(
             ),
         }
         if rng.below(6) == 0 {
-            let which = usize::from(rng.below(2) == 1);
-            let name = ["alice", "bob"][which];
+            let which = usize::try_from(rng.below(links.len() as u64)).unwrap();
+            let (a, b) = links[which];
             if cut[which] {
-                world.heal(name, "server");
+                world.heal(a, b);
             } else {
-                world.partition(name, "server");
+                world.partition(a, b);
             }
             cut[which] = !cut[which];
         }
-        // Now and then a copy is killed and comes back from its saved state.
+        // Now and then a copy is killed and comes back from its saved state, its journal
+        // intact: its causal layer goes on where it was.
         if restarts && rng.below(10) == 0 {
-            let who = ["alice", "bob", "server"][usize::try_from(rng.below(3)).unwrap()];
+            let who = COPIES[usize::try_from(rng.below(3)).unwrap()];
             restart(world, who);
         }
         world.run_until_quiet(i64::try_from(rng.below(60)).unwrap() + 1);
     }
-    for (which, name) in ["alice", "bob"].into_iter().enumerate() {
+    for (which, &(a, b)) in links.iter().enumerate() {
         if cut[which] {
-            world.heal(name, "server");
+            world.heal(a, b);
         }
     }
     assert_eq!(
@@ -1155,20 +1361,22 @@ pub fn todo_afternoon(
 
     // A copy that refused a write is the first thing to say, before the copies are
     // compared: a list that differs because a block failed is not a merge fault.
-    for who in ["alice", "bob", "server"] {
+    for who in COPIES {
         assert_eq!(
             todo_variables_of(world, who)["refusals"],
             0,
             "seed {seed}: {who} refused a write"
         );
     }
-    for who in ["alice", "bob"] {
+    for who in &COPIES[1..] {
         assert_eq!(
             todos_of(world, who),
-            todos_of(world, "server"),
-            "seed {seed}: {who} and the hub hold different to-do lists"
+            todos_of(world, COPIES[0]),
+            "seed {seed}: {who} and {} hold different to-do lists",
+            COPIES[0]
         );
     }
+    assert_layers_rest(world, &COPIES, &format!("seed {seed}"));
     let list = agreed_todos(world);
     assert_eq!(list, todo_oracle(world), "seed {seed}");
     assert!(world.host_errors().is_empty(), "seed {seed}");
@@ -1178,50 +1386,62 @@ pub fn todo_afternoon(
 // ── The standard shared record list (sce:std/shared/record_list.scxml) ──────
 //
 // The document the trust layer secures (sce-rust-trust, docs/adr/0042), run as a copy of its
-// own by a host (`announce` false, as the scenarios `record_list_person` and `record_list_hub`
-// run it), from the machine the scenarios replay. It names routes and no peers: a person's copy
-// sends to `#hub`, and the hub reaches every person's copy at once on `#people`, which a
-// deployment binds as one key every person reads: here a topic of the world.
+// own by a host (`announce` false, as the scenario `record_list_person` runs it), from the
+// machine the scenarios replay. It names one route and no peer: every copy sends its changes to
+// `#people`, and the layer below the list delivers them (docs/adr/0085, section 3): the peer
+// core of a host that has one, which takes every send through the host's sealer and carries it
+// to a relay, or the Mesh core's causal route for a copy that has none.
 
-/// The hub's actor, and the route a person's copy sends to it by (`#hub`).
-pub const RECORD_HUB: &str = "hub";
-
-/// The route the hub reaches every person's copy by (`#people`).
-pub const RECORD_PEOPLE: &str = "people";
-
-/// The router of a person's copy of the record list: bound to the hub.
-pub fn record_person(name: &str) -> Router {
-    let mut router = Router::new(name, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
-    router.add_peer(RECORD_HUB, peer(&[RECORD_HUB], false));
-    router
-}
-
-/// The router of the hub of the record list: bound to each person it hears from, and to the
-/// topic every person reads.
-pub fn record_hub(people: &[&str]) -> Router {
-    let mut router =
-        Router::new(RECORD_HUB, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
-    for who in people {
-        router.add_peer(who, peer(&[], false));
+/// The node a copy of the record list stamps its changes with.
+pub fn record_node_of(who: &str) -> u64 {
+    match who {
+        "alice" => 1,
+        "bob" => 2,
+        "carol" => 3,
+        other => panic!("{other} is not a copy of the record list"),
     }
-    router.add_peer(RECORD_PEOPLE, peer(&[], false));
+}
+
+/// The router of a copy of the record list whose host carries every change itself (a core
+/// and a relay, which take what the copy sends through the host's sealer): bound to `#people`
+/// by a plain binding, so that a send the host lets through names a binding, and it reaches
+/// no peer, since none is linked.
+pub fn record_copy(name: &str) -> Router {
+    let mut router = Router::new(name, 256, GAP_TIMEOUT_MS).expect("a window the core can hold");
+    router.add_peer(PEOPLE, peer(&[PEOPLE], false));
     router
 }
 
-/// The world of the record list: alice (node 1) and bob (node 2), each `latency_ms` from the
-/// hub (node 100), which tells both on `#people`. Writes to a field do not depend on the ones
-/// before it, so no binding orders.
-pub fn record_world(seed: u64, latency_ms: i64) -> World {
+/// The copies of the record list whose hosts carry every change themselves: alice (node 1),
+/// bob (node 2) and carol (node 3), each bound by [`record_copy`] and linked to no one. There
+/// is no hub machine: a relay a host reaches holds what it is given and runs no list.
+pub fn record_world(seed: u64) -> World {
     let mut world = World::new(seed);
-    world.add("alice", RecordList::new(), record_person("alice"));
-    world.add("bob", RecordList::new(), record_person("bob"));
-    world.add(RECORD_HUB, RecordList::new(), record_hub(&["alice", "bob"]));
-    world.link("alice", RECORD_HUB, latency_ms);
-    world.link("bob", RECORD_HUB, latency_ms);
-    world.topic(RECORD_HUB, RECORD_PEOPLE, &["alice", "bob"]);
-    world.raise("alice", "record_list.join", r#"{"node":"1"}"#);
-    world.raise("bob", "record_list.join", r#"{"node":"2"}"#);
-    world.raise(RECORD_HUB, "record_list.join", r#"{"node":"100"}"#);
+    for who in COPIES {
+        world.add(who, RecordList::new(), record_copy(who));
+        world.raise(
+            who,
+            "record_list.join",
+            &format!(r#"{{"node":"{}"}}"#, record_node_of(who)),
+        );
+    }
+    world
+}
+
+/// The copies of the record list on a causal route (`#people`, `delivery: causal`): alice,
+/// bob and carol, every two `latency_ms` apart, each layer started and each copy joined.
+pub fn record_group_world(seed: u64, latency_ms: i64) -> World {
+    let mut world = group_world_of(seed, latency_ms, &COPIES, TRIO, |world, who, router| {
+        world.add(who, RecordList::new(), router);
+    });
+    for who in COPIES {
+        world.raise(
+            who,
+            "record_list.join",
+            &format!(r#"{{"node":"{}"}}"#, record_node_of(who)),
+        );
+    }
+    at_rest(&mut world);
     world
 }
 
@@ -1279,15 +1499,16 @@ pub fn records_of(world: &mut World, who: &str) -> BTreeMap<(u64, u64), Field> {
     fields_of(&record_variables_of(world, who), who)
 }
 
-/// The three copies of the record list hold one list; which.
-pub fn agreed_records(world: &mut World) -> BTreeMap<(u64, u64), Field> {
-    let hub = records_of(world, RECORD_HUB);
-    for who in ["alice", "bob"] {
+/// The copies `copies` of the record list hold one list; which.
+pub fn agreed_records(world: &mut World, copies: &[&str]) -> BTreeMap<(u64, u64), Field> {
+    let first = records_of(world, copies[0]);
+    for who in &copies[1..] {
         assert_eq!(
             records_of(world, who),
-            hub,
-            "{who} and the hub hold different lists"
+            first,
+            "{who} and {} hold different lists",
+            copies[0]
         );
     }
-    hub
+    first
 }

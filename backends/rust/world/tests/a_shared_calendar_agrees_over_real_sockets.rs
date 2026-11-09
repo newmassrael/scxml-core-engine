@@ -6,19 +6,20 @@
 // each time; that cannot say whether the copies agree once their messages cross real
 // sockets, between processes that are scheduled by an operating system. Here each copy is a
 // process of its own (`todo_peer_wss`, the same generated machine served by a Mesh endpoint
-// on the WebSocket binding), the hub listens on a loopback port and the people dial it, and
-// the test drives them with the same events the simulated tests give theirs.
+// on the WebSocket binding, its route a causal group), a relay node that forwards what one
+// member sends to the others listens on a loopback port and the copies dial it, and the test
+// drives them with the same events the simulated tests give theirs.
 //
-// What is asked is what the simulation was asked: that the copies come to hold one list and
-// one digest whatever order the network delivered in, that the instant they settle among
-// themselves (`todo.settle`) is the one every copy then forgets up to, that the agenda is the
-// same on every copy, and that a copy that is killed and started again is repaired by the
-// digest walk, over a link that really closed, and settles with the others after it.
+// What is asked is what the simulation was asked: that the copies come to hold one list
+// whatever order the network delivered in, that every copy forgets a change by itself once
+// every copy holds it (docs/adr/0085, section 4), that the agenda is the same on every copy,
+// and that what a copy made while every link really closed reaches the others once the links
+// are back, and the copies then forget it alike.
 //
-// By default the three processes run on this machine, on loopback. With
-// `SCE_SOCKET_PLACES=server=<host>,alice=<host>,bob=<host>` and
-// `SCE_SOCKET_SERVER_ADDRESS=<the hub's address>` each runs on the machine named, started
-// with ssh from this one, and the people dial the hub across the network.
+// By default the four processes run on this machine, on loopback. With
+// `SCE_SOCKET_PLACES=relay=<host>,alice=<host>,bob=<host>,carol=<host>` and
+// `SCE_SOCKET_SERVER_ADDRESS=<the relay's address>` each runs on the machine named, started
+// with ssh from this one, and the copies dial the relay across the network.
 
 mod common;
 
@@ -28,7 +29,6 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use common::calendar::*;
-use common::whole;
 use serde_json::{json, Value};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_todo_peer_wss");
@@ -39,8 +39,12 @@ const PATIENCE: Duration = Duration::from_secs(60);
 
 const MINUTE_MS: i64 = 60_000;
 
-/// One copy of the list: a process, the lines it said, and the ends of its pipes.
-struct Copy {
+/// The binding a copy knows the relay by.
+const PEOPLE: &str = "people";
+
+/// One process: a copy of the list or the relay, the lines it said, and the ends of its
+/// pipes.
+struct Process {
     name: &'static str,
     child: Child,
     stdin: ChildStdin,
@@ -49,11 +53,11 @@ struct Copy {
     linked: Vec<String>,
 }
 
-/// The host a copy runs on, when the run puts copies on other machines:
-/// `SCE_SOCKET_PLACES=server=pc3,alice=pc2,bob=hkl002`. Each is reached with ssh, whose
-/// standard input and output carry the lines the host drives it with, and runs the binary
-/// that is built there (`SCE_SOCKET_REMOTE_BINARY`, the checkout `bx` keeps by default).
-/// Without it every copy is a process of this machine, on loopback.
+/// The host a process runs on, when the run puts processes on other machines:
+/// `SCE_SOCKET_PLACES=relay=pc3,alice=pc2,bob=hkl002,carol=pc2`. Each is reached with ssh,
+/// whose standard input and output carry the lines the host drives it with, and runs the
+/// binary that is built there (`SCE_SOCKET_REMOTE_BINARY`, the checkout `bx` keeps by
+/// default). Without it every process is one of this machine, on loopback.
 fn place_of(name: &str) -> Option<String> {
     let places = std::env::var("SCE_SOCKET_PLACES").ok()?;
     let prefix = format!("{name}=");
@@ -62,13 +66,14 @@ fn place_of(name: &str) -> Option<String> {
         .find_map(|place| place.strip_prefix(&prefix).map(str::to_string))
 }
 
-/// The address the people dial the hub at: its own machine's, when it is on another.
-fn server_address() -> String {
+/// The address the copies dial the relay at: its own machine's, when it is on another.
+fn relay_address() -> String {
     std::env::var("SCE_SOCKET_SERVER_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
-impl Copy {
-    fn start(name: &'static str, node: u64, address: &str) -> Copy {
+impl Process {
+    /// Start `name` with `args`, here or where the run places it.
+    fn start(name: &'static str, args: &[String]) -> Process {
         let mut command = match place_of(name) {
             Some(host) => {
                 let binary = std::env::var("SCE_SOCKET_REMOTE_BINARY").unwrap_or_else(|_| {
@@ -77,12 +82,12 @@ impl Copy {
                 let mut command = Command::new("ssh");
                 command
                     .args(["-o", "BatchMode=yes", &host])
-                    .arg(format!("{binary} {name} {node} {address}"));
+                    .arg(format!("{binary} {}", args.join(" ")));
                 command
             }
             None => {
                 let mut command = Command::new(BINARY);
-                command.args([name, &node.to_string(), address]);
+                command.args(args);
                 command
             }
         };
@@ -106,7 +111,7 @@ impl Copy {
                 }
             }
         });
-        Copy {
+        Process {
             name,
             child,
             stdin,
@@ -116,7 +121,19 @@ impl Copy {
         }
     }
 
-    /// The next line the copy says that `want` takes; the lines before it are noted
+    /// A copy of the list, node `node`, dialing the relay at `url`.
+    fn copy(name: &'static str, node: u64, url: &str) -> Process {
+        Process::start(name, &[name.to_string(), node.to_string(), url.to_string()])
+    }
+
+    /// The relay, listening at `listen`; it says the port it was given.
+    fn relay(listen: &str) -> Process {
+        let mut relay = Process::start("relay", &["relay".to_string(), listen.to_string()]);
+        relay.line_where(|line| line.starts_with("LISTENING "), "its port");
+        relay
+    }
+
+    /// The next line the process says that `want` takes; the lines before it are noted
     /// (a link that came up) or dropped.
     fn line_where(&mut self, want: impl Fn(&str) -> bool, what: &str) -> String {
         let deadline = Instant::now() + PATIENCE;
@@ -130,6 +147,9 @@ impl Copy {
                 .unwrap_or_else(|_| panic!("{} did not say {what} in time", self.name));
             if let Some(peer) = line.strip_prefix("LINK ") {
                 self.linked.push(peer.to_string());
+            }
+            if let Some(peer) = line.strip_prefix("LOST ") {
+                self.linked.retain(|linked| linked != peer);
             }
             if let Some(port) = line.strip_prefix("LISTENING ") {
                 self.port = port.parse().ok();
@@ -159,6 +179,20 @@ impl Copy {
         saved["variables"].clone()
     }
 
+    /// What the copy's causal layer keeps not yet stable, and holds undelivered.
+    fn layer(&mut self) -> (usize, usize) {
+        self.command(&json!({"layer": true}));
+        let line = self.line_where(|line| line.starts_with("LAYER "), "its layer");
+        let mut numbers = line
+            .trim_start_matches("LAYER ")
+            .split(' ')
+            .map(|number| number.parse::<usize>().expect("a count"));
+        (
+            numbers.next().expect("the log"),
+            numbers.next().expect("the held"),
+        )
+    }
+
     fn wait_linked(&mut self, peer: &str) {
         if self.linked.iter().any(|linked| linked == peer) {
             return;
@@ -168,47 +202,66 @@ impl Copy {
     }
 }
 
-impl Drop for Copy {
+impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
-/// The hub and both people, linked.
+/// The relay and the three copies, linked.
 struct Room {
-    server: Copy,
-    alice: Copy,
-    bob: Copy,
+    relay: Process,
+    alice: Process,
+    bob: Process,
+    carol: Process,
     now: i64,
 }
 
-fn open_room() -> Room {
-    let listen = if place_of("server").is_some() {
+fn listen_address() -> &'static str {
+    if place_of("relay").is_some() {
         "0.0.0.0:0"
     } else {
         "127.0.0.1:0"
-    };
-    let mut server = Copy::start("server", 100, listen);
-    server.line_where(|line| line.starts_with("LISTENING "), "its port");
-    let url = format!("ws://{}:{}", server_address(), server.port.expect("a port"));
-    let mut alice = Copy::start("alice", 1, &url);
-    let mut bob = Copy::start("bob", 2, &url);
-    alice.wait_linked("server");
-    bob.wait_linked("server");
-    server.wait_linked("alice");
-    server.wait_linked("bob");
-    Room {
-        server,
-        alice,
-        bob,
-        now: instant(2026, 3, 1, 0, 0),
     }
 }
 
+fn open_room() -> Room {
+    let relay = Process::relay(listen_address());
+    let url = format!("ws://{}:{}", relay_address(), relay.port.expect("a port"));
+    let mut room = Room {
+        alice: Process::copy("alice", 1, &url),
+        bob: Process::copy("bob", 2, &url),
+        carol: Process::copy("carol", 3, &url),
+        relay,
+        now: instant(2026, 3, 1, 0, 0),
+    };
+    room.wait_linked();
+    room
+}
+
 impl Room {
-    fn copies(&mut self) -> [&mut Copy; 3] {
-        [&mut self.alice, &mut self.bob, &mut self.server]
+    fn copies(&mut self) -> [&mut Process; 3] {
+        [&mut self.alice, &mut self.bob, &mut self.carol]
+    }
+
+    /// Every copy's link to the relay is up, and the relay's to every copy.
+    fn wait_linked(&mut self) {
+        for copy in self.copies() {
+            copy.wait_linked(PEOPLE);
+        }
+        for name in ["alice", "bob", "carol"] {
+            self.relay.wait_linked(name);
+        }
+    }
+
+    fn copy(&mut self, who: &str) -> &mut Process {
+        match who {
+            "alice" => &mut self.alice,
+            "bob" => &mut self.bob,
+            "carol" => &mut self.carol,
+            other => panic!("{other} is not a copy"),
+        }
     }
 
     /// A person changes a field of a to-do, when the host's clock reads the room's time.
@@ -218,11 +271,7 @@ impl Room {
             r#"{{"id":{id},"field":{field},"value":"{value}","text":"","now":"{}"}}"#,
             self.now
         );
-        match who {
-            "alice" => self.alice.raise("todo.edit", &data),
-            "bob" => self.bob.raise("todo.edit", &data),
-            other => panic!("{other} is not a person"),
-        }
+        self.copy(who).raise("todo.edit", &data);
     }
 
     /// Every to-do repeats daily from a start, an hour long.
@@ -232,9 +281,9 @@ impl Room {
         self.set(who, id, REPEAT, DAILY);
     }
 
-    /// A day: both people move and lengthen a few events, concurrently.
+    /// A day: the people move and lengthen a few events, concurrently.
     fn an_afternoon(&mut self, day: i64) {
-        for (who, id) in [("alice", 1), ("bob", 2), ("alice", 3), ("bob", 1)] {
+        for (who, id) in [("alice", 1), ("bob", 2), ("carol", 3), ("bob", 1)] {
             let start = instant(2026, 3, 1 + (day % 28), 8 + id as i64, 0);
             self.set(who, id, START, start);
             self.set(who, id, LENGTH, HOUR_MS * (1 + day % 3));
@@ -242,74 +291,48 @@ impl Room {
         self.now += MINUTE_MS;
     }
 
-    /// Until the three hold one list and one digest, which they do when what each sent
-    /// has arrived and been taken in everywhere.
+    /// Until the three hold one list, which they do when what each sent has arrived and
+    /// been taken in everywhere.
     fn wait_agreed(&mut self) -> Value {
         let deadline = Instant::now() + PATIENCE;
         loop {
-            let held: Vec<(Value, Value)> = self
+            let held: Vec<Value> = self
                 .copies()
                 .iter_mut()
-                .map(|copy| {
-                    let variables = copy.variables();
-                    (variables["values"].clone(), variables["digest"].clone())
-                })
+                .map(|copy| copy.variables()["values"].clone())
                 .collect();
-            let same_digest = held.iter().all(|(_, digest)| *digest == held[0].1);
-            // The values arrive in the order each copy took them in, which is the network's.
-            let sorted = |values: &Value| {
-                let mut each: Vec<String> = values
-                    .as_array()
-                    .expect("a list")
-                    .iter()
-                    .map(Value::to_string)
-                    .collect();
-                each.sort();
-                each
-            };
-            let same_values = held
-                .iter()
-                .all(|(values, _)| sorted(values) == sorted(&held[0].0));
-            if same_digest && same_values && !held[0].0.as_array().expect("a list").is_empty() {
-                return held[0].0.clone();
+            if held.iter().all(|values| sorted(values) == sorted(&held[0]))
+                && !held[0].as_array().expect("a list").is_empty()
+            {
+                return held[0].clone();
             }
             assert!(
                 Instant::now() < deadline,
-                "the copies did not come to hold one list: digests {:?}",
+                "the copies did not come to hold one list: {:?}",
                 held.iter()
-                    .map(|(_, digest)| digest.to_string().len())
+                    .map(|values| values.as_array().map_or(0, Vec::len))
                     .collect::<Vec<_>>()
             );
             std::thread::sleep(Duration::from_millis(50));
         }
     }
 
-    /// Until every copy's floor is `before`.
-    fn wait_floor(&mut self, before: i64) {
+    /// Until every copy's causal layer keeps nothing and holds nothing: every copy took in
+    /// every change, and knows that every other did.
+    fn wait_forgotten(&mut self) {
         let deadline = Instant::now() + PATIENCE;
         loop {
-            let floors: Vec<i128> = self
-                .copies()
-                .iter_mut()
-                .map(|copy| whole(&copy.variables()["floor"]))
-                .collect();
-            if floors.iter().all(|floor| *floor == i128::from(before)) {
+            let layers: Vec<(usize, usize)> =
+                self.copies().iter_mut().map(|copy| copy.layer()).collect();
+            if layers.iter().all(|layer| *layer == (0, 0)) {
                 return;
             }
             assert!(
                 Instant::now() < deadline,
-                "the copies did not settle {before}: floors {floors:?}"
+                "the copies did not forget what they all hold: {layers:?}"
             );
             std::thread::sleep(Duration::from_millis(50));
         }
-    }
-
-    fn settle(&mut self, before: i64) {
-        self.server.raise(
-            "todo.settle",
-            &format!(r#"{{"before":"{before}","members":2}}"#),
-        );
-        self.wait_floor(before);
     }
 
     /// What each copy says is scheduled for a to-do in a window.
@@ -329,14 +352,23 @@ impl Room {
     }
 }
 
-fn held(copy: &mut Copy, list: &str) -> usize {
-    copy.variables()[list].as_array().expect("a list").len()
+/// The values a copy holds, in an order that does not depend on the order they arrived in,
+/// which is the network's.
+fn sorted(values: &Value) -> Vec<String> {
+    let mut each: Vec<String> = values
+        .as_array()
+        .expect("a list")
+        .iter()
+        .map(Value::to_string)
+        .collect();
+    each.sort();
+    each
 }
 
-/// Three processes on loopback sockets hold one list after a fortnight of concurrent
-/// changes, settle an instant by themselves, forget up to it, and show one agenda.
+/// Three processes over loopback sockets hold one list after a fortnight of concurrent
+/// changes, forget every change by themselves once each holds it, and show one agenda.
 #[test]
-fn three_processes_over_real_sockets_agree_and_settle() {
+fn three_processes_over_real_sockets_agree_and_forget() {
     let mut room = open_room();
     for id in 1..=3 {
         room.schedule("alice", id);
@@ -345,51 +377,35 @@ fn three_processes_over_real_sockets_agree_and_settle() {
         room.an_afternoon(day);
     }
     let values = room.wait_agreed();
-    let tombstones = held(&mut room.server, "tombstones");
     let agendas = room.agendas(1);
     assert!(!agendas[0].as_array().expect("a list").is_empty());
     assert!(agendas.iter().all(|agenda| *agenda == agendas[0]));
 
-    let before = room.now;
-    room.now += MINUTE_MS;
-    room.settle(before);
-
+    room.wait_forgotten();
     for copy in room.copies() {
         let variables = copy.variables();
-        assert_eq!(variables["stale"], json!(false), "{} is stale", copy.name);
         assert_eq!(
-            whole(&variables["late"]),
-            0,
-            "{} refused a write",
+            variables["refusals"],
+            json!(0),
+            "{} refused something",
             copy.name
         );
-        assert_eq!(whole(&variables["refusals"]), 0);
     }
-    assert!(
-        held(&mut room.server, "tombstones") < tombstones,
-        "the hub still holds the {tombstones} tombstones it held before it settled"
-    );
     let after = room.wait_agreed();
-    let sorted = |values: &Value| {
-        let mut each: Vec<String> = values
-            .as_array()
-            .expect("a list")
-            .iter()
-            .map(Value::to_string)
-            .collect();
-        each.sort();
-        each
-    };
-    assert_eq!(sorted(&after), sorted(&values), "settling changed a value");
-    let agendas_after = room.agendas(1);
-    assert_eq!(agendas_after, agendas, "settling changed the agenda");
+    assert_eq!(
+        sorted(&after),
+        sorted(&values),
+        "forgetting changed a value"
+    );
+    assert_eq!(room.agendas(1), agendas, "forgetting changed the agenda");
 }
 
-/// A copy that is killed has its link really closed; the hub keeps changing; the copy is
-/// started again from nothing, dials the hub, and is walked to what the others hold, and
-/// the three then settle an instant together.
+/// The relay's process dies, and with it every link; bob changes his to-dos while no link is
+/// up, and his layer keeps what it could not send. A relay is started again on the same port,
+/// the copies dial it, the links that came back carry each copy's vector at once, and bob's
+/// changes reach the others: the three hold one list and forget it alike.
 #[test]
-fn a_killed_copy_is_repaired_over_real_sockets_and_then_settles() {
+fn what_a_copy_made_while_every_link_was_closed_reaches_the_others() {
     let mut room = open_room();
     for id in 1..=3 {
         room.schedule("alice", id);
@@ -398,40 +414,33 @@ fn a_killed_copy_is_repaired_over_real_sockets_and_then_settles() {
         room.an_afternoon(day);
     }
     room.wait_agreed();
+    room.wait_forgotten();
 
-    // Alice's process dies with her link; bob goes on.
-    let url = format!(
-        "ws://{}:{}",
-        server_address(),
-        room.server.port.expect("a port")
-    );
-    let _ = room.alice.child.kill();
-    let _ = room.alice.child.wait();
+    let port = room.relay.port.expect("a port");
+    let _ = room.relay.child.kill();
+    let _ = room.relay.child.wait();
+    for copy in room.copies() {
+        copy.line_where(|line| line == "LOST people", "its link closing");
+    }
     for day in 6..12 {
         let start = instant(2026, 3, 1 + (day % 28), 11, 0);
         room.set("bob", 2, START, start);
         room.now += MINUTE_MS;
     }
+    let (kept, _) = room.bob.layer();
+    assert!(kept > 0, "bob's layer kept nothing it could not send");
 
-    // Started again, she holds nothing, and says her link is back.
-    room.alice = Copy::start("alice", 1, &url);
-    room.alice.wait_linked("server");
-    room.server.wait_linked("alice");
-    room.alice.raise("todo.resync", "");
-    room.bob.raise("todo.resync", "");
-    room.wait_agreed();
-
-    let before = room.now;
-    room.now += MINUTE_MS;
-    room.settle(before);
-    for copy in room.copies() {
-        assert_eq!(
-            copy.variables()["stale"],
-            json!(false),
-            "{} is stale",
-            copy.name
-        );
-    }
+    let listen = if place_of("relay").is_some() {
+        format!("0.0.0.0:{port}")
+    } else {
+        format!("127.0.0.1:{port}")
+    };
+    room.relay = Process::relay(&listen);
+    room.wait_linked();
+    let values = room.wait_agreed();
+    room.wait_forgotten();
+    let bob = room.bob.variables()["values"].clone();
+    assert_eq!(sorted(&bob), sorted(&values));
     let agendas = room.agendas(2);
     assert!(agendas.iter().all(|agenda| *agenda == agendas[0]));
 }
