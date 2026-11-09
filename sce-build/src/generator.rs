@@ -6943,7 +6943,8 @@ mod tests {
         crate::analyzer::analyze(&mut model, "");
         let output =
             generate_c11(&model, &crate::find_template_base(), "nested_loops", None).expect("c11");
-        // The output carries other headers than this machine's, so it is found by its name.
+        // The files are named by the stem; the C names inside are the machine's, which
+        // `parse` gives as `brake`.
         let header = output
             .files
             .iter()
@@ -6963,8 +6964,8 @@ mod tests {
         }
         let record = between(
             header,
-            "typedef struct nested_loops_scratch {",
-            "} nested_loops_scratch_t;",
+            "typedef struct brake_scratch {",
+            "} brake_scratch_t;",
         );
         for depth in ["loop_0", "loop_1"] {
             assert_eq!(
@@ -6973,7 +6974,7 @@ mod tests {
                 "the scratch record holds the union `{depth}`:\n{record}"
             );
         }
-        let machine = between(header, "typedef struct nested_loops {", "} nested_loops_t;");
+        let machine = between(header, "typedef struct brake {", "} brake_t;");
         let scratches: Vec<&str> = machine
             .lines()
             .map(str::trim)
@@ -6981,7 +6982,7 @@ mod tests {
             .collect();
         assert_eq!(
             scratches,
-            vec!["nested_loops_scratch_t scratch;"],
+            vec!["brake_scratch_t scratch;"],
             "the machine has one scratch:\n{machine}"
         );
         let c: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
