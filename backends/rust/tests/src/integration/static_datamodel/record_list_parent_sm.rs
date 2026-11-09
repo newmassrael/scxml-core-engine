@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: record_list_parent.scxml:40 :: _machine"]
-// SCE-MAP: record_list_parent.scxml:40 :: _machine
+#![doc = "SCE-MAP: record_list_parent.scxml:54 :: _machine"]
+// SCE-MAP: record_list_parent.scxml:54 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -113,19 +113,23 @@ pub enum RecordListParentEvent {
     DoneInvoke = 0,
     ErrorCommunication = 1,
     ErrorExecution = 2,
-    RecordListClear = 3,
-    RecordListEdit = 4,
-    RecordListJoin = 5,
-    RecordListRefused = 6,
-    RecordListRegister = 7,
-    RecordListRetire = 8,
-    RecordListRole = 9,
-    RecordListRoom = 10,
-    RecordListSupersede = 11,
-    RecordListValue = 12,
-    RecordListWrite = 13,
+    RecordListChange = 3,
+    RecordListClear = 4,
+    RecordListConfirm = 5,
+    RecordListConfirmed = 6,
+    RecordListEdit = 7,
+    RecordListJoin = 8,
+    RecordListPending = 9,
+    RecordListRefused = 10,
+    RecordListRegister = 11,
+    RecordListRetire = 12,
+    RecordListRole = 13,
+    RecordListRoom = 14,
+    RecordListValue = 15,
+    RecordListVerdict = 16,
+    RecordListWithdraw = 17,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 14,
+    Null = 18,
 }
 
 // ======================================================================
@@ -201,13 +205,21 @@ pub const RECORD_LIST_PARENT_TABLES: ::sce_rust_runtime::DocumentTables<'static>
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 10: holding, transition 10
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 11: the document's initial transition
+            // 11: holding, transition 11
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 12: holding, transition 12
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 13: holding, transition 13
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 14: holding, transition 14
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 15: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(11),
+        initial: TransitionId(15),
         default_state: ::sce_rust_runtime::StateId(RecordListParentState::Holding as u16),
-        null_event: ::sce_rust_runtime::EventId(14),
+        null_event: ::sce_rust_runtime::EventId(18),
         error_events: &[
             ::sce_rust_runtime::EventId(1),
             ::sce_rust_runtime::EventId(2),
@@ -234,27 +246,47 @@ impl RecordListParentEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [RecordListParentEvent] = &[
+        RecordListParentEvent::RecordListChange,
         RecordListParentEvent::RecordListClear,
+        RecordListParentEvent::RecordListConfirm,
+        RecordListParentEvent::RecordListConfirmed,
         RecordListParentEvent::RecordListEdit,
         RecordListParentEvent::RecordListJoin,
+        RecordListParentEvent::RecordListPending,
         RecordListParentEvent::RecordListRefused,
         RecordListParentEvent::RecordListRegister,
         RecordListParentEvent::RecordListRetire,
         RecordListParentEvent::RecordListRole,
         RecordListParentEvent::RecordListRoom,
-        RecordListParentEvent::RecordListSupersede,
         RecordListParentEvent::RecordListValue,
-        RecordListParentEvent::RecordListWrite,
+        RecordListParentEvent::RecordListVerdict,
+        RecordListParentEvent::RecordListWithdraw,
     ];
 }
 
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordListParentRecordListChangePayload {
+    pub by: u64,
+    pub wallTime: i64,
+    pub counter: u32,
+    pub ops: ::sce_rust_runtime::portable::BoundedList<RecordListParentOpRecord, 64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RecordListParentRecordListClearPayload {
     pub id: u32,
     pub field: u16,
     pub now: i64,
     pub more: bool,
+    pub command: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecordListParentRecordListConfirmPayload {
+    pub wallTime: i64,
+    pub counter: u32,
+    pub command: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -265,12 +297,13 @@ pub struct RecordListParentRecordListEditPayload {
     pub text: ::sce_rust_runtime::SceString,
     pub now: i64,
     pub more: bool,
+    pub command: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RecordListParentRecordListJoinPayload {
     pub node: u64,
-    pub hub: bool,
+    pub journal: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -279,6 +312,8 @@ pub struct RecordListParentRecordListRefusedPayload {
     pub field: u16,
     pub kind: RecordListParentRecordCommandEnum,
     pub reason: RecordListParentRecordRefusalEnum,
+    pub command: u64,
+    pub withdrawn: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -298,6 +333,7 @@ pub struct RecordListParentRecordListRetirePayload {
     pub id: u32,
     pub now: i64,
     pub more: bool,
+    pub command: u64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -314,19 +350,6 @@ pub struct RecordListParentRecordListRoomPayload {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct RecordListParentRecordListSupersedePayload {
-    pub id: u32,
-    pub field: u16,
-    pub wallTime: i64,
-    pub counter: u32,
-    pub nodeId: u64,
-    pub by: u64,
-    pub parts: u32,
-    pub atWallTime: i64,
-    pub atCounter: u32,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RecordListParentRecordListValuePayload {
     pub id: u32,
     pub field: u16,
@@ -338,16 +361,19 @@ pub struct RecordListParentRecordListValuePayload {
     pub nodeId: u64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RecordListParentRecordListWritePayload {
-    pub id: u32,
-    pub field: u16,
-    pub value: i64,
-    pub text: ::sce_rust_runtime::SceString,
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordListParentRecordListVerdictPayload {
     pub wallTime: i64,
     pub counter: u32,
-    pub nodeId: u64,
-    pub parts: u32,
+    pub outcome: RecordListParentRecordOutcomeEnum,
+    pub reason: Option<RecordListParentRecordRefusalEnum>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecordListParentRecordListWithdrawPayload {
+    pub wallTime: i64,
+    pub counter: u32,
+    pub command: u64,
 }
 
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
@@ -356,7 +382,9 @@ pub enum RecordListParentPayload {
     /// Schemaless / not-yet-populated default (W3C §5.10 empty `_event.data`).
     #[default]
     None,
+    RecordListChange(RecordListParentRecordListChangePayload),
     RecordListClear(RecordListParentRecordListClearPayload),
+    RecordListConfirm(RecordListParentRecordListConfirmPayload),
     RecordListEdit(RecordListParentRecordListEditPayload),
     RecordListJoin(RecordListParentRecordListJoinPayload),
     RecordListRefused(RecordListParentRecordListRefusedPayload),
@@ -364,19 +392,27 @@ pub enum RecordListParentPayload {
     RecordListRetire(RecordListParentRecordListRetirePayload),
     RecordListRole(RecordListParentRecordListRolePayload),
     RecordListRoom(RecordListParentRecordListRoomPayload),
-    RecordListSupersede(RecordListParentRecordListSupersedePayload),
     RecordListValue(RecordListParentRecordListValuePayload),
-    RecordListWrite(RecordListParentRecordListWritePayload),
+    RecordListVerdict(RecordListParentRecordListVerdictPayload),
+    RecordListWithdraw(RecordListParentRecordListWithdrawPayload),
 }
 
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
 /// Bring into scope with `use …::RecordListParentInject;` to call the
 /// `raise_<event>` methods on the engine.
 pub trait RecordListParentInject {
+    /// Typed `_event.data` inject for `record_list.change`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_record_list_change(&mut self, payload: RecordListParentRecordListChangePayload);
     /// Typed `_event.data` inject for `record_list.clear`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_record_list_clear(&mut self, payload: RecordListParentRecordListClearPayload);
+    /// Typed `_event.data` inject for `record_list.confirm`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_record_list_confirm(&mut self, payload: RecordListParentRecordListConfirmPayload);
     /// Typed `_event.data` inject for `record_list.edit`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -405,25 +441,67 @@ pub trait RecordListParentInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_record_list_room(&mut self, payload: RecordListParentRecordListRoomPayload);
-    /// Typed `_event.data` inject for `record_list.supersede`.
-    /// Binds the event name and payload variant in one call (name↔type
-    /// pairing cannot be constructed inconsistently).
-    fn raise_record_list_supersede(&mut self, payload: RecordListParentRecordListSupersedePayload);
     /// Typed `_event.data` inject for `record_list.value`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_record_list_value(&mut self, payload: RecordListParentRecordListValuePayload);
-    /// Typed `_event.data` inject for `record_list.write`.
+    /// Typed `_event.data` inject for `record_list.verdict`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
-    fn raise_record_list_write(&mut self, payload: RecordListParentRecordListWritePayload);
+    fn raise_record_list_verdict(&mut self, payload: RecordListParentRecordListVerdictPayload);
+    /// Typed `_event.data` inject for `record_list.withdraw`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_record_list_withdraw(&mut self, payload: RecordListParentRecordListWithdrawPayload);
 }
 
 impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolicy> {
+    fn raise_record_list_change(&mut self, payload: RecordListParentRecordListChangePayload) {
+        let data = ::sce_rust_runtime::event_payload::record_json(vec![
+            (
+                "by",
+                ::sce_rust_runtime::event_payload::quote(&payload.by.to_string()),
+            ),
+            (
+                "wallTime",
+                ::sce_rust_runtime::event_payload::quote(&payload.wallTime.to_string()),
+            ),
+            ("counter", payload.counter.to_string()),
+            (
+                "ops",
+                ::sce_rust_runtime::event_payload::list_json(&payload.ops, |h| {
+                    ::sce_rust_runtime::event_payload::record_json(vec![
+                        ("kind", h.kind.to_string()),
+                        ("id", h.id.to_string()),
+                        ("field", h.field.to_string()),
+                        (
+                            "value",
+                            ::sce_rust_runtime::event_payload::quote(&h.value.to_string()),
+                        ),
+                        ("text", ::sce_rust_runtime::event_payload::quote(&h.text)),
+                        (
+                            "wallTime",
+                            ::sce_rust_runtime::event_payload::quote(&h.wallTime.to_string()),
+                        ),
+                        ("counter", h.counter.to_string()),
+                        (
+                            "nodeId",
+                            ::sce_rust_runtime::event_payload::quote(&h.nodeId.to_string()),
+                        ),
+                    ])
+                }),
+            ),
+        ]);
+        self.raise_external_typed_with_data(
+            RecordListParentEvent::RecordListChange,
+            RecordListParentPayload::RecordListChange(payload),
+            &data,
+        );
+    }
     fn raise_record_list_clear(&mut self, payload: RecordListParentRecordListClearPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"now\":\"{}\", \"more\":{}}}",
-            payload.id, payload.field, payload.now, payload.more
+            "{{\"id\":{}, \"field\":{}, \"now\":\"{}\", \"more\":{}, \"command\":\"{}\"}}",
+            payload.id, payload.field, payload.now, payload.more, payload.command
         ));
         self.raise_external_typed_with_data(
             RecordListParentEvent::RecordListClear,
@@ -431,9 +509,20 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
             &data,
         );
     }
+    fn raise_record_list_confirm(&mut self, payload: RecordListParentRecordListConfirmPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"wallTime\":\"{}\", \"counter\":{}, \"command\":\"{}\"}}",
+            payload.wallTime, payload.counter, payload.command
+        ));
+        self.raise_external_typed_with_data(
+            RecordListParentEvent::RecordListConfirm,
+            RecordListParentPayload::RecordListConfirm(payload),
+            &data,
+        );
+    }
     fn raise_record_list_edit(&mut self, payload: RecordListParentRecordListEditPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"value\":\"{}\", \"text\":{}, \"now\":\"{}\", \"more\":{}}}", payload.id, payload.field, payload.value, ::sce_rust_runtime::event_payload::quote(&payload.text), payload.now, payload.more
+            "{{\"id\":{}, \"field\":{}, \"value\":\"{}\", \"text\":{}, \"now\":\"{}\", \"more\":{}, \"command\":\"{}\"}}", payload.id, payload.field, payload.value, ::sce_rust_runtime::event_payload::quote(&payload.text), payload.now, payload.more, payload.command
         ));
         self.raise_external_typed_with_data(
             RecordListParentEvent::RecordListEdit,
@@ -443,8 +532,8 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
     }
     fn raise_record_list_join(&mut self, payload: RecordListParentRecordListJoinPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"node\":\"{}\", \"hub\":{}}}",
-            payload.node, payload.hub
+            "{{\"node\":\"{}\", \"journal\":{}}}",
+            payload.node, payload.journal
         ));
         self.raise_external_typed_with_data(
             RecordListParentEvent::RecordListJoin,
@@ -454,23 +543,7 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
     }
     fn raise_record_list_refused(&mut self, payload: RecordListParentRecordListRefusedPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"kind\":{}, \"reason\":{}}}",
-            payload.id,
-            payload.field,
-            ::sce_rust_runtime::event_payload::quote(match payload.kind {
-                RecordListParentRecordCommandEnum::Edit => "edit",
-                RecordListParentRecordCommandEnum::Clear => "clear",
-                RecordListParentRecordCommandEnum::Retire => "retire",
-            }),
-            ::sce_rust_runtime::event_payload::quote(match payload.reason {
-                RecordListParentRecordRefusalEnum::NotWriter => "notWriter",
-                RecordListParentRecordRefusalEnum::NoRoomForValue => "noRoomForValue",
-                RecordListParentRecordRefusalEnum::NoRoomForHistory => "noRoomForHistory",
-                RecordListParentRecordRefusalEnum::NoRoomForDigest => "noRoomForDigest",
-                RecordListParentRecordRefusalEnum::ChangeTooLarge => "changeTooLarge",
-                RecordListParentRecordRefusalEnum::RegisterNamedTwice => "registerNamedTwice",
-                RecordListParentRecordRefusalEnum::ClockExhausted => "clockExhausted",
-            })
+            "{{\"id\":{}, \"field\":{}, \"kind\":{}, \"reason\":{}, \"command\":\"{}\", \"withdrawn\":{}}}", payload.id, payload.field, ::sce_rust_runtime::event_payload::quote(match payload.kind { RecordListParentRecordCommandEnum::Edit => "edit", RecordListParentRecordCommandEnum::Clear => "clear", RecordListParentRecordCommandEnum::Retire => "retire", }), ::sce_rust_runtime::event_payload::quote(match payload.reason { RecordListParentRecordRefusalEnum::NotWriter => "notWriter", RecordListParentRecordRefusalEnum::NoRoomForValue => "noRoomForValue", RecordListParentRecordRefusalEnum::NoRoomForHistory => "noRoomForHistory", RecordListParentRecordRefusalEnum::NoRoomForDigest => "noRoomForDigest", RecordListParentRecordRefusalEnum::ChangeTooLarge => "changeTooLarge", RecordListParentRecordRefusalEnum::RegisterNamedTwice => "registerNamedTwice", RecordListParentRecordRefusalEnum::ClockExhausted => "clockExhausted", RecordListParentRecordRefusalEnum::PeerRefused => "peerRefused", }), payload.command, payload.withdrawn
         ));
         self.raise_external_typed_with_data(
             RecordListParentEvent::RecordListRefused,
@@ -490,8 +563,8 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
     }
     fn raise_record_list_retire(&mut self, payload: RecordListParentRecordListRetirePayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"now\":\"{}\", \"more\":{}}}",
-            payload.id, payload.now, payload.more
+            "{{\"id\":{}, \"now\":\"{}\", \"more\":{}, \"command\":\"{}\"}}",
+            payload.id, payload.now, payload.more, payload.command
         ));
         self.raise_external_typed_with_data(
             RecordListParentEvent::RecordListRetire,
@@ -521,16 +594,6 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
             &data,
         );
     }
-    fn raise_record_list_supersede(&mut self, payload: RecordListParentRecordListSupersedePayload) {
-        let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"wallTime\":\"{}\", \"counter\":{}, \"nodeId\":\"{}\", \"by\":\"{}\", \"parts\":{}, \"atWallTime\":\"{}\", \"atCounter\":{}}}", payload.id, payload.field, payload.wallTime, payload.counter, payload.nodeId, payload.by, payload.parts, payload.atWallTime, payload.atCounter
-        ));
-        self.raise_external_typed_with_data(
-            RecordListParentEvent::RecordListSupersede,
-            RecordListParentPayload::RecordListSupersede(payload),
-            &data,
-        );
-    }
     fn raise_record_list_value(&mut self, payload: RecordListParentRecordListValuePayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
             "{{\"id\":{}, \"field\":{}, \"ordinal\":{}, \"value\":\"{}\", \"text\":{}, \"wallTime\":\"{}\", \"counter\":{}, \"nodeId\":\"{}\"}}", payload.id, payload.field, payload.ordinal, payload.value, ::sce_rust_runtime::event_payload::quote(&payload.text), payload.wallTime, payload.counter, payload.nodeId
@@ -541,13 +604,46 @@ impl RecordListParentInject for ::sce_rust_runtime::Engine<RecordListParentPolic
             &data,
         );
     }
-    fn raise_record_list_write(&mut self, payload: RecordListParentRecordListWritePayload) {
+    fn raise_record_list_verdict(&mut self, payload: RecordListParentRecordListVerdictPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"value\":\"{}\", \"text\":{}, \"wallTime\":\"{}\", \"counter\":{}, \"nodeId\":\"{}\", \"parts\":{}}}", payload.id, payload.field, payload.value, ::sce_rust_runtime::event_payload::quote(&payload.text), payload.wallTime, payload.counter, payload.nodeId, payload.parts
+            "{{\"wallTime\":\"{}\", \"counter\":{}, \"outcome\":{}, \"reason\":{}}}",
+            payload.wallTime,
+            payload.counter,
+            ::sce_rust_runtime::event_payload::quote(match payload.outcome {
+                RecordListParentRecordOutcomeEnum::None => "none",
+                RecordListParentRecordOutcomeEnum::Accepted => "accepted",
+                RecordListParentRecordOutcomeEnum::Held => "held",
+                RecordListParentRecordOutcomeEnum::Waiting => "waiting",
+                RecordListParentRecordOutcomeEnum::Refused => "refused",
+            }),
+            ::sce_rust_runtime::event_payload::optional_json(
+                payload.reason.as_ref(),
+                |sce_present| ::sce_rust_runtime::event_payload::quote(match sce_present {
+                    RecordListParentRecordRefusalEnum::NotWriter => "notWriter",
+                    RecordListParentRecordRefusalEnum::NoRoomForValue => "noRoomForValue",
+                    RecordListParentRecordRefusalEnum::NoRoomForHistory => "noRoomForHistory",
+                    RecordListParentRecordRefusalEnum::NoRoomForDigest => "noRoomForDigest",
+                    RecordListParentRecordRefusalEnum::ChangeTooLarge => "changeTooLarge",
+                    RecordListParentRecordRefusalEnum::RegisterNamedTwice => "registerNamedTwice",
+                    RecordListParentRecordRefusalEnum::ClockExhausted => "clockExhausted",
+                    RecordListParentRecordRefusalEnum::PeerRefused => "peerRefused",
+                })
+            )
         ));
         self.raise_external_typed_with_data(
-            RecordListParentEvent::RecordListWrite,
-            RecordListParentPayload::RecordListWrite(payload),
+            RecordListParentEvent::RecordListVerdict,
+            RecordListParentPayload::RecordListVerdict(payload),
+            &data,
+        );
+    }
+    fn raise_record_list_withdraw(&mut self, payload: RecordListParentRecordListWithdrawPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"wallTime\":\"{}\", \"counter\":{}, \"command\":\"{}\"}}",
+            payload.wallTime, payload.counter, payload.command
+        ));
+        self.raise_external_typed_with_data(
+            RecordListParentEvent::RecordListWithdraw,
+            RecordListParentPayload::RecordListWithdraw(payload),
             &data,
         );
     }
@@ -633,6 +729,7 @@ pub enum RecordListParentRecordRefusalEnum {
     ChangeTooLarge,
     RegisterNamedTwice,
     ClockExhausted,
+    PeerRefused,
 }
 
 impl RecordListParentRecordRefusalEnum {
@@ -647,6 +744,7 @@ impl RecordListParentRecordRefusalEnum {
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
+            Self::PeerRefused => "peerRefused",
         }
     }
 
@@ -661,6 +759,7 @@ impl RecordListParentRecordRefusalEnum {
             Self::ChangeTooLarge => 6,
             Self::RegisterNamedTwice => 7,
             Self::ClockExhausted => 8,
+            Self::PeerRefused => 9,
         }
     }
 
@@ -675,6 +774,7 @@ impl RecordListParentRecordRefusalEnum {
             6 => Some(Self::ChangeTooLarge),
             7 => Some(Self::RegisterNamedTwice),
             8 => Some(Self::ClockExhausted),
+            9 => Some(Self::PeerRefused),
             _ => None,
         }
     }
@@ -688,6 +788,71 @@ pub struct RecordListParentRefusedRecord {
     pub field: u16,
     pub kind: RecordListParentRecordCommandEnum,
     pub reason: RecordListParentRecordRefusalEnum,
+    pub command: u64,
+    pub withdrawn: bool,
+}
+
+/// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(non_snake_case)]
+pub struct RecordListParentOpRecord {
+    pub kind: u8,
+    pub id: u32,
+    pub field: u16,
+    pub value: i64,
+    pub text: ::sce_rust_runtime::portable::SceString<96>,
+    pub wallTime: i64,
+    pub counter: u32,
+    pub nodeId: u64,
+}
+
+/// SCE Accepted Subset §2.15: an `enum:record_outcome` datamodel value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordListParentRecordOutcomeEnum {
+    None,
+    Accepted,
+    Held,
+    Waiting,
+    Refused,
+}
+
+impl RecordListParentRecordOutcomeEnum {
+    /// The name the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn sce_name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Accepted => "accepted",
+            Self::Held => "held",
+            Self::Waiting => "waiting",
+            Self::Refused => "refused",
+        }
+    }
+
+    /// The number the enum document declares for this value.
+    #[allow(dead_code)]
+    pub fn to_underlying(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Accepted => 1,
+            Self::Held => 2,
+            Self::Waiting => 3,
+            Self::Refused => 4,
+        }
+    }
+
+    /// The variant that declares `raw`, or `None` for a number no variant declares.
+    #[allow(dead_code)]
+    pub fn from_underlying(raw: u8) -> Option<Self> {
+        match raw {
+            0 => Some(Self::None),
+            1 => Some(Self::Accepted),
+            2 => Some(Self::Held),
+            3 => Some(Self::Waiting),
+            4 => Some(Self::Refused),
+            _ => None,
+        }
+    }
 }
 
 /// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
@@ -714,6 +879,8 @@ pub struct RecordListParentData {
     pub others: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8>,
     pub refused: Option<RecordListParentRefusedRecord>,
     pub refused_count: u32,
+    pub pending_count: u32,
+    pub confirmed_count: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -748,6 +915,8 @@ impl RecordListParentObserve for Engine<RecordListParentPolicy> {
                 others: policy.others.clone(),
                 refused: policy.refused,
                 refused_count: policy.refused_count,
+                pending_count: policy.pending_count,
+                confirmed_count: policy.confirmed_count,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -799,6 +968,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRecordRefus
                 Self::ChangeTooLarge => "changeTooLarge",
                 Self::RegisterNamedTwice => "registerNamedTwice",
                 Self::ClockExhausted => "clockExhausted",
+                Self::PeerRefused => "peerRefused",
             }
             .to_string(),
         )
@@ -817,8 +987,45 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRecordRefus
                 "changeTooLarge" => Ok(Self::ChangeTooLarge),
                 "registerNamedTwice" => Ok(Self::RegisterNamedTwice),
                 "clockExhausted" => Ok(Self::ClockExhausted),
+                "peerRefused" => Ok(Self::PeerRefused),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of record_refusal"
+                ))),
+            },
+            _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "'{what}' is not a text"
+            ))),
+        }
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRecordOutcomeEnum {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Text(
+            match self {
+                Self::None => "none",
+                Self::Accepted => "accepted",
+                Self::Held => "held",
+                Self::Waiting => "waiting",
+                Self::Refused => "refused",
+            }
+            .to_string(),
+        )
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        match value {
+            ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
+                "none" => Ok(Self::None),
+                "accepted" => Ok(Self::Accepted),
+                "held" => Ok(Self::Held),
+                "waiting" => Ok(Self::Waiting),
+                "refused" => Ok(Self::Refused),
+                other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                    "'{what}' ({other}) is not a variant of record_outcome"
                 ))),
             },
             _ => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
@@ -957,6 +1164,14 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRefusedReco
                 "reason".to_string(),
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.reason),
             ),
+            (
+                "command".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.command),
+            ),
+            (
+                "withdrawn".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.withdrawn),
+            ),
         ])
     }
 
@@ -969,6 +1184,63 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentRefusedReco
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             kind: ::sce_rust_runtime::saved_state::record_field(value, what, "kind")?,
             reason: ::sce_rust_runtime::saved_state::record_field(value, what, "reason")?,
+            command: ::sce_rust_runtime::saved_state::record_field(value, what, "command")?,
+            withdrawn: ::sce_rust_runtime::saved_state::record_field(value, what, "withdrawn")?,
+        })
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for RecordListParentOpRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "kind".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.kind),
+            ),
+            (
+                "id".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.id),
+            ),
+            (
+                "field".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.field),
+            ),
+            (
+                "value".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.value),
+            ),
+            (
+                "text".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.text),
+            ),
+            (
+                "wallTime".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.wallTime),
+            ),
+            (
+                "counter".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.counter),
+            ),
+            (
+                "nodeId".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.nodeId),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            kind: ::sce_rust_runtime::saved_state::record_field(value, what, "kind")?,
+            id: ::sce_rust_runtime::saved_state::record_field(value, what, "id")?,
+            field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
+            value: ::sce_rust_runtime::saved_state::record_field(value, what, "value")?,
+            text: ::sce_rust_runtime::saved_state::record_field(value, what, "text")?,
+            wallTime: ::sce_rust_runtime::saved_state::record_field(value, what, "wallTime")?,
+            counter: ::sce_rust_runtime::saved_state::record_field(value, what, "counter")?,
+            nodeId: ::sce_rust_runtime::saved_state::record_field(value, what, "nodeId")?,
         })
     }
 }
@@ -1075,16 +1347,29 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
-            revised: "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
-            format2_first: "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
-            format2_revised: "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
+            first: "f4004247309949f371b21bfb3fdeb9321081f34037b2b8d4cd093dac9e48af27",
+            revised: "339fbcd29a3744cb5e8aad5ff60cf609a4e016d594a75ad0e16e09da7d8e3740",
+            format2_first: "59405a4de363d3298249985df7fe808d8751057f0ade2fd995dd782f8240e1de",
+            format2_revised: "0acbd90302f5ed0754a33f3178756a4d271a985d0773eb02e7e9382bade9955c",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "record_list.refused",
-                    revision: 1,
-                    revisions: &[],
-                    added: &[],
+                    revision: 2,
+                    revisions: &[
+                        "c23696beaa537fe1a7d5ee2981d42dfbb76f8ec4603c2b77a27c9872705e1f61",
+                    ],
+                    added: &[
+                        ::sce_rust_runtime::saved_state::AddedField {
+                            id: "command",
+                            since: 2,
+                            default: "\"0\"",
+                        },
+                        ::sce_rust_runtime::saved_state::AddedField {
+                            id: "withdrawn",
+                            since: 2,
+                            default: "false",
+                        },
+                    ],
                     widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "refused",
@@ -1134,9 +1419,14 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                 },
                 ::sce_rust_runtime::saved_state::EnumLineage {
                     key: "enum:sce:std/shared/record_refusal.scxml",
-                    revision: 1,
-                    revisions: &[],
-                    added: &[],
+                    revision: 2,
+                    revisions: &[
+                        "3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8",
+                    ],
+                    added: &[::sce_rust_runtime::saved_state::AddedVariant {
+                        name: "peerRefused",
+                        since: 2,
+                    }],
                     holders: &[::sce_rust_runtime::saved_state::EnumHolder {
                         variable: "refused",
                         field: Some("reason"),
@@ -1187,6 +1477,14 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                     "refusedCount".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refused_count),
                 ),
+                (
+                    "pendingCount".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.pending_count),
+                ),
+                (
+                    "confirmedCount".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.confirmed_count),
+                ),
             ],
             // What each history recorded is the engine's (docs/adr/0064).
             ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
@@ -1235,6 +1533,14 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
             saved.variable("refusedCount")?,
             "refusedCount",
         )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("pendingCount")?,
+            "pendingCount",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("confirmedCount")?,
+            "confirmedCount",
+        )?;
         ::sce_rust_runtime::saved_state::judge::<RecordListParentPolicy>(saved)
     }
 
@@ -1279,6 +1585,14 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
             saved.variable("refusedCount")?,
             "refusedCount",
         )?;
+        policy.pending_count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("pendingCount")?,
+            "pendingCount",
+        )?;
+        policy.confirmed_count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("confirmedCount")?,
+            "confirmedCount",
+        )?;
         // A start after the restore is numbered on from the saved count.
         policy.invoke_starts_list = saved.invoke_start("list");
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
@@ -1292,6 +1606,8 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
 pub struct RecordListParentInvokeParams {
     pub told: Option<u32>,
     pub refused_count: Option<u32>,
+    pub pending_count: Option<u32>,
+    pub confirmed_count: Option<u32>,
 }
 
 // ======================================================================
@@ -1315,6 +1631,10 @@ pub struct RecordListParentPolicy {
     refused: Option<RecordListParentRefusedRecord>,
     /// W3C SCXML 5.2: the `refusedCount` datamodel variable, published (`sce:direction="out"`).
     refused_count: u32,
+    /// W3C SCXML 5.2: the `pendingCount` datamodel variable, published (`sce:direction="out"`).
+    pending_count: u32,
+    /// W3C SCXML 5.2: the `confirmedCount` datamodel variable, published (`sce:direction="out"`).
+    confirmed_count: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -1378,6 +1698,8 @@ impl RecordListParentPolicy {
         };
         let refused: Option<RecordListParentRefusedRecord> = None;
         let refused_count: u32 = 0;
+        let pending_count: u32 = 0;
+        let confirmed_count: u32 = 0;
         Self {
             pending_payload: RecordListParentPayload::default(),
             told,
@@ -1386,6 +1708,8 @@ impl RecordListParentPolicy {
             other,
             refused,
             refused_count,
+            pending_count,
+            confirmed_count,
             session_id: Some(session_id),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
@@ -1459,6 +1783,12 @@ impl RecordListParentPolicy {
         if let Some(value) = params.refused_count {
             self.refused_count = value;
         }
+        if let Some(value) = params.pending_count {
+            self.pending_count = value;
+        }
+        if let Some(value) = params.confirmed_count {
+            self.confirmed_count = value;
+        }
     }
 
     /// W3C SCXML 5.2: what the published `told` datamodel variable
@@ -1489,6 +1819,18 @@ impl RecordListParentPolicy {
     /// holds now. Only the machine writes it.
     pub fn refused_count(&self) -> u32 {
         self.refused_count
+    }
+
+    /// W3C SCXML 5.2: what the published `pendingCount` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn pending_count(&self) -> u32 {
+        self.pending_count
+    }
+
+    /// W3C SCXML 5.2: what the published `confirmedCount` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn confirmed_count(&self) -> u32 {
+        self.confirmed_count
     }
 
     // W3C SCXML 6.4: Defer the start of invoke 'list' of state 'holding' to macrostep end
@@ -1877,17 +2219,21 @@ impl StatePolicy for RecordListParentPolicy {
         RecordListParentEvent::DoneInvoke,
         RecordListParentEvent::ErrorCommunication,
         RecordListParentEvent::ErrorExecution,
+        RecordListParentEvent::RecordListChange,
         RecordListParentEvent::RecordListClear,
+        RecordListParentEvent::RecordListConfirm,
+        RecordListParentEvent::RecordListConfirmed,
         RecordListParentEvent::RecordListEdit,
         RecordListParentEvent::RecordListJoin,
+        RecordListParentEvent::RecordListPending,
         RecordListParentEvent::RecordListRefused,
         RecordListParentEvent::RecordListRegister,
         RecordListParentEvent::RecordListRetire,
         RecordListParentEvent::RecordListRole,
         RecordListParentEvent::RecordListRoom,
-        RecordListParentEvent::RecordListSupersede,
         RecordListParentEvent::RecordListValue,
-        RecordListParentEvent::RecordListWrite,
+        RecordListParentEvent::RecordListVerdict,
+        RecordListParentEvent::RecordListWithdraw,
         RecordListParentEvent::Null,
     ];
 
@@ -1970,17 +2316,21 @@ impl StatePolicy for RecordListParentPolicy {
             RecordListParentEvent::DoneInvoke => "done.invoke",
             RecordListParentEvent::ErrorCommunication => "error.communication",
             RecordListParentEvent::ErrorExecution => "error.execution",
+            RecordListParentEvent::RecordListChange => "record_list.change",
             RecordListParentEvent::RecordListClear => "record_list.clear",
+            RecordListParentEvent::RecordListConfirm => "record_list.confirm",
+            RecordListParentEvent::RecordListConfirmed => "record_list.confirmed",
             RecordListParentEvent::RecordListEdit => "record_list.edit",
             RecordListParentEvent::RecordListJoin => "record_list.join",
+            RecordListParentEvent::RecordListPending => "record_list.pending",
             RecordListParentEvent::RecordListRefused => "record_list.refused",
             RecordListParentEvent::RecordListRegister => "record_list.register",
             RecordListParentEvent::RecordListRetire => "record_list.retire",
             RecordListParentEvent::RecordListRole => "record_list.role",
             RecordListParentEvent::RecordListRoom => "record_list.room",
-            RecordListParentEvent::RecordListSupersede => "record_list.supersede",
             RecordListParentEvent::RecordListValue => "record_list.value",
-            RecordListParentEvent::RecordListWrite => "record_list.write",
+            RecordListParentEvent::RecordListVerdict => "record_list.verdict",
+            RecordListParentEvent::RecordListWithdraw => "record_list.withdraw",
             RecordListParentEvent::Null => "",
         }
     }
@@ -1990,17 +2340,21 @@ impl StatePolicy for RecordListParentPolicy {
             "done.invoke" => Some(RecordListParentEvent::DoneInvoke),
             "error.communication" => Some(RecordListParentEvent::ErrorCommunication),
             "error.execution" => Some(RecordListParentEvent::ErrorExecution),
+            "record_list.change" => Some(RecordListParentEvent::RecordListChange),
             "record_list.clear" => Some(RecordListParentEvent::RecordListClear),
+            "record_list.confirm" => Some(RecordListParentEvent::RecordListConfirm),
+            "record_list.confirmed" => Some(RecordListParentEvent::RecordListConfirmed),
             "record_list.edit" => Some(RecordListParentEvent::RecordListEdit),
             "record_list.join" => Some(RecordListParentEvent::RecordListJoin),
+            "record_list.pending" => Some(RecordListParentEvent::RecordListPending),
             "record_list.refused" => Some(RecordListParentEvent::RecordListRefused),
             "record_list.register" => Some(RecordListParentEvent::RecordListRegister),
             "record_list.retire" => Some(RecordListParentEvent::RecordListRetire),
             "record_list.role" => Some(RecordListParentEvent::RecordListRole),
             "record_list.room" => Some(RecordListParentEvent::RecordListRoom),
-            "record_list.supersede" => Some(RecordListParentEvent::RecordListSupersede),
             "record_list.value" => Some(RecordListParentEvent::RecordListValue),
-            "record_list.write" => Some(RecordListParentEvent::RecordListWrite),
+            "record_list.verdict" => Some(RecordListParentEvent::RecordListVerdict),
+            "record_list.withdraw" => Some(RecordListParentEvent::RecordListWithdraw),
             _ => None,
         }
     }
@@ -2051,14 +2405,59 @@ impl StatePolicy for RecordListParentPolicy {
             return Ok(());
         }
         match event {
-            RecordListParentEvent::RecordListClear => {
+            RecordListParentEvent::RecordListChange => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = RecordListParentPayload::RecordListChange(
+                    RecordListParentRecordListChangePayload {
+                        by: fields.field("by").and_then(|v| v.unsigned64())?,
+                        wallTime: fields.field("wallTime").and_then(|v| v.signed64())?,
+                        counter: fields.field("counter").and_then(|v| v.unsigned::<u32>())?,
+                        ops: fields.field("ops").and_then(|v| {
+                            v.list_within::<_, 64>(1, |v| {
+                                v.record(None, |r| {
+                                    Ok(RecordListParentOpRecord {
+                                        kind: r.field("kind").and_then(|v| v.unsigned::<u8>())?,
+                                        id: r.field("id").and_then(|v| v.unsigned::<u32>())?,
+                                        field: r
+                                            .field("field")
+                                            .and_then(|v| v.unsigned::<u16>())?,
+                                        value: r.field("value").and_then(|v| v.signed64())?,
+                                        text: r.field("text").and_then(|v| v.text::<96>())?,
+                                        wallTime: r.field("wallTime").and_then(|v| v.signed64())?,
+                                        counter: r
+                                            .field("counter")
+                                            .and_then(|v| v.unsigned::<u32>())?,
+                                        nodeId: r.field("nodeId").and_then(|v| v.unsigned64())?,
+                                    })
+                                })
+                            })
+                        })?,
+                    },
+                );
+            }
+            RecordListParentEvent::RecordListClear => {
+                let fields =
+                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
+                        data,
+                        "{\"command\":\"0\"}",
+                    )?;
                 self.pending_payload = RecordListParentPayload::RecordListClear(
                     RecordListParentRecordListClearPayload {
                         id: fields.unsigned::<u32>("id")?,
                         field: fields.unsigned::<u16>("field")?,
                         now: fields.signed64("now")?,
                         more: fields.truth("more")?,
+                        command: fields.unsigned64("command")?,
+                    },
+                );
+            }
+            RecordListParentEvent::RecordListConfirm => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = RecordListParentPayload::RecordListConfirm(
+                    RecordListParentRecordListConfirmPayload {
+                        wallTime: fields.signed64("wallTime")?,
+                        counter: fields.unsigned::<u32>("counter")?,
+                        command: fields.unsigned64("command")?,
                     },
                 );
             }
@@ -2066,7 +2465,7 @@ impl StatePolicy for RecordListParentPolicy {
                 let fields =
                     ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
                         data,
-                        "{\"more\":false}",
+                        "{\"more\":false,\"command\":\"0\"}",
                     )?;
                 self.pending_payload = RecordListParentPayload::RecordListEdit(
                     RecordListParentRecordListEditPayload {
@@ -2076,20 +2475,29 @@ impl StatePolicy for RecordListParentPolicy {
                         text: fields.text("text", 32)?,
                         now: fields.signed64("now")?,
                         more: fields.truth("more")?,
+                        command: fields.unsigned64("command")?,
                     },
                 );
             }
             RecordListParentEvent::RecordListJoin => {
-                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                let fields =
+                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
+                        data,
+                        "{\"journal\":true}",
+                    )?;
                 self.pending_payload = RecordListParentPayload::RecordListJoin(
                     RecordListParentRecordListJoinPayload {
                         node: fields.unsigned64("node")?,
-                        hub: fields.truth("hub")?,
+                        journal: fields.truth("journal")?,
                     },
                 );
             }
             RecordListParentEvent::RecordListRefused => {
-                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                let fields =
+                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
+                        data,
+                        "{\"command\":\"0\",\"withdrawn\":false}",
+                    )?;
                 self.pending_payload = RecordListParentPayload::RecordListRefused(
                     RecordListParentRecordListRefusedPayload {
                         id: fields.unsigned::<u32>("id")?,
@@ -2114,6 +2522,7 @@ impl StatePolicy for RecordListParentPolicy {
                                 RecordListParentRecordRefusalEnum::RegisterNamedTwice
                             }
                             "clockExhausted" => RecordListParentRecordRefusalEnum::ClockExhausted,
+                            "peerRefused" => RecordListParentRecordRefusalEnum::PeerRefused,
                             other => {
                                 return Err(fields.unknown_variant(
                                     "reason",
@@ -2122,6 +2531,8 @@ impl StatePolicy for RecordListParentPolicy {
                                 ))
                             }
                         },
+                        command: fields.unsigned64("command")?,
+                        withdrawn: fields.truth("withdrawn")?,
                     },
                 );
             }
@@ -2141,12 +2552,17 @@ impl StatePolicy for RecordListParentPolicy {
                 );
             }
             RecordListParentEvent::RecordListRetire => {
-                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                let fields =
+                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
+                        data,
+                        "{\"command\":\"0\"}",
+                    )?;
                 self.pending_payload = RecordListParentPayload::RecordListRetire(
                     RecordListParentRecordListRetirePayload {
                         id: fields.unsigned::<u32>("id")?,
                         now: fields.signed64("now")?,
                         more: fields.truth("more")?,
+                        command: fields.unsigned64("command")?,
                     },
                 );
             }
@@ -2169,26 +2585,6 @@ impl StatePolicy for RecordListParentPolicy {
                     },
                 );
             }
-            RecordListParentEvent::RecordListSupersede => {
-                let fields =
-                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
-                        data,
-                        "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}",
-                    )?;
-                self.pending_payload = RecordListParentPayload::RecordListSupersede(
-                    RecordListParentRecordListSupersedePayload {
-                        id: fields.unsigned::<u32>("id")?,
-                        field: fields.unsigned::<u16>("field")?,
-                        wallTime: fields.signed64("wallTime")?,
-                        counter: fields.unsigned::<u32>("counter")?,
-                        nodeId: fields.unsigned64("nodeId")?,
-                        by: fields.unsigned64("by")?,
-                        parts: fields.unsigned::<u32>("parts")?,
-                        atWallTime: fields.signed64("atWallTime")?,
-                        atCounter: fields.unsigned::<u32>("atCounter")?,
-                    },
-                );
-            }
             RecordListParentEvent::RecordListValue => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = RecordListParentPayload::RecordListValue(
@@ -2204,22 +2600,67 @@ impl StatePolicy for RecordListParentPolicy {
                     },
                 );
             }
-            RecordListParentEvent::RecordListWrite => {
-                let fields =
-                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
-                        data,
-                        "{\"parts\":1}",
-                    )?;
-                self.pending_payload = RecordListParentPayload::RecordListWrite(
-                    RecordListParentRecordListWritePayload {
-                        id: fields.unsigned::<u32>("id")?,
-                        field: fields.unsigned::<u16>("field")?,
-                        value: fields.signed64("value")?,
-                        text: fields.text("text", 96)?,
+            RecordListParentEvent::RecordListVerdict => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = RecordListParentPayload::RecordListVerdict(
+                    RecordListParentRecordListVerdictPayload {
                         wallTime: fields.signed64("wallTime")?,
                         counter: fields.unsigned::<u32>("counter")?,
-                        nodeId: fields.unsigned64("nodeId")?,
-                        parts: fields.unsigned::<u32>("parts")?,
+                        outcome: match fields.field("outcome")?.name()? {
+                            "none" => RecordListParentRecordOutcomeEnum::None,
+                            "accepted" => RecordListParentRecordOutcomeEnum::Accepted,
+                            "held" => RecordListParentRecordOutcomeEnum::Held,
+                            "waiting" => RecordListParentRecordOutcomeEnum::Waiting,
+                            "refused" => RecordListParentRecordOutcomeEnum::Refused,
+                            other => {
+                                return Err(fields.unknown_variant(
+                                    "outcome",
+                                    other,
+                                    "record_outcome",
+                                ))
+                            }
+                        },
+                        reason: fields.optional("reason", |fields| {
+                            Ok(match fields.field("reason")?.name()? {
+                                "notWriter" => RecordListParentRecordRefusalEnum::NotWriter,
+                                "noRoomForValue" => {
+                                    RecordListParentRecordRefusalEnum::NoRoomForValue
+                                }
+                                "noRoomForHistory" => {
+                                    RecordListParentRecordRefusalEnum::NoRoomForHistory
+                                }
+                                "noRoomForDigest" => {
+                                    RecordListParentRecordRefusalEnum::NoRoomForDigest
+                                }
+                                "changeTooLarge" => {
+                                    RecordListParentRecordRefusalEnum::ChangeTooLarge
+                                }
+                                "registerNamedTwice" => {
+                                    RecordListParentRecordRefusalEnum::RegisterNamedTwice
+                                }
+                                "clockExhausted" => {
+                                    RecordListParentRecordRefusalEnum::ClockExhausted
+                                }
+                                "peerRefused" => RecordListParentRecordRefusalEnum::PeerRefused,
+                                other => {
+                                    return Err(fields.unknown_variant(
+                                        "reason",
+                                        other,
+                                        "record_refusal",
+                                    ))
+                                }
+                            })
+                        })?,
+                    },
+                );
+            }
+            RecordListParentEvent::RecordListWithdraw => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = RecordListParentPayload::RecordListWithdraw(
+                    RecordListParentRecordListWithdrawPayload {
+                        wallTime: fields.signed64("wallTime")?,
+                        counter: fields.unsigned::<u32>("counter")?,
+                        command: fields.unsigned64("command")?,
                     },
                 );
             }
@@ -2233,8 +2674,8 @@ impl StatePolicy for RecordListParentPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: record_list_parent.scxml:40 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:54 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -2243,7 +2684,7 @@ impl StatePolicy for RecordListParentPolicy {
     ) {
         match state {
             RecordListParentState::Holding => {
-                // SCE-MAP: record_list_parent.scxml:83 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:106 :: holding :: _state_body
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     self.defer_invoke_list(engine);
@@ -2260,8 +2701,8 @@ impl StatePolicy for RecordListParentPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: record_list_parent.scxml:40 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:54 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -2321,8 +2762,8 @@ impl StatePolicy for RecordListParentPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: record_list_parent.scxml:40 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:54 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -2355,46 +2796,70 @@ impl StatePolicy for RecordListParentPolicy {
                         return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
-                if event == RecordListParentEvent::RecordListRole {
+                if event == RecordListParentEvent::RecordListVerdict {
                     {
                         // holding, transition 4
                         return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
-                if event == RecordListParentEvent::RecordListRoom {
+                if event == RecordListParentEvent::RecordListConfirm {
                     {
                         // holding, transition 5
                         return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
-                if event == RecordListParentEvent::RecordListWrite {
+                if event == RecordListParentEvent::RecordListWithdraw {
                     {
                         // holding, transition 6
                         return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
-                if event == RecordListParentEvent::RecordListSupersede {
+                if event == RecordListParentEvent::RecordListRole {
                     {
                         // holding, transition 7
                         return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
-                if event == RecordListParentEvent::RecordListRegister {
+                if event == RecordListParentEvent::RecordListRoom {
                     {
                         // holding, transition 8
                         return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
-                if event == RecordListParentEvent::RecordListValue {
+                if event == RecordListParentEvent::RecordListChange {
                     {
                         // holding, transition 9
                         return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
-                if event == RecordListParentEvent::RecordListRefused {
+                if event == RecordListParentEvent::RecordListRegister {
                     {
                         // holding, transition 10
                         return Some(::sce_rust_runtime::TransitionId(10));
+                    }
+                }
+                if event == RecordListParentEvent::RecordListValue {
+                    {
+                        // holding, transition 11
+                        return Some(::sce_rust_runtime::TransitionId(11));
+                    }
+                }
+                if event == RecordListParentEvent::RecordListRefused {
+                    {
+                        // holding, transition 12
+                        return Some(::sce_rust_runtime::TransitionId(12));
+                    }
+                }
+                if event == RecordListParentEvent::RecordListPending {
+                    {
+                        // holding, transition 13
+                        return Some(::sce_rust_runtime::TransitionId(13));
+                    }
+                }
+                if event == RecordListParentEvent::RecordListConfirmed {
+                    {
+                        // holding, transition 14
+                        return Some(::sce_rust_runtime::TransitionId(14));
                     }
                 }
                 None
@@ -2406,8 +2871,8 @@ impl StatePolicy for RecordListParentPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: record_list_parent.scxml:40 :: _machine"]
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    #[doc = "SCE-MAP: record_list_parent.scxml:54 :: _machine"]
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -2416,7 +2881,7 @@ impl StatePolicy for RecordListParentPolicy {
         match transition.0 {
             // holding, transition 0
             0 => {
-                // SCE-MAP: record_list_parent.scxml:89 :: holding :: _transition_0
+                // SCE-MAP: record_list_parent.scxml:112 :: holding :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListJoin(ev) => ev.clone(),
@@ -2449,9 +2914,9 @@ impl StatePolicy for RecordListParentPolicy {
                             );
                             // The value is read from the machine's field as it stands now.
                             wire_params
-                                .entry("hub".to_string())
+                                .entry("journal".to_string())
                                 .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.hub));
+                                .push(::sce_rust_runtime::ScriptValue::Bool(ev.journal));
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
                                 wire_params,
                             )
@@ -2496,7 +2961,7 @@ impl StatePolicy for RecordListParentPolicy {
             }
             // holding, transition 1
             1 => {
-                // SCE-MAP: record_list_parent.scxml:95 :: holding :: _transition_1
+                // SCE-MAP: record_list_parent.scxml:118 :: holding :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListEdit(ev) => ev.clone(),
@@ -2551,6 +3016,10 @@ impl StatePolicy for RecordListParentPolicy {
                                 .entry("more".to_string())
                                 .or_default()
                                 .push(::sce_rust_runtime::ScriptValue::Bool(ev.more));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("command".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.command).to_string()),
+                            );
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
                                 wire_params,
                             )
@@ -2595,7 +3064,7 @@ impl StatePolicy for RecordListParentPolicy {
             }
             // holding, transition 2
             2 => {
-                // SCE-MAP: record_list_parent.scxml:105 :: holding :: _transition_2
+                // SCE-MAP: record_list_parent.scxml:129 :: holding :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListClear(ev) => ev.clone(),
@@ -2641,6 +3110,10 @@ impl StatePolicy for RecordListParentPolicy {
                                 .entry("more".to_string())
                                 .or_default()
                                 .push(::sce_rust_runtime::ScriptValue::Bool(ev.more));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("command".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.command).to_string()),
+                            );
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
                                 wire_params,
                             )
@@ -2685,7 +3158,7 @@ impl StatePolicy for RecordListParentPolicy {
             }
             // holding, transition 3
             3 => {
-                // SCE-MAP: record_list_parent.scxml:113 :: holding :: _transition_3
+                // SCE-MAP: record_list_parent.scxml:138 :: holding :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListRetire(ev) => ev.clone(),
@@ -2726,6 +3199,10 @@ impl StatePolicy for RecordListParentPolicy {
                                 .entry("more".to_string())
                                 .or_default()
                                 .push(::sce_rust_runtime::ScriptValue::Bool(ev.more));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("command".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.command).to_string()),
+                            );
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
                                 wire_params,
                             )
@@ -2770,8 +3247,271 @@ impl StatePolicy for RecordListParentPolicy {
             }
             // holding, transition 4
             4 => {
-                // SCE-MAP: record_list_parent.scxml:120 :: holding :: _transition_4
+                // SCE-MAP: record_list_parent.scxml:148 :: holding :: _transition_4
                 // W3C SCXML 3.13: Transition 4 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentPayload::RecordListVerdict(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_4";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("counter".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("outcome".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String(
+                                    (ev.outcome).sce_name().to_string(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("reason".to_string()).or_default().push(
+                                match ev.reason {
+                                    Some(sce_present) => ::sce_rust_runtime::ScriptValue::String(
+                                        (sce_present).sce_name().to_string(),
+                                    ),
+                                    None => ::sce_rust_runtime::ScriptValue::Null,
+                                },
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.4: Send to child invoke 'list' via #_list.
+                        // A child whose session has reached its final state has ended, and is not
+                        // there to address.
+                        if self
+                            .child_list
+                            .as_ref()
+                            .is_some_and(|child| !child.is_in_final_state())
+                        {
+                            if let Some(ref mut child) = self.child_list {
+                                // W3C SCXML C.1: this session is the sender, and the child reads
+                                // the location it publishes as `_event.origin` (docs/adr/0090).
+                                child.deliver_by_name(
+                                    "record_list.verdict",
+                                    &event_data,
+                                    self.session_id.as_deref().unwrap_or(""),
+                                );
+                            }
+                            // docs/adr/0045: what the child sent its parent as it took the event,
+                            // and its ending, reach this session within the delivery.
+                            self.settle_child_list(engine);
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                RecordListParentEvent::ErrorCommunication,
+                                "<send target='#_list'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // holding, transition 5
+            5 => {
+                // SCE-MAP: record_list_parent.scxml:156 :: holding :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentPayload::RecordListConfirm(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_5";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("counter".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("command".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.command).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.4: Send to child invoke 'list' via #_list.
+                        // A child whose session has reached its final state has ended, and is not
+                        // there to address.
+                        if self
+                            .child_list
+                            .as_ref()
+                            .is_some_and(|child| !child.is_in_final_state())
+                        {
+                            if let Some(ref mut child) = self.child_list {
+                                // W3C SCXML C.1: this session is the sender, and the child reads
+                                // the location it publishes as `_event.origin` (docs/adr/0090).
+                                child.deliver_by_name(
+                                    "record_list.confirm",
+                                    &event_data,
+                                    self.session_id.as_deref().unwrap_or(""),
+                                );
+                            }
+                            // docs/adr/0045: what the child sent its parent as it took the event,
+                            // and its ending, reach this session within the delivery.
+                            self.settle_child_list(engine);
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                RecordListParentEvent::ErrorCommunication,
+                                "<send target='#_list'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // holding, transition 6
+            6 => {
+                // SCE-MAP: record_list_parent.scxml:163 :: holding :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                let ev = match &self.pending_payload {
+                    RecordListParentPayload::RecordListWithdraw(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    {
+                        let send_id: &str = "__send_6";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("counter".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("command".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.command).to_string()),
+                            );
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.4: Send to child invoke 'list' via #_list.
+                        // A child whose session has reached its final state has ended, and is not
+                        // there to address.
+                        if self
+                            .child_list
+                            .as_ref()
+                            .is_some_and(|child| !child.is_in_final_state())
+                        {
+                            if let Some(ref mut child) = self.child_list {
+                                // W3C SCXML C.1: this session is the sender, and the child reads
+                                // the location it publishes as `_event.origin` (docs/adr/0090).
+                                child.deliver_by_name(
+                                    "record_list.withdraw",
+                                    &event_data,
+                                    self.session_id.as_deref().unwrap_or(""),
+                                );
+                            }
+                            // docs/adr/0045: what the child sent its parent as it took the event,
+                            // and its ending, reach this session within the delivery.
+                            self.settle_child_list(engine);
+                        } else {
+                            // W3C SCXML C.1: the invocation is not running, so the session the
+                            // target names is not there to reach.
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
+                                RecordListParentEvent::ErrorCommunication,
+                                "<send target='#_list'> names an invocation that is not running",
+                            );
+                            engine.raise(err_meta);
+                            break 'action_block;
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // holding, transition 7
+            7 => {
+                // SCE-MAP: record_list_parent.scxml:170 :: holding :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListRole(ev) => ev.clone(),
                     _ => return,
@@ -2779,7 +3519,7 @@ impl StatePolicy for RecordListParentPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     {
-                        let send_id: &str = "__send_4";
+                        let send_id: &str = "__send_7";
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
@@ -2848,10 +3588,10 @@ impl StatePolicy for RecordListParentPolicy {
                     }
                 }
             }
-            // holding, transition 5
-            5 => {
-                // SCE-MAP: record_list_parent.scxml:126 :: holding :: _transition_5
-                // W3C SCXML 3.13: Transition 5 actions
+            // holding, transition 8
+            8 => {
+                // SCE-MAP: record_list_parent.scxml:176 :: holding :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListRoom(ev) => ev.clone(),
                     _ => return,
@@ -2859,7 +3599,7 @@ impl StatePolicy for RecordListParentPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     {
-                        let send_id: &str = "__send_5";
+                        let send_id: &str = "__send_8";
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
@@ -2934,18 +3674,18 @@ impl StatePolicy for RecordListParentPolicy {
                     }
                 }
             }
-            // holding, transition 6
-            6 => {
-                // SCE-MAP: record_list_parent.scxml:133 :: holding :: _transition_6
-                // W3C SCXML 3.13: Transition 6 actions
+            // holding, transition 9
+            9 => {
+                // SCE-MAP: record_list_parent.scxml:185 :: holding :: _transition_9
+                // W3C SCXML 3.13: Transition 9 actions
                 let ev = match &self.pending_payload {
-                    RecordListParentPayload::RecordListWrite(ev) => ev.clone(),
+                    RecordListParentPayload::RecordListChange(ev) => ev.clone(),
                     _ => return,
                 };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     {
-                        let send_id: &str = "__send_6";
+                        let send_id: &str = "__send_9";
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
@@ -2963,137 +3703,84 @@ impl StatePolicy for RecordListParentPolicy {
                         // W3C SCXML 6.2: Evaluate <param> expressions at send time
                         let event_data_string: String = {
                             let wire_params = &mut _send_wire_params;
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("id".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("field".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.field)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params.entry("value".to_string()).or_default().push(
-                                ::sce_rust_runtime::ScriptValue::String((ev.value).to_string()),
-                            );
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("text".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::String(ev.text.to_string()));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params.entry("wallTime".to_string()).or_default().push(
-                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
-                            );
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("counter".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params.entry("nodeId".to_string()).or_default().push(
-                                ::sce_rust_runtime::ScriptValue::String((ev.nodeId).to_string()),
-                            );
-                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
-                                wire_params,
-                            )
-                        };
-                        let event_data: &str = &event_data_string;
-
-                        // W3C SCXML 6.4: Send to child invoke 'list' via #_list.
-                        // A child whose session has reached its final state has ended, and is not
-                        // there to address.
-                        if self
-                            .child_list
-                            .as_ref()
-                            .is_some_and(|child| !child.is_in_final_state())
-                        {
-                            if let Some(ref mut child) = self.child_list {
-                                // W3C SCXML C.1: this session is the sender, and the child reads
-                                // the location it publishes as `_event.origin` (docs/adr/0090).
-                                child.deliver_by_name(
-                                    "record_list.write",
-                                    &event_data,
-                                    self.session_id.as_deref().unwrap_or(""),
-                                );
-                            }
-                            // docs/adr/0045: what the child sent its parent as it took the event,
-                            // and its ending, reach this session within the delivery.
-                            self.settle_child_list(engine);
-                        } else {
-                            // W3C SCXML C.1: the invocation is not running, so the session the
-                            // target names is not there to reach.
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
-                                RecordListParentEvent::ErrorCommunication,
-                                "<send target='#_list'> names an invocation that is not running",
-                            );
-                            engine.raise(err_meta);
-                            break 'action_block;
-                        }
-
-                        let _ = event_data; // suppress unused warning in branches that skip dispatch
-                        let _ = send_id; // suppress unused warning when no send operation
-                    }
-                }
-            }
-            // holding, transition 7
-            7 => {
-                // SCE-MAP: record_list_parent.scxml:144 :: holding :: _transition_7
-                // W3C SCXML 3.13: Transition 7 actions
-                let ev = match &self.pending_payload {
-                    RecordListParentPayload::RecordListSupersede(ev) => ev.clone(),
-                    _ => return,
-                };
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                'action_block: {
-                    {
-                        let send_id: &str = "__send_7";
-
-                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
-                        // delivered, so each name carries a vector. The typed value is kept
-                        // rather than its text — a receiver reading `_event.data.value === 42`
-                        // finds the string "42" unequal.
-                        //
-                        // Declared out here rather than inside the payload block because
-                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
-                        // below are renderings of that one evaluation: the BasicHTTP and
-                        // host-served arms read this map instead of asking the data model again.
-                        let mut _send_wire_params: ::std::collections::BTreeMap<
-                            String,
-                            Vec<::sce_rust_runtime::ScriptValue>,
-                        > = ::std::collections::BTreeMap::new();
-                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
-                        let event_data_string: String = {
-                            let wire_params = &mut _send_wire_params;
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("id".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.id)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("field".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.field)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params.entry("wallTime".to_string()).or_default().push(
-                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
-                            );
-                            // The value is read from the machine's field as it stands now.
-                            wire_params
-                                .entry("counter".to_string())
-                                .or_default()
-                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
-                            // The value is read from the machine's field as it stands now.
-                            wire_params.entry("nodeId".to_string()).or_default().push(
-                                ::sce_rust_runtime::ScriptValue::String((ev.nodeId).to_string()),
-                            );
                             // The value is read from the machine's field as it stands now.
                             wire_params
                                 .entry("by".to_string())
                                 .or_default()
                                 .push(::sce_rust_runtime::ScriptValue::String((ev.by).to_string()));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("wallTime".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::String((ev.wallTime).to_string()),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("counter".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.counter)));
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("ops".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Array(
+                                    ev.ops
+                                        .iter()
+                                        .map(|h| {
+                                            ::sce_rust_runtime::ScriptValue::Object(
+                                                vec![
+                                                    (
+                                                        "kind".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::Int(
+                                                            i64::from(h.kind),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "id".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::Int(
+                                                            i64::from(h.id),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "field".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::Int(
+                                                            i64::from(h.field),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "value".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::String(
+                                                            h.value.to_string(),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "text".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::String(
+                                                            h.text.to_string(),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "wallTime".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::String(
+                                                            h.wallTime.to_string(),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "counter".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::Int(
+                                                            i64::from(h.counter),
+                                                        ),
+                                                    ),
+                                                    (
+                                                        "nodeId".to_string(),
+                                                        ::sce_rust_runtime::ScriptValue::String(
+                                                            h.nodeId.to_string(),
+                                                        ),
+                                                    ),
+                                                ]
+                                                .into_iter()
+                                                .collect(),
+                                            )
+                                        })
+                                        .collect(),
+                                ),
+                            );
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
                                 wire_params,
                             )
@@ -3112,7 +3799,7 @@ impl StatePolicy for RecordListParentPolicy {
                                 // W3C SCXML C.1: this session is the sender, and the child reads
                                 // the location it publishes as `_event.origin` (docs/adr/0090).
                                 child.deliver_by_name(
-                                    "record_list.supersede",
+                                    "record_list.change",
                                     &event_data,
                                     self.session_id.as_deref().unwrap_or(""),
                                 );
@@ -3136,10 +3823,10 @@ impl StatePolicy for RecordListParentPolicy {
                     }
                 }
             }
-            // holding, transition 8
-            8 => {
-                // SCE-MAP: record_list_parent.scxml:157 :: holding :: _transition_8
-                // W3C SCXML 3.13: Transition 8 actions
+            // holding, transition 10
+            10 => {
+                // SCE-MAP: record_list_parent.scxml:196 :: holding :: _transition_10
+                // W3C SCXML 3.13: Transition 10 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListRegister(ev) => ev.clone(),
                     _ => return,
@@ -3206,10 +3893,10 @@ impl StatePolicy for RecordListParentPolicy {
                     }
                 }
             }
-            // holding, transition 9
-            9 => {
-                // SCE-MAP: record_list_parent.scxml:169 :: holding :: _transition_9
-                // W3C SCXML 3.13: Transition 9 actions
+            // holding, transition 11
+            11 => {
+                // SCE-MAP: record_list_parent.scxml:208 :: holding :: _transition_11
+                // W3C SCXML 3.13: Transition 11 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListValue(ev) => ev.clone(),
                     _ => return,
@@ -3286,10 +3973,10 @@ impl StatePolicy for RecordListParentPolicy {
                     }
                 }
             }
-            // holding, transition 10
-            10 => {
-                // SCE-MAP: record_list_parent.scxml:184 :: holding :: _transition_10
-                // W3C SCXML 3.13: Transition 10 actions
+            // holding, transition 12
+            12 => {
+                // SCE-MAP: record_list_parent.scxml:223 :: holding :: _transition_12
+                // W3C SCXML 3.13: Transition 12 actions
                 let ev = match &self.pending_payload {
                     RecordListParentPayload::RecordListRefused(ev) => ev.clone(),
                     _ => return,
@@ -3302,6 +3989,8 @@ impl StatePolicy for RecordListParentPolicy {
                         field: ev.field,
                         kind: ev.kind,
                         reason: ev.reason,
+                        command: ev.command,
+                        withdrawn: ev.withdrawn,
                     });
 
                     // W3C SCXML 5.3: <assign location="refusedCount">
@@ -3314,6 +4003,54 @@ impl StatePolicy for RecordListParentPolicy {
                             Ok(()) => false,
                             Err(_) => {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='refusedCount'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // holding, transition 13
+            13 => {
+                // SCE-MAP: record_list_parent.scxml:229 :: holding :: _transition_13
+                // W3C SCXML 3.13: Transition 13 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="pendingCount">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.pending_count =
+                                sce_forge_runtime::algorithm::add::<u32>(self.pending_count, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='pendingCount'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // holding, transition 14
+            14 => {
+                // SCE-MAP: record_list_parent.scxml:232 :: holding :: _transition_14
+                // W3C SCXML 3.13: Transition 14 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="confirmedCount">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.confirmed_count =
+                                sce_forge_runtime::algorithm::add::<u32>(self.confirmed_count, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='confirmedCount'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
