@@ -233,6 +233,29 @@ impl Router {
             .map(|causal| &causal.layer)
     }
 
+    /// When a causal peer whose layer still has work is next owed this copy's
+    /// `causalVector`: the time at which [`Router::tick`] announces it. A layer
+    /// has work while its log keeps a change not yet stable or it holds one it
+    /// cannot yet deliver; a vector is how either ends, by a repair or by the
+    /// mark that moves the stable cut. `None` when no started layer has work,
+    /// which lets a host that owns time (a simulation) sleep until something
+    /// else happens; a layer never announced is owed its vector at once.
+    pub fn next_announce_due_ms(&self) -> Option<i64> {
+        self.peers
+            .values()
+            .filter_map(|bound| {
+                let causal = bound.causal.as_ref()?;
+                if causal.layer.log_len() == 0 && causal.layer.held_len() == 0 {
+                    return None;
+                }
+                Some(match causal.announced_ms {
+                    None => i64::MIN,
+                    Some(at) => at.saturating_add(causal.announce_every_ms),
+                })
+            })
+            .min()
+    }
+
     /// The host committed the journal record of `dot`, a change of the causal
     /// peer `peer`: what it releases goes to that peer's send half.
     pub fn committed(
@@ -1942,6 +1965,22 @@ mod tests {
         let _ = phone.announce("people", [3; 16], 0).unwrap();
         assert!(!due(phone.tick(99).unwrap()));
         assert!(due(phone.tick(100).unwrap()));
+    }
+
+    /// When a host that owns time wakes for a vector: never while the layer
+    /// has no work, and a period after its last vector once its log keeps a
+    /// change not yet stable. Red if a layer with an empty log asks to be
+    /// woken (a simulated world then never comes to rest), or if one whose
+    /// log keeps a change does not (a loss no link edge reports is then never
+    /// repaired while nothing else happens).
+    #[test]
+    fn a_layer_with_work_is_woken_for_its_vector_and_one_without_is_not() {
+        let mut phone = copy(1);
+        assert_eq!(phone.next_announce_due_ms(), None);
+        let _ = phone.announce("people", [3; 16], 40).unwrap();
+        let dot = accepted(phone.send(&request("#people", "edit", ""), [9; 16], 50));
+        let _ = sent(phone.committed("people", dot, 50));
+        assert_eq!(phone.next_announce_due_ms(), Some(140));
     }
 
     /// The view. Red if the epoch check is removed: a change tagged with
