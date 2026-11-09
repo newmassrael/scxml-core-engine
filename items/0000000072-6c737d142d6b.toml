@@ -6,3 +6,9 @@ commit = "bd220957ee347557017bced4e849442794b66dee"
 base = "a9253db5494bdaedb1b1d8e235db4fae89b16318"
 machine = "mf977c53d872e"
 at = 1794215121
+
+[return]
+reason = "conflict"
+detail = "sce-build/Cargo.toml"
+report = "mf977c53d872e:0000000072-6c737d142d6b/attempt-2.log"
+at = 1794229881
