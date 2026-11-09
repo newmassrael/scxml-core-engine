@@ -483,6 +483,43 @@ static inline void sce_forge_wire_close(sce_forge_wire_t *w) {
     w->depth -= 1u;
 }
 
+/* ── A composed value written part by part (docs/adr/0086, section 5.3) ──
+ *
+ * A machine's writer of a composed value is the statements its type's walk spells,
+ * one part at a time, wherever the value stands: `sce_forge_wire_pair_key` names
+ * the pair of the top object the value is, and the statements after it write the
+ * value bare. A part that is a scalar is `sce_forge_wire_put_value`; a list or a
+ * record opens its container with `sce_forge_wire_open_container`, writes the
+ * separator before each element or member with `sce_forge_wire_next_in_container`
+ * (a member's key and its colon after it, by `sce_forge_wire_put`), and ends it
+ * with `sce_forge_wire_close`. A value past a bound its type declares is refused
+ * whole by `sce_forge_wire_refuse`, never cut. */
+
+/* Start the pair `key` of the top object, whose value the statements after it
+ * write bare: a pair whose value is a composed value, which is never collected into
+ * the array of a name that repeats. */
+static inline void sce_forge_wire_pair_key(sce_forge_wire_t *w, const char *key) {
+    if (w->overflow) {
+        return;
+    }
+    if (w->depth != 0u) {
+        /* A pair belongs to the top object; inside a container it is a member. */
+        w->overflow = true;
+        return;
+    }
+    sce_forge_wire_key(w, key);
+    w->last_key = NULL;
+    w->last_count = 0;
+}
+
+/* Refuse the object being written: a part of it is a value its type does not hold
+ * (a list longer than its bound, a text with no end inside its buffer, an enum value
+ * no variant names). The object is then one that does not fit, which
+ * `sce_forge_wire_end` reports, and the buffer holds `{}`. */
+static inline void sce_forge_wire_refuse(sce_forge_wire_t *w) {
+    w->overflow = true;
+}
+
 /* One value alone, as the JSON text of an event's data, written into `buf` of
  * `cap` bytes. False when it did not fit, and `buf` then holds the empty string,
  * never a truncated value (truncated JSON does not parse, so it would arrive as
