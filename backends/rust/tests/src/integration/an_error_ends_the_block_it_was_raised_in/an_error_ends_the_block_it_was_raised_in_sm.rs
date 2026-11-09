@@ -256,7 +256,12 @@ pub struct AnErrorEndsTheBlockItWasRaisedInPolicy {
     // constructor parameter is mandatory whenever `model.needs_script_engine`
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
+    // §scxml-6.4.3: the invoke params the parent handed this session, which
+    // its start applies once its session is established and its `<data>`
+    // initialized.
+    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -688,6 +693,7 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
+            pending_params: Vec::new(),
             basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -756,256 +762,48 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         Self::build(session_id, script_engine)
     }
 
-    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
-    // session is named by the session's id (W3C SCXML 5.10), which every
-    // constructor bound when the policy was built (docs/adr/0045).
-    fn ensure_script_engine(&mut self) {
-        if self.script_engine_initialized {
-            return;
-        }
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        let io_processors =
-            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(
-            &sid,
-            "an_error_ends_the_block_it_was_raised_in",
-            &io_processors,
-        ) {
-            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
-        }
-
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
-        // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "errors", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterAssign' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterAssign",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterScript' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterScript",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterLog' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "afterLog", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterCancel' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterCancel",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterIfInner' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterIfInner",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "afterIf", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'ifThen' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "ifThen", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'ifElse' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "ifElse", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterIfCond' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterIfCond",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'elseifThen' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "elseifThen",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'elseifElse' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "elseifElse",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterElseifCond' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterElseifCond",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterNestedIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterNestedIf",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterOuterIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterOuterIf",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterSingle' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterSingle",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterTrans' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterTrans",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'initRan' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "initRan", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'pairs' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "pairs", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'sum' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "sum", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'outer' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "outer", "{1, 2}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'inner' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "inner", "{10, 20}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'o' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "o", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'i' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "i", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "obj", "{}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        self.script_engine_initialized = true;
+    // docs/adr/0096: the script session this machine's executable content runs
+    // in was established by its start (`do_initialize_data_model`), and a start
+    // whose session could not be established was refused before anything
+    // could reach here. Reaching here without one is a defect of the generated
+    // code, not a condition of the run.
+    fn assert_script_session(&self) {
+        debug_assert!(
+            self.script_engine_initialized,
+            "the script session is established by the start, before any executable content runs"
+        );
     }
 
-    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
-    // Called from StatePolicy::initialize_data_model() trait override
-    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+    // W3C SCXML 5.2/5.3 + docs/adr/0096: establish the script session, then
+    // initialize the datamodel in it, raising error.execution for a `<data>`
+    // or a top-level `<script>` that fails. Called from
+    // StatePolicy::initialize_data_model(), the first step of the start and of
+    // `enter_at`, before any state is entered.
+    //
+    // This is the one place a session is made. It is three steps: create it
+    // (which loads the shared library into it), then bind the system
+    // variables. The session is named by the session's id (W3C SCXML 5.10),
+    // which every constructor bound when the policy was built
+    // (docs/adr/0045). A step that fails releases what the steps before it
+    // made and is the error, so the start is refused with nothing half done.
+    fn do_initialize_data_model(
+        &mut self,
+        engine: &mut Engine<Self>,
+    ) -> Result<(), sce_rust_runtime::ScriptSessionFailure> {
         if self.script_engine_initialized {
-            return;
+            return Ok(());
         }
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
+        if let Err(e) = se.create_session(&sid) {
+            ::sce_rust_runtime::sce_log_error!(
+                "The script session '{}' could not be created: {}",
+                sid,
+                e
+            );
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_creation(&e));
+        }
 
         // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
         // same helper every other backend uses, so a machine reads the same
@@ -1018,7 +816,12 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             &io_processors,
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
+            se.destroy_session(&sid);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_system_variables(
+                &e,
+            ));
         }
+        self.script_engine_initialized = true;
 
         // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
@@ -1332,7 +1135,16 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             ));
         }
 
-        self.script_engine_initialized = true;
+        // §scxml-6.4.3: the invoke params the parent handed this session, applied
+        // after the `<data>` above so that each overrides the default its
+        // `<data>` gave. The parent hands them before this session's start
+        // (`set_param_value_in_script_engine`) and this session applies them,
+        // so the child's session is made by the child.
+        for (name, value) in std::mem::take(&mut self.pending_params) {
+            let _ = se.set_variable(&sid, &name, value);
+        }
+
+        Ok(())
     }
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
@@ -1365,7 +1177,7 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         engine: &mut Engine<Self>,
         reason: &str,
     ) -> Option<bool> {
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1432,9 +1244,12 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         }
     }
 
-    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
-    // value the INVOKING session produced for an `<invoke>` `<param>` or
-    // namelist location.
+    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location, to seed the
+    // `<data>` of that name. The parent calls it before this session's start,
+    // and the start applies it once the session is established and its
+    // `<data>` initialized (`do_initialize_data_model`): the parent does not
+    // make this session's script session on its own stack (docs/adr/0096).
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -1449,11 +1264,7 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         name: &str,
         value: sce_rust_runtime::ScriptValue,
     ) {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let _ = se.set_variable(&sid, name, value);
+        self.pending_params.push((name.to_string(), value));
     }
 }
 
@@ -1570,10 +1381,18 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
         0,
     >;
     type Configuration = AnErrorEndsTheBlockItWasRaisedInConfiguration;
+    // docs/adr/0096: what refuses this machine's start. One with a script
+    // engine is refused when its script session cannot be established; one
+    // without cannot be refused that way, so its host starts it with
+    // `engine.initialize().unwrap_or_else(|never| match never {})`.
+    type StartFailure = ::sce_rust_runtime::ScriptSessionFailure;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = true;
+    // Exactly when there is a script engine: the datamodel's initialization is
+    // where the script session is established (docs/adr/0096), so a machine
+    // with a session to establish always has it run at its start.
     const NEEDS_DATA_MODEL_INIT: bool = true;
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
@@ -1682,7 +1501,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="obj.missing.deep">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1708,7 +1527,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterSingle">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1741,7 +1560,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                     'action_block: {
                         {
                             // W3C SCXML 5.3: <assign location="initRan">
-                            self.ensure_script_engine();
+                            self.assert_script_session();
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1774,7 +1593,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="obj.missing.deep">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1800,7 +1619,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterAssign">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1829,7 +1648,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.8: <script>
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1846,7 +1665,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterScript">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1875,7 +1694,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     // W3C SCXML 4.7: <log> with script engine expression
                     {
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1901,7 +1720,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterLog">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1930,7 +1749,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     // W3C SCXML 6.3: <cancel sendidexpr="obj.missing.deep">
                     {
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1959,7 +1778,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterCancel">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1992,7 +1811,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         if self.evaluate_if_cond("true", engine, &mut if_cond_failed) {
                             {
                                 // W3C SCXML 5.3: <assign location="obj.missing.deep">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2020,7 +1839,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                             {
                                 // W3C SCXML 5.3: <assign location="afterIfInner">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2053,7 +1872,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterIf">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2090,7 +1909,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         ) {
                             {
                                 // W3C SCXML 5.3: <assign location="ifThen">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2118,7 +1937,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         } else {
                             {
                                 // W3C SCXML 5.3: <assign location="ifElse">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2151,7 +1970,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterIfCond">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2184,7 +2003,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         if self.evaluate_if_cond("false", engine, &mut if_cond_failed) {
                             {
                                 // W3C SCXML 5.3: <assign location="elseifThen">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2216,7 +2035,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         ) {
                             {
                                 // W3C SCXML 5.3: <assign location="elseifThen">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2244,7 +2063,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                         } else {
                             {
                                 // W3C SCXML 5.3: <assign location="elseifElse">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2277,7 +2096,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterElseifCond">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2318,7 +2137,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                                 ) {
                                     {
                                         // W3C SCXML 5.3: <assign location="ifThen">
-                                        self.ensure_script_engine();
+                                        self.assert_script_session();
                                         let sid = self.session_id.as_ref().unwrap().clone();
                                         let se = self.script_engine.clone();
                                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2346,7 +2165,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                             {
                                 // W3C SCXML 5.3: <assign location="afterNestedIf">
-                                self.ensure_script_engine();
+                                self.assert_script_session();
                                 let sid = self.session_id.as_ref().unwrap().clone();
                                 let se = self.script_engine.clone();
                                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2379,7 +2198,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterOuterIf">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2408,7 +2227,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 4.6: <foreach array="outer" item="o">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2451,7 +2270,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                                         {
                                             // W3C SCXML 4.6: <foreach array="inner" item="i">
-                                            self.ensure_script_engine();
+                                            self.assert_script_session();
                                             let sid = self.session_id.as_ref().unwrap().clone();
                                             let se = self.script_engine.clone();
                                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2484,7 +2303,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
 {
     // W3C SCXML 5.3: <assign location="pairs">
-    self.ensure_script_engine();
+    self.assert_script_session();
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = self.script_engine.clone();
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2504,7 +2323,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
 {
     // W3C SCXML 5.3: <assign location="sum">
-    self.ensure_script_engine();
+    self.assert_script_session();
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = self.script_engine.clone();
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2613,8 +2432,9 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
-        self.ensure_script_engine();
+        // W3C SCXML 5.10: set _event for guard evaluation, in the session the
+        // start established (docs/adr/0096)
+        self.assert_script_session();
         if event != Self::null_event() {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
             // its member's when a name the document does not write was matched
@@ -2712,7 +2532,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="errors">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2742,7 +2562,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="obj.missing.deep">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2768,7 +2588,7 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterTrans">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2796,10 +2616,15 @@ impl StatePolicy for AnErrorEndsTheBlockItWasRaisedInPolicy {
             _ => {}
         }
     }
-    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
-    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
-    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
-        self.do_initialize_data_model(engine);
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support,
+    // after the script session is established; a session that cannot be
+    // refuses the start (docs/adr/0096). Delegates to inherent impl method
+    // (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(
+        &mut self,
+        engine: &mut Engine<Self>,
+    ) -> Result<(), Self::StartFailure> {
+        self.do_initialize_data_model(engine)
     }
 
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_parent">` whose wait is

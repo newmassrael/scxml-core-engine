@@ -292,7 +292,12 @@ pub struct ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
     // constructor parameter is mandatory whenever `model.needs_script_engine`
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
+    // §scxml-6.4.3: the invoke params the parent handed this session, which
+    // its start applies once its session is established and its `<data>`
+    // initialized.
+    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -653,6 +658,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
+            pending_params: Vec::new(),
             basic_http_access_uri: String::new(),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
@@ -726,233 +732,48 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         Self::build(session_id, script_engine)
     }
 
-    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
-    // session is named by the session's id (W3C SCXML 5.10), which every
-    // constructor bound when the policy was built (docs/adr/0045).
-    fn ensure_script_engine(&mut self) {
-        if self.script_engine_initialized {
-            return;
-        }
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        let io_processors =
-            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
-        if let Err(e) = se.setup_system_variables(
-            &sid,
-            "a_target_expression_is_routed_as_its_literal_is",
-            &io_processors,
-        ) {
-            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
-        }
-
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
-        // W3C SCXML 5.2/5.3: Initialize 'tInternal' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "tInternal",
-            "\"#_internal\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'tKid' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "tKid",
-            "\"#_kid\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'tStranger' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "tStranger",
-            "\"#_scxml_nosuch\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'tParent' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "tParent",
-            "\"#_parent\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'tBogus' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "tBogus",
-            "\"bogus\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'kidLoc' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "kidLoc", "\"\"",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'internalNow' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "internalNow",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'internalLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "internalLater",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'kidNow' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "kidNow", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'kidLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "kidLater", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'sessNow' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "sessNow", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'sessLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "sessLater",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'commErrors' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "commErrors",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'execErrors' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "execErrors",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterStranger' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterStranger",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterStrangerLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterStrangerLater",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterOrphan' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterOrphan",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterOrphanLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterOrphanLater",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterBogus' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterBogus",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        // W3C SCXML 5.2/5.3: Initialize 'afterBogusLater' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterBogusLater",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-        }
-
-        self.script_engine_initialized = true;
+    // docs/adr/0096: the script session this machine's executable content runs
+    // in was established by its start (`do_initialize_data_model`), and a start
+    // whose session could not be established was refused before anything
+    // could reach here. Reaching here without one is a defect of the generated
+    // code, not a condition of the run.
+    fn assert_script_session(&self) {
+        debug_assert!(
+            self.script_engine_initialized,
+            "the script session is established by the start, before any executable content runs"
+        );
     }
 
-    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
-    // Called from StatePolicy::initialize_data_model() trait override
-    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+    // W3C SCXML 5.2/5.3 + docs/adr/0096: establish the script session, then
+    // initialize the datamodel in it, raising error.execution for a `<data>`
+    // or a top-level `<script>` that fails. Called from
+    // StatePolicy::initialize_data_model(), the first step of the start and of
+    // `enter_at`, before any state is entered.
+    //
+    // This is the one place a session is made. It is three steps: create it
+    // (which loads the shared library into it), then bind the system
+    // variables. The session is named by the session's id (W3C SCXML 5.10),
+    // which every constructor bound when the policy was built
+    // (docs/adr/0045). A step that fails releases what the steps before it
+    // made and is the error, so the start is refused with nothing half done.
+    fn do_initialize_data_model(
+        &mut self,
+        engine: &mut Engine<Self>,
+    ) -> Result<(), sce_rust_runtime::ScriptSessionFailure> {
         if self.script_engine_initialized {
-            return;
+            return Ok(());
         }
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
+        if let Err(e) = se.create_session(&sid) {
+            ::sce_rust_runtime::sce_log_error!(
+                "The script session '{}' could not be created: {}",
+                sid,
+                e
+            );
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_creation(&e));
+        }
 
         // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
         // same helper every other backend uses, so a machine reads the same
@@ -965,7 +786,12 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
             &io_processors,
         ) {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
+            se.destroy_session(&sid);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_system_variables(
+                &e,
+            ));
         }
+        self.script_engine_initialized = true;
 
         // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
         // W3C SCXML 5.2/5.3: Initialize 'tInternal' from expr (global)
@@ -1236,7 +1062,16 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
             ));
         }
 
-        self.script_engine_initialized = true;
+        // §scxml-6.4.3: the invoke params the parent handed this session, applied
+        // after the `<data>` above so that each overrides the default its
+        // `<data>` gave. The parent hands them before this session's start
+        // (`set_param_value_in_script_engine`) and this session applies them,
+        // so the child's session is made by the child.
+        for (name, value) in std::mem::take(&mut self.pending_params) {
+            let _ = se.set_variable(&sid, &name, value);
+        }
+
+        Ok(())
     }
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
@@ -1269,7 +1104,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         engine: &mut Engine<Self>,
         reason: &str,
     ) -> Option<bool> {
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1336,9 +1171,12 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         }
     }
 
-    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
-    // value the INVOKING session produced for an `<invoke>` `<param>` or
-    // namelist location.
+    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location, to seed the
+    // `<data>` of that name. The parent calls it before this session's start,
+    // and the start applies it once the session is established and its
+    // `<data>` initialized (`do_initialize_data_model`): the parent does not
+    // make this session's script session on its own stack (docs/adr/0096).
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -1353,11 +1191,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         name: &str,
         value: sce_rust_runtime::ScriptValue,
     ) {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let _ = se.set_variable(&sid, name, value);
+        self.pending_params.push((name.to_string(), value));
     }
 
     // W3C SCXML 6.4: Defer the start of invoke 'kid' of state 'run' to macrostep end
@@ -1466,7 +1300,20 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
                 // enters the tree's directory before its first macrostep.
                 engine.share_tree_inboxes_with(&mut child_engine);
-                child_engine.initialize();
+                if let Err(failure) =
+                    sce_rust_runtime::helpers::invoke_processing::start_child(&mut child_engine)
+                {
+                    ::sce_rust_runtime::sce_log_error!(
+                        "<invoke id='{}'> did not start its child: {}",
+                        "kid",
+                        failure
+                    );
+                    self.active_invokes.remove("kid");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
+                    continue;
+                }
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_kid = Some(Box::new(child_engine));
@@ -1658,10 +1505,18 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         0,
     >;
     type Configuration = ATargetExpressionIsRoutedAsItsLiteralIsConfiguration;
+    // docs/adr/0096: what refuses this machine's start. One with a script
+    // engine is refused when its script session cannot be established; one
+    // without cannot be refused that way, so its host starts it with
+    // `engine.initialize().unwrap_or_else(|never| match never {})`.
+    type StartFailure = ::sce_rust_runtime::ScriptSessionFailure;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = true;
+    // Exactly when there is a script engine: the datamodel's initialization is
+    // where the script session is established (docs/adr/0096), so a machine
+    // with a session to establish always has it run at its start.
     const NEEDS_DATA_MODEL_INIT: bool = true;
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
@@ -1805,7 +1660,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_7";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -1963,7 +1818,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterStranger">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1993,7 +1848,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_8";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -2150,7 +2005,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterStrangerLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2180,7 +2035,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_9";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -2337,7 +2192,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterOrphan">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2367,7 +2222,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_10";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -2523,7 +2378,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterOrphanLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2553,7 +2408,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_11";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -2710,7 +2565,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterBogus">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -2740,7 +2595,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_12";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -2896,7 +2751,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
 
                     {
                         // W3C SCXML 5.3: <assign location="afterBogusLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -3002,8 +2857,9 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
-        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
-        self.ensure_script_engine();
+        // W3C SCXML 5.10: set _event for guard evaluation, in the session the
+        // start established (docs/adr/0096)
+        self.assert_script_session();
         if event != Self::null_event() {
             // §scxml-5.10: the name the event ARRIVED under, which is longer than
             // its member's when a name the document does not write was matched
@@ -3143,7 +2999,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="commErrors">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -3176,7 +3032,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="execErrors">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -3209,7 +3065,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="kidLoc">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -3233,7 +3089,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_0";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -3392,7 +3248,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     {
                         let send_id: &str = "__send_1";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -3544,7 +3400,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                     {
                         let send_id: &str = "__send_2";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -3702,7 +3558,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                     {
                         let send_id: &str = "__send_3";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -3853,7 +3709,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                     {
                         let send_id: &str = "__send_4";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -4011,7 +3867,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                     {
                         let send_id: &str = "__send_5";
 
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -4190,7 +4046,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="internalNow">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4223,7 +4079,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="internalLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4256,7 +4112,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="kidNow">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4286,7 +4142,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="kidLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4319,7 +4175,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="sessNow">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4352,7 +4208,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                 'action_block: {
                     {
                         // W3C SCXML 5.3: <assign location="sessLater">
-                        self.ensure_script_engine();
+                        self.assert_script_session();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -4380,10 +4236,15 @@ Some(core::time::Duration::from_millis(10_u64)),
             _ => {}
         }
     }
-    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
-    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
-    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
-        self.do_initialize_data_model(engine);
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support,
+    // after the script session is established; a session that cannot be
+    // refuses the start (docs/adr/0096). Delegates to inherent impl method
+    // (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(
+        &mut self,
+        engine: &mut Engine<Self>,
+    ) -> Result<(), Self::StartFailure> {
+        self.do_initialize_data_model(engine)
     }
 
     // W3C SCXML 6.4: Execute pending invokes at macrostep end

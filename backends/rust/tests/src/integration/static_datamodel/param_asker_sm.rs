@@ -759,10 +759,18 @@ impl StatePolicy for ParamAskerPolicy {
         0,
     >;
     type Configuration = ParamAskerConfiguration;
+    // docs/adr/0096: what refuses this machine's start. One with a script
+    // engine is refused when its script session cannot be established; one
+    // without cannot be refused that way, so its host starts it with
+    // `engine.initialize().unwrap_or_else(|never| match never {})`.
+    type StartFailure = ::core::convert::Infallible;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
+    // Exactly when there is a script engine: the datamodel's initialization is
+    // where the script session is established (docs/adr/0096), so a machine
+    // with a session to establish always has it run at its start.
     const NEEDS_DATA_MODEL_INIT: bool = false;
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
@@ -1227,7 +1235,11 @@ impl ::sce_rust_runtime::test::ComponentMachine for ParamAskerComponent {
                 None
             },
         );
-        machine.initialize();
+        // A test component's datamodel is the static one, so it has no script
+        // session whose failure could refuse its start (docs/adr/0096). Matched
+        // out rather than `let Ok(()) =`, which an uninhabited error admits only
+        // from Rust 1.82 and the runtime this code builds on claims 1.75.
+        machine.initialize().unwrap_or_else(|never| match never {});
         self.machine = Some(machine);
     }
 
