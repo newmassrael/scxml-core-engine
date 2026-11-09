@@ -50,6 +50,8 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 import com.sce.generated.job_reply.EVENT_NAME as JOB_REPLY
 import com.sce.generated.job_request.EVENT_NAME as JOB_REQUEST
+import com.sce.generated.reply_ok.TYPE as REPLY_OK_TYPE
+import com.sce.generated.reply_ok.canonical as replyOkCanonical
 
 class ATestComponentRunsThroughItsDoorsTest {
 
@@ -102,7 +104,9 @@ class ATestComponentRunsThroughItsDoorsTest {
             val request = message.valueAs<JobRequestPayload>() ?: return
             seen.requested.add(request.job)
             val reply = JobReplyPayload(job = job ?: request.job, code = code)
-            pending.add((now + ANSWER_DELAY) to Message(JOB_REPLY, reply))
+            // The reply's canonical form in the test log is the one the unit of
+            // a template over its record writes.
+            pending.add((now + ANSWER_DELAY) to Message.of(JOB_REPLY, reply, REPLY_OK_TYPE, ::replyOkCanonical))
         }
 
         override fun nextInput(): Instant? = pending.firstOrNull()?.first

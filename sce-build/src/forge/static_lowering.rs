@@ -3579,13 +3579,22 @@ impl StaticTarget for KotlinTarget {
             ),
         })
     }
-    // The specific template's `value`, which the send hands its processor as the
-    // request's value (`HostSendRequest.value`, `kotlin/actions/send.kt.jinja2`).
+    // The specific template's `value`, with the name of its record type and the
+    // unit's writer of its canonical form in the test log
+    // (docs/SCE_TEST_PROFILE.md §12.5), which the send hands its processor as
+    // the request's value (`HostSendRequest.value`, `kotlin/actions/send.kt.jinja2`).
+    // A sent template is over the record of a message, so its unit writes both
+    // (`TYPE` and `canonical`, `forge/kotlin/test_template.kt.jinja2`). Kotlin
+    // has no reference to a function by its package, so the writer is a lambda
+    // over the unit's `canonical`.
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = |name: &str| kotlin_test_template(&message.unit, name);
         Some(format!(
-            "{}({})",
-            kotlin_test_template(&message.unit, "value"),
-            args.join(", ")
+            "{KOTLIN_TEST_RUNTIME}.messageValue({}({}), {}) {{ sceSent -> {}(sceSent) }}",
+            unit("value"),
+            args.join(", "),
+            unit("TYPE"),
+            unit("canonical")
         ))
     }
     // No line: every declaration of the unit is named by its package

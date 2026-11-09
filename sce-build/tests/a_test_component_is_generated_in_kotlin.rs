@@ -299,13 +299,17 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "eventName = \"job.request\",",
         "target = \"sut\",",
         "invokeId = currentEventMetadata.invokeId,",
-        "value = com.sce.generated.request_of.value(vJob)",
+        "value = com.sce.runtime.test.messageValue(com.sce.generated.request_of.value(vJob), \
+         com.sce.generated.request_of.TYPE) { sceSent -> \
+         com.sce.generated.request_of.canonical(sceSent) }",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value = com.sce.generated.reply_of.value(vRequested, vOk)",
+        "value = com.sce.runtime.test.messageValue(\
+         com.sce.generated.reply_of.value(vRequested, vOk), com.sce.generated.reply_of.TYPE) \
+         { sceSent -> com.sce.generated.reply_of.canonical(sceSent) }",
         "processorType = \"http://sce.dev/ext/test-component\",",
         "invokeId = \"answerer\",",
     ] {
@@ -378,7 +382,12 @@ fn a_template_argument_is_handed_over_as_the_machine_holds_it() {
     std::fs::write(&path, component).expect("the component is written");
     let code = text_at(&path);
     assert!(
-        code.contains("value = com.sce.generated.job_report_of.value(vElapsed, vNote, vCode)"),
+        code.contains(
+            "value = com.sce.runtime.test.messageValue(\
+             com.sce.generated.job_report_of.value(vElapsed, vNote, vCode), \
+             com.sce.generated.job_report_of.TYPE) \
+             { sceSent -> com.sce.generated.job_report_of.canonical(sceSent) }"
+        ),
         "{code}"
     );
 }

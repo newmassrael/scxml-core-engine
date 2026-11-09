@@ -90,6 +90,25 @@ pub(super) fn render_test_template_kotlin(
     } else {
         None
     };
+    // A message is a record of an event schema (§11.3), so only a template over
+    // one writes a message's type name and its canonical form
+    // ([`TestTemplateModel::is_over_record`]); that is also what puts the
+    // document's unit on the SCE runtime, which its header states
+    // (`ForgeDocument::runtime_dep`).
+    let message = match &m.template_type {
+        TypeOf::Record { alias } => {
+            let record = scope.records.get(alias).ok_or_else(|| {
+                walk.refused(format!(
+                    "`record:{alias}` names no record the document imports"
+                ))
+            })?;
+            let written = canonical_value(&m.template_type, &Canonical::root(), &scope)
+                .map_err(|why| walk.refused(why))?;
+            Some((log_type_name(record), written))
+        }
+        _ => None,
+    };
+    let (log_type, canonical_expr) = message.unzip();
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("template_name".into(), m.name.clone().into());
@@ -98,7 +117,194 @@ pub(super) fn render_test_template_kotlin(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
+    ctx.insert("log_type".into(), serde_json::json!(log_type));
     l.render(env, "test_template", ctx)
+}
+
+/// The name the types module of the suite's TTCN-3 export gives the record
+/// `record` (rule E1, docs/SCE_TEST_PROFILE.md §9.5): the unit name of its
+/// document's file ([`crate::ttcn3_export::names::unit_name`]), which is what a
+/// message of it carries as its `type` in the test log (§12.5). A record read
+/// with no document falls back to the name the document gives itself. The
+/// same name on every backend, as the Rust unit writes it.
+fn log_type_name(record: &ScopedRecord) -> String {
+    let stem = std::path::Path::new(&record.identity)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(&record.name);
+    crate::ttcn3_export::names::unit_name(stem)
+}
+
+/// The object of the profile's Kotlin runtime whose functions write the
+/// canonical form of a value in the test log
+/// (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/test/Canonical.kt`).
+const CANONICAL: &str = "com.sce.runtime.test.Canonical";
+
+/// A value the canonical writer reads, in Kotlin.
+struct Canonical {
+    /// What names the value: `value`, a lambda's parameter, or a field or a
+    /// case's record of either.
+    expr: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+}
+
+impl Canonical {
+    /// `canonical`'s parameter `value`.
+    fn root() -> Self {
+        Canonical {
+            expr: "value".to_string(),
+            depth: 0,
+        }
+    }
+
+    /// The field `id` of the record the value is.
+    fn field(&self, id: &str) -> Self {
+        Canonical {
+            expr: format!(
+                "{}.{}",
+                self.expr,
+                event_schema_field_ident(id, Language::Kotlin)
+            ),
+            depth: self.depth,
+        }
+    }
+
+    /// The name a lambda or a `when` binds a value inside this one to, and the
+    /// value it binds.
+    fn bound(&self, prefix: &str) -> (String, Self) {
+        let name = format!("{prefix}_{}", self.depth);
+        let value = Canonical {
+            expr: name.clone(),
+            depth: self.depth + 1,
+        };
+        (name, value)
+    }
+}
+
+/// The Kotlin expression that writes the value `at`, of the type `ty` read in
+/// `scope`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
+/// §12.5): a `String`, a `Boolean`, a `List` or a `Map` of them, which the
+/// runtime's `Json.writeJcs` writes. The form is the SCE type's, never the
+/// Kotlin type's. Each record and union is read in the scope of its own
+/// document, as the walk of its matcher reads it. The same walk as the Rust
+/// unit's `canonical`, spelled in Kotlin: an optional field is a `?.let` that
+/// leaves an absent one null, which the record omits, a list a `map`, and a
+/// union a `when` over the classes of its cases.
+fn canonical_value(ty: &ValueType, at: &Canonical, scope: &TypeScope) -> Result<String, String> {
+    Ok(match ty {
+        TypeOf::Scalar(SceType::Bool) => format!("{CANONICAL}.boolean({})", at.expr),
+        TypeOf::Scalar(SceType::Enum(reference)) => {
+            let declared = scope.enums.get(&reference.alias).ok_or_else(|| {
+                format!(
+                    "`enum:{}` names no enum the document imports",
+                    reference.alias
+                )
+            })?;
+            if declared.strict {
+                format!("{CANONICAL}.enumerated({}.declaredName())", at.expr)
+            } else {
+                format!(
+                    "{CANONICAL}.openEnumerated({0}.declaredName(), \
+                     {CANONICAL}.integer({0}.toUnderlying()))",
+                    at.expr
+                )
+            }
+        }
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
+            format!("{CANONICAL}.integer({})", at.expr)
+        }
+        TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
+        TypeOf::Text { .. } => format!("{CANONICAL}.text({})", at.expr),
+        TypeOf::Bytes { .. } => format!("{CANONICAL}.bytes({})", at.expr),
+        TypeOf::Optional { .. } => {
+            return Err(format!(
+                "a value of {ty} has a form in the test log only as a field of a record, \
+                 which omits it where it is absent"
+            ))
+        }
+        TypeOf::List { elem, .. } => {
+            let (name, element) = at.bound("item");
+            format!(
+                "{CANONICAL}.list({}.map {{ {name} -> {} }})",
+                at.expr,
+                canonical_value(elem, &element, scope)?
+            )
+        }
+        TypeOf::Record { alias } => {
+            let record = scope
+                .records
+                .get(alias)
+                .ok_or_else(|| format!("`record:{alias}` names no record the document imports"))?;
+            let fields = record
+                .fields
+                .iter()
+                .map(|(id, field_type)| {
+                    let field = at.field(id);
+                    let value = match field_type {
+                        TypeOf::Optional { elem } => {
+                            let (name, present) = field.bound("present");
+                            format!(
+                                "{}?.let {{ {name} -> {} }}",
+                                field.expr,
+                                canonical_value(elem, &present, &record.scope)?
+                            )
+                        }
+                        other => canonical_value(other, &field, &record.scope)?,
+                    };
+                    Ok(format!(
+                        "\"{}\" to {value}",
+                        filters::escape_kotlin(id.to_string())
+                    ))
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+            format!("{CANONICAL}.record({})", fields.join(", "))
+        }
+        TypeOf::Union { alias } => {
+            let union = scope
+                .unions
+                .get(alias)
+                .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))?;
+            // The value is bound by the `when` where a case's record is read,
+            // so the arm reads it smart-cast to the case's class; a union no
+            // case of which holds a record binds nothing.
+            let (binding, held) = at.bound("case");
+            let binds = union.cases.iter().any(|case| case.record.is_some());
+            let arms = union
+                .cases
+                .iter()
+                .map(|case| {
+                    let variant = &case.variant.name;
+                    let class = kotlin_case_type(union, variant);
+                    let name = filters::escape_kotlin(variant.to_string());
+                    Ok(match &case.record {
+                        Some(record) => {
+                            let written = canonical_value(
+                                &TypeOf::Record {
+                                    alias: record.clone(),
+                                },
+                                &Canonical {
+                                    expr: format!("{}.value", held.expr),
+                                    depth: held.depth,
+                                },
+                                &union.scope,
+                            )?;
+                            format!("is {class} -> {CANONICAL}.unionCase(\"{name}\", {written})")
+                        }
+                        None => format!("is {class} -> {CANONICAL}.unionCase(\"{name}\", null)"),
+                    })
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+            let subject = if binds {
+                format!("val {binding} = {}", at.expr)
+            } else {
+                at.expr.clone()
+            };
+            format!("when ({subject}) {{ {} }}", arms.join("; "))
+        }
+    })
 }
 
 /// The name the generated `matches` and `value` take the formal parameter
