@@ -85,7 +85,11 @@ use serde_json::{json, Value};
 /// refused it for the rate (`SCE_PEER_TRANSPORT_RATE_LIMITED`) and give the wait its run takes on
 /// the host's own clock ([`sce_peer_link_set_pause`]); and a host installs the sink of what the
 /// library logs ([`sce_peer_set_log_sink`]), with a status appended (`SCE_PEER_ERR_SINK_TAKEN`).
-pub const SCE_PEER_ABI_VERSION: u32 = 6;
+/// Version 7: a change of the list is one event and one signed operation, `record_list.change`
+/// (docs/adr/0085, section 1), so what [`sce_peer_outbound`] takes and the events an outcome holds
+/// are of another shape than the parts `record_list.write` and `record_list.supersede` of version 6,
+/// which the core no longer signs: a changed shape of a text, which makes a new number.
+pub const SCE_PEER_ABI_VERSION: u32 = 7;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;

@@ -160,15 +160,17 @@ fn bob(genesis: [u8; 32]) -> *mut ScePeer {
     }
 }
 
-/// A write of `value` to field 3 of row `id`, stamped by `node` at `wall`, NUL-terminated.
+/// A change of one write of `value` to field 3 of row `id`, stamped by `node` at `wall`,
+/// NUL-terminated.
 fn write(id: u32, node: u64, wall: i64, value: i64) -> std::ffi::CString {
-    let text = serde_json::json!({"id": id, "field": 3, "value": value.to_string(), "text": "",
-        "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    let text = serde_json::json!({"by": node.to_string(), "wallTime": wall.to_string(),
+        "counter": 0, "ops": [{"kind": 0, "id": id, "field": 3, "value": value.to_string(),
+        "text": "", "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string();
     std::ffi::CString::new(text).unwrap()
 }
 
-/// `peer` sends a write, which its core takes.
+/// `peer` sends a change, which its core takes.
 ///
 /// # Safety
 /// `peer` is a live handle.
@@ -178,7 +180,7 @@ unsafe fn sends(peer: *mut ScePeer, data: &std::ffi::CStr) {
     let status = unsafe {
         sce_peer_outbound(
             peer,
-            c"record_list.write".as_ptr(),
+            c"record_list.change".as_ptr(),
             data.as_ptr(),
             &mut kept,
             std::ptr::null_mut(),
@@ -188,13 +190,13 @@ unsafe fn sends(peer: *mut ScePeer, data: &std::ffi::CStr) {
     assert_eq!(kept, SCE_PEER_KEPT_TAKEN);
 }
 
-/// How many `record_list.write` events an outcome tells the machine.
+/// How many `record_list.change` events an outcome tells the machine.
 fn writes_in(outcome: &Value) -> usize {
     outcome["events"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|pair| pair[0] == "record_list.write")
+        .filter(|pair| pair[0] == "record_list.change")
         .count()
 }
 

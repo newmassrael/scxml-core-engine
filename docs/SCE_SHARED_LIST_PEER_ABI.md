@@ -54,7 +54,12 @@ reviewer learns one set of rules:
   0083 section 4) moves no number: it is written only for an exchange that froze the device's own
   chain, which a lane of version 6 reads by members' names and meets only when a relay of protocol 2
   answers `conflict` or a round finds the device signed two histories; every other outcome's text is
-  the one it was. ADR 0083 counts it among version 7, which the core's outbox makes;
+  the one it was. The version is 7 (2026-11-09, docs/adr/0085 landing 4c): a change of the list is
+  one event and one signed operation, `record_list.change`, so what `sce_peer_outbound` takes and the
+  events an outcome holds are of another shape than the parts `record_list.write` and
+  `record_list.supersede` of version 6, which the core no longer signs (section 4), a changed shape
+  of a text that the policy above makes a new number. What ADR 0083 counted among "version 7", the
+  core's outbox, takes the number after it, in ADR 0085's landing 5;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -179,16 +184,17 @@ log is written (section 7).
 
 ## 4. A send of the machine
 
-The machine's outbound `record_list.write` and `record_list.supersede`, addressed to `#hub` or
-`#people`, are given as the event's name and its JSON payload, as the machine wrote them.
+The machine's outbound `record_list.change`, addressed to `#people`, is given as the event's name
+and its JSON payload, as the machine wrote it: one change whole, signed as one operation
+(docs/adr/0085, section 1).
 `*kept` says what the core did:
 
 | Answer | Value | Meaning |
 |---|---|---|
 | `SCE_PEER_KEPT_TAKEN` | 0 | signed and remembered; the next round carries it to the relay |
-| `SCE_PEER_KEPT_HELD` | 1 | the device holds it already (a machine built again from its application's own log sends its writes again): nothing is signed, and the relay is given nothing new |
-| `SCE_PEER_KEPT_NOT_SIGNED` | 2 | it is no event that is signed; nothing is kept |
-| `SCE_PEER_KEPT_REFUSED` | 3 | the trust will not sign it, and `*reason` says why: another content under a stamp the device signed or that waits, another person's write the device holds no signature of, a person the log the device holds does not let write (a reader, a device taken off), a frozen chain, a device with no person; nothing is kept |
+| `SCE_PEER_KEPT_HELD` | 1 | the device holds it already (a machine built again from its application's own log sends its changes again): nothing is signed, and the relay is given nothing new |
+| `SCE_PEER_KEPT_NOT_SIGNED` | 2 | it is no event that is signed (a part `record_list.write` or `record_list.supersede` of version 6 included); nothing is kept |
+| `SCE_PEER_KEPT_REFUSED` | 3 | the trust will not sign it, and `*reason` says why: another content under a dot the device signed or that waits, another person's change the device holds no signature of, a change that names nothing or writes one register twice, a person the log the device holds does not let write (a reader, a device taken off), a frozen chain, a device with no person; nothing is kept |
 | `SCE_PEER_KEPT_WAITING` | 4 | the device may not sign it yet, and `*reason` says why: it has not read the log that lets it write (an invited device before its first round, a log that grants it nothing yet), the key of the epoch the list's content is in, or, restored, its own chain; it is kept (below) |
 
 **A send the device may not sign yet is kept, not refused.** A machine sends whenever its person
@@ -199,7 +205,7 @@ what waits, in that order, as far as the device may, once the logs are level and
 device's own chain is read back, before the relay is given what it lacks: the round that reads what a
 send waited for gives it the relay, and its outcome names it in `taken` (section 5). The same send
 made again while it waits waits once (`SCE_PEER_KEPT_WAITING` again), and one of another content under
-the stamp of a write that waits is refused at once. When a round's log says the person never may (a
+the dot of a change that waits is refused at once. When a round's log says the person never may (a
 reader, a device taken off before it read the list), every send that waited is refused then, each with
 why, in the outcome's `dropped`, and `rebuild` is true: the machine took the write in as made and no
 other copy will hold it, so the host builds its machine again and makes a resync, as for an evicted
@@ -482,14 +488,15 @@ and she grants writing to the key the proof names. Every call each core is given
 gives back is recorded in order: the opening and its genesis, the invitation (`invite`, with the
 secret the recording fixes) and what it says (`invitation`), the join and its fingerprint, the
 devices that joined before the grant and none after it, the grant, what each device stands at, a
-write of bob's made
+change of bob's made
 before his device read the log, kept waiting (and sent again, waiting once) and signed by his first
-round, his writes and his note through `sce_peer_outbound`, an event that is not signed, another
-content under a stamp he signed (refused), each request and the relay's answer, the outcomes, bob's
+round, his change that writes his first write over and the field anew, one operation, through
+`sce_peer_outbound`, an event that is not signed, another content under a dot he signed (refused),
+each request and the relay's answer, the outcomes, bob's
 sealed state and his core made again given nothing but the list and the genesis and restored from it
-with no key given again, a write of his that comes back held and a new one kept waiting until his
+with no key given again, a change of his that comes back held and a new one kept waiting until his
 chain is read back, which the round that reads it signs and which then comes back held, a resync, a
-round of alice's whose transport fails, and bob taken off: a write his core signs before it read the
+round of alice's whose transport fails, and bob taken off: a change his core signs before it read the
 removal reaches no one, since the relay refuses a device the log took off. Bob's device is handed no
 token: it logs in (a `login` step, which names the audience, and its requests, answers and outcome)
 before its first round, and the relay's answers to its rounds are made with the token that login

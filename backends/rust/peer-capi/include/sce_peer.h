@@ -5,7 +5,7 @@
  * The peer core of a device that holds a shared list (ADR 0079), for the lanes that are not Rust.
  *
  * A lane holds the core of one device of one list and speaks to it in UTF-8 texts: the machine's
- * outbound record_list.write and record_list.supersede as the event's name and its JSON payload, the
+ * outbound record_list.change, one change whole, as the event's name and its JSON payload, the
  * relay's requests and responses as the protocol's JSON, what a round came to as one JSON text, and
  * what the device keeps between runs, its secrets with the rest, as one sealed state under a data key
  * the lane wraps with its platform's key store. An administrator's device opens a list and grants,
@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 6u
+#define SCE_PEER_ABI_VERSION 7u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
