@@ -155,7 +155,11 @@ them to every device it admits to a list keyed by its group (`Peer::add_member`,
 
 A hub's machine is told, by `Trust::hub_role_events`, that anyone who could write at some entry
 is a writer: the machine has no log to judge by, and must not refuse what its host let through. A
-person's machine is told the role they have now (`Trust::role_events`).
+person's machine is told the role they have now (`Trust::role_events`). A copy on a Mesh causal
+route (docs/adr/0085, section 3.2) is told as a hub's machine is: its layer gives it a change as
+late as a repair brings it, which its host judges by the grant of the time the change was made at,
+and every copy judges a peer's change by its roster, so a copy told only the present would refuse
+what its host let through.
 
 ## 3. Operations, and the settled instant
 
