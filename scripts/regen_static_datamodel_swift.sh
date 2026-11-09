@@ -202,11 +202,13 @@ fi
 # name (status 7) is listed, not skipped: a schema of a field Swift does not lower yet
 # is one more thing standing between it and the rest of the fixtures. The enums are
 # swept with them: the type a field of a record or a value of an algorithm holds a
-# variant in is a unit of the same target, written for what it is.
+# variant in is a unit of the same target, written for what it is. So are the unions
+# (docs/adr/0092): a schema whose field holds one names the enum its unit declares, so
+# the unit has to be in the target beside it.
 mapfile -t SCHEMA_CANDIDATES < <(
     {
-        grep -lE 'sce:kind="(event-schema|enum)"' "$INPUT_ROOT"/*.scxml "$CORPUS_ROOT"/*.scxml
-        grep -rlE 'sce:kind="(event-schema|enum)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+        grep -lE 'sce:kind="(event-schema|enum|union)"' "$INPUT_ROOT"/*.scxml "$CORPUS_ROOT"/*.scxml
+        grep -rlE 'sce:kind="(event-schema|enum|union)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
     } | LC_ALL=C sort -u
 )
 SCHEMAS=()
