@@ -152,6 +152,11 @@ ffi = []
 # Dev-only, and no cycle: the engine depends on the runtime, not on codegen.
 sce-rust-lua = { path = "../backends/rust/lua" }
 sce-rust-runtime = { path = "../backends/rust/runtime" }
+# The validator of a suite's TTCN-3 export (docs/adr/0091 answer 12,
+# docs/SCE_TEST_PROFILE.md section 9.4), which holds every export the tests
+# make to its witness. Dev-only and one way: the validator depends on no crate
+# of SCE, so it shares no code with the exporter it checks.
+sce-ttcn3-validator = { path = "../sce-ttcn3-validator" }
 schemars = "0.8"
 # Full JSON Schema validator. Drives the AST export drift guard's
 # round-trip assertions through the same code path a real consumer

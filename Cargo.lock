@@ -3740,6 +3740,7 @@ dependencies = [
  "roxmltree",
  "sce-rust-lua",
  "sce-rust-runtime",
+ "sce-ttcn3-validator",
  "schemars 0.8.22",
  "serde",
  "serde_json",
