@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-test-log.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE test log (wire schema v1)",
-  "description": "The test log of one run of one test case of the test profile (docs/adr/0091 C3 and answer 8; docs/SCE_TEST_PROFILE.md section 12.5): the test verdict and the records of TCI's test logging interface (ETSI ES 201 873-6), each written where the profile's semantics places its event, in the order the round scheduler produces them. Both runtimes of a suite write it, the native one and the TTCN-3 one, and a run of the same suite against the same input trace must give the same log on both sides; a disagreement is the test case's error. The text is the JSON Canonicalization Scheme (RFC 8785) of the log, and the log holds no number: an instant, a duration and every integer of a value are the text of their decimal digits, since a 64-bit integer is past what a reader that holds numbers as doubles reads exactly. Two logs therefore agree exactly when their bytes do. A message carries the name of its record type as the export's types module names it, and its value in the canonical form of the profile's types: an integer the text of its digits, a bool a truth value, a value of an enum the name its document declares, a text a text, a byte string its octets in upper-case hex, a record an object of its fields by their declared ids with an absent field omitted, a list an array, and a value of a union an object of one member, its case's variant, whose value is the case's record or the empty object. Authoritative producer is backends/rust/runtime/src/test/test_log.rs over the runs of backends/rust/runtime/src/test/run.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "description": "The test log of one run of one test case of the test profile (docs/adr/0091 C3 and answer 8; docs/SCE_TEST_PROFILE.md section 12.5): the test verdict and the records of TCI's test logging interface (ETSI ES 201 873-6), each written where the profile's semantics places its event, in the order the round scheduler produces them. Both runtimes of a suite write it, the native one and the TTCN-3 one, and a run of the same suite against the same input trace must give the same log on both sides; a disagreement is the test case's error. The text is the JSON Canonicalization Scheme (RFC 8785) of the log, and the log holds no number: an instant, a duration and every integer of a value are the text of their decimal digits, since a 64-bit integer is past what a reader that holds numbers as doubles reads exactly. Two logs therefore agree exactly when their bytes do. A message carries the name of its record type as the export's types module names it, and its value in the canonical form of the profile's types: an integer the text of its digits, a bool a truth value, a value of an enum the name its document declares, a text a text, a byte string its octets in upper-case hex, a record an object of its fields by their declared ids with an absent field omitted, a list an array with an absent element of a list of optional<T> null in its place, since the array names an element by its position and leaving one out would move every element after it, and a value of a union an object of one member, its case's variant, whose value is the case's record or the empty object. Authoritative producer is backends/rust/runtime/src/test/test_log.rs over the runs of backends/rust/runtime/src/test/run.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
   "type": "object",
   "required": ["schema", "suite", "test_case", "verdict", "records"],
   "additionalProperties": false,
@@ -49,18 +49,25 @@
       "minLength": 1
     },
     "value": {
-      "description": "A value in the canonical form of the profile's types: a text, a truth value, an array of values, or an object of values. Never a number and never null.",
+      "description": "A value in the canonical form of the profile's types: a text, a truth value, an array of elements, or an object of values. Never a number, and never null: an absent field of a record is omitted, and null stands only as an element of an array.",
       "oneOf": [
         { "type": "string" },
         { "type": "boolean" },
         {
           "type": "array",
-          "items": { "$ref": "#/definitions/value" }
+          "items": { "$ref": "#/definitions/element" }
         },
         {
           "type": "object",
           "additionalProperties": { "$ref": "#/definitions/value" }
         }
+      ]
+    },
+    "element": {
+      "description": "An element of a list in the canonical form: its value, or null for an absent element of a list of optional<T>, which keeps its place since the array names it by its position. The TTCN-3 export refuses a list of optional<T> (docs/SCE_TEST_PROFILE.md section 6.3, rule E1), so only a native log holds null.",
+      "oneOf": [
+        { "$ref": "#/definitions/value" },
+        { "type": "null" }
       ]
     },
     "record": {

@@ -1926,7 +1926,7 @@ document's file in lower snake case. Two records of one shape are then two types
 side.
 
 **The value form.** A message's `value` is in the canonical form of the profile's types (§6.3), built from texts, truth
-values, arrays and objects alone:
+values, arrays and objects, and `null` for an absent element of a list alone:
 
 | Type | Form |
 |---|---|
@@ -1937,7 +1937,16 @@ values, arrays and objects alone:
 | `bytes[N]` | the octets in upper-case hex, two digits each |
 | `record:X` | an object of its fields by their declared ids; an absent field is omitted, as TTCN-3's `omit` is |
 | `list<T>[B]` | an array of its elements in order |
+| `list<optional<T>>[B]` | an array of its elements in order: a present element its value, an absent one `null` |
 | `union:X` | an object of one member, named by its case's variant, whose value is the case's record, or `{}` for a case that holds none |
+
+An absent value has two forms, by where it stands. A record names its fields, so an absent field is left out and the
+object still says which fields it holds. An array names its elements by their positions, so an absent element cannot be
+left out: every element after it would move to the position before, and `[absent, 7]` would be written as `[7]`, the
+form of another value. It is `null` in its place, the one JSON value no other form takes, so it is never read as a
+present value. A message is a record, so an optional value in it stands as a field or as an element, and has one of
+these two forms. The TTCN-3 export refuses a list of `optional<T>` (rule E1, §6.3), so no TTCN-3 log holds `null` and
+the two sides' agreement on one set of bytes (ADR 0091 C3) is unaffected: `null` is a native log's form alone.
 
 The form is the type's, not the language's: a byte string and a list of `uint8` are one Rust type and take two forms.
 So the generated unit of every template over a record writes its record's type name and its value's form by the types

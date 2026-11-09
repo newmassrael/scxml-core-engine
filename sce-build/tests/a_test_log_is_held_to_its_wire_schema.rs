@@ -247,6 +247,26 @@ fn every_log_the_runtime_writes_validates_against_the_wire_schema() {
     assert_eq!(ended["verdict"], "error");
 }
 
+/// An absent element of a list of `optional<T>` is `null` in its place, which
+/// the schema admits as an element of an array, at any depth of the value: the
+/// array names an element by its position, so it cannot be left out as an
+/// absent field of a record is.
+#[test]
+fn the_test_log_schema_admits_an_absent_element_of_a_list_as_null() {
+    let schema = schema();
+    let mut log = parsed(&written(None));
+    let sent = log["records"]
+        .as_array()
+        .expect("records")
+        .iter()
+        .position(|record| record["kind"] == "message-sent")
+        .expect("a message-sent record");
+    log["records"][sent]["value"]["note"] = serde_json::json!(["1", null]);
+    assert_eq!(violations(&schema, &log), Vec::<String>::new(), "{log}");
+    log["records"][sent]["value"]["note"] = serde_json::json!([{ "tags": ["1", null] }]);
+    assert_eq!(violations(&schema, &log), Vec::<String>::new(), "{log}");
+}
+
 /// The schema refuses what the runtime does not write: starting from a log it
 /// first shows valid, each change of one member is refused.
 #[test]
@@ -336,6 +356,14 @@ fn the_test_log_schema_rejects_what_the_runtime_does_not_write() {
         (
             "an absent field of a value as null",
             changed(&|l| l["records"][sent]["value"]["note"] = serde_json::Value::Null),
+        ),
+        (
+            "a message's whole value as null",
+            changed(&|l| l["records"][sent]["value"] = serde_json::Value::Null),
+        ),
+        (
+            "a field of an element of a list as null",
+            changed(&|l| l["records"][sent]["value"]["note"] = serde_json::json!([{ "n": null }])),
         ),
         (
             "a duration as a number",
