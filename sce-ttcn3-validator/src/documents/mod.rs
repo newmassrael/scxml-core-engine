@@ -1091,8 +1091,10 @@ pub(crate) mod tests {
     }
 
     /// A document that holds what the generator's preprocessors expand, an
-    /// `<xi:include>` (or an `<include>` of no namespace) or an `<sce:use>`,
-    /// is not read as it is written, and says so by name.
+    /// `<xi:include>` or an `<sce:use>`, is not read as it is written, and
+    /// says so by name. An `<include>` undeclared to `xmlns=""` is not one:
+    /// roxmltree does not read it as of no namespace, so the generator's
+    /// test, which this reader's repeats, does not expand it either.
     #[test]
     fn a_document_the_export_would_expand_is_refused_by_name() {
         for (written, named) in [
@@ -1100,7 +1102,6 @@ pub(crate) mod tests {
                 r#"<xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="part.xml"/>"#,
                 "<xi:include>",
             ),
-            (r#"<include xmlns="" href="part.xml"/>"#, "<xi:include>"),
             (r#"<sce:use template="part.xml"/>"#, "<sce:use>"),
         ] {
             let config = CONFIG.replace(
