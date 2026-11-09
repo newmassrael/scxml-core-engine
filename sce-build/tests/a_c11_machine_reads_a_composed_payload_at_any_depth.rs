@@ -170,12 +170,12 @@ fn the_payload_is_held_in_types_named_by_their_shape_each_declared_once() {
         &[
             "typedef struct batch_reader_batch_sent_payload {\n    \
              batch_reader_record_item_list_3_t items;\n    sce_static_list_uint8_2_list_2_t \
-             grid;\n    signal_level_enum_list_2_t levels;\n    sce_optional_uint16_list_2_t \
+             grid;\n    enum_signal_level_enum_list_2_t levels;\n    sce_optional_uint16_list_2_t \
              maybe;\n    sce_optional_record_sce_static_list_uint8_2_t spare;\n    \
              sce_static_string_4_t note;\n    sce_static_list_uint8_2_t late;\n} \
              batch_reader_batch_sent_payload_t;",
             "typedef struct {\n    uint32_t id;\n    int64_t amount;\n    sce_static_string_8_t \
-             label;\n    signal_level_enum_t level;\n    sce_optional_int64_t due;\n    \
+             label;\n    enum_signal_level_enum_t level;\n    sce_optional_int64_t due;\n    \
              sce_static_bytes_4_t blob;\n    sce_static_string_8_list_4_t tags;\n} \
              batch_reader_record_item_t;",
             "#ifndef BATCH_READER_RECORD_ITEM_LIST_3\n",
@@ -259,7 +259,7 @@ fn the_inject_seam_writes_each_part_held_to_its_type() {
             "if (((*payload).late).len > sizeof(((*payload).late).data) / \
              sizeof(((*payload).late).data[0])) {\n    sce_forge_wire_refuse(sce_wire);\n}",
             "if (memchr(((*sce_item).label).data, '\\0', sizeof(((*sce_item).label).data)) == NULL)",
-            "const char *const sce_name = signal_level_declared_name((*sce_item));",
+            "const char *const sce_name = enum_signal_level_declared_name((*sce_item));",
             "    if (!sce_forge_wire_end(sce_wire)) {\n        return false;\n    }\n",
         ],
     );
@@ -348,7 +348,7 @@ fn a_send_writes_each_composed_field_where_its_pair_stands() {
              sizeof((sm->pending_payload.as.batch_sent.items).data[0])) {",
             "sce_forge_wire_pair_key(sce_wire, \"\\\"late\\\"\");\nif ((sm->policy.v_late).len > ",
             "if ((sm->pending_payload.as.batch_sent.spare).present) {",
-            "const char *const sce_name = signal_level_declared_name((*sce_item));",
+            "const char *const sce_name = enum_signal_level_declared_name((*sce_item));",
         ],
     );
 }
@@ -482,10 +482,12 @@ fn a_text_a_composed_payload_holds_read_as_a_value_is_refused_by_name_on_c11() {
 const SHAPES_READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="shapes_reader">
-  <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
+  <sce:import kind="enum" src="enum_shape_kind.scxml" as="Kind"/>
   <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
   <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
   <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="shape_label.scxml" as="Label"/>
+  <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
   <datamodel>
     <data id="seen" sce:type="uint32" expr="0"/>
   </datamodel>
@@ -499,11 +501,14 @@ const SHAPES_READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// The union fixtures a reader of `shapes.sent` imports.
-const SHAPES: [&str; 5] = [
-    "shape_kind.scxml",
+/// The union fixtures a reader of `shapes.sent` imports, beside the fixtures
+/// of the static data model (`static_union.scxml` reads them there).
+const SHAPES: [&str; 7] = [
+    "enum_shape_kind.scxml",
     "shape_radius.scxml",
     "shape_rect.scxml",
+    "shape_label.scxml",
+    "shape_path.scxml",
     "union_shape.scxml",
     "event_shapes.scxml",
 ];
@@ -515,10 +520,9 @@ const SHAPES: [&str; 5] = [
 /// own name, naming the field and the union.
 #[test]
 fn a_payload_that_holds_a_union_stays_refused_by_name_on_c11() {
-    let unions = repo_root().join("sce-build/tests/fixtures/union");
     let (ok, out) = run(
         &["check", "-l", "c11"],
-        &unions,
+        &fixtures(),
         &SHAPES,
         "shapes_reader.scxml",
         SHAPES_READER,
