@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/test_profile/runtime/answerer.scxml
@@ -135,8 +135,8 @@ class AnswererStateMachine(
     }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `job` datamodel variable, the machine's own. */
-    private var vJob: UInt = 42.toUInt()
+    /** W3C SCXML 5.2: the `asked` datamodel variable, the machine's own. */
+    private var vAsked: UInt = 42.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -144,7 +144,7 @@ class AnswererStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
-        var job: UInt? = null
+        var asked: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -153,7 +153,7 @@ class AnswererStateMachine(
     }
 
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.job?.let { vJob = it }
+        params.asked?.let { vAsked = it }
     }
 
     /**
@@ -194,10 +194,10 @@ class AnswererStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-        revised = "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
-        format2First = "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-        format2Revised = "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
+        first = "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+        revised = "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
+        format2First = "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+        format2Revised = "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
         records = listOf(
         ),
         enums = listOf(
@@ -222,7 +222,7 @@ class AnswererStateMachine(
     }
 
     private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
-        variables += "job" to SavedValues.of(vJob)
+        variables += "asked" to SavedValues.of(vAsked)
     }
 
     /** [save] at the host's wall clock now. */
@@ -257,9 +257,9 @@ class AnswererStateMachine(
     // variable's type cannot hold, and answers what writes them: nothing is
     // written until every part has read.
     private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint32(savedGrown.variable("job"), "job")
+        val saved1 = SavedValues.uint32(savedGrown.variable("asked"), "asked")
         return {
-            vJob = saved1
+            vAsked = saved1
         }
     }
 
@@ -277,7 +277,7 @@ class AnswererStateMachine(
     }
 
     private fun judgeVariablesPart0(savedGrown: SavedState) {
-        SavedValues.uint32(savedGrown.variable("job"), "job")
+        SavedValues.uint32(savedGrown.variable("asked"), "asked")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -433,7 +433,7 @@ class AnswererStateMachine(
                 // the value of its specific template, handed to the test-port
                 // processor as a value and never as an encoding (docs/adr/0091,
                 // C2). Every other send leaves it null and carries `eventData`.
-                value = com.sce.generated.request_of.value(vJob)
+                value = com.sce.generated.request_of.value(vAsked)
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,

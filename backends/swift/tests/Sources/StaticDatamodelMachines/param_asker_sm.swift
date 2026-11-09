@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -487,7 +487,7 @@ public final class ParamAskerPolicy: InvocablePolicy {
 
                 // docs/SCE_TEST_PROFILE.md §4.7: <sce:start-timer>
 
-                self.sceTestContext.startTimer("reply", 1000000)
+                self.sceTestContext.startTimer("deadline", 1000000)
 
             }
         default:
@@ -548,7 +548,7 @@ public final class ParamAskerPolicy: InvocablePolicy {
             if event == .sceTestSnapshot {
                 // docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
                 // guarded by its cond and then its match on the round's snapshot.
-                if (self.sceTestContext.timedOut("reply")) {
+                if (self.sceTestContext.timedOut("deadline")) {
                     return EnabledTransition(
                         source: state,
                         targets: [.state(.failed)],
@@ -602,7 +602,7 @@ public final class ParamAskerPolicy: InvocablePolicy {
 
                 // docs/SCE_TEST_PROFILE.md §4.7: <sce:stop-timer>
 
-                self.sceTestContext.stopTimer("reply")
+                self.sceTestContext.stopTimer("deadline")
 
 
 
@@ -611,7 +611,7 @@ public final class ParamAskerPolicy: InvocablePolicy {
                 }
             case 1:
                 // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.sceTestContext.timeout("reply")
+                self.sceTestContext.timeout("deadline")
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 

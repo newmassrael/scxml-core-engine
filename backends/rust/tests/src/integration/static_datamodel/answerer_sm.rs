@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -159,7 +159,7 @@ pub type AnswererConfiguration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const ANSWERER_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const ANSWERER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -342,10 +342,10 @@ impl AnswererPersist for Engine<AnswererPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-            revised: "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
-            format2_first: "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-            format2_revised: "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
+            first: "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+            revised: "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
+            format2_first: "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+            format2_revised: "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
             records: &[],
             enums: &[],
             features: None,
@@ -367,8 +367,8 @@ impl AnswererPersist for Engine<AnswererPolicy> {
             self,
             &Self::SHAPE,
             vec![(
-                "job".to_string(),
-                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.job),
+                "asked".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.asked),
             )],
             // What each history recorded is the engine's (docs/adr/0064).
             ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
@@ -385,8 +385,10 @@ impl AnswererPersist for Engine<AnswererPolicy> {
         // the invocations and each running child by its own document.
         let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
         ::sce_rust_runtime::saved_state::restore_history::<AnswererPolicy>(saved, Self::HISTORIES)?;
-        let _: u32 =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("asked")?,
+            "asked",
+        )?;
         ::sce_rust_runtime::saved_state::judge::<AnswererPolicy>(saved)
     }
 
@@ -404,8 +406,10 @@ impl AnswererPersist for Engine<AnswererPolicy> {
         // refused restore holds no half of a state. A document with no
         // `<history>` refuses any a saved state records.
         ::sce_rust_runtime::saved_state::restore_history::<AnswererPolicy>(saved, Self::HISTORIES)?;
-        policy.job =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
+        policy.asked = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("asked")?,
+            "asked",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -415,7 +419,7 @@ impl AnswererPersist for Engine<AnswererPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct AnswererInvokeParams {
-    pub job: Option<u32>,
+    pub asked: Option<u32>,
 }
 
 // ======================================================================
@@ -425,8 +429,8 @@ pub struct AnswererInvokeParams {
 pub struct AnswererPolicy {
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
-    /// W3C SCXML 5.2: the `job` datamodel variable.
-    job: u32,
+    /// W3C SCXML 5.2: the `asked` datamodel variable.
+    asked: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -457,10 +461,10 @@ pub struct AnswererPolicy {
 
 impl AnswererPolicy {
     fn build(session_id: String) -> Self {
-        let job: u32 = 42;
+        let asked: u32 = 42;
         Self {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
-            job,
+            asked,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -534,8 +538,8 @@ impl AnswererPolicy {
     /// §scxml-6.4.1: give this machine the values `params` carries, in place of
     /// the ones its `<data>` gave. Called before it initializes.
     pub fn accept_params(&mut self, params: AnswererInvokeParams) {
-        if let Some(value) = params.job {
-            self.job = value;
+        if let Some(value) = params.asked {
+            self.asked = value;
         }
     }
 }
@@ -614,7 +618,7 @@ impl StatePolicy for AnswererPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &ANSWERER_TABLES;
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &ANSWERER_TABLES;
     const STATES: &'static [Self::State] = &[AnswererState::Asking, AnswererState::Done];
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[
@@ -782,7 +786,7 @@ impl StatePolicy for AnswererPolicy {
                                 // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the
                                 // value of its specific template, handed to the test-port processor
                                 // as a value and never as an encoding (docs/adr/0091, C2).
-                                value: Some(::std::sync::Arc::new(request_of::value(self.job))),
+                                value: Some(::std::sync::Arc::new(request_of::value(self.asked))),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,

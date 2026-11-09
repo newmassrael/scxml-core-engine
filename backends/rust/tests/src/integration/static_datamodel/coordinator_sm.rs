@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -163,7 +163,7 @@ pub type CoordinatorConfiguration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const COORDINATOR_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const COORDINATOR_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -390,10 +390,10 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-            revised: "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de",
-            format2_first: "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-            format2_revised: "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de",
+            first: "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+            revised: "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde",
+            format2_first: "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+            format2_revised: "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde",
             records: &[],
             enums: &[],
             features: None,
@@ -416,8 +416,8 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
             &Self::SHAPE,
             vec![
                 (
-                    "job".to_string(),
-                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.job),
+                    "requested".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.requested),
                 ),
                 (
                     "ok".to_string(),
@@ -442,8 +442,10 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        let _: u32 =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("requested")?,
+            "requested",
+        )?;
         let _: u32 =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ok")?, "ok")?;
         ::sce_rust_runtime::saved_state::judge::<CoordinatorPolicy>(saved)
@@ -466,8 +468,10 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
             saved,
             Self::HISTORIES,
         )?;
-        policy.job =
-            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("job")?, "job")?;
+        policy.requested = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("requested")?,
+            "requested",
+        )?;
         policy.ok =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("ok")?, "ok")?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
@@ -479,7 +483,7 @@ impl CoordinatorPersist for Engine<CoordinatorPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct CoordinatorInvokeParams {
-    pub job: Option<u32>,
+    pub requested: Option<u32>,
     pub ok: Option<u32>,
 }
 
@@ -494,8 +498,8 @@ pub struct CoordinatorPolicy {
     pending_payload: CoordinatorPayload,
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
-    /// W3C SCXML 5.2: the `job` datamodel variable.
-    job: u32,
+    /// W3C SCXML 5.2: the `requested` datamodel variable.
+    requested: u32,
     /// W3C SCXML 5.2: the `ok` datamodel variable.
     ok: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
@@ -534,12 +538,12 @@ pub struct CoordinatorPolicy {
 
 impl CoordinatorPolicy {
     fn build(session_id: String) -> Self {
-        let job: u32 = 0;
+        let requested: u32 = 0;
         let ok: u32 = 0;
         Self {
             pending_payload: CoordinatorPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
-            job,
+            requested,
             ok,
             session_id: Some(session_id),
             pending_invokes: Vec::new(),
@@ -616,8 +620,8 @@ impl CoordinatorPolicy {
     /// §scxml-6.4.1: give this machine the values `params` carries, in place of
     /// the ones its `<data>` gave. Called before it initializes.
     pub fn accept_params(&mut self, params: CoordinatorInvokeParams) {
-        if let Some(value) = params.job {
-            self.job = value;
+        if let Some(value) = params.requested {
+            self.requested = value;
         }
         if let Some(value) = params.ok {
             self.ok = value;
@@ -787,7 +791,7 @@ impl StatePolicy for CoordinatorPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &COORDINATOR_TABLES;
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &COORDINATOR_TABLES;
     const STATES: &'static [Self::State] = &[
         CoordinatorState::Working,
         CoordinatorState::Serving,
@@ -1116,8 +1120,8 @@ impl StatePolicy for CoordinatorPolicy {
                 let ev = CoordinatorJobRequestPayload { job: sce_value.job };
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
-                    // W3C SCXML 5.3: <assign location="job">
-                    self.job = ev.job;
+                    // W3C SCXML 5.3: <assign location="requested">
+                    self.requested = ev.job;
 
                     {
                         let send_id: &str = "__send_0";
@@ -1147,7 +1151,8 @@ impl StatePolicy for CoordinatorPolicy {
                                 // value of its specific template, handed to the test-port processor
                                 // as a value and never as an encoding (docs/adr/0091, C2).
                                 value: Some(::std::sync::Arc::new(reply_of::value(
-                                    self.job, self.ok,
+                                    self.requested,
+                                    self.ok,
                                 ))),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);

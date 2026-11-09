@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 // SCE-MAP: reply_of.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
@@ -15,13 +15,13 @@ typealias Value = com.sce.generated.job_reply.JobReplyPayload
  * Whether [value] matches the template `reply_of` (ES 201 873-1 Annex B.1,
  * docs/SCE_TEST_PROFILE.md §6.1).
  *
- * @param param_job the formal parameter `job`, of type `uint32`.
+ * @param param_answers the formal parameter `answers`, of type `uint32`.
  *
  * @param param_code the formal parameter `code`, of type `uint32`.
  */
 @Suppress("UNUSED_PARAMETER", "SENSELESS_COMPARISON", "USELESS_IS_CHECK")
-fun matches(value: Value, param_job: UInt, param_code: UInt): Boolean =
-    value.job == param_job && value.code == param_code
+fun matches(value: Value, param_answers: UInt, param_code: UInt): Boolean =
+    value.job == param_answers && value.code == param_code
 
 /**
  * The value the specific template `reply_of` sends (docs/SCE_TEST_PROFILE.md
@@ -29,5 +29,5 @@ fun matches(value: Value, param_job: UInt, param_code: UInt): Boolean =
  * template by [matches], given the same parameters.
  */
 @Suppress("UNUSED_PARAMETER")
-fun value(param_job: UInt, param_code: UInt): Value =
-    com.sce.generated.job_reply.JobReplyPayload(job = param_job, code = param_code)
+fun value(param_answers: UInt, param_code: UInt): Value =
+    com.sce.generated.job_reply.JobReplyPayload(job = param_answers, code = param_code)

@@ -158,7 +158,7 @@ pub type DonedataLocalInvokeSceSynthInvokeInvParamConfiguration =
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const DONEDATA_LOCAL_INVOKE_SCE_SYNTH_INVOKE_INV_PARAM_TABLES:
-    ::sce_rust_runtime::DocumentTables = {
+    ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -604,7 +604,7 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> =
         &DONEDATA_LOCAL_INVOKE_SCE_SYNTH_INVOKE_INV_PARAM_TABLES;
     const STATES: &'static [Self::State] = &[DonedataLocalInvokeSceSynthInvokeInvParamState::Done];
     const HISTORIES: &'static [Self::History] = &[];

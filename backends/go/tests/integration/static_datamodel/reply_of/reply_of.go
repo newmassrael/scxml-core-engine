@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 // SCE-MAP: reply_of.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
@@ -19,17 +19,17 @@ type Value = sce_job_reply.JobReplyPayload
 // Matches reports whether value matches the template `reply_of` (ES 201 873-1 Annex B.1,
 // docs/SCE_TEST_PROFILE.md §6.1).
 //
-// param_job is the formal parameter `job`, of type `uint32`.
+// param_answers is the formal parameter `answers`, of type `uint32`.
 //
 // param_code is the formal parameter `code`, of type `uint32`.
-func Matches(value Value, param_job uint32, param_code uint32) bool {
-	return value.Job == param_job && value.Code == param_code
+func Matches(value Value, param_answers uint32, param_code uint32) bool {
+	return value.Job == param_answers && value.Code == param_code
 }
 
 // Specific is the value the specific template `reply_of` sends (docs/SCE_TEST_PROFILE.md
 // §6.2): every field it names at its value, every field it omits absent. It matches the template by
 // Matches, given the same parameters. It is not named Value, as the other backends name it, since Go
 // keeps the type Value and the package's functions in one namespace.
-func Specific(param_job uint32, param_code uint32) Value {
-	return sce_job_reply.JobReplyPayload{Job: param_job, Code: param_code}
+func Specific(param_answers uint32, param_code uint32) Value {
+	return sce_job_reply.JobReplyPayload{Job: param_answers, Code: param_code}
 }

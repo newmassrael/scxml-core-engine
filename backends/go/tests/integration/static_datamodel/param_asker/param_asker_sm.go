@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -967,7 +967,7 @@ func (p *ParamAskerPolicy) ExecuteEntryActions(state ParamAskerState, engine *sc
 
 	// docs/SCE_TEST_PROFILE.md §4.7: <sce:start-timer>
 
-	p.sceTestContext.StartTimer("reply", 1000000)
+	p.sceTestContext.StartTimer("deadline", 1000000)
 
 		}()
 	default:
@@ -1035,7 +1035,7 @@ func (p *ParamAskerPolicy) FirstEnabledTransition(state ParamAskerState, event P
 		if event == ParamAskerEventSceTestSnapshot {
 			// docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
 			// guarded by its cond and then its match on the round's snapshot.
-			if p.sceTestContext.TimedOut("reply") {
+			if p.sceTestContext.TimedOut("deadline") {
 				return sce.EnabledTransition[ParamAskerState, sce.HistoryID]{
 					Source:          state,
 					Targets:         transitionTargetsOfParamAsker[state][1],
@@ -1091,7 +1091,7 @@ func (p *ParamAskerPolicy) ExecuteTransitionContent(source ParamAskerState, tran
 
 	// docs/SCE_TEST_PROFILE.md §4.7: <sce:stop-timer>
 
-	p.sceTestContext.StopTimer("reply")
+	p.sceTestContext.StopTimer("deadline")
 
 
 
@@ -1103,7 +1103,7 @@ func (p *ParamAskerPolicy) ExecuteTransitionContent(source ParamAskerState, tran
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-				p.sceTestContext.Timeout("reply")
+				p.sceTestContext.Timeout("deadline")
 
 	// docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
 

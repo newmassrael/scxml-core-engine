@@ -157,7 +157,7 @@ pub type Test422SceSynthInvokeInvoke1Configuration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const TEST422_SCE_SYNTH_INVOKE_INVOKE1_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const TEST422_SCE_SYNTH_INVOKE_INVOKE1_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -373,7 +373,7 @@ impl StatePolicy for Test422SceSynthInvokeInvoke1Policy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> =
         &TEST422_SCE_SYNTH_INVOKE_INVOKE1_TABLES;
     const STATES: &'static [Self::State] = &[
         Test422SceSynthInvokeInvoke1State::Sub1,
