@@ -1950,9 +1950,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedValueIsSentB
     ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "deliveries") == 2; }))
         << "the forwarded delivery did not come back: deliveries " << variable(*machine, "deliveries").dump()
         << ", refusals " << variable(*machine, "refusals").dump();
-    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "counted_deliveries") == 1; }))
-        << "the list sent with its one element did not arrive: counted_deliveries "
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "counted_deliveries") == 2; }))
+        << "the list sent with its one element did not arrive and come back: counted_deliveries "
         << variable(*machine, "counted_deliveries").dump();
+    // Forwarded once more, its scalar `hops` read as a scalar field of a payload that holds a list.
+    EXPECT_EQ(variable(*machine, "counted_hops"), 3);
     EXPECT_EQ(variable(*machine, "refusals"), 1) << "the delivery the machine sent itself fits its schema, and the "
                                                     "one refusal is the list sent short of its field's lower count";
     // A list variable sent to a field that states a lower count (docs/adr/0086, section 15.6):

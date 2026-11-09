@@ -43,12 +43,16 @@ func TestADeliveryForwardedByItsNamesComesBackWhole(t *testing.T) {
 		t.Errorf("refusals is %d, not the 1 of the list sent short of its count", got)
 	}
 	// Sent empty, refused whole and never delivered; sent with its one
-	// element, delivered.
-	if got := policy.CountedDeliveries(); got != 1 {
-		t.Errorf("counted_deliveries is %d, not 1", got)
+	// element, delivered, and forwarded once more with its scalar `hops`, a
+	// scalar field of a payload that holds a list.
+	if got := policy.CountedDeliveries(); got != 2 {
+		t.Errorf("counted_deliveries is %d, not 2", got)
 	}
 	if got := policy.CountedSum(); got != 7 {
 		t.Errorf("counted_sum is %d, not 7", got)
+	}
+	if got := policy.CountedHops(); got != 3 {
+		t.Errorf("counted_hops is %d, not 3", got)
 	}
 	if got := policy.Deliveries(); got != 2 {
 		t.Errorf("deliveries is %d: the forwarded delivery did not come back on the internal queue", got)
