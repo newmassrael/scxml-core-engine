@@ -271,7 +271,8 @@ pub trait StatePolicy: Sized + 'static {
     /// [`ScriptSessionFailure`](crate::ScriptSessionFailure) for a machine with a
     /// script engine, whose session may not be established, and
     /// [`core::convert::Infallible`] for one without, whose start cannot be
-    /// refused that way, so a host starts it with `let Ok(()) = engine.initialize();`.
+    /// refused that way, so a host starts it with
+    /// `engine.initialize().unwrap_or_else(|never| match never {})`.
     ///
     /// [`Engine::initialize`](crate::Engine::initialize) returns it as it is; the
     /// refusals that hold every kind of failure ([`RootStartRefusal`](crate::RootStartRefusal),
