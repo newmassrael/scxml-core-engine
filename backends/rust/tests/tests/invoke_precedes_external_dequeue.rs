@@ -35,7 +35,7 @@ use sce_rust_tests::integration::invoke_precedes_external_dequeue::{
 fn pending_invokes_start_before_the_external_dequeue() {
     let policy = InvokePrecedesExternalDequeuePolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

@@ -65,7 +65,7 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
     let log = Rc::new(RefCell::new(Log::default()));
     let mut engine =
         sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(
         engine.get_current_state(),
         StatechartNativeActionState::Idle
@@ -153,7 +153,7 @@ fn native_action_does_not_fire_without_its_typed_payload() {
     let log = Rc::new(RefCell::new(Log::default()));
     let mut engine =
         sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // No typed inject: the payload variant stays unset, which is exactly what
     // a host that reached for `raise_external_by_name` would produce.
@@ -222,7 +222,7 @@ fn native_action_answers_a_document_raised_event_with_error_execution() {
     let log = Rc::new(RefCell::new(Log::default()));
     let mut engine =
         sce_rust_runtime::Engine::new(StatechartNativeActionPolicy::new(Recorder(log.clone())));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     engine.raise_external_by_name("selftest", "");
     engine.step();

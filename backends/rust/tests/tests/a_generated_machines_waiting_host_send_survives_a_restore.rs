@@ -104,7 +104,7 @@ fn waiting() -> Engine<Policy> {
     let mut engine = Engine::new(Policy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     engine.register_event_processor(DECLARED_TYPE, |_| Vec::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     drive(&mut engine, "start");
     drive(&mut engine, "bump");
     engine.advance_time_ms(WAITED_MS);

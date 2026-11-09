@@ -67,7 +67,7 @@ const PROBE_SESSION_ID: sce_rust_runtime::helpers::session_id::SessionId =
 pub extern "C" fn sce_footprint_step() -> bool {
     let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.step();
     engine.is_running()
 }
@@ -79,7 +79,7 @@ pub extern "C" fn sce_footprint_step() -> bool {
 pub extern "C" fn sce_footprint_process_event() -> bool {
     let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.process_event(FirstEvent::E1);
     engine.is_running()
 }
@@ -93,7 +93,7 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 pub extern "C" fn sce_footprint_tick() -> bool {
     let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.tick();
     engine.is_running()
 }
@@ -110,7 +110,7 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
     };
     let policy = EventQueueCapacityProbePolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.step();
     // A host with a clock drives each of its machines with `tick`, so the
     // second machine's `tick` is weighed as the first's is: what the two share
@@ -138,7 +138,7 @@ pub extern "C" fn sce_footprint_second_machine() -> bool {
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {
     let policy = FirstPolicy::new_with_checked_session_id(PROBE_SESSION_ID);
     let mut engine = Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.step();
     engine.truncated_macrosteps()
 }

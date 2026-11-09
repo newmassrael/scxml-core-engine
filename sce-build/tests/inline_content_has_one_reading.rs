@@ -536,7 +536,9 @@ fn an_assigns_inline_text_reaches_the_datamodel_as_its_value() {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "assign_content".to_string();
-    engine.create_session(&session);
+    engine
+        .create_session(&session)
+        .expect("the session is created");
 
     // Each row is what §scxml-B-2-1's ordering says the text means: an
     // expression when it is one, otherwise the space-normalised string.

@@ -42,7 +42,9 @@ fn send_namelist_reaches_the_form_and_a_broken_item_discards_the_message() {
     policy.set_basic_http_access_uri(sce_rust_tests::harness::http_test_server_url());
     let mut engine = sce_rust_runtime::Engine::new(policy);
     sce_rust_tests::harness::setup_http_test(&mut engine);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(15), Duration::from_millis(10));
     assert!(

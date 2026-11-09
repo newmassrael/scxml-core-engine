@@ -30,7 +30,8 @@ fn scheduler_driven() -> Engine<Test175Policy> {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = Engine::new(Test175Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e
 }
 
@@ -124,7 +125,7 @@ fn a_host_that_ticks_stops_being_counted() {
 #[test]
 fn a_machine_with_no_delayed_send_is_never_counted() {
     let mut e = Engine::new(Test144Policy::new());
-    e.initialize();
+    let Ok(()) = e.initialize();
 
     for _ in 0..32 {
         e.step();

@@ -32,7 +32,7 @@ use sce_rust_tests::integration::event_schema_native::{
 #[test]
 fn typed_payload_guard_fires_natively() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartMinimalPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(
         engine.get_current_state(),
         StatechartMinimalState::Waiting,
@@ -84,7 +84,7 @@ fn a_refused_delivery_with_nothing_in_its_place_is_counted_as_discarded() {
 #[test]
 fn typed_payload_guard_misses_on_nonzero() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartMinimalPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // Same event, a payload the guard rejects — the machine stays put.
     engine.raise_job_completed(StatechartMinimalJobCompletedPayload { elapsed_ms: 5 });
@@ -106,7 +106,7 @@ fn typed_payload_guard_misses_on_nonzero() {
 #[test]
 fn bytes_payload_guard_fires_on_match() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(engine.get_current_state(), StatechartBytesState::Waiting);
 
     // Hand-assembled typed payload: `raw` is the portable `SceBytes<8>`, built
@@ -128,7 +128,7 @@ fn bytes_payload_guard_fires_on_match() {
 #[test]
 fn bytes_payload_guard_misses_on_nonmatch() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     engine.raise_signal_received(StatechartBytesSignalReceivedPayload {
         raw: ::sce_rust_runtime::SceBytes::from_slice(b"no").unwrap(),
@@ -177,7 +177,7 @@ fn deliver_lifted_data(engine: &mut sce_rust_runtime::Engine<StatechartLiftedPol
 #[test]
 fn a_payload_on_the_data_wire_fires_the_same_guard() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     deliver_lifted_data(&mut engine, r#"{"elapsed_ms": 0}"#);
 
@@ -192,7 +192,7 @@ fn a_payload_on_the_data_wire_fires_the_same_guard() {
 #[test]
 fn the_inject_seam_still_fires_its_own_guard() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     engine.raise_job_completed(StatechartLiftedJobCompletedPayload { elapsed_ms: 0 });
     engine.step();
@@ -207,7 +207,7 @@ fn the_inject_seam_still_fires_its_own_guard() {
 #[test]
 fn a_value_of_another_type_is_refused_as_the_script_engine_refuses_it() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     deliver_lifted_data(&mut engine, r#"{"elapsed_ms": "nought"}"#);
 
@@ -222,7 +222,7 @@ fn a_value_of_another_type_is_refused_as_the_script_engine_refuses_it() {
 #[test]
 fn an_event_with_no_data_is_refused_the_same_way() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     deliver_lifted_data(&mut engine, "");
 
@@ -237,7 +237,7 @@ fn an_event_with_no_data_is_refused_the_same_way() {
 #[test]
 fn a_payload_the_guard_rejects_is_not_an_error() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // The payload reads perfectly; the comparison is simply false. Nothing
     // failed, so nothing is raised — the machine waits.

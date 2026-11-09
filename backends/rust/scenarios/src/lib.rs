@@ -211,7 +211,7 @@ fn replay_recording<P: StatePolicy>(
     let sent: Sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let children = child_mesh::Children::new(std::sync::Arc::clone(&sent));
     register(&mut engine, &sent, &children, routed);
-    engine.initialize();
+    engine.initialize().expect("the machine starts");
     // A machine that starts a child session in its first state has that child
     // running, and maybe ended, before any event arrives; it is read as the
     // events leave it, after the rounds that take.

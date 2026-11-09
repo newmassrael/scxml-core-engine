@@ -96,7 +96,7 @@ impl ChildMeshRouter for Recorder {
 fn a_child_given_no_router_has_its_peer_send_refused_and_the_machines_router_is_not_asked() {
     let mut engine = engine();
     let parent = parent_router(&mut engine);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     assert_eq!(
         engine.policy().refusals(),
@@ -115,7 +115,7 @@ fn a_factory_that_answers_none_leaves_the_child_with_no_router() {
     let mut engine = engine();
     let parent = parent_router(&mut engine);
     engine.register_child_mesh_routers(|_invoke_id: &str, _document: &str| None);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     assert_eq!(engine.policy().refusals(), 1);
     assert!(parent.lock().unwrap().is_empty());
@@ -140,7 +140,7 @@ fn each_start_asks_the_factory_and_each_end_detaches_what_it_answered() {
         });
         Some(router)
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     // Asked before the child was entered, since the greeting went through it.
     assert_eq!(
@@ -223,7 +223,7 @@ fn a_restored_machine_asks_for_its_resumed_childrens_routers_once_its_host_regis
     let first_log = Log::default();
     let first_inbox: Arc<Mutex<Vec<MeshCall>>> = Arc::default();
     engine.register_child_mesh_routers(recording_factory(&first_log, &first_inbox));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     engine.raise_external_by_name("open", "");
     settle(&mut engine);

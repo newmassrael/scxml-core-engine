@@ -39,7 +39,8 @@ fn a_host_names_its_origin_in_its_own_terms() {
         }
         None
     });
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     let (invoke_id, token) = started

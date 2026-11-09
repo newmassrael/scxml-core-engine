@@ -91,7 +91,9 @@ where
 {
     let policy = T::create_policy();
     let mut engine = Engine::<T::Policy>::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine starts: a W3C test is run over a script session that is established");
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));
     if !completed {
         return TestResult::Timeout;

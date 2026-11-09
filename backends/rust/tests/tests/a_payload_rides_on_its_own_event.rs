@@ -21,7 +21,8 @@ fn each_payload_arrives_on_its_own_event() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.raise_external(Event::Finish, "");
     e.step();
 

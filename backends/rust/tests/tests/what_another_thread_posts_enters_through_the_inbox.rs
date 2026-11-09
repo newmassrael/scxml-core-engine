@@ -127,7 +127,9 @@ impl Machine {
     }
 
     fn boot(&mut self) {
-        self.engine.initialize();
+        self.engine
+            .initialize()
+            .expect("the machine's script session is established");
         self.engine.step();
     }
 
@@ -686,7 +688,7 @@ fn tree_with_its_clock_running() -> (Engine<StaticInvokeTreePolicy>, u64) {
         Engine::new(StaticInvokeTreePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     let starts = serve_the_clock(&mut engine);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("go", "");
     engine.tick();
     engine.tick();
@@ -781,7 +783,7 @@ fn an_ending_posted_for_a_child_before_its_parents_send_to_it_is_taken_first() {
     );
     engine.set_clock(SceClock::Manual(0));
     let starts = serve_the_clock(&mut engine);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     // Driven until `worker` has started its clock, a bounded number of times,
     // so a start that never comes fails the case rather than hangs it.
     for _ in 0..8 {

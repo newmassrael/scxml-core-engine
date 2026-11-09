@@ -454,7 +454,9 @@ fn engine_with(variables: &[(&str, &str)]) -> (LuaEngine, String) {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "member_access".to_string();
-    engine.create_session(&session);
+    engine
+        .create_session(&session)
+        .expect("the session is created");
     for (name, lua) in variables {
         engine
             .execute_script(&session, &format!("{name} = {lua}"))

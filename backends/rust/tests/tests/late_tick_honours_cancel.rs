@@ -36,7 +36,7 @@ const PAST_BOTH_DEADLINES: Duration = Duration::from_millis(400);
 
 fn started() -> Engine<LateTickHonoursCancelPolicy> {
     let mut engine = Engine::new(LateTickHonoursCancelPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -215,7 +215,7 @@ fn stepping_readings() -> u32 {
 fn started_on(clock: SceClock) -> Engine<LateTickHonoursCancelPolicy> {
     let mut engine = Engine::new(LateTickHonoursCancelPolicy::new());
     engine.set_clock(clock);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

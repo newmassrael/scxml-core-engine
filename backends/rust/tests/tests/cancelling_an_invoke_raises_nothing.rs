@@ -26,7 +26,8 @@ fn leaving_the_invoking_state_raises_no_cancel_event() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     assert!(
         e.get_active_states().contains(&State::P),
         "the run has to start in `p`, with its child invoked"

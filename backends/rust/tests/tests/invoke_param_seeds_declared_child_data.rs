@@ -33,7 +33,9 @@ fn an_invoke_param_carries_the_invoking_sessions_value_to_a_declared_child_data(
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = InvokeParamSeedsDeclaredChildDataPolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     // Three sequential invokes, each answering in its own macrostep.
     let completed = engine.run_until_completion(Duration::from_secs(3), Duration::from_millis(10));

@@ -60,7 +60,7 @@ fn started() -> (Engine<StaticInvokeTreePolicy>, Starts) {
         Engine::new(StaticInvokeTreePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     let starts = serve(&mut engine);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     (engine, starts)
 }
 

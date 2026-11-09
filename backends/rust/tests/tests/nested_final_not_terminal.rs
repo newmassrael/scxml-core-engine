@@ -31,7 +31,7 @@ use sce_rust_tests::integration::nested_final_not_terminal::{
 fn a_nested_final_does_not_end_the_session() {
     let policy = NestedFinalNotTerminalPolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     assert_eq!(
         engine.get_current_state(),

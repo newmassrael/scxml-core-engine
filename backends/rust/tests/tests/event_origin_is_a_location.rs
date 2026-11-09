@@ -41,7 +41,9 @@ fn origin_is_the_senders_published_location_and_routes_back() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = EventOriginIsALocationPolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

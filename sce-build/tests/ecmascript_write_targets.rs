@@ -68,7 +68,9 @@ fn a_write_and_a_read_of_the_same_text_reach_the_same_cell() {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "write_targets".to_string();
-    engine.create_session(&session);
+    engine
+        .create_session(&session)
+        .expect("the session is created");
     engine
         .execute_script(&session, "arr = {10, 20, 30}; obj = {k = 1}")
         .expect("the fixture datamodel establishes");
@@ -250,7 +252,9 @@ fn a_refused_target_raises_the_authors_message_on_the_engine() {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "refused_target".to_string();
-    engine.create_session(&session);
+    engine
+        .create_session(&session)
+        .expect("the session is created");
 
     let emitted = sce_build::filters::to_lua_location("holder'x".to_string())
         .expect("the filter answers rather than failing the render");

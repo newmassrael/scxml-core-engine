@@ -40,7 +40,7 @@ fn batch(second_tags: usize) -> String {
 
 fn machine() -> Engine<StaticComposedPayloadPolicy> {
     let mut engine = Engine::new(StaticComposedPayloadPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

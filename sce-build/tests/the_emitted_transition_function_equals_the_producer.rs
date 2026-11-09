@@ -1389,7 +1389,7 @@ type Policy = machine::{machine}Policy;
 
 fn fresh() -> Engine<Policy> {{
     let mut engine = Engine::new(Policy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }}
 

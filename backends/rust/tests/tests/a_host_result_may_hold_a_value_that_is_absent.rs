@@ -50,7 +50,7 @@ fn asking() -> (Engine<Policy>, u64) {
     let starts: Arc<Mutex<Vec<u64>>> = Arc::default();
     let mut engine = Engine::new(Policy::new());
     engine.register_x_sce_host_invoker(LookupHost(Arc::clone(&starts)));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("ask", "");
     engine.step();
     let token = {

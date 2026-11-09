@@ -344,7 +344,7 @@ fn replay_scenario<P: StatePolicy>(
         model,
     };
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    engine.initialize().expect("the machine starts");
     settle(&mut engine);
     let steps = scenario["steps"].as_array().expect("steps");
     assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
@@ -541,7 +541,7 @@ fn run_sequence(table: &Value, sequence: &[usize]) {
     let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
     serve(&mut engine, &host);
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     let ask = &table["ask"];
     let event = ask["event"].as_str().expect("the ask event");
@@ -726,7 +726,7 @@ fn run_harness(table: &Value, sequence: &[usize]) -> HarnessRun {
     let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
     serve(&mut engine, &host);
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle_harness(&mut engine);
     let offer = harness["offer"].as_str().expect("the offer event");
     for id in harness["offered"].as_array().expect("the offered ids") {

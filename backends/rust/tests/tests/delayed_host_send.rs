@@ -86,7 +86,7 @@ fn armed() -> (Engine<Policy>, CallLog, Arc<Mutex<u64>>) {
             origin: None,
         }]
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     (engine, log, now)
 }
 
@@ -245,7 +245,7 @@ fn the_engine_says_when_the_deferred_host_send_is_due() {
 fn a_deferred_send_with_no_handler_reports_it_when_it_comes_due() {
     let mut engine = Engine::new(Policy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // At 100 ms the machine is in `armed`, whose `error.execution` transition
     // is the witness. Nothing has reported anything yet: the send was armed,

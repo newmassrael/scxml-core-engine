@@ -77,7 +77,9 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
             origin: None,
         }]
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(
@@ -184,7 +186,9 @@ fn a_registered_handler_receives_the_send_and_its_reply_arrives() {
 fn a_handler_that_answers_nothing_is_not_an_error() {
     let (mut engine, script_engine) = started();
     engine.register_event_processor(DECLARED_TYPE, |_req: HostSendRequest| Vec::new());
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(
@@ -210,7 +214,9 @@ fn a_handler_that_answers_nothing_is_not_an_error() {
 #[test]
 fn a_declared_type_with_no_handler_still_raises_error_execution() {
     let (mut engine, script_engine) = started();
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(
@@ -234,7 +240,9 @@ fn a_handler_registered_for_another_type_does_not_serve_this_one() {
             origin: None,
         }]
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(

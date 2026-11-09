@@ -26,7 +26,8 @@ fn each_argument_reaches_only_the_child_that_declares_it() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     let completed = e.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
 

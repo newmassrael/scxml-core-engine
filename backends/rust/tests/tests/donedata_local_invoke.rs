@@ -38,7 +38,9 @@ fn parent_observes_donedata_on_done_invoke() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = DonedataLocalInvokePolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     // Children are synchronous (single top-level `<final>`), so the parent
     // reaches `pass`/`fail` within a few microsteps. A brief poll loop

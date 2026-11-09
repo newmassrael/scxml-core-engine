@@ -73,7 +73,7 @@ fn parent(workers: &Workers) -> Parent {
 fn started(workers: &Workers) -> Engine<Parent> {
     let mut engine = Engine::new(parent(workers));
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -227,7 +227,7 @@ fn a_candidate_is_given_the_host_answered_for_it_and_no_other() {
     );
     let mut engine = Engine::new(StaticChildHostHybridPolicy::new(host));
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     for _ in 0..40 {
         engine.tick();
     }

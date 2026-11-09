@@ -32,7 +32,7 @@ fn machine() -> (Engine<StaticSendHttpPolicy>, Posted) {
         recorder.lock().unwrap().push(request);
         None
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     (engine, posted)
 }
 

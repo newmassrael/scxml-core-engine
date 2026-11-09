@@ -45,7 +45,7 @@ macro_rules! observe {
         let policy = machine::SessionPolicy::new(machine::RecordingSessionActions::default());
         let mut engine =
             Engine::<machine::SessionPolicy<machine::RecordingSessionActions>>::new(policy);
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         for name in $sequence {
             engine.raise_external_by_name(name, "");
             engine.step();
@@ -151,7 +151,7 @@ macro_rules! saved {
         let mut engine =
             Engine::<machine::SessionPolicy<machine::RecordingSessionActions>>::new(policy);
         engine.set_clock(SceClock::Manual(0));
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         engine.save_at(SAVED_AT_MS).expect("saves")
     }};
 }

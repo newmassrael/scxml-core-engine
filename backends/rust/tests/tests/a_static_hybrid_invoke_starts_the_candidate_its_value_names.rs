@@ -28,7 +28,7 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_hybrid_sm::Stat
 fn started() -> Engine<StaticInvokeHybridPolicy> {
     let mut engine = Engine::new(StaticInvokeHybridPolicy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

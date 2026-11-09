@@ -158,7 +158,9 @@ fn emitted_lua_answers_what_ecmascript_answers() {
     let mut failures: Vec<String> = Vec::new();
     for (index, case) in cases().iter().enumerate() {
         let session = format!("case{index}");
-        engine.create_session(&session);
+        engine
+            .create_session(&session)
+            .expect("the session is created");
 
         let scope = scope_for(&case.setup);
         if !case.setup.is_empty() {
@@ -244,7 +246,9 @@ fn the_chunked_embed_answers_what_ecmascript_answers() {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "c11-embed-ecma262";
-    engine.create_session(session);
+    engine
+        .create_session(session)
+        .expect("the session is created");
     for source in [
         sce_build::filters::ECMA_SEMANTICS_LUA,
         sce_build::filters::JSON_BUILTINS_LUA,

@@ -89,7 +89,7 @@ fn working() -> (Engine<Policy>, Log) {
     let mut engine = Engine::new(Policy::new_with_session_id("fixture-root").expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
     register(&mut engine, &log);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("start", "");
     engine.tick();
     (engine, log)

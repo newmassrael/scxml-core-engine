@@ -47,7 +47,7 @@ fn drive_to_armed(engine: &mut sce_rust_runtime::Engine<HostEventReachesTheChild
 fn an_event_the_host_hands_over_reaches_the_autoforward_child() {
     let policy = HostEventReachesTheChildPolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     drive_to_armed(&mut engine);
     assert_eq!(

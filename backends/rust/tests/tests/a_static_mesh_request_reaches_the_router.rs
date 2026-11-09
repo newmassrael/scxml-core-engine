@@ -31,7 +31,7 @@ use sce_rust_tests::integration::host_processor::{
 /// A machine with no script engine, initialised and standing at `idle`.
 fn engine() -> Engine<Policy> {
     let mut e = Engine::new(Policy::new());
-    e.initialize();
+    let Ok(()) = e.initialize();
     e.step();
     e
 }

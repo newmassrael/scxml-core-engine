@@ -43,7 +43,7 @@ fn started() -> Engine<StaticInvokePolicy> {
     let mut engine =
         Engine::new(StaticInvokePolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

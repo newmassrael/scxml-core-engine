@@ -67,7 +67,8 @@ fn a_mesh_request_is_answered_through_the_router() {
     let requests: Arc<Mutex<Vec<HostInvokeRequest>>> = Arc::default();
     let mut e = engine();
     e.register_mesh_rpc_invoker(recording_router(&requests));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     let request = the_request(&requests);
@@ -86,7 +87,8 @@ fn a_mesh_request_the_router_fails_is_error_invoke() {
     let requests: Arc<Mutex<Vec<HostInvokeRequest>>> = Arc::default();
     let mut e = engine();
     e.register_mesh_rpc_invoker(recording_router(&requests));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     let request = the_request(&requests);
@@ -203,7 +205,8 @@ mod through_the_host_core {
         let (shared, sent) = endpoint(true);
         let mut e = engine();
         endpoint::register(&mut e, &shared);
-        e.initialize();
+        e.initialize()
+            .expect("the machine's script session is established");
         e.step();
 
         let (peer, bytes) = sent.lock().unwrap().pop().expect("the request was sent");
@@ -249,7 +252,8 @@ mod through_the_host_core {
         let (shared, sent) = endpoint(false);
         let mut e = engine();
         endpoint::register(&mut e, &shared);
-        e.initialize();
+        e.initialize()
+            .expect("the machine's script session is established");
         e.step();
 
         assert!(sent.lock().unwrap().is_empty(), "nothing reached the wire");
@@ -265,7 +269,8 @@ mod through_the_host_core {
 #[test]
 fn a_mesh_request_with_no_router_registered_is_error_execution() {
     let mut e = engine();
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     assert_eq!(e.policy().answered(), Some(0));

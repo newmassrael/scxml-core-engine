@@ -48,7 +48,7 @@ impl StaticHostDutyActions for KeepaliveHost {
 #[test]
 fn a_host_that_performs_is_taken_by_new_and_given_the_duty_and_its_release() {
     let mut engine = Engine::new(StaticHostDutyPolicy::new(KeepaliveHost::default()));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(engine.policy().actions().started, 0);
 
     engine.raise_external_by_name("engage", "");
@@ -87,7 +87,7 @@ fn a_recorder_runs_the_machine_only_through_the_entry_that_says_so() {
     let mut engine = Engine::new(StaticHostDutyPolicy::new_simulated(
         RecordingStaticHostDutyActions::default(),
     ));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("engage", "");
     engine.step();
     engine.raise_external_by_name("release", "");
@@ -108,7 +108,7 @@ fn a_host_that_performs_may_also_be_built_through_the_simulated_entry() {
     // performs as well, so a harness that always builds this way is not wrong
     // for a host that is real.
     let mut engine = Engine::new(StaticHostDutyPolicy::new_simulated(KeepaliveHost::default()));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("engage", "");
     engine.step();
     assert_eq!(engine.policy().actions().started, 1);

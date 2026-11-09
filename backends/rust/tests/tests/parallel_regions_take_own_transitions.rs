@@ -37,7 +37,9 @@ fn every_region_takes_its_own_transition() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = Policy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let entry = engine.get_active_states();
     assert!(

@@ -21,7 +21,8 @@ fn each_argument_costs_what_its_clause_says() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     for event in [Event::Go, Event::Finish] {
         e.raise_external(event, "");
         e.step();

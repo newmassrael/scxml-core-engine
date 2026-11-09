@@ -87,7 +87,7 @@ fn rich_request() -> HostSendRequest {
 fn armed() -> Engine<Policy> {
     let mut engine = Engine::new(Policy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.schedule_host_send(rich_request(), Duration::from_millis(RICH_DUE_MS), "rich");
     engine
 }
