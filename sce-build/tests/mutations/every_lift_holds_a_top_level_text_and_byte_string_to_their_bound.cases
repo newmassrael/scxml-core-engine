@@ -69,8 +69,8 @@ PY
 
 mutation_case "the C11 lift's text buffer is the data's and not the bound's" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "char lifted_{member}_{id}[{bound}u + 1u];\\n\"",
-     "char lifted_{member}_{id}[SCE_MAX_DATA_LEN];\\n\"")
+     "char {lifted}[{bound}u + 1u];\\n\"",
+     "char {lifted}[SCE_MAX_DATA_LEN];\\n\"")
 PY
 
 mutation_case "the Swift lift reads a text held to no bound" <<'PY'
