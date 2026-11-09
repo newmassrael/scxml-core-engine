@@ -156,10 +156,11 @@ fn two_hosts_that_never_meet_carry_a_write_through_the_relay_over_a_socket() {
     let mut sealer = alice.clone();
     sealer
         .seal(
-            "#hub",
-            "record_list.write",
-            &json!({"id":"1","field":"3","value":"7","text":"","wallTime":"1000",
-                    "counter":"0","nodeId":"1"})
+            "#people",
+            "record_list.change",
+            &json!({"by":"1","wallTime":"1000","counter":"0","ops":[
+                {"kind":0,"id":"1","field":"3","value":"7","text":"",
+                 "wallTime":"0","counter":"0","nodeId":"0"}]})
             .to_string(),
         )
         .unwrap();
@@ -184,7 +185,7 @@ fn two_hosts_that_never_meet_carry_a_write_through_the_relay_over_a_socket() {
         round
             .events
             .iter()
-            .filter(|(event, _)| event == "record_list.write")
+            .filter(|(event, _)| event == "record_list.change")
             .count(),
         1
     );

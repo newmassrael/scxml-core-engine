@@ -4,8 +4,8 @@
 // A courier's round as a state machine with no link: the host is asked for one request at a time
 // and gives the answer back, whenever it has one. What is asked of it here: that a round driven by
 // hand makes the requests a courier makes, in the same order, and comes to the same round, over one
-// history of the list (alice's log, two writes of hers, the note that the second wrote over the
-// first, and her checkpoint) in two universes that never meet; that a round whose answer never
+// history of the list (alice's log, two changes of hers that write, a third that writes the first
+// over, and her checkpoint) in two universes that never meet; that a round whose answer never
 // comes, or whose link fails, leaves the next round to tell the machine what an unbroken round would
 // have told it, and nothing twice; and that a round that stalled on a log kept back goes on from
 // where it stopped once the log comes.
@@ -27,8 +27,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const DAVE: u64 = 4;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 const ROLE: &str = "record_list.role";
 
 fn person(node: u64) -> Identity {
@@ -78,25 +77,27 @@ fn token(node: u64) -> String {
     authority().issue(LIST, node, 1_000_000)
 }
 
-/// A write of `value` to field 3 of row 1, stamped by `node` at `wall`, as the record list sends it.
+/// A change of `node`'s stamped at `wall` of one write, of `value` to field 3 of row 1, as the record
+/// list sends it.
 fn write(node: u64, wall: i64, value: i64) -> String {
-    json!({"id": 1, "field": 3, "value": value.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": 1, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
-/// The note that `by` wrote over the write `node` stamped at `wall`, in the change stamped `at`.
+/// The change of `by`'s stamped at `at` that writes over the write `node` stamped at `wall`.
 fn supersede(node: u64, wall: i64, by: u64, at: i64) -> String {
-    json!({"id": 1, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": node.to_string(), "by": by.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
+    json!({"by": by.to_string(), "wallTime": at.to_string(), "counter": 0, "ops": [
+        {"kind": 1, "id": 1, "field": 3, "value": "0", "text": "",
+         "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()}]})
     .to_string()
 }
 
 type Shared = Arc<Mutex<Relay<MemoryStore>>>;
 
-/// One history of the list: a relay that holds alice's log, two writes of hers, the note that the
-/// second wrote over the first, and her checkpoint; alice's host; and a host of bob's that was told
+/// One history of the list: a relay that holds alice's log, two changes of hers that write, a
+/// third that writes the first over, and her checkpoint; alice's host; and a host of bob's that was told
 /// only the genesis, which is all an invitation carries. Two universes made by this hold the same
 /// bytes, so what a courier does in one a machine driven by hand must do in the other.
 struct Universe {
@@ -116,9 +117,9 @@ fn universe(limits: Limits) -> Universe {
     alice.set_identity(ALICE, person(ALICE));
     let mut sealer = alice.clone();
     for (event, data) in [
-        (WRITE, write(ALICE, 1000, 1)),
-        (WRITE, write(ALICE, 1001, 2)),
-        (SUPERSEDE, supersede(ALICE, 1000, ALICE, 1001)),
+        (CHANGE, write(ALICE, 1000, 1)),
+        (CHANGE, write(ALICE, 1001, 2)),
+        (CHANGE, supersede(ALICE, 1000, ALICE, 1002)),
     ] {
         assert!(sealer.seal("#hub", event, &data).unwrap().is_some());
     }
@@ -281,7 +282,7 @@ fn a_round_driven_by_hand_asks_and_comes_to_what_a_courier_does() {
         state = left;
     }
 
-    // The first round tells bob's machine the roster, then alice's writes and her note, in order.
+    // The first round tells bob's machine the roster, then alice's three changes, in order.
     let first = &rounds[0];
     assert_eq!(named(first, ROLE).len(), 3, "{:?}", first.events);
     let operations: Vec<&str> = first
@@ -290,14 +291,13 @@ fn a_round_driven_by_hand_asks_and_comes_to_what_a_courier_does() {
         .map(|(name, _)| name.as_str())
         .filter(|name| *name != ROLE)
         .collect();
-    assert_eq!(operations, vec![WRITE, WRITE, SUPERSEDE]);
+    assert_eq!(operations, vec![CHANGE, CHANGE, CHANGE]);
     assert!(first.refused.is_empty(), "{:?}", first.refused);
     assert!(!first.stalled);
     // The second has nothing new; a resync tells everything again; a reread tells nothing held.
     assert!(rounds[1].events.is_empty(), "{:?}", rounds[1].events);
-    assert_eq!(named(&rounds[2], WRITE).len(), 2);
-    assert_eq!(named(&rounds[2], SUPERSEDE).len(), 1);
-    assert!(named(&rounds[3], WRITE).is_empty());
+    assert_eq!(named(&rounds[2], CHANGE).len(), 3);
+    assert!(named(&rounds[3], CHANGE).is_empty());
 
     // A checkpoint and a key package are published the same way by both.
     let expected = courier.publish_checkpoint(30_000, 7);
@@ -385,17 +385,17 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
         |request| answer(&u.relay, BOB, false, request),
     );
     assert!(outcome.is_ok());
-    let held_event = (WRITE.to_string(), write(ALICE, 1000, 1));
+    let held_event = (CHANGE.to_string(), write(ALICE, 1000, 1));
     let held_message = Record::KeyPackage {
         node: BOB,
         data: "AA".to_string(),
         join: None,
     };
     // What became of three sends that waited: one signed, one found held, one refused for good.
-    let taken = (WRITE.to_string(), write(BOB, 2000, 2));
-    let found = (WRITE.to_string(), write(BOB, 2500, 4));
+    let taken = (CHANGE.to_string(), write(BOB, 2000, 2));
+    let found = (CHANGE.to_string(), write(BOB, 2500, 4));
     let dropped = (
-        WRITE.to_string(),
+        CHANGE.to_string(),
         write(BOB, 3000, 3),
         "node 2 may not write".to_string(),
     );
@@ -445,9 +445,9 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     let resync = outcome.unwrap();
     assert!(resync.messages.is_empty());
     assert_eq!(
-        named(&resync, WRITE).len(),
-        2,
-        "the relay's two writes, once"
+        named(&resync, CHANGE).len(),
+        3,
+        "the relay's three changes, once"
     );
     assert_eq!(resync.evicted, vec![(ALICE, 9)]);
     assert_eq!(resync.restored, vec![(ALICE, 8)]);
@@ -458,10 +458,10 @@ fn what_a_host_holds_back_from_a_round_the_next_round_hands_over() {
     );
 }
 
-/// The relay gives two records a batch, so a round has taken alice's writes in when it asks for the
-/// batch that holds her note. That answer never comes (the host abandons the round), or the link
-/// fails on it; either way the state the round leaves, saved and read back, starts a round that
-/// tells bob's machine exactly what an unbroken round told it.
+/// The relay gives two records a batch, so a round has taken alice's first two changes in when it
+/// asks for the batch that holds her third. That answer never comes (the host abandons the round),
+/// or the link fails on it; either way the state the round leaves, saved and read back, starts a
+/// round that tells bob's machine exactly what an unbroken round told it.
 #[test]
 fn a_round_whose_answer_never_comes_leaves_the_next_round_to_tell_what_it_took_in() {
     let limits = Limits {
@@ -474,7 +474,7 @@ fn a_round_whose_answer_never_comes_leaves_the_next_round_to_tell_what_it_took_i
             .sync()
             .unwrap()
     };
-    assert_eq!(named(&reference, WRITE).len(), 2);
+    assert_eq!(named(&reference, CHANGE).len(), 3);
 
     for link_fails in [false, true] {
         let broken = universe(limits);
@@ -519,13 +519,13 @@ fn a_round_whose_answer_never_comes_leaves_the_next_round_to_tell_what_it_took_i
             6,
             "past the batches taken in, and not past the one asked for"
         );
-        // The two writes taken in are held by the trust and not told: a round tells its machine
+        // The two changes taken in are held by the trust and not told: a round tells its machine
         // what it may when it ends (docs/adr/0085, section 3.1), so one that does not end leaves
         // nothing to hand over, and what the machine was told did not move.
         assert_eq!(state.untold(), 0, "nothing is told before a round ends");
         assert!(
             broken.bob.delivered().is_empty(),
-            "the two writes taken in wait in the trust: {:?}",
+            "the two changes taken in wait in the trust: {:?}",
             broken.bob.delivered()
         );
         let read_back = CourierState::from_text(&state.to_text());
@@ -616,7 +616,7 @@ fn a_round_that_stalled_on_a_log_kept_back_goes_on_when_the_log_comes() {
     assert_eq!(requests, taken(&asked));
     assert_eq!(outcome, Ok(stalled.clone()));
     assert!(stalled.stalled);
-    assert!(named(&stalled, WRITE).is_empty());
+    assert!(named(&stalled, CHANGE).is_empty());
     assert_eq!(
         requests
             .iter()
@@ -638,8 +638,7 @@ fn a_round_that_stalled_on_a_log_kept_back_goes_on_when_the_log_comes() {
     assert_eq!(requests, taken(&asked));
     assert_eq!(outcome, Ok(resumed.clone()));
     assert!(!resumed.stalled);
-    assert_eq!(named(&resumed, WRITE).len(), 2);
-    assert_eq!(named(&resumed, SUPERSEDE).len(), 1);
+    assert_eq!(named(&resumed, CHANGE).len(), 3);
     assert_eq!(named(&resumed, ROLE).len(), 3);
     assert_eq!(state.cursor(), 8);
 }
@@ -699,5 +698,5 @@ fn a_round_of_a_device_that_may_not_read_yet_goes_on_once_it_may() {
     assert_eq!(requests, taken(&asked));
     assert_eq!(outcome, Ok(resumed.clone()));
     assert!(!resumed.stalled);
-    assert_eq!(named(&resumed, WRITE).len(), 2);
+    assert_eq!(named(&resumed, CHANGE).len(), 3);
 }

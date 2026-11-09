@@ -114,19 +114,21 @@ fn give_log<S: Store>(relay: &mut Relay<S>, node: u64) {
     }
 }
 
+/// A change of `author`'s stamped at `wall` of one write, to row `id`.
 fn write(author: u64, id: u64, wall: i64) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "1", "text": "",
-           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": wall.to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "1", "text": "",
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
-/// What a person's host sends of a write: the operation as it travels.
+/// What a person's host sends of a change: the operation as it travels.
 fn operation(host: &mut Trust, author: u64, id: u64, wall: i64) -> (String, String) {
     let sent = host
-        .seal("#hub", "record_list.write", &write(author, id, wall))
+        .seal("#hub", "record_list.change", &write(author, id, wall))
         .unwrap()
         .unwrap();
-    ("record_list.write".to_string(), sent)
+    ("record_list.change".to_string(), sent)
 }
 
 fn submit<S: Store>(relay: &mut Relay<S>, node: u64, op: &(String, String)) -> Response {
@@ -263,16 +265,18 @@ fn an_operation_that_verifies_is_kept_once_and_one_that_does_not_is_refused() {
 
     // A change to what alice signed is no operation of hers.
     let mut changed: Value = serde_json::from_str(&op.1).unwrap();
-    changed["value"] = json!("2");
+    changed["ops"][0]["value"] = json!("2");
     let response = submit(&mut relay, 1, &(op.0.clone(), changed.to_string()));
     assert_eq!(refused(&response), &Code::Invalid);
 
     // Not a signed event (a write of the list the layer secured before the standard record list is
-    // none, whatever it carries), not JSON.
+    // none, and nor is a part of a change as the list sent it before a change was one message,
+    // whatever it carries), not JSON.
     for (event, data) in [
         ("record_list.edit", op.1.as_str()),
         ("todo.write", op.1.as_str()),
-        ("record_list.write", "{"),
+        ("record_list.write", op.1.as_str()),
+        ("record_list.change", "{"),
     ] {
         let response = submit(&mut relay, 1, &(event.to_string(), data.to_string()));
         assert_eq!(refused(&response), &Code::Invalid, "{event} {data}");
@@ -577,8 +581,9 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
     alice.append(&epoch).unwrap();
     alice.set_epoch_key(1, [5; 32]);
     let titled = |id: u64, text: &str| {
-        json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
-               "wallTime": (1000 + id).to_string(), "counter": "0", "nodeId": "1"})
+        json!({"by": "1", "wallTime": (1000 + id).to_string(), "counter": "0", "ops": [
+            {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": text,
+             "wallTime": "0", "counter": "0", "nodeId": "0"}]})
         .to_string()
     };
     let mut sent = Vec::new();
@@ -586,13 +591,13 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
     assert_eq!(longest.len(), 32);
     for (id, text) in [(1u64, "buy milk"), (2, ""), (3, longest)] {
         let data = alice
-            .seal("#hub", "record_list.write", &titled(id, text))
+            .seal("#hub", "record_list.change", &titled(id, text))
             .unwrap()
             .unwrap();
         let response = submit(
             &mut relay,
             1,
-            &("record_list.write".to_string(), data.clone()),
+            &("record_list.change".to_string(), data.clone()),
         );
         assert!(
             matches!(response, Response::Accepted { new: true, .. }),
@@ -604,7 +609,7 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
         .iter()
         .map(|data| {
             let value: Value = serde_json::from_str(data).unwrap();
-            value["text"].as_str().unwrap().len()
+            value["ops"][0]["text"].as_str().unwrap().len()
         })
         .collect();
     assert_eq!(
@@ -658,7 +663,7 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
     let after_the_epoch = host(Some(2));
     after_the_epoch.append(&epoch).unwrap();
     let mut value: Value = serde_json::from_str(&write(2, 10, 3000)).unwrap();
-    let signing = message::signing(LIST, "record_list.write", &value)
+    let signing = message::signing(LIST, "record_list.change", &value)
         .unwrap()
         .unwrap();
     let (next, log_hash) = after_the_epoch.head();
@@ -675,7 +680,7 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
     let response = submit(
         &mut relay,
         2,
-        &("record_list.write".to_string(), value.to_string()),
+        &("record_list.change".to_string(), value.to_string()),
     );
     assert_eq!(refused(&response), &Code::Invalid);
     let reason = match response {
@@ -802,10 +807,10 @@ fn a_host_gives_a_relay_what_it_lacks_and_is_given_what_it_lacks() {
     let mut alice_courier = Courier::new(alice.clone(), link(1));
     // alice's host holds the log and has made two operations; the relay holds nothing.
     alice_sealer
-        .seal("#hub", "record_list.write", &write(1, 1, 1000))
+        .seal("#hub", "record_list.change", &write(1, 1, 1000))
         .unwrap();
     alice_sealer
-        .seal("#hub", "record_list.write", &write(1, 2, 1001))
+        .seal("#hub", "record_list.change", &write(1, 2, 1001))
         .unwrap();
     let round = alice_courier.sync().unwrap();
     assert_eq!(round.pushed, 4 + 2, "the log and the two operations");
@@ -822,13 +827,13 @@ fn a_host_gives_a_relay_what_it_lacks_and_is_given_what_it_lacks() {
     let writes: Vec<&(String, String)> = round
         .events
         .iter()
-        .filter(|(event, _)| event == "record_list.write")
+        .filter(|(event, _)| event == "record_list.change")
         .collect();
     assert_eq!(writes.len(), 2);
     let told: Value = serde_json::from_str(&writes[0].1).unwrap();
     assert_eq!(
-        told["nodeId"], "1",
-        "the machine is told the write as its author made it"
+        told["by"], "1",
+        "the machine is told the change as its author made it"
     );
     assert!(
         round
@@ -844,7 +849,7 @@ fn a_host_gives_a_relay_what_it_lacks_and_is_given_what_it_lacks() {
         again
             .events
             .iter()
-            .all(|(event, _)| event != "record_list.write"),
+            .all(|(event, _)| event != "record_list.change"),
         "{:?}",
         again.events
     );
@@ -854,7 +859,7 @@ fn a_host_gives_a_relay_what_it_lacks_and_is_given_what_it_lacks() {
         replay
             .events
             .iter()
-            .filter(|(event, _)| event == "record_list.write")
+            .filter(|(event, _)| event == "record_list.change")
             .count(),
         2
     );
@@ -905,7 +910,7 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
     let mut sealer = alice.clone();
     for n in 1..=3 {
         sealer
-            .seal("#hub", "record_list.write", &write(1, n, 1000 + n as i64))
+            .seal("#hub", "record_list.change", &write(1, n, 1000 + n as i64))
             .unwrap();
     }
     // alice gives both relays everything; the second one will not pass the second operation on.
@@ -929,7 +934,7 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
     let writes = round
         .events
         .iter()
-        .filter(|(e, _)| e == "record_list.write")
+        .filter(|(e, _)| e == "record_list.change")
         .count();
     assert_eq!(writes, 2, "the relay passed on 1 and 3");
     assert_eq!(bob.heads()[0].seq, 1, "the chain is in full only to 1");
@@ -946,7 +951,7 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
     let writes: Vec<_> = round
         .events
         .iter()
-        .filter(|(e, _)| e == "record_list.write")
+        .filter(|(e, _)| e == "record_list.change")
         .collect();
     assert_eq!(writes.len(), 1, "only the operation the host lacked");
     assert!(bob.divergences().is_empty());
@@ -1008,7 +1013,7 @@ fn an_amendment_makes_a_courier_read_again_what_it_refused() {
         round
             .events
             .iter()
-            .filter(|(event, _)| event == "record_list.write")
+            .filter(|(event, _)| event == "record_list.change")
             .count(),
         1
     );
@@ -1034,7 +1039,7 @@ fn an_amendment_makes_a_courier_read_again_what_it_refused() {
     let writes: Vec<&(String, String)> = round
         .events
         .iter()
-        .filter(|(event, _)| event == "record_list.write")
+        .filter(|(event, _)| event == "record_list.change")
         .collect();
     assert_eq!(writes.len(), 1, "{:?}", round.events);
     assert_eq!(carol.last_seq(2), 2);
@@ -1163,11 +1168,11 @@ fn the_proof_that_a_device_signed_conflicting_operations_goes_through_a_relay_to
     let second = host(Some(1));
     first
         .clone()
-        .seal("#hub", "record_list.write", &write(1, 1, 1000))
+        .seal("#hub", "record_list.change", &write(1, 1, 1000))
         .unwrap();
     second
         .clone()
-        .seal("#hub", "record_list.write", &write(1, 2, 1001))
+        .seal("#hub", "record_list.change", &write(1, 2, 1001))
         .unwrap();
     Courier::new(first.clone(), link(1)).sync().unwrap();
 
@@ -1197,7 +1202,7 @@ fn the_proof_that_a_device_signed_conflicting_operations_goes_through_a_relay_to
     let told = round
         .events
         .iter()
-        .filter(|(event, _)| event == "record_list.write")
+        .filter(|(event, _)| event == "record_list.change")
         .count();
     assert_eq!(told, 1, "{:?}", round.events);
 }

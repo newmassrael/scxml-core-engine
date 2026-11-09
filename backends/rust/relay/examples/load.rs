@@ -20,7 +20,7 @@
 //! server. The relay's per-device request allowance is lifted here: a load that comes from a few
 //! devices would otherwise measure the allowance and not the relay.
 //!
-//! A write is made the way a host makes it (`Trust::seal`, which signs it as the device), so the
+//! A change of one write is made the way a host makes it (`Trust::seal`, which signs it as the device), so the
 //! relay does the work it does for a member: it checks the token, the signature, the device's chain
 //! against the log, and keeps the record.
 
@@ -222,16 +222,22 @@ fn drive(mut devices: Vec<Device>, writes: usize) -> Outcome {
             let k = device.next;
             device.next += 1;
             let write = json!({
-                "id": (k % 64).to_string(),
-                "field": "3",
-                "value": k.to_string(),
-                "text": "",
+                "by": device.node.to_string(),
                 "wallTime": (1_000 + k).to_string(),
                 "counter": "0",
-                "nodeId": device.node.to_string(),
+                "ops": [{
+                    "kind": 0,
+                    "id": (k % 64).to_string(),
+                    "field": "3",
+                    "value": k.to_string(),
+                    "text": "",
+                    "wallTime": "0",
+                    "counter": "0",
+                    "nodeId": "0",
+                }],
             })
             .to_string();
-            let sealed = match device.trust.seal("#hub", "record_list.write", &write) {
+            let sealed = match device.trust.seal("#people", "record_list.change", &write) {
                 Ok(Some(sealed)) => sealed,
                 other => {
                     outcome.errors += 1;
@@ -243,7 +249,7 @@ fn drive(mut devices: Vec<Device>, writes: usize) -> Outcome {
             };
             let start = Instant::now();
             let answer = device.link.call(&Request::Submit {
-                event: "record_list.write".to_string(),
+                event: "record_list.change".to_string(),
                 data: sealed,
             });
             let took = start.elapsed().as_micros() as u64;

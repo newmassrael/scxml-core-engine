@@ -43,8 +43,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const CAROL: u64 = 3;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 const ROLE: &str = "record_list.role";
 
 fn person(node: u64) -> Identity {
@@ -69,28 +68,74 @@ fn genesis() -> Entry {
     .finish()
 }
 
-/// A write of `value` to field 3 of row `id`, stamped by `node` at `wall`, as the record list's
-/// `record_list.write` carries it: a 64-bit number as text, a narrower one as a number.
+/// One write of `value` and `text` to `field` of row `id`, as a change holds it: a 64-bit number as
+/// text, a narrower one as a number, and the dot of its change, which it does not carry, 0.
+fn put(id: u32, field: u16, value: i64, text: &str) -> Value {
+    json!({"kind": 0, "id": id, "field": field, "value": value.to_string(), "text": text,
+           "wallTime": "0", "counter": 0, "nodeId": "0"})
+}
+
+/// One write-over of the write of row `id`, field 3, that `node` stamped at `wall`.
+fn put_over(id: u32, node: u64, wall: i64) -> Value {
+    json!({"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+}
+
+/// A change of `node`'s stamped at `wall`, as the record list's `record_list.change` carries it.
+fn change(node: u64, wall: i64, ops: Vec<Value>) -> String {
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": ops})
+        .to_string()
+}
+
+/// A change of one write of `value` to field 3 of row `id`, stamped by `node` at `wall`.
 fn write(id: u32, node: u64, wall: i64, value: i64) -> String {
-    json!({"id": id, "field": 3, "value": value.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
-    .to_string()
+    change(node, wall, vec![put(id, 3, value, "")])
 }
 
-/// A write of the title `text` to field 1 of row `id`, stamped by `node` at `wall`.
+/// A change of one write of the title `text` to field 1 of row `id`, stamped by `node` at `wall`.
 fn titled(id: u32, node: u64, wall: i64, text: &str) -> String {
-    json!({"id": id, "field": 1, "value": "0", "text": text,
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
-    .to_string()
+    change(node, wall, vec![put(id, 1, 0, text)])
 }
 
-/// The note, as `record_list.supersede` carries it, that `by` wrote over the write of row `id`
-/// that `node` stamped at `wall`, in the change stamped `at`.
-fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
-    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": node.to_string(), "by": by.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
-    .to_string()
+/// The change of `by`'s stamped at `at` that writes over the write of row `id`, field 3, that
+/// `node` stamped at `wall`, and writes the field anew with `value`.
+fn rewrite(id: u32, node: u64, wall: i64, by: u64, at: i64, value: i64) -> String {
+    change(
+        by,
+        at,
+        vec![put_over(id, node, wall), put(id, 3, value, "")],
+    )
+}
+
+/// The operations of `kind` of every change a round told the machine, in their order, each with
+/// its change's author as `by`.
+fn ops_told(outcome: &Outcome, kind: u64) -> Vec<Value> {
+    named(outcome, CHANGE)
+        .into_iter()
+        .flat_map(|change| {
+            let by = change["by"].clone();
+            change["ops"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(move |op| op["kind"] == kind)
+                .map(move |mut op| {
+                    op["by"] = by.clone();
+                    op
+                })
+        })
+        .collect()
+}
+
+/// The writes of every change a round told the machine.
+fn writes(outcome: &Outcome) -> Vec<Value> {
+    ops_told(outcome, 0)
+}
+
+/// The write-overs of every change a round told the machine.
+fn write_overs(outcome: &Outcome) -> Vec<Value> {
+    ops_told(outcome, 1)
 }
 
 /// The relay, and the authority whose tokens it takes.
@@ -137,21 +182,24 @@ impl Network {
         records
     }
 
-    /// The writes the relay holds of the list, each as the operation it keeps.
+    /// The writes of every change the relay holds of the list, each as the change it keeps carries
+    /// it.
     fn writes_held(&mut self) -> Vec<Value> {
         self.records_held()
             .into_iter()
             .filter_map(|record| match record {
-                Record::Operation { event, data } if event == WRITE => {
-                    Some(serde_json::from_str(&data).unwrap())
+                Record::Operation { event, data } if event == CHANGE => {
+                    serde_json::from_str::<Value>(&data).ok()
                 }
                 _ => None,
             })
+            .flat_map(|change| change["ops"].as_array().cloned().unwrap_or_default())
+            .filter(|op| op["kind"] == 0)
             .collect()
     }
 
-    /// How many operations the relay holds of the list, writes and notes, the proof of a conflict
-    /// included: what grows by one for each operation a device signs and gives it.
+    /// How many operations the relay holds of the list, one for each change, the proof of a
+    /// conflict included: what grows by one for each operation a device signs and gives it.
     fn operations_held(&mut self) -> usize {
         self.records_held()
             .iter()
@@ -240,14 +288,14 @@ fn what_alices_machine_sends_reaches_bobs_machine_as_it_was_sent() {
     let mut bob = invited(BOB);
 
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        alice.outbound(CHANGE, &write(1, ALICE, 1000, 10)),
         Kept::Taken
     );
     let first = network.round(&mut alice, ALICE, RoundKind::Sync);
     assert!(first.refused().is_empty(), "{:?}", first.refused());
     assert_eq!(first.round.pushed, 4 + 1, "the log and the write");
     assert!(
-        named(&first, WRITE).is_empty(),
+        named(&first, CHANGE).is_empty(),
         "alice's machine is not told its own write back"
     );
 
@@ -255,38 +303,38 @@ fn what_alices_machine_sends_reaches_bobs_machine_as_it_was_sent() {
     assert!(told.refused().is_empty(), "{:?}", told.refused());
     assert!(!told.stalled());
     assert_eq!(named(&told, ROLE).len(), 3, "the roster the log makes");
-    let writes = named(&told, WRITE);
+    let changes = named(&told, CHANGE);
+    assert_eq!(changes.len(), 1);
+    assert!(
+        changes[0].get("sig").is_none() && changes[0].get("seq").is_none(),
+        "the machine is told the change, not the operation it travelled as: {}",
+        changes[0]
+    );
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0]["nodeId"], "1");
+    assert_eq!(writes[0]["by"], "1");
     assert_eq!(writes[0]["value"], "10");
     assert_eq!(writes[0]["id"], 1);
-    assert!(
-        writes[0].get("sig").is_none() && writes[0].get("seq").is_none(),
-        "the machine is told the write, not the operation it travelled as: {}",
-        writes[0]
-    );
     assert_eq!(
         told.events()[0].0,
         ROLE,
         "the roster comes before the operations"
     );
 
-    // Alice writes the field again and notes that her new write is over her first.
+    // Alice writes the field again over her first write: one change of a write-over and a write,
+    // one operation, told whole.
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 2000, 20)),
-        Kept::Taken
-    );
-    assert_eq!(
-        alice.outbound(SUPERSEDE, &supersede(1, ALICE, 1000, ALICE, 2000)),
+        alice.outbound(CHANGE, &rewrite(1, ALICE, 1000, ALICE, 2000, 20)),
         Kept::Taken
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
     let names: Vec<String> = told.events().into_iter().map(|(name, _)| name).collect();
-    assert_eq!(names, vec![WRITE.to_string(), SUPERSEDE.to_string()]);
-    let notes = named(&told, SUPERSEDE);
+    assert_eq!(names, vec![CHANGE.to_string()]);
+    let notes = write_overs(&told);
     assert_eq!(notes[0]["by"], "1");
     assert_eq!(notes[0]["wallTime"], "1000");
+    assert_eq!(writes(&told)[0]["value"], "20");
 
     // Nothing more is new, and both hold alice's chain to the same head.
     let again = network.round(&mut bob, BOB, RoundKind::Sync);
@@ -307,7 +355,7 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
     network.round(&mut alice, ALICE, RoundKind::Sync);
     for n in 1..=4 {
         assert_eq!(
-            alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), i64::from(n))),
+            alice.outbound(CHANGE, &write(n, ALICE, 1000 + i64::from(n), i64::from(n))),
             Kept::Taken
         );
     }
@@ -360,7 +408,7 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
     );
     let mut bob = restarted(bob, BOB);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    let mut rows: Vec<Value> = named(&told, WRITE)
+    let mut rows: Vec<Value> = writes(&told)
         .into_iter()
         .map(|write| write["id"].clone())
         .collect();
@@ -368,7 +416,7 @@ fn devices_saved_and_restored_in_the_middle_of_a_round_go_on_and_agree() {
     assert_eq!(
         rows,
         vec![json!(1), json!(2), json!(3), json!(4)],
-        "every write once, the two taken before the stop included"
+        "every change once, the two taken before the stop included"
     );
     assert_eq!(named(&told, ROLE).len(), 3);
     assert_eq!(alice.trust().heads(), bob.trust().heads());
@@ -390,7 +438,7 @@ fn what_a_device_that_may_not_write_sends_is_refused_and_reaches_no_one() {
 
     let mut carol = invited(CAROL);
     network.round(&mut carol, CAROL, RoundKind::Sync);
-    match carol.outbound(WRITE, &write(5, CAROL, 1000, 1)) {
+    match carol.outbound(CHANGE, &write(5, CAROL, 1000, 1)) {
         Kept::Refused(reason) => assert!(reason.contains("may not write"), "{reason}"),
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -402,18 +450,23 @@ fn what_a_device_that_may_not_write_sends_is_refused_and_reaches_no_one() {
 
     let mut bob = invited(BOB);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert!(named(&told, WRITE).is_empty(), "{:?}", told.events());
+    assert!(named(&told, CHANGE).is_empty(), "{:?}", told.events());
 
     let mut nobody = Peer::invited(LIST, genesis().hash());
     network.round(&mut nobody, BOB, RoundKind::Sync);
     assert!(matches!(
-        nobody.outbound(WRITE, &write(6, BOB, 1000, 1)),
+        nobody.outbound(CHANGE, &write(6, BOB, 1000, 1)),
         Kept::Refused(_)
     ));
     assert_eq!(
-        alice.outbound("record_list.propose", r#"{"before":"30000"}"#),
+        alice.outbound("record_list.edit", r#"{"id":1}"#),
         Kept::NotSigned
     );
+    // A part of a change as the list sent it before a change was one message is no event that is
+    // signed (docs/adr/0085, section 1.4).
+    let part =
+        r#"{"id":1,"field":3,"value":"1","text":"","wallTime":"1000","counter":0,"nodeId":"1"}"#;
+    assert_eq!(alice.outbound("record_list.write", part), Kept::NotSigned);
 }
 
 /// A host that answers before it asked, begins an exchange before taking the last one's outcome,
@@ -559,12 +612,12 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     assert_eq!(bob.standing().keys, alice.standing().keys);
 
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
+        alice.outbound(CHANGE, &write(1, ALICE, 3000, 5)),
         Kept::Taken
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    let writes = named(&told, WRITE);
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1, "{:?}", told.events());
     assert_eq!(writes[0]["value"], "5", "opened under the group's key");
 
@@ -577,12 +630,12 @@ fn the_core_follows_the_group_and_what_is_sealed_under_its_epoch_opens() {
     assert_eq!(removed.owed, 0);
     assert_eq!(alice.trust().epochs(), vec![1, 2, 3]);
     assert_eq!(
-        alice.outbound(WRITE, &write(2, ALICE, 4000, 6)),
+        alice.outbound(CHANGE, &write(2, ALICE, 4000, 6)),
         Kept::Taken
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let cut = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert!(named(&cut, WRITE).is_empty(), "{:?}", cut.events());
+    assert!(named(&cut, CHANGE).is_empty(), "{:?}", cut.events());
     assert_eq!(bob.standing().role, 0);
     assert_eq!(
         bob.trust().epochs(),
@@ -665,11 +718,11 @@ fn what_the_first_device_writes_alone_is_sealed_at_the_relay_and_opens_for_one_a
     assert_eq!(standing.owed, 1, "the commit of the first epoch");
 
     assert_eq!(
-        alice.outbound(WRITE, &titled(1, ALICE, 1000, "buy milk")),
+        alice.outbound(CHANGE, &titled(1, ALICE, 1000, "buy milk")),
         Kept::Taken
     );
     assert_eq!(
-        alice.outbound(WRITE, &write(2, ALICE, 1500, 7)),
+        alice.outbound(CHANGE, &write(2, ALICE, 1500, 7)),
         Kept::Taken
     );
     let opened = network.round(&mut alice, ALICE, RoundKind::Sync);
@@ -705,7 +758,7 @@ fn what_the_first_device_writes_alone_is_sealed_at_the_relay_and_opens_for_one_a
     assert!(joined.refused().is_empty(), "{:?}", joined.refused());
     assert_eq!(joined.steps, vec![GroupStep::Joined(2)], "{joined:?}");
     assert_eq!(bob.trust().epochs(), vec![1, 2]);
-    let told = named(&joined, WRITE);
+    let told = writes(&joined);
     assert_eq!(told.len(), 2, "{:?}", joined.events());
     assert!(
         told.iter().any(|write| write["text"] == "buy milk"),
@@ -718,10 +771,10 @@ fn what_the_first_device_writes_alone_is_sealed_at_the_relay_and_opens_for_one_a
 
     // What bob writes is sealed under the epoch he joined at, and opens on alice's device; the
     // relay still holds nothing in the clear.
-    assert_eq!(bob.outbound(WRITE, &write(3, BOB, 2000, 9)), Kept::Taken);
+    assert_eq!(bob.outbound(CHANGE, &write(3, BOB, 2000, 9)), Kept::Taken);
     network.round(&mut bob, BOB, RoundKind::Sync);
     let theirs = network.round(&mut alice, ALICE, RoundKind::Sync);
-    let from_bob = named(&theirs, WRITE);
+    let from_bob = writes(&theirs);
     assert_eq!(from_bob.len(), 1, "{:?}", theirs.events());
     assert_eq!(from_bob[0]["value"], "9");
     let held = network.writes_held();
@@ -754,7 +807,7 @@ fn a_list_whose_log_names_no_epoch_of_its_group_signs_no_write_until_it_names_on
         .unwrap();
     assert_eq!(alice.standing().epoch, 0);
 
-    let kept = alice.outbound(WRITE, &titled(1, ALICE, 1000, "buy milk"));
+    let kept = alice.outbound(CHANGE, &titled(1, ALICE, 1000, "buy milk"));
     assert!(
         matches!(&kept, Kept::Waiting(why) if why.contains("names no epoch")),
         "{kept:?}"
@@ -791,8 +844,8 @@ fn a_list_whose_log_names_no_epoch_of_its_group_signs_no_write_until_it_names_on
     let joined = network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(joined.steps, vec![GroupStep::Joined(1)], "{joined:?}");
     let again = network.round(&mut bob, BOB, RoundKind::Sync);
-    let mut told = named(&joined, WRITE);
-    told.extend(named(&again, WRITE));
+    let mut told = writes(&joined);
+    told.extend(writes(&again));
     assert_eq!(told.len(), 1, "{:?} {:?}", joined.events(), again.events());
     assert_eq!(told[0]["text"], "buy milk");
 }
@@ -848,21 +901,21 @@ fn a_device_restored_from_its_sealed_state_goes_on_with_no_key_given_again() {
     assert!(!bob.awaits_own_chain());
 
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
+        alice.outbound(CHANGE, &write(1, ALICE, 3000, 5)),
         Kept::Taken
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    let writes = named(&told, WRITE);
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1, "{:?}", told.events());
     assert_eq!(
         writes[0]["value"], "5",
         "opened under the key the state kept"
     );
-    assert_eq!(bob.outbound(WRITE, &write(2, BOB, 3500, 6)), Kept::Taken);
+    assert_eq!(bob.outbound(CHANGE, &write(2, BOB, 3500, 6)), Kept::Taken);
     network.round(&mut bob, BOB, RoundKind::Sync);
     let theirs = network.round(&mut alice, ALICE, RoundKind::Sync);
-    assert_eq!(named(&theirs, WRITE).len(), 1, "{:?}", theirs.events());
+    assert_eq!(named(&theirs, CHANGE).len(), 1, "{:?}", theirs.events());
 
     alice.remove_member(BOB).unwrap();
     let removed = network.round(&mut alice, ALICE, RoundKind::Sync);
@@ -885,7 +938,7 @@ fn a_sealed_state_is_refused_whole_under_another_key_changed_cut_or_for_another_
     let mut network = Network::new(Limits::default());
     let mut alice = alice();
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        alice.outbound(CHANGE, &write(1, ALICE, 1000, 10)),
         Kept::Taken
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
@@ -988,7 +1041,7 @@ fn a_sealed_state_holds_no_secret_and_no_content_in_the_clear() {
     network.round(&mut alice, ALICE, RoundKind::Sync);
     network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 3000, 5)),
+        alice.outbound(CHANGE, &write(1, ALICE, 3000, 5)),
         Kept::Taken
     );
     let epoch_keys = alice.trust().keys_for_backup();
@@ -1163,7 +1216,7 @@ fn a_device_taken_off_writes_to_no_one() {
     network.round(&mut alice, ALICE, RoundKind::Sync);
     // An invited device signs nothing before a round has read it the log that grants it.
     network.round(&mut bob, BOB, RoundKind::Sync);
-    assert_eq!(bob.outbound(WRITE, &write(1, BOB, 1000, 1)), Kept::Taken);
+    assert_eq!(bob.outbound(CHANGE, &write(1, BOB, 1000, 1)), Kept::Taken);
     network.round(&mut bob, BOB, RoundKind::Sync);
     network.round(&mut alice, ALICE, RoundKind::Sync);
     assert_eq!(alice.trust().last_seq(BOB), 1);
@@ -1186,37 +1239,36 @@ fn a_device_taken_off_writes_to_no_one() {
         })
     );
 
-    assert_eq!(bob.outbound(WRITE, &write(2, BOB, 2000, 2)), Kept::Taken);
+    assert_eq!(bob.outbound(CHANGE, &write(2, BOB, 2000, 2)), Kept::Taken);
     let cut = network.round(&mut bob, BOB, RoundKind::Sync);
     assert_eq!(cut.round.pushed, 0);
     assert_eq!(cut.refused().len(), 1, "{:?}", cut.refused());
     assert_eq!(bob.standing().role, 0);
     let after = network.round(&mut alice, ALICE, RoundKind::Sync);
-    assert!(named(&after, WRITE).is_empty(), "{:?}", after.events());
+    assert!(named(&after, CHANGE).is_empty(), "{:?}", after.events());
 }
 
 /// Alice's application keeps its own log of commands and builds her machine again from it after
-/// her device restarted from its save: the machine sends every write and note again, as it made
-/// them. The core gives each back as the operation it holds, the relay is given nothing, and bob's
-/// machine is told nothing twice; a resync tells the rebuilt machine the list.
+/// her device restarted from its save: the machine sends every change again, as it made it. The
+/// core gives each back as the operation it holds, the relay is given nothing, and bob's machine is
+/// told nothing twice; a resync tells the rebuilt machine the list.
 #[test]
 fn a_device_that_replays_its_own_log_after_a_restart_writes_nothing_twice() {
     let mut network = Network::new(Limits::default());
     let mut alice = alice();
     let mut bob = invited(BOB);
     let sends = [
-        (WRITE, write(1, ALICE, 1000, 10)),
-        (WRITE, write(1, ALICE, 2000, 20)),
-        (SUPERSEDE, supersede(1, ALICE, 1000, ALICE, 2000)),
-        (WRITE, write(2, ALICE, 3000, 30)),
+        (CHANGE, write(1, ALICE, 1000, 10)),
+        (CHANGE, rewrite(1, ALICE, 1000, ALICE, 2000, 20)),
+        (CHANGE, write(2, ALICE, 3000, 30)),
     ];
     for (event, data) in &sends {
         assert_eq!(alice.outbound(event, data), Kept::Taken, "{event} {data}");
     }
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    assert_eq!(named(&told, WRITE).len(), 3);
-    assert_eq!(named(&told, SUPERSEDE).len(), 1);
+    assert_eq!(named(&told, CHANGE).len(), 3);
+    assert_eq!(write_overs(&told).len(), 1);
     let held = alice.trust().signed_operations();
 
     let mut alice = restarted(alice, ALICE);
@@ -1239,7 +1291,7 @@ fn a_device_that_replays_its_own_log_after_a_restart_writes_nothing_twice() {
     assert!(replayed.refused().is_empty(), "{:?}", replayed.refused());
     assert_eq!(replayed.round.pushed, 0, "the relay is given nothing new");
     assert_eq!(
-        named(&replayed, WRITE).len(),
+        named(&replayed, CHANGE).len(),
         3,
         "the rebuilt machine is told the list"
     );
@@ -1258,11 +1310,11 @@ fn a_write_sent_again_with_another_content_is_refused_and_nothing_is_signed() {
     let mut network = Network::new(Limits::default());
     let mut alice = alice();
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        alice.outbound(CHANGE, &write(1, ALICE, 1000, 10)),
         Kept::Taken
     );
     let before = alice.trust().signed_operations();
-    match alice.outbound(WRITE, &write(1, ALICE, 1000, 11)) {
+    match alice.outbound(CHANGE, &write(1, ALICE, 1000, 11)) {
         Kept::Refused(reason) => assert!(reason.contains("another content"), "{reason}"),
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -1272,7 +1324,7 @@ fn a_write_sent_again_with_another_content_is_refused_and_nothing_is_signed() {
 
     let mut bob = invited(BOB);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    let writes = named(&told, WRITE);
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0]["value"], "10");
     assert!(bob.trust().equivocating().is_empty());
@@ -1291,7 +1343,7 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     let mut bob = invited(BOB);
     for n in 1..=2 {
         assert_eq!(
-            alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), 1)),
+            alice.outbound(CHANGE, &write(n, ALICE, 1000 + i64::from(n), 1)),
             Kept::Taken
         );
     }
@@ -1301,7 +1353,7 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     let older = alice.save_sealed().unwrap();
     for n in 3..=4 {
         assert_eq!(
-            alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), 1)),
+            alice.outbound(CHANGE, &write(n, ALICE, 1000 + i64::from(n), 1)),
             Kept::Taken
         );
     }
@@ -1318,12 +1370,12 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
         2
     );
     assert!(alice.trust().awaits_own_chain());
-    match alice.outbound(WRITE, &write(5, ALICE, 5000, 5)) {
+    match alice.outbound(CHANGE, &write(5, ALICE, 5000, 5)) {
         Kept::Waiting(reason) => assert!(reason.contains("signs nothing new"), "{reason}"),
         other => panic!("expected the write to wait, got {other:?}"),
     }
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 1001, 1)),
+        alice.outbound(CHANGE, &write(1, ALICE, 1001, 1)),
         Kept::Held,
         "what the core holds is given as it was"
     );
@@ -1333,7 +1385,7 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     // too, and the round finds it held once it has read her chain back.
     assert!(
         matches!(
-            alice.outbound(WRITE, &write(3, ALICE, 1003, 1)),
+            alice.outbound(CHANGE, &write(3, ALICE, 1003, 1)),
             Kept::Waiting(_)
         ),
         "the save does not hold it"
@@ -1359,17 +1411,17 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     assert_eq!(back.round.pushed, 1, "the write that waited");
     assert_eq!(
         back.taken(),
-        vec![(WRITE.to_string(), write(5, ALICE, 5000, 5))],
+        vec![(CHANGE.to_string(), write(5, ALICE, 5000, 5))],
         "the write signed now, and no other"
     );
     assert_eq!(
         back.held(),
-        vec![(WRITE.to_string(), write(3, ALICE, 1003, 1))],
+        vec![(CHANGE.to_string(), write(3, ALICE, 1003, 1))],
         "the write her chain, read back, held"
     );
     assert!(back.dropped().is_empty());
     assert!(!back.rebuild());
-    let rows: Vec<Value> = named(&back, WRITE)
+    let rows: Vec<Value> = writes(&back)
         .into_iter()
         .map(|write| write["id"].clone())
         .collect();
@@ -1383,13 +1435,13 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
     assert_eq!(alice.standing().waiting, 0);
 
     assert_eq!(
-        alice.outbound(WRITE, &write(5, ALICE, 5000, 5)),
+        alice.outbound(CHANGE, &write(5, ALICE, 5000, 5)),
         Kept::Held,
         "the write that waited, signed once"
     );
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let told = network.round(&mut bob, BOB, RoundKind::Sync);
-    let writes = named(&told, WRITE);
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1, "{:?}", told.events());
     assert_eq!(writes[0]["id"], 5);
     assert!(bob.trust().equivocating().is_empty(), "no frozen chain");
@@ -1398,10 +1450,10 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
 }
 
 /// Bob's device is used before it has read anything of the list: his machine writes a field,
-/// writes it again and notes that the second write is over the first, and sends the first again, as
-/// a machine built again from its application's log does. His core can sign none of it yet and
-/// keeps each, once, in the order it was made, and refuses at once another content under the stamp
-/// of a write that waits. What waits is in his sealed state: his device stops and starts again from
+/// writes it again over the first in one change, writes another, and sends the first again, as a
+/// machine built again from its application's log does. His core can sign none of it yet and keeps
+/// each, once, in the order it was made, and refuses at once another content under the dot of a
+/// change that waits. What waits is in his sealed state: his device stops and starts again from
 /// it. His first round reads the log that lets him write, signs what waited in its order, and gives
 /// it the relay in the same round; alice's machine is told it.
 #[test]
@@ -1412,9 +1464,9 @@ fn what_a_device_sends_before_it_may_sign_waits_and_reaches_everyone_in_order() 
 
     let mut bob = invited(BOB);
     let sends = [
-        (WRITE, write(1, BOB, 1000, 10)),
-        (WRITE, write(1, BOB, 2000, 20)),
-        (SUPERSEDE, supersede(1, BOB, 1000, BOB, 2000)),
+        (CHANGE, write(1, BOB, 1000, 10)),
+        (CHANGE, rewrite(1, BOB, 1000, BOB, 2000, 20)),
+        (CHANGE, write(2, BOB, 3000, 30)),
     ];
     for (event, data) in &sends {
         match bob.outbound(event, data) {
@@ -1423,10 +1475,10 @@ fn what_a_device_sends_before_it_may_sign_waits_and_reaches_everyone_in_order() 
         }
     }
     assert!(
-        matches!(bob.outbound(WRITE, &sends[0].1), Kept::Waiting(_)),
+        matches!(bob.outbound(CHANGE, &sends[0].1), Kept::Waiting(_)),
         "sent again, it waits once"
     );
-    match bob.outbound(WRITE, &write(1, BOB, 1000, 11)) {
+    match bob.outbound(CHANGE, &write(1, BOB, 1000, 11)) {
         Kept::Refused(reason) => assert!(reason.contains("another content"), "{reason}"),
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -1452,8 +1504,8 @@ fn what_a_device_sends_before_it_may_sign_waits_and_reaches_everyone_in_order() 
     assert_eq!(bob.trust().last_seq(BOB), 3);
 
     let told = network.round(&mut alice, ALICE, RoundKind::Sync);
-    assert_eq!(named(&told, WRITE).len(), 2, "{:?}", told.events());
-    assert_eq!(named(&told, SUPERSEDE).len(), 1, "{:?}", told.events());
+    assert_eq!(named(&told, CHANGE).len(), 3, "{:?}", told.events());
+    assert_eq!(write_overs(&told).len(), 1, "{:?}", told.events());
     assert_eq!(alice.trust().heads(), bob.trust().heads());
     assert!(alice.trust().equivocating().is_empty());
 }
@@ -1481,7 +1533,7 @@ fn a_write_made_before_the_grant_is_signed_by_the_round_that_reads_it() {
         2,
         "the genesis and alice's grant"
     );
-    match bob.outbound(WRITE, &write(1, BOB, 1000, 7)) {
+    match bob.outbound(CHANGE, &write(1, BOB, 1000, 7)) {
         Kept::Waiting(reason) => {
             assert!(reason.contains("grants node 2 nothing yet"), "{reason}")
         }
@@ -1495,7 +1547,7 @@ fn a_write_made_before_the_grant_is_signed_by_the_round_that_reads_it() {
     assert_eq!(granted.taken().len(), 1, "{granted:?}");
     assert_eq!(granted.round.pushed, 1, "the write that waited");
     let told = network.round(&mut alice, ALICE, RoundKind::Sync);
-    let writes = named(&told, WRITE);
+    let writes = writes(&told);
     assert_eq!(writes.len(), 1, "{:?}", told.events());
     assert_eq!(writes[0]["value"], "7");
 }
@@ -1516,13 +1568,13 @@ fn what_waited_for_a_grant_that_does_not_let_the_person_write_is_refused_and_sai
     for (node, role) in [(CAROL, "role 1"), (BOB, "role 0")] {
         let mut device = invited(node);
         let sent = write(1, node, 1000, 1);
-        assert!(matches!(device.outbound(WRITE, &sent), Kept::Waiting(_)));
+        assert!(matches!(device.outbound(CHANGE, &sent), Kept::Waiting(_)));
         let read = network.round(&mut device, node, RoundKind::Sync);
         let dropped = read.dropped();
         assert_eq!(dropped.len(), 1, "{read:?}");
         assert_eq!(
             (dropped[0].0.as_str(), dropped[0].1.as_str()),
-            (WRITE, sent.as_str())
+            (CHANGE, sent.as_str())
         );
         assert!(
             dropped[0].2.contains("may not write") && dropped[0].2.contains(role),
@@ -1538,7 +1590,7 @@ fn what_waited_for_a_grant_that_does_not_let_the_person_write_is_refused_and_sai
         assert_eq!(device.standing().waiting, 0);
         assert!(device.trust().signed_operations().is_empty());
         assert!(
-            matches!(device.outbound(WRITE, &sent), Kept::Refused(_)),
+            matches!(device.outbound(CHANGE, &sent), Kept::Refused(_)),
             "sent again, it is refused at once"
         );
     }
@@ -1587,7 +1639,7 @@ enum Restore {
     Older,
 }
 
-/// Alice's machine, built again from her own log of commands, sends every write and note she made
+/// Alice's machine, built again from her own log of commands, sends every change she made
 /// again: on a list keyed by its group and on one with no keys, before and after the resync round
 /// that tells the rebuilt machine the list, with no restart, after a restart from the state saved
 /// last, and after one from an older state, and with a write of bob's that her machine wrote over
@@ -1615,23 +1667,19 @@ fn sends_again_and_signs_nothing(keyed: bool, restore: Restore, before_resync: b
     let (mut alice, mut bob) = two_writers(&mut network, keyed);
     let bobs = write(7, BOB, 900, 7);
     if theirs {
-        assert_eq!(bob.outbound(WRITE, &bobs), Kept::Taken, "{case}");
+        assert_eq!(bob.outbound(CHANGE, &bobs), Kept::Taken, "{case}");
         network.round(&mut bob, BOB, RoundKind::Sync);
         network.round(&mut alice, ALICE, RoundKind::Sync);
     }
 
-    let first = (WRITE, write(1, ALICE, 1000, 10));
+    let first = (CHANGE, write(1, ALICE, 1000, 10));
     assert_eq!(alice.outbound(first.0, &first.1), Kept::Taken, "{case}");
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let older = alice.save_sealed().unwrap();
-    let mut after = vec![
-        (WRITE, write(1, ALICE, 2000, 20)),
-        (SUPERSEDE, supersede(1, ALICE, 1000, ALICE, 2000)),
-    ];
+    let mut after = vec![(CHANGE, rewrite(1, ALICE, 1000, ALICE, 2000, 20))];
     if theirs {
-        // Alice writes over bob's write, and her machine notes that she did.
-        after.push((WRITE, write(7, ALICE, 2500, 70)));
-        after.push((SUPERSEDE, supersede(7, BOB, 900, ALICE, 2500)));
+        // Alice writes over bob's write and writes the field anew, in one change.
+        after.push((CHANGE, rewrite(7, BOB, 900, ALICE, 2500, 70)));
     }
     for (event, data) in &after {
         assert_eq!(alice.outbound(event, data), Kept::Taken, "{case}: {data}");
@@ -1649,12 +1697,12 @@ fn sends_again_and_signs_nothing(keyed: bool, restore: Restore, before_resync: b
             restored_from(&older)
         }
     };
-    // What the rebuilt machine sends: every write and note of hers, in the order she made them,
-    // and bob's write, which it holds and shares.
+    // What the rebuilt machine sends: every change of hers, in the order she made them, and bob's
+    // change, which it holds and is given again.
     let mut replay = vec![first.clone()];
     replay.extend(after.iter().cloned());
     if theirs {
-        replay.push((WRITE, bobs.clone()));
+        replay.push((CHANGE, bobs.clone()));
     }
     let lost: Vec<(String, String)> = if restore == Restore::Older {
         after
@@ -1736,7 +1784,7 @@ fn careless_copy(entries: &[Entry], trust_text: &str, keys: &[(u32, [u8; 32])]) 
 /// The relay holds alice's chain past a conflict: a second core of her device, made from an older
 /// state and not waiting for her chain, signed another write at a number she had used, so the relay
 /// holds two operations of hers there and its head of her stops below them. Her device then comes
-/// back from that older state, and her machine sends the writes and the note it made after it. Read
+/// back from that older state, and her machine sends the changes it made after it. Read
 /// back by the relay's heads alone, her chain would seem to end where the state ends: her core would
 /// sign them again at the numbers after it, under the log as it is now, and the relay would take
 /// each as one more operation of hers, at every restart. Her core reads her chain back from where it
@@ -1756,7 +1804,7 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
     let (mut alice, _bob) = two_writers(&mut network, keyed);
     for n in 1..=2 {
         let data = write(n, ALICE, 1000 + i64::from(n), i64::from(n));
-        assert_eq!(alice.outbound(WRITE, &data), Kept::Taken, "{case}");
+        assert_eq!(alice.outbound(CHANGE, &data), Kept::Taken, "{case}");
     }
     network.round(&mut alice, ALICE, RoundKind::Sync);
     let older = alice.save_sealed().unwrap();
@@ -1764,9 +1812,8 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
     let older_text = alice.trust().to_text();
     let older_keys = alice.trust().keys_for_backup();
     let after = [
-        (WRITE, write(3, ALICE, 1003, 3)),
-        (WRITE, write(3, ALICE, 1004, 4)),
-        (SUPERSEDE, supersede(3, ALICE, 1003, ALICE, 1004)),
+        (CHANGE, write(3, ALICE, 1003, 3)),
+        (CHANGE, rewrite(3, ALICE, 1003, ALICE, 1004, 4)),
     ];
     for (event, data) in &after {
         assert_eq!(alice.outbound(event, data), Kept::Taken, "{case}: {data}");
@@ -1779,14 +1826,14 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
 
     let copy = careless_copy(&older_entries, &older_text, &older_keys);
     let other = copy
-        .seal_sent(WRITE, &write(9, ALICE, 5000, 9))
+        .seal_sent(CHANGE, &write(9, ALICE, 5000, 9))
         .unwrap()
         .expect("a write is signed");
     assert!(other.signed, "{case}");
     let submitted = network.carry(
         ALICE,
         &Request::Submit {
-            event: WRITE.to_string(),
+            event: CHANGE.to_string(),
             data: other.data,
         }
         .to_json(),
