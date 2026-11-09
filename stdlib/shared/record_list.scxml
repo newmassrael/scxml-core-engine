@@ -418,7 +418,7 @@
          taken in (`provisional`), and the values their write-overs took out (`undo`),
          until the host confirms or withdraws each (docs/adr/0093, section 3.4); the
          change named now (`standing`), whether the host's word named one the copy holds
-         (`named`) and where the changes to withdraw begin (`withdrawFrom`); and what is
+         (`provisionalFound`) and where the changes to withdraw begin (`withdrawFrom`); and what is
          kept of each list while one is rebuilt without what leaves it. -->
     <data id="provisional" sce:type="list&lt;record:Provisional&gt;[shared_provisional=8]"/>
     <data id="provisionalKept" sce:type="list&lt;record:Provisional&gt;[shared_provisional=8]"/>
@@ -430,7 +430,7 @@
       <sce:set name="field" expr="0"/>
       <sce:set name="kind" expr="Command.edit"/>
     </data>
-    <data id="named" sce:type="bool" expr="false"/>
+    <data id="provisionalFound" sce:type="bool" expr="false"/>
     <data id="withdrawFrom" sce:type="uint32" expr="0"/>
     <data id="undo" sce:type="list&lt;record:Undo&gt;[shared_undo=512]"/>
     <data id="undoKept" sce:type="list&lt;record:Undo&gt;[shared_undo=512]"/>
@@ -1111,17 +1111,17 @@
          confirmation that names no change the copy holds provisionally is the host's
          fault: it changes nothing and is counted. -->
     <transition event="record_list.confirm" type="internal">
-      <assign location="named" expr="false"/>
+      <assign location="provisionalFound" expr="false"/>
       <foreach array="provisional" item="p">
         <if cond="p.wallTime === _event.data.wallTime &amp;&amp; p.counter === _event.data.counter">
-          <assign location="named" expr="true"/>
+          <assign location="provisionalFound" expr="true"/>
           <assign location="standing" expr="p"/>
         </if>
       </foreach>
-      <if cond="!named">
+      <if cond="!provisionalFound">
         <assign location="refusals" expr="refusals + 1"/>
       </if>
-      <if cond="named">
+      <if cond="provisionalFound">
         <sce:clear target="provisionalKept"/>
         <foreach array="provisional" item="p">
           <if cond="p.wallTime !== standing.wallTime || p.counter !== standing.counter">
@@ -1159,17 +1159,17 @@
          one before it. A withdrawal that names no change the copy holds provisionally is
          the host's fault: it changes nothing and is counted. -->
     <transition event="record_list.withdraw" type="internal">
-      <assign location="named" expr="false"/>
+      <assign location="provisionalFound" expr="false"/>
       <foreach array="provisional" item="p" index="at">
-        <if cond="!named &amp;&amp; p.wallTime === _event.data.wallTime &amp;&amp; p.counter === _event.data.counter">
-          <assign location="named" expr="true"/>
+        <if cond="!provisionalFound &amp;&amp; p.wallTime === _event.data.wallTime &amp;&amp; p.counter === _event.data.counter">
+          <assign location="provisionalFound" expr="true"/>
           <assign location="withdrawFrom" expr="at"/>
         </if>
       </foreach>
-      <if cond="!named">
+      <if cond="!provisionalFound">
         <assign location="refusals" expr="refusals + 1"/>
       </if>
-      <if cond="named">
+      <if cond="provisionalFound">
         <foreach array="provisional" item="p" index="at">
           <if cond="at &gt;= withdrawFrom">
             <send target="#_internal" event="record_list.unwind"/>
