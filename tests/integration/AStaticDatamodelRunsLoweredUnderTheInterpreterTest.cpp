@@ -1125,6 +1125,28 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AnEcmascriptDocumentR
         << "a delivery outside its schema was not refused whole; the machine stands in " << machine->getCurrentState();
 }
 
+// A composed payload is judged whole at the door too (docs/adr/0086, section 4.2):
+// `static_composed_payload` takes `batch.sent`, whose schema holds lists and records,
+// and a delivery whose `items` is a text is refused before any transition is
+// selected. The Interpreter answers it with the error.execution taken in its place,
+// so the transition it reports is error.execution's, and none on `batch.sent` is
+// taken: `item_count` stays 0 and `refusals` counts the error once. A door that let
+// the delivery in would report `batch.sent` and leave the refusal to its content.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedDeliveryOutsideItsTypeTakesNoTransition) {
+    const Lowered lowered = lower(kFixtures / "static_composed_payload.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    const auto result = machine->processEvent("batch.sent", R"({"items":"none"})");
+    EXPECT_EQ("error.execution", result.eventName)
+        << "the delivery was taken in place of the error.execution its door owed";
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
+        << "refusals is " << variable(*machine, "refusals").dump();
+    EXPECT_EQ(0, variable(*machine, "item_count"));
+}
+
 // An `<invoke type="scxml">` hands its child the values its `<param>`s and
 // `namelist` name, each to the child's variable of the same name, and a variable
 // nothing hands a value to keeps the one its `<data>` gave it

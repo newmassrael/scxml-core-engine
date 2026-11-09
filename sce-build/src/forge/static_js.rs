@@ -120,12 +120,11 @@
 //! machine reads it through the event's schema. So a read of a schema field is
 //! a call of the library's `field`, which refuses what the generated lift of a
 //! payload refuses — no data, a bare value, a missing field, a value of another
-//! type or beyond its width — by throwing, and the expression that read it
-//! fails as an overflow does. One difference is left standing and stated
-//! (docs/SCE_ACCEPTED_SUBSET.md §2.15): a generated machine lifts the payload
-//! once when the event is dequeued and raises `error.execution` once for a
-//! malformed delivery, and the Interpreter raises one for each expression that
-//! reads a field.
+//! type or beyond its width — by throwing. Before any of that, the event's door
+//! reads the whole delivery when the event is taken, as a generated machine
+//! lifts it ([`door_records`]): a malformed delivery is refused whole and
+//! `error.execution` taken once in its place (docs/adr/0086, section 4.2), so no
+//! expression reads one.
 //!
 //! # A composed payload
 //!
@@ -138,10 +137,12 @@
 //! a list the data or an enclosing loop's item holds walks that list, a list
 //! taken whole into a list variable is the value itself, which nothing changes
 //! in place, and a `<send>` carries a composed value by its name as the value
-//! its `<param>` writes, a 64-bit integer as the text of its digits. Each
-//! transition taken on such an event opens its content with a read of the whole
-//! data ([`leading_read_edits`]), so a delivery outside its type runs none of
-//! the transition's content, as on the generated backends.
+//! its `<param>` writes, a 64-bit integer as the text of its digits. The whole
+//! data is read once, by the event's door when the event is taken
+//! ([`composed_read_events`]): a delivery outside its type is refused whole and
+//! `error.execution` taken in its place, as on the generated backends
+//! (docs/adr/0086, section 4.2), and the value the door read is the one every
+//! expression of the content reads, through the library's `taken`.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -256,9 +257,10 @@ fn installation_expression(algorithms: &[LoweredAlgorithm], doors: &[DoorRecord]
         .iter()
         .map(|door| {
             format!(
-                " {RUNTIME_GLOBAL}.door({}, {});",
+                " {RUNTIME_GLOBAL}.door({}, {}{});",
                 serde_json::Value::String(door.event.clone()),
-                door.record
+                door.record,
+                if door.composed { ", true" } else { "" }
             )
         })
         .collect();
@@ -275,20 +277,34 @@ fn installation_expression(algorithms: &[LoweredAlgorithm], doors: &[DoorRecord]
 struct DoorRecord {
     event: String,
     record: String,
+    /// Whether the schema holds a composed value: the door then reads the data
+    /// whole and keeps the value it read for the content
+    /// ([`JsTarget::reading_composed_payloads`]).
+    composed: bool,
 }
 
 /// The door of each event of `payload_events`, the events whose payload an
-/// expression of `model` reads, whose schema is one of entries: what a generated
-/// machine lifts when it takes the event. A composed payload is not read by this
-/// lowering (`ComposedLowering::ECMASCRIPT`), so it has no door here.
+/// expression of `model` reads: what a generated machine lifts when it takes
+/// the event. `composed` holds the descriptor of each event whose schema holds
+/// a composed value ([`JsTarget::reading_composed_payloads`]); every other
+/// event's record is spelled from its schema of entries.
 fn door_records(
     model: &SCXMLModel,
     payload_events: &std::collections::BTreeSet<String>,
+    composed: &BTreeMap<String, String>,
 ) -> Result<Vec<DoorRecord>, GenerateError> {
     let schemas = model.entry_event_schemas();
     let enums = model.held_enums();
     let mut doors = Vec::new();
     for event in payload_events {
+        if let Some(descriptor) = composed.get(event) {
+            doors.push(DoorRecord {
+                event: event.clone(),
+                record: descriptor.clone(),
+                composed: true,
+            });
+            continue;
+        }
         let Some(schema) = schemas.get(event) else {
             continue;
         };
@@ -329,6 +345,7 @@ fn door_records(
         doors.push(DoorRecord {
             event: event.clone(),
             record: format!("{{record: {{{}}}{defaults}}}", fields.join(", ")),
+            composed: false,
         });
     }
     Ok(doors)
@@ -359,9 +376,9 @@ pub struct JsTarget {
     /// Each imported algorithm's document name, and the symbol it is installed
     /// under.
     algorithms: BTreeMap<String, String>,
-    /// Each event whose schema holds a composed value, and the read of its
-    /// whole data an expression reads a part of it through
-    /// ([`Self::reading_composed_payloads`]).
+    /// Each event whose schema holds a composed value, and the descriptor of
+    /// its schema's record, `{record: {...}}` with its defaults, which its door
+    /// reads the whole data by ([`Self::reading_composed_payloads`]).
     payloads: BTreeMap<String, String>,
     /// How the document names an element of the SCXML namespace, which every
     /// element this target writes is named by ([`ScxmlElements`]).
@@ -419,21 +436,16 @@ impl JsTarget {
     }
 
     /// This target, reading the data of each event of `model` whose schema
-    /// holds a composed value (docs/adr/0086, section 6) through the library's
-    /// `payload`, handed the descriptor of the schema's record that the walk of
-    /// its type spells ([`JsComposed`]): every field read at once, each bound
-    /// held at every depth, so a delivery outside its type is refused whole by
-    /// the first expression that reads any of it, and none of its content that
-    /// reads the data runs (docs/adr/0086, section 4.2). A read is then that
-    /// value and the fields, elements and lengths after it, as a generated
-    /// machine reads the payload it lifted.
-    ///
-    /// The Interpreter's script engine reads an event's data in the expression
-    /// that names it, so the data is read where each expression reads it, and
-    /// once more before anything else a transition taken on the event runs
-    /// ([`leading_read_edits`]): a delivery the read refuses runs none of the
-    /// transition's content, as a generated machine, which lifts the payload
-    /// once when the event is dequeued, runs none of it.
+    /// holds a composed value (docs/adr/0086, section 6) whole, by the
+    /// descriptor of the schema's record that the walk of its type spells
+    /// ([`JsComposed`]): every field read at once, each bound held at every
+    /// depth. The door of the event reads it so when the event is taken, before
+    /// any transition is selected, refuses a delivery outside its type whole
+    /// (docs/adr/0086, section 4.2), and keeps the value it read, which every
+    /// expression reads through the library's `taken` ([`Self::payload_accessor`]):
+    /// one walk for each delivery, as a generated machine lifts its payload
+    /// once. A read is then that value and the fields, elements and lengths
+    /// after it.
     ///
     /// An event whose read the walk cannot spell (its record no import of the
     /// statechart's) is left out, so its data is `_event.data` as the engine
@@ -484,10 +496,7 @@ impl JsTarget {
                 PAYLOAD_ACCESSOR,
             );
             if let Ok(descriptor) = read {
-                self.payloads.insert(
-                    event.clone(),
-                    format!("{RUNTIME_GLOBAL}.payload({PAYLOAD_ACCESSOR}, {descriptor})"),
-                );
+                self.payloads.insert(event.clone(), descriptor);
             }
         }
         self
@@ -1134,13 +1143,16 @@ impl StaticTarget for JsTarget {
     }
     // The engine's own `_event.data`, a field of which the expression lowering
     // reads through the library's `field`; the data of an event whose schema
-    // holds a composed value is read whole instead, and a part of it is read
-    // from that value ([`JsTarget::reading_composed_payloads`]).
+    // holds a composed value is the value its door read whole, and a part of it
+    // is read from that value ([`JsTarget::reading_composed_payloads`]).
     fn payload_accessor(&self, event: &str) -> String {
-        self.payloads
-            .get(event)
-            .cloned()
-            .unwrap_or_else(|| PAYLOAD_ACCESSOR.to_string())
+        // An event name is a token of the descriptor grammar, which holds no
+        // quote, so it stands in a single-quoted string as written.
+        if self.payloads.contains_key(event) {
+            format!("{RUNTIME_GLOBAL}.taken('{event}', {PAYLOAD_ACCESSOR})")
+        } else {
+            PAYLOAD_ACCESSOR.to_string()
+        }
     }
     // There is no channel to check before the guard: a delivery of the event
     // whose data does not fit is refused whole at the Interpreter's door, before
@@ -1549,33 +1561,11 @@ fn is_scxml_element(node: &roxmltree::Node<'_, '_>, name: &str) -> bool {
         && node.tag_name().namespace() == Some(SCXML_NAMESPACE)
 }
 
-/// The offset just past the `>` that closes the start tag opened at `start` in
-/// `text`, a `>` inside a quoted attribute value passed over; `None` for a tag
-/// that does not close.
-fn start_tag_end(text: &str, start: usize) -> Option<usize> {
-    let mut quote: Option<char> = None;
-    for (offset, c) in text.get(start..)?.char_indices() {
-        match (quote, c) {
-            (Some(open), c) if c == open => quote = None,
-            (Some(_), _) => {}
-            (None, '"' | '\'') => quote = Some(c),
-            (None, '>') => return Some(start + offset + 1),
-            (None, _) => {}
-        }
-    }
-    None
-}
-
-/// The read that opens the content of each transition taken on an event whose
-/// composed payload the machine reads (docs/adr/0086, section 4.2): a
-/// `<script>` that reads the whole data ([`JsTarget::reading_composed_payloads`])
-/// and keeps nothing of it, inserted before the transition's first element. A
-/// delivery outside its type makes it throw, which the Interpreter answers as
-/// it does any executable content that fails: `error.execution` is raised and
-/// the block ends (§scxml-4.9), so none of the transition's content runs, as a
-/// generated machine, which lifts the payload when the event is dequeued, runs
-/// none of it. A delivery of its type passes, and every expression after it
-/// reads the data as it would have.
+/// The events whose composed payload the machine reads (docs/adr/0086, section
+/// 4.2), each of which is given a door that reads the whole data when the event
+/// is taken ([`JsTarget::reading_composed_payloads`]): a delivery outside its
+/// type is refused whole, before any transition is selected, as a generated
+/// machine refuses it.
 ///
 /// An event is read where `lowered`, the model the walk lowered, has a
 /// transition on it whose condition or content reads `_event.data`, which is
@@ -1583,20 +1573,13 @@ fn start_tag_end(text: &str, start: usize) -> Option<usize> {
 /// event reads nothing of it and refuses nothing. The event of a transition is
 /// the one the walk reads its `_event.data` as ([`crate::model::Transition::payload_event`]):
 /// the event it names, or, for a receive branch of a test component, the event
-/// of the record its template is of, which the transition does not name. So
-/// each `<transition>` of the text is read as the transition the model holds in
-/// its place: the one at the same index among the transitions of the state
-/// whose `id` its parent carries. A transition with no content has no block to
-/// end, a `<transition>` of an `<initial>` or a `<history>` is taken on no
-/// event, and one inside an inline child is the child's, lowered with it
-/// ([`child_edits`]).
-fn leading_read_edits(
-    text: &str,
+/// of the record its template is of, which the transition does not name.
+fn composed_read_events(
     lowered: &SCXMLModel,
     target: &JsTarget,
-) -> Result<Vec<Edit>, GenerateError> {
+) -> std::collections::BTreeSet<String> {
     let received = lowered.received_events();
-    let read: std::collections::BTreeSet<&str> = lowered
+    lowered
         .states
         .values()
         .flat_map(|state| &state.transitions)
@@ -1605,67 +1588,8 @@ fn leading_read_edits(
         })
         .map(|t| t.payload_event(&received))
         .filter(|event| target.payloads.contains_key(*event))
-        .collect();
-    if read.is_empty() {
-        return Ok(Vec::new());
-    }
-    let document = roxmltree::Document::parse(text).map_err(|e| {
-        GenerateError::unsupported(format!(
-            "the document cannot be read again to be rewritten: {e}"
-        ))
-    })?;
-    let mut edits = Vec::new();
-    for node in document
-        .descendants()
-        .filter(|node| is_scxml_element(node, "transition"))
-    {
-        let in_a_child = node
-            .ancestors()
-            .filter(|ancestor| is_scxml_element(ancestor, "scxml"))
-            .count()
-            > 1;
-        let Some(parent) = node.parent_element().filter(|parent| {
-            !in_a_child
-                && (is_scxml_element(parent, "state") || is_scxml_element(parent, "parallel"))
-        }) else {
-            continue;
-        };
-        let index = parent
-            .children()
-            .filter(|child| is_scxml_element(child, "transition"))
-            .position(|child| child == node);
-        let held = parent
-            .attribute("id")
-            .and_then(|id| lowered.states.get(id))
-            .zip(index)
-            .and_then(|(state, index)| state.transitions.get(index));
-        let Some(transition) = held else {
-            return Err(GenerateError::unsupported(format!(
-                "a <transition> of the <{}> `{}` is none the model holds in its place, so it \
-                 has no event whose data could be read before its content",
-                parent.tag_name().name(),
-                parent.attribute("id").unwrap_or_default()
-            )));
-        };
-        let event = transition.payload_event(&received);
-        let Some(payload) = target.payloads.get(event).filter(|_| read.contains(event)) else {
-            continue;
-        };
-        if !node.children().any(|child| child.is_element()) {
-            continue;
-        }
-        let at = start_tag_end(text, node.range().start).ok_or_else(|| {
-            GenerateError::unsupported(format!(
-                "the <transition> taken on `{event}` has a start tag that does not close, so \
-                 there is no place to read its data before its content"
-            ))
-        })?;
-        edits.push(Edit {
-            range: at..at,
-            text: target.script_element(&format!("{payload};")),
-        });
-    }
-    Ok(edits)
+        .map(str::to_string)
+        .collect()
 }
 
 /// The edits that turn the document into an ECMAScript one: its data model,
@@ -1741,7 +1665,7 @@ fn schema_read_events(model: &SCXMLModel) -> std::collections::BTreeSet<String> 
 /// Nothing else of the document changes, and a document that reads no payload
 /// through a schema is returned as it is.
 fn install_doors(text: &str, model: &SCXMLModel) -> Result<String, GenerateError> {
-    let doors = door_records(model, &schema_read_events(model))?;
+    let doors = door_records(model, &schema_read_events(model), &BTreeMap::new())?;
     let Some(first) = doors.first() else {
         return Ok(text.to_string());
     };
@@ -1873,8 +1797,11 @@ fn lower_parsed(
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
-    edits.extend(leading_read_edits(text, &lowered, &target).map_err(refuse)?);
-    let doors = door_records(&lowered, &lowering.payload_events).map_err(refuse)?;
+    // The door of every event whose payload the machine reads: a schema of
+    // entries' and a composed one's alike (docs/adr/0086, section 4.2).
+    let mut read = lowering.payload_events.clone();
+    read.extend(composed_read_events(&lowered, &target));
+    let doors = door_records(&lowered, &read, &target.payloads).map_err(refuse)?;
     let library_call = format!("{RUNTIME_GLOBAL}.");
     let needs_library = !doors.is_empty()
         || lowering
@@ -3046,18 +2973,6 @@ mod tests {
         assert_eq!(lowering.name, target.name());
     }
 
-    /// The read that opens a transition's content is placed just past its start
-    /// tag, a `>` inside a quoted attribute value of either quote passed over,
-    /// and a tag that never closes has no such place.
-    #[test]
-    fn the_leading_read_goes_just_past_the_start_tag() {
-        let text = r#"<s><transition cond="a > b" event='x>y'><assign/></transition></s>"#;
-        let start = text.find("<transition").expect("the tag");
-        let at = start_tag_end(text, start).expect("the tag closes");
-        assert_eq!(&text[at..], "<assign/></transition></s>");
-        assert_eq!(start_tag_end("<transition cond=\"a > b", 0), None);
-    }
-
     /// An element the lowering writes is named as the document names the SCXML
     /// namespace: under the prefix its root binds to it, with none where it is
     /// the default namespace, whatever else the root binds.
@@ -3091,12 +3006,12 @@ mod tests {
 
     /// A receive branch of a test component reads as `_event.data` the message
     /// its template names, an event the transition does not name
-    /// (`Transition::payload_event`), and opens its content with the read of
-    /// that message's whole data, as a transition that names the event does.
-    /// The model is the composed fixture's with its transition on `batch.sent`
-    /// made such a branch, and the text names another event there.
+    /// (`Transition::payload_event`), and the door of that message's event reads
+    /// its whole data, as for a transition that names the event. The model is
+    /// the composed fixture's with its transition on `batch.sent` made such a
+    /// branch.
     #[test]
-    fn a_receive_branch_opens_with_the_read_of_the_message_its_template_names() {
+    fn a_receive_branch_opens_the_door_of_the_message_its_template_names() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/static_datamodel/static_composed_payload.scxml"
@@ -3104,22 +3019,11 @@ mod tests {
         let mut model = crate::parser::SCXMLParser::new()
             .parse_file(path)
             .expect("the fixture parses");
-        let written = model
-            .authored_positions
-            .as_ref()
-            .expect("the parse keeps the text")
-            .expanded
-            .clone();
-        let named = "<transition event=\"batch.sent\" type=\"internal\">";
-        let branch_tag = "<transition event=\"peer.reply\" type=\"internal\">";
-        assert_eq!(written.matches(named).count(), 1, "{written}");
-        let text = written.replace(named, branch_tag);
         let target = JsTarget::new(BTreeMap::new()).reading_composed_payloads(&model);
-        let read = target
-            .payloads
-            .get("batch.sent")
-            .cloned()
-            .expect("batch.sent is read whole");
+        assert!(
+            target.payloads.contains_key("batch.sent"),
+            "batch.sent is read whole"
+        );
         model
             .received_records
             .insert("BatchOf".to_string(), "Batch".to_string());
@@ -3139,33 +3043,57 @@ mod tests {
             ..Default::default()
         });
         branch.content_reads_payload = true;
-        let edits = leading_read_edits(&text, &model, &target).expect("the reads are placed");
-        assert_eq!(edits.len(), 1, "{edits:?}");
-        assert!(
-            text[..edits[0].range.start].ends_with(branch_tag),
-            "the read opens the branch's content"
+        assert_eq!(
+            composed_read_events(&model, &target),
+            std::collections::BTreeSet::from(["batch.sent".to_string()]),
+            "the branch reads the message of batch.sent, whose door reads it whole"
         );
-        assert_eq!(edits[0].range.start, edits[0].range.end);
-        assert_eq!(edits[0].text, target.script_element(&format!("{read};")));
     }
 
     /// The data of an event whose schema holds no composed value is the
     /// engine's own `_event.data`, a field of which the library's `field`
-    /// reads; that of one whose schema holds one is read whole, by the read the
-    /// target was built with.
+    /// reads; that of one whose schema holds one is the value its door read
+    /// whole when the event was taken, which the library's `taken` answers.
     #[test]
     fn only_a_composed_payload_is_read_whole() {
         let mut target = JsTarget::new(BTreeMap::new());
         assert_eq!(target.payload_accessor("tick"), PAYLOAD_ACCESSOR);
-        target.payloads.insert(
-            "batch.sent".to_string(),
-            "SceStatic.payload(_event.data, {record: {}})".to_string(),
-        );
+        target
+            .payloads
+            .insert("batch.sent".to_string(), "{record: {}}".to_string());
         assert_eq!(
             target.payload_accessor("batch.sent"),
-            "SceStatic.payload(_event.data, {record: {}})"
+            "SceStatic.taken('batch.sent', _event.data)"
         );
         assert_eq!(target.payload_accessor("tick"), PAYLOAD_ACCESSOR);
+    }
+
+    /// The door of an event whose schema holds a composed value is installed
+    /// with its descriptor and marked composed, so the library reads the data
+    /// whole and keeps it; one of a schema of entries is installed as before.
+    #[test]
+    fn a_composed_door_is_installed_with_its_descriptor() {
+        let doors = [
+            DoorRecord {
+                event: "tick".to_string(),
+                record: "{record: {'n': 'uint8'}}".to_string(),
+                composed: false,
+            },
+            DoorRecord {
+                event: "batch.sent".to_string(),
+                record: "{record: {}}".to_string(),
+                composed: true,
+            },
+        ];
+        let installed = installation_expression(&[], &doors);
+        assert!(
+            installed.contains(" SceStatic.door(\"tick\", {record: {'n': 'uint8'}});"),
+            "{installed}"
+        );
+        assert!(
+            installed.contains(" SceStatic.door(\"batch.sent\", {record: {}}, true);"),
+            "{installed}"
+        );
     }
 
     /// An optional payload field is read through the library's `field` with its

@@ -667,23 +667,43 @@
      reads one, and answers the sentence of the first refusal, on which the
      Interpreter takes error.execution in the event's place, or the empty text.
      A field past its bound so refuses the delivery even on a route that reads no
-     such field. */
+     such field. The door of an event whose schema holds a composed value is
+     handed composed: it reads the data whole, as payload() does, and keeps the
+     value it read for the event being processed, which every expression of the
+     content then reads through taken(): one walk for each delivery. */
   var doors = {};
+  var kept = null;
   function dequeued(event) {
+    kept = null;
     if (event === undefined || event === null || !Object.prototype.hasOwnProperty.call(doors, event.name)) {
       return '';
     }
     var door = doors[event.name];
     try {
-      Object.keys(door.record).forEach(function (id) {
-        var defaulted = door.defaults !== undefined && Object.prototype.hasOwnProperty.call(door.defaults, id);
-        field(event.data, id, door.record[id], defaulted ? door.defaults[id] : undefined);
+      if (door.composed) {
+        kept = { name: event.name, value: payload(event.data, door.type) };
+        return '';
+      }
+      Object.keys(door.type.record).forEach(function (id) {
+        var defaulted = door.type.defaults !== undefined && Object.prototype.hasOwnProperty.call(door.type.defaults, id);
+        field(event.data, id, door.type.record[id], defaulted ? door.type.defaults[id] : undefined);
       });
       return '';
     } catch (refusal) {
       var why = refusal !== null && typeof refusal === 'object' && refusal.message !== undefined ? refusal.message : refusal;
       return '`' + String(event.name) + '` payload: ' + String(why);
     }
+  }
+
+  /* The composed payload of the event name names, as its door read it when the
+     event was taken. One that arrived under a longer name the transition's
+     descriptor matches was taken by no door of that name, and is read here,
+     whole, from data, as the door would have read it. */
+  function taken(name, data) {
+    if (kept !== null && kept.name === name) {
+      return kept.value;
+    }
+    return payload(data, doors[name].type);
   }
 
   /* What a type descriptor describes. A scalar is named by its type, an enum by
@@ -1002,10 +1022,11 @@
     U64: integer(false, 64),
     field: field,
     payload: payload,
-    door: function (name, record) {
-      doors[name] = record;
+    door: function (name, type, composed) {
+      doors[name] = { type: type, composed: composed === true };
       globalThis.__sceDequeued = dequeued;
     },
+    taken: taken,
     lift: lift,
     parseText: parseText,
     otherwise: function (value, fallback) {

@@ -367,6 +367,17 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    field past its bound refuses the delivery even on a route that reads none of it
    (`scenarios/static_payload_bytes.json`, a sensor of 40 to 49).
 
+   The door covers a composed payload too (amended 2026-11-09). An event whose schema holds a list, a record or an
+   optional value of either is installed with the descriptor of its schema's record and marked composed
+   (`SceStatic.door(<event>, <type>, true)`): its door reads the data whole, as `SceStatic.payload` does, refuses a
+   delivery outside its type before any transition is selected, and keeps the value it read for the event being
+   processed. Every expression of the content reads that value through `SceStatic.taken(<event>, _event.data)`, so a
+   delivery is walked once, as a generated machine lifts it once; one that arrived under a longer name the
+   transition's descriptor matches, which no door of that name took, is read there whole instead. The read that
+   used to open the content of each transition on such an event (`leading_read_edits`), which refused inside the
+   transition and so let the transition be taken, is removed with it
+   (`AComposedDeliveryOutsideItsTypeTakesNoTransition`, on `static_composed_payload`).
+
    The shared record list (ADR 0046) follows: an edit whose text is past `shared_typed_text` is refused where it is
    read, as every delivery outside its type is, and the list's own check of the text (`typed`, of the same bound),
    which no delivery could reach any more, is retired with the variant `textTooLong` (ADR 0046, section 6, amended
