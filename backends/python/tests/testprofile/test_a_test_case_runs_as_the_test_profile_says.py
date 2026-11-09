@@ -21,7 +21,8 @@ re-entrant use is refused, and a context outlives no component it names.
 to, since their run is not consumed by running it. The case of ``TestTheDoors``
 reaches the run only through the two host processors a generated component
 registers on its engine (§12.3), written here with the types the engine
-registers them under.
+registers them under. The cases of ``TestTheTestLog`` hold the run's test log
+(§12.5) to the bytes the Rust module ``the_test_log`` holds its own to.
 
 This directory is not a fixture stem: it holds the runtime to hand-worked
 answers, which no document drives. ``scripts/gates/w3c-python.sh`` names it
@@ -76,12 +77,15 @@ from sce_runtime.testprofile import (  # noqa: E402
     Timer,
     TimerStatus,
     Verdict,
+    canonical,
     enabled,
     features_of,
+    message_value,
     receives,
     run_suite,
     worse,
 )
+from sce_runtime.testprofile.canonical import CanonicalValue  # noqa: E402
 
 SECOND = 1_000_000
 
@@ -180,8 +184,15 @@ class _TraceAdapter:
         return due
 
 
+def no_fields(_: object) -> CanonicalValue:
+    """The canonical form of a message whose record holds no field."""
+    return {}
+
+
 def message(event: str) -> Message:
-    return Message(event, ())
+    """A message of the record ``event`` that holds no field: ``{}`` in the test
+    log, of the record type ``empty``."""
+    return Message.of(event, (), "empty", no_fields)
 
 
 def logged(result: TestCaseResult, component: str, kind: LogKind) -> bool:
@@ -349,10 +360,10 @@ class _FourInputs:
             return []
         self._given = True
         return [
-            SystemInput("sut", Message("number", "7")),
-            SystemInput("sut", Message("other", 7)),
-            SystemInput("sut", Message("number", 6)),
-            SystemInput("sut", Message("number", 7)),
+            SystemInput("sut", Message.of("number", "7", "text", canonical.text)),
+            SystemInput("sut", Message.of("other", 7, "number", canonical.integer)),
+            SystemInput("sut", Message.of("number", 6, "number", canonical.integer)),
+            SystemInput("sut", Message.of("number", 7, "number", canonical.integer)),
         ]
 
 
@@ -785,7 +796,7 @@ def port_processor(context: ComponentContext) -> HostSendHandler:
 
     def send(request: HostSendRequest) -> list:
         assert request.value is not None, "a test-port send carries its template's value"
-        context.send(request.target, Message(request.event_name, request.value))
+        context.send(request.target, Message(event=request.event_name, test_value=request.value))
         return []
 
     return send
@@ -811,6 +822,12 @@ class _Ping:
     n: int
 
 
+def ping_canonical(value: _Ping) -> CanonicalValue:
+    """A ``_Ping`` in the canonical form of the test log, as the unit of a
+    template over its record writes it."""
+    return canonical.record(("n", canonical.integer(value.n)))
+
+
 class _DoorsTester:
     """An MTC wired as a generated one is: its start registers the two
     processors, each holding its context, and it reaches the doors of the run
@@ -826,7 +843,14 @@ class _DoorsTester:
         sends = port_processor(context)
         invokes = component_invoker(context)
         invokes(HostInvokeEvent(start=HostInvokeRequest(processor_type=TEST_COMPONENT, invoke_id="echo")))
-        sends(HostSendRequest(processor_type=TEST_PORT, event_name="ping", target="p", value=_Ping(3)))
+        sends(
+            HostSendRequest(
+                processor_type=TEST_PORT,
+                event_name="ping",
+                target="p",
+                value=message_value(_Ping(3), "ping", ping_canonical),
+            )
+        )
         context.start_timer("reply", 10)
         self._invoker = invokes
         self._context = context
@@ -887,3 +911,134 @@ class TestTheDoors:
         assert result.log[killed].at == 10, "the cancel came at the timeout"
         assert killed < verdict, "the cancel removed the PTC, not the end"
         assert logged(result, "echo", LogKind.VERDICT), result.log
+
+
+def pinging() -> Configuration:
+    """An MTC and its echo, joined ``p`` to ``q``; the MTC has two timers."""
+    return Configuration(
+        mtc_type="Tester",
+        ptc_types={"echo": "Echo"},
+        ports_of_type=by_type(("Tester", "p"), ("Echo", "q")),
+        timers_of_type=by_type(("Tester", "t"), ("Tester", "s")),
+        connections=[Connection(Endpoint("mtc", "p"), Endpoint("echo", "q"))],
+    )
+
+
+def ping(n: int) -> Message:
+    """The ping's value, a record of one number of the record type ``ping``, as
+    the unit of a template over it writes it."""
+    return Message.of("ping", _Ping(n), "ping", ping_canonical)
+
+
+def pinging_machines() -> _Machines:
+    """The MTC creates the echo, pings it, starts two timers and logs; at the
+    first timer's timeout it stops the second, and the first again, which no
+    longer runs, and passes. The echo takes the ping, passes with a reason, and
+    terminates."""
+
+    def tester_start(context: ComponentContext, self: _Scripted) -> None:
+        context.create("echo")
+        context.send("p", ping(3))
+        context.start_timer("t", 10)
+        context.start_timer("s", 20)
+        context.log('asked "echo"')
+
+    def tester_snapshot(context: ComponentContext, self: _Scripted) -> None:
+        if context.timed_out("t"):
+            context.timeout("t")
+            context.stop_timer("s")
+            context.stop_timer("t")
+            context.setverdict(Verdict.PASS)
+            self.end()
+
+    def echo_snapshot(context: ComponentContext, self: _Scripted) -> None:
+        if context.snapshot_present("q"):
+            context.receive("q")
+            context.setverdict(Verdict.PASS, "pinged")
+            self.end()
+
+    return (
+        _Machines()
+        .with_("Tester", (tester_start, tester_snapshot))
+        .with_("Echo", (idle(), echo_snapshot))
+    )
+
+
+def logged_suite(test_case: TestCase) -> Suite:
+    return Suite("logged_suite", executes=[Execute(test_case)])
+
+
+class TestTheTestLog:
+    """The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3): each
+    record written where the semantics places its event, in the order the rounds
+    produce them, and the whole log in its one canonical text."""
+
+    def test_a_run_writes_each_record_where_its_event_happens(self) -> None:
+        """P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the
+        suite's runner. The echo's work comes in the round after the MTC's
+        start, at NOW = 0, the timeout at 10; the stop of a timer that no longer
+        runs, and the removal of the terminated echo when the MTC ends, write no
+        record."""
+        suite = logged_suite(TestCase("pings_the_echo", pinging(), pinging_machines().factory()))
+        results = run_suite(suite, features_of(), lambda test_case: _TraceAdapter())
+        assert len(results) == 1
+        assert results[0].canonical_log(suite.name) == "".join(
+            [
+                '{"records":[',
+                '{"at":"0","kind":"test-case-started"},',
+                '{"at":"0","component":"mtc","kind":"component-created","type":"Tester"},',
+                '{"at":"0","component":"echo","kind":"component-created","type":"Echo"},',
+                '{"at":"0","component":"mtc","kind":"message-sent","port":"p",',
+                '"type":"ping","value":{"n":"3"}},',
+                '{"at":"0","component":"mtc","duration_us":"10","kind":"timer-started",',
+                '"timer":"t"},',
+                '{"at":"0","component":"mtc","duration_us":"20","kind":"timer-started",',
+                '"timer":"s"},',
+                '{"at":"0","component":"mtc","kind":"log","text":"asked \\"echo\\""},',
+                '{"at":"0","component":"echo","kind":"message-received","port":"q",',
+                '"type":"ping","value":{"n":"3"}},',
+                '{"at":"0","component":"echo","kind":"verdict-set","reason":"pinged",',
+                '"verdict":"pass"},',
+                '{"at":"0","component":"echo","kind":"component-done","verdict":"pass"},',
+                '{"at":"10","component":"mtc","kind":"timer-timed-out","timer":"t"},',
+                '{"at":"10","component":"mtc","kind":"timer-stopped","timer":"s"},',
+                '{"at":"10","component":"mtc","kind":"verdict-set","verdict":"pass"},',
+                '{"at":"10","component":"mtc","kind":"component-done","verdict":"pass"},',
+                '{"at":"10","kind":"test-case-ended","verdict":"pass"}',
+                '],"schema":"sce-test-log.v1","suite":"logged_suite",',
+                '"test_case":"pings_the_echo","verdict":"pass"}',
+            ]
+        )
+
+    def test_an_error_the_runtime_sets_is_logged_without_its_cause(self) -> None:
+        """P13: an error the runtime sets is a verdict without the runtime's own
+        reason, which another runtime would not write alike."""
+        machines = _Machines().with_("Waiter", (idle(), idle()))
+        result = run_case(lone("Waiter"), machines, _TraceAdapter(), 7)
+        assert result.verdict is Verdict.ERROR
+        assert result.canonical_log("logged_suite", "waits") == "".join(
+            [
+                '{"records":[',
+                '{"at":"0","kind":"test-case-started"},',
+                '{"at":"0","component":"mtc","kind":"component-created","type":"Waiter"},',
+                '{"at":"7","component":"mtc","kind":"verdict-set","verdict":"error"},',
+                '{"at":"7","kind":"test-case-ended","verdict":"error"}',
+                '],"schema":"sce-test-log.v1","suite":"logged_suite",',
+                '"test_case":"waits","verdict":"error"}',
+            ]
+        )
+
+    def test_a_test_case_that_cannot_start_logs_its_start_and_end(self) -> None:
+        """P13: a test case that cannot start, for want of an adapter, logs its
+        start and its end alone, since no component was created."""
+        suite = logged_suite(TestCase("unplayed", pinging(), pinging_machines().factory()))
+        results = run_suite(suite, features_of(), lambda test_case: None)
+        assert results[0].canonical_log(suite.name) == "".join(
+            [
+                '{"records":[',
+                '{"at":"0","kind":"test-case-started"},',
+                '{"at":"0","kind":"test-case-ended","verdict":"error"}',
+                '],"schema":"sce-test-log.v1","suite":"logged_suite",',
+                '"test_case":"unplayed","verdict":"error"}',
+            ]
+        )

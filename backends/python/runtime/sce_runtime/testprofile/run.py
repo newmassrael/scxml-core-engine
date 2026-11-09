@@ -38,7 +38,23 @@ from typing import (
 from ..saved_state import StateRefusal
 from .module_parameters import ModuleParameters, copy_of
 from .port import Duration, Instant, Message, Port
-from .timer import Timer
+from .testlog import (
+    ComponentCreated,
+    ComponentDone,
+    Log,
+    MessageReceived,
+    MessageSent,
+    TestCaseEnded,
+    TestCaseStarted,
+    TestLogEvent,
+    TestLogRecord,
+    TimerStarted,
+    TimerStopped,
+    TimerTimedOut,
+    VerdictSet,
+    write_test_log,
+)
+from .timer import Timer, TimerStatus
 from .verdict import Verdict, worse
 
 V = TypeVar("V")
@@ -103,8 +119,11 @@ class Configuration:
 
 
 class LogKind(Enum):
-    """What the test log records of a run (§12.5); ``str`` of a kind is its name
-    as the other runtimes name it."""
+    """What a line of the run's log records (§12.5): the run as a reader follows
+    it, with the removals of PTCs and the cause of an ``error`` in the runtime's
+    words. The test log, which two runtimes compare, is
+    ``TestCaseResult.records``. ``str`` of a kind is its name as the other
+    runtimes name it."""
 
     #: The MTC created and started.
     START = "Start"
@@ -133,7 +152,7 @@ class LogKind(Enum):
 
 @dataclass(frozen=True)
 class LogRecord:
-    """One line of the test log."""
+    """One line of the run's log."""
 
     #: ``NOW`` when it was recorded.
     at: Instant
@@ -148,8 +167,8 @@ class LogRecord:
 
 @dataclass
 class TestCaseResult:
-    """The outcome of one test case: its verdict, the instant it ended at, and
-    its log."""
+    """The outcome of one test case: its verdict, the instant it ended at, the
+    lines of its log, and its test log."""
 
     # Not a class of tests, though its name begins as pytest's do.
     __test__ = False
@@ -158,8 +177,24 @@ class TestCaseResult:
     verdict: Verdict
     #: ``NOW`` when the run ended.
     ended_at: Instant
-    #: The test log.
+    #: The lines of the run's log, for a reader.
     log: List[LogRecord]
+    #: The test log (docs/adr/0091, C3): the records of TCI's test logging
+    #: interface, in the order the run produced them, which ``canonical_log``
+    #: writes.
+    records: List[TestLogRecord] = field(default_factory=list)
+
+    def canonical_log(self, suite: str, test_case: str) -> str:
+        """The test log of this run of the test case ``test_case`` of the suite
+        ``suite``, in its one canonical text: the JSON Canonicalization Scheme of
+        ``schema``, ``suite``, ``test_case``, ``verdict`` and ``records``, each
+        record in the order the run produced it.
+
+        Raises ``ValueError`` when a message's value is not in the canonical
+        form (``TestValue.canonical``), which no writer of ``canonical``
+        builds.
+        """
+        return write_test_log(suite, test_case, self.verdict, self.records)
 
 
 @dataclass(frozen=True)
@@ -286,6 +321,7 @@ class _RunState:
         # A dynamic error ended the run (P13).
         self.failed = False
         self.log: List[LogRecord] = []
+        self.records: List[TestLogRecord] = []
         # A step of the run is inside the state (`_held`).
         self.held = False
 
@@ -365,6 +401,7 @@ class _RunState:
         if entity.terminated or not terminated:
             return
         entity.terminated = True
+        self.trace(ComponentDone(name, entity.state.verdict))
         if name == MTC_NAME:
             self.mtc_terminated = True
             return
@@ -387,7 +424,10 @@ class _RunState:
             verdict = worse(verdict, mtc.state.verdict)
         if self.failed:
             verdict = Verdict.ERROR
-        return TestCaseResult(verdict=verdict, ended_at=self.now, log=list(self.log))
+        self.trace(TestCaseEnded(verdict))
+        return TestCaseResult(
+            verdict=verdict, ended_at=self.now, log=list(self.log), records=list(self.records)
+        )
 
     # -- Entities (§2.1, P9) --------------------------------------------------
 
@@ -405,6 +445,7 @@ class _RunState:
         self.order.append(name)
         kind = LogKind.START if name == MTC_NAME else LogKind.CREATE
         self.record(name, kind, component_type)
+        self.trace(ComponentCreated(name, component_type))
         return self.created
 
     def ptc_to_create(self, creator: str, ptc: str) -> Optional[str]:
@@ -445,6 +486,7 @@ class _RunState:
 
     def send(self, sender: str, port: str, message: Message) -> None:
         self.record(sender, LogKind.SEND, f"{port} {message.event}")
+        self.trace(MessageSent(sender, port, message.type_name, message.canonical_value()))
         for connection in self.configuration.connections:
             if connection.a.names(sender, port):
                 peer = connection.b
@@ -495,6 +537,7 @@ class _RunState:
             raise RuntimeError(f"{name} receives on '{port}', which its component type does not declare")
         message = queue.remove_head()
         self.record(name, LogKind.RECEIVE, f"{port} {message.event}")
+        self.trace(MessageReceived(name, port, message.type_name, message.canonical_value()))
         return message
 
     def timeout(self, name: str, serial: int, timer: str) -> None:
@@ -505,6 +548,7 @@ class _RunState:
             raise RuntimeError(f"{name} times out on '{timer}', which its component type does not declare")
         binding.timeout_taken()
         self.record(name, LogKind.TIMEOUT, timer)
+        self.trace(TimerTimedOut(name, timer))
 
     def setverdict(self, name: str, serial: int, verdict: Verdict, reason: str) -> None:
         component = self.component(name, serial)
@@ -513,16 +557,24 @@ class _RunState:
         if reason:
             detail += " " + reason
         self.record(name, LogKind.VERDICT, detail)
+        self.trace(VerdictSet(name, verdict, reason if reason else None))
 
     # -- The verdict and the log (§5, §12.5) ----------------------------------
 
     def fail(self, component: str, why: str) -> None:
-        """A dynamic error (P13): the run ends with ``error``."""
+        """A dynamic error (P13): the run ends with ``error``. The test log
+        records the verdict without ``why``, which is this runtime's own
+        prose."""
         self.failed = True
         self.record(component, LogKind.ERROR, why)
+        self.trace(VerdictSet(component, Verdict.ERROR, None))
 
     def record(self, component: str, kind: LogKind, detail: str) -> None:
         self.log.append(LogRecord(at=self.now, component=component, kind=kind, detail=detail))
+
+    def trace(self, event: TestLogEvent) -> None:
+        """A record of the test log, at ``NOW``."""
+        self.records.append(TestLogRecord(self.now, event))
 
 
 @contextmanager
@@ -679,17 +731,24 @@ class ComponentContext:
         ``NOW``."""
         with _held(self._run, self._name) as state:
             state.component(self._name, self._serial).timer(timer).start(state.now, duration)
+            state.trace(TimerStarted(self._name, timer, duration))
 
     def stop_timer(self, timer: str) -> None:
-        """``<sce:stop-timer>`` (P7)."""
+        """``<sce:stop-timer>`` (P7). The test log records the stop of a running
+        timer; the stop of one that is not running changes nothing."""
         with _held(self._run, self._name) as state:
-            state.component(self._name, self._serial).timer(timer).stop()
+            binding = state.component(self._name, self._serial).timer(timer)
+            running = binding.status is TimerStatus.RUNNING
+            binding.stop()
+            if running:
+                state.trace(TimerStopped(self._name, timer))
 
     def log(self, text: str) -> None:
         """A ``<log>`` (P8): recorded in the test log with ``NOW`` and the
         component."""
         with _held(self._run, self._name) as state:
             state.record(self._name, LogKind.LOG, text)
+            state.trace(Log(self._name, text))
 
     # -- Doors (§12.3) --------------------------------------------------------
 
@@ -800,13 +859,15 @@ class TestCaseRun:
         self._started = False
 
     def run(self) -> TestCaseResult:
-        """Run the test case to its end and answer its verdict and log.
+        """Run the test case to its end and answer its verdict and logs.
 
         Raises ``RuntimeError`` when this run has been run already.
         """
         if self._started:
             raise RuntimeError("a test case run is run once; build another to run the test case again")
         self._started = True
+        with _held(self._state, MTC_NAME) as state:
+            state.trace(TestCaseStarted())
         _create_entity(self._state, MTC_NAME, self._state.configuration.mtc_type)
         while True:
             with _held(self._state, MTC_NAME) as state:

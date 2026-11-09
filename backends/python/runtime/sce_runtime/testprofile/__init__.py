@@ -25,8 +25,18 @@ and every class whose name begins with ``Test`` as a test. ``testprofile``
 names the document this package implements and is neither: no file of it is
 collected, and no import of it can be read as the standard library's. The
 classes whose names begin with ``Test`` (``TestCaseRun``, ``TestCase``,
-``TestCaseResult``) say ``__test__ = False``, so a test that imports one is not
-asked to collect it.
+``TestCaseResult``, ``TestValue`` and the test log's) say ``__test__ = False``,
+so a test that imports one is not asked to collect it. For the same reason the
+module of the test log is ``testlog``.
+
+The test log
+------------
+A run's test log (§12.5) is its ``TestCaseResult.records``, written in its one
+canonical text by ``TestCaseResult.canonical_log``. A message's value reaches it
+in the canonical form ``canonical`` spells, which the generated unit of a
+template over a record writes (``<template>.canonical``), with the name of its
+record type (``<template>.TYPE``): a send carries the three together as one
+``TestValue`` (``message_value``).
 
 Ownership
 ---------
@@ -48,8 +58,9 @@ naming the component, as the Rust runtime panics. An exception that leaves a
 step part way goes out of the run, as a panic does in Rust.
 """
 
+from . import canonical
 from .module_parameters import ModuleParameters, ModuleParameterValue
-from .port import Duration, Instant, Message, Port
+from .port import Duration, Instant, Message, Port, TestValue, message_value
 from .run import (
     MTC_NAME,
     ComponentContext,
@@ -79,12 +90,14 @@ from .suite import (
     features_of,
     run_suite,
 )
+from .testlog import TEST_LOG_SCHEMA, TestLogEvent, TestLogRecord
 from .text_length import text_length
 from .timer import Timer, TimerStatus
 from .verdict import Verdict, worse
 
 __all__ = [
     "MTC_NAME",
+    "TEST_LOG_SCHEMA",
     "CaseResult",
     "ComponentContext",
     "ComponentMachine",
@@ -111,11 +124,16 @@ __all__ = [
     "TestCase",
     "TestCaseResult",
     "TestCaseRun",
+    "TestLogEvent",
+    "TestLogRecord",
+    "TestValue",
     "Timer",
     "TimerStatus",
     "Verdict",
+    "canonical",
     "enabled",
     "features_of",
+    "message_value",
     "receives",
     "run_suite",
     "text_length",
