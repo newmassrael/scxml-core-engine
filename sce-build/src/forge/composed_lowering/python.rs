@@ -354,6 +354,15 @@ impl ComposedSpelling for PythonComposed<'_> {
             PythonCarrier::Wire => format!("_ScriptValue.of({written})"),
         }
     }
+    // The count held first, by the `AlgorithmFailure` a `<send>` catches of a
+    // param, then the list written by the `lambda` the runtime calls only for
+    // a list that holds it.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "sce_algorithm.holds_at_least(len({}), {least}, lambda: {sent})",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         "sce_copied"
@@ -708,6 +717,20 @@ mod tests {
         );
         assert_eq!(wire.send_param("[1]".to_string()), "_ScriptValue.of([1])");
         assert_eq!(PYTHON.send_param("x".to_string()), "x");
+        // A list sent where its field asks a lower count it does not prove is
+        // held to the count before it is written (docs/adr/0086, section 15.6).
+        assert_eq!(
+            wire.send_counted(
+                &Held::place("self.v_taking"),
+                "ops",
+                1,
+                "_ScriptValue.of([])".to_string()
+            ),
+            Some(
+                "sce_algorithm.holds_at_least(len(self.v_taking), 1, lambda: _ScriptValue.of([]))"
+                    .to_string()
+            )
+        );
     }
 
     /// Two places whose types differ only in their bounds are one Python type,

@@ -749,7 +749,7 @@ PY
 # asks a script engine and the machine is one that needs one.
 mutation_case "a Mesh request's params are not lowered" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    for param in &mut info.base.params {\n        lower_wire_param(param, ctx, renames, rewrites)?;\n        composed_writes_unlowered(\n            &format!(\"a Mesh <invoke> <param name=",
+     "    for param in &mut info.base.params {\n        lower_wire_param(param, None, ctx, renames, rewrites)?;\n        composed_writes_unlowered(\n            &format!(\"a Mesh <invoke> <param name=",
      "    for param in &mut info.base.params {\n        composed_writes_unlowered(\n            &format!(\"a Mesh <invoke> <param name=")
 PY
 

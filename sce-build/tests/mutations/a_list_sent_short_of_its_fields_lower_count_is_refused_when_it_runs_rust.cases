@@ -1,0 +1,34 @@
+# Mutation cases for "a list sent short of its field's lower count is refused when the send runs"
+# (docs/adr/0086, section 15.6, landing step 9), on the Rust lane: the Rust machine of
+# `static_composed_send` sends `held` empty to `counted.sent`, whose `kept` holds at least one
+# element, which must be refused whole with `error.execution` (`refusals` 1, no delivery), and then
+# with one element, which must arrive (`counted_deliveries` 1, `counted_sum` 7).
+#
+# Each case takes the run-time half away: the param that holds the count is no longer one that can
+# fail, so the `<send>` evaluates it where no failure is read; or the runtime's check passes a short
+# list. The machine reaches the lane only through the committed tree its regeneration writes, so
+# the tree is a declared target and the regeneration carries a mutated generator into it.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_sent_short_of_its_fields_lower_count_is_refused_when_it_runs_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_composed_value_is_sent_by_its_name
+mutation_targets sce-build/src/forge/static_lowering.rs backends/rust/forge-runtime/src/algorithm.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/static_composed_send_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
+
+mutation_case "the param that holds the count is written as one that cannot fail" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "            (counted, !target.composed_param_writes())",
+     "            (counted, false)")
+PY
+
+mutation_case "the runtime passes a list short of its field's lower count" <<'PY'
+edit("backends/rust/forge-runtime/src/algorithm.rs",
+     "    if (held as u64) < u64::from(least) {",
+     "    if (held as u64) < u64::from(least) && false {")
+PY

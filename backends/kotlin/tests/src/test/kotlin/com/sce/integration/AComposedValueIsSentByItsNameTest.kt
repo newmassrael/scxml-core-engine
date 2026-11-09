@@ -46,7 +46,16 @@ class AComposedValueIsSentByItsNameTest {
         try {
             sm.sendEventByName("batch.sent", EventMetadata(data = batch()))
             sm.tick()
-            assertEquals(0u, sm.refusals, "the delivery the machine sent itself fits its schema")
+            assertEquals(
+                1u,
+                sm.refusals,
+                "the delivery the machine sent itself fits its schema, and the one refusal is the list sent short of its field's lower count",
+            )
+            // A list variable sent to a field that states a lower count (docs/adr/0086, section
+            // 15.6): sent empty, refused whole and never delivered; sent with its one element,
+            // delivered.
+            assertEquals(1u, sm.countedDeliveries)
+            assertEquals(7u, sm.countedSum)
             assertEquals(2u, sm.deliveries, "the forwarded delivery came back on the internal queue")
             // Depth 1: the lengths of a list of records and a list of enum values.
             assertEquals(3u, sm.itemCount)
