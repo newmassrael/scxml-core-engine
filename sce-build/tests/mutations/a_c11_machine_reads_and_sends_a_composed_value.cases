@@ -17,7 +17,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_c11_machine_reads_a_composed_payload_at_any_depth
-mutation_targets sce-build/src/forge/composed_lowering/c11.rs sce-build/src/forge/generator.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs
+mutation_targets sce-build/src/forge/composed_lowering/c11.rs sce-build/src/forge/generator.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs tools/codegen/templates/c/state_machine.c.jinja2
 mutation_oracles sce-build/tests/a_c11_machine_reads_a_composed_payload_at_any_depth.rs
 
 # A list is read with no bound: one element past it is kept (section 4.1).
@@ -92,4 +92,13 @@ edit("sce-build/src/forge/static_lowering.rs",
     fn reads_composed_text(&self) -> bool {
         true
     }''')
+PY
+
+# A send a host serves hands it, as a composed pair's text, the payload from its
+# start rather than the value alone: every pair before it, its key, and the
+# value.
+mutation_case "a host's pair text is read from the payload's start" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     r'''                        const size_t sce_value_at = sce_forge_wire_mark(sce_wire);''',
+     r'''                        const size_t sce_value_at = 0u;''')
 PY

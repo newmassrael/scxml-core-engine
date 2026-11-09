@@ -134,7 +134,23 @@
                            past a bound refuses the whole payload, never cuts it. */
                         sce_forge_wire_t *const sce_wire = &sce_wire_;
                         sce_forge_wire_pair_key(sce_wire, "\"{{ param.name | escape_json_string | escape_c }}\"");
+{% if host_texts %}
+                        /* A send a host serves carries the pair as text too: the
+                           JSON of the value, read back from the payload it was
+                           written into, so it is written once. A value refused as
+                           it was written is no text, and the payload's end refuses
+                           the send. */
+                        const size_t sce_value_at = sce_forge_wire_mark(sce_wire);
+{% endif %}
 {{ param.native_value }}
+{% if host_texts %}
+                        if (sce_forge_wire_copy_since(sce_wire, sce_value_at,
+                                SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]), SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {
+                            _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                            _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
+                            _host_param_count++;
+                        }
+{% endif %}
                     }
 {% elif param.native_value %}
                     {

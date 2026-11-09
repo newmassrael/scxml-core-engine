@@ -5495,10 +5495,14 @@ every depth; a place read through an index is refused by name on C++ too. The C1
 backend has no value a composed param could be held in until it is written, so it
 writes the value where its pair stands, part by part, through the wire writer
 (`sce/forge/wire.h`): a list as an array, a record as an object, keys ascending at
-every depth, an absent value as `null` and each scalar as a scalar param crosses; a
-place read through an index is refused by name on C11 too, and so is a composed value
-an `<invoke>`'s `<param>`, a `<donedata>`, a `<content expr>` or a `<send>` a host
-serves carries, whose request carries each value as text too.
+every depth, an absent value as `null` and each scalar as a scalar param crosses. A
+`<send>` a host serves (a Mesh peer's included) carries the same payload, and hands
+the host each composed pair as text too: the value's JSON, read back from the payload
+it was written into, so it is written once. A part past its room, or a list short of
+its lower count, refuses the whole send with `error.execution`. A place read through
+an index is refused by name on C11 too, and so is a composed value an `<invoke>`'s
+`<param>`, a `<donedata>` or a `<content expr>` carries, whose writers open no pair
+for one yet.
 
 **Which backend lowers a composed value** (docs/adr/0086, section 7.3). One table
 decides what each backend lowers of a composed value, a row per backend
