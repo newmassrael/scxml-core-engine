@@ -10,6 +10,7 @@ package voucher_is
 
 import (
 	"bytes"
+	"github.com/newmassrael/sce-go-runtime/testprofile/canonical"
 	sce_voucher_payment "github.com/newmassrael/sce-go-tests/integration/static_datamodel/voucher_payment"
 )
 
@@ -29,4 +30,16 @@ func Matches(value Value) bool {
 // keeps the type Value and the package's functions in one namespace.
 func Specific() Value {
 	return sce_voucher_payment.VoucherPaymentPayload{VoucherCode: []byte{0x00, 0xff, 0x10, 0xa0}}
+}
+
+// TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
+// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+const TYPE = "voucher_payment"
+
+// Canonical is value in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+// integer as the text of its digits, a byte string in upper-case hex, an enum by its declared name,
+// an absent field omitted. A send of this template carries it beside the value it sends
+// (`testprofile.MessageValue`).
+func Canonical(value Value) any {
+	return canonical.Record(canonical.Field("voucher_code", canonical.Bytes(value.VoucherCode)))
 }

@@ -463,13 +463,15 @@ func (c *AnswererComponent) Start(context *scetestprofile.ComponentContext) {
 	machine := sce.NewEngine[AnswererState, AnswererEvent](&policy)
 	// P6: a send on a port is appended to the queue of the port it is connected
 	// to, or handed to the system adapter where it is mapped. A test-port send
-	// always carries its template's value (`forge::static_lowering`,
-	// `StaticTarget::test_message`).
+	// always carries its template's value, with the name of its record type
+	// and the writer of its canonical form in the test log (§12.5,
+	// `forge::static_lowering`, `StaticTarget::test_message`).
 	machine.RegisterEventProcessor("http://sce.dev/ext/test-port", func(request sce.HostSendRequest) []sce.HostSendResponse {
-		if request.Value == nil {
+		value, carried := request.Value.(scetestprofile.TestValue)
+		if !carried {
 			panic("a test-port send carries its template's value")
 		}
-		context.Send(request.Target, scetestprofile.Message{Event: request.EventName, Value: request.Value})
+		context.Send(request.Target, scetestprofile.Message{Event: request.EventName, Value: value})
 		return nil
 	})
 	// P9: the start of a PTC's invocation creates and starts it, and its cancel
@@ -789,9 +791,10 @@ func (p *AnswererPolicy) ExecuteEntryActions(state AnswererState, engine *sce.En
 			InvokeID: p.pendingEventInvokeid,
 			// docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the
 			// value of its specific template, handed to the test-port processor
-			// as a value and never as an encoding (docs/adr/0091, C2). Every
-			// other send leaves it nil and carries EventData.
-			Value: sce_request_of.Specific(p.vAsked),
+			// as a value and never as an encoding (docs/adr/0091, C2), with the
+			// writer of its canonical form in the test log (§12.5). Every other
+			// send leaves it nil and carries EventData.
+			Value: scetestprofile.MessageValue(sce_request_of.Specific(p.vAsked), sce_request_of.TYPE, sce_request_of.Canonical),
 		}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 		// W3C SCXML 6.2: a declared type with no handler registered is, from

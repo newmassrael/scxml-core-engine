@@ -575,13 +575,15 @@ public final class PtcKeeperComponent: SceTestProfile.ComponentMachine {
         do {
             // P6: a send on a port is appended to the queue of the port it is
             // connected to, or handed to the system adapter where it is mapped. A
-            // test-port send always carries its template's value
-            // (`forge::static_lowering`, `StaticTarget::test_message`).
+            // test-port send always carries its template's value, with the name of
+            // its record type and the writer of its canonical form in the test log
+            // (`forge::static_lowering`, `StaticTarget::test_message`;
+            // docs/SCE_TEST_PROFILE.md §12.5).
             try machine.registerEventProcessor("http://sce.dev/ext/test-port") { request in
-                guard let sent = request.value else {
+                guard let sent = request.value?.value as? any SceTestProfile.TestValue else {
                     preconditionFailure("a test-port send carries its template's value")
                 }
-                context.send(request.target, SceTestProfile.Message(event: request.eventName, value: sent.value))
+                context.send(request.target, SceTestProfile.Message(event: request.eventName, value: sent))
                 return []
             }
             // P9: the start of a PTC's invocation creates and starts it, and its

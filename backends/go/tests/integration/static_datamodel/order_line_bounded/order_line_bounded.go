@@ -9,6 +9,7 @@
 package order_line_bounded
 
 import (
+	"github.com/newmassrael/sce-go-runtime/testprofile/canonical"
 	sce_order_line "github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line"
 	sce_paint_color "github.com/newmassrael/sce-go-tests/integration/static_datamodel/paint_color"
 	sce_quantity_at_most "github.com/newmassrael/sce-go-tests/integration/static_datamodel/quantity_at_most"
@@ -24,4 +25,16 @@ type Value = sce_order_line.OrderLinePayload
 // param_limit is the formal parameter `limit`, of type `uint16`.
 func Matches(value Value, param_limit uint16) bool {
 	return value.Sku == "A-1" && sce_quantity_at_most.Matches(value.Quantity, param_limit) && value.Color == sce_paint_color.PaintColorBlue
+}
+
+// TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
+// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+const TYPE = "order_line"
+
+// Canonical is value in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+// integer as the text of its digits, a byte string in upper-case hex, an enum by its declared name,
+// an absent field omitted. A send of this template carries it beside the value it sends
+// (`testprofile.MessageValue`).
+func Canonical(value Value) any {
+	return canonical.Record(canonical.Field("sku", canonical.Text(value.Sku)), canonical.Field("quantity", canonical.Integer(value.Quantity)), canonical.Field("color", canonical.Enumerated(value.Color.DeclaredName())))
 }
