@@ -633,6 +633,14 @@ old encode, the old encode and its templates are removed in the same landing.
    over the caller's (§1), so a refusal leaves the caller's sink untouched; it returns the refusal as a
    `CodecError`. The runtime's line writer takes views and any range of texts, and throws nothing. The
    template's struct is gone: every content-line plan is printed. The printed set is 144 codecs.
+
+   *The thirty-first C++ landing, 2026-11-09:* a fixed field whose bits run past its first byte, the last form
+   the printer lacked. ADR 0095 says where such a field's bits lie: bits of the word its bytes make in its byte
+   order. The plan writes a whole field that shares none of its bytes as one value of its bytes
+   (`Write::Whole`), and every other byte of the fixed part as the or of the pieces the fields hold in it
+   (`Write::Byte`); the C++ printer prints both, and the template's encode and decode, Swift and the diagram
+   read the same spans (`forge::bit_layout`). The printed set is 145 codecs, every codec of the resources, so
+   the template's C++ encode prints none of them.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
