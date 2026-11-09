@@ -124,6 +124,7 @@ pub fn register_literal_escaper(
         Syntax::Python => env.add_filter("escape_python", escape_python),
         Syntax::Rust => env.add_filter("escape_rust", escape_rust),
         Syntax::Swift => env.add_filter("escape_swift", escape_swift),
+        Syntax::Ttcn3 => env.add_filter("escape_ttcn3", escape_ttcn3),
     }
 }
 
@@ -2653,6 +2654,46 @@ pub(crate) fn escape_swift(text: String) -> String {
     out
 }
 
+/// A character as TTCN-3 writes it by its position in ISO/IEC 10646:
+/// `char(group, plane, row, cell)`, a value of `universal charstring`
+/// (ES 201 873-1 §6.1.1).
+fn ttcn3_quadruple(ch: char) -> String {
+    let point = u32::from(ch);
+    format!(
+        "char({}, {}, {}, {})",
+        point >> 24,
+        (point >> 16) & 0xFF,
+        (point >> 8) & 0xFF,
+        point & 0xFF
+    )
+}
+
+/// Escape the author's text for the BODY of a TTCN-3 character string
+/// literal, `"…"`.
+///
+/// TTCN-3 writes a `"` inside the literal twice and reads a backslash as
+/// itself. It has no escape for any other character, so one outside printable
+/// ASCII ends the literal and is concatenated as its quadruple
+/// ([`ttcn3_quadruple`]): what the escaper writes between the literal's quotes
+/// is `" & char(0, 0, 0, 10) & "`, which with them is an expression of the
+/// same characters. A module the export writes is ASCII whatever its values
+/// hold.
+pub(crate) fn escape_ttcn3(text: String) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '"' => out.push_str("\"\""),
+            ' '..='~' => out.push(ch),
+            other => {
+                out.push_str("\" & ");
+                out.push_str(&ttcn3_quadruple(other));
+                out.push_str(" & \"");
+            }
+        }
+    }
+    out
+}
+
 /// Convert SCXML string expression to Kotlin string expression.
 fn to_kotlin_string_expr(expr: String) -> String {
     if expr.is_empty() {
@@ -3044,6 +3085,7 @@ mod literal_escaper_census {
         ("escape_python", escape_python),
         ("escape_rust", escape_rust),
         ("escape_swift", escape_swift),
+        ("escape_ttcn3", escape_ttcn3),
     ];
 
     /// Text that a STRING-LITERAL escaper must change and an identifier
@@ -3101,6 +3143,22 @@ mod literal_escaper_census {
         );
         // A backslash before `(` is doubled, so nothing interpolates.
         assert_eq!(escape_swift("\\(1)".to_string()), "\\\\(1)");
+    }
+
+    /// What `escape_ttcn3` writes between a literal's quotes is an expression
+    /// of the same characters: a `"` twice, a backslash as itself, and every
+    /// character outside printable ASCII concatenated as its quadruple.
+    #[test]
+    fn escape_ttcn3_writes_what_ttcn3_reads_back() {
+        assert_eq!(escape_ttcn3("a\"b\\c".to_string()), "a\"\"b\\c");
+        assert_eq!(
+            escape_ttcn3("x\ny".to_string()),
+            "x\" & char(0, 0, 0, 10) & \"y"
+        );
+        assert_eq!(
+            escape_ttcn3("\u{e9}\u{1F600}".to_string()),
+            "\" & char(0, 0, 0, 233) & \"\" & char(0, 1, 246, 0) & \""
+        );
     }
 
     /// The table above names every `escape_*` filter this module registers.

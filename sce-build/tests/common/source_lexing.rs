@@ -86,6 +86,9 @@ const TEMPLATE_DIRS: &[(&str, Syntax)] = &[
     ("/templates/python/", Syntax::Python),
     ("/templates/rust/", Syntax::Rust),
     ("/templates/swift/", Syntax::Swift),
+    // The TTCN-3 export of a test suite, which no backend emits
+    // (docs/SCE_TEST_PROFILE.md §9.5).
+    ("/templates/ttcn3/", Syntax::Ttcn3),
 ];
 
 /// Where the C++ backend's own templates live. They predate the

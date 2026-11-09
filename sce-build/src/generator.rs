@@ -5782,6 +5782,19 @@ pub fn register_template(
     backend: Language,
 ) -> Result<(), minijinja::Error> {
     let syntax = Syntax::of_template(&name, backend);
+    register_template_in(env, name, content, syntax)
+}
+
+/// [`register_template`] for a template whose syntax is known without a
+/// backend: one that writes a language no backend emits, as the TTCN-3
+/// export's do ([`Syntax::Ttcn3`], docs/SCE_TEST_PROFILE.md §9.5). The same
+/// door, so the same rewrite reads it.
+pub fn register_template_in(
+    env: &mut Environment<'_>,
+    name: String,
+    content: &str,
+    syntax: Syntax,
+) -> Result<(), minijinja::Error> {
     install_rewrite_filters(env, syntax);
     let encoded = rewritten_template(&name, content, syntax)?;
     env.add_template_owned(name, encoded.to_string())

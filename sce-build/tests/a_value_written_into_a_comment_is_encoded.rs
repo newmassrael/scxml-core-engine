@@ -158,7 +158,8 @@ fn renders_for_several_backends(source: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// No template reaches a minijinja environment except through
-/// `generator::register_template`.
+/// `generator::register_template_in`, the door `generator::register_template`
+/// passes a backend's template through once it has read the template's syntax.
 ///
 /// Read from the library's code with comments stripped, so prose that names the
 /// minijinja call is not counted.
@@ -181,7 +182,7 @@ fn every_template_enters_through_the_one_door() {
             let text = std::fs::read_to_string(&path).expect("read source");
             let code = code_only(&text);
             let door = code
-                .find("pub fn register_template(")
+                .find("pub fn register_template_in(")
                 .map(|start| (start, start + code[start..].find("\n}\n").unwrap_or(0)));
             let mut from = 0usize;
             while let Some(found) = code[from..].find("add_template") {
@@ -199,12 +200,12 @@ fn every_template_enters_through_the_one_door() {
     }
     assert!(
         door_holds_it,
-        "register_template no longer registers anything itself, so this guard is \
+        "register_template_in no longer registers anything itself, so this guard is \
          looking for a door that is not there"
     );
     assert!(
         calls.is_empty(),
-        "templates registered without generator::register_template:\n{}\n\n\
+        "templates registered without generator::register_template_in:\n{}\n\n\
          A template that skips the door renders every value it writes into a comment \
          raw — the defect the door exists to remove.",
         calls.join("\n")

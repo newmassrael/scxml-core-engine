@@ -112,6 +112,7 @@ pub const ALREADY_FIT_FOR_A_LITERAL: &[&str] = &[
     "escape_python",
     "escape_rust",
     "escape_swift",
+    "escape_ttcn3",
     // Return a complete expression, delimiters included.
     "c_char_array_init",
     "c_text_expr",
@@ -148,6 +149,7 @@ pub fn escaper_for(syntax: Syntax) -> &'static str {
         Syntax::Python => "escape_python",
         Syntax::Rust => "escape_rust",
         Syntax::Swift => "escape_swift",
+        Syntax::Ttcn3 => "escape_ttcn3",
     }
 }
 
@@ -212,6 +214,7 @@ impl fmt::Display for RawLiteralSite {
                 Syntax::Go => "\"…\" rather than `…`",
                 Syntax::Python => "\"…\"",
                 Syntax::Swift => "\"…\" rather than #\"…\"#",
+                Syntax::Ttcn3 => "\"…\"",
             }
         )
     }

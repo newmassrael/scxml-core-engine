@@ -116,6 +116,16 @@ fn ends_its_list(line: &str, syntax: Syntax) -> bool {
             word("return") || word("break") || word("continue") || word("goto") || word("throw")
         }
         Syntax::Python => word("return") || word("raise") || word("break") || word("continue"),
+        // A TTCN-3 statement that leaves its block (ES 201 873-1). `goto`
+        // names a label of the same function, as in C.
+        Syntax::Ttcn3 => {
+            word("return")
+                || word("stop")
+                || word("repeat")
+                || word("break")
+                || word("continue")
+                || word("goto")
+        }
     }
 }
 
@@ -129,7 +139,9 @@ fn opens_a_clause(line: &str, syntax: Syntax) -> bool {
                 || line.starts_with("default:")
                 || matches!(line, "public:" | "protected:" | "private:")
         }
-        Syntax::Rust | Syntax::Kotlin | Syntax::Python => false,
+        // A TTCN-3 `select` writes each `case` with its own block, so a case
+        // opens a list as a brace does and is no label.
+        Syntax::Rust | Syntax::Kotlin | Syntax::Python | Syntax::Ttcn3 => false,
     }
 }
 

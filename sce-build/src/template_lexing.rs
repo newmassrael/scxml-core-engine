@@ -59,6 +59,11 @@ pub enum Syntax {
     Python,
     Rust,
     Swift,
+    /// TTCN-3, which the export of a test suite writes
+    /// (docs/SCE_TEST_PROFILE.md §9.5). No backend emits it, so no
+    /// [`Language`] reads as it; a template is read as it by its name alone
+    /// (`.ttcn.jinja2`).
+    Ttcn3,
 }
 
 impl Syntax {
@@ -98,6 +103,7 @@ impl Syntax {
             Some("py") => Syntax::Python,
             Some("swift") => Syntax::Swift,
             Some("c" | "h" | "cc" | "cpp" | "hpp" | "inl" | "ld") => Syntax::CFamily,
+            Some("ttcn") => Syntax::Ttcn3,
             _ => Syntax::of_language(backend),
         }
     }
@@ -110,6 +116,7 @@ impl Syntax {
             Syntax::Python => Rules::python(),
             Syntax::Rust => Rules::rust(),
             Syntax::Swift => Rules::swift(),
+            Syntax::Ttcn3 => Rules::ttcn3(),
         }
     }
 }
@@ -665,6 +672,10 @@ const PYTHON_STRINGS: &[StringDelim] = &[
 ];
 const RUST_STRINGS: &[StringDelim] = &[escaped("\"")];
 const SWIFT_STRINGS: &[StringDelim] = &[escaped("\"\"\""), escaped("\"")];
+// A TTCN-3 character string writes a `"` it holds twice and gives a backslash
+// no meaning, so a backslash ends nothing early; `"a""b"` reads as two literals
+// side by side, whose characters are the one literal's.
+const TTCN3_STRINGS: &[StringDelim] = &[escaped_undelimitable("\"")];
 
 impl Rules {
     fn c_family() -> Self {
@@ -770,6 +781,27 @@ impl Rules {
             cpp_raw: false,
             rust_raw: false,
             swift_raw: true,
+            line_splices: false,
+            opaque: &[],
+        }
+    }
+    /// TTCN-3 as the export of a test suite writes it (ES 201 873-1 Annex A):
+    /// `//` and `/* */` comments, which do not nest, and the character string
+    /// of [`TTCN3_STRINGS`]. A bit, hex or octet string (`'0AFF'O`) holds
+    /// digits alone, so it hides no comment and no string and is read as code;
+    /// TTCN-3 has no raw string and no character literal.
+    fn ttcn3() -> Self {
+        Rules {
+            line: &["//"],
+            line_directives: &[],
+            block: &[("/*", "*/")],
+            nests: false,
+            strings: TTCN3_STRINGS,
+            char_literals: false,
+            prose_when_line_initial: &[],
+            cpp_raw: false,
+            rust_raw: false,
+            swift_raw: false,
             line_splices: false,
             opaque: &[],
         }
@@ -1346,6 +1378,31 @@ mod tests {
         assert_eq!(
             Syntax::of_template("state_machine.swift.jinja2", Language::Cpp),
             Syntax::Swift
+        );
+        assert_eq!(
+            Syntax::of_template("ttcn3/types_module.ttcn.jinja2", Language::Cpp),
+            Syntax::Ttcn3
+        );
+    }
+
+    /// TTCN-3 reads its comments as C does, and a `"` its string holds as two
+    /// quotes: the value after `""` is still inside the string, a backslash
+    /// ends nothing, and an octet string is code.
+    #[test]
+    fn ttcn3_reads_its_strings_and_comments() {
+        let t = "var charstring s := \"a\"\"{{ a }}\\\" & {{ b }};\n\
+                 // {{ c }}\n/* {{ d }} */ {{ e }}\n\
+                 var octetstring o := '{{ f }}'O;\n";
+        assert_eq!(
+            contexts(t, Syntax::Ttcn3),
+            vec![
+                ("{{ a }}".to_string(), Class::Literal),
+                ("{{ b }}".to_string(), Class::Code),
+                ("{{ c }}".to_string(), Class::Comment),
+                ("{{ d }}".to_string(), Class::Comment),
+                ("{{ e }}".to_string(), Class::Code),
+                ("{{ f }}".to_string(), Class::Code),
+            ]
         );
     }
 
