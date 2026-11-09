@@ -25,7 +25,9 @@
 
 use super::*;
 use crate::forge::expr::{wide_literal_spelling, WideLiteral};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 
 /// An integer literal of the profile (`test_profile::decimal_integer`) as
@@ -1300,6 +1302,13 @@ pub(super) trait CanonicalSpelling {
     /// `strict` is false for an enum of an open set, whose number no variant
     /// declares is written as its digits.
     fn enumerated(&self, at: &Self::At, strict: bool) -> String;
+    /// A value of the enum `declared` at `at`: [`Self::enumerated`] by
+    /// default, where the value names its variant's name and number itself; a
+    /// backend whose value names neither, as a C enumerator does not, reads them
+    /// through the functions of the enum's own unit, which `declared` names.
+    fn enumerated_of(&self, at: &Self::At, declared: &ScopedEnum) -> String {
+        self.enumerated(at, declared.strict)
+    }
     /// An integer of any width.
     fn integer(&self, at: &Self::At) -> String;
     /// A text.
@@ -1357,7 +1366,7 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                     reference.alias
                 )
             })?;
-            spelling.enumerated(at, declared.strict)
+            spelling.enumerated_of(at, declared)
         }
         TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => spelling.integer(at),
         TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
@@ -1565,6 +1574,7 @@ impl<S: JoinSpelling> JoinSpelling for LowersUnions<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::value_type::ScopedVariant;
 
     /// A spelling of the canonical form that keeps the default of every
     /// method that has one, its positions the names it reads.
@@ -1586,8 +1596,8 @@ mod tests {
         fn boolean(&self, at: &String) -> String {
             at.clone()
         }
-        fn enumerated(&self, at: &String, _strict: bool) -> String {
-            at.clone()
+        fn enumerated(&self, at: &String, strict: bool) -> String {
+            format!("{at}:{}", if strict { "closed" } else { "open" })
         }
         fn integer(&self, at: &String) -> String {
             at.clone()
@@ -1640,5 +1650,33 @@ mod tests {
         let (_, present) = Plain.bound(&field, "present");
         assert_eq!(present, "present_of_value.note");
         assert_eq!(Plain.optional_value(&field, present.clone()), present);
+    }
+
+    /// A value of an enum is, by default, what `enumerated` writes of it,
+    /// closed or open as its enum declares: a backend that keeps the default
+    /// writes what it wrote before the hook, whatever enum it is of.
+    #[test]
+    fn an_enum_value_is_spelled_by_enumerated_by_default() {
+        let root = Plain.root();
+        for strict in [true, false] {
+            let declared = ScopedEnum {
+                name: "paint_color".to_string(),
+                variants: vec![ScopedVariant {
+                    name: "red".to_string(),
+                    value: 0,
+                }],
+                underlying: SceType::Uint8,
+                strict,
+            };
+            assert_eq!(
+                Plain.enumerated_of(&root, &declared),
+                Plain.enumerated(&root, strict)
+            );
+        }
+        assert_eq!(
+            Plain.enumerated(&root, true),
+            "value:closed",
+            "the spelling tells a closed enum from an open one"
+        );
     }
 }
