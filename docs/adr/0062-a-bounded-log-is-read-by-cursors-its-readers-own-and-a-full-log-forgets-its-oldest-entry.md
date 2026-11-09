@@ -1649,6 +1649,24 @@ since the deferred reader landed, so the table above is a measurement of the ear
 first run that will judge them, and a case that SURVIVES there is a finding about Miri's emulation or the source, not a fault of
 the runner.
 
+### Every template stores the context (2026-11-04, 2026-11-09)
+
+On 2026-11-04 (ab74ca01be) the Swift template came to store the context of the elements it writes: a flag input is a bit
+of a context word and a tag a word of its own, as in the other templates, and `publish` takes the flags. Swift went on a
+list of its own, `BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS`, beside `BROADCAST_LOG_CONTEXT_BACKENDS` of the six that write
+every log.
+
+With that, every language was on one of the two lists, and the refusal `refusal_for` gave a language off both ("the
+`<language>` log template does not yet store them with the entry") was reached by none. Its two mutation cases (a refusal
+of flags inverted, of a tag inverted) survived every round since, as a mutant of code no input reaches must. On 2026-11-09
+the two lists, `broadcast_log_stores_context` and the refusal were removed, and storing the context became part of what a
+broadcast-log template is (the comment on `BROADCAST_LOG_BACKENDS`): a template that does not store it does not land, as
+one that does not write the slot does not. A language added to `Language` is not admitted by this: it is in neither
+`BROADCAST_LOG_BACKENDS` nor `ships_in_part` until its template lands, and `refusal_for` writes every language's arm out.
+The test that held the lists against each other went with them; `what_a_caller_must_give_is_stored_with_the_entry_in_every_language`
+holds that no language refuses an element for a flag input or a tag, and the casefile
+`a_broadcast_log_stores_the_callers_inputs_beside_its_bytes.cases` drops the four cases whose code is gone (14 remain).
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1663,9 +1681,8 @@ What is left:
 - **Swift holds the log in part**, and what is left follows its codec. The Swift codec lowers positional fixed-width integer
   fields and refuses everything else by name (flag inputs, variants, bit-fields, present-if, repeat, TLV chain, embed,
   variable length, cbor, content-line), so the log refuses an element whose codec holds any of those, naming the codec and the
-  construct. Each construct the Swift codec comes to lower widens the elements the log takes, and a flag input or a variant
-  adds the context words, which the Swift template has not been written to store: it would be the Kotlin template's
-  context block over the same runtime. The 64-bit row is the only one (see the section above), so a deploy whose target
+  construct. Each construct the Swift codec comes to lower widens the elements the log takes; the context words a flag
+  input or a variant adds are stored by the Swift template already (see "Every template stores the context"). The 64-bit row is the only one (see the section above), so a deploy whose target
   selects the narrow row is refused for Swift. `broadcast-log/runtime-missing` is produced by nothing today: it stays in the
   contract as the answer for a language added to `Language` whose runtime has no log row.
 - **Narrow rows for Kotlin, Go and Python** do not exist: the targets they run on offer 64-bit atomics, and a target that did

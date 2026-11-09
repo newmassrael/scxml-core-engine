@@ -17,10 +17,7 @@
 # - `broadcast_log_context_value` (`sce-build/src/forge/generator.rs`), which turns them into
 #   the `word`, `shift`, `tag_word`, `payload_start` and `present` a template prints, and
 #   the word width each renderer passes it;
-# - the words the C11 renderer counts to refuse an entry its 32-bit count cannot hold;
-# - the registry of the templates that store the context
-#   (`BROADCAST_LOG_CONTEXT_BACKENDS` in `sce-build/src/forge/codegen_matrix.rs`) and the
-#   refusal `refusal_for` gives a language that is not on it.
+# - the words the C11 renderer counts to refuse an entry its 32-bit count cannot hold.
 #
 # A mutant of any of them writes the context where the other half of the log does not read
 # it, so a reader decodes an entry under flags it was not published under, or reads the
@@ -41,7 +38,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test broadcast_log_kind
-mutation_targets sce-build/src/lib.rs sce-build/src/forge/generator.rs sce-build/src/forge/codegen_matrix.rs
+mutation_targets sce-build/src/lib.rs sce-build/src/forge/generator.rs
 
 # --- How many words the context takes ---
 
@@ -215,75 +212,14 @@ edit("sce-build/src/forge/generator.rs",
      r'''        + 0u64''')
 PY
 
-# --- Which languages store the context ---
-
-# A language that is not on the registry refuses an element that has a context, and every
-# language on it must hold one. Read the other way round, the languages that store the
-# context refuse it and the one that does not accepts it. Killed by
-# `what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere`
-# (every language on the registry expects `refusal_for` to be `None` for flags and for a
-# tag), and by every `*_stores_*` test, which expects the module to generate.
-mutation_case "a language that stores the context is refused an element that has one" <<'PY'
-edit("sce-build/src/lib.rs",
-     r'''        if !forge::codegen_matrix::broadcast_log_stores_context(language) {''',
-     r'''        if forge::codegen_matrix::broadcast_log_stores_context(language) {''')
-PY
-
-# A language that is left off the registry refuses what its template stores. Killed by
-# `c11_stores_the_flag_inputs_an_element_asks_its_caller_for`, whose compile of the flag
-# input `S` is expected to generate and is refused with "the C11 log template does not yet
-# store them with the entry". (The registry test above reads the same list for both sides of
-# its comparison and so does not notice.)
-mutation_case "the registry of context-storing templates does not list C11" <<'PY'
-edit("sce-build/src/forge/codegen_matrix.rs",
-     r'''pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
-    Language::Rust,
-    Language::Kotlin,
-    Language::Python,
-    Language::Go,
-    Language::C11,
-    Language::Cpp,
-];''',
-     r'''pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
-    Language::Rust,
-    Language::Kotlin,
-    Language::Python,
-    Language::Go,
-    Language::Cpp,
-];''')
-PY
-
-# --- What a language that does not store the context says ---
-
-# A language with no context words refuses flag inputs by name. With the test read the other
-# way, an element with flag inputs is not refused where the template cannot store them, and
-# the module is lowered to a call of the codec without the arguments it needs. Killed by
-# `what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere`:
-# Swift is the one language off the registry, and `refusal_for` must be `Some(..)` for two
-# flag inputs (it is `None` under the mutant, which panics "does not store a flag input yet").
-mutation_case "a language with no context words does not refuse an element with flag inputs" <<'PY'
-edit("sce-build/src/lib.rs",
-     r'''            if !self.caller_flag_inputs.is_empty() {''',
-     r'''            if self.caller_flag_inputs.is_empty() {''')
-PY
-
-# The same for the tag of a variant. Killed by the same test, whose second half asks the
-# language that does not store the context for a refusal of a tag alone and panics "does not
-# store a variant tag yet" when it gets `None`.
-mutation_case "a language with no context words does not refuse an element with a variant tag" <<'PY'
-edit("sce-build/src/lib.rs",
-     r'''            if self.caller_variant_tag {''',
-     r'''            if !self.caller_variant_tag {''')
-PY
-
 # --- Mutants that are not cases ---
 #
-# Swift added to `BROADCAST_LOG_CONTEXT_BACKENDS`. The registry test reads the registry for
-# both sides of its comparison (`stores_context` is `broadcast_log_stores_context`), so a
-# language added to the list is expected to refuse nothing and refuses nothing; and no
-# language ships a broadcast log in Swift, so no other test renders one. What would observe
-# it is a test that holds the list itself against the set of languages that have a template,
-# which this corpus does not have yet. It needs a test first.
+# Which languages store the context. Every broadcast-log template does (ADR 0062 section 4),
+# so there is no registry of them and no refusal of a language off it to mutate: the registry
+# and the refusal were removed on 2026-11-09, after Swift's template came to store the context
+# and the refusal was reached by no language, so its two cases could only survive. Whether a
+# template stores the context is held by the template casefile
+# (`a_broadcast_log_template_stores_the_context_where_the_runtime_reads_it.cases`).
 #
 # The `bit` of a flag (`bit => index`). No template reads it; a flag is addressed by its
 # `word` and `shift`.

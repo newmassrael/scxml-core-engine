@@ -20,7 +20,7 @@ use tempfile::tempdir;
 use sce_build::compile_scxml_with_imports;
 use sce_build::forge::codegen_matrix::{
     awaits_runtime, broadcast_log_progress_ceiling, check, emitting, language_wire_name, lookup,
-    template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS, BROADCAST_LOG_CONTEXT_BACKENDS,
+    template_ships, EmitOutcome, KindClass, BROADCAST_LOG_BACKENDS,
 };
 use sce_build::forge::diagnostic::{DiagnosticCode, Fix, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
@@ -1352,13 +1352,6 @@ fn cbor_codec_with(entry: &str) -> String {
     )
 }
 
-/// Whether the language's broadcast-log template stores the context of an element, the
-/// flag inputs and the variant tag its codec asks its caller for
-/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`]).
-fn stores_context(language: Language) -> bool {
-    sce_build::forge::codegen_matrix::broadcast_log_stores_context(language)
-}
-
 #[test]
 fn rust_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     // The codec `event_record` takes the flag input `S` from its caller on `decode`, and
@@ -1504,39 +1497,6 @@ fn rust_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
             "*byte = (entry[4 + index / 8] >> (8 * (index % 8))) as u8;",
         ],
     );
-}
-
-#[test]
-fn the_languages_that_store_the_context_are_the_languages_that_have_a_log_template() {
-    // The registry test above reads one list on both sides. This one reads two: a language
-    // that stores the context has a template to store it in, and a language with a template
-    // stores it, so a language added to the context list without a template (a language
-    // that writes the log in part, as Swift does, is in neither list) or a template shipped
-    // without the context storage is seen here and nowhere else.
-    for language in BROADCAST_LOG_CONTEXT_BACKENDS {
-        assert!(
-            BROADCAST_LOG_BACKENDS.contains(language),
-            "{language:?} is listed as storing a log's context but has no broadcast-log template"
-        );
-    }
-    for language in BROADCAST_LOG_BACKENDS {
-        assert!(
-            stores_context(*language),
-            "{language:?} has a broadcast-log template that does not store the context"
-        );
-    }
-    // A language that writes the log in part is in the other list, and stores the context of
-    // the elements it writes: it is neither a whole template nor without one.
-    for language in sce_build::forge::codegen_matrix::BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS {
-        assert!(
-            sce_build::forge::codegen_matrix::ships_in_part(ForgeKind::BroadcastLog, *language),
-            "{language:?} is listed as storing a log's context in part but does not write the log in part"
-        );
-        assert!(
-            !BROADCAST_LOG_BACKENDS.contains(language),
-            "{language:?} is listed in both the whole and the in-part context lists"
-        );
-    }
 }
 
 #[test]
@@ -1884,7 +1844,10 @@ fn an_element_with_a_string_entry_that_states_its_bound_is_not_refused_by_the_te
 // --- The facts of an element are the codec's; the verdict on them is a language's ---
 
 #[test]
-fn what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by_name_elsewhere() {
+fn what_a_caller_must_give_is_stored_with_the_entry_in_every_language() {
+    // ADR 0062 section 4: the flag inputs and the variant tag a codec asks its caller for
+    // are part of the element, and every template that writes the log, whole or in part,
+    // stores them beside the bytes. No language refuses an element for them.
     let flags = BroadcastLogElementFacts {
         caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
         ..BroadcastLogElementFacts::default()
@@ -1894,24 +1857,8 @@ fn what_a_caller_must_give_is_stored_where_the_template_stores_it_and_refused_by
         ..BroadcastLogElementFacts::default()
     };
     for language in Language::ALL.iter().copied() {
-        if stores_context(language) {
-            assert_eq!(flags.refusal_for(language), None, "{language:?}");
-            assert_eq!(tag.refusal_for(language), None, "{language:?}");
-            continue;
-        }
-        let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
-        let why = flags
-            .refusal_for(language)
-            .unwrap_or_else(|| panic!("{language:?} does not store a flag input yet"));
-        assert!(why.contains("flag input(s) S, T"), "{why}");
-        assert!(
-            why.contains(&format!("the {wire} log template does not yet store")),
-            "{why}"
-        );
-        let why = tag
-            .refusal_for(language)
-            .unwrap_or_else(|| panic!("{language:?} does not store a variant tag yet"));
-        assert!(why.contains("the variant's tag"), "{why}");
+        assert_eq!(flags.refusal_for(language), None, "{language:?}");
+        assert_eq!(tag.refusal_for(language), None, "{language:?}");
     }
 }
 
@@ -5306,28 +5253,25 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_python_an
     assert_eq!(details[0], details[1], "Rust and Kotlin");
     assert_eq!(details[0], details[2], "Rust and Python");
     assert_eq!(details[0], details[3], "Rust and C++");
-    // What an element a language cannot hold is refused with differs by the fact
-    // that language refuses (Rust has no owned form for a CBOR string that states no
-    // bound, a language whose template does not store the context refuses a tag), and
-    // the sentence that names it is the same one.
+    // An element a language cannot hold is refused by the fact that language
+    // refuses, in the one sentence that names the language: of these four, Rust
+    // alone, which has no owned form for a CBOR string that states no bound. The
+    // other three hold that element.
+    let element = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        cbor_entry_unbounded: true,
+        ..BroadcastLogElementFacts::default()
+    };
     for (language, name) in languages {
-        let element = if stores_context(language) {
-            BroadcastLogElementFacts {
-                cbor_text_or_bytes_entry: true,
-                cbor_entry_unbounded: true,
-                ..BroadcastLogElementFacts::default()
-            }
-        } else {
-            BroadcastLogElementFacts {
-                caller_variant_tag: true,
-                ..BroadcastLogElementFacts::default()
-            }
-        };
-        if language != Language::Rust && stores_context(language) {
-            // Holds the CBOR entry, and stores a tag: nothing is refused.
+        if language != Language::Rust {
+            assert_eq!(element.refusal_for(language), None, "{language:?}");
             continue;
         }
-        let detail = single_refusal(language, &xml, &resolution_options(Some(3), 4, element));
+        let detail = single_refusal(
+            language,
+            &xml,
+            &resolution_options(Some(3), 4, element.clone()),
+        );
         assert!(
             detail.contains(&format!(
                 "the element 'event_record' cannot be stored by the {name} template"

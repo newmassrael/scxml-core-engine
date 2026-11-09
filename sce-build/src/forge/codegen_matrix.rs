@@ -481,6 +481,14 @@ pub const TEST_SUITE_BACKENDS: &[Language] = &[
 /// derived from it, so the two cannot disagree, and every test that holds the
 /// kind to the backends that ship it reads it, so a landing is this one line and
 /// the files that make it true.
+///
+/// A broadcast-log template stores the context of an element (ADR 0062 section 4,
+/// "Caller inputs are part of the element"): the flag inputs and the variant tag
+/// its codec asks its caller for, kept in the slot beside the bytes so that every
+/// reader decodes an entry under what it was published under. That is part of
+/// what a template is, for a language that writes every log and for one that
+/// writes the log in part ([`ships_in_part`]), so no list says which templates
+/// store it: a template without it does not land.
 pub const BROADCAST_LOG_BACKENDS: &[Language] = &[
     Language::Rust,
     Language::Kotlin,
@@ -489,43 +497,6 @@ pub const BROADCAST_LOG_BACKENDS: &[Language] = &[
     Language::C11,
     Language::Cpp,
 ];
-
-/// The backends whose broadcast-log template stores the context of an element
-/// (ADR 0062 section 4, "Caller inputs are part of the element"): the flag inputs
-/// and the variant tag its codec asks its caller for, kept in the slot beside the
-/// bytes so that every reader decodes an entry under what it was published under.
-///
-/// A subset of [`BROADCAST_LOG_BACKENDS`], by the same rule as that list: a
-/// language joins it in the change that gives its template the context words and
-/// the typed `publish` and `read` that carry them, and in no other, so that a
-/// language whose template does not store the context refuses an element that
-/// has one ([`crate::BroadcastLogElementFacts::refusal_for`]) and never lowers it
-/// to a module that calls the codec without the arguments it needs.
-pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
-    Language::Rust,
-    Language::Kotlin,
-    Language::Python,
-    Language::Go,
-    Language::C11,
-    Language::Cpp,
-];
-
-/// The backends that write the broadcast log in part ([`ships_in_part`]) and store the
-/// context of the elements they write, as [`BROADCAST_LOG_CONTEXT_BACKENDS`] does for the
-/// backends that write every log. They are listed apart because the two lists answer
-/// different questions: that one is a subset of the backends whose template has landed whole
-/// ([`BROADCAST_LOG_BACKENDS`]), and this one is a subset of the backends that write only the
-/// elements their codec emitter lowers, which refuse the others by name first
-/// ([`crate::BroadcastLogElementFacts::refusal_for`]). A language joins it in the change that
-/// gives its template the context words and the typed `publish` and `read` that carry them.
-pub const BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS: &[Language] = &[Language::Swift];
-
-/// Whether the broadcast-log template of `lang` stores the context of an element
-/// ([`BROADCAST_LOG_CONTEXT_BACKENDS`], [`BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS`]).
-pub const fn broadcast_log_stores_context(lang: Language) -> bool {
-    lists(BROADCAST_LOG_CONTEXT_BACKENDS, lang)
-        || lists(BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS, lang)
-}
 
 /// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by
 /// discriminant: `Language` derives `PartialEq`, which is not callable in a

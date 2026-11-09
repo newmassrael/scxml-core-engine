@@ -4658,8 +4658,9 @@ impl BroadcastLogElementFacts {
     /// Why the template of `language` cannot store an element of this shape, or
     /// `None` when it can.
     ///
-    /// What a caller must give is not a refusal: it is stored with the entry
-    /// ([`Self::context_words`]). The one fact left is each language's own: a
+    /// What a caller must give is not a refusal: every broadcast-log template
+    /// stores it with the entry ([`Self::context_words`],
+    /// [`forge::codegen_matrix::BROADCAST_LOG_BACKENDS`]). The one fact left is each language's own: a
     /// language whose decode of a CBOR text or byte-string entry yields a value
     /// that owns its bytes (a copy into the value) holds the element, and one
     /// whose value borrows the buffer holds it when it has an owned form to
@@ -4669,8 +4670,7 @@ impl BroadcastLogElementFacts {
     /// answer, and the change that gives a language its template states, in its
     /// arm, which it is and why. Swift's is decided by its codec emitter: it refuses
     /// the element when that emitter does not write the codec ([`Self::swift_unlowered`]),
-    /// and stores the context of one it writes
-    /// ([`forge::codegen_matrix::BROADCAST_LOG_IN_PART_CONTEXT_BACKENDS`]).
+    /// and stores the context of one it writes.
     pub fn refusal_for(&self, language: generator::Language) -> Option<String> {
         use generator::Language;
         // The Swift log is written over the unit the Swift codec emitter writes, so a codec
@@ -4678,25 +4678,6 @@ impl BroadcastLogElementFacts {
         // codec and the construct (a flag input, a variant, an encoding, a bit field).
         if let (Language::Swift, Some(why)) = (language, &self.swift_unlowered) {
             return Some(why.clone());
-        }
-        // A language whose template has not yet given the slot its context
-        // words ([`forge::codegen_matrix::BROADCAST_LOG_CONTEXT_BACKENDS`]) cannot
-        // store what the codec asks its caller for, and says so by name.
-        if !forge::codegen_matrix::broadcast_log_stores_context(language) {
-            let language_name = forge::codegen_matrix::language_wire_name(language);
-            if !self.caller_flag_inputs.is_empty() {
-                return Some(format!(
-                    "its encode and decode take the flag input(s) {} from the caller, and the {language_name} \
-                     log template does not yet store them with the entry",
-                    self.caller_flag_inputs.join(", ")
-                ));
-            }
-            if self.caller_variant_tag {
-                return Some(format!(
-                    "its decode takes the variant's tag from the caller, and the {language_name} \
-                     log template does not yet store it with the entry"
-                ));
-            }
         }
         // A language whose codec template does not write a list of records
         // refuses the element's codec by name, so the log has no type to name.
