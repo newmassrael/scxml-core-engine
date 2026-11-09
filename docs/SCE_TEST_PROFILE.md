@@ -2,7 +2,8 @@
 
 - Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), the
   structure of the native runtime of step 3 (§12), and the structure of the exporter of step 4, with its types
-  module, its manifest, its name contract and the behaviour of each test component (§9.5).
+  module, its manifest, its name contract and the behaviour of each test component (§9.5), and its correspondence
+  witness (§9.4).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -470,10 +471,14 @@ export together with C3 (ADR 0091 answer 12).
 
 ### 9.4 The correspondence witness
 
-Beside each exported module the exporter writes a witness: one entry per construct of the suite, giving the
-construct (document and node), the rule of §9.2 that translated it, and the TTCN-3 construct it became (module and
-the path of the definition or statement). The validator of ADR 0091 answer 12 is separate from the exporter. It checks
-that:
+Beside the two modules the exporter writes one witness, `S.witness.json` (`schemas/sce-ttcn3-witness.v1.schema.json`,
+`pre-release`, a row of `SCE_WIRE_CONTRACTS.md`): one entry per construct of the suite and rule of §9.2 that
+translated it, giving the construct (its document, its node and the row of the node), the rule, and every place of
+the two modules that rule wrote for it. A construct two rules translate has an entry for each: a `test-component`
+one for E4, its component type, and one for E5, its functions; a transition one for E8, its alternatives and the
+`goto` that ends each of its blocks, and, where it is eventless and guarded, one for E6, its check; an atomic state
+one for E6, its label, and one for E7, its `alt`. The validator of ADR 0091 answer 12 is separate from the exporter,
+and reads the witness, the suite's documents and the two modules. It checks that:
 
 - every construct of the suite has exactly one entry, and every exported definition and statement is named by one;
 - each entry's rule applies to the construct's kind and produced the construct's TTCN-3 form;
@@ -481,6 +486,42 @@ that:
 
 Each check is local to one entry or one state, so it is decidable, and the validator does not compare the runs of
 two programs.
+
+**Constructs.** A document is named by its path relative to the directory of the suite's document, `.` and `..`
+folded and `/` its separator, or a document of the standard library by its `sce:std/` name, so the witness is the
+same bytes wherever the suite is read from. A node is an element by its kind and id (`state 'requesting'`,
+`final 'failed'`, `invoke 'helper'`, `sce:test-port 'sut'`, `sce:execute 'CompletesInTime'`), or a child by its kind
+and its position from 1 under one (`state 'requesting' / transition 1`, `state 'requesting' / onentry 1 / send 1`); a
+document a rule translates whole is its root, `scxml`. The eight integer types of the types module translate no
+construct of a document: §6.3 gives them to every types module, and the witness names them under the suite's root
+and E1. The two codec functions of a type are part of that type's E1.
+
+**Places.** A place is a module and a path from its top, each segment of it an object of one member, its kind:
+
+- a definition: `type` and `external-function` in the types module; `port-type`, `template`, `modulepar`,
+  `component-type` (a test component's and a configuration's system component type alike), `function`, `testcase`,
+  and `control`, which its module's name names, in the behaviour module;
+- a member of a component type: `port`, `timer`, `var`;
+- in a function: `local`, a local variable; `label`, the label of an atomic state, which opens the statements after
+  it up to the next label; and `statement`, a position from 0 among the statements the segment before it opens: the
+  function's own, which run before its first label, a label's, an alternative's block, or the `execute`s of the
+  control part;
+- in a statement: `then` and `else`, a position from 0 in an `if`'s two blocks, and `alternative`, a position from 0
+  in textual order among an `alt`'s alternatives, which opens its block.
+
+So in the job suite the receive branch of `requesting` is the place
+`[{"function": "f_job_tester_in_tester_and_helper"}, {"label": "requesting"}, {"statement": 1}, {"alternative": 0}]`
+of the module `job_suite`, and the `goto` that ends its block is that path followed by `{"statement": 5}`. Each
+definition, member of a component type and statement of the model the modules are written from (**Provenance** in
+§9.5) is exactly one place, and each place is in exactly one entry. The entries stand in the order of the construct's
+document, its row, its node and the rule; an entry's places in the order of the modules, the types module first.
+
+**Claims.** An `alt` and each of its alternatives also state what the third check computes again. The `alt` (E7)
+claims its atomic state and the transition each alternative is, in textual order. An alternative (E8) claims its
+atomic state, its transition, and the states its block exits and enters, each in the order the block does so: the
+exit and entry sets of that transition taken from that atomic state. The exits of the halt that follows the entry of
+a top-level `<final>` are E12's, and are not among them. The witness states the claim and the validator does not
+trust it: it computes the order from P3 and the two sets from §scxml-3.13 over the documents, and compares.
 
 ### 9.5 The exporter
 
@@ -496,16 +537,16 @@ the documents of the profile alone (ADR 0091 §8).
   so the export translates no document `check` refuses.
 - **Output.** For a suite whose unit name is `S`, its file's stem in lower snake case as every unit of a document
   is named: `S_Types.ttcn`, the types module (E1; ADR 0091 C2), and `S_Types.manifest.json`, its structural
-  manifest; and `S.ttcn`, the behaviour module. The behaviour module imports the types module whole
+  manifest; `S.ttcn`, the behaviour module; and `S.witness.json`, the witness of §9.4. The behaviour module imports the types module whole
   (`import from S_Types all;`) and holds, in this order: the port types (E3); the templates (E2); the module
   parameters, the suite's in the order it declares them and then one for each feature of its feature model in the
   order of the features' names (E15); the component types, those of the test components (E4) and then the system
   component types of the configurations (E14), each group in the order of their names; the functions (E5 to E13);
   the test cases (E14), in the order the suite executes them; and the control part (E15). A library caller reads
   each definition as its text and as the model it is written from (`Ttcn3Export`). Nothing is written before the
-  whole export is computed, so a refused suite leaves no file. Each module carries the header of every generated
-  source (`source-hash`); the manifest carries none. The witness of §9.4 is a serialization of the model each
-  definition is written from (**Provenance**, below).
+  whole export is computed, so a refused suite leaves no file, and no witness is written of an export not computed
+  whole. Each module carries the header of every generated source (`source-hash`); the manifest and the witness
+  carry none. The witness is a serialization of the model each definition is written from (**Provenance**, below).
 - **Text.** The TTCN-3 is written by the templates under `tools/codegen/templates/ttcn3/`, through the door every
   template passes, read as TTCN-3: a value written into a comment is encoded for it, and a text value is written as
   a character string, a `"` twice and each character outside printable ASCII concatenated as its quadruple
@@ -711,11 +752,15 @@ selection: each feature its module parameter, `all` a conjunction `and`, `any` a
 inside another in parentheses, as every backend writes a suite's selection. The selection is the one the suite's
 check has read against the feature model, and a feature the model does not declare is refused by name.
 
-**Provenance.** Every module parameter, component type, function, test case and statement, the statements of the
-control part among them, is computed as a model that names the rule of §9.2 that wrote it, the document and the
-node it was written from (`ttcn3_export::behaviour::Source`), so the witness of §9.4 is a serialization of that
-model. A feature's module parameter names the feature in the feature model; a system component type and its ports
-the configuration and its `<sce:system-port>`s; a test case its document; an `execute` its `<sce:execute>`.
+**Provenance.** Every definition of the two modules, every member of a component type and every statement, the
+statements of the control part among them, is computed as a model that names the rule of §9.2 that wrote it, the
+document and the node it was written from (`ttcn3_export::behaviour::Source`), so the witness of §9.4 is a
+serialization of that model (`ttcn3_export::witness`), never read again from the modules' text. A type of the types
+module names its document, and its codec functions the same; a port type and a template their documents; a
+feature's module parameter names the feature in the feature model; a system component type and its ports the
+configuration and its `<sce:system-port>`s; a test case its document; an `execute` its `<sce:execute>`. Each
+alternative of an `alt` also holds the states its block exits and enters, as the core computed them, which the
+witness states as the alternative's claim.
 
 **The manifest.** `S_Types.manifest.json` is the model the types module is written from, serialized
 (`schemas/sce-ttcn3-types-manifest.v1.schema.json`, `pre-release`, a row of `SCE_WIRE_CONTRACTS.md`): every
