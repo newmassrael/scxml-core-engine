@@ -938,7 +938,8 @@ Byte-level encode/decode. Bit position, size, endianness.
 
 **Endianness**: default is `big` (automotive CAN/UDS convention). Override per-field with `sce:endian="little"` or per-document with `sce:default-endian="little"` on the `<scxml>` root.
 
-**`sce:bit-size` values**: a fixed integer (`8`, `16`, `24`, `32`, `64`) or one of:
+**`sce:bit-size` values**: a number of bits, from 1 to the width of the field's type, whole bytes (`8`, `16`,
+`24`) or not (`3`, `12`; where they lie is below), or one of:
 
 | Value | Meaning | Required attributes |
 |-------|---------|-------------------|
@@ -947,6 +948,22 @@ Byte-level encode/decode. Bit position, size, endianness.
 
 A `tail` or `length-ref` field without `sce:max-size`, and a `<sce:repeat>` without `max-count`, are refused as
 `validation/missing-attribute` (docs/adr/0077 §5): the bound is the codec's to state.
+
+**Where a fixed field's bits lie** (docs/adr/0095). A field of `sce:bit-size` `N` at `sce:byte` `B` with
+`sce:bit-offset` `O` (0 when absent) and byte order `E` (its `sce:endian`, else the codec's
+`sce:default-endian`, else big; `native` reads as big) spans the `W = ⌈(O + N) / 8⌉` bytes from `B` on. Those
+bytes, read as one unsigned integer in order `E`, are the field's word, and its value is bits `O` to `O + N` of
+the word, counted from the least significant bit: a 12-bit big-endian field at byte 1, bit offset 4, holding
+`0xABC` is the word `0xABC0`, the bytes `AB C0`. A positional layout writes its fixed bytes from 0 to the end of
+its last fixed field, each byte the or of the bits each field holds in it; a byte no field holds is written zero,
+is ignored by the decode, and counts in the frame's size. The parser refuses as
+`validation/attribute-rule-violated`, on the field:
+
+- a word wider than 64 bits (`O + N > 64`);
+- more bits than the field's type holds;
+- a field that is not whole (`O = 0` and `N` a multiple of 8) whose type is not an unsigned integer or an enum;
+- in a positional layout, two fields that hold the same bit of the frame;
+- in a streamed layout, which writes each field in turn in bytes of its own, a field that is not whole.
 
 `tail` example:
 ```xml
