@@ -1964,8 +1964,14 @@ and `CaseResult.CanonicalLog`, the records of `testprofile.TestLogRecord` writte
 scheme's writer `sce.WriteJCS`, which sorts the members by their UTF-16 code units and not by Go's order of strings;
 the unit of a template over a record declares `TYPE` and `Canonical`, with the writers of the package
 `testprofile/canonical`, and a send carries the value with both (`testprofile.MessageValue`, a `testprofile.TestValue`
-on `HostSendRequest.Value`). The Rust runtime wrote the test log first and the C++, Kotlin and Go runtimes write the
-same one: the run of `answers_the_job` of the generated `runtime_suite` is held on all four to one file,
+on `HostSendRequest.Value`). Python: the same two functions, `canonical_log`, the records of
+`sce_runtime.testprofile.testlog` written at the same points, over the scheme's writer
+`sce_runtime.saved_json.write_jcs`, which sorts a name by its UTF-16 encoding and escapes a lone surrogate as
+`JSON.stringify` does; the unit of a template over a record declares `TYPE` and `canonical`, with the writers of
+`sce_runtime.testprofile.canonical`, and a send carries the value with both (`sce_runtime.testprofile.message_value`,
+a `TestValue` on `HostSendRequest.value`, which the message holds as its `test_value`). The Rust runtime wrote the
+test log first and the C++, Kotlin, Go and Python runtimes write the same one: the run of `answers_the_job` of the
+generated `runtime_suite` is held on all five to one file,
 `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is one set of
 bytes. Each other backend's runtime writes the same records, in the same text.
 
