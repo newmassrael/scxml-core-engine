@@ -23,12 +23,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
+use sce_rust_runtime::json::Value;
 use sce_rust_runtime::saved_state::SavedValue;
 use sce_rust_runtime::test::{
-    enabled, receives, run_suite, worse, ComponentContext, ComponentMachine, Configuration,
-    Duration, Endpoint, Execute, Features, Instant, LogKind, MachineFactory, Message,
-    ModuleParameters, Port, Suite, SystemAdapter, TestCase, TestCaseResult, TestCaseRun, Timer,
-    TimerStatus, Verdict,
+    canonical, enabled, receives, run_suite, worse, ComponentContext, ComponentMachine,
+    Configuration, Duration, Endpoint, Execute, Features, Instant, LogKind, MachineFactory,
+    Message, ModuleParameters, Port, Suite, SystemAdapter, TestCase, TestCaseResult, TestCaseRun,
+    Timer, TimerStatus, Verdict,
 };
 
 const SECOND: Duration = 1_000_000;
@@ -162,8 +163,14 @@ impl SystemAdapter for TraceAdapter {
     }
 }
 
+/// The canonical form of a message whose record holds no field.
+fn no_fields(_: &()) -> Value {
+    Value::Object(Vec::new())
+}
+
+/// A message of the record `event` that holds no field: `{}` in the test log.
 fn message(event: &str) -> Message {
-    Message::new(event, ())
+    Message::new(event, (), no_fields)
 }
 
 fn logged(result: &TestCaseResult, component: &str, kind: LogKind) -> bool {
@@ -576,11 +583,16 @@ mod test_case_run_test {
                 return Vec::new();
             }
             self.given = true;
+            let written = |written: &String| canonical::text(written);
+            let number = |n: &i32| canonical::integer(*n);
             vec![
-                ("sut".to_string(), Message::new("number", "7".to_string())),
-                ("sut".to_string(), Message::new("other", 7_i32)),
-                ("sut".to_string(), Message::new("number", 6_i32)),
-                ("sut".to_string(), Message::new("number", 7_i32)),
+                (
+                    "sut".to_string(),
+                    Message::new("number", "7".to_string(), written),
+                ),
+                ("sut".to_string(), Message::new("other", 7_i32, number)),
+                ("sut".to_string(), Message::new("number", 6_i32, number)),
+                ("sut".to_string(), Message::new("number", 7_i32, number)),
             ]
         }
     }
@@ -1057,6 +1069,7 @@ mod the_shared_handle {
 
 mod the_doors {
     use super::*;
+    use sce_rust_runtime::test::message_value;
     use sce_rust_runtime::{
         HostInvokeCancel, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
         HostSendResponse,
@@ -1104,6 +1117,12 @@ mod the_doors {
         n: u32,
     }
 
+    /// A `Ping` in the canonical form of the test log, as the unit of a
+    /// template over its record writes it.
+    fn ping_canonical(ping: &Ping) -> Value {
+        canonical::record([("n", Some(canonical::integer(ping.n)))])
+    }
+
     /// An MTC wired as a generated one is: its start registers the two
     /// processors, each holding a clone of its context, and it reaches the doors
     /// of the run only through them. Entering its state invokes `echo` and
@@ -1126,7 +1145,7 @@ mod the_doors {
             send(HostSendRequest {
                 event_name: "ping".to_string(),
                 target: "p".to_string(),
-                value: Some(Arc::new(Ping { n: 3 })),
+                value: Some(message_value(Ping { n: 3 }, ping_canonical)),
                 ..HostSendRequest::default()
             });
             context.start_timer("reply", 10);
@@ -1216,5 +1235,188 @@ mod the_doors {
         assert_eq!(result.log[killed].at, 10, "the cancel came at the timeout");
         assert!(killed < verdict, "the cancel removed the PTC, not the end");
         assert!(logged(&result, "echo", LogKind::Verdict));
+    }
+}
+
+/// The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3): each
+/// record written where the semantics places its event, in the order the
+/// rounds produce them, and the whole log in its one canonical text. The C++
+/// runtime's log follows in a later slice with the same records.
+mod the_test_log {
+    use super::*;
+
+    /// An MTC and its echo, joined `p` to `q`; the MTC has two timers.
+    fn pinging() -> Configuration {
+        Configuration {
+            mtc_type: "Tester".to_string(),
+            ptc_types: BTreeMap::from([("echo".to_string(), "Echo".to_string())]),
+            ports_of_type: by_type(&[("Tester", "p"), ("Echo", "q")]),
+            timers_of_type: by_type(&[("Tester", "t"), ("Tester", "s")]),
+            connections: vec![(Endpoint::new("mtc", "p"), Endpoint::new("echo", "q"))],
+            mappings: Vec::new(),
+        }
+    }
+
+    /// The ping's value, a record of one number, as the unit of a template
+    /// over it writes it.
+    fn ping(n: u32) -> Message {
+        Message::new("ping", n, |n| {
+            canonical::record([("n", Some(canonical::integer(*n)))])
+        })
+    }
+
+    /// The MTC creates the echo, pings it, starts two timers and logs; at the
+    /// first timer's timeout it stops the second, and the first again, which
+    /// no longer runs, and passes. The echo takes the ping, passes with a
+    /// reason, and terminates.
+    fn pinging_machines() -> Machines {
+        Machines::default()
+            .with(
+                "Tester",
+                (
+                    step(|context, _| {
+                        context.create("echo");
+                        context.send("p", ping(3));
+                        context.start_timer("t", 10);
+                        context.start_timer("s", 20);
+                        context.log("asked \"echo\"");
+                    }),
+                    step(|context, this| {
+                        if context.timed_out("t") {
+                            context.timeout("t");
+                            context.stop_timer("s");
+                            context.stop_timer("t");
+                            context.setverdict(Verdict::Pass, "");
+                            this.end();
+                        }
+                    }),
+                ),
+            )
+            .with(
+                "Echo",
+                (
+                    idle(),
+                    step(|context, this| {
+                        if context.snapshot_present("q") {
+                            context.receive("q");
+                            context.setverdict(Verdict::Pass, "pinged");
+                            this.end();
+                        }
+                    }),
+                ),
+            )
+    }
+
+    fn suite_of(test_case: TestCase) -> Suite {
+        Suite {
+            name: "logged_suite".to_string(),
+            module_parameters: ModuleParameters::default(),
+            executes: vec![Execute {
+                test_case,
+                guard: None,
+                selection: None,
+            }],
+        }
+    }
+
+    /// P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the
+    /// suite's runner. The echo's work comes in the round after the MTC's
+    /// start, at NOW = 0, the timeout at 10; the stop of a timer that no
+    /// longer runs, and the removal of the terminated echo when the MTC ends,
+    /// write no record.
+    #[test]
+    fn a_run_writes_each_record_where_its_event_happens() {
+        let suite = suite_of(TestCase {
+            name: "pings_the_echo".to_string(),
+            configuration: pinging(),
+            machines: pinging_machines().factory(),
+            module_parameters: Vec::new(),
+        });
+        let results = run_suite(
+            &suite,
+            &Features::default(),
+            |_: &str| -> Option<Box<dyn SystemAdapter>> { Some(Box::new(TraceAdapter::default())) },
+            &ModuleParameters::default(),
+        )
+        .expect("no override is given");
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].canonical_log(&suite.name),
+            concat!(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\",",
+                "\"value\":{\"n\":\"3\"}},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
+                "\"timer\":\"t\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\",",
+                "\"timer\":\"s\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\",",
+                "\"value\":{\"n\":\"3\"}},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\",",
+                "\"verdict\":\"pass\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"t\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"s\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"pings_the_echo\",\"verdict\":\"pass\"}",
+            )
+        );
+    }
+
+    /// P13: an error the runtime sets is a verdict without the runtime's own
+    /// reason, which another runtime would not write alike.
+    #[test]
+    fn an_error_the_runtime_sets_is_logged_without_its_cause() {
+        let machines = Machines::default().with("Waiter", (idle(), idle()));
+        let result = run(lone("Waiter"), &machines, TraceAdapter::default(), Some(7));
+        assert_eq!(result.verdict, Verdict::Error);
+        assert_eq!(
+            result.canonical_log("logged_suite", "waits"),
+            concat!(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Waiter\"},",
+                "{\"at\":\"7\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"error\"},",
+                "{\"at\":\"7\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"waits\",\"verdict\":\"error\"}",
+            )
+        );
+    }
+
+    /// P13: a test case that cannot start, for want of an adapter, logs its
+    /// start and its end alone, since no component was created.
+    #[test]
+    fn a_test_case_that_cannot_start_logs_its_start_and_end() {
+        let suite = suite_of(TestCase {
+            name: "unplayed".to_string(),
+            configuration: pinging(),
+            machines: pinging_machines().factory(),
+            module_parameters: Vec::new(),
+        });
+        let results = run_suite(
+            &suite,
+            &Features::default(),
+            |_: &str| -> Option<Box<dyn SystemAdapter>> { None },
+            &ModuleParameters::default(),
+        )
+        .expect("no override is given");
+        assert_eq!(
+            results[0].canonical_log(&suite.name),
+            concat!(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"unplayed\",\"verdict\":\"error\"}",
+            )
+        );
     }
 }

@@ -56,6 +56,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-payload-schema.v1.schema.json",
     "schemas/sce-ttcn3-types-manifest.v1.schema.json",
     "schemas/sce-ttcn3-witness.v1.schema.json",
+    "schemas/sce-test-log.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -282,6 +283,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_witness_the_export_writes_validates_against_the_wire_schema",
         "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
     ),
+    (
+        "schemas/sce-test-log.v1.schema.json",
+        "every_log_the_runtime_writes_validates_against_the_wire_schema",
+        "sce-build/tests/a_test_log_is_held_to_its_wire_schema.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -386,6 +392,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-ttcn3-witness.v1.schema.json",
         "the_witness_schema_rejects_what_the_export_does_not_write",
         "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
+    ),
+    (
+        "schemas/sce-test-log.v1.schema.json",
+        "the_test_log_schema_rejects_what_the_runtime_does_not_write",
+        "sce-build/tests/a_test_log_is_held_to_its_wire_schema.rs",
     ),
 ];
 
@@ -515,6 +526,14 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          changed. It states the correspondence and nothing of the run; the \
          modules' headers name their inputs.",
         "TTCN-3 correspondence witness deliberately does",
+    ),
+    (
+        "schemas/sce-test-log.v1.schema.json",
+        "compared byte for byte with the log the TTCN-3 side writes of the \
+         same run (docs/adr/0091, C3): a stamp names the producer, which \
+         differs between the two sides, so two runs that agree would write \
+         two logs that differ. It states the run and nothing of who ran it.",
+        "test log deliberately does",
     ),
 ];
 

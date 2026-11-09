@@ -24,6 +24,7 @@ use super::run::{
     Configuration, LogKind, LogRecord, MachineFactory, SystemAdapter, TestCaseResult, TestCaseRun,
     MTC_NAME,
 };
+use super::test_log::{TestLogEvent, TestLogRecord};
 use super::verdict::Verdict;
 
 /// The features a world of a suite's feature model enables (ADR 0057 §2): a
@@ -108,8 +109,18 @@ impl fmt::Display for OverrideRefusal {
 
 impl std::error::Error for OverrideRefusal {}
 
-/// P13: the test case cannot start, so it ends at once with `error`.
+impl CaseResult {
+    /// The test log of this run of the test case in the suite `suite`, in its
+    /// one canonical text ([`TestCaseResult::canonical_log`]).
+    pub fn canonical_log(&self, suite: &str) -> String {
+        self.result.canonical_log(suite, &self.test_case)
+    }
+}
+
+/// P13: the test case cannot start, so it ends at once with `error`. No
+/// component was created, so the test log holds its start and its end alone.
 fn refused(test_case: &str, why: String) -> CaseResult {
+    let at = |event: TestLogEvent| TestLogRecord { at: 0, event };
     CaseResult {
         test_case: test_case.to_string(),
         result: TestCaseResult {
@@ -121,6 +132,12 @@ fn refused(test_case: &str, why: String) -> CaseResult {
                 kind: LogKind::Error,
                 detail: why,
             }],
+            records: vec![
+                at(TestLogEvent::TestCaseStarted),
+                at(TestLogEvent::TestCaseEnded {
+                    verdict: Verdict::Error,
+                }),
+            ],
         },
     }
 }

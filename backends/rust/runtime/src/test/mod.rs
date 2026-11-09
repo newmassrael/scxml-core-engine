@@ -16,19 +16,26 @@
 //! `string[N]` to (§6.1, §11.4), is its count of characters, `str::chars().count()`
 //! in Rust, so it needs no function here.
 //!
+//! A run's test log (§12.5) is its [`TestCaseResult::records`], written in its
+//! one canonical text by [`TestCaseResult::canonical_log`]; a message's value
+//! reaches it in the canonical form [`canonical`] spells, which the generated
+//! unit of a template over a record writes (`<template>::canonical`).
+//!
 //! ⚠ `std` only: a run holds its components' values, queues and log on the heap.
 
 #![cfg(feature = "std")]
 
+pub mod canonical;
 mod module_parameters;
 mod port;
 mod run;
 mod suite;
+mod test_log;
 mod timer;
 mod verdict;
 
 pub use module_parameters::{ModuleParameterValue, ModuleParameters};
-pub use port::{Duration, Instant, Message, MessageValue, Port};
+pub use port::{message_value, Duration, Instant, Message, MessageValue, Port, TestValue};
 pub use run::{
     receives, ComponentContext, ComponentMachine, Configuration, Endpoint, LogKind, LogRecord,
     MachineFactory, SystemAdapter, TestCaseResult, TestCaseRun, MTC_NAME,
@@ -36,5 +43,6 @@ pub use run::{
 pub use suite::{
     enabled, run_suite, CaseResult, Execute, Features, OverrideRefusal, Selection, Suite, TestCase,
 };
+pub use test_log::{TestLogEvent, TestLogRecord, TEST_LOG_SCHEMA, TEST_LOG_SCHEMA_STATUS};
 pub use timer::{Timer, TimerStatus};
 pub use verdict::{worse, Verdict};
