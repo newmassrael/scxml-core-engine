@@ -1939,9 +1939,12 @@ values, arrays and objects alone:
 
 The form is the type's, not the language's: a byte string and a list of `uint8` are one Rust type and take two forms.
 So the generated unit of every template over a record writes its record's type name and its value's form by the types
-its document declares (Rust: `TYPE` and `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a
-send carries the value with both (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a
-`TestValue`). Such a unit names the profile's runtime, so a template over a record is on the SCE runtime and its unit's
+its document declares (Rust: `TYPE` and `canonical`, with the writers of `sce_rust_runtime::test::canonical`; C++:
+`TYPE` and `canonical`, with the writers of `SCE::Test::Canonical` in `sce/include/test/Canonical.h`), and a send
+carries the value with both (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a `TestValue`;
+C++: `SCE::Test::messageValue`, a `SCE::Test::MessageValue`, which the request's `std::any` value holds). The walk over
+a record's types that decides each form is shared by the backends' generators
+(`forge::generator::test_template_walk::canonical_value`), and each spells it in its language. Such a unit names the profile's runtime, so a template over a record is on the SCE runtime and its unit's
 header says `Runtime: sce_runtime` on every backend (§12.2). A system adapter gives the type name and the writer of
 each value it hands the run.
 
@@ -1950,8 +1953,13 @@ sorted by their names as UTF-16 code units, each text escaped as ECMAScript's `J
 one form every engine writes (`tests/json_text/string_escape.json`). An instant, a duration and every integer of a
 value are texts, so the log holds no number, and two logs agree exactly when their bytes do. Rust:
 `TestCaseResult::canonical_log(suite, test_case)` and `CaseResult::canonical_log(suite)`, over the scheme's writer
-`sce_rust_runtime::json::write_canonical`. The Rust runtime writes the test log first; each other backend's runtime
-writes the same records, in the same text.
+`sce_rust_runtime::json::write_canonical`. C++: `TestCaseResult::canonicalLog(suite, testCase)` and
+`CaseResult::canonicalLog(suite)`, the records of `sce/include/test/TestLog.h` written at the same points of the
+semantics, over the scheme's writer `SCE::Saved::writeCanonical` (`sce/include/saved/SavedJson.h`). The Rust runtime
+wrote the test log first and the C++ runtime writes the same one: the run of `answers_the_job` of the generated
+`runtime_suite` is held on both to one file,
+`sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is one set of
+bytes. Each other backend's runtime writes the same records, in the same text.
 
 ### 12.6 The order of the slices
 
