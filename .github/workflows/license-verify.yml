@@ -23,6 +23,10 @@ on:
       - 'scripts/verify_licenses.sh'
       - 'third_party/**'
       - '.github/workflows/license-verify.yml'
+      # The repository's own licence files, which the SSOT lists first
+      # (SCE_LICENSE_FILES_SCE) and the check opens. Without them an edit
+      # to a root LICENSE ran nothing (bx-fleet check learn, 2026-11-09).
+      - 'LICENSE*'
       # The visualizer's own third-party libraries. They are NOT under
       # third_party/ and never were, which is how d3 (ISC) and elkjs
       # (EPL-2.0) came to ship while LICENSE-THIRD-PARTY.md said every
@@ -38,6 +42,7 @@ on:
       - 'scripts/verify_licenses.sh'
       - 'third_party/**'
       - '.github/workflows/license-verify.yml'
+      - 'LICENSE*'
       - 'web/visualizer/vendor/**'
       - 'web/visualizer/*.html'
       - 'LICENSE-THIRD-PARTY.md'

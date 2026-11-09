@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import pathlib
 import re
@@ -1969,10 +1970,17 @@ GATES: dict[str, dict] = {
         # the snapshot against its recorded provenance. The `upstream` mode,
         # which fetches the published specification, is not what this runs.
         "cache": True,
-        # Isolated: Python checks that compare committed catalogs with what the
-        # tracked sources produce; a source the copy lacked would make a catalog
-        # read stale and fail, never pass. No git, no writes.
-        "isolated": True,
+        "isolated": False,
+        "not_isolated_reason": "its tooling suite reads the trees the five "
+                               "ledgers enrol (`paths` of every "
+                               "docs/*/*/mnemosyne.toml) and judges their "
+                               "citations: bx-fleet check learn on 2026-11-09 "
+                               "counted 1441 files read, 842 of them under the "
+                               "scxml enrolment alone, across the engine, the "
+                               "generator and four runtimes. That set is no "
+                               "trigger and moves with the ledgers' config, so "
+                               "a copy of the trigger would leave most of what "
+                               "it judges out",
         "commits": [],
         "peak_gb": 1,
     },
@@ -4018,6 +4026,17 @@ RUNNER_SOURCES = ("scripts/gate", "scripts/gates/lib.sh")
 
 _ROOTED_PATH = re.compile(r"\$\{?(?:SCE_)?REPO_ROOT\}?/([A-Za-z0-9_][A-Za-z0-9_./-]*)")
 
+# A line of code that runs cargo (or rustup handing a command to cargo), and the
+# files cargo and rustup read from the directory they run in rather than from a
+# path anybody passes them: the workspace's cargo configuration and a toolchain
+# file. The runner runs cargo at the root while it selects the release (and
+# reads the pin from rust-toolchain.toml through scripts/lib/rust_toolchains.sh),
+# so these are read by every unit whether or not its gate builds Rust; measured
+# 2026-11-09, `bx-fleet check learn` named `.cargo/config.toml` as read and not
+# an input in each of the four units it ran.
+_RUNS_CARGO = re.compile(r"(?:^|[\s;&|(])cargo\b")
+CARGO_CONFIG = (".cargo", "rust-toolchain", "rust-toolchain.toml")
+
 
 def runner_inputs(repo_root: Path) -> list[str]:
     """The tracked files the runner reads on the way to any gate.
@@ -4026,19 +4045,41 @@ def runner_inputs(repo_root: Path) -> list[str]:
     under the repository root (`$REPO_ROOT/...`, `$SCE_REPO_ROOT/...`): the
     registry the runner resolves a gate's closure with, the submodule
     preflight, and the libraries the gate library sources for the helpers a
-    gate calls. Comment lines are left out, since a path a comment names is
-    not opened. A path that is not tracked (a build directory, a templated
-    `${slug}`) names no input and is dropped.
+    gate calls. The scan follows the shell scripts it finds, so what the
+    preflight or a sourced library names joins too. Comment lines are left
+    out, since a path a comment names is not opened. A path that is not
+    tracked (a build directory, a templated `${slug}`) names no input and is
+    dropped.
+
+    A file read without being named is the other half: when any of those
+    scripts runs cargo, the tracked files of `CARGO_CONFIG` join, since cargo
+    and rustup find them from the directory they run in.
     """
     tracked = set(tracked_paths(repo_root))
     found = set(RUNNER_SOURCES)
-    for rel in RUNNER_SOURCES:
+    pending = list(RUNNER_SOURCES)
+    scanned: set[str] = set()
+    runs_cargo = False
+    while pending:
+        rel = pending.pop()
+        if rel in scanned:
+            continue
+        scanned.add(rel)
         path = repo_root / rel
         if not path.is_file():
             continue
-        for match in _ROOTED_PATH.finditer(script_code(path)):
-            if match.group(1) in tracked:
-                found.add(match.group(1))
+        code = script_code(path)
+        runs_cargo = runs_cargo or _RUNS_CARGO.search(code) is not None
+        for match in _ROOTED_PATH.finditer(code):
+            named = match.group(1)
+            if named in tracked:
+                found.add(named)
+                if named.endswith(".sh"):
+                    pending.append(named)
+    if runs_cargo:
+        found.update(p for p in tracked
+                     if any(p == c or p.startswith(c + "/")
+                            for c in CARGO_CONFIG))
     return sorted(found)
 
 
@@ -6860,6 +6901,22 @@ def self_test(repo_root: Path) -> int:
     # not names no inputs, so its key stays the whole tree.
     cases += 1
     runner_now = runner_inputs(repo_root)
+    # the-runner's-inputs-hold-what-cargo-reads-unasked. The release selection
+    # runs cargo at the root, and cargo reads the workspace's configuration
+    # from there; no path names it, so the scan for named paths cannot find
+    # it, and every unit read it outside its inputs until it joined.
+    tracked_cargo_config = tracked_paths(repo_root, *CARGO_CONFIG)
+    if not tracked_cargo_config:
+        failures.append(
+            "inputs: no file of CARGO_CONFIG is tracked, so the check that "
+            "units carry cargo's configuration reads nothing; "
+            "`.cargo/config.toml` was tracked when it was written")
+    for p in tracked_cargo_config:
+        if p not in runner_now:
+            failures.append(
+                f"inputs: the runner runs cargo at the root, which reads {p}, "
+                f"and the runner's inputs do not hold it; every narrowed unit "
+                f"would read it outside its key")
     head = "0" * 40
     every_unit = plan_units(set(GATES), rust="1.0.0", head=head,
                             triggers=triggers_now, runner=runner_now)
@@ -6930,6 +6987,44 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             f"inputs: ABSENT_INPUTS names {pattern!r}, which no unit's inputs "
             f"hold; the reason beside it describes nothing")
+
+    # the-mesh-catalog's-witnesses-trigger-its-guard. `spec-snapshot` checks
+    # the mesh verifies-catalog against the `SCE-VERIFIES:` markers in the
+    # files `TEST_TREES` names in its generator, so each of those files is a
+    # reason to run it. The tuple is that list's one home; read here rather
+    # than restated, so a witness added there and not to the workflow's
+    # `paths:` fails this instead of leaving a catalog edit unguarded, the
+    # state bx-fleet check learn found on 2026-11-09 (five of them missing).
+    cases += 1
+    generator = (repo_root / "tools" / "mnemosyne-adoption"
+                 / "gen_mesh_verifies_catalog.py")
+    witness_globs: list[str] = []
+    if generator.is_file():
+        tree = ast.parse(generator.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "TEST_TREES"
+                            for t in node.targets)
+                    and isinstance(node.value, (ast.Tuple, ast.List))):
+                witness_globs = [e.value for e in node.value.elts
+                                 if isinstance(e, ast.Constant)
+                                 and isinstance(e.value, str)]
+    if not witness_globs:
+        failures.append(
+            "spec-snapshot: no TEST_TREES tuple was read from "
+            "tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py, so the "
+            "check that its witnesses trigger the gate reads nothing")
+    snapshot_trigger = [glob_to_regex(g) for g in
+                        triggers_now.get("spec-snapshot", [])]
+    for witness in witness_globs:
+        regex = glob_to_regex(witness)
+        unguarded = [p for p in tracked_now if regex.match(p)
+                     and not any(t.match(p) for t in snapshot_trigger)]
+        if unguarded:
+            failures.append(
+                f"spec-snapshot: TEST_TREES names {witness!r}, and "
+                f"{unguarded[:3]} reach no trigger of the gate; add it to "
+                f"spec-snapshot-drift.yml's `paths:`")
 
     # the-plan-is-the-selection. The push used to run exactly the gates
     # `select` chose; it now hands bx the units `plan_units` makes of that
