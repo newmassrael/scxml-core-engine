@@ -155,10 +155,21 @@ impl Members {
     fn agreed(&mut self) -> usize {
         let alice = records_of(&mut self.world, "alice");
         assert_eq!(alice, records_of(&mut self.world, "bob"));
-        let digest = record_variables_of(&mut self.world, "alice")["digest"].clone();
+        let live = |world: &mut World, who: &str| {
+            let mut adds: Vec<String> = record_variables_of(world, who)["adds"]
+                .as_array()
+                .expect("a copy's live writes are a list")
+                .iter()
+                .map(|add| add.to_string())
+                .collect();
+            adds.sort();
+            adds
+        };
+        let alices = live(&mut self.world, "alice");
         assert_eq!(
-            record_variables_of(&mut self.world, "bob")["digest"],
-            digest
+            live(&mut self.world, "bob"),
+            alices,
+            "one set of live writes"
         );
         alice.len()
     }
@@ -233,10 +244,11 @@ fn the_same_relay_serves_a_list_whose_hub_is_trusted() {
     two_members_agree_through_a_relay(Profile::TrustedHub, 22);
 }
 
-/// The members settle an instant on their checkpoints, carried through the relay: each machine
-/// freezes what it holds up to the instant and each host signs the digest; when the checkpoints of
-/// both are in hand the host tells its machine, which compares the digest with its own and
-/// forgets. No machine of a hub, and no administrator, takes part.
+/// The members settle an instant on their checkpoints, carried through the relay, with no machine
+/// of a hub and no administrator: one member's word is not a settlement, both members' are. The
+/// list keeps no tombstones and has nothing to forget (docs/adr/0085, section 2), so no machine
+/// takes part: the settlement is the core's word of stability until its stable cut replaces it
+/// (landing 5), and the copies agree before it and after it.
 #[test]
 fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
     let mut members = Members::new(23, Profile::Untrusted);
@@ -248,63 +260,26 @@ fn an_instant_is_settled_on_the_checkpoints_the_relay_carried() {
     assert_eq!(members.agreed(), 2);
     members.world.advance_ms(60_000);
     members.world.host_errors();
-
-    // A copy that is asked what it holds up to an instant (record_list.propose, which a hub would
-    // send) freezes the tombstones up to it and the digest of them. Here the host asks its own
-    // machine.
-    for who in ["alice", "bob"] {
-        members
-            .world
-            .raise(who, "record_list.propose", r#"{"before":"30000"}"#);
-    }
-    quiet(&mut members.world);
-    members.world.host_errors();
-    let alice_hash = whole(&record_variables_of(&mut members.world, "alice")["frozenHash"]) as u32;
-    let bob_hash = whole(&record_variables_of(&mut members.world, "bob")["frozenHash"]) as u32;
-    assert_eq!(
-        alice_hash, bob_hash,
-        "two copies of one list freeze one digest"
-    );
+    let digest = 7;
 
     // One member's word is not a settlement.
     members
         .courier("alice")
-        .publish_checkpoint(30_000, alice_hash)
+        .publish_checkpoint(30_000, digest)
         .unwrap();
     members.pump();
-    assert_eq!(members.courier("bob").floor_event(30_000, alice_hash), None);
-    for who in ["alice", "bob"] {
-        assert_eq!(
-            whole(&record_variables_of(&mut members.world, who)["floor"]),
-            0,
-            "{who}"
-        );
-    }
+    assert_eq!(members.courier("bob").floor_event(30_000, digest), None);
 
     // Both members' words are.
     members
         .courier("bob")
-        .publish_checkpoint(30_000, bob_hash)
+        .publish_checkpoint(30_000, digest)
         .unwrap();
     members.pump();
     for who in ["alice", "bob"] {
-        let (event, data) = members
-            .courier(who)
-            .floor_event(30_000, alice_hash)
-            .expect("both members signed");
-        members.world.raise(who, &event, &data);
-    }
-    quiet(&mut members.world);
-    for who in ["alice", "bob"] {
-        let vars = record_variables_of(&mut members.world, who);
-        assert_eq!(
-            whole(&vars["floor"]),
-            30_000,
-            "{who}: frozenFor {} frozenHash {} stale {} errors {:?}",
-            vars["frozenFor"],
-            vars["frozenHash"],
-            vars["stale"],
-            members.world.host_errors()
+        assert!(
+            members.courier(who).floor_event(30_000, digest).is_some(),
+            "{who}: both members signed"
         );
     }
     assert_eq!(members.agreed(), 2);
@@ -384,7 +359,10 @@ fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
     let held = records_of(&mut members.world, "alice");
     let operations = members.alice.signed_operations();
     let last = members.alice.last_seq(ALICE);
-    assert_eq!(last, 5, "four writes and a note");
+    assert_eq!(
+        last, 4,
+        "four changes, the third a write-over and a write in one"
+    );
 
     // Her copy is built again from nothing, and her commands are given to it again.
     members.world.restart::<RecordList>("alice", |_, clock| {
@@ -395,17 +373,13 @@ fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
     });
     members
         .world
-        .raise("alice", "record_list.join", r#"{"node":"1","hub":false}"#);
+        .raise("alice", "record_list.join", r#"{"node":"1"}"#);
     for (id, field, value, text, now) in commands {
         record_edit_at(&mut members.world, "alice", id, field, value, text, now);
     }
     quiet(&mut members.world);
     let errors = members.world.host_errors();
-    assert_eq!(
-        errors.len(),
-        5,
-        "every write and note sent again: {errors:?}"
-    );
+    assert_eq!(errors.len(), 4, "every change sent again: {errors:?}");
     assert!(
         errors.iter().all(|error| error.contains("held already")),
         "each is the operation her host holds, signed once: {errors:?}"
@@ -449,32 +423,30 @@ fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
 /// that builds the copy from its journal and the history, and passes, is ADR 0093's step 2.
 ///
 /// Bob's clock runs half a minute ahead of alice's, and each of his changes reaches her copy
-/// before her next command. Every write of his moves her clock up to his time (`HlcReceive` in
-/// `record_list.take`), and her close keeps the greater of that and her `now` (`HlcSend`), so
-/// her three changes are stamped at his time, (50000, 2), (50001, 2) and (50002, 2), and not
-/// at the 20000.. she gave. Her second change writes over her first value; her third writes
-/// over bob's first. Her chain holds three writes and two notes.
+/// before her next command. Every change of his moves her clock up to his time (`HlcReceive`,
+/// once per change), and her close keeps the greater of that and her `now` (`HlcSend`), so her
+/// three changes are stamped at his time, (50000, 2), (50001, 2) and (50002, 2), and not at the
+/// 20000.. she gave. Her second change writes over her first value and writes anew; her third
+/// writes over bob's first and writes anew. Her chain holds three changes, one operation each
+/// (docs/adr/0085, section 1).
 ///
 /// Her copy is then built again as a host does it today: the core kept (a restored core holds
 /// what this one does), a fresh machine, her commands given again with their `now`, and no
 /// operation of bob's between them. Measured, from the code:
 ///
-/// - The fresh clock stamps the changes (20000, 0), (20001, 0) and (20002, 0). A write is known
-///   by its register, stamp and content, so none of the three is held; each has a time earlier
-///   than a write already on her chain, which the core refuses (`Why::GoesBack`): 3 refused.
-///   Her copy took each in before it sent it.
-/// - The second change writes over the first value, which is now the re-stamped one: its note
-///   names a dot no core holds, and a note carries no time the chain checks, so it is signed as
-///   her next operation and published: 1 new operation.
-/// - The third change finds no value of bob's to write over and sends no note at all: the set a
-///   change writes over differs too, which here costs a send and makes none.
+/// - The fresh clock stamps the changes (20000, 0), (20001, 0) and (20002, 0). A change is known
+///   by the bytes it is signed as, so none of the three is held; each has a time earlier than a
+///   change already on her chain, which the core refuses (`Why::GoesBack`): 3 refused. Her copy
+///   took each in before it sent it.
+/// - The second change writes over the first value, which is now the re-stamped one, and the
+///   third finds no value of bob's to write over: the set a change writes over differs too, but
+///   a write-over is an operation of its change and is refused with it, so nothing is published.
 ///
-/// So the refusals come from the re-stamped clock alone: the set written over decides only
-/// which notes are sent and carries no time, and the third cause the consumer's note gave (the
-/// parent's own judgement and the row numbers it assigns) is not in this world, whose host names
-/// every row itself. After a resync on every device her copy holds, in each register her second
-/// and third changes edited, the live run's value and the re-stamped one, two values of one
-/// author; bob's holds one, and the rest of the two copies agree.
+/// So the refusals come from the re-stamped clock alone, and the third cause the consumer's note
+/// gave (the parent's own judgement and the row numbers it assigns) is not in this world, whose
+/// host names every row itself. After a resync on every device her copy holds, in each register
+/// her second and third changes edited, the live run's value and the re-stamped one, two values of
+/// one author; bob's holds one, and the rest of the two copies agree.
 #[test]
 fn control_a_copy_rebuilt_from_its_commands_among_a_peer_ahead_refuses_and_differs() {
     let mut members = Members::new(26, Profile::Untrusted);
@@ -510,7 +482,7 @@ fn control_a_copy_rebuilt_from_its_commands_among_a_peer_ahead_refuses_and_diffe
         );
     }
     let last = members.alice.last_seq(ALICE);
-    assert_eq!(last, 5, "three writes and two notes");
+    assert_eq!(last, 3, "three changes, one operation each");
     assert_eq!(members.bob.last_seq(BOB), 3);
     let operations = members.alice.signed_operations().len();
 
@@ -523,36 +495,32 @@ fn control_a_copy_rebuilt_from_its_commands_among_a_peer_ahead_refuses_and_diffe
     });
     members
         .world
-        .raise("alice", "record_list.join", r#"{"node":"1","hub":false}"#);
+        .raise("alice", "record_list.join", r#"{"node":"1"}"#);
     for (id, value, now) in alice_commands {
         record_edit_at(&mut members.world, "alice", id, DUE, value, "", now);
     }
     quiet(&mut members.world);
     let errors = members.world.host_errors();
-    assert_eq!(
-        errors.len(),
-        4,
-        "three writes and one note sent: {errors:?}"
-    );
+    assert_eq!(errors.len(), 3, "three changes sent: {errors:?}");
     let refused = errors
         .iter()
-        .filter(|error| error.contains("record_list.write: its stamp goes back along this device"))
+        .filter(|error| error.contains("record_list.change: its stamp goes back along this device"))
         .count();
     assert_eq!(
         refused, 3,
-        "every replayed write goes back along her chain: {errors:?}"
+        "every replayed change goes back along her chain, its write-overs with it: {errors:?}"
     );
     let published = errors
         .iter()
-        .filter(|error| error.contains("record_list.supersede: kept for the relay"))
+        .filter(|error| error.contains("kept for the relay"))
         .count();
     assert_eq!(
-        published, 1,
-        "the note naming a re-stamped dot is signed anew: {errors:?}"
+        published, 0,
+        "no part of a change is signed apart from it: {errors:?}"
     );
     let made = members.alice.last_seq(ALICE) - last;
-    assert_eq!(made, 1, "the rebuild made one new operation of hers");
-    assert_eq!(members.alice.signed_operations().len(), operations + 1);
+    assert_eq!(made, 0, "the rebuild made no new operation of hers");
+    assert_eq!(members.alice.signed_operations().len(), operations);
     let rebuilt = records_of(&mut members.world, "alice");
     assert_eq!(rebuilt[&(1, DUE)].stamp, (20_001, 0, ALICE));
     assert_eq!(rebuilt[&(2, DUE)].stamp, (20_002, 0, ALICE));
