@@ -1219,13 +1219,9 @@ pub fn record_world(seed: u64, latency_ms: i64) -> World {
     world.link("alice", RECORD_HUB, latency_ms);
     world.link("bob", RECORD_HUB, latency_ms);
     world.topic(RECORD_HUB, RECORD_PEOPLE, &["alice", "bob"]);
-    world.raise("alice", "record_list.join", r#"{"node":"1","hub":false}"#);
-    world.raise("bob", "record_list.join", r#"{"node":"2","hub":false}"#);
-    world.raise(
-        RECORD_HUB,
-        "record_list.join",
-        r#"{"node":"100","hub":true}"#,
-    );
+    world.raise("alice", "record_list.join", r#"{"node":"1"}"#);
+    world.raise("bob", "record_list.join", r#"{"node":"2"}"#);
+    world.raise(RECORD_HUB, "record_list.join", r#"{"node":"100"}"#);
     world
 }
 
