@@ -68,7 +68,12 @@ impl SystemAdapter for Responder {
         // template over its record writes.
         self.pending.push((
             now + ANSWER_DELAY,
-            Message::new(job_reply::EVENT_NAME, reply, reply_ok::canonical),
+            Message::new(
+                job_reply::EVENT_NAME,
+                reply,
+                reply_ok::TYPE,
+                reply_ok::canonical,
+            ),
         ));
     }
 
@@ -226,11 +231,11 @@ fn a_generated_test_case_writes_its_test_log() {
             "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",",
             "\"type\":\"param_asker\"},",
             "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"sut\",",
-            "\"value\":{\"job\":\"7\"}},",
+            "\"type\":\"job_request\",\"value\":{\"job\":\"7\"}},",
             "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"1000000\",",
             "\"kind\":\"timer-started\",\"timer\":\"deadline\"},",
             "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"message-received\",\"port\":\"sut\",",
-            "\"value\":{\"code\":\"0\",\"job\":\"7\"}},",
+            "\"type\":\"job_reply\",\"value\":{\"code\":\"0\",\"job\":\"7\"}},",
             "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"deadline\"},",
             "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
             "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",

@@ -105,7 +105,12 @@ impl SystemAdapter for Responder {
         // template over its record writes.
         self.pending.push((
             now + ANSWER_DELAY,
-            Message::new(job_reply::EVENT_NAME, reply, reply_ok::canonical),
+            Message::new(
+                job_reply::EVENT_NAME,
+                reply,
+                reply_ok::TYPE,
+                reply_ok::canonical,
+            ),
         ));
     }
 

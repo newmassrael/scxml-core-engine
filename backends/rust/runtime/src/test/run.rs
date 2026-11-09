@@ -497,6 +497,7 @@ impl RunState {
         self.trace(TestLogEvent::MessageSent {
             component: sender.to_string(),
             port: port.to_string(),
+            message_type: message.type_name().to_string(),
             value: message.canonical_value(),
         });
         let peer = self.configuration.connections.iter().find_map(|(a, b)| {
@@ -600,6 +601,7 @@ impl RunState {
         self.trace(TestLogEvent::MessageReceived {
             component: name.to_string(),
             port: port.to_string(),
+            message_type: message.type_name().to_string(),
             value: message.canonical_value(),
         });
         message

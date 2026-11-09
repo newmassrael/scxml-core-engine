@@ -288,6 +288,31 @@ fn a_template_over_a_record_writes_its_values_canonical_form() {
             over_record,
             "{name}: the canonical form is written exactly for a template over a record:\n{text}"
         );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
+            "order_placed_match" => Some("order_placed"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        assert_eq!(
+            record.is_some(),
+            over_record,
+            "{name}: a record template is named here"
+        );
+        if let Some(record) = record {
+            holds_each(
+                &text,
+                &[format!("pub const TYPE: &str = \"{record}\";").as_str()],
+            );
+        }
     }
     let report = unit_of(&profile_dir(), "job_report");
     let c = CANONICAL;

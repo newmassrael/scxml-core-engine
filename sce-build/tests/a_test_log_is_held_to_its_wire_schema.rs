@@ -95,6 +95,7 @@ fn tester_starts(context: &ComponentContext) -> bool {
                 n: u64::MAX,
                 note: "a \"quoted\" note".to_string(),
             },
+            "ping",
             ping_canonical,
         ),
     );
@@ -232,6 +233,14 @@ fn every_log_the_runtime_writes_validates_against_the_wire_schema() {
     for kind in schema_kinds(&schema) {
         assert!(kinds.contains(&kind.as_str()), "no {kind} in {kinds:?}");
     }
+    for record in log["records"].as_array().expect("records") {
+        if record["kind"] == "message-sent" || record["kind"] == "message-received" {
+            assert_eq!(
+                record["type"], "ping",
+                "a message carries its type: {record}"
+            );
+        }
+    }
 
     let ended = parsed(&written(Some(5)));
     assert_eq!(violations(&schema, &ended), Vec::<String>::new(), "{ended}");
@@ -253,6 +262,7 @@ fn the_test_log_schema_rejects_what_the_runtime_does_not_write() {
             .unwrap_or_else(|| panic!("no {kind} record"))
     };
     let sent = position("message-sent");
+    let received = position("message-received");
     let started = position("timer-started");
     let verdict = position("verdict-set");
     let ended = position("test-case-ended");
@@ -296,6 +306,28 @@ fn the_test_log_schema_rejects_what_the_runtime_does_not_write() {
                     .expect("a record")
                     .remove("value");
             }),
+        ),
+        (
+            "a sent message without its type",
+            changed(&|l| {
+                l["records"][sent]
+                    .as_object_mut()
+                    .expect("a record")
+                    .remove("type");
+            }),
+        ),
+        (
+            "a received message without its type",
+            changed(&|l| {
+                l["records"][received]
+                    .as_object_mut()
+                    .expect("a record")
+                    .remove("type");
+            }),
+        ),
+        (
+            "a message of an unnamed type",
+            changed(&|l| l["records"][sent]["type"] = serde_json::json!("")),
         ),
         (
             "an integer of a value as a number",

@@ -275,14 +275,14 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "event_name: \"job.request\".to_string(),",
         "target: \"sut\".to_string(),",
         "value: Some(::sce_rust_runtime::test::message_value(request_of::value(self.job), \
-         request_of::canonical)),",
+         request_of::TYPE, request_of::canonical)),",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`");
     }
     let coordinator = text("coordinator");
     for needle in [
         "value: Some(::sce_rust_runtime::test::message_value(\
-         reply_of::value(self.requested, self.ok), reply_of::canonical)),",
+         reply_of::value(self.requested, self.ok), reply_of::TYPE, reply_of::canonical)),",
         "processor_type: \"http://sce.dev/ext/test-component\".to_string(),",
         "invoke_id: \"answerer\".to_string(),",
     ] {
@@ -349,7 +349,8 @@ fn a_template_argument_is_handed_over_as_the_template_takes_it() {
     std::fs::write(&path, component).expect("the component is written");
     assert!(text_at(&path).contains(
         "value: Some(::sce_rust_runtime::test::message_value(\
-         job_report_of::value(self.elapsed, &self.note, self.code), job_report_of::canonical)),"
+         job_report_of::value(self.elapsed, &self.note, self.code), job_report_of::TYPE, \
+         job_report_of::canonical)),"
     ));
 }
 
