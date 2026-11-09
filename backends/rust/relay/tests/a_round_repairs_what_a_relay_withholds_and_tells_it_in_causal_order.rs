@@ -26,8 +26,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const CAROL: u64 = 3;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 
 fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
@@ -117,10 +116,10 @@ fn nothing_withheld(_: &Record) -> bool {
     false
 }
 
-/// Alice's write, which the feed carol reads leaves out.
+/// Alice's change, which the feed carol reads leaves out.
 fn alices_write(record: &Record) -> bool {
     matches!(record, Record::Operation { event, data }
-        if event == WRITE && data.contains("\"nodeId\":\"1\""))
+        if event == CHANGE && data.contains("\"by\":\"1\""))
 }
 
 fn courier(
@@ -148,19 +147,17 @@ fn courier_asking(
     (Courier::new(host.clone(), link), asked)
 }
 
-/// The operations a round told the machine, each by its event and the value of `wallTime`, and of
-/// `by` for a write-over: the roster is left out.
+/// The changes a round told the machine, each by its event and its time and author
+/// (`wallTime/by`): the roster is left out.
 fn operations_told(events: &[(String, String)]) -> Vec<(String, String)> {
     events
         .iter()
-        .filter(|(event, _)| event == WRITE || event == SUPERSEDE)
+        .filter(|(event, _)| event == CHANGE)
         .map(|(event, data)| {
             let data: Value = serde_json::from_str(data).unwrap();
-            let by = data["by"]
-                .as_str()
-                .map_or(String::new(), |by| format!("/{by}"));
-            let wall = data["wallTime"].as_str().unwrap_or("").to_string();
-            (event.clone(), format!("{wall}{by}"))
+            let by = data["by"].as_str().unwrap_or("");
+            let wall = data["wallTime"].as_str().unwrap_or("");
+            (event.clone(), format!("{wall}/{by}"))
         })
         .collect()
 }
@@ -188,10 +185,11 @@ fn a_write_the_feed_withheld_is_asked_for_and_told_before_the_write_over_that_na
         alice.append(&entry).unwrap();
     }
     alice.set_identity(ALICE, person(ALICE));
-    let write = json!({"id": 1, "field": 3, "value": "1", "text": "",
-                       "wallTime": "1000", "counter": 0, "nodeId": "1"})
+    let write = json!({"by": "1", "wallTime": "1000", "counter": 0, "ops": [
+        {"kind": 0, "id": 1, "field": 3, "value": "1", "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string();
-    assert!(alice.seal_sent(WRITE, &write).unwrap().unwrap().signed);
+    assert!(alice.seal_sent(CHANGE, &write).unwrap().unwrap().signed);
     let round = courier(&relay, &alice, ALICE, nothing_withheld)
         .sync()
         .unwrap();
@@ -203,11 +201,15 @@ fn a_write_the_feed_withheld_is_asked_for_and_told_before_the_write_over_that_na
     bob.set_identity(BOB, person(BOB));
     let mut bobs = courier(&relay, &bob, BOB, nothing_withheld);
     let round = bobs.sync().unwrap();
-    assert_eq!(operations_told(&round.events), vec![event(WRITE, "1000")]);
-    let note = json!({"id": 1, "field": 3, "wallTime": "1000", "counter": 0,
-                      "nodeId": "1", "by": "2"})
+    assert_eq!(
+        operations_told(&round.events),
+        vec![event(CHANGE, "1000/1")]
+    );
+    let note = json!({"by": "2", "wallTime": "1000", "counter": 1, "ops": [
+        {"kind": 1, "id": 1, "field": 3, "value": "0", "text": "",
+         "wallTime": "1000", "counter": 0, "nodeId": "1"}]})
     .to_string();
-    assert!(bob.seal_sent(SUPERSEDE, &note).unwrap().unwrap().signed);
+    assert!(bob.seal_sent(CHANGE, &note).unwrap().unwrap().signed);
     let round = bobs.sync().unwrap();
     assert!(round.refused.is_empty(), "{:?}", round.refused);
 
@@ -229,7 +231,7 @@ fn a_write_the_feed_withheld_is_asked_for_and_told_before_the_write_over_that_na
     );
     assert_eq!(
         operations_told(&round.events),
-        vec![event(WRITE, "1000"), event(SUPERSEDE, "1000/2")]
+        vec![event(CHANGE, "1000/1"), event(CHANGE, "1000/2")]
     );
     assert_eq!(carol.delivered(), vec![(ALICE, 1), (BOB, 1)]);
     assert!(carol.lacking().is_empty());
