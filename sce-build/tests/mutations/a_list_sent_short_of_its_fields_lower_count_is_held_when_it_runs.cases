@@ -1,0 +1,48 @@
+# Mutation cases for "a list sent short of its field's lower count is held to it when the send
+# runs" (docs/adr/0086, section 15.6, landing step 9): the judge accepts a list that fits a field
+# but for the field's own, outermost lower count, which a variable filled by appends does not
+# prove (`value_type::fits_but_for_count`), and refuses every other misfit; the lowering writes the
+# count check where the send writes the list (`composed_wire_value`, `ComposedSpelling::send_counted`).
+#
+# Each case takes one of those away, and the tests under study must turn red: the relation's own
+# test, the judge's accepting test over every backend that sends, and the Rust machine of
+# `static_composed_send`, which must hold `held` to its count.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_list_sent_short_of_its_fields_lower_count_is_held_when_it_runs.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli \
+    --lib --test a_statechart_sends_a_composed_value_by_its_name
+mutation_targets sce-build/src/forge/value_type.rs sce-build/src/forge/static_lowering.rs
+mutation_oracles sce-build/tests/a_statechart_sends_a_composed_value_by_its_name.rs
+
+# ── (a) The judge ──────────────────────────────────────────────────────────────────────────────
+
+mutation_case "a list short of its field's lower count is refused as it was before the hybrid check" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            Some(least) if misfit.why == MisfitReason::LowerCount && misfit.path.is_empty() => {\n                Ok(Some(least))\n            }",
+     "            Some(least) if misfit.why == MisfitReason::LowerCount && misfit.path.is_empty() => {\n                let _ = least;\n                Err(misfit)\n            }")
+PY
+
+mutation_case "a list is sent past its field's bound once the field states a lower count" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            Some(least) if misfit.why == MisfitReason::LowerCount && misfit.path.is_empty() => {",
+     "            Some(least) if misfit.path.is_empty() => {")
+PY
+
+# ── (b) The lowering ───────────────────────────────────────────────────────────────────────────
+
+mutation_case "a list short of its field's lower count is written with no check" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    let (wired, fails) = match unproven_count(&place.ty, param.name, sent_as, rewrites) {",
+     "    let (wired, fails) = match None::<u32> {")
+PY
+
+mutation_case "the count is read of the list the field proves, so no list is checked" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "    crate::forge::value_type::count_left_to_send(held, &field.ty)\n}",
+     "    crate::forge::value_type::count_left_to_send(&field.ty, &field.ty)\n}")
+PY

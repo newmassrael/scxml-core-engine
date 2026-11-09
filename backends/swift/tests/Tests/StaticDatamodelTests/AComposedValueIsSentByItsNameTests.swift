@@ -29,7 +29,12 @@ import Testing
     // absent and `spare` present (`composedBatch`, AComposedPayloadIsReadAtAnyDepthTests).
     engine.raiseExternalByName("batch.sent", eventData: composedBatch(4, 3, 4))
     engine.step()
-    #expect(policy.refusals == 0)
+    // The one refusal is the list sent short of its field's lower count (docs/adr/0086,
+    // section 15.6): sent empty, refused whole and never delivered; sent with its one
+    // element, delivered.
+    #expect(policy.refusals == 1)
+    #expect(policy.countedDeliveries == 1)
+    #expect(policy.countedSum == 7)
     // The forwarded delivery came back on the internal queue.
     #expect(policy.deliveries == 2)
     // Depth 1: the lengths of a list of records and a list of enum values.

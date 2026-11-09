@@ -49,10 +49,11 @@ fn fixtures() -> PathBuf {
 }
 
 /// The documents a reader of `batch.sent` imports, copied beside it.
-const SIBLINGS: [&str; 3] = [
+const SIBLINGS: [&str; 4] = [
     "enum_signal_level.scxml",
     "event_batch_item.scxml",
     "event_batch.scxml",
+    "event_counted.scxml",
 ];
 
 /// A reader of `batch.sent` that measures a list at each depth, walks the

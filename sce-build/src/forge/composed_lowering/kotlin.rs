@@ -359,6 +359,15 @@ impl ComposedSpelling for KotlinComposed<'_> {
             KotlinCarrier::Wire => map,
         }
     }
+    // The count held first, by the `AlgorithmFailure` a `<send>` catches of a
+    // param that can fail, then the list written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "run {{ if (({}).size < {least}) throw com.sce.forge.runtime.AlgorithmFailure(\
+             com.sce.forge.runtime.AlgorithmError.Precondition); {sent} }}",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         "it"
@@ -728,5 +737,19 @@ mod tests {
             .union_member(&shapes.union, &all, "kind")
             .unwrap_err()
             .contains("holds no union"));
+    }
+
+    /// A list sent where its field asks a lower count it does not prove is
+    /// held to the count before it is written (docs/adr/0086, section 15.6).
+    #[test]
+    fn a_list_sent_short_of_its_fields_count_fails_before_it_is_written() {
+        assert_eq!(
+            KOTLIN.send_counted(&Held::place("vTaking"), "ops", 1, "W".to_string()),
+            Some(
+                "run { if ((vTaking).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(\
+                 com.sce.forge.runtime.AlgorithmError.Precondition); W }"
+                    .to_string()
+            )
+        );
     }
 }

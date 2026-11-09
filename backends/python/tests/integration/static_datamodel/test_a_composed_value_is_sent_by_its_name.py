@@ -66,7 +66,15 @@ def test_a_delivery_forwarded_by_its_names_comes_back_whole() -> None:
     engine.initialize()
     policy = engine.policy
     engine.send_event(policy.resolve_event_by_name("batch.sent"), EventMetadata(data=_batch()))
-    assert policy.refusals() == 0, "the delivery the machine sent itself fits its schema"
+    assert policy.refusals() == 1, (
+        "the delivery the machine sent itself fits its schema, and the one refusal is the "
+        "list sent short of its field's lower count"
+    )
+    # A list variable sent to a field that states a lower count (docs/adr/0086,
+    # section 15.6): sent empty, refused whole and never delivered; sent with
+    # its one element, delivered.
+    assert policy.counted_deliveries() == 1
+    assert policy.counted_sum() == 7
     assert policy.deliveries() == 2, "the forwarded delivery came back on the internal queue"
     # Depth 1: the lengths of a list of records and a list of enum values.
     assert policy.item_count() == 3

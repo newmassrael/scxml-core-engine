@@ -37,8 +37,18 @@ func TestADeliveryForwardedByItsNamesComesBackWhole(t *testing.T) {
 	// `maybe` absent and `spare` present.
 	engine.RaiseExternalByName("batch.sent", composedBatch(4, 3, 4))
 	settleComposed(&policy, engine.Step, engine.Tick)
-	if got := policy.Refusals(); got != 0 {
-		t.Errorf("the delivery the machine sent itself was refused %d times", got)
+	// The one refusal is the list sent short of its field's lower count
+	// (docs/adr/0086, section 15.6); the delivery the machine sent itself fits.
+	if got := policy.Refusals(); got != 1 {
+		t.Errorf("refusals is %d, not the 1 of the list sent short of its count", got)
+	}
+	// Sent empty, refused whole and never delivered; sent with its one
+	// element, delivered.
+	if got := policy.CountedDeliveries(); got != 1 {
+		t.Errorf("counted_deliveries is %d, not 1", got)
+	}
+	if got := policy.CountedSum(); got != 7 {
+		t.Errorf("counted_sum is %d, not 7", got)
 	}
 	if got := policy.Deliveries(); got != 2 {
 		t.Errorf("deliveries is %d: the forwarded delivery did not come back on the internal queue", got)
