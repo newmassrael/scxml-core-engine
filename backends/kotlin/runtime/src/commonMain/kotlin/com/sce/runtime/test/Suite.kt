@@ -78,9 +78,15 @@ class Suite(
 data class CaseResult(
     /** The test case's name. */
     val testCase: String,
-    /** Its verdict and log. */
+    /** Its verdict and logs. */
     val result: TestCaseResult,
-)
+) {
+    /**
+     * The test log of this run of the test case in the suite [suite], in its
+     * one canonical text ([TestCaseResult.canonicalLog]).
+     */
+    fun canonicalLog(suite: String): String = result.canonicalLog(suite, testCase)
+}
 
 /**
  * An override of a module parameter the suite does not declare: the caller's
@@ -91,13 +97,20 @@ class OverrideRefusal(
     val reason: String,
 ) : Exception(reason)
 
-/** P13: the test case cannot start, so it ends at once with `error`. */
+/**
+ * P13: the test case cannot start, so it ends at once with `error`. No
+ * component was created, so the test log holds its start and its end alone.
+ */
 private fun refused(testCase: String, why: String): CaseResult = CaseResult(
     testCase = testCase,
     result = TestCaseResult(
         verdict = Verdict.ERROR,
         endedAt = 0,
         log = listOf(LogRecord(at = 0, component = MTC_NAME, kind = LogKind.ERROR, detail = why)),
+        records = listOf(
+            TestLogRecord(at = 0, event = TestLogEvent.TestCaseStarted),
+            TestLogRecord(at = 0, event = TestLogEvent.TestCaseEnded(Verdict.ERROR)),
+        ),
     ),
 )
 

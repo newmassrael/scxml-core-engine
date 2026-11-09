@@ -106,7 +106,11 @@ private class TraceAdapter(private val trace: List<Input> = emptyList()) : Syste
     }
 }
 
-private fun message(event: String): Message = Message(event, Unit)
+/**
+ * A message of the record [event] that holds no field: `{}` in the test log, of
+ * the record type `empty`.
+ */
+private fun message(event: String): Message = Message.of(event, Unit, "empty") { emptyMap<String, Any>() }
 
 private fun logged(result: TestCaseResult, component: String, kind: LogKind): Boolean =
     result.log.any { it.component == component && it.kind == kind }
@@ -269,11 +273,13 @@ private class FourInputs : SystemAdapter {
             return emptyList()
         }
         given = true
+        val written: (String) -> Any = { text -> Canonical.text(text) }
+        val number: (Int) -> Any = { n -> Canonical.integer(n) }
         return listOf(
-            "sut" to Message("number", "7"),
-            "sut" to Message("other", 7),
-            "sut" to Message("number", 6),
-            "sut" to Message("number", 7),
+            "sut" to Message.of("number", "7", "text", written),
+            "sut" to Message.of("other", 7, "number", number),
+            "sut" to Message.of("number", 6, "number", number),
+            "sut" to Message.of("number", 7, "number", number),
         )
     }
 }
@@ -878,6 +884,9 @@ private fun testComponentInvoker(context: ComponentContext): Invoker = { event -
 /** The record a template of the port type reads. */
 private class Ping(val n: Int)
 
+/** A [Ping] in the canonical form of the test log, as the unit of a template over its record writes it. */
+private fun pingCanonical(ping: Ping): Any = Canonical.record("n" to Canonical.integer(ping.n))
+
 /**
  * An MTC wired as a generated one is: its start registers the two processors,
  * each holding its context, and it reaches the doors of the run only through
@@ -902,7 +911,7 @@ private class DoorsTester : ComponentMachine {
                 processorType = TEST_PORT,
                 eventName = "ping",
                 target = "p",
-                value = Ping(3),
+                value = messageValue(Ping(3), "ping", ::pingCanonical),
             ),
         )
         context.startTimer("reply", 10)
@@ -973,5 +982,179 @@ class TheDoorsTest {
         assertEquals(10L, result.log[killed].at, "the cancel came at the timeout")
         assertTrue(killed < verdict, "the cancel removed the PTC, not the end")
         assertTrue(logged(result, "echo", LogKind.VERDICT))
+        // §12.5: the request carried the value with its type's name and the
+        // writer of its canonical form, which the test log records.
+        assertTrue(
+            TestLogRecord(0, TestLogEvent.MessageSent("mtc", "p", "ping", mapOf("n" to "3"))) in result.records,
+            result.records.toString(),
+        )
+    }
+}
+
+/** An MTC and its echo, joined `p` to `q`; the MTC has two timers. */
+private fun pinging(): Configuration = Configuration(
+    mtcType = "Tester",
+    ptcTypes = mapOf("echo" to "Echo"),
+    portsOfType = byType("Tester" to "p", "Echo" to "q"),
+    timersOfType = byType("Tester" to "t", "Tester" to "s"),
+    connections = listOf(Endpoint("mtc", "p") to Endpoint("echo", "q")),
+)
+
+/**
+ * The ping's value, a record of one number of the record type `ping`, as the
+ * unit of a template over it writes it.
+ */
+private fun ping(n: UInt): Message =
+    Message.of("ping", n, "ping") { value -> Canonical.record("n" to Canonical.integer(value)) }
+
+/**
+ * The MTC creates the echo, pings it, starts two timers and logs; at the first
+ * timer's timeout it stops the second, and the first again, which no longer
+ * runs, and passes. The echo takes the ping, passes with a reason, and
+ * terminates.
+ */
+private fun pingingMachines(): Machines = Machines()
+    .with(
+        "Tester",
+        Pair(
+            { context, _ ->
+                context.create("echo")
+                context.send("p", ping(3u))
+                context.startTimer("t", 10)
+                context.startTimer("s", 20)
+                context.log("asked \"echo\"")
+            },
+            { context, self ->
+                if (context.timedOut("t")) {
+                    context.timeout("t")
+                    context.stopTimer("s")
+                    context.stopTimer("t")
+                    context.setverdict(Verdict.PASS, "")
+                    self.end()
+                }
+            },
+        ),
+    )
+    .with(
+        "Echo",
+        Pair(idle()) { context, self ->
+            if (context.snapshotPresent("q")) {
+                context.receive("q")
+                context.setverdict(Verdict.PASS, "pinged")
+                self.end()
+            }
+        },
+    )
+
+private fun suiteOf(testCase: TestCase): Suite = Suite(
+    name = "logged_suite",
+    moduleParameters = ModuleParameters(),
+    executes = listOf(execute(testCase, null)),
+)
+
+/**
+ * The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3): each record
+ * written where the semantics places its event, in the order the rounds produce
+ * them, and the whole log in its one canonical text, the bytes the Rust
+ * runtime's twin cases (`the_test_log`) expect.
+ */
+class TheTestLogTest {
+
+    /**
+     * P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the
+     * suite's runner. The echo's work comes in the round after the MTC's start,
+     * at NOW = 0, the timeout at 10; the stop of a timer that no longer runs,
+     * and the removal of the terminated echo when the MTC ends, write no record.
+     */
+    @Test
+    fun `a run writes each record where its event happens`() {
+        val suite = suiteOf(
+            TestCase(
+                name = "pings_the_echo",
+                configuration = pinging(),
+                machines = pingingMachines().factory(),
+                moduleParameters = emptyList(),
+            ),
+        )
+        val results = runSuite(suite, emptySet(), { _ -> TraceAdapter() }, ModuleParameters())
+        assertEquals(1, results.size)
+        assertEquals(
+            listOf(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\",",
+                "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
+                "\"timer\":\"t\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\",",
+                "\"timer\":\"s\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\",",
+                "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\",",
+                "\"verdict\":\"pass\"},",
+                "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"t\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"s\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+                "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"pings_the_echo\",\"verdict\":\"pass\"}",
+            ).joinToString(""),
+            results[0].canonicalLog(suite.name),
+        )
+    }
+
+    /**
+     * P13: an error the runtime sets is a verdict without the runtime's own
+     * reason, which another runtime would not write alike.
+     */
+    @Test
+    fun `an error the runtime sets is logged without its cause`() {
+        val machines = Machines().with("Waiter", Pair(idle(), idle()))
+        val result = runCase(lone("Waiter"), machines, TraceAdapter(), 7L)
+        assertEquals(Verdict.ERROR, result.verdict)
+        assertEquals(
+            listOf(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Waiter\"},",
+                "{\"at\":\"7\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"error\"},",
+                "{\"at\":\"7\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"waits\",\"verdict\":\"error\"}",
+            ).joinToString(""),
+            result.canonicalLog("logged_suite", "waits"),
+        )
+    }
+
+    /**
+     * P13: a test case that cannot start, for want of an adapter, logs its
+     * start and its end alone, since no component was created.
+     */
+    @Test
+    fun `a test case that cannot start logs its start and end`() {
+        val suite = suiteOf(
+            TestCase(
+                name = "unplayed",
+                configuration = pinging(),
+                machines = pingingMachines().factory(),
+                moduleParameters = emptyList(),
+            ),
+        )
+        val results = runSuite(suite, emptySet(), { _ -> null }, ModuleParameters())
+        assertEquals(
+            listOf(
+                "{\"records\":[",
+                "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+                "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+                "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+                "\"test_case\":\"unplayed\",\"verdict\":\"error\"}",
+            ).joinToString(""),
+            results[0].canonicalLog(suite.name),
+        )
     }
 }

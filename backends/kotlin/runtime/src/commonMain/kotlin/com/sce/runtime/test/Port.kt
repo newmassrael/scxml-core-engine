@@ -19,11 +19,69 @@ typealias Instant = Long
 typealias Duration = Long
 
 /**
+ * A value a message carries, its type's name and its canonical form in the
+ * test log (docs/SCE_TEST_PROFILE.md §12.5).
+ *
+ * The value is read back by its type ([Message.valueAs]); its canonical form
+ * is written by the types its document declares ([Canonical]), which its
+ * Kotlin type alone does not say. [messageValue] makes one of a value, its
+ * type's name and the writer of its form, which is what a generated send and a
+ * system adapter give; a host may implement it on a type of its own.
+ *
+ * Cross-language sibling: `sce_rust_runtime::test::TestValue` (Rust).
+ */
+interface TestValue {
+    /** The value, to be read back by its type. */
+    fun asAny(): Any
+
+    /**
+     * The name of the value's record as the types module of the suite's
+     * TTCN-3 export names it (docs/SCE_TEST_PROFILE.md §9.5): the unit name of
+     * its `event-schema` document. A value in TCI always carries its type, and
+     * so does a message of the test log.
+     */
+    val typeName: String
+
+    /**
+     * The value in the canonical form of the test log: built from texts, truth
+     * values, lists and maps alone ([Canonical]), so that the JSON
+     * Canonicalization Scheme writes it as the same bytes on every runtime. It
+     * runs while the run's state is held, so it reads the value and nothing
+     * else.
+     */
+    fun canonical(): Any
+}
+
+/** A value, its type's name and the writer of its canonical form: what [messageValue] makes. */
+private class WithCanonical<V : Any>(
+    private val value: V,
+    override val typeName: String,
+    private val write: (V) -> Any,
+) : TestValue {
+    override fun asAny(): Any = value
+
+    override fun canonical(): Any = write(value)
+
+    // The value's type is not known here, so only its type's name is shown.
+    override fun toString(): String = "TestValue(typeName=$typeName, ..)"
+}
+
+/**
+ * [value] as a message's value, of the record [typeName], whose canonical form
+ * [canonical] writes: the `TYPE` and the `canonical` of the unit of a template
+ * over its record, as a generated send gives them (`<template>.TYPE`,
+ * `<template>.canonical`).
+ */
+fun <V : Any> messageValue(value: V, typeName: String, canonical: (V) -> Any): TestValue =
+    WithCanonical(value, typeName, canonical)
+
+/**
  * A message on a port: the event name of its record and the record's value.
  *
- * The value is the record type the statechart generator writes for the
- * `event-schema` that declares it; a template's matcher reads it as that type
- * ([valueAs]). Matching is on the value and never on an encoding (ADR 0091 C2).
+ * The value is of the record type the unit of its `event-schema` declares; a
+ * template's matcher reads it as that type ([valueAs]). Matching is on the
+ * value and never on an encoding (ADR 0091 C2), and so is the test log
+ * ([canonicalValue]).
  *
  * The value is held as it is: the Rust runtime shares it through an `Arc` so
  * that the request that carries it stays cloneable, and every Kotlin value is
@@ -32,17 +90,34 @@ typealias Duration = Long
 class Message(
     /** The event name of the message's record. */
     val event: String,
-    /** The record's value, read back by its type. */
-    val value: Any?,
+    /** The record's value, with its type's name and the writer of its canonical form. */
+    val value: TestValue,
 ) {
     /**
      * The value, when it is a [V]; null when it is of another type, which a
      * template of [V] does not match.
      */
-    inline fun <reified V : Any> valueAs(): V? = value as? V
+    inline fun <reified V : Any> valueAs(): V? = value.asAny() as? V
+
+    /** The value in the canonical form of the test log. */
+    fun canonicalValue(): Any = value.canonical()
+
+    /** The name of the value's record type in the test log ([TestValue.typeName]). */
+    val typeName: String
+        get() = value.typeName
 
     // The value's type is not known here, so only the event is shown.
     override fun toString(): String = "Message(event=$event, ..)"
+
+    companion object {
+        /**
+         * A message of the record [event] whose value is [value], of the record
+         * type [typeName], whose canonical form [canonical] writes
+         * ([messageValue]).
+         */
+        fun <V : Any> of(event: String, value: V, typeName: String, canonical: (V) -> Any): Message =
+            Message(event, messageValue(value, typeName, canonical))
+    }
 }
 
 /**
