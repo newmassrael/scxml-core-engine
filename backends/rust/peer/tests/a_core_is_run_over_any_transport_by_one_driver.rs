@@ -31,8 +31,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const CAROL: u64 = 3;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 
 fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
@@ -55,18 +54,20 @@ fn genesis() -> Entry {
     .finish()
 }
 
-/// A write of `value` to field 3 of row `id`, stamped by `node` at `wall`.
+/// A change of one write of `value` to field 3 of row `id`, stamped by `node` at `wall`.
 fn write(id: u32, node: u64, wall: i64, value: i64) -> String {
-    json!({"id": id, "field": 3, "value": value.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": id, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
-/// The note that `by` wrote over the write of row `id` that `node` stamped at `wall`, at `at`.
+/// The change of `by`'s stamped at `at` that writes over the write of row `id` that `node`
+/// stamped at `wall`.
 fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
-    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": node.to_string(), "by": by.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
+    json!({"by": by.to_string(), "wallTime": at.to_string(), "counter": 0, "ops": [
+        {"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+         "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()}]})
     .to_string()
 }
 
@@ -204,11 +205,11 @@ fn the_driver_asks_and_comes_to_what_a_host_carrying_the_texts_by_hand_does() {
 
     for alice in [&mut hand_alice, &mut driven_alice] {
         assert_eq!(
-            alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+            alice.outbound(CHANGE, &write(1, ALICE, 1000, 10)),
             Kept::Taken
         );
         assert_eq!(
-            alice.outbound(WRITE, &write(1, ALICE, 2000, 20)),
+            alice.outbound(CHANGE, &write(1, ALICE, 2000, 20)),
             Kept::Taken
         );
     }
@@ -226,14 +227,14 @@ fn the_driver_asks_and_comes_to_what_a_host_carrying_the_texts_by_hand_does() {
         outcome
             .events()
             .iter()
-            .filter(|(event, _)| event == WRITE)
+            .filter(|(event, _)| event == CHANGE)
             .count(),
         2
     );
 
     for alice in [&mut hand_alice, &mut driven_alice] {
         assert_eq!(
-            alice.outbound(SUPERSEDE, &supersede(1, ALICE, 1000, ALICE, 2000)),
+            alice.outbound(CHANGE, &supersede(1, ALICE, 1000, ALICE, 2500)),
             Kept::Taken
         );
     }
@@ -262,7 +263,7 @@ fn four_writes() -> Shared {
     let mut alice = alice();
     for n in 1..=4 {
         assert_eq!(
-            alice.outbound(WRITE, &write(n, ALICE, 1000 + i64::from(n), i64::from(n))),
+            alice.outbound(CHANGE, &write(n, ALICE, 1000 + i64::from(n), i64::from(n))),
             Kept::Taken
         );
     }
@@ -283,7 +284,7 @@ fn a_transport_that_fails_mid_round_leaves_the_next_round_to_hand_over_what_was_
         reference
             .events()
             .iter()
-            .filter(|(event, _)| event == WRITE)
+            .filter(|(event, _)| event == CHANGE)
             .count(),
         4
     );
@@ -382,7 +383,7 @@ fn a_round_whose_transport_waits_ends_when_cancelled_and_when_its_deadline_passe
     let relay = relay(Limits::default());
     let mut alice = alice();
     assert_eq!(
-        alice.outbound(WRITE, &write(1, ALICE, 1000, 10)),
+        alice.outbound(CHANGE, &write(1, ALICE, 1000, 10)),
         Kept::Taken
     );
 
@@ -617,15 +618,16 @@ fn what_becomes_of_each_send_is_logged_by_its_decision_and_never_by_its_content(
     let shared = relay(Limits::default());
     let digest = list_digest(LIST);
     let mut alice = alice();
-    let milk = json!({"id": 1, "field": 1, "value": "0", "text": "buy milk",
-                      "wallTime": "1000", "counter": 0, "nodeId": ALICE.to_string()})
+    let milk = json!({"by": ALICE.to_string(), "wallTime": "1000", "counter": 0, "ops": [
+        {"kind": 0, "id": 1, "field": 1, "value": "0", "text": "buy milk",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string();
-    assert_eq!(alice.outbound(WRITE, &milk), Kept::Taken);
-    assert_eq!(alice.outbound(WRITE, &milk), Kept::Held);
+    assert_eq!(alice.outbound(CHANGE, &milk), Kept::Taken);
+    assert_eq!(alice.outbound(CHANGE, &milk), Kept::Held);
     let bread = milk.replace("buy milk", "buy bread");
-    assert!(matches!(alice.outbound(WRITE, &bread), Kept::Refused(_)));
+    assert!(matches!(alice.outbound(CHANGE, &bread), Kept::Refused(_)));
     assert_eq!(
-        alice.outbound("record_list.propose", r#"{"before":"30000"}"#),
+        alice.outbound("record_list.edit", r#"{"id":1}"#),
         Kept::NotSigned
     );
     run(&mut alice, &mut direct(&shared, ALICE), RoundKind::Sync);
@@ -634,12 +636,12 @@ fn what_becomes_of_each_send_is_logged_by_its_decision_and_never_by_its_content(
         .map(|taken| taken.line)
         .collect();
     let kept = |decision: &str| {
-        format!("event=send_kept list={digest} send=record_list.write decision={decision}")
+        format!("event=send_kept list={digest} send=record_list.change decision={decision}")
     };
     assert!(lines.contains(&kept("taken")), "{lines:#?}");
     assert!(lines.contains(&kept("held")), "{lines:#?}");
     let refused = format!(
-        "{} reason=\"record_list.write: this device signed another content",
+        "{} reason=\"record_list.change: this device signed another content",
         kept("refused")
     );
     assert!(
@@ -648,7 +650,7 @@ fn what_becomes_of_each_send_is_logged_by_its_decision_and_never_by_its_content(
     );
     assert!(
         lines.contains(&format!(
-            "event=send_kept list={digest} send=record_list.propose decision=not_signed"
+            "event=send_kept list={digest} send=record_list.edit decision=not_signed"
         )),
         "{lines:#?}"
     );
@@ -666,21 +668,25 @@ fn what_becomes_of_each_send_is_logged_by_its_decision_and_never_by_its_content(
         .restore_sealed(ALICE, &sealed.state, &sealed.key)
         .unwrap();
     let later = write(2, ALICE, 2000, 2);
-    assert!(matches!(restored.outbound(WRITE, &later), Kept::Waiting(_)));
+    assert!(matches!(
+        restored.outbound(CHANGE, &later),
+        Kept::Waiting(_)
+    ));
     let outcome = run(&mut restored, &mut direct(&shared, ALICE), RoundKind::Sync);
-    assert_eq!(outcome.taken(), vec![(WRITE.to_string(), later)]);
+    assert_eq!(outcome.taken(), vec![(CHANGE.to_string(), later)]);
     let lines: Vec<String> = capture::taken()
         .into_iter()
         .map(|taken| taken.line)
         .collect();
-    let why = "\"record_list.write: this device's state came back from a store that may be behind \
+    let why =
+        "\"record_list.change: this device's state came back from a store that may be behind \
                what it signed, and it signs nothing new until a round has read its own chain back \
                from the relay\"";
     let expected = [
         format!("{} reason={why}", kept("waiting")),
         format!("event=send_waited list={digest} decision=waiting count=1 reason={why}"),
         format!("event=waiting_signed list={digest} taken=0 held=0 dropped=0 waiting=1"),
-        format!("event=send_waited list={digest} send=record_list.write decision=taken"),
+        format!("event=send_waited list={digest} send=record_list.change decision=taken"),
         format!("event=waiting_signed list={digest} taken=1 held=0 dropped=0 waiting=0"),
     ];
     for line in &expected {

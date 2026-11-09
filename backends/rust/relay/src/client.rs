@@ -209,7 +209,7 @@ pub struct Round {
     /// the relay was given it with the rest of what it lacked.
     pub taken: Vec<(String, String)>,
     /// What the machine sent that waited to be signed and that the host held already when its turn
-    /// came (the round read the device's own chain back, and it held the write or the note): each
+    /// came (the round read the device's own chain back, and it held the change): each
     /// `(event, data)`, in the order it was sent. Nothing was signed for it and the relay was given
     /// nothing new ([`sce_rust_trust::Waited::held`]).
     pub held: Vec<(String, String)>,
@@ -2190,19 +2190,19 @@ fn take_key_grant(
 /// What became of what a machine sent, kept by a host that has no hub ([`keep`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kept {
-    /// Signed and remembered: a new operation of the host's chain is in its [`Trust`], and a
-    /// courier carries it to the relay.
+    /// Signed and remembered: one change is one new operation of the host's chain, in its
+    /// [`Trust`], and a courier carries it to the relay (docs/adr/0085, section 1).
     Taken,
-    /// The host holds it already, as the operation it made or admitted before for the same write or
-    /// note: nothing is signed, the operation keeps its number and its signature, and a courier
-    /// gives the relay nothing it has. What a machine built again from its host's own log sends.
+    /// The host holds it already, as the operation it made or admitted before for the same change:
+    /// nothing is signed, the operation keeps its number and its signature, and a courier gives the
+    /// relay nothing it has. What a machine built again from its host's own log sends.
     Held,
     /// It is not an event that is signed: nothing is kept, and a relay carries nothing of it.
     NotSigned,
     /// The host would not sign it, and never will under the log it holds, and why: another content
-    /// under a stamp the device signed or that waits, another person's write the host holds no
-    /// signature of, a person the log does not let write (a reader, a device taken off), a frozen
-    /// chain, a host with no person.
+    /// under a dot the device signed or that waits, another person's change the host holds no
+    /// signature of, a change that names nothing or writes one register twice, a person the log
+    /// does not let write (a reader, a device taken off), a frozen chain, a host with no person.
     Refused(String),
     /// The host may not sign it yet, and why: the device has not read the log that lets it write,
     /// the key of the epoch the log is in, or, after its state came back from a store, its own
@@ -2215,10 +2215,10 @@ pub enum Kept {
 /// Sign and remember what a machine sent, as the host of a machine that has no hub does: the one
 /// place a send becomes an operation of the host's chain ([`Trust::keep_sent`]), whether through
 /// [`Keep`] behind a Mesh endpoint or through a host that is given the machine's sends itself. What
-/// is signed does not depend on whether the machine addressed the event to `#hub` or to `#people`:
-/// the event alone is signed. A write or a note the host holds already is signed once
-/// ([`Kept::Held`]), so a host may give it a machine's sends again, as many times as the machine
-/// makes them; one the host may not sign yet is kept until it may ([`Kept::Waiting`]).
+/// is signed does not depend on the target the machine addressed the event to: the event alone is
+/// signed. A change the host holds already is signed once ([`Kept::Held`]), so a host may give it a
+/// machine's sends again, as many times as the machine makes them; one the host may not sign yet is
+/// kept until it may ([`Kept::Waiting`]).
 pub fn keep(trust: &Trust, event: &str, data: &str) -> Kept {
     let kept = match trust.keep_sent(event, data) {
         Sent::Signed => Kept::Taken,
@@ -2364,7 +2364,7 @@ mod tests {
         state.evidence_sent.insert("proof".to_string());
         state
             .untold
-            .push(("record_list.write".to_string(), "{}".to_string()));
+            .push(("record_list.change".to_string(), "{}".to_string()));
         state.roster_len = 3;
         state.begin_again();
         assert_eq!(state.cursor(), 0);
