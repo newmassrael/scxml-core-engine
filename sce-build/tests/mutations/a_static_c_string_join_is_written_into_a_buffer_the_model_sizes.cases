@@ -52,8 +52,8 @@ PY
 
 mutation_case "a conditional is as long as its first branch only" <<'PY'
 edit("sce-build/src/forge/text_bound.rs",
-     "        } => text_bound(consequent, ctx).larger(text_bound(alternate, ctx)),\n",
-     "        } => {\n            let _ = alternate;\n            text_bound(consequent, ctx)\n        }\n")
+     "        return text_bound(consequent, ctx).larger(text_bound(alternate, ctx));\n",
+     "        let _ = alternate;\n        return text_bound(consequent, ctx);\n")
 PY
 
 mutation_case "an integer is as long as a uint32 whatever its width" <<'PY'
