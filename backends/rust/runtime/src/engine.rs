@@ -1866,7 +1866,8 @@ impl<P: StatePolicy> Engine<P> {
     /// not running. A machine without a script engine has
     /// [`core::convert::Infallible`] as its
     /// [`StartFailure`](StatePolicy::StartFailure), so its start cannot fail
-    /// and a host writes `let Ok(()) = engine.initialize();`.
+    /// and a host writes `engine.initialize().unwrap_or_else(|never| match never {})`
+    /// (`let Ok(()) = …` says the same from Rust 1.82; this crate claims 1.75).
     #[must_use = "a start refused for its script session entered nothing, and the machine is not running"]
     pub fn initialize(&mut self) -> Result<(), P::StartFailure> {
         // §scxml-3.13: entering the initial configuration is one turn, and the

@@ -1648,7 +1648,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // docs/adr/0096: what refuses this machine's start. One with a script
     // engine is refused when its script session cannot be established; one
     // without cannot be refused that way, so its host starts it with
-    // `let Ok(()) = engine.initialize();`.
+    // `engine.initialize().unwrap_or_else(|never| match never {})`.
 {% if model.needs_script_engine %}
     type StartFailure = ::sce_rust_runtime::ScriptSessionFailure;
 {% else %}
@@ -2334,8 +2334,10 @@ impl ::sce_rust_runtime::test::ComponentMachine for {{ machine_name }}Component 
             },
         );
         // A test component's datamodel is the static one, so it has no script
-        // session whose failure could refuse its start (docs/adr/0096).
-        let Ok(()) = machine.initialize();
+        // session whose failure could refuse its start (docs/adr/0096). Matched
+        // out rather than `let Ok(()) =`, which an uninhabited error admits only
+        // from Rust 1.82 and the runtime this code builds on claims 1.75.
+        machine.initialize().unwrap_or_else(|never| match never {});
         self.machine = Some(machine);
     }
 

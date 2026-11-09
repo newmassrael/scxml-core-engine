@@ -59,7 +59,7 @@
 //! // without a script engine: its start cannot be refused.
 //! let policy = MyPolicy::new();
 //! let mut engine = Engine::new(policy);
-//! let Ok(()) = engine.initialize();
+//! engine.initialize().unwrap_or_else(|never| match never {});
 //! // ...process events via engine.process_event(...) / engine.tick() ...
 //!
 //! // A machine with a script engine is refused its start when its script
