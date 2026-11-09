@@ -979,12 +979,13 @@ class {{ machine_name }}Component:
 
         # P6: a send on a port is appended to the queue of the port it is
         # connected to, or handed to the system adapter where it is mapped. A
-        # test-port send always carries its template's value
+        # test-port send always carries its template's value, with the name of
+        # its record type and the writer of its canonical form in the test log
         # (`forge::static_lowering`, `StaticTarget::test_message`).
         def send(request: Any) -> List[Any]:
             if request.value is None:
                 raise RuntimeError("a test-port send carries its template's value")
-            context.send(request.target, {{ test_runtime }}.Message(event=request.event_name, value=request.value))
+            context.send(request.target, {{ test_runtime }}.Message(event=request.event_name, test_value=request.value))
             return []
 
         engine.register_event_processor({{ test_port_processor | py_string_literal }}, send)

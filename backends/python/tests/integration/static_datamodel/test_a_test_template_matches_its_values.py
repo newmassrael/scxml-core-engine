@@ -46,6 +46,7 @@ from integration.static_datamodel import (  # noqa: E402 -- path inserted above
     voucher_is,
     voucher_payment,
 )
+from sce_runtime.saved_json import write_jcs  # noqa: E402
 
 #: U+00E9, one character of two UTF-8 bytes.
 E_ACUTE = "é"
@@ -225,3 +226,29 @@ def test_a_byte_string_literal_is_its_octets() -> None:
     assert not voucher_is.matches(voucher_payment.VoucherPaymentPayload(voucher_code=bytes(other))), (
         "other octets do not match"
     )
+
+
+def test_a_records_canonical_form_is_written_by_the_types_its_documents_declare() -> None:
+    """docs/SCE_TEST_PROFILE.md §12.5: the unit's ``canonical`` writes a record by
+    the types its documents declare, in the JSON Canonicalization Scheme: every
+    integer as the text of its digits, a list's elements in order, an enum by its
+    declared name, a byte string in upper-case hex, an absent field omitted and a
+    present one written. ``TYPE`` is the unit name of the record's event schema.
+    The Python twin of the Kotlin
+    ``anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare``, over the
+    records Python lowers, which hold no union."""
+    report = job_report_of.value(5, "late", 9)
+    assert write_jcs(job_report_of.canonical(report)) == (
+        '{"codes":["9","255"],"count":"4294967295","elapsed_ms":"5","note":"late","retry":"2"}'
+    )
+    absent = dataclasses.replace(report, note=None, retry=None, tag=0)
+    assert write_jcs(job_report_of.canonical(absent)) == (
+        '{"codes":["9","255"],"count":"4294967295","elapsed_ms":"5","tag":"0"}'
+    ), "an absent field is omitted, and a present zero is written"
+    assert job_report_of.TYPE == "job_status"
+    assert write_jcs(order_line_exact.canonical(order_line_exact.value())) == (
+        '{"color":"red","quantity":"2","sku":"A-1"}'
+    )
+    assert order_line_exact.TYPE == "order_line"
+    assert write_jcs(voucher_is.canonical(voucher_is.value())) == '{"voucher_code":"00FF10A0"}'
+    assert voucher_is.TYPE == "voucher_payment"

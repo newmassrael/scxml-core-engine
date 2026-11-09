@@ -41,6 +41,7 @@ from integration.static_datamodel import (  # noqa: E402 -- path inserted above
     asking_configuration,
     job_reply,
     job_request,
+    reply_ok,
     runtime_suite,
 )
 from sce_runtime import saved_values  # noqa: E402
@@ -88,7 +89,11 @@ class Responder:
         )
         self._requested.append(request.job)
         reply = job_reply.JobReplyPayload(job=request.job, code=self._code)
-        self._pending.append((now + ANSWER_DELAY, Message(event=job_reply.EVENT_NAME, value=reply)))
+        # The reply's canonical form in the test log is the one the unit of a
+        # template over its record writes.
+        self._pending.append(
+            (now + ANSWER_DELAY, Message.of(job_reply.EVENT_NAME, reply, reply_ok.TYPE, reply_ok.canonical))
+        )
 
     def next_input(self) -> Optional[Instant]:
         return self._pending[0][0] if self._pending else None
@@ -166,6 +171,45 @@ def test_fails_a_job_the_system_under_test_answers_with_a_failure() -> None:
     assert results[0].result.verdict == Verdict.FAIL, results[0].result.log
     assert results[0].result.ended_at == SECOND, "time advances to the timer's instant"
     assert logs(results[0], LogKind.TIMEOUT), "the timeout is logged"
+
+
+#: The test log every runtime writes of ``answers_the_job`` in a world with no
+#: feature, answered with success: one file the Rust, C++, Kotlin and Python runs
+#: are held to (``a_generated_test_case_writes_its_test_log`` in
+#: ``backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs``), so the
+#: agreement of the backends is one set of bytes, named by the path every other
+#: reader uses.
+ANSWERS_THE_JOB_LOG = (
+    _HERE.parents[4]
+    / "sce-build"
+    / "tests"
+    / "fixtures"
+    / "test_profile"
+    / "runtime"
+    / "expected_logs"
+    / "answers_the_job.json"
+)
+
+
+def answers_the_job_log() -> str:
+    """The shared log, without the one newline the file ends in, which no
+    canonical text holds."""
+    assert ANSWERS_THE_JOB_LOG.is_file(), f"cannot read the shared test log at {ANSWERS_THE_JOB_LOG}"
+    text = ANSWERS_THE_JOB_LOG.read_text(encoding="utf-8")
+    assert text.endswith("\n") and not text.endswith("\n\n"), "the shared log ends in one newline"
+    return text[:-1]
+
+
+def test_a_generated_test_case_writes_its_test_log() -> None:
+    """docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in
+    its one canonical text, the bytes of the shared file. The request the
+    component sends carries the value its template's unit writes, the job of the
+    suite's module parameter; the reply arrives at 500 and is taken in that
+    round, which stops the timer, passes and ends the MTC."""
+    requested: List[int] = []
+    results = suite_run(features_of(), 0, requested)
+    assert names_of(results) == ["answers_the_job"]
+    assert results[0].canonical_log("runtime_suite") == answers_the_job_log()
 
 
 def test_runs_the_test_cases_a_world_selects() -> None:

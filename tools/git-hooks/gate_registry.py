@@ -2304,7 +2304,11 @@ GATES: dict[str, dict] = {
         "extra": ["backends/python/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
                   "sce/include/scripting/*.lua", "tests/ecmascript/**",
-                  "scripts/install_sce_python.sh"],
+                  "scripts/install_sce_python.sh",
+                  # The test log every runtime writes of the generated suite,
+                  # which `test_a_test_suite_runs_through_its_runner.py` reads
+                  # at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",
