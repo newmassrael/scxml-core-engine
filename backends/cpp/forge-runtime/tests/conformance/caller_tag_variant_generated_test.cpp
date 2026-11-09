@@ -16,9 +16,13 @@
 // 16-bit version) and 1 for the session close arm (an 8-bit reason), and hands
 // the decode what it read there. codec_every_arm_says_parent writes the flag
 // `header.M` (bit 6) as the arm's tag and `header.N` (bit 5) as the arm says
-// its flag input.
+// its flag input. codec_some_arms_say_parent holds the same flags over a
+// variant one of whose arms says the input: in a value of that arm `N` is held
+// to it, and the encode refuses one that says otherwise before its first byte
+// (docs/adr/0065 §6 R4e); in a value of the other arm `N` is the value's own.
 
 #include "codec_every_arm_says_parent.h"
+#include "codec_some_arms_say_parent.h"
 #include "codec_source_parent_tag.h"
 
 #include <cstdint>
@@ -43,6 +47,7 @@ using Leaf = ::SCE::Generated::CodecSourceLeaf::CodecSourceLeaf;
 using ParentTag = ::SCE::Generated::CodecSourceParentTag::CodecSourceParentTag;
 using EveryArmSays = ::SCE::Generated::CodecEveryArmSays::CodecEveryArmSays;
 using EveryArmSaysParent = ::SCE::Generated::CodecEveryArmSaysParent::CodecEveryArmSaysParent;
+using SomeArmsSayParent = ::SCE::Generated::CodecSomeArmsSayParent::CodecSomeArmsSayParent;
 
 // Decode `frame` as `Codec` and write the value back.
 template <class Codec> std::optional<std::vector<std::uint8_t>> round_trip(const std::vector<std::uint8_t> &frame) {
@@ -97,12 +102,49 @@ void a_parent_writes_the_flag_every_arm_says() {
     }
 }
 
+// A frame of either arm is written back byte for byte: `N` as the arm that
+// says it says it, and as the value's own in the arm that does not.
+void a_parent_writes_the_flag_some_arms_say() {
+    const std::vector<std::vector<std::uint8_t>> frames{
+        {0x60, 7, 1, 'a'},
+        {0x40, 7},
+        {0x00, 7},
+        {0x20, 7},
+    };
+    for (const auto &frame : frames) {
+        CHECK(round_trip<SomeArmsSayParent>(frame) == frame, "a some-arms-say frame is written back byte for byte");
+    }
+}
+
+// A value whose `N` says otherwise than the arm that says it is refused before
+// the first byte, and the sink holds nothing.
+void a_flag_the_arm_says_otherwise_is_refused_before_the_first_byte() {
+    const std::vector<std::uint8_t> frame{0x40, 7};
+    SceCursor cursor(frame.data(), frame.size());
+    const std::optional<SomeArmsSayParent> decoded = SomeArmsSayParent::decode(cursor);
+    CHECK(decoded.has_value(), "the near arm without a suffix decodes");
+    if (!decoded.has_value()) {
+        return;
+    }
+    // `N` set, while the arm holds no suffix and so says it clear.
+    const SomeArmsSayParent contradicted(static_cast<std::uint8_t>(0x60), decoded->body());
+    std::vector<std::uint8_t> bytes;
+    ::SCE::Forge::VectorSink sink(bytes);
+    const std::optional<::SCE::Forge::CodecError> refused = contradicted.encode(sink);
+    CHECK(refused == std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::PresentIfMismatch),
+          "the encode refuses a flag the arm says otherwise");
+    CHECK(bytes.empty(), "a refusal leaves the sink untouched");
+    CHECK(!contradicted.encode_to_vec().has_value(), "encode_to_vec answers no bytes for a refused value");
+}
+
 }  // namespace
 
 int main() {
     a_parent_writes_the_tag_of_the_arm_its_leaf_holds();
     a_leaf_answers_the_tag_it_was_decoded_under();
     a_parent_writes_the_flag_every_arm_says();
+    a_parent_writes_the_flag_some_arms_say();
+    a_flag_the_arm_says_otherwise_is_refused_before_the_first_byte();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

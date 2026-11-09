@@ -15,9 +15,11 @@
 use super::*;
 use crate::forge::bit_layout::BitSpan;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
+use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    list_law, Absent, Automaton, Bound, Clause, CodecPlan, Derive, EncodePlan, EntryId, Guard,
-    HandedFrom, Measured, Narrow, Number, NumberInto, Offset, Presence, Value, Write,
+    list_law, Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, EncodePlan,
+    EntryId, Guard, HandedFrom, Measured, Narrow, Number, NumberInto, Offset, Presence, Value,
+    Write,
 };
 
 pub(super) mod cbor;
@@ -202,9 +204,33 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             }
         }
     }
-    if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
-        forms.push("an encode that can refuse".to_string());
+    // The encode refuses before its first byte what a check holds a value to:
+    // an input a held codec says, to what this codec hands it, and a gate it
+    // cannot derive the presence from, to the field it gates; and a held
+    // codec's own refusal, which a count of the writes finds first. A chain
+    // walked as slots holds its named entry apart from the others, which a
+    // check of each entry would not read. Every other refusal is not yet.
+    for check in &plan.input_checks {
+        if let CheckSite::List { list } = &check.site {
+            let slots = plan.program.iter().any(|write| {
+                matches!(write, Write::Streamed { field, list: Some(walk), .. }
+                    if field.id == list.id && walk.slots.is_some())
+            });
+            if slots {
+                forms.push(format!(
+                    "`{}`, a chain of slots whose entries are held to an input",
+                    list.id
+                ));
+            }
+        }
     }
+    forms.extend(
+        plan.totality
+            .refusals()
+            .iter()
+            .filter(|r| !matches!(r.kind, RefusalKind::PresentIfMismatch | RefusalKind::Child))
+            .map(|r| format!("`{}`, an encode that refuses it ({})", r.element, r.kind)),
+    );
     let gated_element = |f: &CodecField| gated(&f.id);
     for write in &plan.program {
         match write {
@@ -3178,16 +3204,61 @@ pub(super) fn render(
         ));
         input_params.push_str(", const Overrides& overrides = Overrides{}");
     }
+    // A codec held here that can refuse a value does so after this codec may
+    // have written bytes: the encode then writes into a sink that only counts
+    // first (ADR 0058 §3), so the caller's sink is untouched by a refusal.
+    let children_refuse = plan
+        .totality
+        .refusals()
+        .iter()
+        .any(|r| r.kind == RefusalKind::Child);
+    let input_args: String = plan
+        .given
+        .iter()
+        .map(|input| format!(", {}", input_name(&input.name)))
+        .chain((!plan.overridable.is_empty()).then(|| ", overrides".to_string()))
+        .collect();
+    let refuses = if plan.totality.is_total() {
+        "It\n\
+         /// refuses nothing; what it returns is the sink's own failure, and it\n\
+         /// throws only what a read of `src` throws."
+    } else {
+        "A value\n\
+         /// the encoding cannot carry is refused before the first byte is written,\n\
+         /// and it throws only what a read of `src` throws."
+    };
+    let elements_named = if names.is_empty() {
+        "none".to_string()
+    } else {
+        names.join(", ")
+    };
+    let entry = if children_refuse {
+        format!(
+            "\x20   template <class S>\n\
+             \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w{input_params}) noexcept(is_nothrow_source<S>::value) {{\n\
+             \x20       static_assert(is_source<S>::value, \"S presents every element of {struct_name}: {elements_named}\");\n\
+             \x20       {{\n\
+             \x20           ::SCE::Forge::CountingSink _count;\n\
+             \x20           if (auto _e = write_source(src, _count{input_args}); _e) return _e;\n\
+             \x20       }}\n\
+             \x20       return write_source(src, w{input_args});\n\
+             \x20   }}\n\n\
+             \x20   /// `encode_source` without the count that finds a refusal first.\n\
+             \x20   template <class S>\n\
+             \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> write_source(const S& src, ::SCE::Forge::SceSink& w{input_params}) noexcept(is_nothrow_source<S>::value) {{\n"
+        )
+    } else {
+        format!(
+            "\x20   template <class S>\n\
+             \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w{input_params}) noexcept(is_nothrow_source<S>::value) {{\n\
+             \x20       static_assert(is_source<S>::value, \"S presents every element of {struct_name}: {elements_named}\");\n"
+        )
+    };
     before.push_str(&format!(
         "/// The encode of `{struct_name}` over any source of it: each element read\n\
-         /// through `source`, written as the plan lays it out (docs/adr/0081). It\n\
-         /// refuses nothing; what it returns is the sink's own failure, and it\n\
-         /// throws only what a read of `src` throws.\n\
+         /// through `source`, written as the plan lays it out (docs/adr/0081). {refuses}\n\
          struct Wire {{\n\
-         \x20   template <class S>\n\
-         \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w{input_params}) noexcept(is_nothrow_source<S>::value) {{\n\
-         \x20       static_assert(is_source<S>::value, \"S presents every element of {struct_name}: {}\");\n",
-        if names.is_empty() { "none".to_string() } else { names.join(", ") }
+         {entry}"
     ));
     if names.is_empty() {
         before.push_str("        (void)src;\n        (void)w;\n");
@@ -3787,6 +3858,156 @@ pub(super) fn render(
             })
             .unwrap_or_default()
     };
+
+    // What a value is held to before the first byte is written (docs/adr/0065
+    // §2), so a refusal leaves the sink untouched: each input a held codec says,
+    // to what this codec hands it from elsewhere, and each gate the encode
+    // cannot derive the presence from, to the field it gates. Each refusal is
+    // one the totality analysis names.
+    let refuse = |kind: RefusalKind, at: &str| {
+        format!("return ::SCE::Forge::{};", plan.totality.require(kind, at))
+    };
+    for check in &plan.input_checks {
+        let (_, ns) = held_codec(imports, &check.codec);
+        let input = filters::to_snake_case(check.input.clone());
+        // Whether `entry` says the input otherwise than `value`; a value that
+        // says nothing of it disagrees with nothing (docs/adr/0065 §6 R4e).
+        let says_otherwise = |entry: &str, value: &str| {
+            let said = format!("{ns}::input_{input}({entry})");
+            if check.partly {
+                format!("({said}.has_value() && ((*{said} != 0) != {value}))")
+            } else {
+                format!("(({said} != 0) != {value})")
+            }
+        };
+        let fail = refuse(RefusalKind::PresentIfMismatch, &check.at);
+        // A list a gate leaves out holds no entry that could disagree.
+        let walked = |list: &CodecField, statements: String| {
+            let walked = element(list).expect("a list whose entries are checked is an element");
+            if walked.optional {
+                format!(
+                    "        if ({}.has_value()) {{\n{statements}        }}\n",
+                    walked.local()
+                )
+            } else {
+                statements
+            }
+        };
+        let handed = match &check.against {
+            Against::Carrier { carrier, bit } => format!(
+                "((static_cast<std::uint64_t>({}) >> {bit}) & 1u) != 0",
+                read(carrier)
+            ),
+            Against::Input { name } => format!("{} != 0", input_name(name)),
+            // Each entry says whether the entry before is of the kind, which
+            // the first entry has none before it to be.
+            Against::PreviousEntry { id } => {
+                let CheckSite::List { list: chain } = &check.site else {
+                    unreachable!("a chain supplies an input from the entry before");
+                };
+                let entries = element(chain)
+                    .expect("a chain whose entries are checked is an element")
+                    .entries();
+                let kind = entry_identifier(plan, l, ns, &chain.id, "_x");
+                before.push_str(&walked(
+                    chain,
+                    format!(
+                        "        {{\n\
+                         \x20           bool _prev = false;\n\
+                         \x20           for (const auto& _x : {entries}) {{\n\
+                         \x20               if ({}) {fail}\n\
+                         \x20               _prev = {kind} == 0x{id:X}u;\n\
+                         \x20           }}\n\
+                         \x20       }}\n",
+                        says_otherwise("_x", "_prev")
+                    ),
+                ));
+                continue;
+            }
+        };
+        let test = match &check.site {
+            CheckSite::List { list } => {
+                let entries = element(list)
+                    .expect("a list whose entries are checked is an element")
+                    .entries();
+                walked(
+                    list,
+                    format!(
+                        "            for (const auto& _x : {entries}) {{\n\
+                         \x20               if ({}) {fail}\n\
+                         \x20           }}\n",
+                        says_otherwise("_x", "_h")
+                    ),
+                )
+            }
+            CheckSite::Embed { body } => {
+                let held = element(body).expect("a body whose input is checked is an element");
+                let local = held.local();
+                if held.optional {
+                    format!(
+                        "            if ({local}.has_value() && {}) {fail}\n",
+                        says_otherwise(&format!("*{local}"), "_h")
+                    )
+                } else {
+                    format!("            if ({}) {fail}\n", says_otherwise(&local, "_h"))
+                }
+            }
+            // The arm the value holds, where it is one of the arms whose codec
+            // says the input.
+            CheckSite::Arm { arms } => {
+                let variant = variant
+                    .as_ref()
+                    .expect("an arm whose input is checked is an arm of the codec's variant");
+                let mut cases = String::new();
+                for &i in arms {
+                    let index = variant.index(i);
+                    let arm = match variant.arms[i].1 {
+                        Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
+                        None => format!("std::get_if<{index}>(&_r_body)->body"),
+                    };
+                    cases.push_str(&variant.guarded(
+                        i,
+                        &format!(
+                            "                case {index}:\n\
+                             \x20                   if ({}) {fail}\n\
+                             \x20                   break;\n",
+                            says_otherwise(&arm, "_h")
+                        ),
+                    ));
+                }
+                format!(
+                    "            switch (_r_body.index()) {{\n\
+                     {cases}\
+                     \x20               default: break;\n\
+                     \x20           }}\n"
+                )
+            }
+        };
+        before.push_str(&format!(
+            "        {{\n\
+             \x20           const bool _h = {handed};\n\
+             {test}\
+             \x20       }}\n"
+        ));
+    }
+    for field in &plan.gate_checks {
+        let present = element(field)
+            .expect("a field whose gate is checked is an element the value presents")
+            .local();
+        before.push_str(&format!(
+            "        if (({}) != {present}.has_value()) {}\n",
+            gate_test(field),
+            refuse(RefusalKind::PresentIfMismatch, &field.id)
+        ));
+    }
+    // A held codec that can refuse a value returns its refusal through each
+    // write of it (`if (auto _e = ...) return _e;`), which the count before the
+    // writes finds first (`encode_source`).
+    for r in plan.totality.refusals() {
+        if r.kind == RefusalKind::Child {
+            plan.totality.require(RefusalKind::Child, &r.element);
+        }
+    }
     // How many bytes a body encodes to, counted by its encode over a sink that
     // keeps none; its encode refuses nothing, so the count is all it returns.
     for (element_id, number) in encoded {
@@ -4458,6 +4679,10 @@ pub(super) fn render(
         decoded.push_str("            /*body=*/std::move(body),\n");
     }
     decoded.push_str("        };\n");
+
+    // Every refusal the totality analysis names is one the encode writes
+    // (docs/adr/0065 §2).
+    plan.totality.assert_all_written(struct_name);
 
     // Each text ends at its last line; the template places it on a line of
     // its own.

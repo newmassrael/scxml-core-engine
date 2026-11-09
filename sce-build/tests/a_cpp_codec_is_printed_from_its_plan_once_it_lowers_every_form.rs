@@ -210,10 +210,7 @@ fn codec_documents_under(dir: &Path, out: &mut Vec<PathBuf>) {
 /// keeps on the template's encode, by path from `sce-build`, in order. Until it
 /// is empty the template's encode prints a codec somewhere, and so cannot be
 /// removed (docs/adr/0081 §6); a landing that moves one removes it here.
-const KEPT_ELSEWHERE: &[&str] = &[
-    "../backends/rust/forge-conformance/fixtures/codec_some_arms_say_parent.scxml",
-    "tests/fixtures/cbor_codec/codec_cbor_record_list.scxml",
-];
+const KEPT_ELSEWHERE: &[&str] = &["tests/fixtures/cbor_codec/codec_cbor_record_list.scxml"];
 
 /// The C++ backend prints every codec of the repository outside the resources
 /// but [`KEPT_ELSEWHERE`], which it keeps on the template's encode for the

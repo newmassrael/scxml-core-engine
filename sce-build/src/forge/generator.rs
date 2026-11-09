@@ -11764,16 +11764,24 @@ fn render_codec(
     // printer lowers is printed from the plan, its value presented through
     // accessors and encoded over any source of it; any other keeps the
     // template's encode whole (§6), so no codec has two.
-    let cpp_printed = if matches!(lang, crate::generator::Language::Cpp) {
+    // Whether that printed encode can refuse a value, which its plan's
+    // totality says and the facades that return its bytes answer.
+    let (cpp_printed, cpp_printed_refuses) = if matches!(lang, crate::generator::Language::Cpp) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
         match (&plan, cpp_source::unlowered(&plan, imports)) {
-            (crate::forge::encode_plan::CodecPlan::Positional(p), None) => Some(
-                cpp_source::render(p, &l, imports, &filters::to_pascal_case(m.name.clone())),
+            (crate::forge::encode_plan::CodecPlan::Positional(p), None) => (
+                Some(cpp_source::render(
+                    p,
+                    &l,
+                    imports,
+                    &filters::to_pascal_case(m.name.clone()),
+                )),
+                !p.totality.is_total(),
             ),
-            _ => None,
+            _ => (None, false),
         }
     } else {
-        None
+        (None, false)
     };
 
     // RFC §synth-5-B variant primitive (closures complete): all six
@@ -13569,7 +13577,13 @@ fn render_codec(
     for line in &bound_lines {
         present_if_encode_prologue.push_str(&format!("{indent}{line}\n"));
     }
-    let encode_can_refuse = refuses_mismatch || !bound_lines.is_empty();
+    // A printed C++ encode refuses what its plan's totality names, and
+    // nothing of the template's prologue, which it does not run.
+    let encode_can_refuse = if cpp_printed.is_some() {
+        cpp_printed_refuses
+    } else {
+        refuses_mismatch || !bound_lines.is_empty()
+    };
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),

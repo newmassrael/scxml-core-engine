@@ -492,6 +492,9 @@ set(CALLER_TAG_DOCUMENTS
     "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_far.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_parent.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_plain.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_parent.scxml"
 )
 set(CALLER_TAG_GENERATED_HEADERS "")
 foreach(_caller_tag_document IN LISTS CALLER_TAG_DOCUMENTS)
