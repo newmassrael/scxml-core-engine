@@ -108,7 +108,7 @@ SCHEMAS+=(harness_ask harness_repair)
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as
 # `super::<file>`.
-SCHEMAS+=(event_occurrence event_schedule event_later event_latest event_conflict event_selects event_agenda event_settled event_answer event_member event_roster)
+SCHEMAS+=(event_occurrence event_schedule event_later event_latest event_conflict event_selects event_agenda event_member event_roster)
 # The standard algorithms sync_client imports, by their library names; each
 # is generated beside the machines under its own name, as a local one is.
 STD_ALGORITHMS=(sync/sync_failure sync/sync_retry_at sync/sync_delete_outcome sync/sync_upload_outcome)
@@ -124,7 +124,9 @@ STD_ALGORITHMS+=(merge/mv_value merge/mv_value_holds merge/mv_value_keep merge/m
 # The standard text rules static_text_record hands a record that holds text, and
 # the record's own schema.
 STD_ALGORITHMS+=(text/text_slot text/text_slot_latest text/text_slot_retitled text/text_slot_holds)
-# The digest todo_peer keeps of the changes it holds.
+# The standard digest of a set of changes and its rules, which the standard library keeps
+# and every backend generates, though no shared list keeps a digest since its layer below
+# repairs it (docs/adr/0085).
 STD_ALGORITHMS+=(merge/merkle_node merge/merkle_insert merge/merkle_change_hash)
 # The time zone todo_peer turns its schedule's wall-clock readings into instants by.
 STD_ALGORITHMS+=(time/utc_from_local)

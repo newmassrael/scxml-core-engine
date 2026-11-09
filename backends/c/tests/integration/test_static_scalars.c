@@ -3341,7 +3341,7 @@ int main(void) {
     bad |= sync_client_scenario("sync_client", 30);
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
-    bad |= todo_peer_scenario("todo_peer_server", 13);
+    bad |= todo_peer_scenario("todo_peer_carol", 13);
     bad |= record_list_scenario("record_list_person", 24);
     bad |= record_list_scenario("record_list_alone", 5);
     bad |= record_list_unrouted_scenario("record_list_offline", 5);
