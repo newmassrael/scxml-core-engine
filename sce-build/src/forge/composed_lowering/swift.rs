@@ -91,12 +91,66 @@ pub(crate) fn swift_case_read(variant: &str) -> String {
     )
 }
 
-/// Why a Swift walk meets no union: the one decision of what is lowered
-/// refuses a union on Swift before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const SWIFT_HOLDS_NO_UNION: &str =
-    "a Swift machine holds no union yet (docs/adr/0092, section 7): the one decision of what \
-     is lowered refuses a union on Swift before any walk reaches one";
+/// The name a Swift union reader binds the case the tag named to.
+const SWIFT_CASE_BINDING: &str = "sceCase";
+
+/// The identifier of the case `variant` of a machine's union: the variant as
+/// the Swift declaration of an enum spells it, with no document to qualify it
+/// ([`crate::forge::enum_naming::variant_ident`]), as the machine's own enum
+/// spells the same variant.
+fn swift_machine_case_ident(variant: &str) -> String {
+    crate::forge::enum_naming::variant_ident(crate::generator::Language::Swift, "", variant)
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+pub(crate) fn swift_shared_read(field: &str) -> String {
+    format!(
+        "provenField{}",
+        crate::filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The Swift spelling of what follows a union's value to read `member` where it
+/// may be in the cases `left` ([`ComposedSpelling::union_member`]): the tag's
+/// property; the field of the one case left, read through that case's proven
+/// read, a place as a record's field is; or the accessor of a field several
+/// cases share ([`shared_plain_field`]). `Err` for a field the cases left share
+/// whose value is not copied as it is read, which no accessor answers yet.
+fn swift_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    if member == union.tag {
+        return Ok(SWIFT_UNION_KIND.to_string());
+    }
+    let declares = |case: &ScopedCase| -> bool {
+        case.record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
+    };
+    match left {
+        [case] if declares(case) => Ok(format!("{}.{member}", swift_case_read(&case.variant.name))),
+        _ if !left.is_empty()
+            && left.iter().all(|case| declares(case))
+            && shared_plain_field(union, member).is_some() =>
+        {
+            Ok(swift_shared_read(member))
+        }
+        _ => Err(format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field those \
+             cases share whose value is not copied as it is read, and a machine reads such a \
+             field only where a test proves one case (docs/adr/0092, section 6.1)",
+            union.name,
+            left.iter()
+                .map(|case| format!("`{}`", case.variant.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
 
 /// The head of a Swift reader that answers a value of `ty`: a closure of the
 /// value it reads, refusing a value outside its type with the runtime's
@@ -205,7 +259,39 @@ fn swift_bound_check(
             (!checks.is_empty()).then(|| checks.join("; "))
         }
         ValueType::Scalar(_) => None,
-        ValueType::Union { .. } => return Err(SWIFT_HOLDS_NO_UNION.to_string()),
+        // The case the value is in, whose record is checked field by field at the
+        // path of the union's own (docs/adr/0092, section 7): the tag is part of
+        // no path, and a case that holds nothing, or nothing to check, is left.
+        ValueType::Union { alias } => {
+            let held = records.union(within, alias)?;
+            let bound = format!("sceCase{depth}");
+            let mut arms = Vec::new();
+            for case in &held.union.cases {
+                let Some(record) = &case.record else {
+                    continue;
+                };
+                let record = ValueType::Record {
+                    alias: record.clone(),
+                };
+                if let Some(check) =
+                    swift_bound_check(&record, Some(&held.key), path, &bound, depth, records)?
+                {
+                    arms.push(format!(
+                        "case .{}(let {bound}): {check}",
+                        swift_machine_case_ident(&case.variant.name)
+                    ));
+                }
+            }
+            if arms.is_empty() {
+                return Ok(None);
+            }
+            // Every other case holds nothing a bound is declared on; where there
+            // is none, a `default` would be one the compiler warns is never run.
+            if arms.len() < held.union.cases.len() {
+                arms.push("default: break".to_string());
+            }
+            Some(format!("switch {value} {{ {} }}", arms.join("; ")))
+        }
     })
 }
 
@@ -569,9 +655,9 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
 
-    // A Swift machine holds no union yet: the gate refuses one by name before a
-    // walk reaches it, so each spelling below either names what it would be or
-    // says why there is none.
+    // The machine's own sum, beside its records (docs/adr/0092, section 7, the
+    // Swift row): named by the union's document, so one union is one type of the
+    // machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}{}Union",
@@ -580,51 +666,220 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
     fn union_case_ident(&self, variant: &str) -> String {
-        crate::forge::enum_naming::variant_ident(crate::generator::Language::Swift, "", variant)
+        swift_machine_case_ident(variant)
     }
+    // The tag is read by the one property every union of a Swift unit and of a
+    // Swift machine answers it by, whatever key it is written under on the wire.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(SWIFT_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
         swift_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        swift_shared_read(field)
+    }
+    // An enum of the machine, a value compared whole as a record that holds a
+    // composed value is. Every read the narrowing proves is a property of it,
+    // whose other cases are a `preconditionFailure` (the one place they are
+    // written, as a proven optional is read through the runtime's one `proven`,
+    // docs/adr/0055, section 5), and each has its place beside it that is
+    // written through: a getter and a setter that assigns the case whole.
+    fn union_def(&self, def: &UnionDef) -> String {
+        let name = crate::filters::escape_swift(def.name.clone());
+        let others = |covered: usize, variant: &str, indent: &str| {
+            if covered < def.cases.len() {
+                format!(
+                    "{indent}default:\n{indent}    preconditionFailure(\"a value of {name} read as \
+                     {} is in another case\")\n",
+                    crate::filters::escape_swift(variant.to_string())
+                )
+            } else {
+                String::new()
+            }
+        };
+        let mut variants = String::new();
+        let mut kind_arms = String::new();
+        let mut proven = String::new();
+        for case in &def.cases {
+            let ident = &case.ident;
+            kind_arms.push_str(&format!(
+                "        case .{ident}:\n            return {}.{}\n",
+                def.tag_ty, case.tag_ident
+            ));
+            match &case.record {
+                Some(record) => {
+                    variants.push_str(&format!("    case {ident}({record})\n"));
+                    proven.push_str(&format!(
+                        "\n    public var {read}: {record} {{\n        guard case .{ident}(let \
+                         sceRecord) = self else {{\n            preconditionFailure(\"a value of \
+                         {name} read as {variant} is in another case\")\n        }}\n        \
+                         return sceRecord\n    }}\n\n    public var {place}: {record} {{\n        \
+                         get {{ {read} }}\n        set {{ self = .{ident}(newValue) }}\n    }}\n",
+                        read = case.proven,
+                        place = self.union_place_of(&case.proven),
+                        variant = crate::filters::escape_swift(case.variant.clone()),
+                    ));
+                }
+                None => variants.push_str(&format!("    case {ident}\n")),
+            }
+        }
+        let shared: String = def
+            .shared
+            .iter()
+            .map(|field| {
+                let reads: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!(
+                            "        case .{ident}(let sceRecord):\n            return \
+                             sceRecord.{}\n",
+                            field.field
+                        )
+                    })
+                    .collect();
+                let writes: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!(
+                            "            case .{ident}(var sceRecord):\n                \
+                             sceRecord.{} = newValue\n                self = .{ident}(sceRecord)\n",
+                            field.field
+                        )
+                    })
+                    .collect();
+                format!(
+                    "\n    public var {read}: {ty} {{\n        switch self {{\n{reads}{}        \
+                     }}\n    }}\n\n    public var {place}: {ty} {{\n        get {{ {read} }}\n        \
+                     set {{\n            switch self {{\n{writes}{}            }}\n        }}\n    \
+                     }}\n",
+                    others(field.cases.len(), &field.field, "        "),
+                    others(field.cases.len(), &field.field, "            "),
+                    read = field.accessor,
+                    place = self.union_place_of(&field.accessor),
+                    ty = field.ty,
+                )
+            })
+            .collect();
         format!(
-            "provenField{}",
-            crate::filters::to_pascal_case(field.to_string())
+            "/// SCE Accepted Subset §2.15: a `union:{name}` value (docs/adr/0092).\n\
+             public enum {ty}: Equatable, Sendable {{\n{variants}\n    public var {tag}: {tag_ty} \
+             {{\n        switch self {{\n{kind_arms}        }}\n    }}\n{proven}{shared}}}",
+            ty = def.ty,
+            tag = def.tag_method,
+            tag_ty = def.tag_ty,
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{SWIFT_HOLDS_NO_UNION}")
+    // The case's constructor, holding the record or nothing.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        match record {
+            Some(record) => format!("{ty}.{case}({record})"),
+            None => format!("{ty}.{case}"),
+        }
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{SWIFT_HOLDS_NO_UNION}")
+    // The tag first, by the enum's reader, then the record of the case it
+    // names from the same object (docs/adr/0092, section 4), each case an arm
+    // of a `switch` the compiler holds to every variant of the tag's enum.
+    fn read_union(&self, _value: &str, read: &UnionRead<'_>) -> String {
+        let arms: String = read
+            .arms
+            .iter()
+            .map(|arm| {
+                let case = format!("{}.{}", read.ty, arm.case_ident);
+                let value = match &arm.record {
+                    Some(record) => format!("{case}(try ({record})({SWIFT_READ_BINDING}))"),
+                    None => case,
+                };
+                format!("case {}.{}: return {value}; ", read.tag_ty, arm.tag_ident)
+            })
+            .collect();
+        format!(
+            "{} try {SWIFT_READ_BINDING}.union(tag: {}, {}, {{ ({SWIFT_CASE_BINDING}: {}, \
+             {SWIFT_READ_BINDING}: PayloadValue) throws -> {} in switch {SWIFT_CASE_BINDING} \
+             {{ {arms}}} }}) }}",
+            closure_head(&read.ty),
+            literal(read.tag),
+            read.tag_reader,
+            read.tag_ty,
+            read.ty
+        )
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{SWIFT_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{SWIFT_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case (docs/adr/0092,
+    // section 2.1), keys ascending as the runtime's `unionJSON` writes them.
+    // The case's record is the reference its arm binds.
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let tag = literal(tag);
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let variant = literal(&arm.variant);
+                match &arm.fields {
+                    Some(fields) => {
+                        let members: Vec<String> = fields
+                            .iter()
+                            .map(|(id, json)| {
+                                format!("PayloadPair.json({}, rawJSON: {json})", literal(id))
+                            })
+                            .collect();
+                        format!(
+                            "case .{}(let {SWIFT_ELEMENT_BINDING}): return unionJSON(tag: {tag}, \
+                             variant: {variant}, [{}]); ",
+                            arm.case_ident,
+                            members.join(", ")
+                        )
+                    }
+                    None => format!(
+                        "case .{}: return unionJSON(tag: {tag}, variant: {variant}, []); ",
+                        arm.case_ident
+                    ),
+                }
+            })
+            .collect();
+        format!(
+            "{{ () -> String in switch ({}) as {ty} {{ {arms}}} }}()",
+            held.text
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(SWIFT_HOLDS_NO_UNION.to_string())
+        swift_union_member(union, left, member)
     }
     fn union_place_of(&self, read: &str) -> String {
         format!("{read}Place")
     }
     fn union_member_place(
         &self,
-        _holder: &str,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(SWIFT_HOLDS_NO_UNION.to_string())
+        if member == union.tag {
+            return Err(format!(
+                "the tag `{member}` of `union:{}` is never written alone: the case changes by a \
+                 whole assignment (docs/adr/0092, section 6.1 item 6)",
+                union.name
+            ));
+        }
+        // The read stands exactly where the write does: one case left that
+        // declares the field, or several that share it.
+        swift_union_member(union, left, member)?;
+        Ok(match left {
+            [case] => format!(
+                "{holder}.{}.{member}",
+                self.union_place_of(&swift_case_read(&case.variant.name))
+            ),
+            _ => format!(
+                "{holder}.{}",
+                self.union_place_of(&swift_shared_read(member))
+            ),
+        })
     }
 }
 
@@ -988,22 +1243,256 @@ mod tests {
         );
     }
 
-    /// A Swift walk names no union: the one decision of what is lowered
-    /// refuses one on Swift first, and the walk that would declare or check one
-    /// says why there is none.
+    /// The tag's enum as a Swift machine declares it: a variant is the member
+    /// of the enum's type its document's name spells in lowerCamelCase.
+    fn swift_kinds() -> std::collections::BTreeMap<String, MachineEnum> {
+        [(
+            "Kind".to_string(),
+            MachineEnum {
+                alias: "Kind".to_string(),
+                ty: "MKindEnum".to_string(),
+                variants: vec![
+                    ("dot".to_string(), "dot".to_string()),
+                    ("circle".to_string(), "circle".to_string()),
+                    ("disc".to_string(), "disc".to_string()),
+                ],
+            },
+        )]
+        .into()
+    }
+
+    /// A union is the machine's own sum at any depth, named by its document
+    /// (docs/adr/0092, section 7), and reaches its tag's enum, then the record
+    /// each case holds once, then itself.
     #[test]
-    fn a_swift_walk_reads_no_union() {
+    fn a_swift_machine_holds_a_union_in_its_own_sum_after_its_cases_records() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &SWIFT).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
-        assert!(SWIFT
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
-        assert!(
-            swift_bound_check(&ty("union:Shape"), None, "path", "one", 0, &shapes)
-                .unwrap_err()
-                .contains("holds no union")
+        let kinds = swift_kinds();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &SWIFT),
+            Ok("MShapeUnion".to_string())
         );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &SWIFT
+            ),
+            Ok("[MShapeUnion?]".to_string())
+        );
+        let mut reached = Reached::default();
+        held_records(&ty("list<union:Shape>[2]"), None, &shapes, &mut reached).expect("reached");
+        held_records(&ty("union:Shape"), None, &shapes, &mut reached).expect("reached");
+        assert_eq!(reached.records, vec!["Radius".to_string()]);
+        assert_eq!(reached.unions, vec![SHAPE_KEY.to_string()]);
+    }
+
+    /// The declaration: one case per variant of the tag, the tag read as the
+    /// machine's enum, a proven read and its place per case that holds a record,
+    /// whose other cases are a `preconditionFailure`, and one accessor for
+    /// `radius`, which `circle` and `disc` share.
+    #[test]
+    fn a_swift_union_is_declared_with_its_tag_its_proven_reads_and_its_shared_fields() {
+        let def = union_definition(SHAPE_KEY, &shapes(), &swift_kinds(), &SWIFT).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "provenFieldRadius".to_string(),
+                ty: "UInt16".to_string(),
+                cases: vec!["circle".to_string(), "disc".to_string()],
+            }]
+        );
+        let text = SWIFT.union_def(&def);
+        for fragment in [
+            "public enum MShapeUnion: Equatable, Sendable {\n    case dot\n    case \
+             circle(MRadiusRecord)\n    case disc(MRadiusRecord)\n",
+            "    public var kind: MKindEnum {\n        switch self {\n        case .dot:\n            \
+             return MKindEnum.dot\n        case .circle:\n            return MKindEnum.circle\n",
+            "    public var provenCircle: MRadiusRecord {\n        guard case .circle(let \
+             sceRecord) = self else {\n",
+            // ... and the place each is written through (section 6.1 item 6).
+            "    public var provenCirclePlace: MRadiusRecord {\n        get { provenCircle }\n        \
+             set { self = .circle(newValue) }\n    }\n",
+            "    public var provenFieldRadius: UInt16 {\n        switch self {\n        case \
+             .circle(let sceRecord):\n            return sceRecord.radius\n        case \
+             .disc(let sceRecord):\n            return sceRecord.radius\n        default:\n            \
+             preconditionFailure(",
+            "    public var provenFieldRadiusPlace: UInt16 {\n        get { provenFieldRadius }\n        \
+             set {\n            switch self {\n            case .circle(var sceRecord):\n                \
+             sceRecord.radius = newValue\n                self = .circle(sceRecord)\n",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+        assert!(!text.contains("provenDot"), "{text}");
+        assert_eq!(text.matches("preconditionFailure(").count(), 4, "{text}");
+    }
+
+    /// A union whose every case holds the shared field leaves no case for a
+    /// `default`, which Swift warns is never run.
+    #[test]
+    fn a_swift_accessor_over_every_case_has_no_default() {
+        let def = UnionDef {
+            ty: "MPairUnion".to_string(),
+            name: "pair".to_string(),
+            tag_method: "kind".to_string(),
+            tag_ty: "MKindEnum".to_string(),
+            cases: ["left", "right"]
+                .iter()
+                .map(|name| UnionCaseDef {
+                    ident: name.to_string(),
+                    variant: name.to_string(),
+                    tag_ident: name.to_string(),
+                    record: Some("MRadiusRecord".to_string()),
+                    proven: swift_case_read(name),
+                })
+                .collect(),
+            shared: vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "provenFieldRadius".to_string(),
+                ty: "UInt16".to_string(),
+                cases: vec!["left".to_string(), "right".to_string()],
+            }],
+        };
+        let text = SWIFT.union_def(&def);
+        assert!(text.contains("provenFieldRadiusPlace"), "{text}");
+        assert!(!text.contains("default:"), "{text}");
+    }
+
+    /// A write of a union's field (docs/adr/0092, section 6.1 item 6): through
+    /// the place of the one case left, or the place of a field two cases share;
+    /// the tag is never written alone.
+    #[test]
+    fn a_swift_proven_write_is_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|case| case.variant.name == name)
+                .expect("a case")
+        };
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        assert_eq!(
+            SWIFT.union_member_place("self.s", union, &[case("disc")], "radius"),
+            Ok("self.s.provenDiscPlace.radius".into())
+        );
+        assert_eq!(
+            SWIFT.union_member_place("self.s", union, &[case("circle"), case("disc")], "radius"),
+            Ok("self.s.provenFieldRadiusPlace".into())
+        );
+        assert!(SWIFT
+            .union_member_place("self.s", union, &all, "kind")
+            .unwrap_err()
+            .contains("never written alone"));
+        assert!(SWIFT
+            .union_member_place("self.s", union, &[case("dot")], "radius")
+            .is_err());
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// property, a field of the one case left through that case's proven read,
+    /// and a field two cases share through its accessor.
+    #[test]
+    fn a_swift_proven_read_is_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|case| case.variant.name == name)
+                .expect("a case")
+        };
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        assert_eq!(swift_union_member(union, &all, "kind"), Ok("kind".into()));
+        assert_eq!(
+            swift_union_member(union, &[case("disc")], "radius"),
+            Ok("provenDisc.radius".into())
+        );
+        assert_eq!(
+            swift_union_member(union, &[case("circle"), case("disc")], "radius"),
+            Ok("provenFieldRadius".into())
+        );
+        assert!(swift_union_member(union, &[case("dot")], "radius").is_err());
+    }
+
+    /// The reader reads the tag by the enum's reader and then the record of
+    /// the case it names from the same object, each case an arm of a `switch`
+    /// over the tag's enum; the writer writes the tag among the case's fields.
+    #[test]
+    fn a_swift_union_is_read_tag_first_and_written_by_its_case() {
+        let shapes = shapes();
+        let kinds = swift_kinds();
+        let read = reader(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &kinds,
+            &SWIFT,
+            "sceValue",
+        )
+        .expect("read");
+        assert!(
+            read.starts_with(
+                "{ (sceValue: PayloadValue) throws -> MShapeUnion in try \
+                 sceValue.union(tag: \"kind\", { (sceValue: PayloadValue) throws -> MKindEnum \
+                 in "
+            ),
+            "{read}"
+        );
+        assert!(
+            read.contains(
+                "{ (sceCase: MKindEnum, sceValue: PayloadValue) throws -> MShapeUnion in switch \
+                 sceCase { case MKindEnum.dot: return MShapeUnion.dot; case MKindEnum.circle: \
+                 return MShapeUnion.circle(try ("
+            ),
+            "{read}"
+        );
+        assert!(read.ends_with("} }) }"), "{read}");
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &SWIFT,
+                &Held::place("x.one")
+            ),
+            Ok(
+                "{ () -> String in switch (x.one) as MShapeUnion { case .dot: return \
+                unionJSON(tag: \"kind\", variant: \"dot\", []); case .circle(let sceElement): \
+                return unionJSON(tag: \"kind\", variant: \"circle\", [PayloadPair.json(\
+                \"radius\", rawJSON: WireValue.integer(Int64(sceElement.radius)).json)]); case \
+                .disc(let sceElement): return unionJSON(tag: \"kind\", variant: \"disc\", \
+                [PayloadPair.json(\"radius\", rawJSON: \
+                WireValue.integer(Int64(sceElement.radius)).json)]); } }()"
+                    .to_string()
+            )
+        );
+    }
+
+    /// A raise seam holds a union a host built to the bound every case's
+    /// record declares, at the path of the union's own place: the case a record
+    /// is in is a `switch`, and a union none of whose cases holds a bound has no
+    /// check.
+    #[test]
+    fn a_swift_raise_checks_each_case_of_a_union_where_a_record_holds_a_bound() {
+        let shapes = shapes();
+        assert_eq!(
+            swift_bound_check(&ty("union:Shape"), None, "\"one\"", "one", 0, &shapes),
+            Ok(None)
+        );
+    }
+
+    /// The tag's property is the one name every union answers its tag by.
+    #[test]
+    fn a_swift_union_answers_its_tag_by_one_property() {
+        assert_eq!(SWIFT.union_tag_read("kind"), Some("kind".to_string()));
+        assert_eq!(SWIFT.union_tag_read("type"), Some("kind".to_string()));
     }
 }
