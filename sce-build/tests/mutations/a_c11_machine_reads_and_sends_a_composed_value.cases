@@ -1,0 +1,95 @@
+# Mutation cases for "a C11 machine reads a composed payload at any depth and
+# sends a composed value by its name" (docs/adr/0086, sections 4, 5.3, 5.4, 6
+# and 7.1, the C11 row).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_c11_machine_reads_and_sends_a_composed_value.cases
+#
+# A C11 machine holds a composed value in types named by their shape, reads a
+# payload by one function of the machine per type over the runtime's bounded
+# readers, names the path of a refused place in a buffer of the longest path the
+# type has, writes a composed value where its pair stands, holding a host's
+# value to its type as it writes it, and refuses by name a read of a text it
+# holds in a buffer as a value. Each case takes one of those decisions away and
+# has to turn the pin test red on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_c11_machine_reads_a_composed_payload_at_any_depth
+mutation_targets sce-build/src/forge/composed_lowering/c11.rs sce-build/src/forge/generator.rs sce-build/src/forge/static_lowering.rs sce-build/src/forge/expr.rs
+mutation_oracles sce-build/tests/a_c11_machine_reads_a_composed_payload_at_any_depth.rs
+
+# A list is read with no bound: one element past it is kept (section 4.1).
+mutation_case "a list is read past its bound" <<'PY'
+edit("sce-build/src/forge/composed_lowering/c11.rs",
+     r'''sce_payload_list_open_within(sce_value, {least}u, {max}u,''',
+     r'''sce_payload_list_open_within(sce_value, {least}u, UINT32_MAX,''')
+PY
+
+# A host's list past the room of its type is written as far as it says it
+# reaches, past the array that holds it (section 5.4).
+mutation_case "a list past the room of its type is written" <<'PY'
+edit("sce-build/src/forge/composed_lowering/c11.rs",
+     r'''            "if ({value}.len > sizeof({value}.data) / sizeof({value}.data[0]))''',
+     r'''            "if (false && {value}.len > sizeof({value}.data) / sizeof({value}.data[0]))''')
+PY
+
+# The pairs of a payload are written in the schema's order, not ascending by
+# their keys' bytes (ARCHITECTURE.md, "JSON Object Key Order").
+mutation_case "the pairs are written in the schema's order" <<'PY'
+edit("sce-build/src/forge/composed_lowering/c11.rs",
+     r'''    // A record's ids are distinct, so the pairs order by their ids.
+    let mut sorted: Vec<&(String, String)> = fields.iter().collect();
+    sorted.sort();''',
+     r'''    // A record's ids are distinct, so the pairs order by their ids.
+    let sorted: Vec<&(String, String)> = fields.iter().collect();''')
+PY
+
+# The path of a refused place is measured without the digits of its indices,
+# so the buffer that names it is too short and the reason cuts it (section 4.2).
+mutation_case "a path is measured without its indices" <<'PY'
+edit("sce-build/src/forge/composed_lowering/c11.rs",
+     r'''            1 + last.to_string().len() as u64 + c11_path_len(elem, within, records)?''',
+     r'''            let _ = last;
+            1 + c11_path_len(elem, within, records)?''')
+PY
+
+# A composed payload is lifted into a copy of its size on the stack, which the
+# machine's own storage exists to keep off it (section 8.5 (d)).
+mutation_case "a composed payload is lifted into a copy" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     r'''            owned_payload: String::new(),
+            in_place: true,''',
+     r'''            owned_payload: String::new(),
+            in_place: false,''')
+PY
+
+# An element of a list of lists, read through an index outside the list,
+# answers 0, which is no list: the C the machine is written as does not compile.
+mutation_case "a list element read outside its list answers zero" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''        InferredType::Bytes | InferredType::List(_) => CFailedRead::Aggregate,''',
+     r'''        InferredType::Bytes => CFailedRead::Aggregate,''')
+PY
+
+# A composed param is written as a value the send holds, which C has none of.
+mutation_case "a composed param is written as a value" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     r'''            writes: rewrites.target.composed_param_writes(),''',
+     r'''            writes: false,''')
+PY
+
+# A text a composed value holds in its buffer is read as the pointer every C
+# text expression is, which is C that does not compile, not a refusal by name.
+mutation_case "a composed text is read as a pointer" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     r'''    // expression reads as the pointer every text expression is.
+    fn reads_composed_text(&self) -> bool {
+        false
+    }''',
+     r'''    // expression reads as the pointer every text expression is.
+    fn reads_composed_text(&self) -> bool {
+        true
+    }''')
+PY
