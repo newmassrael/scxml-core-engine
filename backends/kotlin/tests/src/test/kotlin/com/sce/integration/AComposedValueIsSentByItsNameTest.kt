@@ -53,9 +53,11 @@ class AComposedValueIsSentByItsNameTest {
             )
             // A list variable sent to a field that states a lower count (docs/adr/0086, section
             // 15.6): sent empty, refused whole and never delivered; sent with its one element,
-            // delivered.
-            assertEquals(1u, sm.countedDeliveries)
+            // delivered, and forwarded once more with its scalar `hops`, a scalar field of a
+            // payload that holds a list.
+            assertEquals(2u, sm.countedDeliveries)
             assertEquals(7u, sm.countedSum)
+            assertEquals(3.toUByte(), sm.countedHops)
             assertEquals(2u, sm.deliveries, "the forwarded delivery came back on the internal queue")
             // Depth 1: the lengths of a list of records and a list of enum values.
             assertEquals(3u, sm.itemCount)
