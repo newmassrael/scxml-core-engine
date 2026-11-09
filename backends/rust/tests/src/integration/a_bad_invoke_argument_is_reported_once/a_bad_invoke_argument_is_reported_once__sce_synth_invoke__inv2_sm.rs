@@ -161,7 +161,7 @@ pub type ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Configuration =
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
 pub const ABAD_INVOKE_ARGUMENT_IS_REPORTED_ONCE_SCE_SYNTH_INVOKE_INV2_TABLES:
-    ::sce_rust_runtime::DocumentTables = {
+    ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -380,7 +380,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> =
         &ABAD_INVOKE_ARGUMENT_IS_REPORTED_ONCE_SCE_SYNTH_INVOKE_INV2_TABLES;
     const STATES: &'static [Self::State] = &[
         ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2State::Up,

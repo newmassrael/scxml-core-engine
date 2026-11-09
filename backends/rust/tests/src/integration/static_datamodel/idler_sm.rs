@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -154,7 +154,7 @@ pub type IdlerConfiguration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const IDLER_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const IDLER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -577,7 +577,7 @@ impl StatePolicy for IdlerPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &IDLER_TABLES;
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &IDLER_TABLES;
     const STATES: &'static [Self::State] = &[IdlerState::Idling, IdlerState::Done];
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[IdlerEvent::SceTestSnapshot, IdlerEvent::Null];

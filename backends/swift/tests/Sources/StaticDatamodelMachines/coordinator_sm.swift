@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -159,8 +159,8 @@ public final class CoordinatorPolicy: InvocablePolicy {
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
-    /// W3C SCXML 5.2: the `job` datamodel variable.
-    var vJob: UInt32 = 0
+    /// W3C SCXML 5.2: the `requested` datamodel variable.
+    var vRequested: UInt32 = 0
     /// W3C SCXML 5.2: the `ok` datamodel variable.
     var vOk: UInt32 = 0
 
@@ -170,15 +170,15 @@ public final class CoordinatorPolicy: InvocablePolicy {
     /// it; a variable that may be absent is handed the optional value whole.
     public struct InvokeParams {
         public init() {}
-        public var vJob: UInt32? = nil
+        public var vRequested: UInt32? = nil
         public var vOk: UInt32? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
     /// `<data>` gave. Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vJob {
-            vJob = value
+        if let value = params.vRequested {
+            vRequested = value
         }
         if let value = params.vOk {
             vOk = value
@@ -609,7 +609,7 @@ public final class CoordinatorPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                self.vJob = self.pendingJobRequestPayload.job
+                self.vRequested = self.pendingJobRequestPayload.job
 
 
                 // W3C SCXML 6.2: send id="__send_0"
@@ -628,7 +628,7 @@ public final class CoordinatorPolicy: InvocablePolicy {
                         sendID: "__send_0",
                         eventData: sendEventData,
                         invokeID: engine.currentEventInvokeID,
-                        value: HostSendValue(ReplyOf.value(self.vJob, self.vOk))
+                        value: HostSendValue(ReplyOf.value(self.vRequested, self.vOk))
                     )
                     engine.performHostSend(sendRequest)
 
@@ -777,17 +777,17 @@ extension CoordinatorPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-            revised: "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de",
-            format2First: "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-            format2Revised: "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de")
+            first: "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+            revised: "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde",
+            format2First: "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+            format2Revised: "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde")
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
     /// machine's own included, and not only the ones it publishes.
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
-            SavedEntry("job", SavedValues.of(vJob)),
+            SavedEntry("requested", SavedValues.of(vRequested)),
             SavedEntry("ok", SavedValues.of(vOk)),
         ]
     }
@@ -795,10 +795,10 @@ extension CoordinatorPolicy: SavedPolicy {
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(try saved.variable("job"), "job")
+        let value0 = try SavedValues.uint32(try saved.variable("requested"), "requested")
         let value1 = try SavedValues.uint32(try saved.variable("ok"), "ok")
         return { [self] in
-            self.vJob = value0
+            self.vRequested = value0
             self.vOk = value1
         }
     }

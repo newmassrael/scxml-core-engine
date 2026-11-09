@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 // SCE-MAP: asking_configuration.scxml:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
@@ -20,7 +20,7 @@ fun configuration(): com.sce.runtime.test.Configuration = com.sce.runtime.test.C
         "param_asker" to listOf("sut"),
     ),
     timersOfType = mapOf(
-        "param_asker" to listOf("reply"),
+        "param_asker" to listOf("deadline"),
     ),
     connections = emptyList(),
     mappings = listOf(

@@ -156,7 +156,9 @@ pub type StaticMeshRelaySceSynthInvokeInnerConfiguration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const STATIC_MESH_RELAY_SCE_SYNTH_INVOKE_INNER_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const STATIC_MESH_RELAY_SCE_SYNTH_INVOKE_INNER_TABLES: ::sce_rust_runtime::DocumentTables<
+    'static,
+> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -578,7 +580,7 @@ impl StatePolicy for StaticMeshRelaySceSynthInvokeInnerPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> =
         &STATIC_MESH_RELAY_SCE_SYNTH_INVOKE_INNER_TABLES;
     const STATES: &'static [Self::State] = &[StaticMeshRelaySceSynthInvokeInnerState::Waiting];
     const HISTORIES: &'static [Self::History] = &[];

@@ -158,7 +158,7 @@ pub type StatechartHostInvokerOptionalConfiguration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const STATECHART_HOST_INVOKER_OPTIONAL_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const STATECHART_HOST_INVOKER_OPTIONAL_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -1129,7 +1129,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables =
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> =
         &STATECHART_HOST_INVOKER_OPTIONAL_TABLES;
     const STATES: &'static [Self::State] = &[
         StatechartHostInvokerOptionalState::Idle,

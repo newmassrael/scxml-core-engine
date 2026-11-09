@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/test_profile/runtime/coordinator.scxml
@@ -156,8 +156,8 @@ class CoordinatorStateMachine(
     }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `job` datamodel variable, the machine's own. */
-    private var vJob: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `requested` datamodel variable, the machine's own. */
+    private var vRequested: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `ok` datamodel variable, the machine's own. */
     private var vOk: UInt = 0.toUInt()
 
@@ -167,7 +167,7 @@ class CoordinatorStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
-        var job: UInt? = null
+        var requested: UInt? = null
         var ok: UInt? = null
     }
 
@@ -177,7 +177,7 @@ class CoordinatorStateMachine(
     }
 
     private fun acceptParamsPart0(params: InvokeParams) {
-        params.job?.let { vJob = it }
+        params.requested?.let { vRequested = it }
         params.ok?.let { vOk = it }
     }
 
@@ -219,10 +219,10 @@ class CoordinatorStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-        revised = "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de",
-        format2First = "734e400812e9cc397a661eba66e879e6c39d82f80c7bf1464405daaf18c30178",
-        format2Revised = "98b0941af6c46fbc364590822bc4e5940fdeff475cb833ebc71f32641045e1de",
+        first = "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+        revised = "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde",
+        format2First = "4d3b7687e368634dc42dc51d0b64f382cf80a884c834722149333c07a4c11683",
+        format2Revised = "7b04d87179ae3f89db54984648f503eca1270dbcd4b0e0e3498390c2c4831cde",
         records = listOf(
         ),
         enums = listOf(
@@ -247,7 +247,7 @@ class CoordinatorStateMachine(
     }
 
     private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
-        variables += "job" to SavedValues.of(vJob)
+        variables += "requested" to SavedValues.of(vRequested)
         variables += "ok" to SavedValues.of(vOk)
     }
 
@@ -283,10 +283,10 @@ class CoordinatorStateMachine(
     // variable's type cannot hold, and answers what writes them: nothing is
     // written until every part has read.
     private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
-        val saved1 = SavedValues.uint32(savedGrown.variable("job"), "job")
+        val saved1 = SavedValues.uint32(savedGrown.variable("requested"), "requested")
         val saved2 = SavedValues.uint32(savedGrown.variable("ok"), "ok")
         return {
-            vJob = saved1
+            vRequested = saved1
             vOk = saved2
         }
     }
@@ -305,7 +305,7 @@ class CoordinatorStateMachine(
     }
 
     private fun judgeVariablesPart0(savedGrown: SavedState) {
-        SavedValues.uint32(savedGrown.variable("job"), "job")
+        SavedValues.uint32(savedGrown.variable("requested"), "requested")
         SavedValues.uint32(savedGrown.variable("ok"), "ok")
     }
 
@@ -687,7 +687,7 @@ class CoordinatorStateMachine(
                 val sceValue = checkNotNull(sceMessage.valueAs<com.sce.generated.any_request.Value>()) { "a receive branch takes the message its guard matched" }
                 pendingJobRequestPayload = CoordinatorJobRequestPayload(job = sceValue.job)
 
-            vJob = pendingJobRequestPayload!!.job
+            vRequested = pendingJobRequestPayload!!.job
 
 
             if (run send@{
@@ -714,7 +714,7 @@ class CoordinatorStateMachine(
                 // the value of its specific template, handed to the test-port
                 // processor as a value and never as an encoding (docs/adr/0091,
                 // C2). Every other send leaves it null and carries `eventData`.
-                value = com.sce.generated.reply_of.value(vJob, vOk)
+                value = com.sce.generated.reply_of.value(vRequested, vOk)
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,

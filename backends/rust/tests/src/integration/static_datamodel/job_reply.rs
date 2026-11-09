@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 #![doc = "SCE-MAP: job_reply.scxml:4 :: _forge_body"]
 // SCE-MAP: job_reply.scxml:4 :: _forge_body
 
@@ -25,7 +25,7 @@ pub const SCHEMA_ID: &str = "urn:sce:schema:job_reply:1";
 /// The payload as a JSON Schema (2020-12): one spelling of each value, every
 /// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 #[allow(dead_code)]
-pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:job_reply:1\",\"x-sce-source-hash\":\"011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"job\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"code\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"job\",\"code\"],\"additionalProperties\":false}";
+pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:job_reply:1\",\"x-sce-source-hash\":\"16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"job\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"code\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"job\",\"code\"],\"additionalProperties\":false}";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct JobReplyPayload {

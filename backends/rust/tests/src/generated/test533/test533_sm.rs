@@ -163,7 +163,7 @@ pub type Test533Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedV
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const TEST533_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const TEST533_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -830,7 +830,7 @@ impl StatePolicy for Test533Policy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &TEST533_TABLES;
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &TEST533_TABLES;
     const STATES: &'static [Self::State] = &[
         Test533State::S1,
         Test533State::P,

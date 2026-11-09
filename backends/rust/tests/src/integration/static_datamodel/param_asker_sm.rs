@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -161,7 +161,7 @@ pub type ParamAskerConfiguration =
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
 /// the runtime supports. The reference is to one constant allocation all the
 /// same.
-pub const PARAM_ASKER_TABLES: ::sce_rust_runtime::DocumentTables = {
+pub const PARAM_ASKER_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
     use ::sce_rust_runtime::{
         DocumentTables, HistoryId, HistoryRow, StateId, StateKind, StateRow, Target, TransitionId,
         TransitionRow,
@@ -709,7 +709,7 @@ impl StatePolicy for ParamAskerPolicy {
     // histories and events by the numbers the tables know them by. Each of the
     // three lists is in the order of those numbers, so it is the inverse of the
     // enum's discriminant.
-    const TABLES: &'static ::sce_rust_runtime::DocumentTables = &PARAM_ASKER_TABLES;
+    const TABLES: &'static ::sce_rust_runtime::DocumentTables<'static> = &PARAM_ASKER_TABLES;
     const STATES: &'static [Self::State] = &[
         ParamAskerState::Asking,
         ParamAskerState::Checking,
@@ -943,7 +943,7 @@ impl StatePolicy for ParamAskerPolicy {
                     }
 
                     // docs/SCE_TEST_PROFILE.md §4.7: <sce:start-timer>
-                    self.test_context().start_timer("reply", 1000000);
+                    self.test_context().start_timer("deadline", 1000000);
                 }
             }
             _ => {}
@@ -998,7 +998,7 @@ impl StatePolicy for ParamAskerPolicy {
                     }
                 }
                 if event == ParamAskerEvent::SceTestSnapshot {
-                    if self.test_context().timed_out("reply") {
+                    if self.test_context().timed_out("deadline") {
                         // asking, transition 1
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
@@ -1051,7 +1051,7 @@ impl StatePolicy for ParamAskerPolicy {
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §4.7: <sce:stop-timer>
-                    self.test_context().stop_timer("reply");
+                    self.test_context().stop_timer("deadline");
 
                     // W3C SCXML 5.3: <assign location="answered">
                     self.answered = ev.job;
@@ -1062,7 +1062,7 @@ impl StatePolicy for ParamAskerPolicy {
                 // SCE-MAP: param_asker.scxml:30 :: asking :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
-                self.test_context().timeout("reply");
+                self.test_context().timeout("deadline");
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>

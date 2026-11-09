@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -175,12 +175,12 @@ func (e AnswererEvent) String() string {
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const AnswererSavedShapeFormat2 = "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0"
+const AnswererSavedShapeFormat2 = "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b"
 
 // AnswererSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const AnswererSavedShapeFormat2Revised = "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3"
+const AnswererSavedShapeFormat2Revised = "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633"
 
 // AnswererSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -195,10 +195,10 @@ var AnswererSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var AnswererSavedShape = sce.SavedShape{
-	First:          "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-	Revised:        "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
-	Format2First:   "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-	Format2Revised: "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
+	First:          "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+	Revised:        "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
+	Format2First:   "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+	Format2Revised: "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
 	Records: []sce.RecordLineage{
 	},
 	Enums: []sce.EnumLineage{
@@ -227,7 +227,7 @@ func AnswererSaveAt(engine *sce.Engine[AnswererState, AnswererEvent], wallNowMs 
 		return nil, sce.Refuse("the engine is not one of Answerer")
 	}
 	variables := sce.NewJSONObject()
-	variables.Set("job", sce.SavedWriteUint32(p.vJob))
+	variables.Set("asked", sce.SavedWriteUint32(p.vAsked))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &AnswererSavedShape, variables,
 		sce.SaveHistory[AnswererState, AnswererEvent](p, AnswererHistories),
@@ -251,9 +251,9 @@ func AnswererJudge(saved *sce.SavedState) error {
 	if _, err := sce.RestoreHistory[AnswererState, AnswererEvent](p, grown, AnswererHistories); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("job"); err != nil {
+	if raw, err := grown.Variable("asked"); err != nil {
 		return err
-	} else if _, err := sce.SavedReadUint32(raw, "job"); err != nil {
+	} else if _, err := sce.SavedReadUint32(raw, "asked"); err != nil {
 		return err
 	}
 	return sce.JudgeSession[AnswererState, AnswererEvent](p, grown)
@@ -283,18 +283,18 @@ func AnswererRestoreAt(policy *AnswererPolicy, saved *sce.SavedState, clock sce.
 	if err != nil {
 		return nil, err
 	}
-	raw1, err := grown.Variable("job")
+	raw1, err := grown.Variable("asked")
 	if err != nil {
 		return nil, err
 	}
-	read1, err := sce.SavedReadUint32(raw1, "job")
+	read1, err := sce.SavedReadUint32(raw1, "asked")
 	if err != nil {
 		return nil, err
 	}
 	if err := sce.JudgeSession[AnswererState, AnswererEvent](policy, grown); err != nil {
 		return nil, err
 	}
-	policy.vJob = read1
+	policy.vAsked = read1
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -376,8 +376,8 @@ type AnswererPolicy struct {
 	// initial state's `<onentry>` may already start a timer or set a verdict.
 	sceTestContext *scetestprofile.ComponentContext
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
-	// W3C SCXML 5.2: the `job` datamodel variable.
-	vJob uint32
+	// W3C SCXML 5.2: the `asked` datamodel variable.
+	vAsked uint32
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -399,7 +399,7 @@ func NewAnswererPolicy() AnswererPolicy {
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vJob: 42,
+		vAsked: 42,
 	}
 }
 
@@ -507,14 +507,14 @@ func (c *AnswererComponent) Terminated() bool {
 // variable left nil, or absent for an optional one, keeps the value its `<data>`
 // gave it.
 type AnswererInvokeParams struct {
-	VJob *uint32
+	VAsked *uint32
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
 // ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
 func (p *AnswererPolicy) AcceptParams(params AnswererInvokeParams) {
-	if params.VJob != nil {
-		p.vJob = *params.VJob
+	if params.VAsked != nil {
+		p.vAsked = *params.VAsked
 	}
 }
 
@@ -791,7 +791,7 @@ func (p *AnswererPolicy) ExecuteEntryActions(state AnswererState, engine *sce.En
 			// value of its specific template, handed to the test-port processor
 			// as a value and never as an encoding (docs/adr/0091, C2). Every
 			// other send leaves it nil and carries EventData.
-			Value: sce_request_of.Specific(p.vJob),
+			Value: sce_request_of.Specific(p.vAsked),
 		}
 		_, hostServed := engine.PerformHostSend(hostRequest)
 		// W3C SCXML 6.2: a declared type with no handler registered is, from

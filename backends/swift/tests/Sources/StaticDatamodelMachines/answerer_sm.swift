@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
+// source-hash: 16d76c0f9ed42e7e13706b7e291287d0861ab6ac1014d873b4e04ff755d59e01
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -127,8 +127,8 @@ public final class AnswererPolicy: InvocablePolicy {
     }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
-    /// W3C SCXML 5.2: the `job` datamodel variable.
-    var vJob: UInt32 = 42
+    /// W3C SCXML 5.2: the `asked` datamodel variable.
+    var vAsked: UInt32 = 42
 
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
@@ -136,14 +136,14 @@ public final class AnswererPolicy: InvocablePolicy {
     /// it; a variable that may be absent is handed the optional value whole.
     public struct InvokeParams {
         public init() {}
-        public var vJob: UInt32? = nil
+        public var vAsked: UInt32? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
     /// `<data>` gave. Called before the machine starts.
     public func acceptParams(_ params: InvokeParams) {
-        if let value = params.vJob {
-            vJob = value
+        if let value = params.vAsked {
+            vAsked = value
         }
     }
 
@@ -377,7 +377,7 @@ public final class AnswererPolicy: InvocablePolicy {
                         sendID: "__send_0",
                         eventData: sendEventData,
                         invokeID: engine.currentEventInvokeID,
-                        value: HostSendValue(RequestOf.value(self.vJob))
+                        value: HostSendValue(RequestOf.value(self.vAsked))
                     )
                     engine.performHostSend(sendRequest)
 
@@ -571,26 +571,26 @@ extension AnswererPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-            revised: "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3",
-            format2First: "77d40fcdf3eb3896043f63260f7de6cf663bda6fd692f40dd88cc57a93acf3a0",
-            format2Revised: "e0c7774f372d98441592ca3054927430a4f75b7865f2f8ddab9da0b4388f1be3")
+            first: "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+            revised: "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633",
+            format2First: "8e094bee378cf8b1c253876879730a308b0a5b5ddfb893d99ccb59c8cf5ed95b",
+            format2Revised: "5a4841580d4408f221413befb0d67049ca9ba3eff3780284b83bdb6869e0b633")
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
     /// machine's own included, and not only the ones it publishes.
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
-            SavedEntry("job", SavedValues.of(vJob)),
+            SavedEntry("asked", SavedValues.of(vAsked)),
         ]
     }
 
     /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
-        let value0 = try SavedValues.uint32(try saved.variable("job"), "job")
+        let value0 = try SavedValues.uint32(try saved.variable("asked"), "asked")
         return { [self] in
-            self.vJob = value0
+            self.vAsked = value0
         }
     }
 }
