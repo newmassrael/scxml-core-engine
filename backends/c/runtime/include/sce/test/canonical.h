@@ -28,10 +28,9 @@
  * The generated unit of a test template over a record writes its
  * `<name>_canonical` with these, by the types its document declares
  * (`forge/c/test_template.h.jinja2`): a C type alone does not say which form a
- * value takes. C11 lowers no union, so no form of one is written here; and a
- * byte string of one entry, which the C11 unit of an event schema holds as a
- * pointer with no length, has none, so a template over a record that holds one
- * is refused. The C11 port of `sce/include/test/Canonical.h` and
+ * value takes. A byte string, of one entry or inside a list, is held with its
+ * length, which `sce_test_canonical_bytes` is given. C11 lowers no union, so no
+ * form of one is written here. The C11 port of `sce/include/test/Canonical.h` and
  * `sce_rust_runtime::test::canonical`. Header-only and allocation-free.
  */
 

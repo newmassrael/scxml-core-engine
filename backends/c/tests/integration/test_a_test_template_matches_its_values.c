@@ -11,11 +11,10 @@
 //
 // Each case is the twin of the C++ gtest of the same name in
 // tests/integration/ATestTemplateMatchesItsValuesTest.cpp, `ATestTemplate.<Name>`
-// written in snake case, with the same values. The C++ case of a byte string
-// literal has no twin: the C11 unit of an event schema holds a byte string of
-// one entry as a pointer with no length, so C11 refuses `voucher_is`
-// (sce-build/tests/a_test_template_is_generated_in_c11.rs). A text's bytes past
-// ASCII are written as escapes.
+// written in snake case, with the same values; the C11 unit of an event schema
+// holds a byte string in the buffer of its bound beside its length, which the
+// case of a byte string literal reads. A text's bytes past ASCII are written as
+// escapes.
 //
 // Header-only code; nothing here allocates.
 
@@ -32,6 +31,7 @@
 #include "order_line_bounded.h"
 #include "order_line_exact.h"
 #include "report_within.h"
+#include "voucher_is.h"
 
 static int failures = 0;
 
@@ -344,6 +344,27 @@ static void an_enum_is_written_by_its_declared_name_and_a_text_as_it_is(void) {
     CHECK(strcmp(written, "{\"color\":\"blue\",\"quantity\":\"2\",\"sku\":\"A-1\"}") == 0, "wrote %s", written);
 }
 
+// A byte string written in hex, held with its length: the value holds its
+// octets and their count, matches its template, and a value one octet apart
+// does not, nor one a byte shorter; the test log writes its octets in
+// upper-case hex.
+static void a_byte_string_literal_is_its_octets(void) {
+    static const uint8_t octets[] = {0x00u, 0xffu, 0x10u, 0xa0u};
+    const VoucherPaymentPayload_t voucher = voucher_is_value();
+    CHECK(voucher.voucher_code.len == 4u && memcmp(voucher.voucher_code.data, octets, 4u) == 0,
+          "the value holds the four octets, %zu of them", voucher.voucher_code.len);
+    CHECK(voucher_is_matches(&voucher), "the value matches its template");
+    VoucherPaymentPayload_t other = voucher;
+    other.voucher_code.data[3] = 0xa1u;
+    CHECK(!voucher_is_matches(&other), "another last octet does not match");
+    VoucherPaymentPayload_t shorter = voucher;
+    shorter.voucher_code.len = 3u;
+    CHECK(!voucher_is_matches(&shorter), "three of the four octets do not match");
+    char out[64];
+    const char *written = canonical_of(voucher_is_record_type(), &voucher, out, sizeof(out));
+    CHECK(strcmp(written, "{\"voucher_code\":\"00FF10A0\"}") == 0, "wrote %s", written);
+}
+
 int main(void) {
     matches_a_status_each_of_whose_fields_its_matcher_holds();
     a_value_list_matches_any_of_its_items_and_a_range_holds_its_bounds();
@@ -359,6 +380,7 @@ int main(void) {
     a_length_on_a_text_counts_a_multi_byte_character_as_one();
     a_records_canonical_form_is_written_by_the_types_its_document_declares();
     an_enum_is_written_by_its_declared_name_and_a_text_as_it_is();
+    a_byte_string_literal_is_its_octets();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

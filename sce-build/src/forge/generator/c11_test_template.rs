@@ -20,17 +20,20 @@
 //!
 //! Every type is the one the event schema's unit spells a field of that type
 //! in: one entry where the type is one (a number, `bool`, a value of an enum, a
-//! text in the buffer of its bound, an optional one in the runtime's
+//! text in the buffer of its bound, a byte string in the buffer of its bound
+//! beside its length, an optional one in the runtime's
 //! `sce_optional_<elem>_t`), and a composition laid out statically where it is
 //! not ([`unit_type`]), so a template's value, and the value a reference passes
 //! the template it names, is the field's own type. A position inside a list is
 //! the list's element, which a composition holds in its own types: there a byte
-//! string holds its length, and an optional value is the composition's.
+//! string is the composition's, which holds its length too, and an optional
+//! value is the composition's.
 //!
 //! A text is compared by its bytes up to its terminator (`strcmp`) and its
 //! length restriction counts characters through the profile's runtime
 //! ([`TEXT_LENGTH`]); a byte string is compared by its length and its octets
-//! (`memcmp`); a value that may be absent is tested by `present` and read by
+//! (`memcmp`), the other side read through the runtime's view of bytes, and
+//! counted by its length; a value that may be absent is tested by `present` and read by
 //! `value` behind that test; and an optional value a parameter gives is
 //! compared by its two parts, since C compares no two structs (a specific
 //! value stands for no list, record or union, `test_profile::matcher_admitted`).
@@ -46,12 +49,9 @@
 //!
 //! What C11 refuses by name: a union, which it lowers nowhere
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), by the walk before
-//! anything is spelled; a byte string of one entry, which the C11 event schema
-//! unit holds as a pointer with no length, so no value of it can be compared,
-//! built or written in the test log, and so no template over a record that
-//! holds one; and a reference, inside a list, to a template of an optional
-//! type, whose value the list holds in its own optional type rather than the
-//! one the referenced template takes.
+//! anything is spelled; and a reference, inside a list, to a template of an
+//! optional type, whose value the list holds in its own optional type rather
+//! than the one the referenced template takes.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -63,7 +63,8 @@ use super::test_template_walk::{
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
 use crate::forge::static_lowering::{
-    c_string_storage_def, c_string_storage_of, c_string_storage_type,
+    c_bytes_storage_def, c_bytes_storage_type, c_string_storage_def, c_string_storage_of,
+    c_string_storage_type,
 };
 use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
@@ -129,12 +130,7 @@ pub(super) fn render_test_template_c11(
     }
     // Only a template over a record, the type of a message, writes a message's
     // record type and its value's canonical form (`TemplateWalk::message_form`).
-    let canonical = C11Canonical::default();
-    let (log_type, canonical_body) = walk.message_form(&canonical, &scope)?.unzip();
-    let refusal = canonical.refusal.borrow_mut().take();
-    if let Some(why) = refusal {
-        return Err(walk.refused(why));
-    }
+    let (log_type, canonical_body) = walk.message_form(&C11Canonical, &scope)?.unzip();
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert(
@@ -190,6 +186,21 @@ pub(super) fn render_test_template_c11(
         .map(|&bound| c_string_storage_def(bound))
         .collect();
     ctx.insert("c_text_defs".into(), serde_json::json!(c_text_defs));
+    // The buffer of each byte string of one entry the template's own type and
+    // its parameters hold, beside its length, under the guard every header of
+    // that capacity shares; the runtime's view of bytes, which its fill
+    // function takes and a comparison of byte strings reads, is included with
+    // it.
+    let c_bytes_defs: Vec<String> = held
+        .bytes
+        .iter()
+        .map(|&capacity| c_bytes_storage_def(capacity))
+        .collect();
+    ctx.insert(
+        "views_bytes".into(),
+        (!c_bytes_defs.is_empty() || spelling.compares_bytes.get()).into(),
+    );
+    ctx.insert("c_bytes_defs".into(), serde_json::json!(c_bytes_defs));
     ctx.insert(
         "optional_defs".into(),
         serde_json::json!(held.optional_defs.iter().collect::<Vec<_>>()),
@@ -209,12 +220,19 @@ fn c_parameter(id: &str) -> String {
     format!("param_{id}")
 }
 
-/// The refusal of a byte string of one entry, of type `ty`.
-fn bytes_unheld(ty: &ValueType) -> String {
-    format!(
-        "`{ty}` is a byte string the C11 unit of an event schema holds as a pointer with no \
-         length, so no value of it is compared or built"
-    )
+/// The initializer of a byte string of the octets `data`, `len` their count:
+/// inside a list, of the composition's type, its length first as it declares
+/// it (`{ uint32_t len; uint8_t data[N]; }`); of one entry, of the buffer the
+/// event schema's unit holds one in, its octets first
+/// (`sce_static_bytes_<N>_t`). Each designator stands in the order of its
+/// member, which a C++ reader of the header requires.
+fn bytes_initializer(composed: bool, len: &str, data: &[String]) -> String {
+    let data = data.join(", ");
+    if composed {
+        format!("{{ .len = {len}, .data = {{ {data} }} }}")
+    } else {
+        format!("{{ .data = {{ {data} }}, .len = {len} }}")
+    }
 }
 
 /// The types the template's own value and its parameters are held in, and
@@ -225,6 +243,9 @@ struct HeldTypes {
     compositions: C11Declarations,
     /// The bound of each text they hold as one entry.
     texts: BTreeSet<u32>,
+    /// The capacity of each byte string they hold as one entry, in the buffer
+    /// beside its length the event schema's unit holds one in.
+    bytes: BTreeSet<u32>,
     /// The declaration of each optional value of an element the runtime does
     /// not declare (a text over its buffer, a value of an enum).
     optional_defs: BTreeSet<String>,
@@ -245,7 +266,12 @@ impl HeldTypes {
         ty: &ValueType,
     ) -> Result<String, ForgeError> {
         match ty.entry() {
-            Ok((EntryType::Scalar(SceType::Bytes), _)) => Err(walk.refused(bytes_unheld(ty))),
+            Ok((EntryType::Scalar(SceType::Bytes), bound)) => {
+                let capacity =
+                    crate::forge::limits::resolve_bytes_max(bound.map(|bound| bound.max));
+                self.bytes.insert(capacity);
+                Ok(c_bytes_storage_type(capacity))
+            }
             Ok((EntryType::Scalar(SceType::String), Some(bound))) => {
                 self.texts.insert(bound.max);
                 Ok(c_string_storage_type(bound.max))
@@ -285,6 +311,9 @@ struct CSpelling {
     /// Whether a matcher counts the characters of a text, which the runtime's
     /// [`TEXT_LENGTH_HEADER`] declares.
     counts_characters: Cell<bool>,
+    /// Whether a matcher compares two byte strings, each read through the
+    /// runtime's view of bytes (`sce/forge/bytes.h`).
+    compares_bytes: Cell<bool>,
     /// The first refusal a spelling met where the walk asks for a text and not
     /// for a result, which the unit is refused by once the walk is done.
     refusal: RefCell<Option<String>>,
@@ -323,17 +352,21 @@ impl JoinSpelling for CSpelling {
             (TypeOf::Text { .. }, Op::Eq) => {
                 format!("strcmp({place}.data, {rhs}) {} 0", Op::Eq.spelled(negated))
             }
-            // `rhs` is the string literal of the octets, whose `sizeof` counts
-            // them and the terminator after them: only a literal stands here,
-            // since no parameter is a byte string of one entry, and the literal
-            // of one is refused where it is spelled (`literal`).
-            (TypeOf::Bytes { .. }, Op::Eq) => negate(
-                format!(
-                    "({place}.len == sizeof({rhs}) - 1u && \
-                         memcmp({place}.data, {rhs}, sizeof({rhs}) - 1u) == 0)"
-                ),
-                negated,
-            ),
+            // `rhs` is the runtime's view of the other byte string, a literal's
+            // octets or a parameter's buffer (`literal`, `parameter`), so one
+            // spelling reads both, and a position of one entry and one inside a
+            // list alike: each holds its octets in `data` and their count in
+            // `len`.
+            (TypeOf::Bytes { .. }, Op::Eq) => {
+                self.compares_bytes.set(true);
+                negate(
+                    format!(
+                        "({place}.len == ({rhs}).len && \
+                         memcmp({place}.data, ({rhs}).data, {place}.len) == 0)"
+                    ),
+                    negated,
+                )
+            }
             // A parameter of the optional type itself, the one composed value a
             // specific value stands for (`test_profile::matcher_admitted` admits
             // none of a list, a record or a union): equal where both are absent,
@@ -363,10 +396,6 @@ impl JoinSpelling for CSpelling {
             TypeOf::Text { .. } => {
                 self.counts_characters.set(true);
                 format!("{TEXT_LENGTH}({place}.data) {operator} {n}u")
-            }
-            TypeOf::Bytes { .. } if !at.at.composed => {
-                self.refuse(bytes_unheld(&at.ty));
-                String::new()
             }
             _ => format!("{place}.len {operator} {n}u"),
         }
@@ -481,9 +510,12 @@ impl TemplateSpelling for CSpelling {
     }
 
     /// The parameter as it is, but for a text, which is compared by its bytes
-    /// and builds the buffer of the position's bound, and for a value that may
-    /// be absent built inside a list, whose optional type is the list's own, so
-    /// it is built from the parameter's two parts.
+    /// and builds the buffer of the position's bound; for a byte string, which
+    /// is compared through the runtime's view of its buffer and, inside a list,
+    /// whose byte string type is the list's own, built octet by octet from its
+    /// buffer of the same capacity; and for a value that may be absent built
+    /// inside a list, whose optional type is the list's own, so it is built
+    /// from the parameter's two parts.
     fn parameter(
         &self,
         name: &str,
@@ -497,6 +529,14 @@ impl TemplateSpelling for CSpelling {
             (Use::Build, TypeOf::Text { .. }, TypeOf::Text { max }) => {
                 format!("{}({param}.data)", c_string_storage_of(max.max))
             }
+            (Use::Compare, TypeOf::Bytes { .. }, _) => {
+                format!("((sce_forge_bytes_view_t){{ {param}.data, {param}.len }})")
+            }
+            (Use::Build, TypeOf::Bytes { .. }, TypeOf::Bytes { max }) if at.at.composed => {
+                let data: Vec<String> =
+                    (0..max.max).map(|i| format!("{param}.data[{i}]")).collect();
+                bytes_initializer(true, &format!("(uint32_t){param}.len"), &data)
+            }
             (Use::Build, TypeOf::Optional { .. }, _) if at.at.composed => {
                 format!("{{ .present = {param}.present, .value = {param}.value }}")
             }
@@ -507,8 +547,9 @@ impl TemplateSpelling for CSpelling {
     /// An integer in decimal, `true` or `false`, a variant of an enum by the
     /// constant its document declares, a text, or a byte string: one spelling
     /// compares and builds but for a text, which builds the buffer of its
-    /// bound, and a byte string, which compares as the string literal of its
-    /// octets and builds as the initializer of its length and its octets.
+    /// bound, and a byte string, which compares as the runtime's view of the
+    /// string literal of its octets and builds as the initializer of its octets
+    /// and their count ([`bytes_initializer`]).
     fn literal(&self, text: &str, at: &Position<'_, CAt>, purpose: Use) -> Result<String, String> {
         let refused = || format!("'{text}' is no literal of {}", at.ty);
         match &at.ty {
@@ -542,9 +583,6 @@ impl TemplateSpelling for CSpelling {
                 })
             }
             TypeOf::Bytes { .. } => {
-                if !at.at.composed {
-                    return Err(bytes_unheld(&at.ty));
-                }
                 let octets = hex_octets(text).ok_or_else(refused)?;
                 Ok(match purpose {
                     Use::Compare => {
@@ -556,17 +594,16 @@ impl TemplateSpelling for CSpelling {
                                     .unwrap_or_default()
                             })
                             .collect();
-                        format!("\"{escaped}\"")
+                        format!(
+                            "((sce_forge_bytes_view_t){{ (const uint8_t *)\"{escaped}\", {}u }})",
+                            octets.len()
+                        )
                     }
                     Use::Build if octets.is_empty() => "{ .len = 0u }".to_string(),
                     Use::Build => {
                         let data: Vec<String> =
                             octets.iter().map(|pair| format!("0x{pair}")).collect();
-                        format!(
-                            "{{ .len = {}u, .data = {{ {} }} }}",
-                            octets.len(),
-                            data.join(", ")
-                        )
+                        bytes_initializer(at.at.composed, &format!("{}u", octets.len()), &data)
                     }
                 })
             }
@@ -668,9 +705,6 @@ struct C11CanonicalAt {
     /// The C expression of the value: `(*value)`, which the function is lent,
     /// an element of a list by its index, or a field of either.
     expr: String,
-    /// Whether the value is an element of a list, which a composition holds in
-    /// its own types: there a byte string holds its length.
-    composed: bool,
     /// How many loops over a list the value stands inside: the number of the
     /// next loop's index, so no index shadows another (`-Wshadow`).
     depth: usize,
@@ -691,25 +725,10 @@ struct C11CanonicalAt {
 /// variant nor its number, so an enum's value is read through the functions of
 /// the enum's own unit ([`CanonicalSpelling::enumerated_of`]); and an integer
 /// of any width through the runtime's macro, since C has no overload by the
-/// width and signedness of a field. A byte string of one entry, which the C11
-/// event schema unit holds as a pointer with no length, has no form here and is
-/// refused by name; C11 lowers no union, so the walk's refusal of one stands.
-#[derive(Default)]
-struct C11Canonical {
-    /// The first refusal a spelling met, which the unit is refused by once the
-    /// walk is done: the walk asks for a text and not for a result.
-    refusal: RefCell<Option<String>>,
-}
-
-impl C11Canonical {
-    /// Keeps `why` as the unit's refusal, unless one was kept before it.
-    fn refuse(&self, why: String) {
-        let mut kept = self.refusal.borrow_mut();
-        if kept.is_none() {
-            *kept = Some(why);
-        }
-    }
-}
+/// width and signedness of a field. A byte string, of one entry or inside a
+/// list, holds its octets in `data` and their count in `len`, which its form
+/// reads alike. C11 lowers no union, so the walk's refusal of one stands.
+struct C11Canonical;
 
 impl CanonicalSpelling for C11Canonical {
     type At = C11CanonicalAt;
@@ -718,7 +737,6 @@ impl CanonicalSpelling for C11Canonical {
     fn root(&self) -> C11CanonicalAt {
         C11CanonicalAt {
             expr: "(*value)".to_string(),
-            composed: false,
             depth: 0,
         }
     }
@@ -732,7 +750,6 @@ impl CanonicalSpelling for C11Canonical {
                 at.expr,
                 event_schema_field_ident(id, Language::C11)
             ),
-            composed: false,
             depth: at.depth,
         }
     }
@@ -742,7 +759,6 @@ impl CanonicalSpelling for C11Canonical {
         let name = format!("sce_{prefix}_{}", at.depth);
         let bound = C11CanonicalAt {
             expr: name.clone(),
-            composed: at.composed,
             depth: at.depth + 1,
         };
         (name, bound)
@@ -752,7 +768,6 @@ impl CanonicalSpelling for C11Canonical {
     fn list_element(&self, list: &C11CanonicalAt, bound: C11CanonicalAt) -> C11CanonicalAt {
         C11CanonicalAt {
             expr: format!("{}.items[{}]", list.expr, bound.expr),
-            composed: true,
             depth: bound.depth,
         }
     }
@@ -761,7 +776,6 @@ impl CanonicalSpelling for C11Canonical {
     fn optional_value(&self, field: &C11CanonicalAt, _bound: C11CanonicalAt) -> C11CanonicalAt {
         C11CanonicalAt {
             expr: format!("{}.value", field.expr),
-            composed: field.composed,
             depth: field.depth,
         }
     }
@@ -802,17 +816,9 @@ impl CanonicalSpelling for C11Canonical {
         format!("sce_test_canonical_text({C_JCS}, {}.data);", at.expr)
     }
 
-    /// A byte string a list holds, by its length and its octets. One of one
-    /// entry is held with no length, and is refused.
+    /// A byte string by its octets and their count, of one entry or inside a
+    /// list alike.
     fn bytes(&self, at: &C11CanonicalAt) -> String {
-        if !at.composed {
-            self.refuse(
-                "a byte string of one entry, which the C11 unit of an event schema holds as a \
-                 pointer with no length, has no form in the test log"
-                    .to_string(),
-            );
-            return String::new();
-        }
         format!(
             "sce_test_canonical_bytes({C_JCS}, {0}.data, {0}.len);",
             at.expr

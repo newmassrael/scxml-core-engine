@@ -1253,10 +1253,12 @@ forge unit is, and, since C has no namespace, each declaration carries the docum
 Every record, enum and referenced template the unit names is reached through the header of the document that
 declares it, which the unit includes, and a referenced template's functions are named by its document. C11 joins
 the tests as Rust, Kotlin, Go and Python do. C11 lowers no union, so a template whose type reaches a union at any
-depth is refused on C11 as on C++ (ADR 0092, section 7). It refuses by name too a template that compares, counts or
-builds a byte string of one entry, which the C11 unit of an event schema holds as a pointer with no length, and a
-reference, inside a list, to a template of an optional type, whose value the list holds in its composition's own
-optional type and not in the one the referenced template takes.
+depth is refused on C11 as on C++ (ADR 0092, section 7). The C11 unit of an event schema holds a byte string of one
+entry in the buffer of its bound beside its length (`sce_static_bytes_<N>_t`), as a composition holds one inside a
+list, so a byte string is compared by its length and its octets, the other side read through the runtime's view of
+bytes, counted by its length and built by the initializer of its type. C11 refuses by name a reference, inside a
+list, to a template of an optional type, whose value the list holds in its composition's own optional type and not
+in the one the referenced template takes.
 
 Swift generates `test-template` (§12.6, slice 6). The unit is a file `<Name>.swift`, named by the document's file as
 every forge unit is. Every unit of a run is a file of one module, so the unit declares a caseless enum `<Name>`, as an
@@ -1452,8 +1454,8 @@ allocated:
   hold a number, a `bool`, a value of an enum and an optional value of each, a text's among them, in the same C types,
   which are assigned; the unit holds a text in the buffer of its bound and the channel as a pointer, so a text is
   copied into the buffer the machine keeps for that field, whose size the build holds the bound to (`SCE_MAX_DATA_LEN`).
-  The unit holds a byte string of one entry as a pointer with no length, so a message of a record with one that the
-  content reads is refused by name;
+  The unit holds a byte string of one entry in the buffer of its bound beside its length and the channel in an array
+  of the same capacity beside its `_len`, so its bytes and its length are copied;
 - a `<log>` records its label, a colon and its value as the engine's `<log>` writes it, into a buffer one byte longer
   than a line of the test log holds, so a line the log cannot hold reaches the run long enough to be counted in
   `log_lost` and is never cut on the way;
@@ -2044,11 +2046,10 @@ bytes. Each other backend's runtime writes the same records, in the same text.
    for a template's length restriction, since a C text is held as UTF-8 bytes, and the C11 host send request
    carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
    §11.9 is lifted for C11 for `test-template`; C11 lowers no union, so a template whose type reaches one stays
-   refused there, as on C++, Go and Python, and so does one over a byte string of one entry, which its event schema
-   unit holds as a pointer with no length. C11 generates test components next, through the doors of §12.3, each in
+   refused there, as on C++, Go and Python. C11 generates test components next, through the doors of §12.3, each in
    storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
-   `test-component`, but for a component that declares `<sce:action>`, for one whose template reaches a union, and
-   for a receive branch whose content reads a message of a record with a byte string of one entry. C11 then
+   `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
+   C11 then
    generates the configuration, case and suite tables over the same rows, each including what it reads by its
    header and making every machine from storage the caller places, and runs the examples end to end through
    `sce_test_run_suite`; the refusal is lifted for C11 for the remaining kinds, and for a component's module

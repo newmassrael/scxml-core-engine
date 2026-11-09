@@ -13,9 +13,11 @@
 //! characters by the profile's runtime; a value that may be absent is tested by
 //! `present` and read by `value`; a value that may be absent a parameter gives
 //! is compared by its two parts; a value is built as the initializer of its
-//! variable. C11 lowers no union (docs/adr/0092), so a template whose type
-//! reaches one is refused as C++ refuses it, and it refuses a byte string of
-//! one entry, which its event schema unit holds as a pointer with no length.
+//! variable. A byte string is held in the buffer of its bound beside its
+//! length, of one entry as inside a list, so it is compared, counted, built and
+//! written in the test log by its length and its octets. C11 lowers no union
+//! (docs/adr/0092), so a template whose type reaches one is refused as C++
+//! refuses it.
 //!
 //! What the generated units do when they run is held by
 //! `backends/c/tests/integration/test_a_test_template_matches_its_values.c`,
@@ -70,9 +72,7 @@ fn holds_each(text: &str, parts: &[&str]) {
 /// Every accepted template the profile's fixtures hold that C11 generates: its
 /// document, its name, and whether it is specific (docs/SCE_TEST_PROFILE.md
 /// §6.2). The two over a union are refused
-/// ([`a_template_that_reaches_a_union_is_refused_on_c11`]), and the one over a
-/// byte string of one entry
-/// ([`a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_octets`]).
+/// ([`a_template_that_reaches_a_union_is_refused_on_c11`]).
 fn templates() -> Vec<(PathBuf, &'static str, bool)> {
     let at = |dir: PathBuf, name: &'static str| dir.join(format!("{name}.scxml"));
     vec![
@@ -103,6 +103,8 @@ fn templates() -> Vec<(PathBuf, &'static str, bool)> {
             false,
         ),
         (at(imports_dir(), "card_within"), "card_within", false),
+        // A byte string of one entry, compared by its length and its octets.
+        (at(imports_dir(), "voucher_is"), "voucher_is", true),
         // A unit is named by the document's file (`test-template.scxml`), as
         // every forge unit is (`DocumentLabel::for_input_path`), not by its
         // `name`.
@@ -413,109 +415,90 @@ fn blob_template(name: &str, code: &str) -> String {
     )
 }
 
-/// The schema of a record that holds a list of byte strings alone.
-const SPARES_RECORD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="spares_record"
-       sce:event-name="spares.record">
-  <datamodel>
-    <data id="spares" sce:type="list&lt;bytes[2]&gt;[2]" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"#;
-
-/// A template over the spares record whose first spare is the byte string
-/// `00ff`.
-const SPARES_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-template" name="spares_first"
-       sce:type="record:Spares">
-  <sce:import kind="event-schema" src="spares_record.scxml" as="Spares"/>
-  <sce:record-match>
-    <sce:list-match field="spares">
-      <sce:specific value="00ff"/>
-      <sce:any-value/>
-    </sce:list-match>
-  </sce:record-match>
-</scxml>
-"#;
-
-/// A byte string of one entry is held by the C11 event schema unit as a
-/// pointer with no length, so a template that compares, counts or builds one is
-/// refused by name: a literal of it, and a length restriction on it. No
-/// parameter reaches one: a parameter of a byte string is refused where its
-/// type is spelled, and the profile admits no specific value of a record that
-/// holds one (`test_profile::matcher_admitted`). A template over a record that
-/// holds one and matches it with any value is refused too, since the test log
-/// writes every field of a message (docs/SCE_TEST_PROFILE.md §12.5) and that
-/// one has no form there. One inside a list is the composition's, which holds
-/// its length, and is compared and written by its length and its octets. The
-/// documents are a test's alone, written into a directory of their own.
+/// A byte string of one entry is held by the C11 event schema unit in the
+/// buffer of its bound beside its length (`sce_static_bytes_<N>_t`), and one
+/// inside a list by the composition, which holds its length too: so each is
+/// compared by its length and its octets, the other side read through the
+/// runtime's view of bytes; counted by its length; built by the initializer of
+/// its type, each designator in its member's order; and written in the test
+/// log by its octets and their count (docs/SCE_TEST_PROFILE.md §12.5). A
+/// template over a record that holds one is generated whatever its matcher
+/// reads. The documents are a test's alone, written into a directory of their
+/// own.
 #[test]
-fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_octets() {
-    let detail = refused(&imports_dir().join("voucher_is.scxml"));
-    assert!(
-        detail.starts_with("test-template 'voucher_is': `bytes[4]` is a byte string the C11 unit"),
-        "{detail}"
+fn a_byte_string_is_compared_counted_built_and_logged_by_its_length_and_octets() {
+    let voucher = unit_of(&imports_dir(), "voucher_is");
+    holds_each(
+        &voucher,
+        &[
+            "((*value).voucher_code.len == (((sce_forge_bytes_view_t){ (const uint8_t \
+             *)\"\\000\\377\\020\\240\", 4u })).len && memcmp((*value).voucher_code.data, \
+             (((sce_forge_bytes_view_t){ (const uint8_t *)\"\\000\\377\\020\\240\", 4u })).data, \
+             (*value).voucher_code.len) == 0)",
+            ".voucher_code = { .data = { 0x00, 0xff, 0x10, 0xa0 }, .len = 4u }",
+            "#include \"sce/forge/bytes.h\"",
+            "    sce_jcs_key(jcs, \"voucher_code\");\n    sce_test_canonical_bytes(jcs, \
+             (*value).voucher_code.data, (*value).voucher_code.len);\n",
+        ],
     );
 
     let dir = tempfile::tempdir().expect("a directory for the documents");
     std::fs::write(dir.path().join("blob_record.scxml"), BLOB_RECORD).expect("the schema");
-    std::fs::write(dir.path().join("spares_record.scxml"), SPARES_RECORD).expect("the schema");
     let write = |name: &str, text: String| {
         let path = dir.path().join(format!("{name}.scxml"));
         std::fs::write(&path, text).expect("the template");
         path
     };
 
+    // A field of one entry its matcher does not read is still written in the
+    // test log, beside the list's byte strings.
     let any_code = write(
         "blob_spare",
         blob_template("blob_spare", r#"<sce:any-value field="code"/>"#),
     );
-    let detail = refused(&any_code);
-    assert!(
-        detail.starts_with(
-            "test-template 'blob_spare': a byte string of one entry, which the C11 unit of an \
-             event schema holds as a pointer with no length, has no form in the test log"
-        ),
-        "{detail}"
-    );
-
-    let first = write("spares_first", SPARES_TEMPLATE.to_string());
-    let text = unit(&first, "spares_first");
+    let text = unit(&any_code, "blob_spare");
     holds_each(
         &text,
         &[
             "(*value).spares.len == 2u",
-            "((*value).spares.items[0].len == sizeof(\"\\000\\377\") - 1u && \
-             memcmp((*value).spares.items[0].data, \"\\000\\377\", sizeof(\"\\000\\377\") - 1u) \
-             == 0)",
+            "((*value).spares.items[0].len == (((sce_forge_bytes_view_t){ (const uint8_t \
+             *)\"\\000\\377\", 2u })).len && memcmp((*value).spares.items[0].data, \
+             (((sce_forge_bytes_view_t){ (const uint8_t *)\"\\000\\377\", 2u })).data, \
+             (*value).spares.items[0].len) == 0)",
+            "    sce_jcs_key(jcs, \"code\");\n    sce_test_canonical_bytes(jcs, \
+             (*value).code.data, (*value).code.len);\n",
             "        sce_test_canonical_bytes(jcs, (*value).spares.items[sce_item_0].data, \
              (*value).spares.items[sce_item_0].len);\n",
+            "    static const sce_test_record_type_t record_type = { \"blob_record\", \
+             blob_spare_canonical_lent };\n",
         ],
     );
 
-    for (name, code) in [
-        (
+    let code_is = write(
+        "blob_code_is",
+        blob_template(
             "blob_code_is",
             r#"<sce:specific field="code" value="00ff10a0"/>"#,
         ),
-        (
+    );
+    assert!(
+        unit(&code_is, "blob_code_is").contains(
+            "((*value).code.len == (((sce_forge_bytes_view_t){ (const uint8_t \
+             *)\"\\000\\377\\020\\240\", 4u })).len && memcmp((*value).code.data, \
+             (((sce_forge_bytes_view_t){ (const uint8_t *)\"\\000\\377\\020\\240\", 4u })).data, \
+             (*value).code.len) == 0)"
+        ),
+        "a literal of one entry is compared by its length and its octets"
+    );
+    let code_short = write(
+        "blob_code_short",
+        blob_template(
             "blob_code_short",
             r#"<sce:any-value field="code" length-max="2"/>"#,
         ),
-    ] {
-        let path = write(name, blob_template(name, code));
-        let detail = refused(&path);
-        assert!(
-            detail.starts_with(&format!(
-                "test-template '{name}': `bytes[4]` is a byte string the C11 unit"
-            )),
-            "{detail}"
-        );
-    }
+    );
+    let short = unit(&code_short, "blob_code_short");
+    assert!(short.contains("(*value).code.len <= 2u"), "{short}");
 }
 
 /// A template over the profile's job status, named `name`, whose formal
@@ -770,6 +753,7 @@ fn a_template_over_a_record_writes_its_values_canonical_form() {
             }
             "order_line_exact" | "order_line_bounded" => Some("order_line"),
             "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
             // The kind example's schema is the file `event-schema.scxml`.
             "test_template" => Some("event_schema"),
             _ => None,

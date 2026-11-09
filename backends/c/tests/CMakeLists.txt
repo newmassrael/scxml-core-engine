@@ -4316,9 +4316,9 @@ set_tests_properties(c11_integration_forge_bounded_collection PROPERTIES
 # generated beside the records, the enum and the templates their headers
 # include, and matched against payloads written by hand
 # (integration/test_a_test_template_matches_its_values.c, the twin of the C++
-# ATestTemplateMatchesItsValuesTest). `voucher_is` and its record are not
-# among them: C11 refuses a template over a byte string of one entry, which its
-# event schema unit holds as a pointer with no length.
+# ATestTemplateMatchesItsValuesTest). `voucher_is` and its record hold a byte
+# string of one entry, which the event schema unit holds in the buffer of its
+# bound beside its length (`sce/forge/bytes.h` the view it is filled through).
 set(_TP_FIXTURE_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile")
 set(_TP_HEADERS "")
 foreach(_TP_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of report_within)
@@ -4326,7 +4326,7 @@ foreach(_TP_DOCUMENT job_status elapsed_at_most every_matcher job_report job_rep
     list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
 endforeach()
 foreach(_TP_DOCUMENT paint_color order_line quantity_two quantity_at_most order_line_exact
-                     order_line_bounded card_payment card_within)
+                     order_line_bounded card_payment card_within voucher_payment voucher_is)
     sce_c_integration_generation(_TP_${_TP_DOCUMENT} "${_TP_FIXTURE_DIR}/imports/${_TP_DOCUMENT}.scxml")
     list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
 endforeach()
