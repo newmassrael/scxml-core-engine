@@ -19036,11 +19036,18 @@ fn lower_action(
                 crate::forge::model::AlgorithmValueType::Record { alias } => {
                     reads_payload = false;
                     let written = action.expr.trim();
-                    let named = renames.get(written).copied().unwrap_or(written);
+                    // A machine's variable is named by its rename; a loop's
+                    // record item is a local, spelled as every other read of
+                    // it is, so an item the target shifts off one of its own
+                    // names (Go's receiver `p`) is not read as that name.
+                    let named = match renames.get(written) {
+                        Some(field) => field.to_string(),
+                        None => target.expr_target().local_spelling(written),
+                    };
                     Receiving {
                         text: match rewrites.schemas.get(alias) {
-                            Some(schema) => target.record_copy(named, schema),
-                            None => named.to_string(),
+                            Some(schema) => target.record_copy(&named, schema),
+                            None => named,
                         },
                         can_fail: false,
                     }
