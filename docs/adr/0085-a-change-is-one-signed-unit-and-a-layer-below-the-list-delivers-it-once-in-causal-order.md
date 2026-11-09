@@ -903,3 +903,60 @@ open to the owner's review:
 - **The room test loses its control**, a list that runs out of room without a settle, which no longer exists: a copy
   holds only what is current. What grows is the layer's log, whose refusal past its room the world reports (landing
   4d tells it to the list).
+
+Decided while landing 4d, the journal per change, recall, restore and the verdict with ADR 0093 step 2 folded in
+(2026-11-10), under the same rule and open to the owner's review:
+
+- **One schema per event of the stamp's shape.** ADR 0093 section 5 gives `record_stamp` to five events. A schema
+  names one event (`sce:event-name`), and a statechart reads `_event.data` through the schema of the event's name,
+  so the shape is written once per event: `record_confirm`, `record_withdraw` and `record_raise`, which a host gives
+  a copy, and `record_pending` and `record_confirmed`, which a copy tells its parent, each `wallTime`, `counter` and
+  `command`. `record_list_parent` reads none of the last two, and imports both.
+- **A field of a first revision has no default.** ADR 0044 refuses `sce:default` on a field of the first revision,
+  so the stamp's `command` (ADR 0093 gives it default 0) and `record_recall`'s `provisional` are required: a host
+  writes 0 and false where it has nothing to say. `journal` on `record_join` is a second revision and keeps its
+  default, `true`.
+- **A recall is the report given back.** `record_recall` holds `record_made`'s fields (the change and `command`)
+  and `provisional`: what a host recalls is what it journalled, and a provisional change withdrawn after a restart
+  names the same command as one withdrawn before it.
+- **The verdict carries the layer's reason.** Section 3 and answer Q7 tell a full log as `noRoomForHistory`, and
+  ADR 0093's `record_verdict` has no field for it, so `record_verdict` gains `reason`, an `optional<enum:Refusal>`
+  read of a refusal only; a refusal that gives none is `peerRefused`. `record_refusal` gains `peerRefused` as its
+  second revision (`sce:since="2"`), the way ADR 0044 grows an enum.
+- **A refusal by the layer names the change's first operation.** `record_refused` names the command at fault, and
+  a change the layer refused or withdrew has none at fault; a change recalled provisionally after a restart carries
+  no command record either. Both are told as the register of the change's first operation, `edit` for a write and
+  `clear` for a write-over, with `command` naming the change, so a withdrawal reads the same before a restart and
+  after it. A refusal by the copy itself keeps its command at fault, as before.
+- **A host's word out of turn is counted where it happens.** A command given while an offer is outstanding is
+  taken by a transition of its own, before the command's own, that counts it in `refusals` and stages nothing; a
+  verdict, a confirmation or a withdrawal that names no change the copy holds, and a verdict of `none`, are counted
+  the same way and change nothing. ADR 0093 section 3.2 names `error.execution`, which is the platform's word for
+  a statement that failed; the document raises no platform event of its own, and what is observed (a count, and
+  nothing staged) is the same.
+- **`record_closed` at change units.** Its count of parts is `operations`, the number taken in (0 for a refusal or
+  a change that names nothing), its stamp is `wallTime` and `counter`, and a change the layer refused keeps the
+  stamp it was closed at, which no change is given again. A change taken in provisionally is reported closed at its
+  verdict, as one taken in; its later withdrawal is the host's own journal entry.
+- **The room of the provisional changes is judged at the close.** A change closed while the copy holds
+  `shared_provisional` (8) provisional changes is refused `noRoomForHistory` before it is stamped, whatever its
+  verdict would be, since the copy could not take it in provisionally if the layer answered `waiting`.
+- **The undo record is a list of its own.** A record holds no list, so the values a provisional change took out are
+  `undo` (`record_undo`: the change's stamp and the value whole), apart from `provisional` (`record_provisional`),
+  bounded by `shared_undo` (512, `shared_provisional` times `shared_parts`). A withdrawal gives values back at the
+  end of `values` and `adds`, so the copy equals one that never took the change as a set, the values in another
+  order; the parent is told each register the withdrawals moved once, after the last of them.
+- **One delivery for a peer's change and a recall.** Both make the change the one in hand and raise
+  `record_list.deliver`, which queues its takes and moves the clock once by its stamp; the own write-over's clock
+  of ADR 0083 section 1.6 is that move, a change of the copy's own node raising the clock to its stamp whatever its
+  operations are. A verdict queues the takes itself, the clock moved at the close already.
+- **A restore is a state in parts.** `record_restore` keeps `record_change`'s fields: `by` is 0 and not read,
+  `wallTime` and `counter` are the state's clock, which the copy's clock is raised to, and each write carries the
+  dot of its own value. A stable state may hold more values than one restore carries (`shared_parts`), so a host
+  gives it in several, and a value given twice is taken in once.
+- **Section 7.4 asks nothing more of the list.** Two changes of one author whose write-overs name one dot are
+  admitted, and the second changes nothing: a write-over whose value is gone is taken in as no change (4c).
+- **Every throwaway copy joins with `journal` false**: the scenarios before these, the world's copies of
+  `record_world` and `record_group_world`, the devices of `common/devices.rs`, the restarted copy of the relay
+  test, and the standard list's replay of the to-do afternoon. A world host that gives its layer each offered change
+  and its copy the verdict is landing 4e's on the Mesh route and landing 5's on the core.
