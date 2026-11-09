@@ -7657,7 +7657,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationAttributeRuleViolated,
             stage: Stage::Validation,
             expected: Some(vec![rule.clone()]),
-            actual: Some(value.clone()),
+            // An empty value is a rule no written value breaks (a count of
+            // children): it names no token, so the record reports none.
+            actual: (!value.is_empty()).then(|| value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
@@ -8040,7 +8042,11 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationCrossKindCircularDependency,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(cycle.join(" → ")),
+            // The path is SCE's: it joins the `src` of imports written in
+            // several documents, and no line holds it (SCE_ERROR_CONTRACT.md
+            // §2.1). It travels in `message`; the record stands on the
+            // reference that closes the cycle.
+            actual: None,
             fix: None,
             // The cycle path itself is the canonical identity — two
             // distinct cycles in the same build will have different
@@ -13261,6 +13267,27 @@ mod tests {
         assert!(d.fix.is_none(), "a rule names no replacement: {:?}", d.fix);
     }
 
+    /// A rule no written value breaks — a `<sce:value-list>` of one matcher
+    /// — names no token: the record carries no `actual`, and the count is
+    /// the message's (SCE_ERROR_CONTRACT.md §2.1).
+    #[test]
+    fn attribute_rule_broken_by_no_written_value_reports_no_actual() {
+        let err: ForgeError = ValidationError::AttributeRuleViolated {
+            element: "<sce:value-list>".into(),
+            attr: "matcher count 1".into(),
+            value: String::new(),
+            rule: "two or more matchers".into(),
+        }
+        .into();
+        let d = single(&err);
+        assert_eq!(d.actual, None);
+        assert_eq!(d.expected, Some(vec!["two or more matchers".to_string()]));
+        assert_eq!(
+            d.message,
+            "<sce:value-list>: invalid matcher count 1 (expected: two or more matchers)"
+        );
+    }
+
     #[test]
     fn invalid_reference_emits_replace_one_of_fix() {
         let err: ForgeError = ValidationError::InvalidReference {
@@ -13931,12 +13958,14 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:08e17a70cb512bdc","code":"validation/cross-kind-type-mismatch","stage":"validation","message":"statechart 'monitor': '_event.data.elapsed_ms' expects 'uint32', got a string literal","expected":["uint32"],"actual":"'late'"}"#,
             ),
             (
+                // The cycle is a path SCE joins across documents, which no
+                // line holds: it is the message's, and no `actual`.
                 "forge/cross-kind-circular-dependency",
                 ValidationError::CrossKindCircularDependency {
                     cycle: vec!["a.scxml".into(), "b.scxml".into(), "a.scxml".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9316da7f260e4553","code":"validation/cross-kind-circular-dependency","stage":"validation","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml","actual":"a.scxml → b.scxml → a.scxml"}"#,
+                r#"{"v":1,"id":"fnv1a:9316da7f260e4553","code":"validation/cross-kind-circular-dependency","stage":"validation","message":"circular <sce:import> dependency: a.scxml → b.scxml → a.scxml"}"#,
             ),
             (
                 "forge/transform-output-cycle",

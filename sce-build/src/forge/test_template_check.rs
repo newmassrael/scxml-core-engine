@@ -581,12 +581,14 @@ impl Checker<'_> {
                 &union.scope,
             ),
             (None, None) => Ok(()),
+            // A count is no text of the document: `attr` names it, and the
+            // record reports no `actual` (`ValidationError::AttributeRuleViolated`).
             (Some(record), None) => Err(self.shape(
                 line,
                 ValidationError::AttributeRuleViolated {
                     element,
-                    attr: "matcher".into(),
-                    value: "0".into(),
+                    attr: "matcher count 0".into(),
+                    value: String::new(),
                     rule: format!(
                         "one matcher, of the record {record} the case '{variant}' of the union \
                          {alias} holds"
@@ -597,8 +599,8 @@ impl Checker<'_> {
                 line,
                 ValidationError::AttributeRuleViolated {
                     element,
-                    attr: "matcher".into(),
-                    value: "1".into(),
+                    attr: "matcher count 1".into(),
+                    value: String::new(),
                     rule: format!(
                         "no matcher: the case '{variant}' of the union {alias} holds no record, \
                          its tag alone"
@@ -648,11 +650,13 @@ impl Checker<'_> {
                 .iter()
                 .map(|p| p.id.as_str())
                 .collect();
+            // The two counts are the message's: neither is text of the
+            // document, so the record reports no `actual`.
             return Err(self.refused(
                 line,
                 MatcherRefusal {
                     rule: TestProfileRule::TemplateParameter,
-                    actual: args.len().to_string(),
+                    actual: String::new(),
                     detail: format!(
                         "<sce:template-ref> binds {} argument(s) to {alias}, which takes {} \
                          formal parameter(s) ({}): args binds each formal parameter, in order, \

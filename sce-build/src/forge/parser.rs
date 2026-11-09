@@ -2092,14 +2092,16 @@ fn parse_test_template(
     let matchers: Vec<roxmltree::Node> = sce_children_among(root, MATCHER_ELEMENTS).collect();
     let one_matcher = "exactly one matcher of docs/SCE_TEST_PROFILE.md §11.4: a template \
                        matches one value of its type";
+    // A count is no text of the document: the refusal names it in `attr`
+    // and reports no `actual` (`ValidationError::AttributeRuleViolated`).
     let Some(first) = matchers.first() else {
         return Err(located(
             root,
             doc,
             ValidationError::AttributeRuleViolated {
                 element: root_element.into(),
-                attr: "matcher".into(),
-                value: "0".into(),
+                attr: "matcher count 0".into(),
+                value: String::new(),
                 rule: one_matcher.into(),
             },
         ));
@@ -2110,8 +2112,8 @@ fn parse_test_template(
             doc,
             ValidationError::AttributeRuleViolated {
                 element: root_element.into(),
-                attr: "matcher".into(),
-                value: matchers.len().to_string(),
+                attr: format!("matcher count {}", matchers.len()),
+                value: String::new(),
                 rule: one_matcher.into(),
             },
         ));
@@ -2338,8 +2340,8 @@ impl MatcherReader<'_> {
                         doc,
                         ValidationError::AttributeRuleViolated {
                             element: element.to_string(),
-                            attr: "matcher".into(),
-                            value: items.len().to_string(),
+                            attr: format!("matcher count {}", items.len()),
+                            value: String::new(),
                             rule: rule.to_string(),
                         },
                     ));
@@ -2385,8 +2387,8 @@ impl MatcherReader<'_> {
                         doc,
                         ValidationError::AttributeRuleViolated {
                             element: element.to_string(),
-                            attr: "matcher".into(),
-                            value: case.len().to_string(),
+                            attr: format!("matcher count {}", case.len()),
+                            value: String::new(),
                             rule: "at most one matcher: the matcher of the case's record, or \
                                    none when the case holds none"
                                 .into(),
@@ -2583,7 +2585,7 @@ fn parse_test_configuration(
             doc,
             ValidationError::AttributeRuleViolated {
                 element: "<sce:mtc>".into(),
-                attr: "(element)".into(),
+                attr: format!("element count {}", mtcs.len()),
                 value: String::new(),
                 rule: "exactly one <sce:mtc>: a test case has one main test component".into(),
             },
@@ -2745,8 +2747,8 @@ fn parse_test_configuration(
                 doc,
                 ValidationError::AttributeRuleViolated {
                     element: "<sce:connect>".into(),
-                    attr: "endpoint".into(),
-                    value: endpoints.len().to_string(),
+                    attr: format!("endpoint count {}", endpoints.len()),
+                    value: String::new(),
                     rule: "exactly two <sce:endpoint>: a connect joins one component port to \
                            another"
                         .into(),

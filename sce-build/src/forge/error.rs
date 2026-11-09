@@ -762,7 +762,14 @@ pub enum ValidationError {
     /// `sce:window="0"` where a positive integer is required. `rule` says
     /// what a legal value satisfies, and rides the wire as `expected`
     /// with no fix: the producer knows the rule, not the value meant.
-    #[error("{element}: invalid {attr} value '{value}' (expected: {rule})")]
+    ///
+    /// `value` is the value as written, the record's `actual`. It is empty
+    /// where no written value breaks the rule — a count of children, an
+    /// element as a whole — and the record then carries no `actual`
+    /// (SCE_ERROR_CONTRACT.md §2.1): a count is no text of the document.
+    /// `attr` then names what breaks the rule, a count with the number it
+    /// came to (`matcher count 2`), so the message still says it.
+    #[error("{}", attribute_rule_message(.element, .attr, .value, .rule))]
     AttributeRuleViolated {
         element: String,
         attr: String,
@@ -6176,6 +6183,16 @@ fn atomic_width_contradiction_message(
          SCE Protocol-Synthesis RFC §5.P: {rule}. \
          Repair: {repair}."
     )
+}
+
+/// The sentence of [`ValidationError::AttributeRuleViolated`]: the value as
+/// written when one breaks the rule, and what breaks it alone when none does.
+fn attribute_rule_message(element: &str, attr: &str, value: &str, rule: &str) -> String {
+    if value.is_empty() {
+        format!("{element}: invalid {attr} (expected: {rule})")
+    } else {
+        format!("{element}: invalid {attr} value '{value}' (expected: {rule})")
+    }
 }
 
 fn exactly_one_attribute_message(

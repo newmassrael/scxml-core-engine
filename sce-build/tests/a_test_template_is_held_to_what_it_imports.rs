@@ -240,17 +240,20 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
         DiagnosticCode::ValidationInvalidAttribute,
         Some("cheque"),
     ),
+    // How many matchers a case holds is a count, no text of the document.
     (
         "refused_payment_case_without_matcher.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("0"),
+        None,
     ),
     (
         "refused_payment_empty_case_with_matcher.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("1"),
+        None,
     ),
-    // A template-ref and the template it names.
+    // A template-ref and the template it names. How many arguments it binds
+    // is a count, and the cycle a path across documents: neither is text of
+    // the line, and each is the message's.
     (
         "refused_line_reference_of_another_type.scxml",
         DiagnosticCode::TestProfileMatcherType,
@@ -259,7 +262,7 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_line_reference_arity.scxml",
         DiagnosticCode::TestProfileTemplateParameter,
-        Some("0"),
+        None,
     ),
     (
         "refused_line_reference_argument_type.scxml",
@@ -269,20 +272,34 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_reference_cycle_there.scxml",
         DiagnosticCode::ValidationCrossKindCircularDependency,
-        Some(
-            "refused_reference_cycle_back.scxml → refused_reference_cycle_there.scxml → \
-             refused_reference_cycle_back.scxml",
-        ),
+        None,
     ),
     (
         "refused_reference_cycle_back.scxml",
         DiagnosticCode::ValidationCrossKindCircularDependency,
-        Some(
-            "refused_reference_cycle_there.scxml → refused_reference_cycle_back.scxml → \
-             refused_reference_cycle_there.scxml",
-        ),
+        None,
     ),
 ];
+
+/// A cycle of references is named in the message, by the `src` of each
+/// import on it, and the refusal stands on the reference that leads into
+/// it: the `<sce:template-ref>` of the checked template.
+#[test]
+fn a_reference_cycle_is_named_in_the_message_of_the_reference_that_closes_it() {
+    let err =
+        checked_in(&imports_dir(), "refused_reference_cycle_there.scxml").expect_err("refused");
+    let diagnostic = &err.error.to_diagnostics()[0];
+    assert_eq!(diagnostic.actual, None, "{err:?}");
+    assert!(
+        diagnostic.message.contains(
+            "refused_reference_cycle_back.scxml → refused_reference_cycle_there.scxml → \
+             refused_reference_cycle_back.scxml"
+        ),
+        "{}",
+        diagnostic.message
+    );
+    assert_eq!(err.location.line, Some(9));
+}
 
 #[test]
 fn each_rule_the_imports_decide_is_refused_with_its_own_code() {

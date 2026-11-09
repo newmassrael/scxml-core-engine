@@ -635,7 +635,10 @@ Concretely:
   to be one code carrying one comma-joined string, and the wire split
   the string on commas into candidates — so a rule such as "rational
   literal: integer, decimal, or `num/denom`" reached consumers as three
-  replacement values (measured 2026-09-21: ~100 of 134 sites).
+  replacement values (measured 2026-09-21: ~100 of 134 sites). A rule no
+  written value breaks — how many children an element holds, as a
+  `<sce:value-list>` of one matcher — carries no `actual`: the count is
+  no text of the document, and the message states it.
 
 Consumers that want "the closed set of legal values" should always read
 `fix`. Consumers that want "what the producer was grammatically expecting

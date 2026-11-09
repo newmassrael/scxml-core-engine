@@ -253,7 +253,8 @@ fn a_test_case_and_a_suite_read_as_what_they_name() {
 
 /// Every refusal of what one document of the profile states alone, by the
 /// fixture that breaks it: its code, and the value the record names as
-/// `actual` where the rule names one.
+/// `actual` where the rule names one. A refusal of how many children an
+/// element holds names none (`a_count_of_children_is_no_actual`).
 const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     // §11.2, §11.3: the port type.
     (
@@ -290,12 +291,12 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_template_two_matchers.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("2"),
+        None,
     ),
     (
         "refused_template_no_matcher.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("0"),
+        None,
     ),
     (
         "refused_template_parameter_out.scxml",
@@ -315,12 +316,12 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_template_value_list_of_one.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("1"),
+        None,
     ),
     (
         "refused_template_empty_complement.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("0"),
+        None,
     ),
     (
         "refused_template_field_missing.scxml",
@@ -390,7 +391,7 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_template_union_case_of_two.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("2"),
+        None,
     ),
     (
         "refused_template_range_bound_twice.scxml",
@@ -451,7 +452,7 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
     (
         "refused_configuration_connect_of_one.scxml",
         DiagnosticCode::ValidationAttributeRuleViolated,
-        Some("1"),
+        None,
     ),
     (
         "refused_configuration_system_port_twice.scxml",
@@ -585,6 +586,46 @@ fn every_refusal_fixture_is_judged() {
         .collect();
     judged.sort();
     assert_eq!(on_disk, judged);
+}
+
+/// A rule broken by how many children an element holds names no token: a
+/// count is no text of the document, so the record carries no `actual`
+/// (SCE_ERROR_CONTRACT.md §2.1), and its message says the count.
+#[test]
+fn a_count_of_children_is_no_actual() {
+    for (name, said) in [
+        ("refused_template_no_matcher.scxml", "matcher count 0"),
+        ("refused_template_two_matchers.scxml", "matcher count 2"),
+        (
+            "refused_template_value_list_of_one.scxml",
+            "matcher count 1",
+        ),
+        ("refused_template_empty_complement.scxml", "matcher count 0"),
+        (
+            "refused_template_union_case_of_two.scxml",
+            "matcher count 2",
+        ),
+        (
+            "refused_configuration_connect_of_one.scxml",
+            "endpoint count 1",
+        ),
+        ("refused_configuration_two_mtcs.scxml", "element count 2"),
+    ] {
+        let text = read(&fixture(name));
+        let err = parse_forge_with_imports(&text, label(name)).expect_err("refused");
+        let diagnostic = &err.error.to_diagnostics()[0];
+        assert_eq!(
+            diagnostic.code.as_str(),
+            DiagnosticCode::ValidationAttributeRuleViolated.as_str(),
+            "{name}: {err:?}"
+        );
+        assert_eq!(diagnostic.actual, None, "{name}: {err:?}");
+        assert!(
+            diagnostic.message.contains(said),
+            "{name}: {}",
+            diagnostic.message
+        );
+    }
 }
 
 /// A refusal is placed on the row of the value it names.
