@@ -6,3 +6,9 @@ commit = "b892375e41391752ebece7a8b8657c99b175903b"
 base = "44d066709144eb41cf688f402c932a48fdd9723f"
 machine = "mf977c53d872e"
 at = 1794184745
+
+[return]
+reason = "conflict"
+detail = "SCE_MESH.md"
+report = "mf977c53d872e:0000000057-62f4792f830a/attempt-3.log"
+at = 1794188703
