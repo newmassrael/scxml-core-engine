@@ -185,11 +185,12 @@ impl Network {
     }
 }
 
-/// The write the machine of `node` sends of row `id`.
+/// The change of one write the machine of `node` sends of row `id`.
 fn write(id: u32, node: u64) -> CString {
     CString::new(format!(
-        "{{\"id\":{id},\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"{}\",\
-         \"counter\":0,\"nodeId\":\"{node}\"}}",
+        "{{\"by\":\"{node}\",\"wallTime\":\"{}\",\"counter\":0,\"ops\":[\
+         {{\"kind\":0,\"id\":{id},\"field\":3,\"value\":\"1\",\"text\":\"\",\
+         \"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}}]}}",
         1000 * id
     ))
     .unwrap()
@@ -208,7 +209,7 @@ unsafe fn send(peer: *mut ScePeer, id: u32, node: u64) {
         assert_eq!(
             sce_peer_outbound(
                 peer,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 data.as_ptr(),
                 &mut kept,
                 &mut reason
@@ -239,14 +240,16 @@ unsafe fn device(name: &CString, node: u64, seed: [u8; 32]) -> *mut ScePeer {
     }
 }
 
-/// Whether `outcome` tells the machine a write that `node` stamped.
+/// Whether `outcome` tells the machine a change that `node` made.
 fn tells_a_write_of(outcome: &Value, node: u64) -> bool {
-    let stamp = format!("\"nodeId\":\"{node}\"");
+    let stamp = format!("\"by\":\"{node}\"");
     outcome["events"]
         .as_array()
         .expect("an outcome's events are a list")
         .iter()
-        .any(|event| event[0] == "record_list.write" && event[1].as_str().unwrap().contains(&stamp))
+        .any(|event| {
+            event[0] == "record_list.change" && event[1].as_str().unwrap().contains(&stamp)
+        })
 }
 
 #[test]
