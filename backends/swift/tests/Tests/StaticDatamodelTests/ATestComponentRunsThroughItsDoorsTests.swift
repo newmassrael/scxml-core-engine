@@ -78,7 +78,12 @@ private final class Responder: SystemAdapter {
         }
         seen.requested.append(request.job)
         let reply = JobReplyPayload(job: job ?? request.job, code: code)
-        pending.append((at: now + answerDelay, message: Message(event: JobReply.eventName, value: reply)))
+        // The reply's canonical form in the test log is the one the unit of a template over its record
+        // writes.
+        let message = Message.of(
+            event: JobReply.eventName, value: reply, typeName: ReplyOk.TYPE,
+            canonical: { ReplyOk.canonical($0) })
+        pending.append((at: now + answerDelay, message: message))
     }
 
     func nextInput() -> TestInstant? {

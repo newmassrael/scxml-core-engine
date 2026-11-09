@@ -17300,14 +17300,26 @@ impl StaticTarget for SwiftTarget {
             ),
         })
     }
-    // The specific template's `value`, which the send hands its processor as the
-    // request's value (`HostSendRequest.value`, a `HostSendValue`,
-    // `swift/actions/send.swift.jinja2`).
+    // The specific template's `value`, with the name of its record type and the
+    // unit's writer of its canonical form in the test log
+    // (docs/SCE_TEST_PROFILE.md §12.5), which the send hands its processor as
+    // the request's value (`HostSendRequest.value`, a `HostSendValue`,
+    // `swift/actions/send.swift.jinja2`): a `MessageValue`, which is `Equatable`
+    // and `Sendable` as the request's value is. A sent template is over the
+    // record of a message, so its unit writes both (`TYPE` and `canonical`,
+    // `forge/swift/test_template.swift.jinja2`). The writer is a closure over the
+    // unit's `canonical`, which captures nothing and so is `@Sendable` where the
+    // runtime's `messageValue` takes it. The runtime is named by its module, so
+    // no declaration of the machine's module can hide it.
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = |name: &str| swift_test_template(&message.unit, name);
         Some(format!(
-            "{}({})",
-            swift_test_template(&message.unit, "value"),
-            args.join(", ")
+            "{}.messageValue({}({}), {}, {{ sceSent in {}(sceSent) }})",
+            crate::std_imports::SWIFT_TEST_RUNTIME_MODULE,
+            unit("value"),
+            args.join(", "),
+            unit("TYPE"),
+            unit("canonical")
         ))
     }
     // No line: every unit is a file of the machine's module, named by its enum

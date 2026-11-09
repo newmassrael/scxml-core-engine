@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+import Foundation
 import SceRuntime
 import SceTestProfile
 import StaticDatamodelMachines
@@ -59,7 +60,12 @@ private final class Responder: SystemAdapter {
         }
         requested.jobs.append(request.job)
         let reply = JobReplyPayload(job: request.job, code: code)
-        pending.append((at: now + answerDelay, message: Message(event: JobReply.eventName, value: reply)))
+        // The reply's canonical form in the test log is the one the unit of a template over its record
+        // writes.
+        let message = Message.of(
+            event: JobReply.eventName, value: reply, typeName: ReplyOk.TYPE,
+            canonical: { ReplyOk.canonical($0) })
+        pending.append((at: now + answerDelay, message: message))
     }
 
     func nextInput() -> TestInstant? {
@@ -95,6 +101,24 @@ private func names(_ results: [CaseResult]) -> [String] {
 /// Whether the log of `result` records a line of `kind`.
 private func logged(_ result: CaseResult, _ kind: LogKind) -> Bool {
     result.result.log.contains { $0.kind == kind }
+}
+
+/// The test log every runtime writes of `answers_the_job` in a world with no feature, answered with
+/// success: one file the Rust, C++ and Kotlin runs are held to (`a_generated_test_case_writes_its_test_log`
+/// in backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs), read where it is, so the
+/// agreement of the backends is one set of bytes. The file ends in one newline, which no canonical text
+/// holds.
+private func answersTheJobLog() throws -> String {
+    var url = URL(fileURLWithPath: #filePath)
+    // The file, then StaticDatamodelTests, Tests, tests, swift and backends.
+    for _ in 0..<6 {
+        url.deleteLastPathComponent()
+    }
+    let path = url.appendingPathComponent(
+        "sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json")
+    let text = try String(contentsOf: path, encoding: .utf8)
+    XCTAssertTrue(text.hasSuffix("\n") && !text.hasSuffix("\n\n"), "the shared log ends in one newline")
+    return String(text.dropLast())
 }
 
 final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
@@ -135,6 +159,20 @@ final class ATestSuiteRunsThroughItsRunnerTests: XCTestCase {
         XCTAssertEqual(only.result.verdict, .fail, "\(only.result.log)")
         XCTAssertEqual(only.result.endedAt, second, "time advances to the timer's instant")
         XCTAssertTrue(logged(only, .timeout))
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in its one canonical text,
+    /// the bytes of the shared file the Rust, C++ and Kotlin runs are held to. The request the component
+    /// sends carries the value its template's unit writes, the job of the suite's module parameter; the
+    /// reply arrives at 500 and is taken in that round, which stops the timer, passes and ends the MTC.
+    func testAGeneratedTestCaseWritesItsTestLog() throws {
+        let results = try runTheSuite([], code: 0, requested: Requested())
+        XCTAssertEqual(names(results), ["answers_the_job"])
+        let only = try XCTUnwrap(results.first)
+        let log = only.canonicalLog(suite: "runtime_suite")
+        // Compared by bytes: Swift's `==` on a `String` holds two canonically equivalent texts equal,
+        // which two logs that agree under C3 are not.
+        XCTAssertEqual(Array(log.utf8), Array(try answersTheJobLog().utf8), log)
     }
 
     /// §11.8: a world runs the test cases whose selection it satisfies, in the suite's order: `ptcs` alone

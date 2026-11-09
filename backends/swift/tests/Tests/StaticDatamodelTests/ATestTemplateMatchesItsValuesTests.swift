@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
+import SceRuntime
 import XCTest
 
 @testable import StaticDatamodelMachines
@@ -204,5 +205,36 @@ final class ATestTemplateMatchesItsValuesTests: XCTestCase {
         other[3] = 0xA1
         XCTAssertFalse(
             VoucherIs.matches(VoucherPaymentPayload(voucher_code: other)), "other octets do not match")
+    }
+
+    /// The bytes of the canonical text of `value`, which two logs agree by.
+    private func canonicalBytes(_ value: JSONValue) throws -> [UInt8] {
+        Array(try writeCanonicalJSON(value).utf8)
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.5: each unit's `canonical` writes its record by the types its
+    /// documents declare, in the JSON Canonicalization Scheme: every integer as the text of its digits, a
+    /// list as an array in order, an absent field omitted and a present one written, an enum by its
+    /// declared name, a byte string in upper-case hex. `TYPE` is the unit name of the record's event
+    /// schema.
+    func testARecordsCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare() throws {
+        XCTAssertEqual(
+            try canonicalBytes(JobReport.canonical(JobReport.value())),
+            Array("{\"codes\":[\"7\"],\"count\":\"1\",\"elapsed_ms\":\"0\",\"note\":\"started on time\"}".utf8))
+        let retried = JobStatusPayload(
+            elapsed_ms: 4_294_967_295, note: nil, codes: [], tag: 3, retry: 2, count: 0)
+        XCTAssertEqual(
+            try canonicalBytes(JobReport.canonical(retried)),
+            Array(
+                "{\"codes\":[],\"count\":\"0\",\"elapsed_ms\":\"4294967295\",\"retry\":\"2\",\"tag\":\"3\"}".utf8))
+        XCTAssertEqual(
+            try canonicalBytes(OrderLineExact.canonical(OrderLineExact.value())),
+            Array("{\"color\":\"red\",\"quantity\":\"2\",\"sku\":\"A-1\"}".utf8))
+        XCTAssertEqual(
+            try canonicalBytes(VoucherIs.canonical(VoucherIs.value())),
+            Array("{\"voucher_code\":\"00FF10A0\"}".utf8))
+        XCTAssertEqual(JobReport.TYPE, "job_status")
+        XCTAssertEqual(OrderLineExact.TYPE, "order_line")
+        XCTAssertEqual(VoucherIs.TYPE, "voucher_payment")
     }
 }

@@ -69,6 +69,11 @@ fn holds_each(text: &str, parts: &[&str]) {
 /// The import of the profile's runtime, which counts a text's characters.
 const TEST_RUNTIME_IMPORT: &str = "\nimport SceTestProfile\n";
 
+/// The imports of a unit that writes its record's canonical form: the Swift
+/// runtime, whose `JSONValue` the form is, and the profile's, whose writers
+/// write it.
+const CANONICAL_IMPORTS: &str = "\nimport SceRuntime\nimport SceTestProfile\n";
+
 /// Every accepted template the profile's fixtures hold that Swift generates:
 /// its document, the unit it is written as, and whether it is specific
 /// (docs/SCE_TEST_PROFILE.md §6.2). The two over a union are among them, since
@@ -190,9 +195,11 @@ fn a_specific_templates_value_is_its_record() {
             "value.tag == nil && value.retry == nil && value.count == 1",
         ],
     );
-    // No text is counted, so the runtime is not imported.
-    assert!(!report.contains("import SceTestProfile"), "{report}");
-    assert!(!report.contains("\nimport "), "{report}");
+    // No text is counted, but the unit writes its record's canonical form, so
+    // it imports the runtime of the writers and of their `JSONValue`, and
+    // nothing else.
+    holds_each(&report, &[CANONICAL_IMPORTS]);
+    assert_eq!(report.matches("\nimport ").count(), 2, "{report}");
 
     let report_of = unit_of(&profile_dir(), "job_report_of", "JobReportOf");
     holds_each(
@@ -244,7 +251,7 @@ fn an_enum_a_reference_and_bytes_are_spelled_by_their_units() {
 
 /// A range's literal bound at its type's own limit is left out, since it holds
 /// every value; a length counts a text's characters through the profile's
-/// runtime; a template that counts no text imports nothing.
+/// runtime; a template over no record that counts no text imports nothing.
 #[test]
 fn a_range_bound_at_the_limit_is_left_out_and_a_text_length_counts_characters() {
     let example = unit(&kind_example(), "TestTemplate");
@@ -276,6 +283,110 @@ fn a_range_bound_at_the_limit_is_left_out_and_a_text_length_counts_characters() 
         ],
     );
     assert!(!at_most.contains("\nimport "), "{at_most}");
+}
+
+/// The runtime's writers of the canonical form of a value in the test log.
+const CANONICAL: &str = "SceTestProfile.Canonical";
+
+/// The type of a value's canonical form, named by its module.
+const CANONICAL_VALUE: &str = "SceRuntime.JSONValue";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form in the test log by the types the
+/// schema declares, each field by its declared id, an optional one through its
+/// `map`; a template over another type writes none, and imports the runtime
+/// of none. The type's name is the one the Rust and Kotlin units write for the
+/// same record.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, unit_name, _) in templates() {
+        let text = unit(&path, unit_name);
+        let over_record = !matches!(
+            unit_name,
+            "ElapsedAtMost" | "ShapeIsCircle" | "QuantityAtMost" | "QuantityTwo"
+        );
+        assert_eq!(
+            text.contains(&format!(
+                "\n    public static func canonical(_ value: Value) -> {CANONICAL_VALUE} {{\n"
+            )),
+            over_record,
+            "{unit_name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        assert_eq!(
+            text.contains(CANONICAL_IMPORTS),
+            over_record,
+            "{unit_name}: the unit imports the runtime of the form exactly where it writes one:\n{text}"
+        );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        let record = match unit_name {
+            "EveryMatcher" | "JobReport" | "JobReportOf" | "ReportWithin" => Some("job_status"),
+            "OrderLineExact" | "OrderLineBounded" => Some("order_line"),
+            "CardWithin" => Some("card_payment"),
+            "VoucherIs" => Some("voucher_payment"),
+            "OrderPlacedMatch" => Some("order_placed"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "TestTemplate" => Some("event_schema"),
+            _ => None,
+        };
+        assert_eq!(
+            record.is_some(),
+            over_record,
+            "{unit_name}: a record template is named here"
+        );
+        if let Some(record) = record {
+            holds_each(
+                &text,
+                &[format!("\n    public static let TYPE: String = \"{record}\"\n").as_str()],
+            );
+        }
+    }
+    let report = unit_of(&profile_dir(), "job_report", "JobReport");
+    let c = CANONICAL;
+    let v = CANONICAL_VALUE;
+    let written = format!(
+        "\n        return {c}.record((\"elapsed_ms\", {c}.integer(value.elapsed_ms)), \
+         (\"note\", value.note.map {{ present_0 -> {v} in {c}.text(present_0) }}), \
+         (\"codes\", {c}.list(value.codes.map {{ item_0 -> {v} in {c}.integer(item_0) }})), \
+         (\"tag\", value.tag.map {{ present_0 -> {v} in {c}.integer(present_0) }}), \
+         (\"retry\", value.retry.map {{ present_0 -> {v} in {c}.integer(present_0) }}), \
+         (\"count\", {c}.integer(value.count)))\n"
+    );
+    holds_each(&report, &[written.as_str()]);
+}
+
+/// The canonical form of a record that holds a list of records, an enum, a
+/// nested record and a union: each element's fields read through its
+/// closure's parameter, an enum by its `declaredName`, a byte string as its
+/// octets, and a union through a `switch` over its enum's cases in a closure
+/// called where it stands, each pattern binding the case's record and a case
+/// that holds none written as the empty object. Swift lowers a union
+/// (`codegen_matrix::UNION_BACKENDS`), so the template is generated.
+#[test]
+fn a_records_canonical_form_reaches_every_type_it_holds() {
+    let placed = unit_of(&imports_dir(), "order_placed_match", "OrderPlacedMatch");
+    let c = CANONICAL;
+    let v = CANONICAL_VALUE;
+    let lines = format!(
+        "(\"lines\", {c}.list(value.lines.map {{ item_0 -> {v} in \
+         {c}.record((\"sku\", {c}.text(item_0.sku)), \
+         (\"quantity\", {c}.integer(item_0.quantity)), \
+         (\"color\", {c}.enumerated(item_0.color.declaredName))) }}))"
+    );
+    let customer = format!(
+        "(\"customer\", {c}.record((\"full_name\", {c}.text(value.customer.full_name)), \
+         (\"vip\", {c}.boolean(value.customer.vip))))"
+    );
+    let paid = format!(
+        "(\"payment\", {{ () -> {v} in switch value.payment {{ \
+         case OrderPayment.card(let case_0): return {c}.unionCase(\"card\", \
+         {c}.record((\"last4\", {c}.text(case_0.last4)), \
+         (\"amount\", {c}.integer(case_0.amount)))); \
+         case OrderPayment.cash: return {c}.unionCase(\"cash\", nil); \
+         case OrderPayment.voucher(let case_0): return {c}.unionCase(\"voucher\", \
+         {c}.record((\"voucher_code\", {c}.bytes(case_0.voucher_code)))) }} }}())"
+    );
+    holds_each(&placed, &[lines.as_str(), customer.as_str(), paid.as_str()]);
 }
 
 /// The detail of a `generate/unsupported-feature` refusal.
