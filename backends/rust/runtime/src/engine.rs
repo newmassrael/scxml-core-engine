@@ -5939,7 +5939,7 @@ fn exit_interpreter(host: &mut dyn MainLoop) {
 /// from call to call.
 struct Turn<'a> {
     host: &'a mut dyn MainLoop,
-    tables: &'static DocumentTables,
+    tables: &'static DocumentTables<'static>,
     enabled: microstep::SliceVec<'a, TransitionId>,
     scratch: microstep::Scratch<'a>,
 }
