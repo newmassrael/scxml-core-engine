@@ -5375,6 +5375,97 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
     place_path(&parse_to_ast(text.trim()).ok()?)
 }
 
+/// What [`composed_text_read`] asks of the lowering that reads an expression:
+/// whether a path is one it spells for itself (a variable, a field of a record
+/// variable or of a loop's record item), which it reads where the target holds
+/// it, and whether a name is the item of a loop over a list a place holds, a
+/// part of a composed value.
+pub(crate) struct ComposedParts<'a> {
+    pub renamed: &'a dyn Fn(&str) -> bool,
+    pub item_of_a_place: &'a dyn Fn(&str) -> bool,
+}
+
+/// The first read in `expr`, typed in `ctx`, of a text or a byte string as a
+/// value at a place a composed value holds (docs/adr/0086, section 6.1): a
+/// field, an element or a present value below the payload of an event whose
+/// schema holds a composition, or the item of a loop over a list a place holds
+/// and any place below it, as it is written. A path the lowering spells for
+/// itself ([`ComposedParts::renamed`]) is none of these. `None` for an
+/// expression that reads none, or that does not type.
+pub(crate) fn composed_text_read(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    parts: &ComposedParts<'_>,
+) -> Option<String> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return None;
+    }
+    let ast = resolve(expr, ctx).ok()?;
+    first_composed_text_read(&ast, ctx, parts, expr)
+}
+
+/// [`composed_text_read`] over `node` and every node below it, `source` the
+/// expression's text.
+fn first_composed_text_read(
+    node: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    parts: &ComposedParts<'_>,
+    source: &str,
+) -> Option<String> {
+    if matches!(node.ty, InferredType::Str | InferredType::Bytes) {
+        if let Some(path) = place_path(node) {
+            if held_by_a_composed_value(&path, ctx, parts) {
+                return Some(
+                    node.span
+                        .clone()
+                        .and_then(|span| source.get(span))
+                        .map_or(path, str::to_string),
+                );
+            }
+        }
+    }
+    node.children()
+        .into_iter()
+        .find_map(|child| first_composed_text_read(child, ctx, parts, source))
+}
+
+/// Whether the place `path` names is held by a composed value: a place below
+/// the payload with a composed value on the way to it, or the item of a loop
+/// over a list a place holds or a place below it, which no rename spells.
+fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, parts: &ComposedParts<'_>) -> bool {
+    if (parts.renamed)(path) {
+        return false;
+    }
+    let payload = crate::forge::event_schema_check::EVENT_DATA_PATH;
+    let element = crate::forge::value_path::ELEMENT;
+    match path.strip_prefix(payload) {
+        Some(rest) if rest.is_empty() || rest.starts_with('.') || rest.starts_with(element) => {
+            // Every place from the payload to the one read, that one left out:
+            // each step opens with a `.` or an element's `[]`.
+            std::iter::once(0)
+                .chain(
+                    rest.char_indices()
+                        .filter(|(at, c)| *c == '.' || rest[*at..].starts_with(element))
+                        .map(|(at, _)| at),
+                )
+                .map(|at| &path[..payload.len() + at])
+                .any(|holder| {
+                    ctx.value_of(holder).is_some_and(|place| {
+                        crate::forge::value_path::holds_composition(ctx.value_scope, &place)
+                    })
+                })
+        }
+        _ => {
+            let root = path
+                .split(|c: char| c == '.' || c == '[')
+                .next()
+                .unwrap_or(path);
+            (parts.item_of_a_place)(root)
+        }
+    }
+}
+
 fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
     match &expr.kind {
         ExprKind::Ident(name) => Some(name.clone()),
@@ -11754,8 +11845,23 @@ enum CFailedRead {
     /// The empty string: a function that takes a string must never be handed a null pointer.
     Text,
     /// A zeroed value of the field's own type: a byte string is a struct, and a conditional
-    /// whose arms are a struct and 0 does not compile.
+    /// whose arms are a struct and 0 does not compile. So is a list, an element of a list of
+    /// lists a composed value holds (docs/adr/0086, section 6.1), which reads as empty.
     Aggregate,
+    /// The absent value of an element that may be absent, a struct of its flag and its value
+    /// (docs/adr/0055, section 5).
+    Absent,
+}
+
+/// What a checked index read in C gives when it records a failure, by the type of what it
+/// reads: a zeroed struct of a byte string or a list, the absent value of a value that may be
+/// absent, and 0 for every other.
+fn c_failed_part(read: InferredType) -> CFailedRead {
+    match read {
+        InferredType::Bytes | InferredType::List(_) => CFailedRead::Aggregate,
+        InferredType::Optional(_) => CFailedRead::Absent,
+        _ => CFailedRead::Zero,
+    }
 }
 
 /// A checked index read in C (SCE_FORGE.md §3.4.1), with `field` — empty, or
@@ -11789,6 +11895,7 @@ fn c_checked_index(
         // A designated initializer: `{0}` over a struct whose first member is an array is
         // `-Wmissing-braces`, and the rest of the value is zeroed all the same.
         CFailedRead::Aggregate => format!("(__typeof__({read})){{ .len = 0 }}"),
+        CFailedRead::Absent => format!("(__typeof__({read})){{ .present = false }}"),
     };
     Ok(format!(
         "(sce_forge_checked_index_from_{from}(&sce_failure_, {idx}, {len}) ? {read} : {failed})"
@@ -12033,8 +12140,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             let failed = match expr.ty {
                 InferredType::Str => CFailedRead::Text,
-                InferredType::Bytes => CFailedRead::Aggregate,
-                _ => CFailedRead::Zero,
+                other => c_failed_part(other),
             };
             c_checked_index(left, index, &format!(".{property}"), failed)?
         }
@@ -12146,7 +12252,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => c_checked_index(left, index, "", CFailedRead::Zero)?,
+        } => c_checked_index(left, index, "", c_failed_part(expr.ty))?,
         // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
         // width, which records a failure in the body's `sce_failure_` and
         // yields 0; the statement around it returns that failure. C has no

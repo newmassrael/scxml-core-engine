@@ -442,6 +442,27 @@ pub fn resolve_narrowed<'r>(
     walk_narrowed(base, root, Some(&path[..at]), &steps(&path[at..])?, facts)
 }
 
+/// Whether the place `at` holds a composed value whose parts are places of
+/// their own (docs/adr/0086, section 1.1): a list, a union, a value that may be
+/// absent of one of those or of a record, or a record a field of which is one
+/// of those or a record. A record of entries alone holds none: its fields are
+/// the entries a schema has always held. A record the scope does not resolve
+/// holds none that can be named.
+pub fn holds_composition(base: Option<&TypeScope>, at: &Place) -> bool {
+    fn composed(ty: &ValueType) -> bool {
+        match ty {
+            ValueType::List { .. } | ValueType::Record { .. } | ValueType::Union { .. } => true,
+            ValueType::Optional { elem } => composed(elem),
+            ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => false,
+        }
+    }
+    match &at.ty {
+        ValueType::Record { alias } => record_at(base, at, alias)
+            .is_some_and(|record| record.fields.iter().any(|(_, ty)| composed(ty))),
+        other => composed(other),
+    }
+}
+
 /// The fields of the record the place `at` holds, by id; `None` for a value
 /// that is no record, or whose record the scope does not resolve.
 pub fn record_fields(base: Option<&TypeScope>, at: &Place) -> Option<Vec<String>> {

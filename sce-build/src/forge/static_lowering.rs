@@ -1664,6 +1664,27 @@ pub trait StaticTarget {
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
         None
     }
+    /// Whether what [`Self::composed_send_spelling`] writes a composed value a
+    /// `<param>` carries as is the statements that write it where the pair the
+    /// `<send>` opens stands ([`crate::model::Param::native_writes`]), rather
+    /// than a value the target holds a param in. A target that writes so lowers
+    /// a composed value a `<send>`'s `<param>` carries, and refuses one by name
+    /// wherever else a value is written: an `<invoke>`'s `<param>`, a
+    /// `<donedata>`, a `<content expr>` and a send a host serves, whose request
+    /// carries each value as text too.
+    fn composed_param_writes(&self) -> bool {
+        false
+    }
+    /// Whether an expression reads, as a value, a text or a byte string a
+    /// composed value holds at any depth (docs/adr/0086, section 6.1): its
+    /// length, a comparison of it, a send of it as a scalar param. A target
+    /// that holds such a text in a buffer of its bound that no expression of
+    /// it reads as a text (C11, whose expressions read a text as a pointer)
+    /// reads it whole only (a copy, a send of the value that holds it), and
+    /// refuses such a read by name where the expression is lowered.
+    fn reads_composed_text(&self) -> bool {
+        true
+    }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -6145,6 +6166,7 @@ pub fn lower(
         payload_enum_paths: Default::default(),
         payload_fields: Default::default(),
         loop_records: Default::default(),
+        place_items: Default::default(),
         lists: list_vars,
         strings: string_vars,
         bytes: bytes_vars,
@@ -6659,6 +6681,11 @@ pub fn lower(
                     let host_served = info.host_served;
                     for param in &mut info.base.params {
                         lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                        composed_writes_unlowered(
+                            &format!("{element} <param name=\"{}\">", param.name),
+                            param.native_writes,
+                            &rewrites,
+                        )?;
                         // docs/adr/0086, section 8.6 (c): the reason a deadline
                         // the machine cannot read quotes its text.
                         if host_served
@@ -6729,6 +6756,11 @@ pub fn lower(
                 );
                 let lowered = lower_wire_value(&view, &plain_ctx, &plain_renames, &rewrites)?;
                 if let Some(value) = lowered {
+                    composed_writes_unlowered(
+                        &format!("<donedata> <content expr=\"{record}\">"),
+                        value.writes,
+                        &rewrites,
+                    )?;
                     done.native_content_value = value.text;
                     done.native_content_value_fails = value.fails;
                     content_json = Some(value.json);
@@ -8490,6 +8522,11 @@ struct Rewrites<'m> {
     /// The record items of the `<foreach>`es the walk is inside, each with the
     /// alias of the schema it holds.
     loop_records: std::cell::RefCell<Vec<(String, String)>>,
+    /// The items of the `<foreach>`es the walk is inside that walk a list a
+    /// place holds rather than a list variable (docs/adr/0086, section 6.1):
+    /// each a part of a composed value, whose texts are held where the
+    /// composed value holds them ([`Self::composed_text_refused`]).
+    place_items: std::cell::RefCell<Vec<String>>,
     lists: ListVars,
     strings: StringVars,
     /// The byte-string variables, each held to its bound as a string is.
@@ -8783,6 +8820,43 @@ impl Rewrites<'_> {
         lower(&rewrite.text, &local)
     }
 
+    /// Refuse by name, for a target that reads no text a composed value holds
+    /// ([`StaticTarget::reads_composed_text`]), an expression `text` that reads
+    /// one as a value (docs/adr/0086, section 7.3): the place is a buffer of its
+    /// bound, which such a target's expressions do not read as a text. A path
+    /// the lowering spells for itself (`renames`) is the target's own reading of
+    /// the place, and is not refused.
+    fn composed_text_refused(
+        &self,
+        text: &str,
+        ctx: &crate::forge::types::TypeCtx<'_>,
+        renames: &HashMap<&str, &str>,
+    ) -> Result<(), Refusal> {
+        if self.target.reads_composed_text() {
+            return Ok(());
+        }
+        let renamed = |path: &str| renames.contains_key(path);
+        let items = self.place_items.borrow();
+        let item_of_a_place = |name: &str| items.iter().any(|item| item == name);
+        let parts = crate::forge::expr::ComposedParts {
+            renamed: &renamed,
+            item_of_a_place: &item_of_a_place,
+        };
+        match crate::forge::expr::composed_text_read(text, ctx, &parts) {
+            None => Ok(()),
+            Some(read) => Err(crate::forge::error::ExprError::UnsupportedConstruct {
+                construct: format!(
+                    "`{read}`, a text or a byte string a composed value holds, read as a value: \
+                     it has no {} lowering yet, and is taken whole only, copied or sent by the \
+                     name of the value that holds it (docs/adr/0086, section 7.3)",
+                    self.target.name()
+                ),
+                observed: Some(read),
+            }
+            .at(None)),
+        }
+    }
+
     /// [`transpile_into_owned`] of `text`, with its state calls rewritten
     /// ([`Self::with_state_calls`]).
     fn owned(
@@ -8792,6 +8866,7 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
+        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             transpile_into_owned(text, target, ctx, renames, slot)
@@ -8836,6 +8911,7 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
+        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             if slot.is_optional() {
@@ -8855,6 +8931,7 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
+        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             transpile_into_receiving(text, target, ctx, renames, slot)
@@ -13470,8 +13547,98 @@ pub(crate) fn c_bytes_storage_type(capacity: u32) -> String {
 
 /// The function that fills the buffer of [`c_bytes_storage_type`] from the view of
 /// bytes already held to the bound.
-fn c_bytes_storage_of(capacity: u32) -> String {
+pub(crate) fn c_bytes_storage_of(capacity: u32) -> String {
     format!("sce_static_bytes_{capacity}_of")
+}
+
+/// The declaration of [`c_bytes_storage_type`] and of its fill function
+/// ([`c_bytes_storage_of`]), under a guard named by the bound: what every
+/// place of the machine that holds a byte string of that bound shares, a
+/// variable, a record's field and a part of a composed value alike.
+pub(crate) fn c_bytes_storage_def(capacity: u32) -> String {
+    let ty = c_bytes_storage_type(capacity);
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    let of = c_bytes_storage_of(capacity);
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
+         typedef struct {{\n    uint8_t data[{capacity}];\n    size_t len;\n}} {ty};\n\n\
+         static inline {ty} {of}(sce_forge_bytes_view_t bytes) {{\n    \
+         {ty} value = {{ {{ 0 }}, 0 }};\n    \
+         for (size_t i = 0; i < bytes.len && i < {capacity}u; ++i) {{\n        \
+         value.data[i] = bytes.data[i];\n    }}\n    \
+         value.len = bytes.len < {capacity}u ? bytes.len : {capacity}u;\n    return value;\n}}\n#endif"
+    )
+}
+
+/// The word the type grammar spells the scalar a C11 machine holds in the C
+/// type `c_type` by (`uint8_t` is `uint8`, `double` is `float64`): what the name
+/// of a list of it and of the optional value of it are made of. `None` for a
+/// type that is no number and no `bool`.
+pub(crate) fn c11_scalar_word(c_type: &str) -> Option<&'static str> {
+    Some(match c_type {
+        "bool" => "bool",
+        "int8_t" => "int8",
+        "int16_t" => "int16",
+        "int32_t" => "int32",
+        "int64_t" => "int64",
+        "uint8_t" => "uint8",
+        "uint16_t" => "uint16",
+        "uint32_t" => "uint32",
+        "uint64_t" => "uint64",
+        "float" => "float32",
+        "double" => "float64",
+        _ => return None,
+    })
+}
+
+/// The C11 type of a list of at most `capacity` values held in the C type
+/// `elem`, `{ size_t len; elem data[capacity]; }`: a list of numbers or truth
+/// values named by the word of its element (`sce_static_list_uint8_4_t`), and
+/// a list of anything else by its element's own type name
+/// (`<machine>_record_item_list_3_t`, `sce_static_string_8_list_4_t`). One name
+/// per shape, whoever holds it (a variable, a record, a payload, a part of a
+/// composed value at any depth), so a value of one place is a value of the
+/// other (docs/adr/0086, section 7.2).
+pub(crate) fn c11_list_type(elem: &str, capacity: u32) -> String {
+    match c11_scalar_word(elem) {
+        Some(word) => format!("sce_static_list_{word}_{capacity}_t"),
+        None => format!("{}_list_{capacity}_t", elem.trim_end_matches("_t")),
+    }
+}
+
+/// The declaration of [`c11_list_type`], under a guard named by it, so every
+/// place that holds a list of one shape declares it once, and of its
+/// constructor from the elements of a list of a smaller bound the build proved
+/// fit it, which a list taken whole into a place of a larger bound is copied by
+/// (docs/adr/0086, section 5.1). `what` is the comment the declaration opens
+/// with. The layout is the library's views' (`.data`, `.len`), which an
+/// expression reads a list by.
+pub(crate) fn c11_list_def(elem: &str, capacity: u32, what: &str) -> String {
+    let ty = c11_list_type(elem, capacity);
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    let of = format!("{}_of", ty.trim_end_matches("_t"));
+    format!(
+        "#ifndef {guard}\n#define {guard}\n/* {what} */\n\
+         typedef struct {{\n    size_t len;\n    {elem} data[{capacity}];\n}} {ty};\n\n\
+         /* The list of the `len` elements at `data`, which the build proved fit its bound. */\n\
+         static inline {ty} {of}(const {elem} *data, size_t len) {{\n    \
+         {ty} value = {{ .len = 0u }};\n    \
+         for (size_t i = 0u; i < len && i < {capacity}u; ++i) {{\n        \
+         value.data[i] = data[i];\n    }}\n    \
+         value.len = len < {capacity}u ? len : {capacity}u;\n    return value;\n}}\n#endif"
+    )
+}
+
+/// The C11 type a machine `machine` holds a record of the schema the
+/// statechart imports as `alias` in: the machine's own, named by its symbol
+/// (its suite prefix included), whether a variable or a composed value holds
+/// it.
+pub(crate) fn c11_record_type(machine: &str, alias: &str) -> String {
+    format!(
+        "{machine}_record_{}_t",
+        filters::to_snake_case(alias.to_string())
+    )
 }
 
 /// C11: a variable is a member of the machine's policy struct (`sm->policy`),
@@ -13589,6 +13756,17 @@ impl CTarget {
     /// machine `machine` holds ([`Self::record_type`]).
     fn optional_record_type(&self, machine: &str, alias: &str) -> Option<String> {
         c11_optional_type(&self.record_type(machine, alias))
+    }
+
+    /// The type each enum the machine `machine` holds is declared as
+    /// ([`StaticTarget::enum_type`]), by the name the statechart holds it by:
+    /// what the C11 walks over a composed value write an enum's declared name
+    /// by ([`crate::forge::composed_lowering::C11Composed`]).
+    fn composed_enums(&self, machine: &str) -> std::collections::BTreeMap<String, String> {
+        self.enums
+            .keys()
+            .filter_map(|alias| Some((alias.clone(), self.enum_type(machine, alias)?)))
+            .collect()
     }
 
     /// The name the document of the enum imported as `alias` declares — the
@@ -14316,6 +14494,23 @@ impl StaticTarget for CTarget {
                 field.sce_type.as_attr()
             ));
         }
+        // A record or a payload that holds a composed value (docs/adr/0086) is a
+        // struct of its schema's fields too ([`crate::forge::composed_lowering::C11Composed`]),
+        // each a member named as the author wrote it, so a name C reserves
+        // cannot be one.
+        if let Some((schema, field)) = model
+            .imported_records
+            .values()
+            .chain(model.imported_event_schemas.values())
+            .filter(|schema| schema.entry_schema().is_err())
+            .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
+            .find(|(_, field)| crate::reader_names::is_reserved_word(Language::C11, &field.id))
+        {
+            return Some(format!(
+                "the field `{}` of `{}`, which holds a composed value, a name C reserves",
+                field.id, schema.name
+            ));
+        }
         if !model.global_scripts.is_empty() {
             return Some("a <script>".to_string());
         }
@@ -14520,10 +14715,39 @@ impl StaticTarget for CTarget {
     // machine's, declared in its header like the payload types, so two machines
     // of one program that import one schema declare two types.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}_record_{}_t",
-            filters::to_snake_case(alias.to_string())
-        )
+        c11_record_type(machine, alias)
+    }
+    // The runtime's payload readers (`sce/event_payload.h`) read each constructor
+    // of a composed payload, through one function of the machine per type that
+    // holds a part, and its wire writer writes each part where it stands
+    // (`sce/forge/wire.h`), into the scratch's slot-sized payload (docs/adr/0086,
+    // section 7.1, the C11 row).
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::C11Composed::new(
+            machine,
+            self.composed_enums(machine),
+        )))
+    }
+    // One spelling for a read and a send: the writer writes the JSON a send
+    // carries as it writes the JSON the inject seam carries.
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        self.composed_spelling(machine)
+    }
+    // C has no value a composed param could be held in until it is written, so
+    // its writer is the statements that write it where its pair stands.
+    fn composed_param_writes(&self) -> bool {
+        true
+    }
+    // A text a composed value holds is a buffer of its bound, which no C
+    // expression reads as the pointer every text expression is.
+    fn reads_composed_text(&self) -> bool {
+        false
     }
     // Plain data by the record rule: a struct of the schema's fields in the
     // schema's order, copied by assignment, and the borrowed view a host reads
@@ -14618,15 +14842,17 @@ impl StaticTarget for CTarget {
     fn list_empty(&self) -> String {
         unreachable!("a C11 list is declared through `bounded_list` or `bounded_record_list`")
     }
-    // The buffer of a list of numbers, of a record's own type: named by the
-    // record and the bound, and declared once beside the record, which is the
-    // machine's alone and so needs no guard.
+    // The buffer of a list of a record's own type: named by the record and the
+    // bound, and declared under a guard of its name, as a list a composed value
+    // holds is ([`c11_list_def`]), so a list variable and a payload's list of
+    // one shape are one type.
     fn bounded_record_list(&self, record: &str, capacity: Option<u32>) -> BoundedList {
         let capacity = capacity.expect("a C11 list has the bound `unsupported` asked of it");
-        let ty = format!("{}_list_{capacity}_t", record.trim_end_matches("_t"));
-        let def = format!(
-            "/* SCE Accepted Subset §2.15: a list of at most {capacity} of `{record}`. */\n\
-             typedef struct {{\n    size_t len;\n    {record} data[{capacity}];\n}} {ty};"
+        let ty = c11_list_type(record, capacity);
+        let def = c11_list_def(
+            record,
+            capacity,
+            &format!("SCE Accepted Subset §2.15: a list of at most {capacity} of `{record}`."),
         );
         BoundedList {
             empty: format!("({ty}){{ 0 }}"),
@@ -14641,14 +14867,15 @@ impl StaticTarget for CTarget {
     // as they do over an algorithm's parameter.
     fn bounded_list(&self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
         let capacity = capacity.expect("a C11 list has the bound `unsupported` asked of it");
-        let ty = format!("sce_static_list_{}_{capacity}_t", elem.as_attr());
-        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-        let def = format!(
-            "#ifndef {guard}\n#define {guard}\n\
-             /* SCE Accepted Subset §2.15: a `list<{elem}>` of at most {capacity}. */\n\
-             typedef struct {{\n    size_t len;\n    {} data[{capacity}];\n}} {ty};\n#endif",
-            crate::forge::generator::c_type(elem),
-            elem = elem.as_attr()
+        let held = crate::forge::generator::c_type(elem);
+        let ty = c11_list_type(held, capacity);
+        let def = c11_list_def(
+            held,
+            capacity,
+            &format!(
+                "SCE Accepted Subset §2.15: a `list<{}>` of at most {capacity}.",
+                elem.as_attr()
+            ),
         );
         BoundedList {
             empty: format!("({ty}){{ 0 }}"),
@@ -14715,23 +14942,10 @@ impl StaticTarget for CTarget {
     // (`sce_forge_bytes_view_t`) built by the reader. `_of` fills it from the view
     // of a value already held to the bound, which a literal's is.
     fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
-        let ty = c_bytes_storage_type(capacity);
-        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-        let of = c_bytes_storage_of(capacity);
-        let def = format!(
-            "#ifndef {guard}\n#define {guard}\n\
-             /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
-             typedef struct {{\n    uint8_t data[{capacity}];\n    size_t len;\n}} {ty};\n\n\
-             static inline {ty} {of}(sce_forge_bytes_view_t bytes) {{\n    \
-             {ty} value = {{ {{ 0 }}, 0 }};\n    \
-             for (size_t i = 0; i < bytes.len && i < {capacity}u; ++i) {{\n        \
-             value.data[i] = bytes.data[i];\n    }}\n    \
-             value.len = bytes.len < {capacity}u ? bytes.len : {capacity}u;\n    return value;\n}}\n#endif"
-        );
         Some(StringStorage {
-            init: format!("{of}({init})"),
-            ty,
-            def,
+            init: format!("{}({init})", c_bytes_storage_of(capacity)),
+            ty: c_bytes_storage_type(capacity),
+            def: c_bytes_storage_def(capacity),
             view: "sce_forge_bytes_view_t".to_string(),
         })
     }
@@ -15425,38 +15639,14 @@ impl StaticTarget for CTarget {
     // the guard of its document, after the enum: two machines of one program
     // that hold the same one declare it once.
     fn optional_def(&self, present: &str, elem: &SceType) -> Option<String> {
-        let name = c11_optional_elem(present)?;
-        let bound = |prefix: &str| -> Option<u32> {
-            present
-                .strip_prefix(prefix)?
-                .strip_suffix("_t")?
-                .parse()
-                .ok()
-        };
-        let (storage, declaration) = match elem {
-            SceType::String => {
-                let bound = bound("sce_static_string_")?;
-                (
-                    c_string_storage_def(bound),
-                    format!("SCE_OPTIONAL_DECLARE_STRING({bound})"),
-                )
-            }
-            SceType::Bytes => {
-                let bound = bound("sce_static_bytes_")?;
-                (
-                    self.bytes_storage(bound, "{ 0 }")?.def,
-                    format!("SCE_OPTIONAL_DECLARE_BYTES({bound})"),
-                )
-            }
-            SceType::Enum(_) => return Some(c11_optional_enum_declaration(&name, present)),
-            _ => return None,
-        };
-        Some(c11_optional_buffer_declaration(
-            &name,
-            present,
-            &storage,
-            &declaration,
-        ))
+        match elem {
+            SceType::String | SceType::Bytes => c11_optional_declaration(present),
+            SceType::Enum(_) => Some(c11_optional_enum_declaration(
+                &c11_optional_elem(present)?,
+                present,
+            )),
+            _ => None,
+        }
     }
     fn optional_import(&self) -> Option<String> {
         Some(C11_OPTIONAL_INCLUDE.to_string())
@@ -15924,33 +16114,58 @@ pub(crate) fn c11_optional_elem(present: &str) -> Option<String> {
     if let Some(document) = present.strip_suffix("_enum_t") {
         return Some(format!("enum_{document}"));
     }
-    let scalar = match present {
-        "bool" => "bool",
-        "int8_t" => "int8",
-        "int16_t" => "int16",
-        "int32_t" => "int32",
-        "int64_t" => "int64",
-        "uint8_t" => "uint8",
-        "uint16_t" => "uint16",
-        "uint32_t" => "uint32",
-        "uint64_t" => "uint64",
-        "float" => "float32",
-        "double" => "float64",
-        // A struct type of a record: the name its own type gives it, whose `_t` is
-        // the one the optional value's ends in.
-        other => {
-            return other
-                .strip_suffix("_t")
-                .filter(|record| {
-                    !record.is_empty()
-                        && record
-                            .chars()
-                            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                })
-                .map(|record| format!("record_{record}"));
-        }
+    if let Some(word) = c11_scalar_word(present) {
+        return Some(word.to_string());
+    }
+    // A struct type of a record: the name its own type gives it, whose `_t` is
+    // the one the optional value's ends in. So is any other struct a composed
+    // value is held in (a list, docs/adr/0086, section 7.2), whose optional
+    // value is declared as a record's is ([`c11_optional_record_declaration`]).
+    present
+        .strip_suffix("_t")
+        .filter(|record| {
+            !record.is_empty()
+                && record
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .map(|record| format!("record_{record}"))
+}
+
+/// The declaration of the optional value of a text, a byte string or an enum held
+/// in the C type `present` ([`c11_optional_elem`]): the buffer of the bound and the
+/// optional value over it, or the optional value over the enum's type, each under
+/// the guard every unit that holds one shares. `None` for a number or a `bool`,
+/// whose optional value `sce/forge/optional.h` declares, and for a struct type,
+/// whose optional value its holder declares ([`c11_optional_record_declaration`]).
+pub(crate) fn c11_optional_declaration(present: &str) -> Option<String> {
+    let name = c11_optional_elem(present)?;
+    let bound = |prefix: &str| -> Option<u32> {
+        present
+            .strip_prefix(prefix)?
+            .strip_suffix("_t")?
+            .parse()
+            .ok()
     };
-    Some(scalar.to_string())
+    if let Some(bound) = bound("sce_static_string_") {
+        return Some(c11_optional_buffer_declaration(
+            &name,
+            present,
+            &c_string_storage_def(bound),
+            &format!("SCE_OPTIONAL_DECLARE_STRING({bound})"),
+        ));
+    }
+    if let Some(bound) = bound("sce_static_bytes_") {
+        return Some(c11_optional_buffer_declaration(
+            &name,
+            present,
+            &c_bytes_storage_def(bound),
+            &format!("SCE_OPTIONAL_DECLARE_BYTES({bound})"),
+        ));
+    }
+    present
+        .ends_with("_enum_t")
+        .then(|| c11_optional_enum_declaration(&name, present))
 }
 
 /// The declaration of the optional value of a text or a byte string held in the
@@ -19057,9 +19272,16 @@ fn lower_action(
                         .map(|(from, to)| (from.as_str(), to.as_str())),
                 )
                 .collect();
+            let over_a_place = matches!(walked.element, WalkedElement::Place(_));
+            if over_a_place {
+                rewrites.place_items.borrow_mut().push(item.to_string());
+            }
             rewrites.loop_depth.set(depth + 1);
             let lowered = lower_actions(&mut action.actions, &inner, &inner_renames, rewrites);
             rewrites.loop_depth.set(depth);
+            if over_a_place {
+                rewrites.place_items.borrow_mut().pop();
+            }
             if holds_a_record.is_some() {
                 rewrites.loop_records.borrow_mut().pop();
             }
@@ -19139,6 +19361,15 @@ fn lower_action(
                     param.name.clone(),
                     lower_wire_param(param, ctx, renames, rewrites)?,
                 ));
+                // A send a host serves carries each value as text too, which a
+                // composed value written where its pair stands is not.
+                if action.send_type_host_served {
+                    composed_writes_unlowered(
+                        &format!("a <send> a host serves, <param name=\"{}\">", param.name),
+                        param.native_writes,
+                        rewrites,
+                    )?;
+                }
                 // A value read from the payload runs only for a delivery that
                 // carried one, as the rest of the transition's content does.
                 reads_payload |=
@@ -19163,6 +19394,11 @@ fn lower_action(
                 );
                 let lowered = lower_wire_value(&view, ctx, renames, rewrites)?;
                 if let Some(value) = lowered {
+                    composed_writes_unlowered(
+                        &format!("<send> <content expr=\"{content}\">"),
+                        value.writes,
+                        rewrites,
+                    )?;
                     action.native_content_value = value.text;
                     action.native_content_value_fails = value.fails;
                     content_json = Some(value.json);
@@ -20047,6 +20283,10 @@ struct WireValue {
     text: String,
     fails: bool,
     json: TextBound,
+    /// Whether [`Self::text`] is the statements that write a composed value
+    /// where its pair stands rather than a value
+    /// ([`StaticTarget::composed_param_writes`]).
+    writes: bool,
 }
 
 /// The most bytes of the JSON the data of a `<send>` or of a `<donedata>` is
@@ -20263,6 +20503,7 @@ fn lower_wire_value(
             fails: false,
             json: place_measure
                 .unwrap_or_else(|| unbounded_value(written, "names no place a type bounds")),
+            writes: rewrites.target.composed_param_writes(),
         }));
     }
     // Typed as it is lowered ([`Rewrites::as_lowered`]).
@@ -20352,6 +20593,7 @@ fn lower_wire_value(
                      bounds",
                 )
             }),
+            writes: false,
         }));
     }
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
@@ -20368,6 +20610,7 @@ fn lower_wire_value(
             text: target.wire_value(InferredType::Str, &name),
             fails: value.can_fail,
             json: place_measure.unwrap_or_else(|| enum_json(&alias, ctx, written)),
+            writes: false,
         }));
     }
     let slot = ty
@@ -20409,6 +20652,7 @@ fn lower_wire_value(
         fails: value.can_fail,
         json: place_measure
             .unwrap_or_else(|| scalar_json(slot, &lowered, ctx, &rewrites.type_scope)),
+        writes: false,
     }))
 }
 
@@ -20501,10 +20745,33 @@ fn lower_wire_param(
         Some(value) => {
             param.native_value = value.text;
             param.native_fails = value.fails;
+            param.native_writes = value.writes;
             value.json
         }
         None => literal_json(param.is_static_literal, &param.static_value),
     })
+}
+
+/// Refuse by name a composed value written as the statements that write it
+/// where its pair stands ([`StaticTarget::composed_param_writes`]) at a place
+/// that writes its pairs as values (an `<invoke>`'s request, a `<donedata>`,
+/// a `<content expr>`, a send a host serves), whose template opens no pair for
+/// such statements and whose request carries each value as text too
+/// (docs/adr/0086, section 7.3). `construct` names the place, `writes` is what
+/// was lowered there.
+fn composed_writes_unlowered(
+    construct: &str,
+    writes: bool,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    if writes {
+        return Err(GenerateError::unsupported(format!(
+            "{construct}: a composed value carried there has no {} lowering yet; a <send>'s \
+             <param> carries one (docs/adr/0086, section 7.3)",
+            rewrites.target.name()
+        )));
+    }
+    Ok(())
 }
 
 /// Lower the `srcexpr` and the `<content expr>` of an `<invoke>` a host runs, in
@@ -20628,6 +20895,11 @@ fn lower_mesh_request(
     }
     for param in &mut info.base.params {
         lower_wire_param(param, ctx, renames, rewrites)?;
+        composed_writes_unlowered(
+            &format!("a Mesh <invoke> <param name=\"{}\">", param.name),
+            param.native_writes,
+            rewrites,
+        )?;
     }
     Ok(())
 }
@@ -20649,6 +20921,11 @@ fn lower_done_params(
         let view = crate::forge::static_datamodel::WireParam::of_done_param(param);
         let json = match lower_wire_value(&view, ctx, renames, rewrites)? {
             Some(value) => {
+                composed_writes_unlowered(
+                    &format!("<donedata> <param name=\"{}\">", param.name),
+                    value.writes,
+                    rewrites,
+                )?;
                 param.native_value = value.text;
                 param.native_fails = value.fails;
                 value.json
@@ -20832,6 +21109,11 @@ fn lower_hybrid_invoke(
                 }
                 None => {
                     lower_wire_param(&mut param, ctx, renames, rewrites)?;
+                    composed_writes_unlowered(
+                        &format!("an <invoke> <param name=\"{}\">", param.name),
+                        param.native_writes,
+                        rewrites,
+                    )?;
                     candidate.unkept.push(param);
                 }
             }

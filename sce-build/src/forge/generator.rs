@@ -5992,7 +5992,15 @@ fn c11_lift_field_refused(event: &str, id: &str) -> String {
 /// `ty` declares, into `dest`: what the lift asks of `sce/event_payload.h`, which
 /// refuses a value its width cannot hold.
 fn c11_scalar_payload_read(ty: &SceType, id: &str, dest: &str) -> String {
-    let reader = match ty {
+    let reader = c11_payload_value_suffix(ty);
+    format!("sce_payload_read_{reader}(&_fields, \"{id}\", &{dest})")
+}
+
+/// The suffix `sce/event_payload.h` names its readers of a number or a `bool`
+/// of the width `ty` by (`sce_payload_read_u8`, `sce_payload_value_u8`): one
+/// per width, which refuses a value the width cannot hold.
+pub(crate) fn c11_payload_value_suffix(ty: &SceType) -> &'static str {
+    match ty {
         SceType::Uint8 => "u8",
         SceType::Uint16 => "u16",
         SceType::Uint32 => "u32",
@@ -6007,8 +6015,7 @@ fn c11_scalar_payload_read(ty: &SceType, id: &str, dest: &str) -> String {
         SceType::String | SceType::Bytes | SceType::Enum(_) => {
             unreachable!("a text, a byte string and an enum are each read by a reader of their own")
         }
-    };
-    format!("sce_payload_read_{reader}(&_fields, \"{id}\", &{dest})")
+    }
 }
 
 /// The statements that read the payload field `id` of `event`, a value of the
@@ -6144,6 +6151,160 @@ return false;\n{indent}}}\n"
     )
 }
 
+/// What the C11 typed channel writes of the payload of one event: its struct's
+/// members, the statements of its lift after the decode, the statements of
+/// the seam's writer of its JSON before `return true`, the decode, what the
+/// seam puts on the typed carrier beside the JSON, and whether the lift fills
+/// the machine's pending payload in place rather than a copy of it.
+struct C11PayloadParts {
+    field_lines: String,
+    field_reads: String,
+    wire_body: String,
+    decode: String,
+    owned_payload: String,
+    in_place: bool,
+}
+
+/// [`C11PayloadParts`] of a payload whose schema holds a composition, with the
+/// declarations of the types its members are held in, which its struct comes
+/// after, and the functions its lift reads them by, which its lift comes after.
+struct C11ComposedPayload {
+    parts: C11PayloadParts,
+    defs: String,
+    readers: String,
+}
+
+/// [`C11ComposedPayload`] of the payload of `event`, whose schema holds a
+/// composition (docs/adr/0086), by the walks over its type as `spelling` spells
+/// them ([`crate::forge::composed_lowering::C11Composed`]): each member in the
+/// type a C11 machine holds it in (section 7.1, the C11 row), each read out of
+/// the event's data by the runtime's bounded readers, which refuse the delivery
+/// whole at the first value outside its type and leave the path to it in the
+/// lift's path, which the reason the machine raises names (section 4.2). The
+/// path is held in a buffer of the longest path the type has, so no reason is
+/// cut. The inject seam writes the payload a host builds as its JSON part by
+/// part, each part held to its type as it is written (section 5.4), and the
+/// machine lifts what arrives from that JSON, so the payload rides no typed
+/// carrier.
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower_c11`]), so a
+/// walk that fails here is a routing defect.
+fn c11_composed_payload(
+    model: &crate::model::SCXMLModel,
+    spelling: &crate::forge::composed_lowering::C11Composed<'_>,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> C11ComposedPayload {
+    use crate::forge::c11_reasons::{Quote, PAYLOAD_REFUSAL};
+    use crate::forge::composed_lowering::{self as composed, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the C11 typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, spelling));
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        spelling,
+        &composed::Held::reference("payload"),
+    ));
+    // The longest path a refusal can name: a field's id, and the longest path
+    // below its value.
+    let mut path_len = 0u64;
+    for field in &held.schema.fields {
+        let below = composed::c11_path_len(&field.sce_type, Some(held.alias), &records)
+            .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+        path_len = path_len.max(field.id.len() as u64 + below);
+    }
+    let format = crate::forge::c11_reasons::row("lift_place_refused")
+        .and_then(|reason| {
+            reason.format(
+                &[event],
+                &[Quote::Within(path_len), Quote::Published(PAYLOAD_REFUSAL)],
+            )
+        })
+        .expect("a lift emits its reasons, each a row of the table, before the slot is computed");
+    let mut field_reads = format!(
+        "    char sce_path[{}u];\n    const size_t sce_path_cap = sizeof(sce_path);\n",
+        path_len + 1
+    );
+    for (id, read) in &readers {
+        let named = filters::escape_c(id.clone());
+        field_reads.push_str(&format!(
+            "    {{\n        const char *sce_at = NULL;\n        void *const sce_into = &out->{id};\n        \
+sce_path[0] = '\\0';\n        \
+(void)sce_payload_path_join(sce_path, sce_path_cap, sce_path, \"{named}\");\n        \
+_refusal = sce_payload_field(&_fields, \"{named}\", &sce_at);\n        \
+if (_refusal == NULL) {{\n            _refusal = {read};\n        }}\n        \
+if (_refusal != NULL) {{\n            \
+snprintf(_message, _message_cap, {format}, sce_path, _refusal);\n            \
+return false;\n        }}\n    }}\n"
+        ));
+    }
+    let wire = composed::C11_WIRE;
+    let wire_body = format!(
+        "    sce_forge_wire_t sce_wire_;\n    sce_forge_wire_t *const {wire} = &sce_wire_;\n    \
+sce_forge_wire_begin({wire}, out, cap);\n{}    if (!sce_forge_wire_end({wire})) {{\n        \
+return false;\n    }}\n",
+        composed::c11_pairs(&writers)
+    );
+    let decode = match crate::forge::schema_revision::composed_defaults_wire(schema) {
+        Some(defaults) => format!(
+            "sce_payload_decode_with_defaults(_data, \"{}\", &_fields)",
+            filters::escape_c(defaults)
+        ),
+        None => "sce_payload_decode(_data, &_fields)".to_string(),
+    };
+    C11ComposedPayload {
+        parts: C11PayloadParts {
+            field_lines: members
+                .iter()
+                .map(|(id, ty)| format!("    {ty} {id};\n"))
+                .collect(),
+            field_reads,
+            wire_body,
+            decode,
+            owned_payload: String::new(),
+            in_place: true,
+        },
+        defs: spelling
+            .take_declarations()
+            .into_iter()
+            .map(|def| format!("{def}\n\n"))
+            .collect(),
+        readers: spelling
+            .take_readers()
+            .into_iter()
+            .map(|reader| format!("{reader}\n"))
+            .collect(),
+    }
+}
+
 /// Build the [`C11EventPayload`] for `model`. See
 /// [`build_rust_event_payload`] for the shared design; this emits the C11
 /// tagged-union form. `model.name` is the C identifier stem (already
@@ -6244,8 +6405,16 @@ pub fn build_c11_event_payload(
     let mut lift_readers = String::new();
     let mut lift_arms = String::new();
     let raises_error = model.events.iter().any(|e| e == "error.execution");
+    // One spelling of the walks for every composed payload of the machine, so a
+    // type or a reader two payloads share is declared once.
+    let composed = crate::forge::composed_lowering::C11Composed::new(
+        &sm,
+        static_enums
+            .iter()
+            .map(|e| (e.alias.clone(), e.ty.clone()))
+            .collect(),
+    );
     for event in &guarded_events {
-        let schema = &entry_schemas[event];
         let token = c11_event_token(event);
         let member = token.to_lowercase();
         let upper = token.to_uppercase();
@@ -6253,92 +6422,139 @@ pub fn build_c11_event_payload(
         let event_const = format!("{sm_upper}_EVENT_{upper}");
         let tag_const = format!("{name_upper}_PAYLOAD_{upper}");
         let fn_name = format!("{sm}_raise_{member}_typed");
-        let mut field_lines = String::new();
-        // What the lift reads back out of `data`, and what the inject seam
-        // writes into it beside the typed payload: the same fields, once.
-        let mut field_reads = String::new();
-        for f in &schema.fields {
-            let id = &f.id;
-            // An optional field (docs/adr/0055) is `null` absent and a value
-            // present, and a delivery that lacks it is refused: its own read.
-            if let EntryType::Optional { elem } = &f.sce_type {
-                field_reads.push_str(&c11_optional_payload_read(f, elem, event, static_enums));
-                field_lines.push_str(&c11_payload_field_decl(&l, f));
-                continue;
+        // A payload whose schema holds a composition (docs/adr/0086) is spelled
+        // by the walks over its type ([`c11_composed_payload`]), the types its
+        // members are held in declared before its struct and the functions
+        // that read them before its lift; one of entries field by field.
+        let C11PayloadParts {
+            field_lines,
+            field_reads,
+            wire_body,
+            decode,
+            owned_payload,
+            in_place,
+        } = match entry_schemas.get(event) {
+            None => {
+                let composed_payload = c11_composed_payload(model, &composed, event, static_enums);
+                structs.push_str(&composed_payload.defs);
+                lift_readers.push_str(&composed_payload.readers);
+                composed_payload.parts
             }
-            let read = match f.sce_type.present_type() {
-                // A byte string is held to its bound at the lift, which the
-                // buffer the payload holds it in is sized by
-                // ([`c11_payload_field_decl`], docs/adr/0086, section 4.4).
-                SceType::Bytes => {
-                    field_reads.push_str(&c11_field_value_read(
-                        id,
-                        &format!(
-                            "sce_payload_value_bytes(_value, out->{id}, {}u, &out->{id}_len)",
-                            lift_bytes_bound(f)
-                        ),
-                        event,
-                        "    ",
-                    ));
-                    String::new()
-                }
-                SceType::Enum(r) => {
-                    field_reads.push_str(&c11_payload_enum_read(
-                        static_enum_of(static_enums, &r.alias),
-                        &r.alias,
-                        event,
-                        id,
-                        &format!("out->{id}"),
-                    ));
-                    String::new()
-                }
-                SceType::String => {
-                    // The machine owns where a lifted text lives — see
-                    // `lift_storage`, which holds the field's bound and its
-                    // terminator. The text is held to that bound at the lift,
-                    // the top level included, so a text past it refuses the
-                    // payload before any transition reads it, as on every
-                    // other engine (docs/adr/0086, section 4.4).
-                    let bound = lift_text_bound(f);
-                    let lifted = c11_lifted_text(event, id);
-                    lift_storage.push_str(&format!(
-                        "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted `{id}` lives \
-(the payload\n       field is a borrowed `const char *`): its bound and the terminator. */\n    \
-char {lifted}[{bound}u + 1u];\n"
-                    ));
-                    field_reads.push_str(&c11_field_value_read(
-                        id,
-                        &format!("sce_payload_value_text(_value, sm->{lifted}, {bound}u)"),
-                        event,
-                        "    ",
-                    ));
-                    field_reads.push_str(&format!("    out->{id} = sm->{lifted};\n"));
-                    String::new()
-                }
-                scalar => c11_scalar_payload_read(scalar, id, &format!("out->{id}")),
-            };
-            if !read.is_empty() {
-                let refused = c11_lift_field_refused(event, id);
-                field_reads.push_str(&format!(
-                    "    _refusal = {read};\n    if (_refusal != NULL) {{\n        \
+            Some(schema) => {
+                let mut field_lines = String::new();
+                // What the lift reads back out of `data`, and what the inject seam
+                // writes into it beside the typed payload: the same fields, once.
+                let mut field_reads = String::new();
+                for f in &schema.fields {
+                    let id = &f.id;
+                    // An optional field (docs/adr/0055) is `null` absent and a value
+                    // present, and a delivery that lacks it is refused: its own read.
+                    if let EntryType::Optional { elem } = &f.sce_type {
+                        field_reads.push_str(&c11_optional_payload_read(
+                            f,
+                            elem,
+                            event,
+                            static_enums,
+                        ));
+                        field_lines.push_str(&c11_payload_field_decl(&l, f));
+                        continue;
+                    }
+                    let read = match f.sce_type.present_type() {
+                        // A byte string is held to its bound at the lift, which the
+                        // buffer the payload holds it in is sized by
+                        // ([`c11_payload_field_decl`], docs/adr/0086, section 4.4).
+                        SceType::Bytes => {
+                            field_reads.push_str(&c11_field_value_read(
+                                id,
+                                &format!(
+                                    "sce_payload_value_bytes(_value, out->{id}, {}u, \
+                                     &out->{id}_len)",
+                                    lift_bytes_bound(f)
+                                ),
+                                event,
+                                "    ",
+                            ));
+                            String::new()
+                        }
+                        SceType::Enum(r) => {
+                            field_reads.push_str(&c11_payload_enum_read(
+                                static_enum_of(static_enums, &r.alias),
+                                &r.alias,
+                                event,
+                                id,
+                                &format!("out->{id}"),
+                            ));
+                            String::new()
+                        }
+                        SceType::String => {
+                            // The machine owns where a lifted text lives — see
+                            // `lift_storage`, which holds the field's bound and its
+                            // terminator. The text is held to that bound at the lift,
+                            // the top level included, so a text past it refuses the
+                            // payload before any transition reads it, as on every
+                            // other engine (docs/adr/0086, section 4.4).
+                            let bound = lift_text_bound(f);
+                            let lifted = c11_lifted_text(event, id);
+                            lift_storage.push_str(&format!(
+                                "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted \
+`{id}` lives (the payload\n       field is a borrowed `const char *`): its bound and the \
+terminator. */\n    char {lifted}[{bound}u + 1u];\n"
+                            ));
+                            field_reads.push_str(&c11_field_value_read(
+                                id,
+                                &format!("sce_payload_value_text(_value, sm->{lifted}, {bound}u)"),
+                                event,
+                                "    ",
+                            ));
+                            field_reads.push_str(&format!("    out->{id} = sm->{lifted};\n"));
+                            String::new()
+                        }
+                        scalar => c11_scalar_payload_read(scalar, id, &format!("out->{id}")),
+                    };
+                    if !read.is_empty() {
+                        let refused = c11_lift_field_refused(event, id);
+                        field_reads.push_str(&format!(
+                            "    _refusal = {read};\n    if (_refusal != NULL) {{\n        \
 {refused}\n        \
 return false;\n    }}\n"
-                ));
+                        ));
+                    }
+                    field_lines.push_str(&c11_payload_field_decl(&l, f));
+                }
+                let C11RecordWire { body: wire_body } =
+                    c11_record_wire_of(&schema.fields, "payload", static_enums);
+                // A field a later revision of the schema added is read out of the
+                // schema's defaults where the delivery lacks it
+                // (`crate::forge::schema_revision`); a schema with none reads the
+                // delivery alone, as it always has.
+                let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+                    Some(defaults) => format!(
+                        "sce_payload_decode_with_defaults(_data, \"{}\", &_fields)",
+                        filters::escape_c(defaults)
+                    ),
+                    None => "sce_payload_decode(_data, &_fields)".to_string(),
+                };
+                // Strings arrive as borrowed C pointers. Queue the owned JSON and
+                // lift it on dequeue; copying the pointer into the queue would keep
+                // reading a caller's subsequently modified or expired storage.
+                let owned_payload = if schema
+                    .fields
+                    .iter()
+                    .any(|f| *f.sce_type.present_type() == SceType::String)
+                {
+                    String::new()
+                } else {
+                    format!("    evt.payload.tag = {tag_const};\n    evt.payload.as.{member} = *payload;\n")
+                };
+                C11PayloadParts {
+                    field_lines,
+                    field_reads,
+                    wire_body,
+                    decode,
+                    owned_payload,
+                    in_place: false,
+                }
             }
-            field_lines.push_str(&c11_payload_field_decl(&l, f));
-        }
-        let C11RecordWire { body: wire_body } =
-            c11_record_wire_of(&schema.fields, "payload", static_enums);
-        // A field a later revision of the schema added is read out of the
-        // schema's defaults where the delivery lacks it
-        // (`crate::forge::schema_revision`); a schema with none reads the
-        // delivery alone, as it always has.
-        let decode = match crate::forge::schema_revision::defaults_wire(schema) {
-            Some(defaults) => format!(
-                "sce_payload_decode_with_defaults(_data, \"{}\", &_fields)",
-                filters::escape_c(defaults)
-            ),
-            None => "sce_payload_decode(_data, &_fields)".to_string(),
         };
         let undecoded = c11_lift_reason(
             "lift_payload_refused",
@@ -6357,32 +6573,33 @@ if (_refusal != NULL) {{\n        \
 {undecoded}\n        \
 return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
         ));
-        lift_arms.push_str(&format!(
-            "    case {event_const}: {{\n        \
+        // A composed payload is lifted where the machine holds it, so no copy of
+        // its size stands on a stack; the tag says it is held once the whole of
+        // it was read.
+        lift_arms.push_str(&if in_place {
+            format!(
+                "    case {event_const}: {{\n        \
+memset(&sm->pending_payload.as.{member}, 0, sizeof(sm->pending_payload.as.{member}));\n        \
+if (!{sm}_lift_{member}(sm, evt->data, &sm->pending_payload.as.{member}, _message,\n                \
+SCE_SCRATCH_CAP(message))) {{\n            \
+break;\n        }}\n        \
+sm->pending_payload.tag = {tag_const};\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n"
+            )
+        } else {
+            format!(
+                "    case {event_const}: {{\n        \
 {struct_name} _payload;\n        memset(&_payload, 0, sizeof(_payload));\n        \
 if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, SCE_SCRATCH_CAP(message))) {{\n            \
 break;\n        }}\n        \
 sm->pending_payload.tag = {tag_const};\n        \
 sm->pending_payload.as.{member} = _payload;\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n"
-        ));
+            )
+        });
         structs.push_str(&format!(
             "typedef struct {name}_{member}_payload {{\n{field_lines}}} {struct_name};\n\n"
         ));
         tag_lines.push_str(&format!("    {tag_const},\n"));
         union_lines.push_str(&format!("        {struct_name} {member};\n"));
-
-        // Strings arrive as borrowed C pointers. Queue the owned JSON and
-        // lift it on dequeue; copying the pointer into the queue would keep
-        // reading a caller's subsequently modified or expired storage.
-        let owned_payload = if schema
-            .fields
-            .iter()
-            .any(|f| *f.sce_type.present_type() == SceType::String)
-        {
-            String::new()
-        } else {
-            format!("    evt.payload.tag = {tag_const};\n    evt.payload.as.{member} = *payload;\n")
-        };
 
         // A host-run invocation's completion has a typed payload and no
         // inject seam: the machine takes one only through

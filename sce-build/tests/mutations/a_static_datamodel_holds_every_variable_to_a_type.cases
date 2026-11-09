@@ -749,8 +749,8 @@ PY
 # asks a script engine and the machine is one that needs one.
 mutation_case "a Mesh request's params are not lowered" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    for param in &mut info.base.params {\n        lower_wire_param(param, ctx, renames, rewrites)?;\n    }\n    Ok(())\n}\n\n/// Lower the value of each `<param>` of a `<final>`",
-     "    let _ = &mut info.base.params;\n    Ok(())\n}\n\n/// Lower the value of each `<param>` of a `<final>`")
+     "    for param in &mut info.base.params {\n        lower_wire_param(param, ctx, renames, rewrites)?;\n        composed_writes_unlowered(\n            &format!(\"a Mesh <invoke> <param name=",
+     "    for param in &mut info.base.params {\n        composed_writes_unlowered(\n            &format!(\"a Mesh <invoke> <param name=")
 PY
 
 # The params the model admits cost no engine, so a machine that has only these is one
