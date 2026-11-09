@@ -1279,6 +1279,30 @@ A statechart's document name is its file stem, not its `name`
 attribute, so two statecharts sharing a file name in different
 directories are one name declared twice.
 
+Every name a backend writes for a statechart's machine (its files, its
+module, package or namespace, its types and symbols, and the name a
+parent starts it by) spells that stem as an identifier, by the rule a
+forge document's artifacts already follow (`filters::to_snake_case`:
+a hyphen or a dot becomes an underscore, a capital after a lower-case
+letter or a digit opens a word, and every letter is written in lower
+case). `job-tester.scxml` is the
+machine `job_tester`: `job_tester_sm.rs`, `job_tester_sm.h` with
+`namespace SCE::Generated::job_tester`, the Python module
+`job_tester_sm`, as `bounded-collection.scxml` writes
+`bounded_collection.rs`. A stem already in lower snake case is written
+unchanged. The spelling is made once, where the parser names the model
+(`model::statechart_machine_name`), and every name above derives from
+the model's. The file keeps the stem as written: a parent's
+`<invoke src="job-tester.scxml">` reads that file and starts the
+machine `job_tester`, a run stages a child document under its own file
+name, a `deploy.yaml` `source:` of `job-tester.scxml` is found by the
+machine it names, and a diagnostic names the path the caller gave. Two
+statecharts whose stems spell one identifier (`job-tester` and
+`job_tester`) are one name declared twice. A stem the spelling leaves
+no identifier, one that starts with a digit, is written as spelled,
+as a forge document's is, and the target's compiler is what refuses
+it.
+
 An import the document never names — no `enum:<alias>` type, no
 expression reading `<alias>`, no structural reference such as a codec
 body — is still resolved and checked by every rule above, but the
