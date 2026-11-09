@@ -101,7 +101,17 @@ val androidHome = System.getenv("ANDROID_HOME")
         java.util.Properties().apply { f.inputStream().use { load(it) } }
             .getProperty("sdk.dir")
     }
-if (androidAppRequested && androidHome != null) {
+// A request with no SDK is refused here, not dropped. Dropped, the module is simply
+// absent and the task asked for fails as "project 'sce-android-app' not found",
+// which reads as a mistyped name rather than a machine without an SDK (measured
+// 2026-11-09 on a build machine that has none).
+if (androidAppRequested && androidHome == null) {
+    throw GradleException(
+        "sce.androidApp=true asks for :sce-android-app, but no Android SDK was found: " +
+            "set ANDROID_HOME or ANDROID_SDK_ROOT, or sdk.dir in local.properties"
+    )
+}
+if (androidAppRequested) {
     include(":sce-android-app")
     project(":sce-android-app").projectDir = file("backends/kotlin/android-app")
 }
