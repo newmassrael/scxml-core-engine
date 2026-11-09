@@ -282,9 +282,10 @@ private:
 };
 
 /// The fixture's machine over a double that fails as `fail` says, and the
-/// double, to read afterwards.
-struct Run {
-    explicit Run(Fail failing) : fail(failing), engine(std::make_shared<FailingEngine>(failing)) {
+/// double, to read afterwards. Not named `Run`: inside a TEST body that name
+/// is gtest's `testing::Test::Run()`.
+struct MachineOverDouble {
+    explicit MachineOverDouble(Fail failing) : fail(failing), engine(std::make_shared<FailingEngine>(failing)) {
         sm.setScriptEngine(engine);
     }
 
@@ -317,7 +318,7 @@ struct Run {
 // its child's ticks arrive. Without it the cases below could pass over a double
 // that breaks every machine.
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, AStartOverTheDoubleThatFailsNothingRunsTheFixture) {
-    Run run(Fail::Never);
+    MachineOverDouble run(Fail::Never);
     ASSERT_EQ(run.sm.initialize(), std::nullopt) << "a session that is established starts the machine";
     run.sm.processEvent(SM::Event::Finish);
     EXPECT_EQ(run.sm.terminalState(), std::optional<SM::State>(SM::State::Done));
@@ -329,7 +330,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, AStartWhoseSessionCanno
     for (const auto &[fail, stage] : {std::pair{Fail::Create, ::SCE::ScriptSessionStage::Create},
                                       std::pair{Fail::Library, ::SCE::ScriptSessionStage::Library},
                                       std::pair{Fail::SystemVariables, ::SCE::ScriptSessionStage::SystemVariables}}) {
-        Run run(fail);
+        MachineOverDouble run(fail);
         const auto refused = run.sm.initialize();
         ASSERT_TRUE(refused.has_value()) << nameOf(fail) << ": a session that cannot be established refuses the start";
         EXPECT_EQ(refused->stage, stage) << nameOf(fail) << ": the refusal names the step";
@@ -343,7 +344,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, AStartWhoseSessionCanno
 // machine over no session.
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ARefusedStartIsRefusedAgainRatherThanRunWithoutASession) {
     for (const Fail fail : {Fail::Create, Fail::Library, Fail::SystemVariables}) {
-        Run run(fail);
+        MachineOverDouble run(fail);
         EXPECT_TRUE(run.sm.initialize().has_value()) << nameOf(fail);
         EXPECT_TRUE(run.sm.initialize().has_value())
             << nameOf(fail) << ": a second start over the same failing engine is refused too";
@@ -353,7 +354,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ARefusedStartIsRefusedA
 }
 
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ASessionWhoseSystemVariablesCannotBeBoundIsReleased) {
-    Run run(Fail::SystemVariables);
+    MachineOverDouble run(Fail::SystemVariables);
     EXPECT_TRUE(run.sm.initialize().has_value());
     const std::vector<std::string> only{run.session()};
     EXPECT_EQ(run.engine->asked(), only);
@@ -361,7 +362,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ASessionWhoseSystemVari
 }
 
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ARefusedMachineTakesNoEvent) {
-    Run run(Fail::Create);
+    MachineOverDouble run(Fail::Create);
     EXPECT_TRUE(run.sm.initialize().has_value());
     run.sm.processEvent(SM::Event::Finish);
     EXPECT_EQ(run.sm.unseenExternalEvents(), 1u)
@@ -370,7 +371,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, ARefusedMachineTakesNoE
 }
 
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, TheCheckedRootStartIsRefusedForTheSession) {
-    Run run(Fail::Library);
+    MachineOverDouble run(Fail::Library);
     const auto refusal = run.sm.initializeAsRoot();
     ASSERT_TRUE(refusal.has_value()) << "the root start of a machine whose session fails is refused";
     EXPECT_EQ(refusal->kind(), ::SCE::Common::RootStartRefusal::Kind::ScriptSession);
@@ -381,7 +382,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, TheCheckedRootStartIsRe
 }
 
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, AResumedStartWhoseSessionCannotBeEstablishedIsRefused) {
-    Run run(Fail::Create);
+    MachineOverDouble run(Fail::Create);
     const auto verdict = run.sm.enterAt({SM::State::S0}, SM::State::S0);
     EXPECT_EQ(verdict, ::SCE::Core::ConfigurationRejection::ScriptSessionUnavailable);
     ASSERT_TRUE(verdict.scriptSessionFailure.has_value()) << "the entry's refusal carries the failure";
@@ -391,7 +392,7 @@ TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest, AResumedStartWhoseSessi
 
 TEST(AMachineWhoseScriptSessionFailsDoesNotStartAotTest,
      AChildWhoseSessionFailsLeavesItsParentWithErrorExecutionAndNoChild) {
-    Run run(Fail::CreateAfterFirst);
+    MachineOverDouble run(Fail::CreateAfterFirst);
     ASSERT_EQ(run.sm.initialize(), std::nullopt) << "the parent's own session is established";
     run.sm.step();
 
