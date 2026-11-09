@@ -18,6 +18,10 @@
 //! entries, a default entry's initial content among them, is the engine's own
 //! and is not written a second time here; checking it against the profile is
 //! the translation validator's (ADR 0091 answer 12).
+//!
+//! The core reads rows it borrows ([`sce_rust_runtime::DocumentTables`]). The machine
+//! owns the rows it builds and lends them for each transition it asks about,
+//! so an export leaves nothing behind however often a process runs one.
 
 use std::mem::MaybeUninit;
 
@@ -66,19 +70,22 @@ pub(super) struct Taken {
     pub(super) leaf: String,
 }
 
-/// A test component's tables, as the core reads them and as the generator
-/// builds them.
+/// A test component's tables, as the generator builds them, and the rows the
+/// core reads, which the machine owns and lends the core for each question.
 pub(super) struct Machine<'m> {
     model: &'m SCXMLModel,
     rows: DocumentTables,
-    core: &'static CoreTables,
+    core: CoreRows,
 }
 
 impl<'m> Machine<'m> {
     /// The machine of `model`, or why its tables could not be built.
     pub(super) fn of(model: &'m SCXMLModel) -> Result<Self, String> {
         let rows = DocumentTables::of(model).map_err(|e| e.to_string())?;
-        let core = core_tables(&rows)?;
+        let core = CoreRows::of(&rows)?;
+        core.tables()
+            .check()
+            .map_err(|fault| format!("the tables break a rule of the core: {fault:?}"))?;
         Ok(Self { model, rows, core })
     }
 
@@ -138,7 +145,7 @@ impl<'m> Machine<'m> {
             walk: &mut walk,
             history_defaults: &mut history_defaults,
         };
-        let _ = microstep(self.core, &mut recorder, &[transition], scratch);
+        let _ = microstep(&self.core.tables(), &mut recorder, &[transition], scratch);
         // With no `<parallel>`, the configuration is a chain from a top-level
         // state down, and the deepest state of it has the largest number.
         let leaf = recorder
@@ -155,81 +162,97 @@ impl<'m> Machine<'m> {
     }
 }
 
-/// The core's tables over `rows`. The core reads `'static` rows, as a
-/// generated machine's are, so the rows are leaked: a test component's are
-/// built once for each export, and the process that exports it ends.
-fn core_tables(rows: &DocumentTables) -> Result<&'static CoreTables, String> {
-    if !rows.histories.is_empty() || rows.states.iter().any(|r| r.kind == StateKind::Parallel) {
-        return Err(
-            "a test component has no <parallel> and no <history> (docs/SCE_TEST_PROFILE.md \
-             §8.2)"
-                .to_string(),
-        );
+/// The rows the core reads, owned: the generator's rows packed as a
+/// generated machine's constants are (docs/adr/0067).
+struct CoreRows {
+    states: Vec<CoreState>,
+    transitions: Vec<CoreTransition>,
+    targets: Vec<Target>,
+    initial: TransitionId,
+}
+
+impl CoreRows {
+    /// The core's tables, borrowing these rows for as long as they are read.
+    fn tables(&self) -> CoreTables<'_> {
+        CoreTables {
+            states: &self.states,
+            histories: &[],
+            transitions: &self.transitions,
+            targets: &self.targets,
+            initial: self.initial,
+            // No main loop is driven: the core is handed the one transition it
+            // takes, and the machine never names a state before it starts.
+            default_state: StateId(0),
+            null_event: EventId(0),
+            error_events: &[],
+            history: None,
+            parallel: None,
+        }
     }
-    let target = |target: &TargetRef| match target {
-        TargetRef::State(state) => Target::state(StateId(*state)),
-        TargetRef::History(history) => Target::history(HistoryId(*history)),
-    };
-    let mut pool: Vec<Target> = Vec::new();
-    let mut transitions: Vec<CoreTransition> = Vec::with_capacity(rows.transitions.len());
-    for row in &rows.transitions {
-        let written: Vec<Target> = rows.targets[row.targets.range()]
-            .iter()
-            .map(target)
-            .collect();
-        let targets = match written.as_slice() {
-            [] => Target::NONE,
-            [only] => *only,
-            _ => {
-                let position = u16::try_from(pool.len()).map_err(|e| e.to_string())?;
-                let count = u16::try_from(written.len()).map_err(|e| e.to_string())?;
-                pool.push(Target::count(count));
-                pool.extend_from_slice(&written);
-                Target::list(position)
-            }
+
+    /// The rows of `rows`, a test component's, which has no `<parallel>` and
+    /// no `<history>`.
+    fn of(rows: &DocumentTables) -> Result<Self, String> {
+        if !rows.histories.is_empty() || rows.states.iter().any(|r| r.kind == StateKind::Parallel) {
+            return Err(
+                "a test component has no <parallel> and no <history> (docs/SCE_TEST_PROFILE.md \
+                 §8.2)"
+                    .to_string(),
+            );
+        }
+        let target = |target: &TargetRef| match target {
+            TargetRef::State(state) => Target::state(StateId(*state)),
+            TargetRef::History(history) => Target::history(HistoryId(*history)),
         };
-        transitions.push(CoreTransition::new(
-            row.source.map(StateId),
-            targets,
-            row.internal,
-            row.has_content,
-        ));
-    }
-    let states: Vec<CoreState> = rows
-        .states
-        .iter()
-        .map(|row| {
-            CoreState::new(
-                row.parent.map(StateId),
-                match row.kind {
-                    StateKind::Atomic => CoreKind::Atomic,
-                    StateKind::Compound => CoreKind::Compound,
-                    StateKind::Parallel => CoreKind::Parallel,
-                    StateKind::Final => CoreKind::Final,
-                },
-                StateId(row.last_descendant),
-                row.initial.map(TransitionId),
-            )
+        let mut pool: Vec<Target> = Vec::new();
+        let mut transitions: Vec<CoreTransition> = Vec::with_capacity(rows.transitions.len());
+        for row in &rows.transitions {
+            let written: Vec<Target> = rows.targets[row.targets.range()]
+                .iter()
+                .map(target)
+                .collect();
+            let targets = match written.as_slice() {
+                [] => Target::NONE,
+                [only] => *only,
+                _ => {
+                    let position = u16::try_from(pool.len()).map_err(|e| e.to_string())?;
+                    let count = u16::try_from(written.len()).map_err(|e| e.to_string())?;
+                    pool.push(Target::count(count));
+                    pool.extend_from_slice(&written);
+                    Target::list(position)
+                }
+            };
+            transitions.push(CoreTransition::new(
+                row.source.map(StateId),
+                targets,
+                row.internal,
+                row.has_content,
+            ));
+        }
+        let states: Vec<CoreState> = rows
+            .states
+            .iter()
+            .map(|row| {
+                CoreState::new(
+                    row.parent.map(StateId),
+                    match row.kind {
+                        StateKind::Atomic => CoreKind::Atomic,
+                        StateKind::Compound => CoreKind::Compound,
+                        StateKind::Parallel => CoreKind::Parallel,
+                        StateKind::Final => CoreKind::Final,
+                    },
+                    StateId(row.last_descendant),
+                    row.initial.map(TransitionId),
+                )
+            })
+            .collect();
+        Ok(Self {
+            states,
+            transitions,
+            targets: pool,
+            initial: TransitionId(rows.initial),
         })
-        .collect();
-    let tables = CoreTables {
-        states: Box::leak(states.into_boxed_slice()),
-        histories: &[],
-        transitions: Box::leak(transitions.into_boxed_slice()),
-        targets: Box::leak(pool.into_boxed_slice()),
-        initial: TransitionId(rows.initial),
-        // No main loop is driven: the core is handed the one transition it
-        // takes, and the machine never names a state before it starts.
-        default_state: StateId(0),
-        null_event: EventId(0),
-        error_events: &[],
-        history: None,
-        parallel: None,
-    };
-    tables
-        .check()
-        .map_err(|fault| format!("the tables break a rule of the core: {fault:?}"))?;
-    Ok(Box::leak(Box::new(tables)))
+    }
 }
 
 /// A machine that does nothing the core asks of it but write it down, in a
@@ -308,7 +331,7 @@ impl Behaviour for Recorder<'_> {
     }
 
     // A test component has no `<history>` (docs/SCE_TEST_PROFILE.md §8.2),
-    // and its tables hold none ([`core_tables`]).
+    // and its tables hold none ([`CoreRows::of`]).
     fn execute_history_default_content(&mut self, _history: HistoryId) {}
 }
 
