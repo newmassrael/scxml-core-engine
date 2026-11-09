@@ -674,6 +674,60 @@ static void check_the_writer_refuses_a_shape_it_cannot_close(void) {
     }
 }
 
+/* A pair whose value a machine's writer writes part by part (docs/adr/0086, section
+ * 5.3): the key named first, then the value bare, beside a scalar pair; a pair of a
+ * name that repeats is never collected with it; a key inside a container is a shape
+ * that does not fit; and a value refused by its writer leaves the object unwritten. */
+static void check_a_composed_pair_is_written_part_by_part(void) {
+    char buf[96];
+    sce_forge_wire_t w;
+    sce_forge_wire_begin(&w, buf, sizeof(buf));
+    sce_forge_wire_pair(&w, "\"a\"", sce_forge_wire_uint(1));
+    sce_forge_wire_pair_key(&w, "\"b\"");
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_open_container(&w, '{');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put(&w, "\"k\":", 4u);
+    sce_forge_wire_put_value(&w, sce_forge_wire_string("x"));
+    sce_forge_wire_close(&w);
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_null());
+    sce_forge_wire_close(&w);
+    sce_forge_wire_pair_key(&w, "\"c\"");
+    sce_forge_wire_put_value(&w, sce_forge_wire_bool(true));
+    if (!sce_forge_wire_end(&w) || strcmp(buf, "{\"a\":1,\"b\":[{\"k\":\"x\"},null],\"c\":true}") != 0) {
+        fprintf(stderr, "FAIL: a composed pair written part by part reads `%s`\n", buf);
+        failures++;
+    }
+    /* The pair before a composed one is a value of its own, not an array it joins. */
+    sce_forge_wire_begin(&w, buf, sizeof(buf));
+    sce_forge_wire_pair(&w, "\"a\"", sce_forge_wire_uint(1));
+    sce_forge_wire_pair_key(&w, "\"a\"");
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(2));
+    if (!sce_forge_wire_end(&w) || strcmp(buf, "{\"a\":1,\"a\":2}") != 0) {
+        fprintf(stderr, "FAIL: a composed pair was collected with the name before it: `%s`\n", buf);
+        failures++;
+    }
+    sce_forge_wire_begin(&w, buf, sizeof(buf));
+    sce_forge_wire_pair_open(&w, "\"v\"", '[');
+    sce_forge_wire_pair_key(&w, "\"k\"");
+    sce_forge_wire_close(&w);
+    if (sce_forge_wire_end(&w) || strcmp(buf, "{}") != 0) {
+        fprintf(stderr, "FAIL: a pair's key inside a container was written as `%s`\n", buf);
+        failures++;
+    }
+    sce_forge_wire_begin(&w, buf, sizeof(buf));
+    sce_forge_wire_pair_key(&w, "\"v\"");
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_refuse(&w);
+    sce_forge_wire_close(&w);
+    if (sce_forge_wire_end(&w) || strcmp(buf, "{}") != 0) {
+        fprintf(stderr, "FAIL: a refused value left the object written as `%s`\n", buf);
+        failures++;
+    }
+}
+
 /* The path a refusal names a value by, joined from the prefix and each segment. */
 static void check_paths(void) {
     char path[16];
@@ -918,6 +972,7 @@ int main(void) {
     check_cross_product();
     check_maximal_sizes();
     check_the_writer_refuses_a_shape_it_cannot_close();
+    check_a_composed_pair_is_written_part_by_part();
     check_paths();
     check_top_level_bounds_and_records();
     check_bounded_list();
