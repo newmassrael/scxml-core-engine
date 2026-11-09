@@ -21,7 +21,7 @@ const LIST: &str = "home";
 const ALICE: u64 = 1;
 const BOB: u64 = 2;
 
-const WRITE: &str = "record_list.write";
+const CHANGE: &str = "record_list.change";
 
 fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
@@ -76,10 +76,11 @@ fn authority() -> Authority {
     Authority::new([7; 32], "relay-a")
 }
 
-/// A write of alice's to field 3 of row `id`, stamped at `wall`.
+/// A change of alice's stamped at `wall` of one write, to field 3 of row `id`.
 fn write(id: u32, wall: i64) -> String {
-    json!({"id": id, "field": 3, "value": id.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()})
+    json!({"by": ALICE.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": id, "field": 3, "value": id.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
@@ -131,7 +132,7 @@ fn a_device_told_its_own_operation_conflicts_freezes_at_once_and_says_so() {
     let alice = host(ALICE);
     for n in 1..=3 {
         assert_eq!(
-            keep(&alice, WRITE, &write(n, 1000 + i64::from(n))),
+            keep(&alice, CHANGE, &write(n, 1000 + i64::from(n))),
             Kept::Taken
         );
     }
@@ -144,8 +145,8 @@ fn a_device_told_its_own_operation_conflicts_freezes_at_once_and_says_so() {
     for (event, data) in held(1, 2) {
         copy.take_operation(&event, &data).unwrap();
     }
-    assert_eq!(keep(&copy, WRITE, &write(7, 2007)), Kept::Taken);
-    assert_eq!(keep(&copy, WRITE, &write(8, 2008)), Kept::Taken);
+    assert_eq!(keep(&copy, CHANGE, &write(7, 2007)), Kept::Taken);
+    assert_eq!(keep(&copy, CHANGE, &write(8, 2008)), Kept::Taken);
     let before = relay.lock().unwrap().records(LIST);
     let _ = lines();
 
@@ -187,7 +188,7 @@ fn a_device_told_its_own_operation_conflicts_freezes_at_once_and_says_so() {
     assert!(ours.iter().any(|(_, data)| parsed(data) == relays));
     // It signs nothing more.
     assert!(
-        matches!(keep(&copy, WRITE, &write(9, 2009)), Kept::Refused(_)),
+        matches!(keep(&copy, CHANGE, &write(9, 2009)), Kept::Refused(_)),
         "a frozen chain signs nothing"
     );
 
@@ -221,14 +222,14 @@ fn a_courier_that_carries_another_devices_conflict_is_answered_conflict_and_goes
     let digest = list_digest(LIST);
     let relay = relay();
     let alice = host(ALICE);
-    assert_eq!(keep(&alice, WRITE, &write(1, 1001)), Kept::Taken);
+    assert_eq!(keep(&alice, CHANGE, &write(1, 1001)), Kept::Taken);
     Courier::new(alice.clone(), link(&relay, ALICE))
         .sync()
         .unwrap();
     // A copy of alice's that holds nothing signs another first operation, which reaches bob alone;
     // he holds alice's first too, and so the proof.
     let copy = host(ALICE);
-    assert_eq!(keep(&copy, WRITE, &write(5, 1005)), Kept::Taken);
+    assert_eq!(keep(&copy, CHANGE, &write(5, 1005)), Kept::Taken);
     let bob = host(BOB);
     for (event, data) in alice
         .operations(ALICE, 1, 1)

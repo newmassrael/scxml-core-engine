@@ -937,7 +937,7 @@ mod tests {
                 entry: "{\"x\":1}".to_string(),
             },
             Request::Submit {
-                event: "record_list.write".to_string(),
+                event: "record_list.change".to_string(),
                 data: "{}".to_string(),
             },
             Request::Checkpoint {
@@ -1148,7 +1148,7 @@ mod tests {
                 records: vec![
                     Record::Entry("e".to_string()),
                     Record::Operation {
-                        event: "record_list.write".to_string(),
+                        event: "record_list.change".to_string(),
                         data: "d".to_string(),
                     },
                     Record::Checkpoint("c".to_string()),
@@ -1184,7 +1184,7 @@ mod tests {
                 more: true,
             },
             Response::Operations {
-                operations: vec![("record_list.write".to_string(), "d".to_string())],
+                operations: vec![("record_list.change".to_string(), "d".to_string())],
             },
             Response::Heads {
                 heads: vec![Head {
@@ -1222,8 +1222,8 @@ mod tests {
                     frozen: 6,
                     cursor: 12,
                     held: vec![
-                        ("record_list.write".to_string(), "a".to_string()),
-                        ("record_list.supersede".to_string(), "b".to_string()),
+                        ("record_list.change".to_string(), "a".to_string()),
+                        ("record_list.change".to_string(), "b".to_string()),
                     ],
                 },
                 "kept as proof",
@@ -1254,7 +1254,7 @@ mod tests {
             r#"{"v":1,"op":"fly"}"#,
             r#"{"v":1,"op":"entries","from":"x"}"#,
             r#"{"v":1,"op":"feed","cursor":"0","limit":-1}"#,
-            r#"{"v":1,"op":"submit","event":"record_list.write"}"#,
+            r#"{"v":1,"op":"submit","event":"record_list.change"}"#,
         ] {
             assert!(Request::from_json(text).is_err(), "{text}");
         }
@@ -1309,7 +1309,7 @@ mod tests {
                 seq: 3,
                 frozen: 3,
                 cursor: 8,
-                held: vec![("record_list.write".to_string(), "{}".to_string())],
+                held: vec![("record_list.change".to_string(), "{}".to_string())],
             },
             "why",
         )
@@ -1318,7 +1318,7 @@ mod tests {
         assert_eq!(
             value,
             json!({"v": 2, "refused": "conflict", "reason": "why", "node": "1", "seq": "3",
-                   "frozen": "3", "cursor": "8", "held": [["record_list.write", "{}"]]})
+                   "frozen": "3", "cursor": "8", "held": [["record_list.change", "{}"]]})
         );
         let mut without = value.clone();
         without.as_object_mut().unwrap().remove("held");

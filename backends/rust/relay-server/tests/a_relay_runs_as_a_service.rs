@@ -441,7 +441,7 @@ fn a_relay_that_cannot_start_says_what_is_wrong_and_exits_with_its_reason() {
     fs::create_dir_all(&slot).unwrap();
     fs::write(
         slot.join("686f6d65.jsonl"),
-        "{\"list\":\"home\",\"record\":{\"k\":\"op\",\"e\":\"record_list.write\",\"d\":\"{}\"}}\n",
+        "{\"list\":\"home\",\"record\":{\"k\":\"op\",\"e\":\"record_list.change\",\"d\":\"{}\"}}\n",
     )
     .unwrap();
     let forged = check(&configuration);
