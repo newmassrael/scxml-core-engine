@@ -21,6 +21,9 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
+
+#include "sce/forge/bounded.h"
 
 namespace SCE::Forge {
 namespace Detail {
@@ -30,6 +33,23 @@ template <typename T> struct IsOptional : std::false_type {};
 
 template <typename T> struct IsOptional<std::optional<T>> : std::true_type {};
 
+/// The type `x ?? d` answers where `x` holds a `T`: `T` itself, and the plain
+/// text or byte string a machine's bounded text or byte string holds
+/// (`OwnedText`, `OwnedBytes`; docs/adr/0086, section 7.4), so a default of
+/// another bound, or a literal, is read as the text it is and held to the
+/// bound of the place the answer is written to there.
+template <typename T> struct Answered {
+    using type = T;
+};
+
+template <std::size_t Max, std::size_t Min> struct Answered<Bounded<std::string, Max, Min>> {
+    using type = std::string;
+};
+
+template <std::size_t Max, std::size_t Min> struct Answered<Bounded<std::vector<std::uint8_t>, Max, Min>> {
+    using type = std::vector<std::uint8_t>;
+};
+
 }  // namespace Detail
 
 /// `value ?? fallback` (docs/adr/0055): the value `value` holds when it is
@@ -37,19 +57,21 @@ template <typename T> struct IsOptional<std::optional<T>> : std::true_type {};
 /// and `fallback` is called only when `value` is absent, so a failure it would
 /// record (an overflow of a checked operation it computes) is recorded only
 /// then. A fallback of `T` answers a `T`; a fallback that may itself be absent
-/// answers an optional value, absent when both are.
+/// answers an optional value, absent when both are. A bounded text or byte
+/// string answers the plain one it holds ([`Detail::Answered`]).
 template <typename T, typename F> auto otherwise(const std::optional<T> &value, F &&fallback) {
     using Fallback = std::decay_t<std::invoke_result_t<F>>;
+    using Value = typename Detail::Answered<T>::type;
     if constexpr (Detail::IsOptional<Fallback>::value || std::is_same_v<Fallback, std::nullopt_t>) {
         if (value.has_value()) {
-            return std::optional<T>(value);
+            return std::optional<Value>(Value(*value));
         }
-        return std::optional<T>(std::forward<F>(fallback)());
+        return std::optional<Value>(std::forward<F>(fallback)());
     } else {
         if (value.has_value()) {
-            return T(*value);
+            return Value(*value);
         }
-        return static_cast<T>(std::forward<F>(fallback)());
+        return static_cast<Value>(std::forward<F>(fallback)());
     }
 }
 

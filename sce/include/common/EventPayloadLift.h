@@ -5,6 +5,7 @@
 #include "common/JsonText.h"
 #include "common/Latin1Bytes.h"
 #include "core/LogMacros.h"
+#include "sce/forge/bounded.h"
 
 #include <algorithm>
 #include <cmath>
@@ -823,6 +824,34 @@ public:
     }
 
     /**
+     * @brief A text read into the `OwnedText<Max>` a machine holds it in (docs/adr/0086,
+     * section 7.4): refused past `bound`, which is the place's `Max`, as `readText` refuses
+     */
+    template <std::size_t Max, std::size_t Min>
+    EventPayloadRefusal readText(size_t bound, ::SCE::Forge::Bounded<std::string, Max, Min> &out) const {
+        std::string text;
+        EventPayloadRefusal refusal = readText(bound < Max ? bound : Max, text);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+        return hold(std::move(text), out);
+    }
+
+    /**
+     * @brief A byte string read into the `OwnedBytes<Max>` a machine holds it in, refused past
+     * `bound`, which is the place's `Max`, as `readBytes` refuses
+     */
+    template <std::size_t Max, std::size_t Min>
+    EventPayloadRefusal readBytes(size_t bound, ::SCE::Forge::Bounded<std::vector<uint8_t>, Max, Min> &out) const {
+        std::vector<uint8_t> bytes;
+        EventPayloadRefusal refusal = readBytes(bound < Max ? bound : Max, bytes);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+        return hold(std::move(bytes), out);
+    }
+
+    /**
      * @brief A whole number, at the width its type declares
      *
      * ⚠ A truth value is not a number here. JSON spells both, and a schema that
@@ -1011,6 +1040,28 @@ public:
     }
 
     /**
+     * @brief A value of `list<T>[bound]` read into the `OwnedList<T, Max>` a machine holds it
+     * in (docs/adr/0086, section 7.4), `bound` being the place's `Max`: counted before any
+     * element is read, as `readList` counts
+     */
+    template <typename T, std::size_t Max, std::size_t Min, typename Read>
+    EventPayloadRefusal readList(size_t bound, ::SCE::Forge::Bounded<std::vector<T>, Max, Min> &out, Read read) const {
+        return readListWithin(Min, bound, out, read);
+    }
+
+    /** @brief `readListWithin` into the `OwnedList<T, Max>` a machine holds the list in */
+    template <typename T, std::size_t Max, std::size_t Min, typename Read>
+    EventPayloadRefusal readListWithin(size_t least, size_t bound, ::SCE::Forge::Bounded<std::vector<T>, Max, Min> &out,
+                                       Read read) const {
+        std::vector<T> items;
+        EventPayloadRefusal refusal = readListWithin(least > Min ? least : Min, bound < Max ? bound : Max, items, read);
+        if (!refusal.empty()) {
+            return refusal;
+        }
+        return hold(std::move(items), out);
+    }
+
+    /**
      * @brief A value of a record type: an object whose fields `read(fields)` reads
      *
      * `defaults`, for a record whose schema a later revision added fields to, is the
@@ -1068,6 +1119,21 @@ private:
         return refuse(RefusalCode::TooLong,
                       "is " + std::to_string(held) + " bytes, past the " + std::to_string(bound) + " its type declares",
                       boundOf(bound));
+    }
+
+    /**
+     * `list`, read within the bounds of `out`'s type, held in `out`. The reader held its count
+     * already, so what `make` can still refuse is a text that is not well-formed UTF-8 (an
+     * escape of a lone surrogate), which is no JSON text.
+     */
+    template <typename L, std::size_t Max, std::size_t Min>
+    EventPayloadRefusal hold(L list, ::SCE::Forge::Bounded<L, Max, Min> &out) const {
+        auto held = ::SCE::Forge::Bounded<L, Max, Min>::make(std::move(list));
+        if (!held.has_value()) {
+            return refuse(RefusalCode::NotJson, "is not well-formed UTF-8");
+        }
+        out = std::move(*held);
+        return {};
     }
 
     const char *at_ = nullptr;
@@ -1483,6 +1549,10 @@ public:
         } else if constexpr (std::is_same_v<T, std::vector<uint8_t>>) {
             // See EventPayloadValue::readBytes for why Latin-1.
             return quote(Latin1Bytes::textOf(value));
+        } else if constexpr (::SCE::Forge::Detail::IsBounded<T>::value) {
+            // A text or a byte string a machine holds to its bound (docs/adr/0086, section
+            // 7.4) is written as the one it holds.
+            return json(value.inner());
         } else if constexpr (std::is_floating_point_v<T>) {
             // The one spelling of a float (ARCHITECTURE.md, "JSON Number
             // Text"); `%.17g` wrote 0.1 as `0.10000000000000001`. JSON has no
@@ -1543,6 +1613,12 @@ public:
         }
         out += ']';
         return out;
+    }
+
+    /** @brief `list` of a list a machine holds to its bound (`OwnedList`, docs/adr/0086, section 7.4) */
+    template <typename T, std::size_t Max, std::size_t Min, typename Write>
+    static std::string list(const ::SCE::Forge::Bounded<std::vector<T>, Max, Min> &items, Write write) {
+        return list(items.inner(), write);
     }
 
     /**
@@ -1665,10 +1741,14 @@ EventPayloadRefusal EventPayloadValue::readUnion(const char *tag, ReadTag readTa
  * @brief The checks a generated raise runs over a value a host built, before it
  * encodes the event (docs/adr/0086, section 5.4)
  *
- * C++ has no checked constructor on a plain struct, so the raise runs the check its
- * composition generates, one call per constructor, and refuses the event whole. Each
- * answers an empty string, or why the value is not one of its type, the path first,
- * in the words the payload reader uses.
+ * A machine's text, byte string and list hold their bounds in their types
+ * (`OwnedText`, `OwnedBytes`, `OwnedList`; section 7.4), so a host cannot build one
+ * past its bound; what no type holds is a list's lower count, which the raise
+ * checks, one call per constructor that reaches such a list, and refuses the event
+ * whole. Each answers an empty string, or why the value is not one of its type, the
+ * path first, in the words the payload reader uses. A list is any whose `size()`
+ * counts its elements and whose `operator[]` reads one: a `std::vector` and an
+ * `OwnedList` alike.
  */
 class EventPayloadBounds {
 public:
@@ -1681,8 +1761,8 @@ public:
     }
 
     /** `each(path, element)` holds each element to its own type, at the path of its index. */
-    template <typename T, typename Each>
-    static std::string list(const std::string &path, const std::vector<T> &items, size_t bound, Each each) {
+    template <typename List, typename Each>
+    static std::string list(const std::string &path, const List &items, size_t bound, Each each) {
         return listWithin(path, items, 0, bound, each);
     }
 
@@ -1691,9 +1771,8 @@ public:
      * each held to its own type by `each`: a list is built from empty an element at a time,
      * so its lower count is held where it is written.
      */
-    template <typename T, typename Each>
-    static std::string listWithin(const std::string &path, const std::vector<T> &items, size_t least, size_t bound,
-                                  Each each) {
+    template <typename List, typename Each>
+    static std::string listWithin(const std::string &path, const List &items, size_t least, size_t bound, Each each) {
         if (items.size() > bound) {
             return "'" + path + "' holds " + std::to_string(items.size()) + " elements, past the " +
                    std::to_string(bound) + " its type declares";
