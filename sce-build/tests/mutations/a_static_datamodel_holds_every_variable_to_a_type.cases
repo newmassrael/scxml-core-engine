@@ -344,13 +344,13 @@ PY
 # schema, a `<final>`), which would reach a backend as a name nothing declares.
 mutation_case "a param that reads the payload is refused everywhere again" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "        if crate::forge::expr::references_event_data_lexically(written)\n            && self.payload_schema.borrow().is_none()\n        {",
+     "        if crate::forge::expr::references_event_data_lexically(written)\n            && !self.payload_declared.get()\n        {",
      "        if crate::forge::expr::references_event_data_lexically(written) {")
 PY
 
 mutation_case "a param reads a payload that is not in scope" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "        if crate::forge::expr::references_event_data_lexically(written)\n            && self.payload_schema.borrow().is_none()\n        {",
+     "        if crate::forge::expr::references_event_data_lexically(written)\n            && !self.payload_declared.get()\n        {",
      "        if false {")
 PY
 

@@ -31,10 +31,12 @@ import Testing
     engine.step()
     // The one refusal is the list sent short of its field's lower count (docs/adr/0086,
     // section 15.6): sent empty, refused whole and never delivered; sent with its one
-    // element, delivered.
+    // element, delivered, and forwarded once more with its scalar `hops`, a scalar field
+    // of a payload that holds a list.
     #expect(policy.refusals == 1)
-    #expect(policy.countedDeliveries == 1)
+    #expect(policy.countedDeliveries == 2)
     #expect(policy.countedSum == 7)
+    #expect(policy.countedHops == 3)
     // The forwarded delivery came back on the internal queue.
     #expect(policy.deliveries == 2)
     // Depth 1: the lengths of a list of records and a list of enum values.
