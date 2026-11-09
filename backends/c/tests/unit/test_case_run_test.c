@@ -1779,6 +1779,24 @@ static void the_test_log_a_record_omits_an_absent_field_and_a_list_keeps_its_ord
     CHECK(canonically(&jcs, "[]"), "wrote %s", canonical_out);
 }
 
+// An absent element of a list is `null` in its place, and a present one its
+// value: the array keeps every position.
+static void the_test_log_an_absent_element_of_a_list_is_null(void) {
+    static const bool present[] = {true, false};
+    static const uint8_t held[] = {1u, 0u};
+    sce_jcs_t jcs;
+    sce_jcs_begin_array(canonical_writer(&jcs));
+    for (size_t i = 0u; i < sizeof(held); ++i) {
+        if (present[i]) {
+            SCE_TEST_CANONICAL_INTEGER(&jcs, held[i]);
+        } else {
+            sce_test_canonical_absent_element(&jcs);
+        }
+    }
+    sce_jcs_end_array(&jcs);
+    CHECK(canonically(&jcs, "[\"1\",null]"), "wrote %s", canonical_out);
+}
+
 // The file `relative` under the repository's root, terminated; false when it
 // cannot be read whole into `cap` bytes.
 static bool read_project_file(const char *relative, char *out, size_t cap, size_t *len) {
@@ -2119,6 +2137,7 @@ int main(void) {
     the_test_log_a_byte_string_is_its_octets_in_upper_case_hex();
     the_test_log_an_enum_is_its_declared_name();
     the_test_log_a_record_omits_an_absent_field_and_a_list_keeps_its_order();
+    the_test_log_an_absent_element_of_a_list_is_null();
     the_test_log_the_schema_file_declares_the_status_this_runtime_does();
     the_test_log_every_kind_is_one_the_schema_names();
     the_test_log_a_record_is_written_with_the_members_of_its_kind();

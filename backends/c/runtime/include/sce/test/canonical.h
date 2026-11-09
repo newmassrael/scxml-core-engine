@@ -23,7 +23,9 @@
  *   - a record is an object of its fields by their declared ids, a field that
  *     is absent omitted, as TTCN-3's `omit` leaves it out (a member named with
  *     `sce_jcs_key` that no value follows);
- *   - a list is an array of its elements in order.
+ *   - a list is an array of its elements in order, an element of
+ *     `optional<T>` that is absent `null`, the one value no other form takes
+ *     (`sce_test_canonical_absent_element`).
  *
  * The generated unit of a test template over a record writes its
  * `<name>_canonical` with these, by the types its document declares
@@ -108,6 +110,16 @@ static inline void sce_test_canonical_integer_(sce_jcs_t *jcs, bool positive, ui
 /** A text. */
 static inline void sce_test_canonical_text(sce_jcs_t *jcs, const char *value) {
     sce_jcs_string(jcs, value);
+}
+
+/** An element of a list of `optional<T>` that holds no value: `null` in its
+ *  place, where a present one is written as its value. An element is not
+ *  omitted as an absent field is, since the array names it by its position,
+ *  which leaving it out would move for every element after it. The TTCN-3
+ *  export refuses a list of `optional<T>` (rule E1, docs/SCE_TEST_PROFILE.md
+ *  §6.3), so only a native log holds this form. */
+static inline void sce_test_canonical_absent_element(sce_jcs_t *jcs) {
+    sce_jcs_null(jcs);
 }
 
 /** A byte string: its `len` octets in upper-case hex, two digits each, as

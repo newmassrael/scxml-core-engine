@@ -91,6 +91,14 @@ class TestCanonical:
         assert written(value) == '["3","1","2"]'
         assert written(canonical.list_of([])) == "[]"
 
+    def test_an_absent_element_of_a_list_is_null(self) -> None:
+        """An absent element of a list is ``null`` in its place, and a present one
+        its value: the array keeps every position."""
+        value = canonical.list_of(
+            canonical.optional_element(tag, canonical.integer) for tag in [1, None]
+        )
+        assert written(value) == '["1",null]'
+
     def test_a_union_is_one_member_named_by_its_variant(self) -> None:
         """A union is one member named by its case's variant: the case's record,
         or the empty object for a case that holds none."""

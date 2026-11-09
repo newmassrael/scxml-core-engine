@@ -17,10 +17,11 @@
 //     each;
 //   - a record is an object of its fields by their declared ids, a field that
 //     is absent omitted, as TTCN-3's `omit` leaves it out;
-//   - a list is an array of its elements in order.
+//   - a list is an array of its elements in order, an element of `optional<T>`
+//     that is absent null, the one value no other form takes.
 //
 // A value is held as the JSON value model of the runtime's JSON writers: a
-// string, a bool, a []any or a *sce.JSONObject.
+// string, a bool, a []any or a *sce.JSONObject, and nil for null.
 //
 // The generated unit of a test template over a record spells its `Canonical`
 // with these, by the types its document declares
@@ -123,7 +124,9 @@ func Field(id string, value any) RecordField {
 
 // Record is a record: each field by its declared id, in any order, since the
 // scheme sorts an object's members; a field whose value is nil is absent and
-// omitted. No value of the canonical form is nil, so nil means absence alone.
+// omitted. No field's value in the canonical form is nil, so nil means absence
+// alone; the one nil a value holds is an absent element inside a list
+// (OptionalElement), which the list's array keeps.
 func Record(fields ...RecordField) *sce.JSONObject {
 	members := sce.NewJSONObject()
 	for _, field := range fields {
@@ -139,6 +142,20 @@ func Record(fields ...RecordField) *sce.JSONObject {
 // for a present field, since what an absent one holds is no value of its type
 // (a closed enum's zero, which no variant need declare, would panic).
 func Optional(present bool, write func() any) any {
+	if !present {
+		return nil
+	}
+	return write()
+}
+
+// OptionalElement is an element of a list of `optional<T>`: the value write
+// gives where present holds, and nil, which sce.WriteJCS writes as JSON null,
+// where it does not. An element is not omitted as an absent field is, since the
+// array names it by its position, which leaving it out would move for every
+// element after it. write is called only for a present element, as Optional
+// calls it. The TTCN-3 export refuses a list of `optional<T>` (rule E1,
+// docs/SCE_TEST_PROFILE.md §6.3), so only a native log holds this form.
+func OptionalElement(present bool, write func() any) any {
 	if !present {
 		return nil
 	}

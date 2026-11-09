@@ -17,7 +17,8 @@
 // - a byte string is the text of its octets in upper-case hex, two digits each;
 // - a record is an object of its fields by their declared ids, a field that is
 //   absent omitted, as TTCN-3's `omit` leaves it out;
-// - a list is an array of its elements in order.
+// - a list is an array of its elements in order, an element of `optional<T>`
+//   that is absent `null`, the one value no other form takes.
 //
 // The generated unit of a test template over a record spells its `canonical`
 // with these, by the types its document declares
@@ -135,6 +136,19 @@ template <typename Elements, typename Write> Value list(const Elements &elements
 template <typename Held, typename Write> std::optional<Value> optional(const std::optional<Held> &held, Write write) {
     if (!held.has_value()) {
         return std::nullopt;
+    }
+    return write(*held);
+}
+
+/// An element of a list of `optional<T>`: the value @p held holds, in the form
+/// @p write gives it, or `null` where it holds none. An element is not omitted
+/// as an absent field is, since the array names it by its position, which
+/// leaving it out would move for every element after it. The TTCN-3 export
+/// refuses a list of `optional<T>` (rule E1, docs/SCE_TEST_PROFILE.md §6.3), so
+/// only a native log holds this form.
+template <typename Held, typename Write> Value optionalElement(const std::optional<Held> &held, Write write) {
+    if (!held.has_value()) {
+        return Value(nullptr);
     }
     return write(*held);
 }

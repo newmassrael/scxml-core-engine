@@ -17,7 +17,8 @@
 //! - a byte string is the text of its octets in upper-case hex, two digits each;
 //! - a record is an object of its fields by their declared ids, a field that is
 //!   absent omitted, as TTCN-3's `omit` leaves it out;
-//! - a list is an array of its elements in order;
+//! - a list is an array of its elements in order, an element of
+//!   `optional<T>` that is absent `null`, the one value no other form takes;
 //! - a value of a union is an object of one member, named by its case's
 //!   variant, whose value is the case's record, or `{}` for a case that holds
 //!   none.
@@ -89,6 +90,15 @@ pub fn list(elements: impl IntoIterator<Item = Value>) -> Value {
     Value::Array(elements.into_iter().collect())
 }
 
+/// An element of a list of `optional<T>`: the value it holds, or `null` where
+/// it holds none. An element is not omitted as an absent field is, since the
+/// array names it by its position, which leaving it out would move for every
+/// element after it. The TTCN-3 export refuses a list of `optional<T>` (rule
+/// E1, docs/SCE_TEST_PROFILE.md §6.3), so only a native log holds this form.
+pub fn optional_element(value: Option<Value>) -> Value {
+    value.unwrap_or(Value::Null)
+}
+
 /// A value of a union: one member, named by the variant of its case, holding
 /// the case's record, or the empty object for a case that holds none.
 pub fn union_case(variant: &str, record: Option<Value>) -> Value {
@@ -158,6 +168,17 @@ mod tests {
         let value = list([3_u8, 1, 2].into_iter().map(integer));
         assert_eq!(written(&value), "[\"3\",\"1\",\"2\"]");
         assert_eq!(written(&list(Vec::new())), "[]");
+    }
+
+    /// An absent element of a list is `null` in its place, and a present one
+    /// its value: the array keeps every position.
+    #[test]
+    fn an_absent_element_of_a_list_is_null() {
+        let value = list([
+            optional_element(Some(integer(1_u8))),
+            optional_element(None),
+        ]);
+        assert_eq!(written(&value), "[\"1\",null]");
     }
 
     /// A union is one member named by its case's variant: the case's record, or

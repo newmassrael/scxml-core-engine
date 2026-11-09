@@ -16,7 +16,8 @@ on every runtime.
 - a byte string is the text of its octets in upper-case hex, two digits each;
 - a record is a dict of its fields by their declared ids, a field that is absent
   omitted, as TTCN-3's ``omit`` leaves it out;
-- a list is a list of its elements in order;
+- a list is a list of its elements in order, an element of ``optional<T>`` that
+  is absent ``None``, written as ``null``, the one value no other form takes;
 - a value of a union is a dict of one member, named by its case's variant, whose
   value is the case's record, or ``{}`` for a case that holds none.
 
@@ -37,7 +38,7 @@ Cross-language siblings: ``sce_rust_runtime::test::canonical`` (Rust),
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, TypeVar, Union
 
 __all__ = [
     "CanonicalValue",
@@ -47,14 +48,19 @@ __all__ = [
     "integer",
     "list_of",
     "open_enumerated",
+    "optional_element",
     "record",
     "text",
     "union_case",
 ]
 
 #: A value in the canonical form: a text, a truth value, a list of values, or a
-#: dict of values by their names. Never a number and never ``None``.
+#: dict of values by their names. Never a number, and ``None`` only as an absent
+#: element inside a list (:func:`optional_element`).
 CanonicalValue = Union[str, bool, List[Any], Dict[str, Any]]
+
+#: The type of the value an element of a list of ``optional<T>`` holds.
+T = TypeVar("T")
 
 
 def integer(value: int) -> str:
@@ -108,9 +114,25 @@ def record(*fields: Tuple[str, Optional[CanonicalValue]]) -> Dict[str, Canonical
     return {field: value for field, value in fields if value is not None}
 
 
-def list_of(elements: Iterable[CanonicalValue]) -> List[CanonicalValue]:
-    """A list: its elements in order."""
+def list_of(elements: Iterable[Optional[CanonicalValue]]) -> List[Optional[CanonicalValue]]:
+    """A list: its elements in order, an absent element of a list of
+    ``optional<T>`` ``None`` in its place (:func:`optional_element`)."""
     return list(elements)
+
+
+def optional_element(
+    held: Optional[T], write: Callable[[T], CanonicalValue]
+) -> Optional[CanonicalValue]:
+    """An element of a list of ``optional<T>``: the value ``held`` holds, in the
+    form ``write`` gives it, or ``None``, which ``write_jcs`` writes as JSON
+    ``null``, where it holds none. An element is not omitted as an absent field
+    is, since the array names it by its position, which leaving it out would
+    move for every element after it. The TTCN-3 export refuses a list of
+    ``optional<T>`` (rule E1, docs/SCE_TEST_PROFILE.md §6.3), so only a native
+    log holds this form."""
+    if held is None:
+        return None
+    return write(held)
 
 
 def union_case(variant: str, case_record: Optional[CanonicalValue]) -> Dict[str, CanonicalValue]:
