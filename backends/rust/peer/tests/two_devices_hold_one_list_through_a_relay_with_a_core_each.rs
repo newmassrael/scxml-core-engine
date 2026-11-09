@@ -310,11 +310,11 @@ fn what_alices_machine_sends_reaches_bobs_machine_as_it_was_sent() {
         "the machine is told the change, not the operation it travelled as: {}",
         changes[0]
     );
-    let writes = writes(&told);
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0]["by"], "1");
-    assert_eq!(writes[0]["value"], "10");
-    assert_eq!(writes[0]["id"], 1);
+    let first = writes(&told);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0]["by"], "1");
+    assert_eq!(first[0]["value"], "10");
+    assert_eq!(first[0]["id"], 1);
     assert_eq!(
         told.events()[0].0,
         ROLE,
