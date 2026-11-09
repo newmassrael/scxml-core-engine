@@ -1950,7 +1950,14 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedValueIsSentB
     ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "deliveries") == 2; }))
         << "the forwarded delivery did not come back: deliveries " << variable(*machine, "deliveries").dump()
         << ", refusals " << variable(*machine, "refusals").dump();
-    EXPECT_EQ(variable(*machine, "refusals"), 0) << "the delivery the machine sent itself fits its schema";
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "counted_deliveries") == 1; }))
+        << "the list sent with its one element did not arrive: counted_deliveries "
+        << variable(*machine, "counted_deliveries").dump();
+    EXPECT_EQ(variable(*machine, "refusals"), 1) << "the delivery the machine sent itself fits its schema, and the "
+                                                    "one refusal is the list sent short of its field's lower count";
+    // A list variable sent to a field that states a lower count (docs/adr/0086, section 15.6):
+    // sent empty, refused whole and never delivered; sent with its one element, delivered.
+    EXPECT_EQ(variable(*machine, "counted_sum"), 7);
     // Depth 1: the lengths of a list of records and a list of enum values.
     EXPECT_EQ(variable(*machine, "item_count"), 3);
     EXPECT_EQ(variable(*machine, "level_count"), 2);
@@ -1988,7 +1995,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ARefusedComposedDeliv
     EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "deliveries") == 2; }))
         << "a delivery of its type after the refusal was not forwarded and read: deliveries "
         << variable(*machine, "deliveries").dump();
-    EXPECT_EQ(variable(*machine, "refusals"), 1) << "the delivery of its type is no error";
+    // The delivery of its type is no error: the one refusal past the first is the list the
+    // first transition sends short of its field's lower count (docs/adr/0086, section 15.6).
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 2; }))
+        << "refusals is " << variable(*machine, "refusals").dump();
     EXPECT_EQ(variable(*machine, "item_count"), 3);
 }
 

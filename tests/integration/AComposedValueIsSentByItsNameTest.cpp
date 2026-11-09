@@ -51,7 +51,12 @@ TEST(AComposedValueIsSentByItsNameTest, ADeliveryForwardedByItsNamesComesBackWho
                                             "],\"grid\":[[1,2],[3,4]],\"levels\":[\"low\",\"critical\"],"
                                             "\"maybe\":[7,null],\"spare\":[1,2],\"note\":\"abcd\",\"late\":[5,6]}");
     StaticScenario::settleRounds(machine);
-    EXPECT_EQ(machine.refusals(), 0u) << "the delivery the machine sent itself fits its schema";
+    EXPECT_EQ(machine.refusals(), 1u) << "the delivery the machine sent itself fits its schema, and the one refusal "
+                                         "is the list sent short of its field's lower count";
+    // A list variable sent to a field that states a lower count (docs/adr/0086, section 15.6): sent
+    // empty, refused whole and never delivered; sent with its one element, delivered.
+    EXPECT_EQ(machine.counted_deliveries(), 1u);
+    EXPECT_EQ(machine.counted_sum(), 7u);
     EXPECT_EQ(machine.deliveries(), 2u) << "the forwarded delivery came back on the internal queue";
     // Depth 1: the lengths of a list of records and a list of enum values.
     EXPECT_EQ(machine.item_count(), 3u);

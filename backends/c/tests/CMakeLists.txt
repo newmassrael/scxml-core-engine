@@ -3064,7 +3064,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         sce_generate_static_integration_c_test(${_STATIC_COMPOSED_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_COMPOSED_MACHINE}.scxml"
-            STAGE_ALSO event_batch.scxml event_batch_item.scxml enum_signal_level.scxml
+            STAGE_ALSO event_batch.scxml event_batch_item.scxml enum_signal_level.scxml event_counted.scxml
         )
     endforeach()
     foreach(_STATIC_COMPOSED_CASE a_composed_payload_is_read_at_any_depth:static_composed_payload

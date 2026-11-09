@@ -52,11 +52,13 @@ fn fixtures() -> PathBuf {
     repo_root().join("sce-build/tests/fixtures/static_datamodel")
 }
 
-/// The documents a sender of `batch.sent` imports, copied beside it.
-const SIBLINGS: [&str; 3] = [
+/// The documents a sender of `batch.sent` or `counted.sent` imports, copied
+/// beside it.
+const SIBLINGS: [&str; 4] = [
     "enum_signal_level.scxml",
     "event_batch_item.scxml",
     "event_batch.scxml",
+    "event_counted.scxml",
 ];
 
 /// The machine of `static_composed_send` for `language`, generated where the
@@ -298,6 +300,86 @@ fn a_value_that_may_not_fit_is_refused_naming_the_field_and_the_place() {
         "{out}"
     );
     assert!(out.contains("'wide' is a "), "{out}");
+}
+
+/// A statechart that holds the variables `data` and, on `go`, sends
+/// `counted.sent` (whose `kept` is a `list<uint8>[1..2]`, event_counted.scxml)
+/// with `kept` given by `expr`.
+fn counted_sender(data: &str, expr: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="counted_sender">
+  <sce:import kind="event-schema" src="event_counted.scxml" as="Counted"/>
+  <datamodel>
+    {data}
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="idle">
+      <send event="counted.sent" target="#_internal">
+        <param name="kept" expr="{expr}"/>
+      </send>
+    </transition>
+  </state>
+</scxml>
+"##
+    )
+}
+
+/// Pinned by `fits_but_for_count` (`sce-build/src/forge/value_type.rs`), which
+/// `Judge::composed_param` asks (`sce-build/src/forge/static_datamodel.rs`):
+/// a list variable, which states no lower count, is sent to a field that states
+/// one, its count left to the send (docs/adr/0086, section 15.6), on each
+/// backend that sends a composed value; one that may hold more than the field
+/// is still refused where it is written.
+#[test]
+fn a_list_variable_is_sent_to_a_field_that_states_a_lower_count() {
+    let fits = counted_sender(
+        r#"<data id="held" sce:type="list&lt;uint8&gt;[2]"/>"#,
+        "held",
+    );
+    for (language, row) in checked_backends() {
+        if row.sends {
+            let (ok, out) = run(&["check", "-l", language], &fits);
+            assert!(
+                ok,
+                "{language} sends a list its count is held to when it runs:\n{out}"
+            );
+        }
+    }
+    let wide = counted_sender(
+        r#"<data id="wide" sce:type="list&lt;uint8&gt;[3]"/>"#,
+        "wide",
+    );
+    let (ok, out) = run(&["check", "-l", "rust"], &wide);
+    assert!(!ok, "a list of 3 may not fit a field of 2:\n{out}");
+    assert!(
+        out.contains("'wide' is a list<uint8>[3], which may hold more than"),
+        "{out}"
+    );
+}
+
+/// Pinned by `composed_wire_value`'s count (`sce-build/src/forge/static_lowering.rs`)
+/// and `RustComposed::send_counted` (`sce-build/src/forge/composed_lowering/rust.rs`):
+/// the Rust machine of `static_composed_send` holds `held` to the one element
+/// `counted.sent` asks before it writes it, through the `AlgorithmError` its
+/// `<send>` reads a param's failure from, and holds no count of a list that
+/// proves its own.
+#[test]
+fn a_list_sent_short_of_its_fields_count_is_held_to_it_on_rust() {
+    let code = sender_machine();
+    holds(
+        &code,
+        &[
+            "::sce_forge_runtime::algorithm::holds_at_least(",
+            "held.len(), 1)?;",
+        ],
+    );
+    assert_eq!(
+        code.matches("holds_at_least(").count(),
+        2,
+        "the two sends of `held` hold its count, and no other send does:\n{code}"
+    );
 }
 
 /// Pinned by the place `Judge::composed_param` asks the value for

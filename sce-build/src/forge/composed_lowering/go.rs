@@ -479,6 +479,15 @@ impl ComposedSpelling for GoComposed<'_> {
             }
         }
     }
+    // The count held first, by the `sceFailure` a `<send>` declares for a param
+    // that can fail and reads after it, then the list written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "func() any {{ if len({}) < {least} {{ sceFailure.Fail(scealgorithm.Precondition) }}; \
+             return {sent} }}()",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         GO_ELEMENT_BINDING
@@ -978,5 +987,19 @@ mod tests {
         )
         .unwrap_err()
         .contains("holds no union"));
+    }
+
+    /// A list sent where its field asks a lower count it does not prove is
+    /// held to the count before it is written (docs/adr/0086, section 15.6).
+    #[test]
+    fn a_list_sent_short_of_its_fields_count_fails_before_it_is_written() {
+        assert_eq!(
+            GO.send_counted(&Held::place("p.Taking"), "ops", 1, "W".to_string()),
+            Some(
+                "func() any { if len(p.Taking) < 1 { sceFailure.Fail(scealgorithm.Precondition) }; \
+                 return W }()"
+                    .to_string()
+            )
+        );
     }
 }

@@ -552,6 +552,15 @@ impl ComposedSpelling for CppComposed<'_> {
             ),
         }
     }
+    // The count held first, by the `sce_failure_` a `<send>` declares for a
+    // param that can fail and reads after it, then the list written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "[&]() -> ScriptValue {{ if ({}.size() < {least}u) {{ \
+             sce_failure_.fail(::SCE::Forge::AlgorithmError::Precondition); }} return {sent}; }}()",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         CPP_COPY_BINDING
@@ -953,6 +962,16 @@ mod tests {
         }
         // The writers write the `ScriptValue` a send holds its params in.
         assert_eq!(wire.send_param("x".to_string()), "x");
+        // A list sent where its field asks a lower count it does not prove is
+        // held to the count before it is written (docs/adr/0086, section 15.6).
+        assert_eq!(
+            wire.send_counted(&Held::place("taking_"), "ops", 1, "W".to_string()),
+            Some(
+                "[&]() -> ScriptValue { if (taking_.size() < 1u) { \
+                 sce_failure_.fail(::SCE::Forge::AlgorithmError::Precondition); } return W; }()"
+                    .to_string()
+            )
+        );
     }
 
     /// Two places of one type are copied by the assignment, which copies a
