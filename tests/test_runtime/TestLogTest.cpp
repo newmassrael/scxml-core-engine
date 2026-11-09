@@ -106,6 +106,16 @@ TEST(CanonicalValue, AnOptionalFieldIsWhatItHoldsOrNone) {
     EXPECT_FALSE(Canonical::optional(std::optional<std::string>(), text).has_value());
 }
 
+/// An absent element of a list is `null` in its place, and a present one its
+/// value: the array keeps every position.
+TEST(CanonicalValue, AnAbsentElementOfAListIsNull) {
+    const auto element = [](const std::optional<std::uint8_t> &held) {
+        return Canonical::optionalElement(held, [](const std::uint8_t &n) { return Canonical::integer(n); });
+    };
+    const std::vector<std::optional<std::uint8_t>> tags{std::uint8_t{1}, std::nullopt};
+    EXPECT_EQ(writeCanonical(Canonical::list(tags, element)), "[\"1\",null]");
+}
+
 // ── A message's value (test/Port.h) ──────────────────────────────────
 
 /// A message's value is read back by its type, and by no other, and its

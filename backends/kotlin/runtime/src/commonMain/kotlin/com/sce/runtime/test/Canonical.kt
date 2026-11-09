@@ -25,7 +25,8 @@ package com.sce.runtime.test
  * - a byte string is the text of its octets in upper-case hex, two digits each;
  * - a record is a map of its fields by their declared ids, a field that is
  *   absent omitted, as TTCN-3's `omit` leaves it out;
- * - a list is a list of its elements in order;
+ * - a list is a list of its elements in order, an element of `optional<T>`
+ *   that is absent null, the one value no other form takes;
  * - a value of a union is a map of one member, named by its case's variant,
  *   whose value is the case's record, or the empty map for a case that holds
  *   none.
@@ -110,8 +111,23 @@ object Canonical {
         return members
     }
 
-    /** A list: its elements in order. */
-    fun list(elements: List<Any>): List<Any> = elements.toList()
+    /**
+     * A list: its elements in order, an absent element of a list of
+     * `optional<T>` null in its place ([optionalElement]).
+     */
+    fun list(elements: List<Any?>): List<Any?> = elements.toList()
+
+    /**
+     * An element of a list of `optional<T>`: the value [held] holds, in the
+     * form [write] gives it, or null, which `Json.writeJcs` writes as JSON
+     * `null`, where it holds none. An element is not omitted as an absent field
+     * is, since the array names it by its position, which leaving it out would
+     * move for every element after it. The TTCN-3 export refuses a list of
+     * `optional<T>` (rule E1, docs/SCE_TEST_PROFILE.md §6.3), so only a native
+     * log holds this form.
+     */
+    fun <T : Any> optionalElement(held: T?, write: (T) -> Any): Any? =
+        if (held == null) null else write(held)
 
     /**
      * A value of a union: one member, named by the variant of its case,

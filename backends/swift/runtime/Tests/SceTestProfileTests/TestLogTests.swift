@@ -69,6 +69,16 @@ struct CanonicalTests {
         #expect(try written(Canonical.list([])) == bytes("[]"))
     }
 
+    /// An absent element of a list is `null` in its place, and a present one its value: the array keeps
+    /// every position.
+    @Test func anAbsentElementOfAListIsNull() throws {
+        let tags: [UInt8?] = [1, nil]
+        let value = Canonical.list(tags.map { tag -> JSONValue in
+            Canonical.optionalElement(tag.map { held -> JSONValue in Canonical.integer(held) })
+        })
+        #expect(try written(value) == bytes("[\"1\",null]"))
+    }
+
     /// A union is one member named by its case's variant: the case's record, or the empty object for a
     /// case that holds none.
     @Test func aUnionIsOneMemberNamedByItsVariant() throws {

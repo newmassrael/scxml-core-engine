@@ -12,7 +12,7 @@
 import SceRuntime
 
 /// The writers of the canonical form of a value of the profile's types, each a `JSONValue` that holds
-/// no number and no `null`:
+/// no number, and `null` only as an absent element of a list:
 ///
 /// - an integer of any width is the text of its decimal digits, since an `int64` or a `uint64` is past
 ///   what a JSON reader that holds numbers as doubles reads exactly;
@@ -22,7 +22,8 @@ import SceRuntime
 /// - a byte string is the text of its octets in upper-case hex, two digits each;
 /// - a record is an object of its fields by their declared ids, a field that is absent omitted, as
 ///   TTCN-3's `omit` leaves it out;
-/// - a list is an array of its elements in order;
+/// - a list is an array of its elements in order, an element of `optional<T>` that is absent `null`,
+///   the one value no other form takes;
 /// - a value of a union is an object of one member, named by its case's variant, whose value is the
 ///   case's record, or the empty object for a case that holds none.
 ///
@@ -90,6 +91,14 @@ public enum Canonical {
     /// A list: its elements in order.
     public static func list(_ elements: [JSONValue]) -> JSONValue {
         .array(elements)
+    }
+
+    /// An element of a list of `optional<T>`: the value it holds, or `null` where it holds none. An
+    /// element is not omitted as an absent field is, since the array names it by its position, which
+    /// leaving it out would move for every element after it. The TTCN-3 export refuses a list of
+    /// `optional<T>` (rule E1, docs/SCE_TEST_PROFILE.md §6.3), so only a native log holds this form.
+    public static func optionalElement(_ value: JSONValue?) -> JSONValue {
+        value ?? .null
     }
 
     /// A value of a union: one member, named by the variant of its case, holding the case's record, or

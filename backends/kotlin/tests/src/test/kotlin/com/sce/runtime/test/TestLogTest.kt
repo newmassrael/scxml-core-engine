@@ -82,6 +82,17 @@ class CanonicalTest {
     }
 
     /**
+     * An absent element of a list is `null` in its place, and a present one
+     * its value: the array keeps every position.
+     */
+    @Test
+    fun `an absent element of a list is null`() {
+        val tags: List<UByte?> = listOf(1u.toUByte(), null)
+        val value = Canonical.list(tags.map { tag -> Canonical.optionalElement(tag) { n -> Canonical.integer(n) } })
+        assertEquals("[\"1\",null]", written(value))
+    }
+
+    /**
      * A union is one member named by its case's variant: the case's record, or
      * the empty object for a case that holds none.
      */

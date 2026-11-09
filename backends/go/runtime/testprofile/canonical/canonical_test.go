@@ -120,3 +120,22 @@ func TestAListIsItsElementsInOrder(t *testing.T) {
 	expect(t, List(len(codes), func(index int) any { return Integer(codes[index]) }), `["3","1","2"]`)
 	expect(t, List(0, func(int) any { return Text("never") }), `[]`)
 }
+
+// An absent element of a list is null in its place, and a present one its
+// value: the array keeps every position, and what an absent element holds is
+// never read.
+func TestAnAbsentElementOfAListIsNull(t *testing.T) {
+	present := []bool{true, false}
+	held := []uint8{1, 0}
+	read := 0
+	element := func(index int) any {
+		return OptionalElement(present[index], func() any {
+			read++
+			return Integer(held[index])
+		})
+	}
+	expect(t, List(len(present), element), `["1",null]`)
+	if read != 1 {
+		t.Errorf("the elements were read %d times, once for the present one alone", read)
+	}
+}
