@@ -54,6 +54,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-observation-trace.v1.schema.json",
     "schemas/sce-transition-table.v1.schema.json",
     "schemas/sce-payload-schema.v1.schema.json",
+    "schemas/sce-ttcn3-types-manifest.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -270,6 +271,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_schema_the_product_writes_validates_against_the_wire_schema",
         "sce-build/src/forge/payload_schema.rs",
     ),
+    (
+        "schemas/sce-ttcn3-types-manifest.v1.schema.json",
+        "every_manifest_the_export_writes_validates_against_the_wire_schema",
+        "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -364,6 +370,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-payload-schema.v1.schema.json",
         "the_wire_schema_rejects_what_the_producer_does_not_write",
         "sce-build/src/forge/payload_schema.rs",
+    ),
+    (
+        "schemas/sce-ttcn3-types-manifest.v1.schema.json",
+        "the_wire_schema_rejects_what_the_export_does_not_write",
+        "sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs",
     ),
 ];
 
@@ -475,6 +486,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          into, names its inputs instead, as the sourcemap sidecar's \
          `source_hash` does.",
         "payload schema deliberately does",
+    ),
+    (
+        "schemas/sce-ttcn3-types-manifest.v1.schema.json",
+        "written beside the types module it describes, as part of an export \
+         a consumer commits and regenerates expecting no diff: a commit stamp \
+         would change it on every commit with no type changed. It states the \
+         structure of the module and nothing of the run; the module's header \
+         names its inputs.",
+        "TTCN-3 types manifest deliberately does",
     ),
 ];
 

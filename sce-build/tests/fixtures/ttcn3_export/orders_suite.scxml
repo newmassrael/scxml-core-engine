@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §9.5: a suite whose TTCN-3 export holds an
+     order, its lines, its customer and the union it is paid by, and the
+     templates of the profile's fixtures that match them. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="orders_suite">
+  <sce:import kind="test-case" src="orders_case.scxml" as="OrdersCase"/>
+  <sce:execute test-case="OrdersCase" guard="1s"/>
+</scxml>

@@ -402,6 +402,10 @@ pub mod transition_records;
 /// The transition table, which is also the trace table —
 /// Requirement-closure RFC ②.
 pub mod transition_table;
+/// The TTCN-3 export of a test suite (docs/adr/0091, docs/SCE_TEST_PROFILE.md
+/// §9.5): a translation of the documents of the test profile into TTCN-3
+/// modules, which is not a backend.
+pub mod ttcn3_export;
 /// The statements of a generated source that follow a statement which ended
 /// their list — what a compiler reports as unreachable code — read the same
 /// way for every language SCE emits. The crate compiles it only for its own

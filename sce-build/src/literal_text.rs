@@ -125,6 +125,7 @@ pub const ALREADY_FIT_FOR_A_LITERAL: &[&str] = &[
     "to_rust_literal",
     "to_rust_string_expr",
     "to_script_source_expr",
+    "ttcn3_charstring",
     // Lower an expression into a scripting language's own source text, which
     // carries its own quoting rules and is not this door's to second-guess.
     "to_lua_assign_content",

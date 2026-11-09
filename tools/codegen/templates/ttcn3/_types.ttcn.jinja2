@@ -1,0 +1,33 @@
+{#- The spelling of a type of the TTCN-3 export (docs/SCE_TEST_PROFILE.md
+    §6.3, §9.5), shared by the types module and the definitions that read its
+    types. `type_expr` writes a `ttcn3_export::types::TypeExpr` as TTCN-3
+    writes the type; `bound` writes the bound in bytes a text or a byte string
+    holds, which TTCN-3 does not count and the module states beside the field
+    (§6.3). A record written in place is the empty record of a union's case
+    that holds none. -#}
+{%- macro type_expr(t) -%}
+{%- if t.kind == "ref" -%}
+{{ t.name }}
+{%- elif t.kind == "boolean" -%}
+boolean
+{%- elif t.kind == "universal charstring" -%}
+universal charstring
+{%- elif t.kind == "octetstring" -%}
+octetstring
+{%- elif t.kind == "record of" -%}
+record length({{ t.min_length }} .. {{ t.max_length }}) of {{ type_expr(t.element) }}
+{%- elif t.kind == "record" and not t.fields -%}
+record {}
+{%- elif t.kind == "record" -%}
+record { {%- for f in t.fields %} {{ type_expr(f.type) }} {{ f.name }}{% if f.optional %} optional{% endif %}{% if not loop.last %},{% endif %}{% endfor %} }
+{%- endif -%}
+{%- endmacro -%}
+{%- macro bound(t) -%}
+{%- if t.kind == "record of" -%}
+{{ bound(t.element) }}
+{%- elif t.kind == "universal charstring" -%}
+at most {{ t.max_utf8_bytes }} bytes of UTF-8
+{%- elif t.kind == "octetstring" -%}
+at most {{ t.max_octets }} octets
+{%- endif -%}
+{%- endmacro -%}

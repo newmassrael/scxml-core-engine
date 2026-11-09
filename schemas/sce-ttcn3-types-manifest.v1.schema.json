@@ -1,0 +1,216 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-ttcn3-types-manifest.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE TTCN-3 types manifest (wire schema v1)",
+  "description": "The structural manifest of the types module the TTCN-3 export of a test suite writes, `<suite>_Types.manifest.json` beside `<suite>_Types.ttcn` (docs/adr/0091 C2; docs/SCE_TEST_PROFILE.md section 9.5). It states every definition of the module by its name, its kind and its structure, and the external codec functions the module declares and does not implement, so a consumer can hold a types module written apart from SCE, with a codec of its own, to the one the export writes. Every name is a name of the suite's documents, written as it is written, and a TTCN-3 identifier. Every value that may pass 2^53, a bound of an integer type and the number of a variant, is the text of its digits; a length and a bound in bytes are numbers. Definitions stand in the order the module holds them: the eight integer types of the type grammar, then the enumerated types, records and unions in the order of their names; the codec functions in the order of their types' names. The manifest names nothing of the run that wrote it, no generator commit and no source hash: two exports of one suite by two builds that write the same module write the same manifest, and the module's own header names its inputs. Authoritative producer is sce-build/src/ttcn3_export/manifest.rs over the model of sce-build/src/ttcn3_export/types.rs, which the module is written from too. Consumers MUST ignore unknown fields. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "type": "object",
+  "required": ["v", "suite", "module", "types", "codec"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "description": "Schema version. Bumped only on a breaking shape change.",
+      "const": 1
+    },
+    "suite": {
+      "description": "The suite's unit name: the stem of its document's file in lower snake case, which names its modules.",
+      "$ref": "#/definitions/identifier"
+    },
+    "module": {
+      "description": "The types module's name, `<suite>_Types`.",
+      "$ref": "#/definitions/identifier"
+    },
+    "types": {
+      "description": "Every type definition of the module, in the order it holds them.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/typeDef" }
+    },
+    "codec": {
+      "description": "The codec functions of each type a port of the suite carries: `external function <encode>(in <type> msg) return octetstring` and `external function <decode>(inout octetstring octets, out <type> msg) return integer`, whose result is the one ES 201 873-1's `decvalue` reports (0 decoded, the message's octets taken from `octets`; 1 not decoded; 2 the octets end before the message does).",
+      "type": "array",
+      "items": { "$ref": "#/definitions/codec" }
+    }
+  },
+  "definitions": {
+    "identifier": {
+      "description": "A TTCN-3 identifier: an ASCII letter, then ASCII letters, digits and underscores.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "integerText": {
+      "description": "An integer as the text of its decimal digits, a minus sign before a negative one.",
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)$"
+    },
+    "typeDef": {
+      "description": "One type definition, told apart by its kind.",
+      "oneOf": [
+        {
+          "description": "`type integer <name> (<min> .. <max>)`: an integer type of the type grammar, named by it.",
+          "type": "object",
+          "required": ["kind", "name", "min", "max"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "integer" },
+            "name": {
+              "enum": ["uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64"]
+            },
+            "min": { "$ref": "#/definitions/integerText" },
+            "max": { "$ref": "#/definitions/integerText" }
+          }
+        },
+        {
+          "description": "`type enumerated <name> { <variant>(<value>), ... }`: an enum, its variants in declared order with their declared numbers.",
+          "type": "object",
+          "required": ["kind", "name", "variants"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "enumerated" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "variants": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "$ref": "#/definitions/identifier" },
+                  "value": { "$ref": "#/definitions/integerText" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "`type record <name> { ... }`: an event schema, its fields in declared order, and the event its messages travel under.",
+          "type": "object",
+          "required": ["kind", "name", "event", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "record" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "event": { "type": "string", "minLength": 1 },
+            "fields": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/field" }
+            }
+          }
+        },
+        {
+          "description": "`type union <name> { ... }`: a union, one alternative per case in its tag enum's order, named by the case's variant.",
+          "type": "object",
+          "required": ["kind", "name", "alternatives"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "union" },
+            "name": { "$ref": "#/definitions/identifier" },
+            "alternatives": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["name", "type"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "$ref": "#/definitions/identifier" },
+                  "type": { "$ref": "#/definitions/typeExpr" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "field": {
+      "description": "A field of a record: its name, its type, and whether it is `optional`.",
+      "type": "object",
+      "required": ["name", "type", "optional"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "type": { "$ref": "#/definitions/typeExpr" },
+        "optional": { "type": "boolean" }
+      }
+    },
+    "typeExpr": {
+      "description": "The type of a field, an alternative or an element, its kind named as TTCN-3 spells the type.",
+      "oneOf": [
+        {
+          "description": "A definition of the module, by its name.",
+          "type": "object",
+          "required": ["kind", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "ref" },
+            "name": { "$ref": "#/definitions/identifier" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "boolean" }
+          }
+        },
+        {
+          "description": "A text: TTCN-3 counts its length in characters, so its bound, in bytes of UTF-8, is stated here and held by the codec.",
+          "type": "object",
+          "required": ["kind", "max_utf8_bytes"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "universal charstring" },
+            "max_utf8_bytes": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "description": "A byte string, its bound in octets.",
+          "type": "object",
+          "required": ["kind", "max_octets"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "octetstring" },
+            "max_octets": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "description": "`record length (<min_length> .. <max_length>) of <element>`: a bounded list.",
+          "type": "object",
+          "required": ["kind", "min_length", "max_length", "element"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "record of" },
+            "min_length": { "type": "integer", "minimum": 0 },
+            "max_length": { "type": "integer", "minimum": 1 },
+            "element": { "$ref": "#/definitions/typeExpr" }
+          }
+        },
+        {
+          "description": "A record written in place: the empty record of a union's case that holds none.",
+          "type": "object",
+          "required": ["kind", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "record" },
+            "fields": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/field" }
+            }
+          }
+        }
+      ]
+    },
+    "codec": {
+      "description": "The codec functions of one message type.",
+      "type": "object",
+      "required": ["type", "encode", "decode"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "$ref": "#/definitions/identifier" },
+        "encode": { "$ref": "#/definitions/identifier" },
+        "decode": { "$ref": "#/definitions/identifier" }
+      }
+    }
+  }
+}

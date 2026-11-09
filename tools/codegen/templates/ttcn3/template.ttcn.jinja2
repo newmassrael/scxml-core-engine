@@ -1,0 +1,60 @@
+{#- One template of the test profile as ES 201 873-1 writes it
+    (docs/SCE_TEST_PROFILE.md §6.1, §9.2 E2, §9.5): its type, its value
+    parameters in order, a parameter that may be absent as `template (omit)`
+    (-1 §15.8), and each matching mechanism of §6.1 as -1 Annex B.1 writes
+    it. A record at the root is written a field to a line, in the record's
+    order; every other matcher on the line it stands in. `template` is
+    `ttcn3_export::templates::TemplateView`. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+{%- macro matcher(m) -%}
+{%- set b = m.body -%}
+{%- if b.form == "integer" -%}
+{{ b.value }}
+{%- elif b.form == "boolean" -%}
+{% if b.value %}true{% else %}false{% endif %}
+{%- elif b.form == "enumerated" -%}
+{{ b.variant }}
+{%- elif b.form == "charstring" -%}
+{{ b.text | ttcn3_charstring }}
+{%- elif b.form == "octetstring" -%}
+'{{ b.hex }}'O
+{%- elif b.form == "param" -%}
+{{ b.name }}
+{%- elif b.form == "record" -%}
+{ {%- for f in b.fields %} {{ f.name }} := {{ matcher(f.matcher) }}{% if not loop.last %},{% endif %}{% endfor %} }
+{%- elif b.form == "list" and not b.elements -%}
+{}
+{%- elif b.form == "list" -%}
+{ {%- for e in b.elements %} {{ matcher(e) }}{% if not loop.last %},{% endif %}{% endfor %} }
+{%- elif b.form == "union" and b.case is none -%}
+{ {{ b.variant }} := {} }
+{%- elif b.form == "union" -%}
+{ {{ b.variant }} := {{ matcher(b.case) }} }
+{%- elif b.form == "value-list" -%}
+({% for i in b.items %}{{ matcher(i) }}{% if not loop.last %}, {% endif %}{% endfor %})
+{%- elif b.form == "complement" -%}
+complement({% for i in b.items %}{{ matcher(i) }}{% if not loop.last %}, {% endif %}{% endfor %})
+{%- elif b.form == "any-value" -%}
+?
+{%- elif b.form == "any-value-or-none" -%}
+*
+{%- elif b.form == "range" -%}
+({% if b.lower is none %}-infinity{% else %}{{ b.lower }}{% endif %} .. {% if b.upper is none %}infinity{% else %}{{ b.upper }}{% endif %})
+{%- elif b.form == "omit" -%}
+omit
+{%- elif b.form == "reference" -%}
+{{ b.template }}{% if b.args %}({{ b.args | join(", ") }}){% endif %}
+{%- endif -%}
+{%- if m.length %} length({{ m.length.min }} .. {% if m.length.max is none %}infinity{% else %}{{ m.length.max }}{% endif %}){% endif -%}
+{%- if m.ifpresent %} ifpresent{% endif -%}
+{%- endmacro -%}
+template {{ types.type_expr(template.type) }} {{ template.name }}
+{%- if template.parameters %}({% for p in template.parameters %}{% if p.omit %}template (omit) {% endif %}{{ types.type_expr(p.type) }} {{ p.name }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %} :=
+{%- if template.matcher.body.form == "record" and template.matcher.length is none and not template.matcher.ifpresent %} {
+{% for f in template.matcher.body.fields %}
+  {{ f.name }} := {{ matcher(f.matcher) }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+};
+{%- else %} {{ matcher(template.matcher) }};
+{%- endif %}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: the main test component of the orders
+     suite. It sends a voucher and passes on an order the template accepts,
+     its quantities at most a limit it holds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="orders_tester"
+       datamodel="sce-static" initial="ordering">
+  <sce:import kind="test-port-type" src="orders_port.scxml" as="OrdersPort"/>
+  <sce:import kind="test-template" src="../test_profile/imports/voucher_is.scxml"
+              as="VoucherIs"/>
+  <sce:import kind="test-template" src="../test_profile/imports/order_placed_match.scxml"
+              as="PlacedMatch"/>
+  <sce:test-port id="sut" type="OrdersPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint16" expr="5"/>
+  </datamodel>
+  <state id="ordering">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="VoucherIs"/>
+    </onentry>
+    <transition sce:receive="sut" sce:test-template="PlacedMatch"
+                sce:template-args="limit" target="placed">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="placed"/>
+</scxml>

@@ -1,0 +1,10 @@
+{#- One port type of the test profile as a TTCN-3 message port type
+    (docs/SCE_TEST_PROFILE.md §2.2, §9.2 E3, §11.3): each message with its
+    direction, in document order, so its `in` and `out` lists are stated
+    explicitly. `port_type` is `ttcn3_export::port_types::PortTypeView`. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+type port {{ port_type.name }} message {
+{% for m in port_type.messages %}
+  {{ m.direction }} {{ types.type_expr(m.type) }};
+{% endfor %}
+}

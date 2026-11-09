@@ -35,6 +35,7 @@ pub mod integration_channels;
 pub mod ledger;
 pub mod name_oracle;
 pub mod native_oracle;
+pub mod profile_suite;
 pub mod repository;
 pub mod routes;
 pub mod row_oracle;

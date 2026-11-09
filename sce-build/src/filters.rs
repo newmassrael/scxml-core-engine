@@ -2694,6 +2694,31 @@ pub(crate) fn escape_ttcn3(text: String) -> String {
     out
 }
 
+/// `text` as a TTCN-3 expression of type `universal charstring`, its
+/// delimiters included: each run of printable ASCII one literal, written as
+/// [`escape_ttcn3`] writes it, and each other character its quadruple,
+/// joined by `&`; `""` for no text. The one spelling the TTCN-3 export
+/// writes a text value by (docs/SCE_TEST_PROFILE.md §9.5).
+pub(crate) fn ttcn3_charstring(text: String) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut run = String::new();
+    for ch in text.chars() {
+        match ch {
+            ' '..='~' => run.push(ch),
+            other => {
+                if !run.is_empty() {
+                    parts.push(format!("\"{}\"", escape_ttcn3(std::mem::take(&mut run))));
+                }
+                parts.push(ttcn3_quadruple(other));
+            }
+        }
+    }
+    if !run.is_empty() || parts.is_empty() {
+        parts.push(format!("\"{}\"", escape_ttcn3(run)));
+    }
+    parts.join(" & ")
+}
+
 /// Convert SCXML string expression to Kotlin string expression.
 fn to_kotlin_string_expr(expr: String) -> String {
     if expr.is_empty() {
@@ -3158,6 +3183,25 @@ mod literal_escaper_census {
         assert_eq!(
             escape_ttcn3("\u{e9}\u{1F600}".to_string()),
             "\" & char(0, 0, 0, 233) & \"\" & char(0, 1, 246, 0) & \""
+        );
+    }
+
+    /// `ttcn3_charstring` writes a whole expression: one literal per run of
+    /// printable ASCII, a quadruple per other character, and `""` for none.
+    #[test]
+    fn ttcn3_charstring_writes_a_whole_expression() {
+        assert_eq!(ttcn3_charstring(String::new()), "\"\"");
+        assert_eq!(
+            ttcn3_charstring("started on time".to_string()),
+            "\"started on time\""
+        );
+        assert_eq!(
+            ttcn3_charstring("say \"hi\"\n".to_string()),
+            "\"say \"\"hi\"\"\" & char(0, 0, 0, 10)"
+        );
+        assert_eq!(
+            ttcn3_charstring("\tx".to_string()),
+            "char(0, 0, 0, 9) & \"x\""
         );
     }
 

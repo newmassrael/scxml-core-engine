@@ -1,0 +1,48 @@
+{#- The types module of a test suite (ADR 0091 C2; docs/SCE_TEST_PROFILE.md
+    §6.3, §9.2 E1, §9.5): the integer types of the type grammar, each enum,
+    record and union the suite reaches in the order of their names, and the
+    codec functions of each message type, which the export declares and does
+    not implement. `module` is `ttcn3_export::types::TypesModule`, which,
+    serialized, is the manifest written beside the module. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+// The types of the test suite {{ module.suite }}, exported from its documents
+// (docs/SCE_TEST_PROFILE.md, sections 6.3 and 9.5).
+module {{ module.module }} {
+
+{% for t in module.types if t.kind == "integer" %}
+type integer {{ t.name }} ({{ t.min }} .. {{ t.max }});
+{% endfor %}
+{% for t in module.types if t.kind != "integer" %}
+
+{% if t.kind == "enumerated" %}
+type enumerated {{ t.name }} { {% for v in t.variants %}{{ v.name }}({{ v.value }}){% if not loop.last %}, {% endif %}{% endfor %} }
+{% elif t.kind == "record" and not t.fields %}
+type record {{ t.name }} {}
+{% elif t.kind == "record" %}
+type record {{ t.name }} {
+{% for f in t.fields %}
+{% set b = types.bound(f.type) %}
+  {{ types.type_expr(f.type) }} {{ f.name }}{% if f.optional %} optional{% endif %}{% if not loop.last %},{% endif %}{% if b %} // {{ b }}{% endif %}
+
+{% endfor %}
+}
+{% elif t.kind == "union" %}
+type union {{ t.name }} {
+{% for a in t.alternatives %}
+  {{ types.type_expr(a.type) }} {{ a.name }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+}
+{% endif %}
+{% endfor %}
+{% if module.codec %}
+
+// The codec of each message type, declared here and implemented outside the
+// export (ADR 0091, C2; docs/SCE_TEST_PROFILE.md, section 9.5).
+{% for c in module.codec %}
+external function {{ c.encode }}(in {{ c.type }} msg) return octetstring;
+external function {{ c.decode }}(inout octetstring octets, out {{ c.type }} msg) return integer;
+{% endfor %}
+{% endif %}
+
+}

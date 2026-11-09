@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3: a port type that receives an order and
+     sends a voucher, the records of the template fixtures. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="orders_port">
+  <sce:import kind="event-schema" src="../test_profile/imports/order_placed.scxml"
+              as="OrderPlaced"/>
+  <sce:import kind="event-schema" src="../test_profile/imports/voucher_payment.scxml"
+              as="Voucher"/>
+  <sce:message type="OrderPlaced" direction="in"/>
+  <sce:message type="Voucher" direction="out"/>
+</scxml>
