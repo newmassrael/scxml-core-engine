@@ -46,9 +46,15 @@ fn a_delivery_forwarded_by_its_names_comes_back_whole() {
     let policy = engine.policy();
     assert_eq!(
         policy.refusals(),
-        0,
-        "the delivery the machine sent itself fits its schema"
+        1,
+        "the delivery the machine sent itself fits its schema, and the one refusal is the \
+         list sent short of its field's lower count"
     );
+    // A list variable sent to a field that states a lower count (docs/adr/0086,
+    // section 15.6): sent empty, refused whole and never delivered; sent with
+    // its one element, delivered.
+    assert_eq!(policy.counted_deliveries(), 1);
+    assert_eq!(policy.counted_sum(), 7);
     assert_eq!(
         policy.deliveries(),
         2,

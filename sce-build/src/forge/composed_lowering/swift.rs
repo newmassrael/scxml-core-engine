@@ -531,6 +531,15 @@ impl ComposedSpelling for SwiftComposed<'_> {
             SwiftCarrier::Wire => format!("WireValue.composed({written})"),
         }
     }
+    // The count held first, by the `sceFailure` a `<send>` declares for a
+    // param that can fail and reads after it, then the list written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "{{ () -> WireValue in if {}.count < {least} {{ sceFailure.fail(.precondition) }}; \
+             return {sent} }}()",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         SWIFT_COPY_BINDING
@@ -872,6 +881,16 @@ mod tests {
         }
         // The inject seam writes the JSON itself.
         assert_eq!(SWIFT.send_param("x".to_string()), "x");
+        // A list sent where its field asks a lower count it does not prove is
+        // held to the count before it is written (docs/adr/0086, section 15.6).
+        assert_eq!(
+            SWIFT.send_counted(&Held::place("taking"), "ops", 1, "W".to_string()),
+            Some(
+                "{ () -> WireValue in if taking.count < 1 { sceFailure.fail(.precondition) }; \
+                 return W }()"
+                    .to_string()
+            )
+        );
     }
 
     /// The value a Swift `<send>` holds a composed param in: the one
