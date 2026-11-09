@@ -13,6 +13,7 @@
 //! does not print yet, and such a codec keeps the template's encode whole.
 
 use super::*;
+use crate::forge::bit_layout::BitSpan;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
 use crate::forge::encode_plan::{
     list_law, Absent, Automaton, Bound, Clause, CodecPlan, Derive, EncodePlan, EntryId, Guard,
@@ -212,16 +213,16 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
         match write {
             // A fixed layout has no field a gate decides; were one there, its
             // offset would not be fixed.
-            Write::Packed(fields) => forms.extend(
-                fields
+            Write::Byte { pieces, .. } => forms.extend(
+                pieces
                     .iter()
-                    .filter(|f| gated_element(f))
-                    .map(|f| format!("`{}`, a gated field of a fixed layout", f.id)),
+                    .filter(|(f, _)| gated_element(f))
+                    .map(|(f, _)| format!("`{}`, a gated field of a fixed layout", f.id)),
             ),
-            Write::Fixed(field) | Write::Tail { field, .. } if gated_element(field) => {
+            Write::Whole(field) | Write::Tail { field, .. } if gated_element(field) => {
                 forms.push(format!("`{}`, a gated field of a fixed layout", field.id))
             }
-            Write::Fixed(_) | Write::Tail { .. } => {}
+            Write::Whole(_) | Write::Tail { .. } => {}
             Write::Streamed {
                 field,
                 guard,
@@ -3700,25 +3701,36 @@ pub(super) fn render(
     };
     for write in &plan.program {
         match write {
-            Write::Packed(fields) => {
-                let parts: Vec<String> = fields
+            // One byte: the or of each field's piece in it (docs/adr/0095 §2),
+            // each read in an integer that holds the field's carrier.
+            Write::Byte { pieces, .. } => {
+                let parts: Vec<String> = pieces
                     .iter()
-                    .map(|f| {
-                        let bits = f.fixed_bits().unwrap_or(8);
-                        let mask = (1u64 << bits) - 1;
-                        let at = f.bit_offset.unwrap_or(0);
-                        format!(
-                            "((static_cast<std::uint32_t>({}) & 0x{mask:X}u) << {at})",
+                    .map(|(f, piece)| {
+                        let wide = l.codec_carrier_bits(&f.sce_type).is_some_and(|b| b > 32);
+                        let held = format!(
+                            "static_cast<std::uint{}_t>({})",
+                            if wide { 64 } else { 32 },
                             read(f)
-                        )
+                        );
+                        let down = if piece.from == 0 {
+                            held
+                        } else {
+                            format!("({held} >> {})", piece.from)
+                        };
+                        format!("(({down} & 0x{:X}u) << {})", piece.mask, piece.to)
                     })
                     .collect();
-                before.push_str(&format!(
-                    "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({})); _e) return _e;\n",
+                let byte = if parts.is_empty() {
+                    "0".to_string()
+                } else {
                     parts.join(" | ")
+                };
+                before.push_str(&format!(
+                    "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({byte})); _e) return _e;\n"
                 ));
             }
-            Write::Fixed(f) => before.push_str(&fixed_write(plan, f, &read(f))),
+            Write::Whole(f) => before.push_str(&fixed_write(plan, f, &read(f))),
             Write::Tail { field, pad } => {
                 // A field the layout aligns follows zeros up to its offset.
                 if *pad {
@@ -4316,28 +4328,36 @@ fn bounds_args(bound: &Bound) -> String {
     }
 }
 
-/// The write of the fixed field `f`, whose value is `value`: a byte or less at
-/// its bit offset, or one of the sink's whole widths in the field's byte order.
+/// The write of the whole fixed field `f`, whose value is `value`, as its bytes
+/// in its byte order (docs/adr/0095 §1): one of the sink's widths, or a byte at
+/// a time for a width the sink has no write of.
 fn fixed_write(plan: &EncodePlan<'_>, f: &CodecField, value: &str) -> String {
-    let bits = f.fixed_bits().unwrap_or(8);
-    let endian = f.endian.unwrap_or(plan.model.default_endian);
-    let call = match bits {
-        b if b < 8 => {
-            let at = f.bit_offset.unwrap_or(0);
-            format!(
-                "w.write_u8(static_cast<std::uint8_t>((static_cast<std::uint32_t>({value}) & 0x{:X}u) << {at}))",
-                (1u64 << b) - 1
-            )
-        }
-        8 => format!("w.write_u8(static_cast<std::uint8_t>({value}))"),
-        b => {
-            let side = if matches!(endian, Endian::Little) {
-                "le"
-            } else {
-                "be"
-            };
-            format!("w.write_u{b}_{side}(static_cast<std::uint{b}_t>({value}))")
-        }
+    let span =
+        BitSpan::of(f, plan.model.default_endian).expect("a fixed write is of a fixed field");
+    let side = if matches!(span.endian, Endian::Little) {
+        "le"
+    } else {
+        "be"
     };
-    format!("        if (auto _e = {call}; _e) return _e;\n")
+    let calls: Vec<String> = match span.bytes {
+        1 => vec![format!("w.write_u8(static_cast<std::uint8_t>({value}))")],
+        n @ (2 | 4 | 8) => {
+            let b = 8 * n;
+            vec![format!(
+                "w.write_u{b}_{side}(static_cast<std::uint{b}_t>({value}))"
+            )]
+        }
+        _ => (span.byte..span.end())
+            .map(|at| {
+                let down = 8 * span.rank(at).expect("a byte of the word");
+                format!(
+                    "w.write_u8(static_cast<std::uint8_t>(static_cast<std::uint64_t>({value}) >> {down}))"
+                )
+            })
+            .collect(),
+    };
+    calls
+        .iter()
+        .map(|call| format!("        if (auto _e = {call}; _e) return _e;\n"))
+        .collect()
 }

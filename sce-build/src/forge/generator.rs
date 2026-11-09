@@ -7,6 +7,7 @@
 // language. Type mappings live here (not in the model) to preserve SRP.
 
 use crate::filters;
+use crate::forge::bit_layout::{BitSpan, Piece, Slot};
 use crate::forge::codec_roles::CodecRoles;
 use crate::forge::codegen_matrix::no_swift_emitter;
 use crate::forge::error::{ForgeError, GenerateError, RelatedRole};
@@ -11866,7 +11867,14 @@ fn render_codec(
             }
             obj.insert(
                 "decode_expr".into(),
-                generate_decode_expr(f, m.default_endian, lang, &m.fields).into(),
+                generate_decode_expr(
+                    f,
+                    m.default_endian,
+                    lang,
+                    &m.fields,
+                    l.codec_carrier_bits(&f.sce_type),
+                )
+                .into(),
             );
             // An enum-typed field is carried on the wire as the enum's
             // carrier, so `decode_expr` reads that carrier and the template
@@ -24485,6 +24493,7 @@ fn generate_decode_expr(
     default_endian: Endian,
     lang: crate::generator::Language,
     fields: &[CodecField],
+    carrier_bits: Option<u32>,
 ) -> String {
     use crate::generator::Language;
     let byte_off = field.byte_offset;
@@ -24493,6 +24502,11 @@ fn generate_decode_expr(
 
     match &field.bit_size {
         BitSize::Fixed { bits } => {
+            let span = BitSpan::of(field, default_endian).expect("a fixed field has a span");
+            // Bits of a word of two bytes or more (docs/adr/0095 §1).
+            if !span.whole() && span.bytes > 1 {
+                return decode_bits_of_word(&span, carrier_bits, lang);
+            }
             if bit_off > 0 || *bits < 8 {
                 let mask = (1u64 << bits) - 1;
                 match lang {
@@ -24524,18 +24538,8 @@ fn generate_decode_expr(
                         | Language::C11 => format!("raw[{byte_off}]"),
                         Language::Swift => no_swift_emitter("generate_decode_expr"),
                     },
-                    16 => decode_multibyte_unified(byte_off, 2, endian, lang),
-                    24 => decode_multibyte_unified(byte_off, 3, endian, lang),
-                    32 => decode_multibyte_unified(byte_off, 4, endian, lang),
-                    _ => match lang {
-                        Language::Python => format!("# unsupported {bits}-bit decode"),
-                        Language::Rust
-                        | Language::Cpp
-                        | Language::Kotlin
-                        | Language::Go
-                        | Language::C11 => format!("/* unsupported {bits}-bit decode */"),
-                        Language::Swift => no_swift_emitter("generate_decode_expr"),
-                    },
+                    // A whole word of two bytes or more.
+                    _ => decode_multibyte_unified(byte_off, span.bytes, endian, lang),
                 }
             }
         }
@@ -24695,6 +24699,77 @@ fn length_ref_end(
             format!("{byte_off}+{len}{suffix_signed}")
         }
         Language::C11 | Language::Swift => String::new(),
+    }
+}
+
+/// The value of a field that is part of a word of two bytes or more
+/// (docs/adr/0095 §1): the word read in its byte order, moved down by the
+/// field's bit offset and masked to its bits, as the integer of `carrier_bits`
+/// (the field's carrier; the narrowest integer that holds the bits where the
+/// carrier is not known).
+fn decode_bits_of_word(
+    span: &BitSpan,
+    carrier_bits: Option<u32>,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let target = carrier_bits.unwrap_or_else(|| {
+        [8, 16, 32, 64]
+            .into_iter()
+            .find(|width| *width >= span.bits)
+            .unwrap_or(64)
+    });
+    let shift = span.shift;
+    let mask = span.mask();
+    if matches!(lang, Language::Kotlin) {
+        // Kotlin's unsigned types have no shift, so the word is folded in an
+        // `Int`, or a `Long` where four bytes or more would reach its sign.
+        let long = span.bytes > 3;
+        let parts: Vec<String> = (span.byte..span.end())
+            .map(|at| {
+                let up = 8 * span.rank(at).expect("a byte of the word");
+                let byte = if long {
+                    format!("(raw[{at}].toLong() and 0xFFL)")
+                } else {
+                    format!("(raw[{at}].toInt() and 0xFF)")
+                };
+                if up == 0 {
+                    byte
+                } else {
+                    format!("({byte} shl {up})")
+                }
+            })
+            .collect();
+        let suffix = if long { "L" } else { "" };
+        let to = match target {
+            8 => "toUByte",
+            16 => "toUShort",
+            32 => "toUInt",
+            _ => "toULong",
+        };
+        return format!(
+            "((({}) ushr {shift}) and 0x{mask:X}{suffix}).{to}()",
+            parts.join(" or ")
+        );
+    }
+    let word = decode_multibyte_unified(span.byte, span.bytes, span.endian, lang);
+    // The word's own integer in Rust, which `decode_multibyte_unified` reads
+    // the bytes into.
+    let word_bits = match span.bytes {
+        2 => 16,
+        3 | 4 => 32,
+        _ => 64,
+    };
+    let bits = format!("(({word}) >> {shift}) & 0x{mask:X}");
+    match lang {
+        Language::Rust if target == word_bits => bits,
+        Language::Rust => format!("({bits}) as u{target}"),
+        Language::Cpp => format!("static_cast<uint{target}_t>({bits})"),
+        Language::C11 => format!("(uint{target}_t)({bits})"),
+        Language::Go => format!("uint{target}({bits})"),
+        Language::Python => bits,
+        Language::Kotlin => unreachable!("answered above"),
+        Language::Swift => no_swift_emitter("decode_bits_of_word"),
     }
 }
 
@@ -25570,19 +25645,10 @@ fn parent_tag_apply_simple_path_suffix(
     if carriers.is_empty() {
         return expr.to_string();
     }
-    // Reproduce `generate_encode_exprs`'s ordering: fixed-length fields
-    // grouped by `byte_offset`, walked via BTreeMap. The entry index
-    // therefore maps back to the i-th distinct byte_offset.
-    let mut byte_offsets: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
-    for f in fields {
-        if !f.is_variable_length() {
-            byte_offsets.insert(f.byte_offset);
-        }
-    }
-    let target_offset = byte_offsets.into_iter().nth(entry_idx);
-    let offset = match target_offset {
-        Some(o) => o,
-        None => return expr.to_string(),
+    // Each entry of `generate_encode_exprs` is one byte of the frame, from
+    // byte 0 (docs/adr/0095 §2), so the entry index is the byte.
+    let Ok(offset) = u32::try_from(entry_idx) else {
+        return expr.to_string();
     };
     // Pick the (single) carrier field at this offset; parent-tag derivation
     // targets a uint8 carrier per v1 lock-in, which always occupies
@@ -25618,81 +25684,111 @@ fn generate_encode_exprs(
     // The context carries the document's imports because an enum-typed
     // field is written as its carrier, through the conversion the imported
     // enum emits — a spelling only the import table knows.
-    let lang = l.lang;
+    // Variable-length fields are emitted by the per-backend template through
+    // the `is_variable` branch on each field meta — the template appends them
+    // after the fixed `encode_exprs` byte literals. Each entry here is one
+    // byte of the frame, from byte 0 (docs/adr/0095 §2).
     let mut exprs = Vec::new();
-
-    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
-        std::collections::BTreeMap::new();
-
-    for field in fields {
-        // Variable-length fields are emitted by the per-backend template
-        // through the `is_variable` branch on each field meta — the
-        // template appends them after the fixed `encode_exprs` byte
-        // literals. They never enter `byte_groups`.
-        if !field.is_variable_length() {
-            byte_groups
-                .entry(field.byte_offset)
-                .or_default()
-                .push(field);
+    for slot in crate::forge::bit_layout::slots(fields, default_endian) {
+        match slot {
+            Slot::Whole(field) => encode_single_field_unified(field, default_endian, &mut exprs, l),
+            Slot::Byte { pieces, .. } => exprs.push(encode_byte_unified(&pieces, l)),
         }
     }
-
-    for group in byte_groups.values() {
-        if group.len() == 1 {
-            encode_single_field_unified(group[0], default_endian, &mut exprs, l);
-        } else {
-            let mut parts = Vec::new();
-            for field in group {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
-                // Sub-byte fields share a byte; an enum among them is still
-                // written as its carrier before the shift and mask.
-                let field_ref = l.codec_carrier_expr(
-                    &field.sce_type,
-                    &l.codec_field_ref(&l.codec_field_id(&field.id)),
-                );
-                match lang {
-                    crate::generator::Language::Kotlin => parts.push(format!(
-                        "({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})"
-                    )),
-                    crate::generator::Language::Rust => {
-                        // Drop the `<< 0` no-op for a bit-offset-0 field
-                        // (clippy::identity_op) — `& mask` already leaves the
-                        // low bits in place.
-                        if bit_off == 0 {
-                            parts.push(format!("({field_ref} & 0x{mask:02X})"))
-                        } else {
-                            parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
-                        }
-                    }
-                    crate::generator::Language::Cpp | crate::generator::Language::C11 => {
-                        parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
-                    }
-                    crate::generator::Language::Go | crate::generator::Language::Python => {
-                        parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}"))
-                    }
-                    crate::generator::Language::Swift => no_swift_emitter("generate_encode_exprs"),
-                }
-            }
-            let sep = match lang {
-                crate::generator::Language::Kotlin => " or ",
-                crate::generator::Language::Rust
-                | crate::generator::Language::Cpp
-                | crate::generator::Language::Go
-                | crate::generator::Language::Python
-                | crate::generator::Language::C11 => " | ",
-                crate::generator::Language::Swift => no_swift_emitter("generate_encode_exprs"),
-            };
-            let merged = parts.join(sep);
-            exprs.push(l.codec_to_byte(&merged));
-        }
-    }
-
     exprs
 }
 
-/// Generate encode expressions for a single non-sub-byte field.
+/// One byte of a positional frame: the or of each field's piece in it, a zero
+/// where no field has one (docs/adr/0095 §2). A field's value is written as
+/// its carrier, moved down to the piece's first bit, masked, and moved up to
+/// where the piece lands in the byte; a piece of a field wider than a byte is
+/// narrowed to one where the language's types would otherwise not meet.
+fn encode_byte_unified(pieces: &[(&CodecField, Piece)], l: &LangCtx) -> String {
+    use crate::generator::Language;
+    let lang = l.lang;
+    let one = pieces.len() == 1;
+    let parts: Vec<String> = pieces
+        .iter()
+        .map(|(field, piece)| {
+            let field_ref = l.codec_carrier_expr(
+                &field.sce_type,
+                &l.codec_field_ref(&l.codec_field_id(&field.id)),
+            );
+            let carrier_bits = l.codec_carrier_bits(&field.sce_type);
+            let (from, mask, to) = (piece.from, piece.mask, piece.to);
+            let down = |value: &str| {
+                if from == 0 {
+                    value.to_string()
+                } else {
+                    format!("({value} >> {from})")
+                }
+            };
+            match lang {
+                Language::Kotlin => {
+                    // A 64-bit carrier is moved down as a `Long`, whose bits an
+                    // `Int` would lose.
+                    let base = if from > 0 && carrier_bits.is_some_and(|b| b > 32) {
+                        format!("({field_ref}.toLong() ushr {from}).toInt()")
+                    } else if from == 0 {
+                        format!("{field_ref}.toInt()")
+                    } else {
+                        format!("{field_ref}.toInt() ushr {from}")
+                    };
+                    let bits = format!("{base} and 0x{mask:02X} shl {to}");
+                    if one {
+                        bits
+                    } else {
+                        format!("({bits})")
+                    }
+                }
+                Language::Rust => {
+                    let masked = format!("{} & 0x{mask:02X}", down(&field_ref));
+                    let bits = if carrier_bits == Some(8) {
+                        masked
+                    } else {
+                        format!("({masked}) as u8")
+                    };
+                    // Drop the `<< 0` no-op (clippy::identity_op).
+                    match (one, to) {
+                        (true, 0) => bits,
+                        (true, to) => format!("({bits}) << {to}"),
+                        (false, 0) => format!("({bits})"),
+                        (false, to) => format!("(({bits}) << {to})"),
+                    }
+                }
+                Language::Cpp | Language::C11 => {
+                    let bits = format!("({} & 0x{mask:02X}) << {to}", down(&field_ref));
+                    if one {
+                        bits
+                    } else {
+                        format!("({bits})")
+                    }
+                }
+                // Go joins only operands of one type, so a piece of a wider
+                // field is narrowed to a byte before it moves.
+                Language::Go if carrier_bits != Some(8) => {
+                    format!("byte({} & 0x{mask:02X}) << {to}", down(&field_ref))
+                }
+                Language::Go | Language::Python => {
+                    format!("({} & 0x{mask:02X}) << {to}", down(&field_ref))
+                }
+                Language::Swift => no_swift_emitter("encode_byte_unified"),
+            }
+        })
+        .collect();
+    if parts.is_empty() {
+        return l.codec_to_byte("0");
+    }
+    let sep = match lang {
+        Language::Kotlin => " or ",
+        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => " | ",
+        Language::Swift => no_swift_emitter("encode_byte_unified"),
+    };
+    l.codec_to_byte(&parts.join(sep))
+}
+
+/// The encode expressions of a whole field that shares none of its bytes, one
+/// for each of its bytes in its byte order (docs/adr/0095 §2).
 fn encode_single_field_unified(
     field: &CodecField,
     default_endian: Endian,
@@ -25705,11 +25801,10 @@ fn encode_single_field_unified(
     // An enum-typed field is written as its carrier — see
     // `LangCtx::codec_carrier_expr`.
     let field_ref = l.codec_carrier_expr(&field.sce_type, &l.codec_field_ref(&name));
-    let bit_off = field.bit_offset.unwrap_or(0);
-    let endian = field.effective_endian(default_endian);
+    let span = BitSpan::of(field, default_endian).expect("a whole write is of a fixed field");
 
-    match field.fixed_bits() {
-        Some(8) if bit_off == 0 => {
+    match span.bytes {
+        1 => {
             match lang {
                 Language::Cpp => exprs.push(field_ref),
                 Language::Kotlin => exprs.push(format!("{field_ref}.toByte()")),
@@ -25722,33 +25817,16 @@ fn encode_single_field_unified(
                 Language::Swift => no_swift_emitter("encode_single_field_unified"),
             }
         }
-        Some(bits) if bits < 8 || bit_off > 0 => {
-            let mask = (1u64 << bits) - 1;
-            let inner = match lang {
-                Language::Kotlin => format!("{field_ref}.toInt() and 0x{mask:02X} shl {bit_off}"),
-                // Drop the `<< 0` no-op for a bit-offset-0 field
-                // (clippy::identity_op).
-                Language::Rust if bit_off == 0 => format!("{field_ref} & 0x{mask:02X}"),
-                Language::Rust
-                | Language::Cpp
-                | Language::Go
-                | Language::Python
-                | Language::C11 => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
-                Language::Swift => no_swift_emitter("encode_single_field_unified"),
-            };
-            exprs.push(l.codec_to_byte(&inner));
-        }
-        Some(byte_count @ (16 | 24 | 32)) => {
+        bytes => {
             // Multi-byte fixed field: delegate to the encode byte-extraction
             // SSOT (the mirror of `decode_multibyte_unified`). `field_ref`
             // already carries the per-language receiver prefix, so the same
             // shift / mask / narrow rules serve both this positional path and
             // the streaming `streaming_fixed_field_encode_*` wrappers.
-            for e in encode_multibyte_unified(&field_ref, byte_count / 8, endian, lang) {
+            for e in encode_multibyte_unified(&field_ref, bytes, span.endian, lang) {
                 exprs.push(e);
             }
         }
-        _ => exprs.push(l.codec_comment(&format!("encode {name}"))),
     }
 }
 
@@ -36296,6 +36374,20 @@ impl LangCtx {
             .map(|ty| self.type_name(ty).into_owned())
     }
 
+    /// How many bits the carrier of a codec field of type `ty` has: the
+    /// integer's own width, or an enum's carrier's. `None` for a type that is
+    /// no integer, or an enum whose import carries no carrier.
+    pub(crate) fn codec_carrier_bits(&self, ty: &SceType) -> Option<u32> {
+        match ty {
+            SceType::Enum(r) => self
+                .enum_import(&r.alias)
+                .carrier
+                .as_ref()
+                .and_then(SceType::int_bit_width),
+            other => other.int_bit_width(),
+        }
+    }
+
     pub(crate) fn enum_from_underlying(&self, alias: &str) -> String {
         use crate::generator::Language;
         let imported = self.enum_import(alias);
@@ -37000,19 +37092,6 @@ impl LangCtx {
             crate::generator::Language::Python => format!("({expr}) & 0xFF"),
             crate::generator::Language::C11 => format!("(uint8_t)({expr})"),
             crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_to_byte"),
-        }
-    }
-
-    /// Comment syntax for unsupported/manual code.
-    fn codec_comment(&self, text: &str) -> String {
-        match self.lang {
-            crate::generator::Language::Python => format!("# {text}"),
-            crate::generator::Language::Rust
-            | crate::generator::Language::Cpp
-            | crate::generator::Language::Kotlin
-            | crate::generator::Language::Go
-            | crate::generator::Language::C11 => format!("/* {text} */"),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::codec_comment"),
         }
     }
 

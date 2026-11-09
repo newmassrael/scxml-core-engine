@@ -20,6 +20,7 @@
 //!   ([`Derive`]), a number by what it measures and how it goes into the
 //!   element that holds it.
 
+use crate::forge::bit_layout::{self, Piece, Slot};
 use crate::forge::codec_roles::{
     self, BindSite, CodecRoles, Derivation, ElementId, GateGroup, InputValue, Role,
 };
@@ -116,11 +117,19 @@ pub struct EncodePlan<'m> {
 
 /// One write of the encode.
 pub enum Write<'m> {
-    /// Fixed fields of a positional layout that share one byte, each masked to
-    /// its bits at its bit offset.
-    Packed(Vec<&'m CodecField>),
-    /// A fixed field of a positional layout, alone at its byte offset.
-    Fixed(&'m CodecField),
+    /// A whole fixed field of a positional layout that shares none of its
+    /// bytes, written as one value of its bytes in its byte order
+    /// (docs/adr/0095 §2).
+    Whole(&'m CodecField),
+    /// Byte `at` of a positional layout: the or of the piece of each fixed
+    /// field with bits in it, zero where no field has (docs/adr/0095 §2).
+    Byte {
+        /// The byte of the frame.
+        at: u32,
+        /// Each field with bits in the byte, and its piece, in declaration
+        /// order.
+        pieces: Vec<(&'m CodecField, Piece)>,
+    },
     /// A variable-length field of a positional layout, after zeros up to its
     /// byte offset where the layout aligns its fields (`pad`).
     Tail {
@@ -1328,9 +1337,8 @@ fn overridable<'m>(
 }
 
 /// The writes of the encode of `model`, in wire order: a positional layout's
-/// fixed fields by byte offset, those that share a byte packed, then its
-/// variable-length fields; or a streamed layout's fields in turn; then the
-/// variant's arm.
+/// fixed bytes (docs/adr/0095 §2), then its variable-length fields; or a
+/// streamed layout's fields in turn; then the variant's arm.
 fn program<'m>(
     model: &'m CodecModel,
     roles: &CodecRoles,
@@ -1338,14 +1346,10 @@ fn program<'m>(
 ) -> Vec<Write<'m>> {
     let mut out = Vec::new();
     if model.positional_layout_is_valid() {
-        let mut bytes: BTreeMap<u32, Vec<&CodecField>> = BTreeMap::new();
-        for field in model.fields.iter().filter(|f| !f.is_variable_length()) {
-            bytes.entry(field.byte_offset).or_default().push(field);
-        }
-        for byte in bytes.into_values() {
-            out.push(match byte.as_slice() {
-                [field] => Write::Fixed(field),
-                _ => Write::Packed(byte),
+        for slot in bit_layout::slots(&model.fields, model.default_endian) {
+            out.push(match slot {
+                Slot::Whole(field) => Write::Whole(field),
+                Slot::Byte { at, pieces } => Write::Byte { at, pieces },
             });
         }
         for field in model.fields.iter().filter(|f| f.is_variable_length()) {

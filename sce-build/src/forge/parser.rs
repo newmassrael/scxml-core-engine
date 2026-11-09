@@ -4671,6 +4671,7 @@ fn parse_codec(
     // rather than emitting a codec that silently fails to decode.
     validate_codec_tail_is_last(&fields, label, &datamodel)?;
     validate_codec_bytes_is_variable(&fields, label, &datamodel)?;
+    validate_codec_bit_layout(&fields, default_endian, label, &datamodel)?;
 
     // RFC §synth-5-B bounded embed — `<sce:embed sce:length-from="<id>"/>` must
     // reference a sibling field declared earlier in the same codec
@@ -7483,6 +7484,32 @@ fn validate_codec_tail_is_last(
         }
     }
     Ok(())
+}
+
+/// The bits of every fixed field are bits a backend can read, of a type that
+/// holds them, and no two fields of a frame laid out by byte share one
+/// (docs/adr/0095 §3). `bit_layout::refusal` states the rules once.
+fn validate_codec_bit_layout(
+    fields: &[CodecField],
+    default_endian: Endian,
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    let positional = crate::forge::model::fields_lay_out_by_byte(fields);
+    let Some(refusal) = crate::forge::bit_layout::refusal(fields, default_endian, positional)
+    else {
+        return Ok(());
+    };
+    Err(located(
+        &field_element(datamodel, &refusal.field),
+        label.diagnostic_label,
+        ValidationError::AttributeRuleViolated {
+            element: format!("field '{}' in codec '{}'", refusal.field, label.identifier),
+            attr: refusal.attr.into(),
+            value: refusal.value,
+            rule: refusal.rule,
+        },
+    ))
 }
 
 /// A `bytes` field carries a LENGTH, never a bit count.

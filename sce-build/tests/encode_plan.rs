@@ -437,11 +437,38 @@ fn a_total_codec_plans_no_check() {
 #[test]
 fn fields_that_share_a_byte_are_packed_into_one_write() {
     with_plan("codec_subbyte", |plan| {
-        let [Write::Packed(fields)] = plan.program.as_slice() else {
+        let [Write::Byte { at: 0, pieces }] = plan.program.as_slice() else {
             panic!("the codec is one packed byte");
         };
-        let ids: Vec<&str> = fields.iter().map(|f| f.id.as_str()).collect();
+        let ids: Vec<&str> = pieces.iter().map(|(f, _)| f.id.as_str()).collect();
         assert_eq!(ids, ["priority", "channel", "direction"]);
+    });
+}
+
+/// A field whose bits run past its first byte is written a byte at a time,
+/// each byte the piece of the field's word it holds (docs/adr/0095 §2): the
+/// 12-bit big-endian `reading` four bits into byte 1 is all of byte 1 and the
+/// high nibble of byte 2, after the whole flag carrier at byte 0.
+#[test]
+fn a_field_across_two_bytes_is_written_a_byte_at_a_time() {
+    with_plan("codec_optional_field_attributes", |plan| {
+        let [Write::Whole(status), Write::Byte {
+            at: 1,
+            pieces: high,
+        }, Write::Byte { at: 2, pieces: low }] = plan.program.as_slice()
+        else {
+            panic!("a whole carrier and two bytes of the reading");
+        };
+        assert_eq!(status.id, "status");
+        let [(reading, first)] = high.as_slice() else {
+            panic!("byte 1 holds the reading alone");
+        };
+        assert_eq!(reading.id, "reading");
+        assert_eq!((first.from, first.mask, first.to), (4, 0xFF, 0));
+        let [(_, second)] = low.as_slice() else {
+            panic!("byte 2 holds the reading alone");
+        };
+        assert_eq!((second.from, second.mask, second.to), (0, 0x0F, 4));
     });
 }
 

@@ -4346,8 +4346,8 @@ impl<'a> Plan<'a> {
         }
         for write in &self.encode.program {
             match write {
-                Write::Packed(fields) => self.packed(fields, &derived, &mut lines),
-                Write::Fixed(field) => self.positional_single(field, &derived, &mut lines),
+                Write::Byte { pieces, .. } => self.byte(pieces, &derived, &mut lines),
+                Write::Whole(field) => self.whole(field, &derived, &mut lines),
                 Write::Tail { field, pad } => {
                     if *pad {
                         lines.push(format!(
@@ -5034,55 +5034,65 @@ impl<'a> Plan<'a> {
 
     // ── the wire: positional layout ──────────────────────────────────
 
-    /// Fixed fields that share one byte, each masked to its bits at its offset.
-    fn packed(&self, fields: &[&CodecField], derived: &Derived, lines: &mut Vec<String>) {
-        let parts: Vec<String> = fields
+    /// One byte of a positional frame: the or of each field's piece in it, a
+    /// zero where no field has one (docs/adr/0095 §2). A piece of a field wider
+    /// than a byte is narrowed to one before it moves within the byte.
+    fn byte(
+        &self,
+        pieces: &[(&CodecField, crate::forge::bit_layout::Piece)],
+        derived: &Derived,
+        lines: &mut Vec<String>,
+    ) {
+        let parts: Vec<String> = pieces
             .iter()
-            .map(|field| {
-                let bit_off = field.bit_offset.unwrap_or(0);
-                let bits = field.fixed_bits().unwrap_or(8);
-                let mask = (1u64 << bits) - 1;
+            .map(|(field, piece)| {
                 let value = self.carrier(field, &self.read(field, derived));
-                // Drop the `<< 0` no-op for a bit-offset-0 field.
-                if bit_off == 0 {
-                    format!("({value} & 0x{mask:02X})")
+                let narrow = self.l().codec_carrier_bits(&field.sce_type) == Some(8);
+                // Drop the `>> 0` and `<< 0` no-ops (clippy::identity_op).
+                let down = if piece.from == 0 {
+                    value
                 } else {
-                    format!("(({value} & 0x{mask:02X}) << {bit_off})")
-                }
+                    format!("({value} >> {})", piece.from)
+                };
+                let masked = format!("{down} & 0x{:02X}", piece.mask);
+                let bits = if narrow {
+                    masked
+                } else {
+                    format!("({masked}) as u8")
+                };
+                (bits, piece.to)
+            })
+            .map(|(bits, to)| match (pieces.len(), to) {
+                (1, 0) => bits,
+                (1, to) => format!("({bits}) << {to}"),
+                (_, 0) => format!("({bits})"),
+                (_, to) => format!("(({bits}) << {to})"),
             })
             .collect();
-        lines.push(format!("w.write_u8({})?;", parts.join(" | ")));
+        if parts.is_empty() {
+            lines.push("w.write_u8(0)?;".to_string());
+        } else {
+            lines.push(format!("w.write_u8({})?;", parts.join(" | ")));
+        }
     }
 
-    fn positional_single(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
+    /// A whole field that shares none of its bytes: its value, as its bytes in
+    /// its byte order.
+    fn whole(&self, field: &CodecField, derived: &Derived, lines: &mut Vec<String>) {
         let value = self.carrier(field, &self.read(field, derived));
-        let bit_off = field.bit_offset.unwrap_or(0);
-        let endian = field.effective_endian(self.m().default_endian);
-        match field.fixed_bits() {
-            Some(8) if bit_off == 0 => lines.push(format!("w.write_u8({value})?;")),
-            Some(bits) if bits < 8 || bit_off > 0 => {
-                let mask = (1u64 << bits) - 1;
-                // Drop the `<< 0` no-op for a bit-offset-0 field.
-                let inner = if bit_off == 0 {
-                    format!("{value} & 0x{mask:02X}")
-                } else {
-                    format!("({value} & 0x{mask:02X}) << {bit_off}")
-                };
-                lines.push(format!("w.write_u8({inner})?;"));
-            }
-            Some(byte_count @ (16 | 24 | 32)) => {
-                for e in encode_multibyte_unified(
-                    &value,
-                    byte_count / 8,
-                    endian,
-                    crate::generator::Language::Rust,
-                ) {
-                    lines.push(format!("w.write_u8({e})?;"));
-                }
-            }
-            // No other width has a positional form; the codec's decode does not
-            // read one either.
-            _ => {}
+        let span = crate::forge::bit_layout::BitSpan::of(field, self.m().default_endian)
+            .expect("a whole write is of a fixed field");
+        if span.bytes == 1 {
+            lines.push(format!("w.write_u8({value})?;"));
+            return;
+        }
+        for e in encode_multibyte_unified(
+            &value,
+            span.bytes,
+            span.endian,
+            crate::generator::Language::Rust,
+        ) {
+            lines.push(format!("w.write_u8({e})?;"));
         }
     }
 

@@ -19,8 +19,8 @@
 //!
 //! The bound is the size of what the encoder writes, read from the encoders:
 //! - the positional path (`CodecModel::positional_layout_is_valid`) writes the
-//!   fixed fields by ascending byte offset, one byte for the sub-byte fields
-//!   that share an offset, and a trailing payload after the padding a
+//!   fixed bytes from 0 to the end of the last fixed field's word
+//!   (docs/adr/0095 §2), and a trailing payload after the padding a
 //!   `sce:dma-burst-align` codec zero-fills up to the payload's own offset;
 //! - the streaming path writes each field in declaration order: a fixed field
 //!   at the bytes its width rounds up to, a VLE integer at its cap, a payload at
@@ -248,29 +248,14 @@ fn positional_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
     Ok(total)
 }
 
-/// The positional encode: the fixed fields grouped by byte offset in ascending
-/// order, then the payload.
+/// The positional encode: the fixed bytes up to the end of the last fixed
+/// field's word, a byte no field holds among them (docs/adr/0095 §2), then the
+/// payload.
 fn positional_fields(m: &CodecModel) -> Result<u64, Unbounded> {
-    let mut groups: BTreeMap<u32, Vec<&CodecField>> = BTreeMap::new();
-    for field in m.fields.iter().filter(|f| !f.is_variable_length()) {
-        groups.entry(field.byte_offset).or_default().push(field);
-    }
-    // A group of one field writes the bytes its width rounds up to (a sub-byte
-    // or bit-offset field, one); several fields at one offset share one byte.
-    let mut written: u64 = groups
-        .values()
-        .map(|group| match group.as_slice() {
-            [field] => {
-                let bits = field.fixed_bits().unwrap_or(8);
-                if bits < 8 || field.bit_offset.unwrap_or(0) > 0 {
-                    1
-                } else {
-                    u64::from(bits.div_ceil(8))
-                }
-            }
-            _ => 1,
-        })
-        .sum();
+    let mut written = u64::from(crate::forge::bit_layout::fixed_end(
+        &m.fields,
+        m.default_endian,
+    ));
     for field in m.fields.iter().filter(|f| f.is_variable_length()) {
         // A codec with a `sce:dma-burst-align` field zero-fills up to the offset
         // of each payload before writing it.

@@ -3946,6 +3946,38 @@ enum HeldAt {
     Line(usize, LineHeld),
 }
 
+/// Whether a codec of `fields` lays them out by byte: the positional path
+/// ([`CodecModel::positional_layout_is_valid`]), asked of the fields alone so
+/// the parser can ask it before the model exists.
+pub fn fields_lay_out_by_byte(fields: &[CodecField]) -> bool {
+    // The positional path has no conditional read (present-if) and no
+    // UTF-8 decode (string); both require the streaming form.
+    if fields
+        .iter()
+        .any(|f| f.present_if.is_some() || f.is_string())
+    {
+        return false;
+    }
+    let last = fields.len().saturating_sub(1);
+    fields.iter().enumerate().all(|(i, f)| match f.bit_size {
+        // Fixed fields have a statically-known offset and width.
+        BitSize::Fixed { .. } => true,
+        // The positional path implements only `tail` / `length-ref`
+        // among the variable bit-sizes, and only as the final field
+        // (a field after a variable payload has a runtime offset).
+        // `tail` not-last is rejected upstream
+        // (`validate_codec_tail_is_last`); the bound here keeps the
+        // predicate self-contained.
+        BitSize::Tail | BitSize::LengthRef => i == last,
+        // VLE / repeat / TLV-chain / embed have no positional form at
+        // all — they always stream.
+        BitSize::Vle { .. }
+        | BitSize::Repeat { .. }
+        | BitSize::TlvChain { .. }
+        | BitSize::Embed => false,
+    })
+}
+
 impl CodecModel {
     /// Take from `capacities` what the deployment says of this codec's fields
     /// (docs/adr/0077 §7). A capacity is refused where it names no field of the
@@ -4059,14 +4091,14 @@ impl CodecModel {
         Ok(taken)
     }
 
-    /// Minimum required frame bytes for decode (from fixed fields, and from the
-    /// start of a burst-aligned field: the padding before it is on the wire).
+    /// Minimum required frame bytes for decode (from the end of each fixed
+    /// field's word, docs/adr/0095 §1, and from the start of a burst-aligned
+    /// field: the padding before it is on the wire).
     pub fn min_frame_bytes(&self) -> u32 {
         let mut max_end = 0u32;
         for field in &self.fields {
-            if let Some(bits) = field.fixed_bits() {
-                let end = field.byte_offset + bits.div_ceil(8);
-                max_end = max_end.max(end);
+            if let Some(span) = crate::forge::bit_layout::BitSpan::of(field, self.default_endian) {
+                max_end = max_end.max(span.end());
             } else if field.dma_burst_align.is_some() && field.present_if.is_none() {
                 max_end = max_end.max(field.byte_offset);
             }
@@ -4181,32 +4213,7 @@ impl CodecModel {
     /// `sce:type="string"` length-ref payloads and a fixed field after a
     /// length-ref payload — were both denylist omissions.)
     pub fn positional_layout_is_valid(&self) -> bool {
-        // The positional path has no conditional read (present-if) and no
-        // UTF-8 decode (string); both require the streaming form.
-        if self.has_present_if_fields() || self.has_string_fields() {
-            return false;
-        }
-        let last = self.fields.len().saturating_sub(1);
-        self.fields
-            .iter()
-            .enumerate()
-            .all(|(i, f)| match f.bit_size {
-                // Fixed fields have a statically-known offset and width.
-                BitSize::Fixed { .. } => true,
-                // The positional path implements only `tail` / `length-ref`
-                // among the variable bit-sizes, and only as the final field
-                // (a field after a variable payload has a runtime offset).
-                // `tail` not-last is rejected upstream
-                // (`validate_codec_tail_is_last`); the bound here keeps the
-                // predicate self-contained.
-                BitSize::Tail | BitSize::LengthRef => i == last,
-                // VLE / repeat / TLV-chain / embed have no positional form at
-                // all — they always stream.
-                BitSize::Vle { .. }
-                | BitSize::Repeat { .. }
-                | BitSize::TlvChain { .. }
-                | BitSize::Embed => false,
-            })
+        fields_lay_out_by_byte(&self.fields)
     }
 
     /// Borrowed zero-copy round — SSOT for "does this codec's generated

@@ -7,6 +7,7 @@
 // beyond state machines: transforms, lookups, conditions, codecs, and more.
 
 pub mod ast_export;
+pub mod bit_layout;
 pub mod bound_spelling;
 pub mod buffer_pool_fsm;
 pub mod cbor_codec;
