@@ -187,11 +187,17 @@ scenarios! {
     "record_list_alone" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_change" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_concurrent_clears" => record_list_parent_sm::{RecordListParentPolicy, RecordListParentPersist};
+    "record_list_journal" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_offline" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_out_of_causal_order_is_not_given" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_parent" => record_list_parent_sm::{RecordListParentPolicy, RecordListParentPersist};
     "record_list_person" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_provisional" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_raise" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_recall" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_restore" => record_list_sm::{RecordListPolicy, RecordListPersist};
     "record_list_retire" => record_list_sm::{RecordListPolicy, RecordListPersist};
+    "record_list_verdict" => record_list_parent_sm::{RecordListParentPolicy, RecordListParentPersist};
     "sheet_peer_alice" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_bob" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};
     "sheet_peer_server" => sheet_peer_sm::{SheetPeerPolicy, SheetPeerPersist};

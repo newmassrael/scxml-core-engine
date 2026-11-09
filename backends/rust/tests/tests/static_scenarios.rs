@@ -912,6 +912,21 @@ fn record_list_takes_two_concurrent_clears_in_either_order() {
     );
 }
 
+// A statechart that invokes a list that keeps a journal is told each change's verdict:
+// its registers once it is accepted or held, `peerRefused` once when it is refused, and
+// a provisional change as pending, then confirmed or withdrawn (docs/adr/0093,
+// section 3.3).
+#[test]
+fn record_list_parent_is_told_each_verdict() {
+    replay(
+        Engine::new(RecordListParentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/record_list_verdict.json"
+        ),
+    );
+}
+
 // Leaving the state that holds an <invoke> cancels the child, which then ends
 // nothing and counts nothing.
 #[test]
@@ -1432,4 +1447,19 @@ a_copy_does_what_it_did_in_the_world! {
     // A change and the one it writes over, given in their causal order, the only order
     // the list's delivery layer gives (docs/adr/0085, section 9.3).
     record_list_takes_a_change_after_the_one_it_writes_over: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_out_of_causal_order_is_not_given.json";
+    // A copy that keeps a journal offers each change to its host and takes it in at the
+    // verdict of its delivery layer, reporting the outcome (docs/adr/0083, docs/adr/0093).
+    record_list_offers_each_change_to_its_journal: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_journal.json";
+    // A change taken in provisionally is confirmed or withdrawn by its undo record, the
+    // suffix after it with it, latest first (docs/adr/0093, section 3.4).
+    record_list_withdraws_a_provisional_change_by_its_undo_record: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_provisional.json";
+    // The host's word of the highest own stamp its layer holds raises the clock, and
+    // the next stamp is after it (docs/adr/0093, section 4.3).
+    record_list_is_raised_to_its_own_highest_stamp: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_raise.json";
+    // A copy built again is given back what was made, whole, and sends nothing while it
+    // is (docs/adr/0083, section 1.5; docs/adr/0085, section 7.2).
+    record_list_is_built_again_by_recall: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_recall.json";
+    // A stable state is handed over, then the changes after its cut (docs/adr/0085,
+    // section 4.4).
+    record_list_is_built_again_from_a_stable_state: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_restore.json";
 }

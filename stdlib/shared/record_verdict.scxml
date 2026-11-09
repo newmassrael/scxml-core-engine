@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_verdict.scxml — the verdict of a copy's delivery layer on the
+  change the copy offered it, as the host gives it to a copy of a shared record list
+  that keeps a journal (docs/adr/0093, section 3.1): `wallTime` and `counter`, the stamp
+  of the change, which names the change the copy holds offered; `outcome`, what the
+  layer answered (record_outcome); and `reason`, why a layer that refused the change
+  refused it (docs/adr/0085, section 3: a layer whose log has no room left for a change
+  not yet stable refuses it, which the copy tells as `noRoomForHistory`). `reason` is
+  read of a refusal only, and a refusal that gives none is `peerRefused`; a verdict
+  that is no refusal gives none.
+
+  The host gives it once it has given the change (record_list.made, record_made) to its
+  layer and committed the change, its verdict and the layer's record of it to its
+  journal in one transaction, so nothing the copy shows after the verdict is missing
+  from the journal after a crash. A verdict that names no change the copy holds offered
+  changes nothing and is counted in `refusals`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_verdict"
+       sce:event-name="record_list.verdict">
+  <sce:import kind="enum" src="sce:std/shared/record_outcome.scxml" as="Outcome"/>
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="outcome" sce:type="enum:Outcome" sce:direction="in"/>
+    <data id="reason" sce:type="optional&lt;enum:Refusal&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_recall.scxml — a change a host gives back to a copy of a shared
+  record list it builds again (docs/adr/0083, section 1.5; docs/adr/0085, section 7.2;
+  docs/adr/0093, section 2.1): the copy's own, as it offered it (record_made) and the
+  host journalled it, or another copy's, as the host's delivery layer holds it. A copy
+  is built from what was made, never from the commands it was made from, so a rebuild
+  makes no change again.
+
+  The fields are record_made's: `by`, `wallTime` and `counter` (the change's author and
+  stamp), `ops` (its operations, record_op, in the change's order) and `command` (the
+  host's name for the command that ended it, 0 for a change of another copy); and
+  `provisional`, whether the change is one of the copy's own that its layer had not
+  carried yet when the host journalled it (docs/adr/0093, section 3.5), which the copy
+  takes in provisionally, as it did at its verdict, so that a withdrawal after a
+  restart behaves as one before it. The flag is read for a change of the copy's own
+  node only.
+
+  The host gives every change after the stable snapshot (record_list.restore,
+  record_restore) in a causal order, its journal's and its layer's history's alike, and
+  the copy takes each in whole by the one path every change is taken in by, judging no
+  roster (each was admitted where it was made or carried), and sends and reports
+  nothing. A recalled change of the copy's own raises its clock to the change's stamp,
+  a write-over-only change included, and another's moves it as a peer's change does.
+
+  The event is new with the journal, and its first revision carries `provisional`
+  (docs/adr/0085, "Owner's answers"): a field of the first revision has no default, so
+  a host writes it on every recall.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_recall"
+       sce:event-name="record_list.recall">
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
+  <datamodel>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="ops" sce:type="list&lt;record:Op&gt;[1..shared_parts=64]" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+    <data id="provisional" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

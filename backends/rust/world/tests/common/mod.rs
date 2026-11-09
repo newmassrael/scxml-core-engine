@@ -1415,6 +1415,12 @@ pub fn record_copy(name: &str) -> Router {
 /// The copies of the record list whose hosts carry every change themselves: alice (node 1),
 /// bob (node 2) and carol (node 3), each bound by [`record_copy`] and linked to no one. There
 /// is no hub machine: a relay a host reaches holds what it is given and runs no list.
+///
+/// Every copy is joined with `journal` false (docs/adr/0083, docs/adr/0093): a copy of a
+/// world is thrown away when its run ends, and its host takes what the copy sends to
+/// `#people`, as a copy that keeps no journal sends it. A copy that keeps one offers each
+/// change to its host on `#journal` and waits for the verdict, which these hosts do not
+/// give: a host that gives its core each offered change is a later landing.
 pub fn record_world(seed: u64) -> World {
     let mut world = World::new(seed);
     for who in COPIES {
@@ -1422,14 +1428,16 @@ pub fn record_world(seed: u64) -> World {
         world.raise(
             who,
             "record_list.join",
-            &format!(r#"{{"node":"{}"}}"#, record_node_of(who)),
+            &format!(r#"{{"node":"{}","journal":false}}"#, record_node_of(who)),
         );
     }
     world
 }
 
 /// The copies of the record list on a causal route (`#people`, `delivery: causal`): alice,
-/// bob and carol, every two `latency_ms` apart, each layer started and each copy joined.
+/// bob and carol, every two `latency_ms` apart, each layer started and each copy joined,
+/// with `journal` false, as [`record_world`]'s are: each copy sends its changes to the
+/// route itself, and no host of this world keeps a journal.
 pub fn record_group_world(seed: u64, latency_ms: i64) -> World {
     let mut world = group_world_of(seed, latency_ms, &COPIES, TRIO, |world, who, router| {
         world.add(who, RecordList::new(), router);
@@ -1438,7 +1446,7 @@ pub fn record_group_world(seed: u64, latency_ms: i64) -> World {
         world.raise(
             who,
             "record_list.join",
-            &format!(r#"{{"node":"{}"}}"#, record_node_of(who)),
+            &format!(r#"{{"node":"{}","journal":false}}"#, record_node_of(who)),
         );
     }
     at_rest(&mut world);

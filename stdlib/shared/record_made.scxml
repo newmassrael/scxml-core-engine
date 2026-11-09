@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_made.scxml — a change a copy of a shared record list that keeps
+  a journal (record_join) made, as it reports it to its host on the route `#journal`
+  (docs/adr/0083, section 1.2; docs/adr/0085, section 7.1): what the change is, rather
+  than the commands it was made from. The report is the copy's offer of the change
+  (docs/adr/0093, section 3.1): the host gives it to the change's delivery layer,
+  commits it to its journal with the layer's verdict, and gives the copy the verdict
+  (record_list.verdict), and the copy takes the change in only then.
+
+  The fields are record_change's: `by`, the copy's node; `wallTime` and `counter`, the
+  change's stamp, the dot of every write in it; and `ops`, its operations (record_op) in
+  the order a change holds them, every write-over before every write. Then `command`,
+  the host's name for the command that ended the change (record_edit, record_clear,
+  record_retire), 0 when it gave none. One change is one report, whatever the number of
+  its operations, and a host that builds the copy again gives it back as one
+  record_list.recall (record_recall), so a rebuild takes in what was made and never
+  makes it again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_made"
+       sce:event-name="record_list.made">
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
+  <datamodel>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="ops" sce:type="list&lt;record:Op&gt;[1..shared_parts=64]" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

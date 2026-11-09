@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_undo.scxml — one value a provisional change of a copy of a
+  shared record list took out (docs/adr/0093, section 3.4): the record type of the
+  copy's undo record. It travels in no message (the event it names is never sent).
+
+  `atWallTime` and `atCounter` are the stamp of the provisional change whose write-over
+  took the value out (record_provisional), and the rest is the value as the copy held it
+  (mv_value): its register (`id`, `field`), its number and text (`value`, `text`) and
+  the dot of its write (`wallTime`, `counter`, `nodeId`). Withdrawing the change gives
+  the value back. A write-over taken in after it, by any change, that names the same
+  dot strikes it: another change took the value out too, and the value stays out.
+
+  `id` and `field` are 64 bits wide, as a value's are, so the record is filled from a
+  held value field by field without narrowing, and `text` is bounded as a value's text
+  is, `merge_text`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_undo"
+       sce:event-name="record_list.undo">
+  <datamodel>
+    <data id="atWallTime" sce:type="int64" sce:direction="in"/>
+    <data id="atCounter" sce:type="uint32" sce:direction="in"/>
+    <data id="id" sce:type="uint64" sce:direction="in"/>
+    <data id="field" sce:type="uint64" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string[merge_text=96]" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

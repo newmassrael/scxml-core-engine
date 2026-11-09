@@ -15,16 +15,22 @@
   the fields such writes gave it and no others, which the statechart that invoked the list
   is told. A retire is a command of a change as an edit is (record_edit); a change that
   retires a row and edits fields of it writes the row anew.
+
+  `command`, added by the second revision, is the host's own name for the command,
+  given back with what a copy that keeps a journal reports of the change it ends, as an
+  edit's is (record_edit, docs/adr/0083). A retire that does not carry it is command 0.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_retire"
-       sce:event-name="record_list.retire">
+       sce:event-name="record_list.retire"
+       sce:revision="2">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="now" sce:type="int64" sce:direction="in"/>
     <data id="more" sce:type="bool" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in" sce:since="2" sce:default="0"/>
   </datamodel>
 </scxml>
