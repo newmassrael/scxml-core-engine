@@ -280,17 +280,20 @@ fn the_c_codec_guards_the_case_of_a_gated_arm() {
 
 // ── C++ ─────────────────────────────────────────────────────────────────
 
-/// The C++ method finds the alternative by its type, as the encode does, and
-/// reads the tag from the catch-all's wrapper.
+/// The C++ codec is printed from its plan (docs/adr/0081 step 4): the method
+/// switches on the arm the value holds, as the encode does, and reads the tag
+/// the catch-all holds.
 #[test]
 fn the_cpp_codec_returns_the_tag_of_its_arm_and_of_its_catch_all() {
     let text = code("tg_open", Language::Cpp);
     let method = [
         "    [[nodiscard]] std::uint8_t tag() const noexcept {",
-        "        if (std::get_if<::SCE::Generated::TgSmall::TgSmall>(&body) != nullptr) return 1;",
-        "        if (std::get_if<::SCE::Generated::TgLarge::TgLarge>(&body) != nullptr) return 2;",
-        "        if (const auto* _p = std::get_if<TgOpenDefault>(&body)) return _p->tag;",
-        "        return 0;",
+        "        switch (body_.index()) {",
+        "            case 0: return 1;",
+        "            case 1: return 2;",
+        "            case 2: return static_cast<std::uint8_t>(std::get_if<2>(&body_)->tag);",
+        "            default: return 0;",
+        "        }",
         "    }",
     ]
     .join("\n");

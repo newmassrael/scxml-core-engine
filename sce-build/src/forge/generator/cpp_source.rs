@@ -45,14 +45,12 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     let mut forms = Vec::new();
     // A variant is presented as the arm the value holds, each arm's body a
     // source of its codec, and written by that codec's encode; its tag is
-    // derived from the arm into a field of the codec's own, or, where the arm's
-    // own header holds it (a peek byte), written by the arm's codec with the
-    // rest of the arm. One whose caller hands the tag, or one with an arm a
-    // build feature decides, is not yet.
-    if let Some(variant) = &m.variant {
-        if variant.tag_field.is_none() {
-            forms.push("a variant whose caller hands its tag".to_string());
-        }
+    // derived from the arm into a field of the codec's own, written by the
+    // arm's codec with the rest of the arm where the arm's own header holds it
+    // (a peek byte), or, where its caller hands it, written by the caller,
+    // which derives it from the arm the value holds and hands it to the decode
+    // (`tag()`). One with an arm a build feature decides is not yet.
+    if m.variant.is_some() {
         for arm in &plan.arms {
             if arm.feature.is_some() {
                 forms.push(format!("`{}`, an arm a build feature decides", arm.codec));
@@ -1176,6 +1174,32 @@ impl VariantPart {
             each.join(", ")
         ));
         out
+    }
+
+    /// The value's `tag()`, over the arm it holds in `body`: the tag the arm
+    /// declares, or the one the catch-all holds. A variant holds one arm at all
+    /// times, so the `0` after the switch is not reached.
+    fn tag_accessor(&self, body: &str) -> String {
+        let mut cases = String::new();
+        for (index, (_, tag)) in self.arms.iter().enumerate() {
+            cases.push_str(&match tag {
+                Some(tag) => format!("            case {index}: return {tag};\n"),
+                None => format!(
+                    "            case {index}: return static_cast<std::uint8_t>(std::get_if<{index}>(&{body})->tag);\n"
+                ),
+            });
+        }
+        format!(
+            "    /// The tag of the arm the value holds: the one the arm declares, or the\n\
+             \x20   /// one the catch-all holds. It is the tag the caller writes and hands the\n\
+             \x20   /// decode, so a value decoded under a tag answers that tag.\n\
+             \x20   [[nodiscard]] std::uint8_t tag() const noexcept {{\n\
+             \x20       switch ({body}.index()) {{\n\
+             {cases}\
+             \x20           default: return 0;\n\
+             \x20       }}\n\
+             \x20   }}\n"
+        )
     }
 
     /// Whether reading the body of a source `S`, and every read of the arm it
@@ -3405,9 +3429,9 @@ pub(super) fn render(
                             l.codec_field_id(&field.id)
                         ));
                     }
-                    ElementId::Variant => {
-                        unreachable!("`unlowered` refuses a variant whose caller hands its tag")
-                    }
+                    ElementId::Variant => unreachable!(
+                        "a variant whose caller hands its tag derives none: the caller writes it"
+                    ),
                 }
             }
             // The tag of the arm each embedded body's variant holds, masked to
@@ -4097,6 +4121,17 @@ pub(super) fn render(
             variant.type_name,
             member("body")
         ));
+        // A variant whose caller hands its tag has no field that holds it: the
+        // value answers the tag of the arm it holds, which is the tag its
+        // caller writes and hands the decode of a value of that arm.
+        if plan
+            .model
+            .variant
+            .as_ref()
+            .is_some_and(|v| v.tag_field.is_none())
+        {
+            members.push_str(&variant.tag_accessor(&member("body")));
+        }
     }
 
     // A default-made value holds what its declared flag values give its

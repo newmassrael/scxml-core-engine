@@ -178,6 +178,92 @@ fn resource_documents() -> Vec<PathBuf> {
     paths
 }
 
+/// The directories of the repository that hold codec documents beside the
+/// resources: the Rust conformance fixtures, the conformance contexts, the
+/// standard library, the test fixtures and the kind examples.
+const OTHER_CODEC_ROOTS: &[&str] = &[
+    "../backends/rust/forge-conformance/fixtures",
+    "../tests/forge/conformance",
+    "../stdlib",
+    "tests/fixtures",
+    "kind-examples",
+];
+
+/// Every document under `dir` that declares itself a codec, by path, in order.
+fn codec_documents_under(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.expect("an entry").path();
+        if path.is_dir() {
+            codec_documents_under(&path, out);
+        } else if path.extension().is_some_and(|ext| ext == "scxml")
+            && std::fs::read_to_string(&path).is_ok_and(|text| text.contains("sce:kind=\"codec\""))
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// The codecs of the repository outside the resources that the C++ backend
+/// keeps on the template's encode, by path from `sce-build`, in order. Until it
+/// is empty the template's encode prints a codec somewhere, and so cannot be
+/// removed (docs/adr/0081 §6); a landing that moves one removes it here.
+const KEPT_ELSEWHERE: &[&str] = &[
+    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm.scxml",
+    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm_held.scxml",
+    "../backends/rust/forge-conformance/fixtures/codec_feature_gated_arm_no_catch_all.scxml",
+    "../backends/rust/forge-conformance/fixtures/codec_some_arms_say_parent.scxml",
+    "tests/fixtures/cbor_codec/codec_cbor_record_list.scxml",
+];
+
+/// The C++ backend prints every codec of the repository outside the resources
+/// but [`KEPT_ELSEWHERE`], which it keeps on the template's encode for the
+/// forms it does not lower.
+#[test]
+fn the_cpp_backend_prints_every_codec_of_the_repository_but_the_ones_it_keeps() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut paths = Vec::new();
+    for root in OTHER_CODEC_ROOTS {
+        codec_documents_under(&manifest.join(root), &mut paths);
+    }
+    paths.sort();
+    let mut kept: Vec<String> = Vec::new();
+    let mut why: Vec<String> = Vec::new();
+    for path in &paths {
+        let shown = path
+            .strip_prefix(manifest)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        // Every document here is one the repository generates, so a refusal
+        // is a defect of its own and not a codec kept.
+        let unlowered = cpp_codec_unlowered_file(path, &[], &ForgeCompileOptions::default())
+            .unwrap_or_else(|e| panic!("{shown}: {e:?}"))
+            .expect("a document that declares itself a codec is one");
+        if !unlowered.is_empty() {
+            why.push(format!("{shown}: {}", unlowered.join("; ")));
+            kept.push(shown);
+        }
+    }
+    eprintln!(
+        "{} codec document(s) read; {} kept:",
+        paths.len(),
+        why.len()
+    );
+    for line in &why {
+        eprintln!("  {line}");
+    }
+    assert_eq!(
+        kept,
+        KEPT_ELSEWHERE,
+        "the C++ backend keeps these codecs of the repository on the template's encode; a \
+         landing that moves one removes it from KEPT_ELSEWHERE (docs/adr/0081 §6):\n  {}",
+        why.join("\n  ")
+    );
+}
+
 #[test]
 fn the_cpp_backend_prints_exactly_the_codecs_whose_every_form_it_lowers() {
     let mut printed: Vec<String> = Vec::new();
