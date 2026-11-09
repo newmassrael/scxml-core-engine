@@ -74,6 +74,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% elif f.vle %}
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
+{% elif f.bits and f.bits.bytes > 1 %}
+    /// The {{ f.bits.size }} bits from bit {{ f.bits.shift }} of the {{ f.bits.bytes }} bytes from byte {{ f.offset }}, read as one
+    /// {{ f.order }}-endian word. A value wider than that is cut to it when written.
 {% elif f.bits %}
     /// The {{ f.bits.size }} bits of byte {{ f.offset }} from bit {{ f.bits.shift }}. A value wider than that is cut
     /// to it when written.
@@ -256,7 +259,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
         let frame = {{ struct_name }}(
 {% for f in fields %}
 {% if f.bits %}
-            {{ f.id }}: try (cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }}) >> {{ f.bits.shift }}) & {{ f.bits.mask }}{{ "," if not loop.last }}
+            {{ f.id }}: try {{ f.bits.decode }}{{ "," if not loop.last }}
 {% else %}
             {{ f.id }}: try cursor.peekInteger({{ f.swift_type }}.self, at: {{ f.offset }}, .{{ f.order }}){{ "," if not loop.last }}
 {% endif %}
@@ -276,11 +279,12 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% if sequential %}
         var frame: [UInt8] = []
 {% else %}
-        {{ "var" if fields else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
+        {{ "var" if fixed_writes else "let" }} frame = [UInt8](repeating: 0, count: Self.frameLength)
 {% endif %}
 {% for line in parent_tag_locals %}
 {{ line }}
 {% endfor %}
+{% if sequential %}
 {% for f in fields %}
 {% set pad = "    " if f.present else "" %}
 {% set src = f.id if f.present else "self." ~ f.id %}
@@ -325,25 +329,23 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {{ pad }}        }
 {% elif f.vle %}
 {{ pad }}        appendVle({{ src }}, to: &frame)
-{% elif sequential %}
-{% if f.derived %}
+{% elif f.derived %}
 {{ pad }}        appendInteger(({{ src }} & {{ f.derived.keep }}) | {{ f.derived.terms }}, to: &frame, .{{ f.order }})
 {% else %}
 {{ pad }}        appendInteger({{ src }}, to: &frame, .{{ f.order }})
-{% endif %}
-{% elif f.bits %}
-        frame[{{ f.offset }}] |= (self.{{ f.id }} & {{ f.bits.mask }}) << {{ f.bits.shift }}
-{% else %}
-{% if f.derived %}
-        storeInteger((self.{{ f.id }} & {{ f.derived.keep }}) | {{ f.derived.terms }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
-{% else %}
-        storeInteger(self.{{ f.id }}, into: &frame, at: {{ f.offset }}, .{{ f.order }})
-{% endif %}
 {% endif %}
 {% if f.present %}
         }
 {% endif %}
 {% endfor %}
+{% else %}
+{# A frame laid out by byte is written one step of its layout after another into a frame of
+   zeros (docs/adr/0095 §2): a field that is the whole of its integer as its bytes, every other
+   byte as the piece each field holds in it. #}
+{% for line in fixed_writes %}
+        {{ line }}
+{% endfor %}
+{% endif %}
         try sink.writeBytes(frame)
     }
 }

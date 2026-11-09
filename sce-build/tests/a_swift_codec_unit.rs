@@ -590,8 +590,8 @@ fn a_gated_byte_string_is_checked_where_it_is_given() {
 fn what_a_variable_length_field_cannot_be_is_refused_by_name() {
     for (field, what) in [
         (
-            r#"<sce:field id="a" sce:type="uint8" sce:byte="0" sce:bit-offset="0" sce:bit-size="4"/>
-               <sce:field id="n" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>"#,
+            r#"<sce:field id="a" sce:type="uint8" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
+               <sce:field id="body" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="8"/>"#,
             "a bit offset in a frame whose layout depends on what it holds",
         ),
         (
@@ -667,15 +667,105 @@ fn a_field_of_bits_inside_a_byte_is_cut_and_shifted_into_it() {
 }
 
 #[test]
-fn a_bit_field_that_does_not_fit_in_one_byte_is_refused_by_name() {
-    for (field, what) in [
+fn a_field_whose_bits_leave_its_byte_is_read_from_its_word_and_written_by_its_pieces() {
+    let code = swift_of("tests/forge/resources/codec_optional_field_attributes.scxml")
+        .expect("a field whose bits span two bytes is written");
+    assert!(
+        code.contains("reading: try (cursor.peekInteger(UInt16.self, at: 1, .big) >> 4) & 0xFFF"),
+        "a decode reads the big-endian word of bytes 1 and 2, moves it down and masks it: {code}"
+    );
+    assert!(
+        code.contains("frame[1] |= UInt8(truncatingIfNeeded: (self.reading >> 4) & 0xFF) << 0"),
+        "byte 1 holds the high eight of the twelve bits: {code}"
+    );
+    assert!(
+        code.contains("frame[2] |= UInt8(truncatingIfNeeded: self.reading & 0xF) << 4"),
+        "the high nibble of byte 2 holds the low four: {code}"
+    );
+    assert!(
+        code.contains("storeInteger(self.status, into: &frame, at: 0, .little)"),
+        "a field that is the whole of its integer is stored whole: {code}"
+    );
+    assert!(
+        code.contains("public static let frameLength = 3"),
+        "the frame runs to the end of the word: {code}"
+    );
+}
+
+#[test]
+fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
+    let code = swift_of_datamodel(
+        r#"<sce:field id="past" sce:type="uint8" sce:byte="0" sce:bit-offset="6" sce:bit-size="4"/>
+    <sce:field id="wide" sce:type="uint16" sce:byte="2" sce:bit-offset="0" sce:bit-size="4"/>
+    <sce:field id="three" sce:type="uint32" sce:byte="3" sce:bit-offset="4" sce:bit-size="20"/>
+    <sce:field id="low" sce:type="uint16" sce:byte="6" sce:bit-size="8"/>"#,
+    )
+    .expect("bits of a word are written");
+    for (expected, why) in [
         (
-            r#"<sce:field id="wide" sce:type="uint16" sce:byte="0" sce:bit-offset="0" sce:bit-size="4"/>"#,
-            "which only a `uint8` takes",
+            "past: try UInt8(truncatingIfNeeded: (cursor.peekInteger(UInt16.self, at: 0, .big) >> 6) & 0xF)",
+            "a word wider than the field's type is narrowed to it",
         ),
         (
-            r#"<sce:field id="past" sce:type="uint8" sce:byte="0" sce:bit-offset="6" sce:bit-size="4"/>"#,
-            "which are not inside one byte",
+            "frame[0] |= ((self.past >> 2) & 0x3) << 0",
+            "the high byte of a big-endian word holds the high bits",
+        ),
+        (
+            "frame[1] |= (self.past & 0x3) << 6",
+            "and the low byte the low bits",
+        ),
+        (
+            "wide: try UInt16(truncatingIfNeeded: (cursor.peekInteger(UInt8.self, at: 2, .big) >> 0) & 0xF)",
+            "a word narrower than the field's type is widened to it",
+        ),
+        (
+            "frame[2] |= UInt8(truncatingIfNeeded: self.wide & 0xF) << 0",
+            "a piece of a field wider than a byte is narrowed to one",
+        ),
+        (
+            "three: try (cursor.peekInteger(UInt32.self, bytes: 3, at: 3, .big) >> 4) & 0xFFFFF",
+            "a word of three bytes is read by the count of its bytes",
+        ),
+        (
+            "frame[3] |= UInt8(truncatingIfNeeded: (self.three >> 12) & 0xFF) << 0",
+            "each byte of the word holds its piece",
+        ),
+        (
+            "frame[5] |= UInt8(truncatingIfNeeded: self.three & 0xF) << 4",
+            "the low bits of the word are in its last byte",
+        ),
+        (
+            "low: try UInt16(truncatingIfNeeded: (cursor.peekInteger(UInt8.self, at: 6, .big) >> 0) & 0xFF)",
+            "whole bytes fewer than the type has are a word of their own",
+        ),
+        (
+            "frame[6] |= UInt8(truncatingIfNeeded: self.low & 0xFF) << 0",
+            "and are written by their pieces, not as the type's bytes",
+        ),
+        (
+            "public static let frameLength = 7",
+            "the frame runs to the end of the last word",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn bits_a_swift_codec_cannot_lay_out_are_refused_by_name() {
+    for (field, what) in [
+        (
+            r#"<sce:field id="small" sce:type="int16" sce:byte="0" sce:bit-size="8"/>"#,
+            "8 bits where its type Int16 holds 16",
+        ),
+        (
+            r#"<sce:field id="n" sce:type="uint16" sce:byte="0" sce:bit-size="12"/>
+               <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
+            "12 bits where its type UInt16 holds 16",
+        ),
+        (
+            r#"<sce:field id="past" sce:type="uint16" sce:byte="0" sce:bit-offset="4" sce:bit-size="8" sce:endian="native"/>"#,
+            "the native byte order",
         ),
     ] {
         let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));

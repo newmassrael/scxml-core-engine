@@ -68,6 +68,18 @@ import Testing
     #expect(try cursor.peekInteger(UInt16.self, at: 1, .big) == 0x0203)
 }
 
+@Test func aWordOfFewerBytesThanItsTypeIsReadFromThoseBytesAlone() throws {
+    var cursor = SceCursor([0xAA, 0x12, 0x34, 0x56, 0x78])
+    try cursor.advance(1)
+    #expect(try cursor.peekInteger(UInt32.self, bytes: 3, at: 0, .big) == 0x12_3456)
+    #expect(try cursor.peekInteger(UInt32.self, bytes: 3, at: 0, .little) == 0x56_3412)
+    #expect(try cursor.peekInteger(UInt64.self, bytes: 3, at: 1, .big) == 0x34_5678)
+    #expect(throws: CodecError.needMoreBytes) {
+        try cursor.peekInteger(UInt32.self, bytes: 3, at: 2, .big)
+    }
+    #expect(cursor.remaining == 4, "reading a word moves nothing")
+}
+
 @Test func aWrittenIntegerReadsBackAsItself() throws {
     var sink = BytesSink()
     try sink.writeInteger(UInt16(0x1234), .big)

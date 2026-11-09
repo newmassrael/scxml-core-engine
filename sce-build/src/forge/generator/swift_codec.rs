@@ -36,8 +36,9 @@ fn integer(sce_type: &SceType) -> Option<(&'static str, u32)> {
 /// (`generate/unsupported-feature`) before [`render`] writes a field; `None` for a codec it does.
 ///
 /// Swift lowers a positional codec of fields that are integers of a native width, each at a byte
-/// offset and in a byte order the document names. Each construct past that is named here until its
-/// spelling is written.
+/// offset and in a byte order the document names, or an unsigned number of the bits of the bytes
+/// it spans (docs/adr/0095 §1). Each construct past that is named here until its spelling is
+/// written.
 ///
 /// `element` answers, for the alias a `<sce:repeat>` names its entries by, what of that codec the
 /// Swift backend does not write (`None` for one it does): a list of entries whose unit is not
@@ -211,30 +212,32 @@ fn field_unlowered(
     if f.is_variable_length() || f.length_field.is_some() {
         return what("a variable-length field");
     }
-    // A field of bits inside one byte has no byte order: it is the byte's own bits. It is laid
-    // at a byte of the frame, which a frame that is read field by field has no fixed place for.
-    if f.bit_offset.is_some() {
-        if is_sequential(m) {
-            return what("a bit offset in a frame whose layout depends on what it holds");
-        }
-        return match bit_field(f) {
-            Ok(_) => None,
-            Err(reason) => what(&reason),
-        };
-    }
-    if f.effective_endian(m.default_endian) == Endian::Native {
-        return what("the native byte order");
-    }
     let Some((swift_type, width)) = integer(&f.sce_type) else {
         return what(&format!("a `{}` field", f.sce_type.as_attr()));
     };
-    match f.bit_size {
-        BitSize::Fixed { bits } if bits == width => None,
-        BitSize::Fixed { bits } => what(&format!(
-            "{bits} bits where its type {swift_type} holds {width}"
-        )),
-        _ => what("a bit size that is not fixed"),
+    let Some(span) = BitSpan::of(f, m.default_endian) else {
+        return what("a bit size that is not fixed");
+    };
+    // A field that is not the whole of its integer is bits of the word its bytes make
+    // (docs/adr/0095 §1), laid at a byte of the frame, which a frame that is read field by
+    // field has no fixed place for. Its value is an unsigned number of its bits, which a signed
+    // type would need a sign for.
+    if !whole_of_its_type(&span, width) {
+        if is_sequential(m) && f.bit_offset.is_some() {
+            return what("a bit offset in a frame whose layout depends on what it holds");
+        }
+        if is_sequential(m) || !f.sce_type.is_unsigned() {
+            return what(&format!(
+                "{} bits where its type {swift_type} holds {width}",
+                span.bits
+            ));
+        }
     }
+    // A word of one byte has no byte order: it is the byte's own bits.
+    if span.bytes > 1 && span.endian == Endian::Native {
+        return what("the native byte order");
+    }
+    None
 }
 
 /// What of the variant `v` of `m` the Swift codec does not lower yet; `None` for one it does.
@@ -399,8 +402,8 @@ fn is_variable(f: &CodecField) -> bool {
 
 /// Whether the frame of `m` is read and written field by field.
 ///
-/// A frame of fields that are the whole of an integer, or bits inside a byte, is laid out at the
-/// byte each field names: the fields are at fixed places. A frame with a field whose size depends
+/// A frame of fields that are the whole of an integer, or bits of the bytes they span, is laid out
+/// at the byte each field names: the fields are at fixed places. A frame with a field whose size depends
 /// on what it holds (a variable-length integer, a `tail`, a `length-ref`) has no fixed place for
 /// the fields after it, so it is read from the cursor in the order of the document, and each field
 /// begins where the last one ended; the `sce:byte` of a field is then its place in that order.
@@ -536,28 +539,104 @@ fn carried_length_expr(m: &CodecModel, name: &str) -> String {
     }
 }
 
-/// Where the bits of a field that names a `sce:bit-offset` lie in its byte: the shift that brings
-/// them to the least significant end and the mask of their width at zero. The field is a `uint8`
-/// holding `bit-size` bits from `bit-offset`, wholly inside the byte at `sce:byte`; any other
-/// shape (a wider type, a bit size that is not fixed, bits past the byte) is the reason it is not
-/// lowered.
-fn bit_field(f: &CodecField) -> Result<(u32, u8), String> {
-    if !matches!(f.sce_type, SceType::Uint8) {
-        return Err(format!(
-            "a bit offset on a `{}` field, which only a `uint8` takes",
-            f.sce_type.as_attr()
-        ));
+/// Whether the field of `span`, whose integer type is `width` bits wide, is the whole of that
+/// integer: whole bytes from bit 0, as many as the type has. Such a field is read and written as
+/// its type by the runtime's cursor and sink; any other is bits of its word (docs/adr/0095 §1).
+fn whole_of_its_type(span: &BitSpan, width: u32) -> bool {
+    span.whole() && span.bits == width
+}
+
+/// The Swift spelling of a byte order: `native` is read as big, as every backend reads it.
+fn order_of(endian: Endian) -> &'static str {
+    match endian {
+        Endian::Little => "little",
+        Endian::Big | Endian::Native => "big",
     }
-    let BitSize::Fixed { bits } = f.bit_size else {
-        return Err("a bit offset with a bit size that is not fixed".to_string());
+}
+
+/// The value of a positional field of the Swift integer type `swift_type` that is bits of the
+/// word `span` (docs/adr/0095 §1), as a decode reads it from the cursor: the word read in
+/// its byte order as the narrowest unsigned integer that holds it, moved down by the field's bit
+/// offset and masked to its bits, then converted to the field's type where that is another. A
+/// word of a width no integer type has (three bytes, five, six, seven) is read by the count of
+/// its bytes.
+fn bits_of_word(span: &BitSpan, swift_type: &str) -> String {
+    let word_type = smallest_unsigned(8 * span.bytes);
+    let order = order_of(span.endian);
+    let word = if matches!(span.bytes, 1 | 2 | 4 | 8) {
+        format!(
+            "cursor.peekInteger({word_type}.self, at: {}, .{order})",
+            span.byte
+        )
+    } else {
+        format!(
+            "cursor.peekInteger({word_type}.self, bytes: {}, at: {}, .{order})",
+            span.bytes, span.byte
+        )
     };
-    let offset = f.bit_offset.unwrap_or(0);
-    if bits == 0 || offset + bits > 8 {
-        return Err(format!(
-            "{bits} bits from bit {offset}, which are not inside one byte"
-        ));
+    let bits = format!("({word} >> {}) & 0x{:X}", span.shift, span.mask());
+    if word_type == swift_type {
+        bits
+    } else {
+        format!("{swift_type}(truncatingIfNeeded: {bits})")
     }
-    Ok((offset, ((1u32 << bits) - 1) as u8))
+}
+
+/// The statement that ors the piece `piece` of the field `f` into byte `at` of the frame
+/// (docs/adr/0095 §2): the value moved down to the piece's first bit and masked, narrowed to a
+/// byte where the field is wider than one, and moved up to where the piece lands in the byte.
+fn piece_write(f: &CodecField, at: u32, piece: Piece) -> String {
+    let value = format!("self.{}", f.id);
+    let down = if piece.from == 0 {
+        value
+    } else {
+        format!("({value} >> {})", piece.from)
+    };
+    let masked = format!("{down} & 0x{:X}", piece.mask);
+    let byte = if matches!(f.sce_type, SceType::Uint8) {
+        format!("({masked})")
+    } else {
+        format!("UInt8(truncatingIfNeeded: {masked})")
+    };
+    format!("frame[{at}] |= {byte} << {}", piece.to)
+}
+
+/// The statements a positional encode writes its fields with into a frame of zeros, one step of
+/// the frame (`bit_layout::slots`) after another (docs/adr/0095 §2). A field that is the whole of
+/// its integer is stored as its bytes in its byte order. Every other byte is the or of the piece
+/// each field holds in it, written as one statement per piece; a byte no field holds stays zero.
+/// A field whose bytes are whole but fewer than its type has is written by the piece it holds in
+/// each of them.
+///
+/// A carrier an embedded variant fills (`parent_tag_derived`) is a field of a codec that embeds
+/// another, which is read field by field and never written here.
+fn fixed_writes(m: &CodecModel) -> Vec<String> {
+    let mut lines = Vec::new();
+    for slot in crate::forge::bit_layout::slots(&m.fields, m.default_endian) {
+        match slot {
+            Slot::Whole(f) => {
+                let span = BitSpan::of(f, m.default_endian).expect("a fixed field");
+                let width = integer(&f.sce_type).map_or(0, |(_, width)| width);
+                if whole_of_its_type(&span, width) {
+                    let order = order_of(span.endian);
+                    lines.push(format!(
+                        "storeInteger(self.{}, into: &frame, at: {}, .{order})",
+                        f.id, span.byte
+                    ));
+                } else {
+                    for at in span.byte..span.end() {
+                        lines.extend(span.piece(at).map(|p| piece_write(f, at, p)));
+                    }
+                }
+            }
+            Slot::Byte { at, pieces } => {
+                for (f, piece) in pieces {
+                    lines.push(piece_write(f, at, piece));
+                }
+            }
+        }
+    }
+    lines
 }
 
 /// The refusals, at the top of an encode, of a value whose gated field and whose gate contradict each
@@ -1228,19 +1307,19 @@ pub(super) fn render(
             }
             let (swift_type, width) =
                 integer(&f.sce_type).expect("a field this renderer is given is an integer");
+            // Where the field's bits lie in a frame laid out by byte (docs/adr/0095 §1).
+            let span = BitSpan::of(f, m.default_endian).filter(|_| !sequential);
             if present.is_some() {
                 // On the wire only on a condition: it adds nothing to the fewest bytes.
             } else if f.is_vle() {
                 frame_length += 1;
-            } else if sequential {
-                frame_length += width / 8;
+            } else if let Some(span) = &span {
+                // The frame runs to the end of the last field's bytes.
+                frame_length = frame_length.max(span.end());
             } else {
-                frame_length = frame_length.max(f.byte_offset + width / 8);
+                frame_length += width / 8;
             }
-            let order = match f.effective_endian(m.default_endian) {
-                Endian::Little => "little",
-                Endian::Big | Endian::Native => "big",
-            };
+            let order = order_of(f.effective_endian(m.default_endian));
             // The carrier's value before anything is read into it: the bits the document's
             // `<sce:flag value=>` declarations set, and zero where it declares none.
             let default = match flag_default_carrier_value(f) {
@@ -1259,13 +1338,15 @@ pub(super) fn render(
                 "vle": f.is_vle(),
                 "flags": f.flags.iter().map(flag_context).collect::<Vec<_>>(),
                 "derived": parent_tag_derived(&derivations, &f.id),
-                // Where its bits lie in the byte, for a field of bits inside one: `null` for a
-                // field that is the whole of its integer.
-                "bits": bit_field(f).ok().filter(|_| f.bit_offset.is_some()).map(|(shift, mask)| {
+                // Where its bits lie in the word its bytes make, and the decode that reads them,
+                // for a field that is bits of a word: `null` for a field that is the whole of its
+                // integer.
+                "bits": span.filter(|s| !whole_of_its_type(s, width)).map(|s| {
                     serde_json::json!({
-                        "shift": shift,
-                        "mask": format!("0x{mask:X}"),
-                        "size": mask.count_ones(),
+                        "shift": s.shift,
+                        "size": s.bits,
+                        "bytes": s.bytes,
+                        "decode": bits_of_word(&s, swift_type),
                     })
                 }),
             })
@@ -1281,6 +1362,14 @@ pub(super) fn render(
         ctx.insert("variant_enum".into(), parts.arms_enum);
     }
     ctx.insert("fields".into(), fields.into());
+    // The statements that write a frame laid out by byte; a frame read field by field writes each
+    // field in turn instead.
+    let writes = if sequential {
+        Vec::new()
+    } else {
+        fixed_writes(m)
+    };
+    ctx.insert("fixed_writes".into(), writes.into());
     ctx.insert(
         "parent_tag_locals".into(),
         parent_tag_locals(&derivations).into(),

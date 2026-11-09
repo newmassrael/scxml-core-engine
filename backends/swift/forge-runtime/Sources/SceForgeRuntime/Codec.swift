@@ -184,12 +184,25 @@ public struct SceCursor: Sendable {
     public func peekInteger<T: FixedWidthInteger>(
         _ type: T.Type, at offset: Int, _ order: SceByteOrder
     ) throws(CodecError) -> T {
-        let width = T.bitWidth / 8
-        guard offset >= 0, remaining - offset >= width else {
+        try peekInteger(type, bytes: T.bitWidth / 8, at: offset, order)
+    }
+
+    /// The integer of type `T` that the `count` bytes starting `offset` bytes after the cursor
+    /// make in `order`, read without moving it: the word of a field of bits that spans a number of
+    /// bytes no integer type is as wide as (three, five, six or seven; docs/adr/0095 §1). `count`
+    /// is at least one and at most the bytes of `T`; fewer than all of them leave its high bits
+    /// zero, so the word is unsigned.
+    public func peekInteger<T: FixedWidthInteger>(
+        _ type: T.Type, bytes count: Int, at offset: Int, _ order: SceByteOrder
+    ) throws(CodecError) -> T {
+        precondition(
+            count >= 1 && count <= T.bitWidth / 8,
+            "a word of \(count) bytes is not read into an integer of \(T.bitWidth / 8)")
+        guard offset >= 0, remaining - offset >= count else {
             throw .needMoreBytes
         }
         var value: T = 0
-        for index in 0..<width {
+        for index in 0..<count {
             let byte = T(truncatingIfNeeded: buffer[position + offset + index])
             switch order {
             case .big:
