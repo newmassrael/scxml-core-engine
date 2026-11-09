@@ -13,7 +13,7 @@
   <sce:system-port id="sut" type="JobPort"/>
   <sce:map component="mtc" port="sut" system-port="sut"/>
   <sce:connect>
-    <sce:endpoint component="mtc" port="control"/>
-    <sce:endpoint component="helper" port="control"/>
+    <sce:endpoint component="mtc" port="ctl"/>
+    <sce:endpoint component="helper" port="ctl"/>
   </sce:connect>
 </scxml>

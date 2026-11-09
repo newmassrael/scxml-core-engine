@@ -7,9 +7,9 @@
        sce:type="record:JobRequest">
   <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
   <datamodel>
-    <data id="job" sce:type="uint32" sce:direction="in"/>
+    <data id="wanted" sce:type="uint32" sce:direction="in"/>
   </datamodel>
   <sce:record-match>
-    <sce:specific field="job" param="job"/>
+    <sce:specific field="job" param="wanted"/>
   </sce:record-match>
 </scxml>

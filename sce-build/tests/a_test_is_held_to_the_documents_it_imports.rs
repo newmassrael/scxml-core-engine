@@ -97,7 +97,7 @@ fn a_test_whose_documents_agree_is_accepted() {
 
 /// The suite every other test of the profile reads, `job_suite.scxml`, holds
 /// whole to the rules its imports decide: its port types, the configuration
-/// whose connect joins the tester's `control` port to the helper's, the test
+/// whose connect joins the tester's `ctl` port to the helper's, the test
 /// case and the suite. A fixture read only by its parser can break a rule of
 /// how the documents fit together and stay unseen; this holds the one every
 /// generated test and the TTCN-3 export read.

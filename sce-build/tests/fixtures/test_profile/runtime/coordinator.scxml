@@ -13,7 +13,7 @@
   <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
   <sce:test-port id="peer" type="ServingPort"/>
   <datamodel>
-    <data id="job" sce:type="uint32" expr="0"/>
+    <data id="requested" sce:type="uint32" expr="0"/>
     <data id="ok" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="working" initial="serving">
@@ -23,9 +23,9 @@
     </transition>
     <state id="serving">
       <transition sce:receive="peer" sce:test-template="AnyRequest" target="served">
-        <assign location="job" expr="_event.data.job"/>
+        <assign location="requested" expr="_event.data.job"/>
         <send type="http://sce.dev/ext/test-port" target="peer"
-              sce:test-template="ReplyOf" sce:template-args="job ok"/>
+              sce:test-template="ReplyOf" sce:template-args="requested ok"/>
       </transition>
     </state>
     <state id="served"/>

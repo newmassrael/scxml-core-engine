@@ -11,20 +11,20 @@
   <sce:import kind="test-port-type" src="test-port-type.scxml" as="JobPort"/>
   <sce:import kind="test-template" src="test-template.scxml" as="CompletedWithin"/>
   <sce:test-port id="sut" type="JobPort"/>
-  <sce:test-timer id="reply" duration="2s"/>
+  <sce:test-timer id="deadline" duration="2s"/>
   <datamodel>
-    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="elapsed_limit" sce:type="uint32" sce:module-parameter="true"/>
   </datamodel>
   <state id="waiting">
     <onentry>
-      <sce:start-timer timer="reply"/>
+      <sce:start-timer timer="deadline"/>
     </onentry>
     <transition sce:receive="sut" sce:test-template="CompletedWithin"
-                sce:template-args="limit" target="passed">
-      <sce:stop-timer timer="reply"/>
+                sce:template-args="elapsed_limit" target="passed">
+      <sce:stop-timer timer="deadline"/>
       <sce:setverdict value="pass"/>
     </transition>
-    <transition sce:timeout="reply" target="failed">
+    <transition sce:timeout="deadline" target="failed">
       <sce:setverdict value="fail" reason="'no reply in time'"/>
     </transition>
   </state>

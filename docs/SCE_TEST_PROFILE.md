@@ -720,21 +720,21 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
   <sce:import kind="test-template" src="job_request.scxml" as="Request"/>
   <sce:import kind="test-template" src="completed_within.scxml" as="CompletedWithin"/>
   <sce:test-port id="sut" type="JobPort"/>
-  <sce:test-port id="control" type="JobPort"/>
-  <sce:test-timer id="reply" duration="2s"/>
+  <sce:test-port id="ctl" type="JobPort"/>
+  <sce:test-timer id="deadline" duration="2s"/>
   <datamodel>
-    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="elapsed_limit" sce:type="uint32" sce:module-parameter="true"/>
   </datamodel>
   <state id="requesting">
     <onentry>
       <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="Request"/>
-      <sce:start-timer timer="reply"/>
+      <sce:start-timer timer="deadline"/>
     </onentry>
-    <transition sce:receive="sut" sce:test-template="CompletedWithin" sce:template-args="limit" target="passed">
-      <sce:stop-timer timer="reply"/>
+    <transition sce:receive="sut" sce:test-template="CompletedWithin" sce:template-args="elapsed_limit" target="passed">
+      <sce:stop-timer timer="deadline"/>
       <sce:setverdict value="pass"/>
     </transition>
-    <transition sce:timeout="reply" target="failed">
+    <transition sce:timeout="deadline" target="failed">
       <sce:setverdict value="fail" reason="'no reply in time'"/>
     </transition>
   </state>
@@ -793,14 +793,14 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
   <sce:system-port id="sut" type="JobPort"/>
   <sce:map component="mtc" port="sut" system-port="sut"/>
   <sce:connect>
-    <sce:endpoint component="mtc" port="control"/>
-    <sce:endpoint component="helper" port="control"/>
+    <sce:endpoint component="mtc" port="ctl"/>
+    <sce:endpoint component="helper" port="ctl"/>
   </sce:connect>
 </scxml>
 ```
 
-The tester's `control` port is of `job_port`, which sends `JobRequest` and receives `JobCompleted`. The helper's
-`control` port is of the port type that turns each direction, so that what one port sends the other receives:
+The tester's `ctl` port is of `job_port`, which sends `JobRequest` and receives `JobCompleted`. The helper's
+`ctl` port is of the port type that turns each direction, so that what one port sends the other receives:
 
 ```xml
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -850,7 +850,7 @@ not, since `JobRequest` is on its `out` list and not on its `in` list.
        version="1.0" sce:kind="test-suite" name="job_suite">
   <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
   <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
-  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:module-parameter id="elapsed_limit" type="uint32" value="500"/>
   <sce:execute test-case="CompletesInTime" guard="10s" requires="job-timeout"/>
 </scxml>
 ```

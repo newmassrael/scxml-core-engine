@@ -280,7 +280,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value: Some(::std::sync::Arc::new(reply_of::value(self.job, self.ok))),",
+        "value: Some(::std::sync::Arc::new(reply_of::value(self.requested, self.ok))),",
         "processor_type: \"http://sce.dev/ext/test-component\".to_string(),",
         "invoke_id: \"answerer\".to_string(),",
     ] {

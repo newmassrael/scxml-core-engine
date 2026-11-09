@@ -489,7 +489,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     );
     let coordinator = text("coordinator");
     assert!(
-        coordinator.contains("reply_of_value(sm->policy.v_job, sm->policy.v_ok);"),
+        coordinator.contains("reply_of_value(sm->policy.v_requested, sm->policy.v_ok);"),
         "coordinator sends the reply its variables name:\n{coordinator}"
     );
     // A branch that receives and sends holds the send's value in a block

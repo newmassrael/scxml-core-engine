@@ -355,7 +355,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value: HostSendValue(ReplyOf.value(self.vJob, self.vOk))\n",
+        "value: HostSendValue(ReplyOf.value(self.vRequested, self.vOk))\n",
         "processorType: \"http://sce.dev/ext/test-component\",",
         "invokeID: \"answerer\",",
     ] {

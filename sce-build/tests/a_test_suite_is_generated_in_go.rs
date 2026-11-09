@@ -196,7 +196,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
     let timers = between(&asking, "TimersOfType:", "Connections:");
     assert!(
-        timers.contains("\t\t\t\"param_asker\": {\"reply\"},\n"),
+        timers.contains("\t\t\t\"param_asker\": {\"deadline\"},\n"),
         "{timers}"
     );
     assert!(

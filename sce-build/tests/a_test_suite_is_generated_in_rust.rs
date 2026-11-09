@@ -99,7 +99,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
     let timers = between(&asking, "timers_of_type:", "connections:");
     assert!(
-        timers.contains("(\"param_asker\".to_string(), vec![\"reply\".to_string()]),"),
+        timers.contains("(\"param_asker\".to_string(), vec![\"deadline\".to_string()]),"),
         "{timers}"
     );
     assert!(

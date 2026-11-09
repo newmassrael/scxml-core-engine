@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- docs/SCE_TEST_PROFILE.md §11.5: a parallel test component. It waits for
-     any message on its control port and passes. The port is of
+     any message on its control port, `ctl`, and passes. The port is of
      job_control_port.scxml, the complement of the tester's job_port.scxml,
      so the configuration can connect the two. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -8,9 +8,9 @@
        version="1.0" sce:kind="test-component" name="helper"
        datamodel="sce-static" initial="listening">
   <sce:import kind="test-port-type" src="job_control_port.scxml" as="JobControlPort"/>
-  <sce:test-port id="control" type="JobControlPort"/>
+  <sce:test-port id="ctl" type="JobControlPort"/>
   <state id="listening">
-    <transition sce:receive="control" target="done">
+    <transition sce:receive="ctl" target="done">
       <sce:setverdict value="pass"/>
     </transition>
   </state>
