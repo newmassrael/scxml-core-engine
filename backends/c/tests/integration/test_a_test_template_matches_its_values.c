@@ -6,7 +6,8 @@
 // fixtures under sce-build/tests/fixtures/test_profile/, matched against
 // concrete payloads: each mechanism of ES 201 873-1 Annex B.1 the profile
 // holds, true and false, and the value of each specific template matching its
-// own template.
+// own template; and the canonical form of a record in the test log, which the
+// unit of a template over it writes (§12.5).
 //
 // Each case is the twin of the C++ gtest of the same name in
 // tests/integration/ATestTemplateMatchesItsValuesTest.cpp, `ATestTemplate.<Name>`
@@ -290,6 +291,59 @@ static void a_length_on_a_text_counts_a_multi_byte_character_as_one(void) {
     CHECK(!card_within_matches(&card, 100u), "101 is not at most 100");
 }
 
+// The text `record_type` writes of `value` through a canonical writer, into
+// `out`; "" where the writer did not finish.
+static const char *canonical_of(const sce_test_record_type_t *record_type, const void *value, char *out, size_t cap) {
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, cap);
+    record_type->canonical(&jcs, value);
+    return sce_jcs_finish(&jcs) ? out : "";
+}
+
+// docs/SCE_TEST_PROFILE.md §12.5: the unit's `<name>_canonical` writes a job
+// status by the types its document declares, in the JSON Canonicalization
+// Scheme: every integer as the text of its digits, an absent field omitted and a
+// present one written, a list's elements in order; its record type names it by
+// the unit name of its event schema, and writes it with `<name>_canonical`.
+static void a_records_canonical_form_is_written_by_the_types_its_document_declares(void) {
+    char out[256];
+    const JobStatusPayload_t report = job_report_value();
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    job_report_canonical(&jcs, &report);
+    CHECK(sce_jcs_finish(&jcs) &&
+              strcmp(out, "{\"codes\":[\"7\"],\"count\":\"1\",\"elapsed_ms\":\"0\",\"note\":\"started on time\"}") == 0,
+          "wrote %s", out);
+    CHECK(strcmp(job_report_record_type()->name, "job_status") == 0, "the record type is '%s'",
+          job_report_record_type()->name);
+
+    JobStatusPayload_t retried = report;
+    retried.tag.present = true;
+    retried.tag.value = 3u;
+    retried.retry.present = true;
+    retried.retry.value = 2u;
+    retried.note = sce_optional_string_32_none();
+    const char *written = canonical_of(job_report_record_type(), &retried, out, sizeof(out));
+    CHECK(strcmp(written, "{\"codes\":[\"7\"],\"count\":\"1\",\"elapsed_ms\":\"0\",\"retry\":\"2\",\"tag\":\"3\"}") ==
+              0,
+          "wrote %s", written);
+}
+
+// An enum by the name its document declares, a text as its characters; the
+// record type of a template over an order line is the order line's.
+static void an_enum_is_written_by_its_declared_name_and_a_text_as_it_is(void) {
+    char out[128];
+    const OrderLinePayload_t line = order_line_exact_value();
+    const char *written = canonical_of(order_line_exact_record_type(), &line, out, sizeof(out));
+    CHECK(strcmp(written, "{\"color\":\"red\",\"quantity\":\"2\",\"sku\":\"A-1\"}") == 0, "wrote %s", written);
+    CHECK(strcmp(order_line_exact_record_type()->name, "order_line") == 0, "the record type is '%s'",
+          order_line_exact_record_type()->name);
+    OrderLinePayload_t blue = line;
+    blue.color = PAINT_COLOR_BLUE;
+    written = canonical_of(order_line_bounded_record_type(), &blue, out, sizeof(out));
+    CHECK(strcmp(written, "{\"color\":\"blue\",\"quantity\":\"2\",\"sku\":\"A-1\"}") == 0, "wrote %s", written);
+}
+
 int main(void) {
     matches_a_status_each_of_whose_fields_its_matcher_holds();
     a_value_list_matches_any_of_its_items_and_a_range_holds_its_bounds();
@@ -303,6 +357,8 @@ int main(void) {
     a_reference_to_a_range_holds_the_bound_its_argument_gives();
     a_template_matches_through_a_reference_to_one_that_is_not_specific();
     a_length_on_a_text_counts_a_multi_byte_character_as_one();
+    a_records_canonical_form_is_written_by_the_types_its_document_declares();
+    an_enum_is_written_by_its_declared_name_and_a_text_as_it_is();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
