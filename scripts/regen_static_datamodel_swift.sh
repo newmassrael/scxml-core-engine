@@ -288,8 +288,9 @@ done
 # named by the document, generated as a file of the same target beside the records and enums their
 # units name; ATestTemplateMatchesItsValuesTests.swift matches them against values. The Rust,
 # Kotlin, Go, Python and C11 trees generate the same templates (scripts/regen_static_datamodel_rust.sh
-# and its siblings), Rust and Kotlin the two over a union besides, which Swift, lowering no union,
-# refuses by name. They are not swept by the directory reads above: the fixture directory of the
+# and its siblings), Rust and Kotlin the two over a union besides, which the Swift generator writes
+# too (sce-build/tests/a_test_template_is_generated_in_swift.rs) and this tree does not generate.
+# They are not swept by the directory reads above: the fixture directory of the
 # profile holds documents refused on purpose, so the documents generated are the ones named here.
 TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
 TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)

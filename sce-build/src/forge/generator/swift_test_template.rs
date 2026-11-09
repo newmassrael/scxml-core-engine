@@ -51,9 +51,10 @@
 //! `Optional`'s `map` as a present value is bound. A union's value is the case
 //! through its enum (`UnionShapeMinimal.circle(...)`), never a bare case,
 //! which an optional position reads as `Optional`'s own case where the two
-//! share a name (`.none`). Until Swift lowers a union
-//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), a template whose type
-//! reaches one is refused by the walk before anything is spelled.
+//! share a name (`.none`). Swift is one of the backends that lower a union
+//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`], which
+//! `TemplateSpelling::lowers_unions` reads), so the walk spells a template
+//! whose type reaches one rather than refusing it.
 
 use super::test_template_walk::{
     hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
@@ -822,11 +823,11 @@ impl TemplateSpelling for SwiftSpelling {
 }
 
 /// The Swift arm of a template over a union, walked by a spelling that lowers
-/// a union ([`super::test_template_walk::LowersUnions`]): no generation
-/// reaches it until Swift lowers a union
-/// ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), since the walk refuses
-/// the template first (`TemplateWalk::refuse_unlowered_unions`), so the arm is
-/// held to the spelling of the union unit before that unit is written.
+/// a union whatever the list says ([`super::test_template_walk::LowersUnions`]),
+/// so the arm is held to its spelling apart from the list. Swift is on the
+/// list ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so generation
+/// reaches the same arm: what a generated unit writes is held by
+/// `sce-build/tests/a_test_template_is_generated_in_swift.rs`.
 #[cfg(test)]
 mod tests {
     use super::super::test_template_walk::LowersUnions;

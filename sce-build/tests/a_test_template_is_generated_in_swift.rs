@@ -11,10 +11,11 @@
 //! named bare, as its unit declares it in the one module. The tests are joined
 //! in C's words; a value that may be absent is read through `map`, its absence
 //! answered by `??`; a text's length is counted in characters through the
-//! profile's runtime, which the unit imports exactly where it counts one.
-//! Swift lowers no union (docs/adr/0092), so a template whose type reaches one
-//! is refused as C++, Go, Python and C11 refuse it, and a record or an enum
-//! whose own Swift unit is not written is refused by what that unit is
+//! profile's runtime, which the unit imports where it counts one or writes its
+//! record's canonical form in the test log (§12.5). Swift lowers a union
+//! (docs/adr/0092, `codegen_matrix::UNION_BACKENDS`), so a template whose type
+//! reaches one is generated, its union the enum its unit declares; a record or
+//! an enum whose own Swift unit is not written is refused by what that unit is
 //! refused for.
 //!
 //! What the generated units do when they run is held by
