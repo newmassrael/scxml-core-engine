@@ -33,6 +33,10 @@ use crate::generator::Language;
 const TEXT_LENGTH_HEADER: &str = "test/Length.h";
 /// The function [`TEXT_LENGTH_HEADER`] declares.
 const TEXT_LENGTH: &str = "SCE::Test::textLength";
+/// The header of the forge runtime that declares the bounded types a specific
+/// template's value builds a text, a byte string and a list through
+/// (docs/adr/0086, section 7.4).
+const FORGE_BOUNDED_HEADER: &str = "sce/forge/bounded.h";
 
 /// The unit of the test template `m`, whose imports are `imports`. Refused by
 /// name where the template's type or a parameter's reaches a union at any
@@ -47,6 +51,7 @@ pub(super) fn render_test_template_cpp(
     let scope = import_type_scope(imports);
     let spelling = CppSpelling {
         counts_characters: std::cell::Cell::new(false),
+        builds_bounded: std::cell::Cell::new(false),
     };
     let walk = TemplateWalk {
         template: m,
@@ -98,6 +103,13 @@ pub(super) fn render_test_template_cpp(
         spelling.counts_characters.get().into(),
     );
     ctx.insert("text_length_header".into(), TEXT_LENGTH_HEADER.into());
+    // The forge runtime's bounded types are included where the value builds
+    // through one, whether or not the unit of the value's type holds one.
+    ctx.insert(
+        "builds_bounded".into(),
+        spelling.builds_bounded.get().into(),
+    );
+    ctx.insert("forge_bounded_header".into(), FORGE_BOUNDED_HEADER.into());
     l.render(env, "test_template", ctx)
 }
 
@@ -149,6 +161,10 @@ struct CppSpelling {
     /// Whether a matcher counts the characters of a text, which the runtime's
     /// [`TEXT_LENGTH_HEADER`] declares.
     counts_characters: std::cell::Cell<bool>,
+    /// Whether the value builds a text, a byte string or a list through the
+    /// forge runtime's bounded type of it, which [`FORGE_BOUNDED_HEADER`]
+    /// declares.
+    builds_bounded: std::cell::Cell<bool>,
 }
 
 impl CppSpelling {
@@ -189,6 +205,13 @@ impl CppSpelling {
                 )))
             }
         })
+    }
+
+    /// `built`, an expression that builds through the forge runtime's
+    /// bounded type, noted so the unit includes [`FORGE_BOUNDED_HEADER`].
+    fn bounded(&self, built: String) -> String {
+        self.builds_bounded.set(true);
+        built
     }
 
     /// What a length restriction counts at `at`: the characters of a text,
@@ -289,11 +312,11 @@ impl TemplateSpelling for CppSpelling {
             }
             TypeOf::Text { max } => Ok(match purpose {
                 Use::Compare => filters::cpp_text_expression(text),
-                Use::Build => format!(
+                Use::Build => self.bounded(format!(
                     "{}::literal({})",
                     crate::forge::composed_lowering::cpp_text_type(max.max),
                     crate::forge::expr::cpp_text_literal(text)
-                ),
+                )),
             }),
             TypeOf::Bytes { max } => {
                 let octets: Vec<String> = text
@@ -308,8 +331,10 @@ impl TemplateSpelling for CppSpelling {
                     (Use::Compare, _) => {
                         format!("std::vector<std::uint8_t>{{{}}}", octets.join(", "))
                     }
-                    (Use::Build, true) => format!("{held}{{}}"),
-                    (Use::Build, false) => format!("{held}::literal({{{}}})", octets.join(", ")),
+                    (Use::Build, true) => self.bounded(format!("{held}{{}}")),
+                    (Use::Build, false) => {
+                        self.bounded(format!("{held}::literal({{{}}})", octets.join(", ")))
+                    }
                 })
             }
             _ => Err(refused()),
@@ -365,7 +390,11 @@ impl TemplateSpelling for CppSpelling {
         if elements.is_empty() {
             format!("{}{{}}", at.at.cpp)
         } else {
-            format!("{}::literal({{{}}})", at.at.cpp, elements.join(", "))
+            self.bounded(format!(
+                "{}::literal({{{}}})",
+                at.at.cpp,
+                elements.join(", ")
+            ))
         }
     }
 }
