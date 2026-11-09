@@ -2,8 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! The deterministic CBOR of a typed value: the bytes a signature covers from ADR 0085's domain
-//! bump on (docs/adr/0086, section 9). Nothing is signed with it yet: `sce-trust/event/2` keeps the
-//! bytes [`crate::message`] writes until that bump switches the domain and the encoding at once.
+//! bump on (docs/adr/0086, section 9). [`crate::message`] writes a change, `sce-trust/event/3`, and
+//! the operation that carries it with this encoding: the bump switched the domain and the encoding
+//! at once.
 //!
 //! A value is written by its type, not by its own shape: [`encode`] takes a [`Value`] and the
 //! [`ValueType`] it is a value of, and writes the core deterministic encoding of RFC 8949 section

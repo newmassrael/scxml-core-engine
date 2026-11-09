@@ -61,9 +61,11 @@ fn publish(hosts: &[&Trust], body: Body) -> Entry {
     entry
 }
 
+/// A change of `author`'s at `wall` of one write, of `text` to row `id`.
 fn write(author: u64, id: u64, wall: i64, text: &str) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
-           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": wall.to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": text,
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
@@ -246,7 +248,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
             alice_host
                 .seal(
                     "#s",
-                    "record_list.write",
+                    "record_list.change",
                     &write(1, n as u64 + 1, 1000 + n as i64, text),
                 )
                 .unwrap()
@@ -258,7 +260,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
             bob_host
                 .seal(
                     "#s",
-                    "record_list.write",
+                    "record_list.change",
                     &write(2, 10 + n as u64, 2000 + n as i64, text),
                 )
                 .unwrap()
@@ -267,7 +269,7 @@ fn recorded() -> (Trust, Entry, Vec<String>) {
     }
     let mut hub_host = hub.clone();
     for op in &ops {
-        hub_host.admit("relay", "record_list.write", op).unwrap();
+        hub_host.admit("relay", "record_list.change", op).unwrap();
     }
     let bobs = bob.checkpoint(30_000, 7).unwrap();
     alice.take_checkpoint(&bobs).unwrap();
@@ -373,7 +375,7 @@ fn a_record_that_was_changed_fails_where_it_was_changed() {
     // An operation whose number was changed is listed as not holding, and counts for nothing.
     let mut value: Value = serde_json::from_str(&text).unwrap();
     let mut op: Value = serde_json::from_str(value["operations"][0][1].as_str().unwrap()).unwrap();
-    op["value"] = json!("9");
+    op["ops"][0]["value"] = json!("9");
     value["operations"][0][1] = Value::String(op.to_string());
     let report = audit::verify(hash, &value.to_string()).unwrap();
     assert_eq!(report.refused.len(), 1, "{:?}", report.refused);
