@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c868fafd129dfb9c6768c3d112e14542a926c118aae9597ed39656faf85e6076
-// SCE-MAP: pattern_kind.scxml:11 :: _forge_body
+// source-hash: 3d8e77ae6e1148d1818998f2f9d129b014c767dc3cded9cb0af2d4fc0c10af0a
+// SCE-MAP: pattern_kind.scxml:16 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -31,6 +31,7 @@ public enum PatternKind: UInt16, CaseIterable, Sendable {
     case invokeCancel = 19
     case invokeError = 20
     case parallelRegionDone = 21
+    case causalVector = 23
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -52,6 +53,7 @@ public enum PatternKind: UInt16, CaseIterable, Sendable {
         case .invokeCancel: return "invokeCancel"
         case .invokeError: return "invokeError"
         case .parallelRegionDone: return "parallelRegionDone"
+        case .causalVector: return "causalVector"
         }
     }
 
@@ -86,6 +88,7 @@ public enum PatternKind: UInt16, CaseIterable, Sendable {
         case "invokeCancel": self = .invokeCancel
         case "invokeError": self = .invokeError
         case "parallelRegionDone": self = .parallelRegionDone
+        case "causalVector": self = .causalVector
         default: return nil
         }
     }

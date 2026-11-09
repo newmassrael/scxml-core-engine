@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d445777bd638d59bb235766496907e1278e8d6187af708d676fb6e02145c0dea
+// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -16,6 +16,7 @@ import com.sce.forge.runtime.SceSink
 import com.sce.generated.pattern_kind.*
 import com.sce.generated.payload_codec.*
 import com.sce.generated.rpc_status.*
+import com.sce.generated.causal_entry.*
 
 /**
  * One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
@@ -61,6 +62,10 @@ data class Envelope(
     var region_id: String? = null,
     /** Map key 18. */
     var child_session_id: String? = null,
+    /** Map key 19. */
+    var causal_epoch: ULong? = null,
+    /** Map key 20. */
+    var causal_vector: List<CausalEntryPayload>? = null,
 ) {
     /**
      * Encode this map into [w]; `null` on success. An entry whose value breaks
@@ -81,6 +86,8 @@ data class Envelope(
         if (parallel_id != null) count++
         if (region_id != null) count++
         if (child_session_id != null) count++
+        if (causal_epoch != null) count++
+        if (causal_vector != null) count++
         Cbor.writeMapHead(w, count)?.let { return it }
         run {
             val v = id
@@ -173,6 +180,18 @@ data class Envelope(
             if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
             Cbor.writeText(w, v)?.let { return it }
         }
+        causal_epoch?.let { v ->
+            Cbor.writeUint(w, 19UL)?.let { return it }
+            Cbor.writeUint(w, v.toULong())?.let { return it }
+        }
+        causal_vector?.let { v ->
+            Cbor.writeUint(w, 20UL)?.let { return it }
+            if (v.size > 64) return CodecError.CborOutOfRange
+            Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }
+            for (record in v) {
+                encodeRecordCausalEntry(w, record)?.let { return it }
+            }
+        }
         return null
     }
 
@@ -215,6 +234,8 @@ data class Envelope(
             var parallel_id: String? = null
             var region_id: String? = null
             var child_session_id: String? = null
+            var causal_epoch: ULong? = null
+            var causal_vector: List<CausalEntryPayload>? = null
             var i = 0UL
             while (i < count) {
                 i++
@@ -309,6 +330,28 @@ data class Envelope(
                         if (child_session_id != null) return null
                         child_session_id = Cbor.readText(c, 262144) ?: return null
                     }
+                    19UL -> {
+                        // A key given twice is not one map entry.
+                        if (causal_epoch != null) return null
+                        causal_epoch = Cbor.readUint(c) ?: return null
+                    }
+                    20UL -> {
+                        // A key given twice is not one map entry.
+                        if (causal_vector != null) return null
+                        causal_vector = run {
+                            // A definite-length array within the list's counts,
+                            // each item one record's map.
+                            val len = Cbor.readArrayLen(c) ?: return null
+                            if (len > 64UL) return null
+                            val list = ArrayList<CausalEntryPayload>(len.toInt())
+                            var n = 0UL
+                            while (n < len) {
+                                n++
+                                list.add(decodeRecordCausalEntry(c) ?: return null)
+                            }
+                            list
+                        }
+                    }
                     else -> if (!Cbor.skip(c)) return null
                 }
             }
@@ -331,7 +374,68 @@ data class Envelope(
                 parallel_id = parallel_id,
                 region_id = region_id,
                 child_session_id = child_session_id,
+                causal_epoch = causal_epoch,
+                causal_vector = causal_vector,
             )
+        }
+
+        /**
+         * Read one record of the event schema `causal_entry` (`record:CausalEntry`)
+         * from [c], as a list of this map holds it (docs/adr/0085, Landing order
+         * step 3a), into the payload type the schema's own unit declares: one
+         * CBOR map of every field, each under its id as text (docs/adr/0086,
+         * section 9.2). Its keys in any order, a key the schema does not declare
+         * skipped whole; a key given twice, a field missing and a text or byte
+         * string past its bound are `null`.
+         */
+        private fun decodeRecordCausalEntry(c: SceCursor): CausalEntryPayload? {
+            val count = Cbor.readMapLen(c) ?: return null
+            var held_hi: ULong? = null
+            var held_lo: ULong? = null
+            var held_seq: ULong? = null
+            var i = 0UL
+            while (i < count) {
+                i++
+                when (Cbor.readText(c, null) ?: return null) {
+                    "hi" -> {
+                        // A key given twice is not one map entry.
+                        if (held_hi != null) return null
+                        held_hi = Cbor.readUint(c) ?: return null
+                    }
+                    "lo" -> {
+                        // A key given twice is not one map entry.
+                        if (held_lo != null) return null
+                        held_lo = Cbor.readUint(c) ?: return null
+                    }
+                    "seq" -> {
+                        // A key given twice is not one map entry.
+                        if (held_seq != null) return null
+                        held_seq = Cbor.readUint(c) ?: return null
+                    }
+                    else -> if (!Cbor.skip(c)) return null
+                }
+            }
+            return CausalEntryPayload(
+                hi = held_hi ?: return null,
+                lo = held_lo ?: return null,
+                seq = held_seq ?: return null,
+            )
+        }
+
+        /**
+         * Write one record of `causal_entry` into [w] as one map of every field,
+         * the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
+         * key first. `null` on success.
+         */
+        private fun encodeRecordCausalEntry(w: SceSink, record: CausalEntryPayload): CodecError? {
+            Cbor.writeMapHead(w, 3UL)?.let { return it }
+            Cbor.writeText(w, "hi")?.let { return it }
+            Cbor.writeUint(w, record.hi.toULong())?.let { return it }
+            Cbor.writeText(w, "lo")?.let { return it }
+            Cbor.writeUint(w, record.lo.toULong())?.let { return it }
+            Cbor.writeText(w, "seq")?.let { return it }
+            Cbor.writeUint(w, record.seq.toULong())?.let { return it }
+            return null
         }
     }
 }

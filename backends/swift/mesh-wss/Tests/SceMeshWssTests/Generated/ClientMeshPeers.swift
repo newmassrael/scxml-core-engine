@@ -29,7 +29,8 @@ public enum ClientMeshPeers {
                     delivery: Delivery(dedup: true, ordered: false),
                     responders: ["server"],
                     deadlineMs: nil,
-                    replyEvents: []
+                    replyEvents: [],
+                    causal: nil
                 ),
                 link: .wssDial(
                     url: "ws://127.0.0.1:8443",

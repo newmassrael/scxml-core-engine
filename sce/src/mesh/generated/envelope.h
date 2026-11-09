@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d445777bd638d59bb235766496907e1278e8d6187af708d676fb6e02145c0dea
+// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "causal_entry.h"
 #include "pattern_kind.h"
 #include "payload_codec.h"
 #include "rpc_status.h"
@@ -498,6 +499,60 @@ struct Read {
 
 /// The `child_session_id` element of a source.
 inline constexpr detail_child_session_id::Read child_session_id{};
+
+namespace detail_causal_epoch {
+void causal_epoch() = delete;
+
+template <class S>
+constexpr auto read(const S &s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.causal_epoch()))
+    -> decltype(s.causal_epoch()) {
+    return s.causal_epoch();
+}
+
+template <class S>
+constexpr auto read(const S &s, ::SCE::Forge::PreferFree) noexcept(noexcept(causal_epoch(s)))
+    -> decltype(causal_epoch(s)) {
+    return causal_epoch(s);
+}
+
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S &s) const noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_causal_epoch
+
+/// The `causal_epoch` element of a source.
+inline constexpr detail_causal_epoch::Read causal_epoch{};
+
+namespace detail_causal_vector {
+void causal_vector() = delete;
+
+template <class S>
+constexpr auto read(const S &s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.causal_vector()))
+    -> decltype(s.causal_vector()) {
+    return s.causal_vector();
+}
+
+template <class S>
+constexpr auto read(const S &s, ::SCE::Forge::PreferFree) noexcept(noexcept(causal_vector(s)))
+    -> decltype(causal_vector(s)) {
+    return causal_vector(s);
+}
+
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S &s) const noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_causal_vector
+
+/// The `causal_vector` element of a source.
+inline constexpr detail_causal_vector::Read causal_vector{};
 }  // namespace source
 
 /// Whether `S` presents every entry of `Envelope`, each convertible to
@@ -521,7 +576,9 @@ struct is_source<
         decltype(source::routing_id(std::declval<const S &>())),
         decltype(source::parallel_id(std::declval<const S &>())),
         decltype(source::region_id(std::declval<const S &>())),
-        decltype(source::child_session_id(std::declval<const S &>()))>>
+        decltype(source::child_session_id(std::declval<const S &>())),
+        decltype(source::causal_epoch(std::declval<const S &>())),
+        decltype(source::causal_vector(std::declval<const S &>()))>>
     : std::conjunction<
           std::is_convertible<decltype(source::id(std::declval<const S &>())), ::SCE::Forge::Bytes<16, 16>>,
           std::is_convertible<decltype(source::source(std::declval<const S &>())), ::SCE::Forge::Text<262144>>,
@@ -552,50 +609,160 @@ struct is_source<
           std::is_convertible<decltype(source::region_id(std::declval<const S &>())),
                               std::optional<::SCE::Forge::Text<262144>>>,
           std::is_convertible<decltype(source::child_session_id(std::declval<const S &>())),
-                              std::optional<::SCE::Forge::Text<262144>>>> {};
+                              std::optional<::SCE::Forge::Text<262144>>>,
+          std::is_convertible<decltype(source::causal_epoch(std::declval<const S &>())), std::optional<uint64_t>>,
+          std::is_convertible<decltype(source::causal_vector(std::declval<const S &>())),
+                              std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>>> {
+};
 
 /// Whether reading every entry of a source `S` throws nothing.
 template <class S, class = void> struct is_nothrow_source : std::false_type {};
 
 template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
-    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<16, 16>>(
-                             source::id(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Text<262144>>(
-                             source::source(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Text<262144>>(
-                             source::event_type(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<SCE::Generated::PatternKind::PatternKind>(
-                             source::pattern(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<SCE::Generated::PayloadCodec::PayloadCodec>(
-                             source::datacontenttype(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<16777216>>(
-                             source::data(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::subject(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
-                             source::correlation_id(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::reply_to(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
-                             source::invoke_id(std::declval<const S &>()))) &&
-                         noexcept(
-                             ::SCE::Forge::Detail::converts_to<std::optional<SCE::Generated::RpcStatus::RpcStatus>>(
-                                 source::rpc_status(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::rpc_error_message(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
-                             source::deadline_unix_ms(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
-                             source::sequence_no(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
-                             source::routing_id(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::parallel_id(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::region_id(std::declval<const S &>()))) &&
-                         noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
-                             source::child_session_id(std::declval<const S &>())))> {};
+    : std::bool_constant<
+          noexcept(
+              ::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<16, 16>>(source::id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Text<262144>>(
+              source::source(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Text<262144>>(
+              source::event_type(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<SCE::Generated::PatternKind::PatternKind>(
+              source::pattern(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<SCE::Generated::PayloadCodec::PayloadCodec>(
+              source::datacontenttype(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<::SCE::Forge::Bytes<16777216>>(
+              source::data(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::subject(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
+              source::correlation_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::reply_to(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
+              source::invoke_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<SCE::Generated::RpcStatus::RpcStatus>>(
+              source::rpc_status(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::rpc_error_message(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
+              source::deadline_unix_ms(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
+              source::sequence_no(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<16, 16>>>(
+              source::routing_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::parallel_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::region_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Text<262144>>>(
+              source::child_session_id(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint64_t>>(
+              source::causal_epoch(std::declval<const S &>()))) &&
+          noexcept(::SCE::Forge::Detail::converts_to<
+                   std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>>(
+              source::causal_vector(std::declval<const S &>())))> {};
+
+/// The records the lists of `Envelope` hold, each in the payload type its
+/// event schema's own unit declares and written as one CBOR map of every
+/// field, each under its id as text (docs/adr/0086, section 9.2).
+struct Records {
+    /// Write one record of `causal_entry` (`record:CausalEntry`) as one map of every
+    /// field, the keys in the order RFC 8949 §4.2.1 sorts their encodings: a
+    /// shorter key first.
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError>
+    encode_record_causal_entry(::SCE::Forge::SceSink &w,
+                               const SCE::Generated::CausalEntry::CausalEntryPayload &record) noexcept {
+        namespace cbor = ::SCE::Forge::Cbor;
+        if (auto _e = cbor::write_map_head(w, 3); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_text(w, "hi"); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(record.hi)); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_text(w, "lo"); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(record.lo)); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_text(w, "seq"); _e) {
+            return _e;
+        }
+        if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(record.seq)); _e) {
+            return _e;
+        }
+        return std::nullopt;
+    }
+
+    /// Read one record of `causal_entry` from `c`: its keys in any order, a key the
+    /// schema does not declare skipped whole; a key given twice or a field
+    /// missing is `std::nullopt`.
+    static std::optional<SCE::Generated::CausalEntry::CausalEntryPayload>
+    decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
+        namespace cbor = ::SCE::Forge::Cbor;
+        const auto count = cbor::read_map_len(c);
+        if (!count) {
+            return std::nullopt;
+        }
+        std::optional<uint64_t> held_hi;
+        std::optional<uint64_t> held_lo;
+        std::optional<uint64_t> held_seq;
+        for (std::uint64_t i = 0; i < *count; ++i) {
+            const auto key = cbor::read_text(c, std::nullopt);
+            if (!key) {
+                return std::nullopt;
+            }
+            if (*key == "hi") {
+                // A key given twice is not one map entry.
+                if (held_hi.has_value()) {
+                    return std::nullopt;
+                }
+                held_hi = cbor::read_uint(c);
+                if (!held_hi) {
+                    return std::nullopt;
+                }
+            } else if (*key == "lo") {
+                // A key given twice is not one map entry.
+                if (held_lo.has_value()) {
+                    return std::nullopt;
+                }
+                held_lo = cbor::read_uint(c);
+                if (!held_lo) {
+                    return std::nullopt;
+                }
+            } else if (*key == "seq") {
+                // A key given twice is not one map entry.
+                if (held_seq.has_value()) {
+                    return std::nullopt;
+                }
+                held_seq = cbor::read_uint(c);
+                if (!held_seq) {
+                    return std::nullopt;
+                }
+            } else if (!cbor::skip(c)) {
+                return std::nullopt;
+            }
+        }
+        if (!held_hi.has_value()) {
+            return std::nullopt;
+        }
+        if (!held_lo.has_value()) {
+            return std::nullopt;
+        }
+        if (!held_seq.has_value()) {
+            return std::nullopt;
+        }
+        SCE::Generated::CausalEntry::CausalEntryPayload record;
+        record.hi = *held_hi;
+        record.lo = *held_lo;
+        record.seq = *held_seq;
+        return record;
+    }
+};
 
 /// The encode of `Envelope` over any source of it: the map head counting
 /// the entries present, then each in ascending key order, every head in its
@@ -608,7 +775,7 @@ struct Wire {
         static_assert(is_source<S>::value,
                       "S presents every entry of Envelope: id, source, event_type, pattern, datacontenttype, data, "
                       "subject, correlation_id, reply_to, invoke_id, rpc_status, rpc_error_message, deadline_unix_ms, "
-                      "sequence_no, routing_id, parallel_id, region_id, child_session_id");
+                      "sequence_no, routing_id, parallel_id, region_id, child_session_id, causal_epoch, causal_vector");
         namespace cbor = ::SCE::Forge::Cbor;
         const auto &_r_id = source::id(src);
         const ::SCE::Forge::Bytes<16, 16> _e_id = _r_id;
@@ -646,6 +813,11 @@ struct Wire {
         const std::optional<::SCE::Forge::Text<262144>> _e_region_id = _r_region_id;
         const auto &_r_child_session_id = source::child_session_id(src);
         const std::optional<::SCE::Forge::Text<262144>> _e_child_session_id = _r_child_session_id;
+        const auto &_r_causal_epoch = source::causal_epoch(src);
+        const std::optional<uint64_t> _e_causal_epoch = _r_causal_epoch;
+        const auto &_r_causal_vector = source::causal_vector(src);
+        const std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> _e_causal_vector =
+            _r_causal_vector;
         std::uint64_t _count = 6;
         if (_e_subject) {
             ++_count;
@@ -681,6 +853,12 @@ struct Wire {
             ++_count;
         }
         if (_e_child_session_id) {
+            ++_count;
+        }
+        if (_e_causal_epoch) {
+            ++_count;
+        }
+        if (_e_causal_vector) {
             ++_count;
         }
         if (auto _e = cbor::write_map_head(w, _count); _e) {
@@ -853,6 +1031,29 @@ struct Wire {
                 return _e;
             }
         }
+        if (_e_causal_epoch) {
+            const auto &v = *_e_causal_epoch;
+            if (auto _e = cbor::write_uint(w, 19); _e) {
+                return _e;
+            }
+            if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(v)); _e) {
+                return _e;
+            }
+        }
+        if (_e_causal_vector) {
+            const auto &v = *_e_causal_vector;
+            if (auto _e = cbor::write_uint(w, 20); _e) {
+                return _e;
+            }
+            if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) {
+                return _e;
+            }
+            for (const auto &_record : v) {
+                if (auto _e = Records::encode_record_causal_entry(w, _record); _e) {
+                    return _e;
+                }
+            }
+        }
         return std::nullopt;
     }
 };
@@ -876,12 +1077,13 @@ struct Envelope {
              std::optional<::SCE::Forge::Text<262144>> rpc_error_message, std::optional<uint64_t> deadline_unix_ms,
              std::optional<uint64_t> sequence_no, std::optional<::SCE::Forge::Bytes<16, 16>> routing_id,
              std::optional<::SCE::Forge::Text<262144>> parallel_id, std::optional<::SCE::Forge::Text<262144>> region_id,
-             std::optional<::SCE::Forge::Text<262144>> child_session_id)
+             std::optional<::SCE::Forge::Text<262144>> child_session_id, std::optional<uint64_t> causal_epoch,
+             std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> causal_vector)
         : id_(id), source_(source), event_type_(event_type), pattern_(pattern), datacontenttype_(datacontenttype),
           data_(data), subject_(subject), correlation_id_(correlation_id), reply_to_(reply_to), invoke_id_(invoke_id),
           rpc_status_(rpc_status), rpc_error_message_(rpc_error_message), deadline_unix_ms_(deadline_unix_ms),
           sequence_no_(sequence_no), routing_id_(routing_id), parallel_id_(parallel_id), region_id_(region_id),
-          child_session_id_(child_session_id) {}
+          child_session_id_(child_session_id), causal_epoch_(causal_epoch), causal_vector_(causal_vector) {}
 
     /// The entry with key 0.
     [[nodiscard]] ::SCE::Forge::Bytes<16, 16> id() const noexcept {
@@ -1000,6 +1202,20 @@ struct Envelope {
         return ::SCE::Forge::Text<262144>(*child_session_id_);
     }
 
+    /// The entry with key 19, where the map holds it.
+    [[nodiscard]] constexpr std::optional<uint64_t> causal_epoch() const noexcept {
+        return causal_epoch_;
+    }
+
+    /// The entry with key 20, where the map holds it.
+    [[nodiscard]] std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>>
+    causal_vector() const noexcept {
+        if (!causal_vector_) {
+            return std::nullopt;
+        }
+        return ::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>(*causal_vector_);
+    }
+
     /// Decode one map from `cursor`. On success the cursor advances past it;
     /// `std::nullopt` on any refusal, with the cursor left where it was.
     static std::optional<Envelope> decode(::SCE::Forge::SceCursor &cursor) {
@@ -1050,6 +1266,8 @@ private:
         std::optional<std::string> parallel_id;
         std::optional<std::string> region_id;
         std::optional<std::string> child_session_id;
+        std::optional<uint64_t> causal_epoch;
+        std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> causal_vector;
         for (std::uint64_t i = 0; i < *count; ++i) {
             const auto key = cbor::read_uint(c);
             if (!key) {
@@ -1287,6 +1505,41 @@ private:
                 child_session_id = std::move(*v);
                 break;
             }
+            case 19: {
+                // A key given twice is not one map entry.
+                if (causal_epoch.has_value()) {
+                    return std::nullopt;
+                }
+                auto v = cbor::read_uint(c);
+                if (!v) {
+                    return std::nullopt;
+                }
+                causal_epoch = std::move(*v);
+                break;
+            }
+            case 20: {
+                // A key given twice is not one map entry.
+                if (causal_vector.has_value()) {
+                    return std::nullopt;
+                }
+                const auto _len = cbor::read_array_len(c);
+                if (!_len || *_len > 64) {
+                    return std::nullopt;
+                }
+                std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> v{std::in_place};
+                for (std::uint64_t _n = 0; _n < *_len; ++_n) {
+                    auto _record = Records::decode_record_causal_entry(c);
+                    if (!_record) {
+                        return std::nullopt;
+                    }
+                    v->push_back(std::move(*_record));
+                }
+                if (!v) {
+                    return std::nullopt;
+                }
+                causal_vector = std::move(*v);
+                break;
+            }
             default:
                 if (!cbor::skip(c)) {
                     return std::nullopt;
@@ -1391,6 +1644,14 @@ private:
                 return std::nullopt;
             }
         }
+        std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> _b_causal_vector;
+        if (causal_vector) {
+            _b_causal_vector =
+                ::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>::make(*causal_vector);
+            if (!_b_causal_vector) {
+                return std::nullopt;
+            }
+        }
         return Envelope{
             /*id=*/*_b_id,
             /*source=*/*_b_source,
@@ -1410,6 +1671,8 @@ private:
             /*parallel_id=*/_b_parallel_id,
             /*region_id=*/_b_region_id,
             /*child_session_id=*/_b_child_session_id,
+            /*causal_epoch=*/causal_epoch,
+            /*causal_vector=*/_b_causal_vector,
         };
     }
 
@@ -1431,6 +1694,9 @@ private:
     std::optional<::SCE::Forge::Bounded<std::string, 262144>> parallel_id_{};
     std::optional<::SCE::Forge::Bounded<std::string, 262144>> region_id_{};
     std::optional<::SCE::Forge::Bounded<std::string, 262144>> child_session_id_{};
+    std::optional<uint64_t> causal_epoch_{};
+    std::optional<::SCE::Forge::Bounded<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>, 64>>
+        causal_vector_{};
 };
 
 }  // namespace SCE::Generated::Envelope
