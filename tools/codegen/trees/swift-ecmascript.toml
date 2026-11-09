@@ -16,8 +16,16 @@ arguments = ["generate", "sce-build/tests/fixtures/swift_ecmascript/{machine}.sc
 place = "backends/swift/tests/Sources/EcmaScriptMachines"
 keep = ["*_sm.swift"]
 
+# The W3C documents EcmaScriptMachinesTests drives by name, each read where it
+# lives. The hand-written tests choose them, not the conformance registry, so
+# they are named here as the documents this tree reads.
 [[generation]]
-each = { list = ["279", "321", "444", "550"], as = "id" }
-arguments = ["generate", "resources/{id}/test{id}.scxml", "-l", "swift", "-o", "{out}"]
+each = { list = [
+    "resources/279/test279.scxml",
+    "resources/321/test321.scxml",
+    "resources/444/test444.scxml",
+    "resources/550/test550.scxml",
+], as = "document" }
+arguments = ["generate", "{document}", "-l", "swift", "-o", "{out}"]
 place = "backends/swift/tests/Sources/EcmaScriptMachines"
 keep = ["*_sm.swift"]
