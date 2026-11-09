@@ -24,8 +24,6 @@
 
 use core::fmt;
 
-use crate::SceString;
-
 /// The step of establishing a script session that failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScriptSessionStage {
@@ -61,12 +59,25 @@ impl fmt::Display for ScriptSessionStage {
 /// A machine's script session could not be established, so its start was
 /// refused: no state was entered, no executable content ran, no event was
 /// taken, and what the failed steps made was released.
+///
+/// The engine's words are kept only where there is an engine to say them: a
+/// `no_std` build has no script engine and never makes this value, and there
+/// it is the step alone. Holding a bounded string for the words would make
+/// every refusal that carries this value
+/// ([`RootStartRefusal`](crate::RootStartRefusal),
+/// [`ConfigurationRejection`](crate::ConfigurationRejection)) that string's
+/// size on a device's stack, for a value it cannot have. `#[non_exhaustive]`
+/// keeps the field `std` adds an addition (docs/adr/0053): no crate builds
+/// this value from its fields, so none is broken when the feature is unified
+/// on.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ScriptSessionFailure {
     /// The step that failed.
     pub stage: ScriptSessionStage,
     /// What the script engine said.
-    pub message: SceString,
+    #[cfg(feature = "std")]
+    pub message: std::string::String,
 }
 
 #[cfg(feature = "std")]
@@ -102,9 +113,12 @@ impl fmt::Display for ScriptSessionFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "the script session could not be established at step '{}': {}",
-            self.stage, self.message
-        )
+            "the script session could not be established at step '{}'",
+            self.stage
+        )?;
+        #[cfg(feature = "std")]
+        write!(f, ": {}", self.message)?;
+        Ok(())
     }
 }
 
