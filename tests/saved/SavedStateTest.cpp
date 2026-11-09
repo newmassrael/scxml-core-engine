@@ -655,6 +655,41 @@ TEST(SavedState, ATextAndAListAreHeldToTheBoundsTheMachineHas) {
               "'l' holds 3 elements, past the 2 it is bounded by");
 }
 
+// A machine holds a text, a byte string and a list in a type that holds its bound
+// (docs/adr/0086, section 7.4): each is read back into the type the caller names, refused past
+// that bound, and written as the value it holds, the same on the wire as before.
+TEST(SavedState, ATextAByteStringAndAListAreReadIntoTheTypeThatHoldsTheirBound) {
+    const auto message = [](const auto &read) {
+        try {
+            read();
+        } catch (const StateRefusal &err) {
+            return std::string(err.what());
+        }
+        return std::string();
+    };
+    const SCE::Forge::OwnedText<6> text = savedReadOwnedText<6>(JsonValue("h\xC3\xA9llo"), "t");
+    EXPECT_EQ(text.inner(), "h\xC3\xA9llo") << "a text of six UTF-8 bytes is held in a place of six";
+    EXPECT_EQ(message([] { savedReadOwnedText<5>(JsonValue("h\xC3\xA9llo"), "t"); }),
+              "'t' holds 6 UTF-8 bytes, past the 5 it is bounded by");
+
+    const SCE::Forge::OwnedBytes<3> bytes = savedReadOwnedBytes<3>(JsonValue("a\xC3\xBF"), "b");
+    EXPECT_EQ(bytes.inner(), (std::vector<std::uint8_t>{'a', 0xFF}));
+    EXPECT_EQ(message([] { savedReadOwnedBytes<2>(JsonValue("abc"), "b"); }),
+              "'b' holds 3 bytes, past the 2 it is bounded by");
+
+    const auto uint8Of = [](const JsonValue &v, const std::string &w) { return savedReadUint8(v, w); };
+    const JsonValue items = parseJson("[1,2]");
+    const auto list = savedReadOwnedList<2>(items, "l", uint8Of);
+    EXPECT_EQ(list.inner(), (std::vector<std::uint8_t>{1, 2}));
+    EXPECT_EQ(message([&] { savedReadOwnedList<1>(items, "l", uint8Of); }),
+              "'l' holds 2 elements, past the 1 it is bounded by");
+    EXPECT_EQ(writeJson(savedWriteList(list, [](std::uint8_t v) { return savedWriteUint8(v); })), "[1,2]");
+
+    const auto optionalText = savedReadOptional(JsonValue("ab"), "o", savedOwnedText<2>());
+    EXPECT_TRUE(optionalText.has_value() && optionalText->inner() == "ab");
+    EXPECT_FALSE(savedReadOptional(JsonValue(), "o", savedOwnedBytes<2>()).has_value());
+}
+
 TEST(SavedState, AnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded) {
     const std::string digest(64, 'a');
     SavedShape shape;
