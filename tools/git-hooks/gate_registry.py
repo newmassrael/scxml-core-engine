@@ -2256,7 +2256,10 @@ GATES: dict[str, dict] = {
                   "sce/include/scripting/*.lua", "tests/ecmascript/**",
                   "tests/ecmascript/kotlin_frontend_refusals.json",
                   "tests/w3c/conformance/fixtures.json",
-                  "resources/150/test150.scxml"],
+                  "resources/150/test150.scxml",
+                  # The test log every runtime writes of the generated suite,
+                  # which `ATestSuiteRunsThroughItsRunnerTest` reads at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
         "deps": ["codegen-build"],
         # 69s was measured on a push whose Kotlin tree was already current.
         # 152s, pace-normalised, is what it cost on 2026-08-24 when a
