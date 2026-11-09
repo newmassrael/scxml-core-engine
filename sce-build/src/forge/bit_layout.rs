@@ -123,7 +123,7 @@ impl BitSpan {
 }
 
 /// One step of the encode of a positional frame's fixed bytes, in wire order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Slot<'m> {
     /// A whole field that shares none of its bytes, written as one value of its
     /// bytes in its byte order.
