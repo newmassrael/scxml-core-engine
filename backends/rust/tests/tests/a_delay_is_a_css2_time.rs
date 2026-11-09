@@ -23,7 +23,8 @@ fn each_delay_is_read_as_one_css2_time() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.set_clock(SceClock::Manual(0));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.advance_time_ms(60_000);
     e.step();
 

@@ -26,7 +26,8 @@ fn each_bad_argument_discards_its_message() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.set_clock(SceClock::Manual(0));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.advance_time_ms(60_000);
     e.raise_external(Event::Finish, "");
     e.step();

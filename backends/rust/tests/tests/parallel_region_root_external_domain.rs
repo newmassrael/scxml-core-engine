@@ -66,7 +66,7 @@ fn configuration(engine: &sce_rust_runtime::Engine<Policy>) -> Vec<String> {
 
 fn started() -> sce_rust_runtime::Engine<Policy> {
     let mut engine = sce_rust_runtime::Engine::new(Policy::default());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

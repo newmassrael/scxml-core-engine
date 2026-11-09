@@ -78,7 +78,7 @@ use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
 
 fn counter() -> Engine<StaticCounterPolicy> {
     let mut engine = Engine::new(StaticCounterPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -203,7 +203,7 @@ fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
     let mut engine = Engine::new(StaticHostCallPolicy::new(
         RecordingStaticHostCallActions::default(),
     ));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     for _ in 0..4 {
         engine.raise_external_by_name("retry", "");
         engine.step();
@@ -231,7 +231,7 @@ fn a_host_action_takes_an_argument_that_may_be_absent_as_an_option() {
     let mut engine = Engine::new(StaticHostCallPolicy::new(
         RecordingStaticHostCallActions::default(),
     ));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     for event in ["plan", "escalate", "unplan"] {
         engine.raise_external_by_name(event, "");
         engine.step();
@@ -257,7 +257,7 @@ fn a_machine_that_publishes_no_variable_snapshots_its_configuration_alone() {
     let mut engine = Engine::new(StaticHostCallPolicy::new(
         RecordingStaticHostCallActions::default(),
     ));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let snapshot = engine.snapshot();
     assert_eq!(
         snapshot.configuration.as_slice(),
@@ -279,7 +279,7 @@ fn day(year: u16, month: u8, day_of_month: u8) -> StaticRecordDayRecord {
 fn record() -> Engine<StaticRecordPolicy> {
     let mut engine =
         Engine::new(StaticRecordPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -372,7 +372,7 @@ fn a_delivery_without_the_payload_runs_none_of_the_content() {
 
 fn list() -> Engine<StaticListPolicy> {
     let mut engine = Engine::new(StaticListPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -433,7 +433,7 @@ fn an_append_past_the_capacity_appends_nothing_and_is_an_execution_error() {
 
 fn overflow() -> Engine<StaticOverflowPolicy> {
     let mut engine = Engine::new(StaticOverflowPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -596,7 +596,7 @@ fn a_restore_runs_no_onentry() {
     let mut engine = Engine::new(StaticHostCallPolicy::new(
         RecordingStaticHostCallActions::default(),
     ));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("retry", "");
     engine.step();
     let saved = through_json(&engine.save().expect("saves"));
@@ -723,19 +723,19 @@ fn a_machine_a_host_creates_draws_a_session_id_and_one_it_gives_is_held_to_the_r
     // A drawn id is a UUID version 4 in lowercase hexadecimal with hyphens; its
     // value is no case's to read.
     let mut engine = Engine::new(StaticListPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let drawn = engine.save().expect("saves").session_id;
     assert_eq!(drawn.len(), 36, "{drawn}");
     assert_eq!(&drawn[14..15], "4", "{drawn}");
     let mut other = Engine::new(StaticListPolicy::new());
-    other.initialize();
+    let Ok(()) = other.initialize();
     assert_ne!(other.save().expect("saves").session_id, drawn);
 
     // An id a host gives where it builds the machine is the one the session
     // runs and saves under.
     let mut given =
         Engine::new(StaticListPolicy::new_with_session_id("planner-1").expect("an Nmtoken"));
-    given.initialize();
+    let Ok(()) = given.initialize();
     assert_eq!(given.save().expect("saves").session_id, "planner-1");
 
     // One that is not an Nmtoken is refused where the machine is built, with
@@ -811,7 +811,7 @@ fn a_record_of_a_schema_that_grew_saves_the_text_every_backend_saves() {
     // machine is at the third, so it names that revision and the revised shape.
     let mut engine =
         Engine::new(StaticSchemaRevisionPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("reading.revised", r#"{"level":4}"#);
     engine.step();
     assert_eq!(
@@ -1004,7 +1004,7 @@ const FORMAT1_ENUM: &str = include_str!(
 
 fn layouts() -> Engine<StaticEnumPolicy> {
     let mut engine = Engine::new(StaticEnumPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -1144,7 +1144,7 @@ fn a_string_longer_than_its_bound_is_refused_in_bytes() {
     // bound counts bytes: two characters of two bytes fit it, and an `é` and a
     // `€` (five bytes) do not.
     let mut engine = Engine::new(StaticStringCapacityPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let json = engine.save().expect("saves").to_json();
     for (claimed, fits) in [
         ("abcd", true),
@@ -1174,7 +1174,7 @@ fn a_byte_string_is_saved_as_latin1_text_and_refused_past_its_bound_or_a_byte() 
     // so four of them fit whatever their code points are, five do not, and a
     // character past U+00FF is no byte at all.
     let mut engine = Engine::new(StaticBytesPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let json = engine.save().expect("saves").to_json();
     for (claimed, fits) in [
         ("abcd", true),
@@ -1212,7 +1212,7 @@ fn a_record_bytes_field_longer_than_its_bound_or_holding_no_byte_is_refused() {
     // wrote, and a character past U+00FF is no byte at all. A byte string is its
     // Latin-1 text: eight characters are eight bytes whatever their code points.
     let mut engine = Engine::new(StaticRecordBytesPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let json = engine.save().expect("saves").to_json();
     for (claimed, fits) in [
         ("abcdefgh", true),
@@ -1250,7 +1250,7 @@ fn a_record_string_field_longer_than_its_bound_is_refused_in_bytes() {
     // one this machine wrote. The bound counts bytes: seven bytes in three
     // characters fit it, and nine bytes in four do not.
     let mut engine = Engine::new(StaticRecordStringPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let json = engine.save().expect("saves").to_json();
     for (claimed, fits) in [
         ("abcdefgh", true),
@@ -1325,7 +1325,7 @@ const HISTORY_RUN: [&str; 7] = [
 fn history_machine() -> Engine<StaticHistoryPolicy> {
     let mut engine =
         Engine::new(StaticHistoryPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -1551,7 +1551,7 @@ fn timers() -> Engine<StaticTimersPolicy> {
     let mut engine =
         Engine::new(StaticTimersPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -1727,7 +1727,7 @@ const FORMAT1_OPTIONAL: &str = include_str!(
 fn optional_run() -> Engine<StaticOptionalPolicy> {
     let mut engine =
         Engine::new(StaticOptionalPolicy::new_with_session_id(ROOT).expect("an Nmtoken"));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     for data in [
         r#"{"id":1,"due":"12","title":null,"status":null}"#,
         r#"{"id":2,"due":null,"title":"later","status":"in_progress"}"#,
@@ -1810,7 +1810,7 @@ fn a_saved_absent_value_is_restored_absent_and_a_present_one_present() {
 /// put its record in its list.
 fn unwidened() -> Engine<StaticOptionalUnwidenedPolicy> {
     let mut engine = Engine::new(StaticOptionalUnwidenedPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("keep", "");
     engine.step();
     engine

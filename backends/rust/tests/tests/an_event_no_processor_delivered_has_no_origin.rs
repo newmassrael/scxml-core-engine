@@ -38,7 +38,8 @@ fn an_event_no_processor_delivered_has_no_origin() {
             origin: None,
         }]
     });
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     e.raise_external(Event::Posted, "");

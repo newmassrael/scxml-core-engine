@@ -30,7 +30,9 @@ use sce_rust_tests::integration::wildcard_in_document_order::{
 fn a_wildcard_keeps_its_guard_and_its_type() {
     let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
     let mut engine = Engine::new(Policy::new(script_engine));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

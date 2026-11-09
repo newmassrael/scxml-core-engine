@@ -920,7 +920,7 @@ impl World {
                 steps: Vec::new(),
             }
         });
-        engine.initialize();
+        engine.initialize().expect("the machine starts");
         let mut actor = Actor {
             name: name.to_string(),
             engine,

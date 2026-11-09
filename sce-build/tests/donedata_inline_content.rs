@@ -142,7 +142,9 @@ fn inline_text_is_an_expression_when_it_is_one_and_a_string_otherwise() {
     let engine = LuaEngine::new();
     assert!(engine.initialize(), "the Lua engine must start");
     let session = "donedata_inline".to_string();
-    engine.create_session(&session);
+    engine
+        .create_session(&session)
+        .expect("the session is created");
 
     let cases: [(&str, ScriptValue); 6] = [
         // W3C test529 — the number, not the two characters that spell it.

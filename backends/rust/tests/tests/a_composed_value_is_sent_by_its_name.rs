@@ -40,7 +40,7 @@ fn batch() -> String {
 #[test]
 fn a_delivery_forwarded_by_its_names_comes_back_whole() {
     let mut engine = Engine::new(StaticComposedSendPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("batch.sent", &batch());
     engine.step();
     let policy = engine.policy();

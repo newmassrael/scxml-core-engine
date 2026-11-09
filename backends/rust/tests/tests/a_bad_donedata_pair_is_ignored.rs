@@ -26,7 +26,8 @@ fn the_bad_pairs_are_dropped_and_the_done_events_still_arrive() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     // The run needs nothing from the host.
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     let p = e.policy();
     let seen = format!(

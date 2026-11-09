@@ -33,7 +33,9 @@ fn a_data_elements_xml_is_a_dom_tree_the_document_can_walk() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut engine = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     // Every transition is eventless, so the verdict is reached in the first
     // macrostep and no event is needed to ask the question.

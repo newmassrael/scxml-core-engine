@@ -144,7 +144,7 @@ fn a_saved_state_holds_a_union_variable_as_its_tag_beside_its_case() {
 
 fn machine() -> Engine<StaticUnionPolicy> {
     let mut engine = Engine::new(StaticUnionPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

@@ -193,7 +193,7 @@ fn fresh() -> &'static Value {
     static FRESH: OnceLock<Value> = OnceLock::new();
     FRESH.get_or_init(|| {
         let mut engine = Engine::new(RequestLifePolicy::new());
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         let text = engine
             .save()
             .expect("a machine that was just started can be saved")

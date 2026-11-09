@@ -22,7 +22,8 @@ fn a_target_expression_is_routed_as_its_literal_is() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     let completed = e.run_until_completion(Duration::from_secs(3), Duration::from_millis(5));
 
     assert!(

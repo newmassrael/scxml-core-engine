@@ -29,7 +29,7 @@ use sce_rust_tests::integration::event_descriptor_spellings_agree::{
 fn every_spelling_of_one_descriptor_catches_the_same_events() {
     let policy = EventDescriptorSpellingsAgreePolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

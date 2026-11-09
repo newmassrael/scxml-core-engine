@@ -130,7 +130,9 @@ fn an_engine_loaded_the_way_c11_loads_the_assets(session: &str) -> sce_rust_lua:
     use sce_rust_runtime::scripting::IScriptEngine;
 
     let engine = sce_rust_lua::LuaEngine::new();
-    engine.create_session(session);
+    engine
+        .create_session(session)
+        .expect("the session is created");
 
     // Loaded the way the generated C11 bootstrap loads them: separately, in
     // order, into the one state. `_scxml_truthy` is a per-engine native that

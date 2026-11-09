@@ -48,7 +48,8 @@ fn engine() -> Engine<AiLoopPolicy> {
     // `examples/ai_loop/ai_loop_example.cpp` registers the real one. Before
     // `initialize()`, because `priming` performs its act on entry.
     e.register_event_processor("x-sce-host", |_req| Vec::new());
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e
 }
 
@@ -940,7 +941,8 @@ fn the_document_declares_its_acts_to_the_host() {
             Vec::new()
         },
     );
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     let acts = seen.lock().expect("handler log");
     assert_eq!(

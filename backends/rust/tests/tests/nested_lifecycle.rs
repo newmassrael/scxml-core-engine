@@ -40,7 +40,7 @@ fn the_machine_and_its_transition_function_agree_on_every_pair() {
     };
     let pairs = expect_every_pair_agrees(&function, || {
         let mut engine = sce_rust_runtime::Engine::new(NestedLifecyclePolicy::new());
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         engine
     });
     assert_eq!(

@@ -28,7 +28,8 @@ fn a_state_is_still_active_while_its_own_onexit_runs() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     let entry = e.get_active_states();
     assert!(

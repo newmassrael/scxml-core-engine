@@ -26,7 +26,8 @@ fn each_event_is_typed_by_the_queue_it_was_taken_from() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     // The document queues its own events; the run needs nothing from the host.
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     let p = e.policy();
     let seen = format!(

@@ -37,7 +37,9 @@ fn an_empty_finalize_updates_the_location_and_an_absent_one_does_not() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = EmptyFinalizeUpdatesTheLocationPolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(15), Duration::from_millis(10));
     assert!(

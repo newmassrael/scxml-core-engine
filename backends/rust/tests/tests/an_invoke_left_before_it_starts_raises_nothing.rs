@@ -27,7 +27,8 @@ fn the_left_states_invoke_is_never_attempted() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     assert!(
         e.get_active_states().contains(&State::S1),
         "`s0` leaves on an eventless transition within the first macrostep"

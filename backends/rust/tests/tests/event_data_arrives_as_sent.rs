@@ -34,7 +34,9 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut engine = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     assert_eq!(
         engine.get_active_states(),

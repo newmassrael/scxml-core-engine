@@ -206,7 +206,7 @@ async fn main() {
     )));
     let mut engine = Engine::new(TodoPeerPolicy::new());
     endpoint::register(&mut engine, &shared);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.raise_external_by_name("todo.join", &format!(r#"{{"node":"{node}","hub":{hub}}}"#));
     pump(&mut engine, &shared);
 

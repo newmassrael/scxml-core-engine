@@ -62,7 +62,7 @@ fn working() -> Engine<StaticInvokeTreePolicy> {
         }
         None
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     // Started twice: left and entered again.
     for event in ["rest", "back"] {
         engine.raise_external_by_name(event, "");

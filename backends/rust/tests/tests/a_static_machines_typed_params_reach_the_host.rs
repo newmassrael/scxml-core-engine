@@ -53,7 +53,7 @@ fn started() -> (Engine<Policy>, Sends, Starts) {
         }
         None
     });
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     (engine, sends, starts)
 }
 

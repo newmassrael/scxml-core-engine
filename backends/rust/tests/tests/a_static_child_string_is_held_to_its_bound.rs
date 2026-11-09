@@ -29,7 +29,7 @@ fn settle(engine: &mut Engine<StaticInvokeStringPolicy>) {
 fn a_string_past_the_childs_bound_is_left_out_and_reported() {
     let mut engine = Engine::new(StaticInvokeStringPolicy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     settle(&mut engine);
     // 1 (`fits`) + 10 (`over`) + 100 (`wide`): all three ended, so none held a
     // value past its bound but the one that fits.

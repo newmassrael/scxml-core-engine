@@ -390,7 +390,7 @@ fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
     members.world.restart::<RecordList>("alice", |_, clock| {
         let mut engine = Engine::new(RecordList::new());
         engine.set_clock(clock);
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         engine
     });
     members
@@ -518,7 +518,7 @@ fn control_a_copy_rebuilt_from_its_commands_among_a_peer_ahead_refuses_and_diffe
     members.world.restart::<RecordList>("alice", |_, clock| {
         let mut engine = Engine::new(RecordList::new());
         engine.set_clock(clock);
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         engine
     });
     members

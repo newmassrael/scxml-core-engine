@@ -30,7 +30,7 @@ const SAVED_AT_MS: u64 = 1_700_000_000_000;
 fn started() -> Engine<StaticInvokeHybridSavedPolicy> {
     let mut engine = Engine::new(StaticInvokeHybridSavedPolicy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

@@ -28,7 +28,9 @@ use sce_rust_tests::integration::typed_reader_names::{
 fn started() -> Engine<Policy> {
     let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
     let mut engine = Engine::new(Policy::new(script_engine));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine
 }
 

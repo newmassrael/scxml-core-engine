@@ -379,7 +379,7 @@ fn a_rust_program_that_never_names_the_table_builds_none_of_it() {
         format!(
             "{module}fn main() {{\n\
              \x20   let mut engine = sce_rust_runtime::Engine::new(machine::{machine}Policy::new());\n\
-             \x20   engine.initialize();\n\
+             \x20   let Ok(()) = engine.initialize();\n\
              \x20   engine.raise_external_by_name(\"go\", \"\");\n\
              \x20   engine.step();\n\
              \x20   std::process::exit(if engine.is_in_final_state() {{ 0 }} else {{ 1 }});\n\

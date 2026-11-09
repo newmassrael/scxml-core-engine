@@ -31,7 +31,9 @@ fn inline_content_is_the_value_its_data_model_reads() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let policy = InlineContentIsReadByItsDataModelPolicy::new(script_engine);
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

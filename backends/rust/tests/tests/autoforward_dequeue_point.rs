@@ -30,7 +30,7 @@ use sce_rust_tests::integration::autoforward_dequeue_point::{
 fn an_external_event_is_forwarded_at_the_dequeue_not_the_enqueue() {
     let policy = AutoforwardDequeuePointPolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

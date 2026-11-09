@@ -22,7 +22,8 @@ fn a_delayed_send_reaches_what_its_target_names() {
     let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     let completed = e.run_until_completion(Duration::from_secs(3), Duration::from_millis(5));
 
     assert!(
@@ -45,7 +46,8 @@ fn a_delayed_send_reaches_what_its_target_names_on_a_late_host() {
         std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
     let mut e = sce_rust_runtime::Engine::new(Policy::new(script_engine));
     e.set_clock(sce_rust_runtime::SceClock::Manual(0));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     for _ in 0..20 {
         if e.is_in_final_state() {
             break;

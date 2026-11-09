@@ -30,7 +30,7 @@ use sce_rust_tests::integration::autoforward_internal_queue::{
 fn an_internal_queue_event_is_never_autoforwarded() {
     let policy = AutoforwardInternalQueuePolicy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(

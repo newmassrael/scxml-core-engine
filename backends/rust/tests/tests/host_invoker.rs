@@ -132,7 +132,9 @@ fn a_registered_invoker_is_started_with_what_the_document_wrote() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     // The fixture counts a completion only when its `_event.invokeid` names
@@ -190,7 +192,9 @@ fn what_the_request_says_is_evaluated_when_the_invocation_starts() {
         }
         None
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     // `probe` / `probe2`, which the case above already reads.
     starts.lock().expect("invoker log").clear();
@@ -231,7 +235,9 @@ fn leaving_the_state_cancels_the_invocation() {
     // Still running when the state exits — a completed invocation has
     // nothing left to cancel (see the case after this one).
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Leave);
 
@@ -287,7 +293,9 @@ fn cancel_is_not_delivered_for_an_invocation_that_never_started() {
     // Now let one start, cancel it, and cancel again: the second call has
     // nothing left to do. A registry that answered twice would have the
     // host tear down the same work twice.
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     assert!(engine.cancel_host_invoke(DECLARED_TYPE, "probe"));
     assert!(
@@ -312,7 +320,9 @@ fn an_invocation_whose_state_left_is_never_started() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Pass);
 
@@ -336,7 +346,9 @@ fn a_completed_invocation_is_not_cancelled() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Leave);
 
@@ -358,7 +370,9 @@ fn a_late_completion_is_accepted_exactly_once() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     assert_eq!(counter(&engine, &script_engine, "started"), 0);
 
@@ -400,7 +414,9 @@ fn a_failed_invocation_raises_error_invoke_once_with_its_origin() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Fail);
 
@@ -461,7 +477,9 @@ fn a_refused_start_raises_error_execution_and_starts_nothing() {
         }
         HostInvokeEvent::Cancel(_) => None,
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Refuse);
     engine.step();
@@ -516,7 +534,9 @@ fn timed() -> Timed {
         }
         None
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Time);
     (engine, script_engine, log, starts)
@@ -660,7 +680,9 @@ fn a_completion_after_the_cancel_is_refused() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     let token = token_of(&starts, "probe");
     engine.process_event(Event::Leave);
@@ -682,7 +704,9 @@ fn a_restarted_invoke_refuses_the_first_runs_reply() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     let first = token_of(&starts, "probe");
     engine.process_event(Event::Leave);
@@ -711,7 +735,9 @@ fn a_done_invoke_raised_the_old_way_is_refused_and_counted() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     let metadata = sce_rust_runtime::event::EventMetadata {
@@ -741,7 +767,9 @@ fn an_idlocation_holds_the_id_the_host_is_handed() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Leave);
 
@@ -769,7 +797,9 @@ fn an_idlocation_is_assigned_like_a_location() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Locate);
     engine.step();
@@ -817,7 +847,9 @@ fn a_generic_done_invoke_raised_the_old_way_is_refused() {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Leave);
 
@@ -842,7 +874,9 @@ fn a_generic_done_invoke_raised_the_old_way_is_refused() {
 #[test]
 fn a_declared_type_with_no_invoker_still_raises_error_execution() {
     let (mut engine, script_engine) = started();
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     // One error.execution per invocation nobody ran.
@@ -863,7 +897,9 @@ fn neither_another_type_nor_a_send_processor_serves_this_invoke() {
     let (mut engine, script_engine) = started();
     engine.register_invoker("x-some-other-host", |_ev: HostInvokeEvent| None);
     engine.register_event_processor(DECLARED_TYPE, |_req| Vec::new());
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(
@@ -885,7 +921,9 @@ fn an_invoker_that_reports_no_completion_fires_no_done_invoke() {
         HostInvokeEvent::Start(_) => Some(HostInvokeResponse::default()),
         HostInvokeEvent::Cancel(_) => None,
     });
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
 
     assert_eq!(
@@ -919,7 +957,9 @@ fn typed_completion(done_data: &str) -> (i64, i64, i64) {
     let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
     engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Type);
     let token = token_of(&starts, "perm");
@@ -998,7 +1038,9 @@ fn typed_host() -> TypedHost {
     let (mut engine, script_engine) = started();
     engine
         .register_x_sce_host_invoker(PermHost(Arc::clone(&calls)), running_invoker(&log, &starts));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     engine.step();
     engine.process_event(Event::Type);
     TypedHost {

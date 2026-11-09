@@ -52,7 +52,9 @@ const INTACT_OBJECT: &str = r#"{"done":true}"#;
 fn started() -> (Engine<Policy>, Arc<dyn IScriptEngine>) {
     let script_engine: Arc<dyn IScriptEngine> = Arc::new(sce_rust_lua::LuaEngine::new());
     let mut engine = Engine::new(Policy::new(Arc::clone(&script_engine)));
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     (engine, script_engine)
 }
 

@@ -30,7 +30,7 @@ use sce_rust_tests::integration::parallel_done_state_is_delivered::{
 fn completion_carries_the_machine_to_a_top_level_final() {
     let policy = Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let entry = engine.get_active_states();
     assert!(

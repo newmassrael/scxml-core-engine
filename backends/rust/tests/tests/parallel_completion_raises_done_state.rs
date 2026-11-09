@@ -29,7 +29,7 @@ use sce_rust_tests::integration::parallel_completion_raises_done_state::{
 fn every_region_final_completes_the_parallel() {
     let policy = Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     let entry = engine.get_active_states();
     assert!(

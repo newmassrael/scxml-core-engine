@@ -53,7 +53,9 @@ fn observed(seen: &Seen) -> Engine<AComputedEventNameIsMatchedLikeAnyOtherPolicy
 #[test]
 fn a_computed_name_is_matched_by_token_and_told_whole() {
     let mut engine = engine();
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
 
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(
@@ -77,7 +79,9 @@ fn a_computed_name_is_matched_by_token_and_told_whole() {
 fn the_observer_is_told_each_row_of_the_table_the_run_takes() {
     let seen = Seen::default();
     let mut engine = observed(&seen);
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
     assert!(completed, "the observed run stopped before its final state");
     assert_eq!(engine.terminal_state(), Some(State::Pass));
@@ -116,7 +120,9 @@ fn a_cleared_observer_is_told_nothing_and_the_run_is_the_same() {
     let seen = Seen::default();
     let mut engine = observed(&seen);
     engine.clear_transition_observer();
-    engine.initialize();
+    engine
+        .initialize()
+        .expect("the machine's script session is established");
     let completed = engine.run_until_completion(Duration::from_secs(2), Duration::from_millis(10));
 
     assert!(completed, "the run stopped before its final state");

@@ -37,7 +37,7 @@ const _: () = {
 fn started() -> Engine<Policy> {
     let mut engine = Engine::new(Policy::new());
     engine.set_clock(SceClock::Manual(0));
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 

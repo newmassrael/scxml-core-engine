@@ -42,7 +42,8 @@ fn a_delayed_http_send_is_posted_when_due() {
         None
     });
     e.set_clock(SceClock::Manual(0));
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
 
     // A zero wait, written or evaluated, is no deferral: the POST is made
     // before initialize() returns, with no tick to bring it out.

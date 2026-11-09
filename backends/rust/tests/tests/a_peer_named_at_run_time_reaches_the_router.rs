@@ -33,7 +33,8 @@ fn a_peer_named_at_run_time_is_sent_to_the_router() {
         sink.lock().unwrap().push(request);
         Vec::new()
     });
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     let routed = routed.lock().unwrap();
@@ -58,7 +59,8 @@ fn a_peer_named_at_run_time_is_sent_to_the_router() {
 #[test]
 fn a_peer_with_no_router_registered_is_error_execution() {
     let mut e = engine();
-    e.initialize();
+    e.initialize()
+        .expect("the machine's script session is established");
     e.step();
 
     assert_eq!(e.policy().refused(), Some(1));
