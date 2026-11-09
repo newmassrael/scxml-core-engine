@@ -480,6 +480,48 @@ impl Namespace {
     }
 }
 
+/// The names one scope below the module definitions holds: a component
+/// type's ports, timers and variables, or a function's labels and locals
+/// (ES 201 873-1 §5.2.0, figure 2). A function that `runs on` a component
+/// type sees the type's names, so its scope is asked with the type's as an
+/// outer one ([`Namespace::local`]); two component types, or two functions,
+/// are scopes of their own and may each hold a name the other holds.
+#[derive(Debug, Default, Clone)]
+pub(super) struct Scope {
+    names: BTreeMap<String, Declared>,
+}
+
+impl Namespace {
+    /// A name declared in `scope`, which sees the module's definitions and
+    /// every scope of `outer`: refused when any of them, or `scope` itself,
+    /// holds it already (ES 201 873-1 §5.2.2). A definition of the module
+    /// declared later is asked against it in turn, as a formal parameter
+    /// is.
+    pub(super) fn local(
+        &mut self,
+        outer: &[&Scope],
+        scope: &mut Scope,
+        name: &str,
+        declared: Declared,
+    ) -> Result<(), Located<ForgeError>> {
+        written(name, &declared)?;
+        let earlier = self
+            .definitions
+            .get(name)
+            .or_else(|| self.values.get(name))
+            .or_else(|| outer.iter().find_map(|s| s.names.get(name)))
+            .or_else(|| scope.names.get(name));
+        if let Some(earlier) = earlier {
+            return Err(collision(name, earlier, &declared));
+        }
+        self.nested
+            .entry(name.to_string())
+            .or_insert_with(|| declared.clone());
+        scope.names.insert(name.to_string(), declared);
+        Ok(())
+    }
+}
+
 /// The refusal of `name`, declared as `earlier` and again as `later`: placed
 /// at the name an author wrote, the later one where both are.
 fn collision(name: &str, earlier: &Declared, later: &Declared) -> Located<ForgeError> {
@@ -599,6 +641,87 @@ mod tests {
                 ),
                 "{refused:?}"
             );
+        }
+    }
+
+    /// A component type's names are seen by the functions that run on it and
+    /// by no other component type; a function's names by no other function;
+    /// and every one of them is seen from the module's definitions, as a
+    /// formal parameter is (ES 201 873-1 §5.2.2).
+    #[test]
+    fn a_local_name_is_refused_where_its_scope_or_an_outer_one_holds_it() {
+        let is_name_refusal = |refused: Located<ForgeError>| {
+            matches!(
+                refused.error,
+                ForgeError::Validation(ref v) if matches!(
+                    **v,
+                    ValidationError::TestProfile { rule: TestProfileRule::ExportName, .. }
+                )
+            )
+        };
+        let mut names = Namespace::default();
+        names
+            .value("ok", Declared::read("the variant", origin("result")))
+            .expect("a value");
+        let mut tester = Scope::default();
+        let mut helper = Scope::default();
+        names
+            .local(
+                &[],
+                &mut tester,
+                "sut",
+                Declared::read("the port", origin("tester")),
+            )
+            .expect("a port");
+        names
+            .local(
+                &[],
+                &mut helper,
+                "sut",
+                Declared::read("the port", origin("helper")),
+            )
+            .expect("a port of another component type");
+        let mut first = Scope::default();
+        let mut second = Scope::default();
+        names
+            .local(
+                &[&tester],
+                &mut first,
+                "waiting",
+                Declared::read("the label", origin("tester")),
+            )
+            .expect("a label");
+        names
+            .local(
+                &[&tester],
+                &mut second,
+                "waiting",
+                Declared::read("the label", origin("tester")),
+            )
+            .expect("a label of another function");
+        for refused in [
+            names.local(
+                &[&tester],
+                &mut first,
+                "sut",
+                Declared::read("the label", origin("tester")),
+            ),
+            names.local(
+                &[&tester],
+                &mut first,
+                "waiting",
+                Declared::read("the label", origin("tester")),
+            ),
+            names.local(
+                &[],
+                &mut tester,
+                "ok",
+                Declared::read("the variable", origin("t")),
+            ),
+            names.definition("waiting", Declared::read("the template", origin("waiting"))),
+        ] {
+            let refused = refused.expect_err("one name twice where one scope sees both");
+            assert!(is_name_refusal(refused));
         }
     }
 

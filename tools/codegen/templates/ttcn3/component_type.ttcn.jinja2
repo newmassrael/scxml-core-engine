@@ -1,0 +1,19 @@
+{#- One test component as a TTCN-3 component type (docs/SCE_TEST_PROFILE.md
+    §2.1, §9.2 E4, §9.5): its ports, each of its port type; its timers, each
+    with its default duration in seconds; its variables, each with its initial
+    value (ES 201 873-1 §6.2.10.1). `component` is
+    `ttcn3_export::behaviour::ComponentTypeView`. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+type component {{ component.name }} {
+{% for p in component.ports %}
+  port {{ p.port_type }} {{ p.name }};
+{% endfor %}
+{% for t in component.timers %}
+  timer {{ t.name }}{% if t.duration %} := {{ t.duration }}{% endif %};
+{% endfor %}
+{% for v in component.variables %}
+{% set b = types.bound(v.type) %}
+  var {{ types.type_expr(v.type) }} {{ v.name }} := {{ v.init }};{% if b %} // {{ b }}{% endif %}
+
+{% endfor %}
+}

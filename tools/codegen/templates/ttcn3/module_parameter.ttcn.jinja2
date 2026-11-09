@@ -1,0 +1,8 @@
+{#- One module parameter of a test suite (docs/SCE_TEST_PROFILE.md §9.5,
+    §11.8): `modulepar T name := value;` (ES 201 873-1 §8.2.1), the bound in
+    bytes of a text or a byte string stated beside it as the types module
+    states a field's. `parameter` is
+    `ttcn3_export::behaviour::ModuleParameterView`. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+{% set b = types.bound(parameter.type) %}
+modulepar {{ types.type_expr(parameter.type) }} {{ parameter.name }} := {{ parameter.value }};{% if b %} // {{ b }}{% endif %}

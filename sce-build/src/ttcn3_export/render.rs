@@ -27,6 +27,15 @@ pub(super) const PORT_TYPE: &str = "ttcn3/port_type.ttcn.jinja2";
 /// The template of one template; its value is `template`.
 pub(super) const TEMPLATE: &str = "ttcn3/template.ttcn.jinja2";
 
+/// The template of one module parameter; its value is `parameter`.
+pub(super) const MODULE_PARAMETER: &str = "ttcn3/module_parameter.ttcn.jinja2";
+
+/// The template of one component type; its value is `component`.
+pub(super) const COMPONENT_TYPE: &str = "ttcn3/component_type.ttcn.jinja2";
+
+/// The template of one function; its value is `function`.
+pub(super) const FUNCTION: &str = "ttcn3/function.ttcn.jinja2";
+
 /// The environment, every template of the export registered.
 pub(super) fn environment() -> Result<Environment<'static>, ForgeError> {
     let mut env = crate::generator::new_env();
