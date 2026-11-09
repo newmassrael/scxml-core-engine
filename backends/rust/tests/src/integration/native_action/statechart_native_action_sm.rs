@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c525a57e845029b0717919e76fd72e962674effcaedf45322a54cbab4419b91a
+// source-hash: d7a9764edbc3c62648b57fd440c3eed4e401e25a63b873b4e90fad2c675a4c34
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
-// SCE-MAP: statechart_native_action.scxml:31 :: _machine
+#![doc = "SCE-MAP: statechart_native_action.scxml:33 :: _machine"]
+// SCE-MAP: statechart_native_action.scxml:33 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -179,10 +179,10 @@ pub const STATECHART_NATIVE_ACTION_TABLES: ::sce_rust_runtime::DocumentTables = 
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, true),
             // 1: idle, transition 1
             TransitionRow::new(Some(StateId(0)), Target::NONE, false, true),
-            // 2: assembling, transition 0
+            // 2: idle, transition 2
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(2)), false, false),
+            // 3: assembling, transition 0
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 3: assembling, transition 1
-            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
             // 4: faulted, transition 0
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, false),
             // 5: the document's initial transition
@@ -469,7 +469,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // generator proves from the document, and the external rule where it
     // proves none (docs/adr/0076). Inert under std, as above.
     // No depth is proven, so it is the external queue's: the transition of
-    // `assembling` on `error.execution` takes `error.execution`, an event the
+    // `idle` on `fragment.received` takes `fragment.received`, an event the
     // internal queue can hold, so an internal event can start a microstep that
     // raises more.
     type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload>;
@@ -666,8 +666,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:33 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -676,7 +676,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     ) {
         match state {
             StatechartNativeActionState::Idle => {
-                // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:40 :: idle :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -695,8 +695,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:33 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -709,7 +709,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
         // `state` from the configuration after this returns.
         match state {
             StatechartNativeActionState::Assembling => {
-                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:64 :: assembling :: _state_body
                 // W3C SCXML 3.9: onexit block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
@@ -726,8 +726,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:33 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -739,12 +739,6 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                 if event == StatechartNativeActionEvent::Reset {
                     {
                         // assembling, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(2));
-                    }
-                }
-                if event == StatechartNativeActionEvent::ErrorExecution {
-                    {
-                        // assembling, transition 1
                         return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
@@ -772,6 +766,12 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
+                if event == StatechartNativeActionEvent::ErrorExecution {
+                    {
+                        // idle, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
+                    }
+                }
                 None
             }
             _ => None,
@@ -781,8 +781,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: statechart_native_action.scxml:31 :: _machine"]
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    #[doc = "SCE-MAP: statechart_native_action.scxml:33 :: _machine"]
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -790,8 +790,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     ) {
         match transition.0 {
             // assembling, transition 0
-            2 => {
-                // SCE-MAP: statechart_native_action.scxml:63 :: assembling :: _transition_0
+            3 => {
+                // SCE-MAP: statechart_native_action.scxml:68 :: assembling :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -801,7 +801,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
             }
             // idle, transition 0
             0 => {
-                // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
+                // SCE-MAP: statechart_native_action.scxml:44 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -818,7 +818,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
+                // SCE-MAP: statechart_native_action.scxml:57 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {

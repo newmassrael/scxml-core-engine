@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c525a57e845029b0717919e76fd72e962674effcaedf45322a54cbab4419b91a
+// source-hash: d7a9764edbc3c62648b57fd440c3eed4e401e25a63b873b4e90fad2c675a4c34
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_native_action.scxml:31 :: _machine
+// SCE-MAP: statechart_native_action.scxml:33 :: _machine
 
 package statechart_native_action
 
@@ -139,13 +139,13 @@ var documentInitialTargetsOfStatechartNativeAction = []StatechartNativeActionTar
 var transitionTargetsOfStatechartNativeAction = [3][][]StatechartNativeActionTarget{
 	StatechartNativeActionStateAssembling: {
 		0: {sce.StateTarget[StatechartNativeActionState, sce.HistoryID](StatechartNativeActionStateIdle)},
-		1: {sce.StateTarget[StatechartNativeActionState, sce.HistoryID](StatechartNativeActionStateFaulted)},
 	},
 	StatechartNativeActionStateFaulted: {
 		0: {sce.StateTarget[StatechartNativeActionState, sce.HistoryID](StatechartNativeActionStateIdle)},
 	},
 	StatechartNativeActionStateIdle: {
 		0: {sce.StateTarget[StatechartNativeActionState, sce.HistoryID](StatechartNativeActionStateAssembling)},
+		2: {sce.StateTarget[StatechartNativeActionState, sce.HistoryID](StatechartNativeActionStateFaulted)},
 	},
 }
 
@@ -548,11 +548,11 @@ func (p *StatechartNativeActionPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartNativeActionStateIdle:
-//line statechart_native_action.scxml:38
+//line statechart_native_action.scxml:40
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -570,7 +570,7 @@ func (p *StatechartNativeActionPolicy) ExecuteEntryActions(state StatechartNativ
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -578,7 +578,7 @@ func (p *StatechartNativeActionPolicy) ExecuteHistoryDefaultContent(history sce.
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNativeActionState, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], configurationBeforeExit []StatechartNativeActionState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -586,7 +586,7 @@ func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNative
 	// the configuration last.
 	switch state {
 	case StatechartNativeActionStateAssembling:
-//line statechart_native_action.scxml:59
+//line statechart_native_action.scxml:64
 		// W3C SCXML 3.9 + 4.9: onexit block 0, its own function so an
 		// error ends it with `return`.
 		func() {
@@ -604,7 +604,7 @@ func (p *StatechartNativeActionPolicy) ExecuteExitActions(state StatechartNative
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) BindCurrentEvent(event StatechartNativeActionEvent, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -614,7 +614,7 @@ func (p *StatechartNativeActionPolicy) BindCurrentEvent(event StatechartNativeAc
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) FirstEnabledTransition(state StatechartNativeActionState, event StatechartNativeActionEvent, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) (sce.EnabledTransition[StatechartNativeActionState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartNativeActionStateAssembling:
@@ -625,17 +625,6 @@ func (p *StatechartNativeActionPolicy) FirstEnabledTransition(state StatechartNa
 					Targets:         transitionTargetsOfStatechartNativeAction[state][0],
 					TransitionIndex: 0,
 					HasActions:      true,
-					IsInternal:      false,
-				}, true
-			}
-		}
-		if event == StatechartNativeActionEventErrorExecution {
-			{
-				return sce.EnabledTransition[StatechartNativeActionState, sce.HistoryID]{
-					Source:          state,
-					Targets:         transitionTargetsOfStatechartNativeAction[state][1],
-					TransitionIndex: 1,
-					HasActions:      false,
 					IsInternal:      false,
 				}, true
 			}
@@ -674,19 +663,30 @@ func (p *StatechartNativeActionPolicy) FirstEnabledTransition(state StatechartNa
 				}, true
 			}
 		}
+		if event == StatechartNativeActionEventErrorExecution {
+			{
+				return sce.EnabledTransition[StatechartNativeActionState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartNativeAction[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StatechartNativeActionState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_native_action.scxml:31
+//line statechart_native_action.scxml:33
 func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source StatechartNativeActionState, transitionIndex int, engine *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {
 	switch source {
 	case StatechartNativeActionStateAssembling:
 		switch transitionIndex {
 		case 0:
-//line statechart_native_action.scxml:63
+//line statechart_native_action.scxml:68
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -697,7 +697,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	case StatechartNativeActionStateIdle:
 		switch transitionIndex {
 		case 0:
-//line statechart_native_action.scxml:42
+//line statechart_native_action.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -709,7 +709,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 	}
 			}()
 		case 1:
-//line statechart_native_action.scxml:55
+//line statechart_native_action.scxml:57
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: c525a57e845029b0717919e76fd72e962674effcaedf45322a54cbab4419b91a
+// source-hash: d7a9764edbc3c62648b57fd440c3eed4e401e25a63b873b4e90fad2c675a4c34
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_native_action.scxml:31 :: _machine
+// SCE-MAP: statechart_native_action.scxml:33 :: _machine
 
 package com.sce.integration.statechart_native_action
 
@@ -199,15 +199,6 @@ class StatechartNativeActionStateMachine(
             isInternal = false,
         )
 
-        // W3C SCXML 3.13: assembling's transition 1, as the microstep reads it.
-        val transitionAssemblingAt1 = EnabledTransition<StatechartNativeActionState, HistoryId>(
-            StatechartNativeActionState.Assembling,
-            listOf(StateTarget(StatechartNativeActionState.Faulted)),
-            1,
-            hasActions = false,
-            isInternal = false,
-        )
-
         // W3C SCXML 3.13: faulted's transition 0, as the microstep reads it.
         val transitionFaultedAt0 = EnabledTransition<StatechartNativeActionState, HistoryId>(
             StatechartNativeActionState.Faulted,
@@ -232,6 +223,15 @@ class StatechartNativeActionStateMachine(
             emptyList(),
             1,
             hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Idle,
+            listOf(StateTarget(StatechartNativeActionState.Faulted)),
+            2,
+            hasActions = false,
             isInternal = false,
         )
     }
@@ -300,7 +300,6 @@ class StatechartNativeActionStateMachine(
     // assembling's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfAssembling(state: StatechartNativeActionState, event: StatechartNativeActionEvent?): EnabledTransition<StatechartNativeActionState, HistoryId>? = when {
         event is StatechartNativeActionEvent.Reset -> TransitionsPart0.transitionAssemblingAt0
-        event is StatechartNativeActionEvent.Error.Execution -> TransitionsPart0.transitionAssemblingAt1
         else -> null
     }
 
@@ -316,6 +315,7 @@ class StatechartNativeActionStateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StatechartNativeActionState, event: StatechartNativeActionEvent?): EnabledTransition<StatechartNativeActionState, HistoryId>? = when {
         event is StatechartNativeActionEvent.Fragment.Received -> TransitionsPart0.transitionIdleAt0
         event is StatechartNativeActionEvent.Selftest -> TransitionsPart0.transitionIdleAt1
+        event is StatechartNativeActionEvent.Error.Execution -> TransitionsPart0.transitionIdleAt2
         else -> null
     }
 
@@ -324,7 +324,7 @@ class StatechartNativeActionStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     override fun onEntry(state: StatechartNativeActionState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartNativeActionState.Assembling -> onEntryOfAssembling()
@@ -335,15 +335,15 @@ class StatechartNativeActionStateMachine(
 
 
     private fun onEntryOfAssembling() {
-                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:64 :: assembling :: _state_body
     }
 
     private fun onEntryOfFaulted() {
-                // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:75 :: faulted :: _state_body
     }
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:40 :: idle :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -353,7 +353,7 @@ class StatechartNativeActionStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     override fun onExit(state: StatechartNativeActionState) {
         when (state) {
             is StatechartNativeActionState.Assembling -> onExitOfAssembling()
@@ -364,7 +364,7 @@ class StatechartNativeActionStateMachine(
 
 
     private fun onExitOfAssembling() {
-                // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:64 :: assembling :: _state_body
                 // W3C SCXML 3.9: Onexit block 1/1
                 run {
 
@@ -374,17 +374,17 @@ class StatechartNativeActionStateMachine(
     }
 
     private fun onExitOfFaulted() {
-                // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:75 :: faulted :: _state_body
     }
 
     private fun onExitOfIdle() {
-                // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
+                // SCE-MAP: statechart_native_action.scxml:40 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_native_action.scxml:31 :: _machine
+    // SCE-MAP: statechart_native_action.scxml:33 :: _machine
     override fun executeTransitionContent(source: StatechartNativeActionState, transitionIndex: Int) {
         when (source) {
             is StatechartNativeActionState.Assembling -> transitionContentOfAssembling(transitionIndex)
@@ -408,7 +408,7 @@ class StatechartNativeActionStateMachine(
 
 
     private fun transitionContentOfAssemblingAt0() {
-                // SCE-MAP: statechart_native_action.scxml:63 :: assembling :: _transition_0
+                // SCE-MAP: statechart_native_action.scxml:68 :: assembling :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="reset_slot">
             actions.resetSlot()
@@ -429,14 +429,14 @@ class StatechartNativeActionStateMachine(
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
+                // SCE-MAP: statechart_native_action.scxml:44 :: idle :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="append_fragment_payload">
             pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution, EventMetadata(data = "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry", type = "platform")) }
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
+                // SCE-MAP: statechart_native_action.scxml:57 :: idle :: _transition_1
 
             raiseInternal(StatechartNativeActionEvent.Fragment.Received)
     }
