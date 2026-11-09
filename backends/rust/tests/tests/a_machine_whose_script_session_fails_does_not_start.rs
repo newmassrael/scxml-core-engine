@@ -10,14 +10,13 @@
 // counts every call that runs a document's expressions, so "no executable
 // content ran" is read from the engine the machine runs its content in.
 //
-// Fixture: integration_resources/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick.scxml,
-// reused for its shape: a parent in `s0` with `<data hellos>` that invokes an
-// inline child, whose `<onentry>` sends `hello` to the parent. A start that
-// ran would initialize `hellos`, enter `s0` and start the child; a child that
-// ran would send `hello`.
-//
-// Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_reply_arrives_without_a_tick.sh
+// Fixture: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml,
+// reused for its shape: a parent in `s0` with `<data ticks>` that invokes an
+// inline child, whose `<onentry>` sends `tick` to the parent 110 times. The
+// child declares `<data>` of its own, so it has a script session of its own to
+// fail (a child without one cannot be refused that way: its failure type is
+// `Infallible`). A start that ran would initialize `ticks`, enter `s0` and
+// start the child; a child that ran would send `tick`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,9 +30,10 @@ use sce_rust_runtime::scripting::{
 use sce_rust_runtime::{
     ConfigurationRejection, Engine, RootStartRefusal, ScriptSessionStage, StatePolicy,
 };
-use sce_rust_tests::integration::a_child_reply_arrives_without_a_tick::{
-    AChildReplyArrivesWithoutATickEvent as Event, AChildReplyArrivesWithoutATickPolicy as Policy,
-    AChildReplyArrivesWithoutATickState as State,
+use sce_rust_tests::integration::a_child_may_send_many_events_in_one_tick::{
+    AChildMaySendManyEventsInOneTickEvent as Event,
+    AChildMaySendManyEventsInOneTickPolicy as Policy,
+    AChildMaySendManyEventsInOneTickState as State,
 };
 
 /// Which step of establishing a session the double fails.
@@ -293,7 +293,7 @@ fn a_start_over_the_double_that_fails_nothing_runs_the_fixture() {
     engine.raise_external(Event::Finish, "");
     engine.step();
     assert_eq!(engine.terminal_state(), Some(State::Done));
-    assert_eq!(engine.policy().hellos(), Some(1));
+    assert_eq!(engine.policy().ticks(), Some(110));
     assert!(double.ran() > 0);
 }
 
@@ -410,8 +410,8 @@ fn a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_chi
     // no transition of `s0` takes.
     assert_eq!(engine.last_unhandled_error(), Some(Event::ErrorExecution));
     assert_eq!(engine.unhandled_error_events(), 1);
-    // No child ran, so no `hello` and no `done.invoke` ever arrived.
-    assert_eq!(engine.policy().hellos(), Some(0));
+    // No child ran, so no `tick` and no `done.invoke` ever arrived.
+    assert_eq!(engine.policy().ticks(), Some(0));
     assert_eq!(engine.discarded_external_events(), 0);
 
     // The parent itself runs on.

@@ -28,9 +28,9 @@ mutation_targets backends/rust/runtime/src/engine.rs tools/codegen/templates/rus
 # regeneration below writes, so both halves are declared: the generated files
 # are compiled into the test, and the command is what carries a mutated
 # template into them.
-mutation_targets backends/rust/tests/src/integration/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick_sm.rs
-mutation_targets backends/rust/tests/src/integration/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid_sm.rs
-mutation_regen scripts/regen_a_child_reply_arrives_without_a_tick.sh
+mutation_targets backends/rust/tests/src/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick_sm.rs
+mutation_targets backends/rust/tests/src/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty_sm.rs
+mutation_regen scripts/regen_a_child_may_send_many_events_in_one_tick.sh
 
 mutation_oracles backends/rust/tests/tests/a_machine_whose_script_session_fails_does_not_start.rs
 
