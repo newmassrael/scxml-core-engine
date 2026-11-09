@@ -74,7 +74,7 @@ impl StatePolicy for HwPolicy {
 
     // Three children of the `<scxml>` element; the document's initial
     // transition, last, enters `stopped`.
-    const TABLES: &'static DocumentTables = &DocumentTables {
+    const TABLES: &'static DocumentTables<'static> = &DocumentTables {
         states: &[
             StateRow::new(None, StateKind::Atomic, StateId(0), None),
             StateRow::new(None, StateKind::Atomic, StateId(1), None),

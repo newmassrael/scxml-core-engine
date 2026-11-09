@@ -157,7 +157,7 @@ const _: () = assert!(
 
 /// The probe machine's tables (docs/adr/0064): the rows of the document the
 /// buffers below are sized for.
-const PROBE_TABLES: &sce_rust_runtime::DocumentTables =
+const PROBE_TABLES: &sce_rust_runtime::DocumentTables<'static> =
     <EventQueueCapacityProbePolicy as StatePolicy>::TABLES;
 
 /// The document the bounds below are those of: three flat states and no
