@@ -258,6 +258,6 @@ PY
 
 mutation_case "a payload's enum field takes a name no variant declares" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "_name_{id});\\n            \\\nreturn false;\\n        }}\\n    }}\\n\",",
-     "_name_{id});\\n            \\\n        }}\\n    }}\\n\",")
+     "{not_variant}\\n            \\\nreturn false;\\n        }}\\n    }}\\n\",",
+     "{not_variant}\\n            \\\n        }}\\n    }}\\n\",")
 PY
