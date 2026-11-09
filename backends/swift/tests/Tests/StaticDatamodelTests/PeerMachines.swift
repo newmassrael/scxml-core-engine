@@ -209,17 +209,9 @@ func sharedRecordList(routed: Bool = true) -> Machine {
             "announced": { integer(policy.announced) },
             "clock": { hlc(policy.clock.wallTime, policy.clock.counter, policy.clock.nodeId) },
             "denied": { integer(policy.denied) },
-            "digest": { .array(policy.digest.map { digestNode($0.depth, $0.prefix, $0.hash) }) },
-            "floor": { digits(policy.floor) },
             "full": { integer(policy.full) },
-            "hub": { .bool(policy.hub) },
-            "late": { integer(policy.late) },
             "node": { digits(policy.node) },
             "refusals": { integer(policy.refusals) },
-            "stale": { .bool(policy.stale) },
-            "tombstones": {
-                .array(policy.tombstones.map { listEntry($0.element, $0.wallTime, $0.counter, $0.nodeId) })
-            },
             "values": {
                 .array(
                     policy.values.map {
@@ -233,7 +225,8 @@ func sharedRecordList(routed: Bool = true) -> Machine {
 
 /// The statechart that keeps a shared record list by invoking the standard one and publishes
 /// what the list told it. No Mesh route is given to the list, so the machine is driven with no
-/// peers: what the list would send a hub is refused where it is made, and the edit runs whole.
+/// peers: the change the list would send its peers is refused where it is made, after it is
+/// taken in, and the edit runs whole.
 func recordListParent() -> Machine {
     let policy = RecordListParentPolicy()
     return drive(

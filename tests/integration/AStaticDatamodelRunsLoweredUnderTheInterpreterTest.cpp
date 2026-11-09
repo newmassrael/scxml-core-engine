@@ -861,10 +861,11 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     }
     // ... and the standard shared record list (sce:std/shared/record_list.scxml), a
     // scenario's machine named by its library name and lowered from the library: a
-    // person's copy, the hub, and a list a host started, when it tells no parent
-    // anything ...
-    for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone", "record_list_offline",
-                             "record_list_change", "record_list_retire"}) {
+    // person's copy, a list a host started, when it tells no parent anything, and a
+    // change and the one it writes over in their causal order, each change one message
+    // whose operations are a list of records (docs/adr/0085) ...
+    for (const char *copy : {"record_list_person", "record_list_alone", "record_list_offline", "record_list_change",
+                             "record_list_retire", "record_list_out_of_causal_order_is_not_given"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }
@@ -872,8 +873,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // `src` is lowered as a document of its own and written beside its parent, whose
     // `src` is rewritten to the name it is written under, so the Interpreter loads
     // the lowered list from the directory the set stands in.
-    EXPECT_NE(std::find(replayed.begin(), replayed.end(), "record_list_parent"), replayed.end())
-        << "record_list_parent was not replayed: a child named by `src` has no lowering for the Interpreter";
+    for (const char *invoking : {"record_list_parent", "record_list_concurrent_clears"}) {
+        EXPECT_NE(std::find(replayed.begin(), replayed.end(), invoking), replayed.end())
+            << invoking << " was not replayed: a child named by `src` has no lowering for the Interpreter";
+    }
     // ... and the scenario of values that may be absent (docs/adr/0055), each `null` in a
     // variable, a record, a list, a payload, a send and the done data, so that a refusal
     // the scan above would let pass does not stand for its lowering.
