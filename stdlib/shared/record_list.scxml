@@ -803,7 +803,11 @@
       </if>
       <assign location="closedAt" expr="offeredAt"/>
       <if cond="_event.data.outcome === Outcome.refused">
-        <assign location="refusedFor" expr="_event.data.reason ?? Refusal.peerRefused"/>
+        <if cond="_event.data.reason !== null">
+          <assign location="refusedFor" expr="_event.data.reason.value"/>
+        <else/>
+          <assign location="refusedFor" expr="Refusal.peerRefused"/>
+        </if>
         <assign location="closedOps" expr="0"/>
         <assign location="closedFor" expr="refusedFor"/>
         <sce:clear target="offered"/>
