@@ -31,7 +31,11 @@
 //! suppression (§mesh-10.5) answers. A link keeps the order its envelopes were
 //! sent in, as a WebSocket does, however much their delays are spread; one that
 //! does not ([`World::reorder`]) is the case the Mesh core orders for. A topic
-//! ([`World::topic`]) is the one-to-many a machine sends to by one name.
+//! ([`World::topic`]) is the one-to-many a machine sends to by one name, and a group
+//! ([`World::group`]) the many-to-many every member sends to and reads by one name, as
+//! the group of a causal binding is (docs/adr/0085, section 3.2). The host of a causal
+//! binding is the world's: it starts the layer ([`World::start_causal`]), commits each
+//! change the layer accepts, and wakes for the vector a layer with work is owed.
 //!
 //! An actor need not be a Rust machine. [`World::add_external`] hosts one that runs in
 //! another process, such as a generated Kotlin machine in a JVM, behind the same Mesh
@@ -71,9 +75,10 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use sce_rust_mesh::causal::{CausalLayer, Start};
 use sce_rust_mesh::endpoint::{
-    self, Admission, Endpoint, EngineCall, Environment, Sealer, SharedEndpoint, Transport,
-    TransportFailure,
+    self, Admission, CausalVerdict, Endpoint, EngineCall, Environment, Sealer, SharedEndpoint,
+    Transport, TransportFailure,
 };
 use sce_rust_mesh::router::Router;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
@@ -167,12 +172,15 @@ pub struct Traced {
 struct Flight {
     from: String,
     to: String,
+    /// The binding the receiver's endpoint knows it by: the sender's name, or the
+    /// name of the group it was sent to, which every member binds and reads.
+    via: String,
     due_ms: i64,
     seq: u64,
     bytes: Vec<u8>,
-    /// Whether it is one copy of what was published to a topic. A copy cut in flight
-    /// is lost, as a datagram is: the publisher sent to the topic, not to this
-    /// receiver, and has nothing to send again to it.
+    /// Whether it is one copy of what was published to a topic or a group. A copy
+    /// cut in flight is lost, as a datagram is: the publisher sent to the topic, not
+    /// to this receiver, and has nothing to send again to it.
     topic: bool,
 }
 
@@ -214,6 +222,9 @@ struct NetState {
     last_due: BTreeMap<(String, String), i64>,
     /// The topics, by publisher and name: who each is delivered to.
     topics: BTreeMap<(String, String), Vec<String>>,
+    /// The groups, by name: their members, each of which sends to the group and
+    /// reads it ([`World::group`]).
+    groups: BTreeMap<String, Vec<String>>,
     rng: Rng,
     next_seq: u64,
     trace: Vec<Traced>,
@@ -230,6 +241,7 @@ impl Network {
             links: BTreeMap::new(),
             last_due: BTreeMap::new(),
             topics: BTreeMap::new(),
+            groups: BTreeMap::new(),
             rng: Rng::new(seed),
             next_seq: 0,
             trace: Vec::new(),
@@ -252,8 +264,9 @@ pub struct SimTransport {
 impl NetState {
     /// Put one envelope on the link from `from` to `to`, as the link treats it: lost,
     /// delivered once, or delivered twice, each after its latency and a jitter drawn
-    /// from the seed. `topic` is whether it is a copy of what was published to a topic.
-    fn carry(&mut self, now: i64, from: &str, to: &str, bytes: &[u8], topic: bool) {
+    /// from the seed. `via` is the binding the receiver knows it by, and `topic` is
+    /// whether it is a copy of what was published to a topic or a group.
+    fn carry(&mut self, now: i64, from: &str, to: &str, via: &str, bytes: &[u8], topic: bool) {
         let direction = (from.to_string(), to.to_string());
         let lost = |net: &mut Self| {
             net.trace.push(Traced {
@@ -295,6 +308,7 @@ impl NetState {
             self.flights.push(Flight {
                 from: from.to_string(),
                 to: to.to_string(),
+                via: via.to_string(),
                 due_ms,
                 seq,
                 bytes: bytes.to_vec(),
@@ -319,6 +333,20 @@ impl Transport for SimTransport {
     fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
         let now = self.clock.now_ms();
         let mut net = self.net.lock();
+        // A group the sender is a member of is a topic every member publishes to: each
+        // other member is reached over its own link, and reads the copy by the group's
+        // name, the one binding a member reads the group by.
+        let members = net
+            .groups
+            .get(peer)
+            .filter(|members| members.contains(&self.from))
+            .cloned();
+        if let Some(members) = members {
+            for member in members.iter().filter(|member| **member != self.from) {
+                net.carry(now, &self.from, member, peer, bytes, true);
+            }
+            return Ok(());
+        }
         let topic = (self.from.clone(), peer.to_string());
         if let Some(subscribers) = net.topics.get(&topic).cloned() {
             // A topic is not one link: each subscriber is reached by its own, which
@@ -327,7 +355,7 @@ impl Transport for SimTransport {
             // refused and nothing is sent again, since what is published to a topic
             // is not addressed to anyone in particular.
             for subscriber in subscribers {
-                net.carry(now, &self.from, &subscriber, bytes, true);
+                net.carry(now, &self.from, &subscriber, &self.from, bytes, true);
             }
             return Ok(());
         }
@@ -345,7 +373,7 @@ impl Transport for SimTransport {
                 message: Some(format!("the link from {} to {peer} is down", self.from)),
             });
         }
-        net.carry(now, &self.from, peer, bytes, false);
+        net.carry(now, &self.from, peer, &self.from, bytes, false);
         Ok(())
     }
 }
@@ -611,12 +639,39 @@ trait Participant {
         self.lock_endpoint().receive(from, bytes);
     }
 
+    /// Whether the actor's endpoint binds `peer`: a member of a group binds the group
+    /// and not the members it reaches through it.
+    fn binds(&self, peer: &str) -> bool {
+        self.lock_endpoint().has_peer(peer)
+    }
+
     fn peer_ready(&mut self, peer: &str) {
         self.lock_endpoint().peer_ready(peer);
     }
 
     fn peer_not_ready(&mut self, peer: &str) {
         self.lock_endpoint().peer_not_ready(peer);
+    }
+
+    /// Act on the verdicts of the actor's causal layers on what its machine sent, as a
+    /// host does (docs/adr/0085, section 3, "offer and verdict"): an accepted change is
+    /// committed at once, the world keeping no journal a crash could lose a record of,
+    /// and so leaves; each refusal is given back, for the world to report it as a fault
+    /// only a host can act on.
+    fn commit_verdicts(&mut self) -> Vec<String> {
+        let mut endpoint = self.lock_endpoint();
+        let mut refused = Vec::new();
+        for verdict in endpoint.take_verdicts() {
+            match verdict {
+                CausalVerdict::Accepted { peer, dot } => endpoint.committed(&peer, dot),
+                CausalVerdict::Refused { peer, refusal } => {
+                    refused.push(format!(
+                        "the causal layer of {peer} refused a change: {refusal:?}"
+                    ));
+                }
+            }
+        }
+        refused
     }
 
     fn transmit_failed(&mut self, peer: &str, bytes: Vec<u8>) {
@@ -637,15 +692,19 @@ trait Participant {
     }
 
     /// When this actor next needs the world's time to have reached, in the
-    /// world's milliseconds: its engine's next scheduled thing, or its
-    /// endpoint's next retry.
+    /// world's milliseconds: its engine's next scheduled thing, its endpoint's
+    /// next retry, or the next vector a causal layer with work is owed.
     fn next_due_ms(&self, now_ms: i64) -> Option<i64> {
         let engine = self.engine_due_ms(now_ms);
-        let retry = self.lock_endpoint().next_retry_due_ms();
-        match (engine, retry) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        let endpoint = self.lock_endpoint();
+        [
+            engine,
+            endpoint.next_retry_due_ms(),
+            endpoint.next_announce_due_ms(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn host_errors(&mut self) -> Vec<String> {
@@ -712,6 +771,9 @@ pub struct World {
     clock: Clock,
     net: Network,
     actors: Vec<Box<dyn Participant>>,
+    /// What the causal layers refused of what their machines sent, since it was last
+    /// read with the hosts' errors ([`World::host_errors`]).
+    refused: Vec<String>,
 }
 
 impl World {
@@ -722,6 +784,7 @@ impl World {
             clock: Clock::default(),
             net: Network::new(seed),
             actors: Vec::new(),
+            refused: Vec::new(),
         }
     }
 
@@ -934,9 +997,10 @@ impl World {
     }
 
     /// Join `a` and `b` by a link up in both directions, `latency_ms` each way. Each
-    /// side is told its peer is ready, as a transport tells its endpoint when a
-    /// connection is made: an endpoint that keeps what it sends while a peer is not
-    /// ready would otherwise keep it for good.
+    /// side that binds the other is told its peer is ready, as a transport tells its
+    /// endpoint when a connection is made: an endpoint that keeps what it sends while a
+    /// peer is not ready would otherwise keep it for good. A side that binds no peer by
+    /// the other's name (a member of a group, which binds the group) is told nothing.
     pub fn link(&mut self, a: &str, b: &str, latency_ms: i64) {
         {
             let mut net = self.net.lock();
@@ -950,8 +1014,118 @@ impl World {
                 );
             }
         }
-        self.with_actor(a, |actor| actor.peer_ready(b));
-        self.with_actor(b, |actor| actor.peer_ready(a));
+        self.tell_ready(a, b);
+        self.tell_ready(b, a);
+    }
+
+    /// Tell `actor` its link to `peer` is up, when it binds `peer`.
+    fn tell_ready(&mut self, actor: &str, peer: &str) {
+        self.with_actor(actor, |actor| {
+            if actor.binds(peer) {
+                actor.peer_ready(peer);
+            }
+        });
+    }
+
+    /// Tell `actor` its link to `peer` is down, when it binds `peer`.
+    fn tell_not_ready(&mut self, actor: &str, peer: &str) {
+        self.with_actor(actor, |actor| {
+            if actor.binds(peer) {
+                actor.peer_not_ready(peer);
+            }
+        });
+    }
+
+    /// Make `name` a group of `members`: one name every member sends to and reads, as a
+    /// causal binding's group is (`delivery: causal`, SCE_MESH.md, docs/adr/0085 section
+    /// 3.2), each member's router binding a peer by that name. What a member sends to it
+    /// reaches every other member over the link between the two ([`link`](Self::link)
+    /// first), delayed, lost and repeated as that link does, and arrives as from the
+    /// group, the binding the member reads it by; a member whose link is down is not
+    /// reached, and nothing is sent again, as for a topic. Each member is told the group
+    /// is ready.
+    ///
+    /// A link between two members that comes back ([`heal`](Self::heal)) tells each that
+    /// the group is ready again, which a causal binding answers with its vector, and a
+    /// link that goes down tells neither anything: the group is still reached over the
+    /// links that are up.
+    ///
+    /// # Panics
+    ///
+    /// When two members have no link between them, or the group is already declared.
+    pub fn group(&mut self, name: &str, members: &[&str]) {
+        {
+            let mut net = self.net.lock();
+            for a in members {
+                for b in members.iter().filter(|b| *b != a) {
+                    assert!(
+                        net.links
+                            .contains_key(&((*a).to_string(), (*b).to_string())),
+                        "no link from {a} to {b}: link the members before the group"
+                    );
+                }
+            }
+            assert!(
+                !net.groups.contains_key(name),
+                "the world already holds a group named {name}"
+            );
+            net.groups.insert(
+                name.to_string(),
+                members.iter().map(|member| (*member).to_string()).collect(),
+            );
+        }
+        for member in members {
+            self.tell_ready(member, name);
+        }
+    }
+
+    /// The groups both `a` and `b` are members of.
+    fn groups_of(&self, a: &str, b: &str) -> Vec<String> {
+        self.net
+            .lock()
+            .groups
+            .iter()
+            .filter(|(_, members)| {
+                members.iter().any(|member| member == a) && members.iter().any(|member| member == b)
+            })
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// Start the causal layer of `actor`'s causal binding `peer` (docs/adr/0085, sections
+    /// 3.2 and 3.3), as its host does when the copy starts: `start` is the incarnation the
+    /// host read from the copy's journal, or a new one; `room` the most changes the layer
+    /// may hold not yet stable; `announce_every_ms` the period of its `causalVector`. A
+    /// layer started again replaces the one before, with what it held.
+    ///
+    /// # Panics
+    ///
+    /// When `actor` does not bind `peer`, or binds it by a binding that is not causal.
+    pub fn start_causal(
+        &mut self,
+        actor: &str,
+        peer: &str,
+        start: Start,
+        room: usize,
+        announce_every_ms: i64,
+    ) {
+        self.with_actor(actor, |participant| {
+            participant
+                .lock_endpoint()
+                .start_causal(peer, start, room, announce_every_ms)
+                .unwrap_or_else(|error| {
+                    panic!("the causal layer of {peer} does not start: {error:?}")
+                });
+        });
+    }
+
+    /// The causal layer of `actor`'s causal binding `peer` as it stands, once started.
+    pub fn causal_layer(&mut self, actor: &str, peer: &str) -> Option<CausalLayer<Vec<u8>>> {
+        let mut layer = None;
+        self.with_actor(actor, |participant| {
+            layer = participant.lock_endpoint().causal_layer(peer).cloned();
+        });
+        layer
     }
 
     /// Make `topic` a name `publisher` can send to, that every one of `subscribers`
@@ -1060,15 +1234,16 @@ impl World {
             }
             cut
         };
-        self.with_actor(a, |actor| actor.peer_not_ready(b));
-        self.with_actor(b, |actor| actor.peer_not_ready(a));
+        self.tell_not_ready(a, b);
+        self.tell_not_ready(b, a);
         for flight in cut.into_iter().filter(|flight| !flight.topic) {
             let (from, to, bytes) = (flight.from, flight.to, flight.bytes);
             self.with_actor(&from, |actor| actor.transmit_failed(&to, bytes));
         }
     }
 
-    /// Restore the link between `a` and `b`; each side is told its peer is ready.
+    /// Restore the link between `a` and `b`; each side is told its peer is ready, and,
+    /// for each group both are members of, that the group is.
     pub fn heal(&mut self, a: &str, b: &str) {
         {
             let mut net = self.net.lock();
@@ -1078,8 +1253,12 @@ impl World {
                 }
             }
         }
-        self.with_actor(a, |actor| actor.peer_ready(b));
-        self.with_actor(b, |actor| actor.peer_ready(a));
+        self.tell_ready(a, b);
+        self.tell_ready(b, a);
+        for group in self.groups_of(a, b) {
+            self.tell_ready(a, &group);
+            self.tell_ready(b, &group);
+        }
     }
 
     /// Give the machine `actor` an external event, as its host would.
@@ -1122,9 +1301,11 @@ impl World {
     }
 
     /// What went wrong that only a host can act on, from every endpoint, since
-    /// it was last asked. A run that expects none asserts this empty.
+    /// it was last asked, and every change a causal layer refused. A run that expects
+    /// none asserts this empty.
     pub fn host_errors(&mut self) -> Vec<String> {
-        self.actors
+        let mut errors: Vec<String> = self
+            .actors
             .iter_mut()
             .flat_map(|actor| {
                 let name = actor.name().to_string();
@@ -1133,7 +1314,9 @@ impl World {
                     .into_iter()
                     .map(move |error| format!("{name}: {error}"))
             })
-            .collect()
+            .collect();
+        errors.append(&mut self.refused);
+        errors
     }
 
     /// Everything that happened on the network, in the order it did.
@@ -1174,18 +1357,23 @@ impl World {
         };
         let delivered = due.len();
         for flight in due {
-            let (from, to, bytes) = (flight.from, flight.to, flight.bytes);
-            self.with_actor(&to, |actor| actor.receive(&from, bytes));
+            let (via, to, bytes) = (flight.via, flight.to, flight.bytes);
+            self.with_actor(&to, |actor| actor.receive(&via, bytes));
         }
         delivered
     }
 
-    /// Run everything that can happen at the world's present time.
+    /// Run everything that can happen at the world's present time. What a machine sent
+    /// to a causal binding leaves once its host has acted on the layer's verdict.
     fn settle(&mut self) {
         loop {
             for actor in &mut self.actors {
                 actor.tick();
                 actor.pump();
+                let refused = actor.commit_verdicts();
+                let name = actor.name().to_string();
+                self.refused
+                    .extend(refused.into_iter().map(|why| format!("{name}: {why}")));
             }
             if self.deliver_due() == 0 {
                 return;
