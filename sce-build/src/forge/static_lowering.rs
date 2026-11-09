@@ -6160,9 +6160,16 @@ pub fn lower(
             matches!(ty, SceType::Bytes)
         }))
         .collect();
+    let mut event_aliases = std::collections::BTreeMap::new();
+    for (alias, schema) in &model.imported_records {
+        event_aliases
+            .entry(schema.event_name.clone())
+            .or_insert_with(|| alias.clone());
+    }
     let rewrites = Rewrites {
         records: record_vars,
         schemas: records.clone(),
+        event_aliases,
         enum_vars: crate::forge::static_datamodel::enum_variables(&scope, &records),
         payload_enum_paths: Default::default(),
         payload_fields: Default::default(),
@@ -8509,6 +8516,12 @@ struct Rewrites<'m> {
     /// Every schema the document imports, by alias — what the fields of a
     /// record a loop walks are read from.
     schemas: std::collections::BTreeMap<String, EntrySchema>,
+    /// The alias each event's schema is imported under, by the event's name,
+    /// for every schema whatever its fields hold: what a `<send>`'s param is
+    /// typed through ([`unproven_count`]). [`Self::schemas`] holds only the
+    /// schemas of one entry per field, which a schema that holds a composed
+    /// field is not.
+    event_aliases: std::collections::BTreeMap<String, String>,
     /// The enum each variable declared `enum:<alias>` holds, and each enum field
     /// of a record variable by its `<id>.<field>` path — what tells an enum
     /// value from a number where a `<param>` is spelled for the wire.
@@ -20627,10 +20640,10 @@ fn unproven_count(
     use crate::forge::value_path::{walk, Place, Step};
     use crate::forge::value_type::ValueType;
     let event = sent_as.filter(|event| !event.is_empty())?;
-    let (alias, _) = rewrites
-        .schemas
-        .iter()
-        .find(|(_, schema)| schema.event_name == event)?;
+    // The schema whole, as the judge read it: a field that states a lower
+    // count is a composed field, so its schema is never one of the entries
+    // `Rewrites::schemas` holds.
+    let alias = rewrites.event_aliases.get(event)?;
     let field = walk(
         Some(&rewrites.type_scope),
         &Place::of(ValueType::Record {
