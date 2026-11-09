@@ -19,8 +19,8 @@
 {{ e.reference }}.done
 {%- endif -%}
 {%- endmacro -%}
-{% macro statements(list, pad) %}
-{% for s in list %}
+{% macro statements(body, pad) %}
+{% for s in body %}
 {% if s.kind == "label" %}
 {{ pad }}label {{ s.name }};
 {% elif s.kind == "goto" %}
