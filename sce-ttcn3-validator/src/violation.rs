@@ -7,7 +7,7 @@
 use std::fmt;
 
 use crate::place::{path_text, Segment};
-use crate::rules::Rule;
+use crate::rules::{Kind, Rule};
 use crate::witness::Construct;
 
 /// One finding.
@@ -50,6 +50,56 @@ pub enum Violation {
     },
     /// An entry whose construct the documents do not hold.
     ConstructDangling { construct: Construct, rule: Rule },
+    /// An entry whose rule translates no construct of its construct's kind.
+    RuleKind {
+        construct: Construct,
+        rule: Rule,
+        kind: Kind,
+    },
+    /// A place an entry names that does not have the TTCN-3 form its rule
+    /// writes for its construct.
+    Form {
+        module: String,
+        path: Vec<Segment>,
+        construct: Construct,
+        rule: Rule,
+        reason: String,
+    },
+    /// An `alt` whose alternatives, or whose claim, are not the branches of
+    /// its atomic state in the order of P3; or an alternative whose claim
+    /// names another state or transition.
+    AltOrder {
+        module: String,
+        path: Vec<Segment>,
+        reason: String,
+    },
+    /// An alternative whose claim exits other states than the transition
+    /// does from its atomic state, or in another order.
+    ExitSet {
+        module: String,
+        path: Vec<Segment>,
+        reason: String,
+    },
+    /// An alternative whose claim enters other states than the transition
+    /// does from its atomic state, or in another order.
+    EntrySet {
+        module: String,
+        path: Vec<Segment>,
+        reason: String,
+    },
+    /// A block whose statements are not those taking its transition from
+    /// its atomic state writes, in their order.
+    BlockOrder {
+        module: String,
+        path: Vec<Segment>,
+        reason: String,
+    },
+    /// An `alt` or an alternative that states no claim of its kind.
+    ClaimMissing {
+        module: String,
+        path: Vec<Segment>,
+        reason: String,
+    },
 }
 
 impl Violation {
@@ -64,6 +114,13 @@ impl Violation {
             Violation::ConstructMissing { .. } => "construct-missing",
             Violation::EntryDuplicate { .. } => "entry-duplicate",
             Violation::ConstructDangling { .. } => "construct-dangling",
+            Violation::RuleKind { .. } => "rule-kind",
+            Violation::Form { .. } => "form",
+            Violation::AltOrder { .. } => "alt-order",
+            Violation::ExitSet { .. } => "exit-set",
+            Violation::EntrySet { .. } => "entry-set",
+            Violation::BlockOrder { .. } => "block-order",
+            Violation::ClaimMissing { .. } => "claim-missing",
         }
     }
 }
@@ -123,6 +180,51 @@ impl fmt::Display for Violation {
                 "{code}: {construct}: an entry of {rule} names it, and the documents hold no such \
                  construct"
             ),
+            Violation::RuleKind {
+                construct,
+                rule,
+                kind,
+            } => write!(
+                f,
+                "{code}: {construct}: an entry of {rule} names it, and {rule} translates no {}",
+                kind.noun()
+            ),
+            Violation::Form {
+                module,
+                path,
+                construct,
+                rule,
+                reason,
+            } => write!(
+                f,
+                "{code}: {module} {}: the entry of {construct} by {rule} names it, and {reason}",
+                path_text(path)
+            ),
+            Violation::AltOrder {
+                module,
+                path,
+                reason,
+            }
+            | Violation::ExitSet {
+                module,
+                path,
+                reason,
+            }
+            | Violation::EntrySet {
+                module,
+                path,
+                reason,
+            }
+            | Violation::BlockOrder {
+                module,
+                path,
+                reason,
+            }
+            | Violation::ClaimMissing {
+                module,
+                path,
+                reason,
+            } => write!(f, "{code}: {module} {}: {reason}", path_text(path)),
         }
     }
 }

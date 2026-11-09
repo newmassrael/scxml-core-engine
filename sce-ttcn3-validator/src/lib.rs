@@ -25,20 +25,33 @@
 //!   witness's vocabulary ([`place`]).
 //!
 //! [`rules`] states, in one table, which rule of §9.2 translates a construct
-//! of each kind and when one must. [`coverage`] holds the first check of
-//! §9.4: every place of the two modules is named by exactly one location of
-//! the witness and every location names a place, and every construct has
-//! exactly one entry for each rule that translates it and every entry names a
-//! construct of the documents. [`scxml313`] computes the exit and entry sets
-//! of a branch from the documents alone. Each finding is a [`Violation`] with
-//! a stable code.
+//! of each kind and when one must. The three checks of §9.4:
+//!
+//! - [`coverage`]: every place of the two modules is named by exactly one
+//!   location of the witness and every location names a place, and every
+//!   construct has exactly one entry for each rule that translates it and
+//!   every entry names a construct of the documents.
+//! - [`form`]: each entry's rule translates its construct's kind, and every
+//!   place it names has the TTCN-3 form that rule writes for the construct,
+//!   read from the documents ([`types`] reads a type of the documents).
+//! - [`order`]: each `alt`'s alternatives are the branches of its atomic
+//!   state in the order of P3, and each block is the exits, the content and
+//!   the entries of its transition from that state, the sets computed by
+//!   [`scxml313`] from the documents and held against the witness's claims.
+//!
+//! Each finding is a [`Violation`] with a stable code.
 
 pub mod coverage;
 pub mod documents;
+#[cfg(test)]
+mod fixture;
+pub mod form;
+pub mod order;
 pub mod place;
 pub mod rules;
 pub mod scxml313;
 pub mod ttcn3;
+pub mod types;
 pub mod violation;
 pub mod witness;
 
@@ -122,7 +135,7 @@ pub fn unit_name(stem: &str) -> String {
 
 /// The stem of the file `name` names: its last segment without its
 /// extension.
-fn stem(name: &str) -> &str {
+pub(crate) fn stem(name: &str) -> &str {
     let file = name.rsplit('/').next().unwrap_or(name);
     file.rsplit_once('.').map_or(file, |(stem, _)| stem)
 }
@@ -200,16 +213,13 @@ pub fn check(documents: &Documents, export: &Export<'_>) -> Result<Vec<Violation
     }
 
     let mut violations = Vec::new();
-    let mut modules = Vec::new();
+    let mut parsed = Vec::new();
     for (expected, text) in [
         (&types_module, export.types_module),
         (&suite, export.behaviour_module),
     ] {
         match ttcn3::parse(text) {
-            Ok(module) if module.name == *expected => modules.push(coverage::ModulePlaces {
-                module: expected.clone(),
-                places: ttcn3::places(&module),
-            }),
+            Ok(module) if module.name == *expected => parsed.push(module),
             Ok(module) => violations.push(Violation::Parse {
                 module: expected.clone(),
                 line: 1,
@@ -225,8 +235,22 @@ pub fn check(documents: &Documents, export: &Export<'_>) -> Result<Vec<Violation
             }),
         }
     }
-    violations.extend(coverage::places(&modules, &witness));
+    let places: Vec<coverage::ModulePlaces> = parsed
+        .iter()
+        .map(|module| coverage::ModulePlaces {
+            module: module.name.clone(),
+            places: ttcn3::places(module),
+        })
+        .collect();
+    violations.extend(coverage::places(&places, &witness));
     violations.extend(coverage::entries(documents, &witness));
+    let modules: Vec<&ttcn3::ast::Module> = parsed.iter().collect();
+    violations.extend(form::check(documents, &modules, &witness));
+    // A behaviour module that did not parse holds no order: its parse
+    // violation stands for it.
+    if let Some(behaviour) = parsed.iter().find(|module| module.name == suite) {
+        violations.extend(order::check(documents, behaviour, &witness));
+    }
     Ok(violations)
 }
 

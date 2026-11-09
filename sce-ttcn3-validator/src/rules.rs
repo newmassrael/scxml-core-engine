@@ -120,6 +120,43 @@ pub enum Kind {
     Received,
 }
 
+impl Kind {
+    /// The kind as a finding names it.
+    pub fn noun(self) -> &'static str {
+        match self {
+            Kind::Suite => "test-suite",
+            Kind::Types => "event schema, enum or union",
+            Kind::Template => "test-template",
+            Kind::PortType => "test-port-type",
+            Kind::TestCase => "test-case",
+            Kind::Configuration => "test-configuration",
+            Kind::FeatureModel => "feature-model",
+            Kind::Component => "test-component",
+            Kind::ModuleParameter => "<sce:module-parameter>",
+            Kind::Execute => "<sce:execute>",
+            Kind::Feature => "<sce:feature>",
+            Kind::Port => "<sce:test-port>",
+            Kind::Timer => "<sce:test-timer>",
+            Kind::Variable => "<data>",
+            Kind::SystemPort => "<sce:system-port>",
+            Kind::AtomicState => "atomic state",
+            Kind::TopLevelFinal => "top-level <final>",
+            Kind::CompoundState => "compound state",
+            Kind::Invoke => "<invoke>",
+            Kind::Transition => "<transition>",
+            Kind::Action(Action::Send) => "<send>",
+            Kind::Action(Action::Assign) => "<assign>",
+            Kind::Action(Action::Log) => "<log>",
+            Kind::Action(Action::If) => "<if>",
+            Kind::Action(Action::Setverdict) => "<sce:setverdict>",
+            Kind::Action(Action::Timer) => "<sce:start-timer> or <sce:stop-timer>",
+            Kind::Action(Action::Other) => "element of executable content no rule writes",
+            Kind::Elseif => "<elseif>",
+            Kind::Received => "local of a received message",
+        }
+    }
+}
+
 /// An element of executable content, by the rule that translates it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
