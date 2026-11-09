@@ -19,6 +19,7 @@
 #include "common/JsonText.h"
 #include "saved/SavedJson.h"
 #include "saved/SavedState.h"
+#include "sce/forge/bounded.h"
 
 #include <charconv>
 #include <cmath>
@@ -232,6 +233,13 @@ template <typename T, typename Write> JsonValue savedWriteList(const std::vector
     return JsonValue(std::move(items));
 }
 
+/// A list a machine holds to its bound in its type (`OwnedList`, docs/adr/0086, section
+/// 7.4), each element by `write`: the array its elements are, as any list is written.
+template <typename T, std::size_t Max, std::size_t Min, typename Write>
+JsonValue savedWriteList(const ::SCE::Forge::Bounded<std::vector<T>, Max, Min> &value, Write write) {
+    return savedWriteList(value.inner(), write);
+}
+
 /// A value that may be absent (docs/adr/0055, section 4): null where it is absent, and what
 /// `write` makes of the value where it is present.
 template <typename T, typename Write> JsonValue savedWriteOptional(const std::optional<T> &value, Write write) {
@@ -390,6 +398,59 @@ inline auto savedBoundedString(std::size_t capacity) {
 inline auto savedBoundedBytes(std::size_t capacity) {
     return
         [capacity](const JsonValue &value, const std::string &what) { return savedReadBytes(value, what, capacity); };
+}
+
+// A machine holds a text, a byte string and a list in a type that holds its bound
+// (`OwnedText<N>`, `OwnedBytes<N>`, `OwnedList<T, N>`; docs/adr/0086, section 7.4), so each
+// is read back into the type the caller names, refused past the bound that type holds, as
+// the readers above refuse past a bound they are handed. A saved state is the same on the
+// wire either way.
+
+/// A text read back into the `OwnedText<Max>` a machine holds it in: refused past `Max`
+/// UTF-8 bytes (`savedReadBoundedString`), and refused where it is not well-formed UTF-8,
+/// which no text the type holds is.
+template <std::size_t Max>
+::SCE::Forge::OwnedText<Max> savedReadOwnedText(const JsonValue &value, const std::string &what) {
+    auto held = ::SCE::Forge::OwnedText<Max>::make(savedReadBoundedString(value, what, Max));
+    if (!held.has_value()) {
+        detail::refuse("'" + what + "' is not well-formed UTF-8");
+    }
+    return std::move(*held);
+}
+
+/// A byte string read back into the `OwnedBytes<Max>` a machine holds it in, refused past
+/// `Max` bytes (`savedReadBytes`).
+template <std::size_t Max>
+::SCE::Forge::OwnedBytes<Max> savedReadOwnedBytes(const JsonValue &value, const std::string &what) {
+    auto held = ::SCE::Forge::OwnedBytes<Max>::make(savedReadBytes(value, what, Max));
+    if (!held.has_value()) {
+        detail::refuse("'" + what + "' holds more than the " + std::to_string(Max) + " bytes it is bounded by");
+    }
+    return std::move(*held);
+}
+
+/// A list read back into the `OwnedList<T, Max>` a machine holds it in, element by element
+/// (`savedReadList`): its count is judged against `Max` before any element is read.
+template <std::size_t Max, typename Element>
+auto savedReadOwnedList(const JsonValue &value, const std::string &what, Element element) {
+    using T = decltype(element(value, what));
+    auto held = ::SCE::Forge::OwnedList<T, Max>::make(savedReadList(value, what, Max, element));
+    if (!held.has_value()) {
+        detail::refuse("'" + what + "' holds more than the " + std::to_string(Max) + " elements it is bounded by");
+    }
+    return std::move(*held);
+}
+
+/// The reader of a text held in `OwnedText<Max>`, for a place that reads through a function
+/// value (savedReadOptional, a record's field).
+template <std::size_t Max> auto savedOwnedText() {
+    return [](const JsonValue &value, const std::string &what) { return savedReadOwnedText<Max>(value, what); };
+}
+
+/// The reader of a byte string held in `OwnedBytes<Max>`, for a place that reads through a
+/// function value (savedReadOptional, a record's field).
+template <std::size_t Max> auto savedOwnedBytes() {
+    return [](const JsonValue &value, const std::string &what) { return savedReadOwnedBytes<Max>(value, what); };
 }
 
 /// An enum value read back from the name its document declares for the variant: refused
