@@ -523,6 +523,30 @@ exit and entry sets of that transition taken from that atomic state. The exits o
 a top-level `<final>` are E12's, and are not among them. The witness states the claim and the validator does not
 trust it: it computes the order from P3 and the two sets from §scxml-3.13 over the documents, and compares.
 
+**The validator.** It is the crate `sce-ttcn3-validator/` and its command
+`sce-ttcn3-validate <suite.scxml> <export directory>`, which prints each violation on a line of its own, its code
+first, and exits 0 when there is none, 1 when there is one or more, and 2 when an input is not read. It shares no
+code with the exporter: it depends on no crate of SCE, and reads each of its inputs with a reader of its own, the
+suite's documents with `roxmltree` and named as **Constructs** names them, the witness into a model of its own, and
+the two modules with a tokenizer and a recursive descent over exactly the TTCN-3 §9.5 writes, each definition and
+statement a place as **Places** names it. So a defect of the exporter's reading is not shared by the reading that
+checks it. A construct of a module outside that TTCN-3 is a `parse` violation, never a place left out, and a
+document of the standard library is not read and is named as such. Of the three checks, it holds the first:
+
+- every place of the two modules is named by exactly one location (`place-unnamed`, `place-named-twice`, and
+  `place-twice` for a module that holds one place twice), and every location names a place (`location-dangling`);
+- every construct has exactly one entry of each rule that translates it (`construct-missing`, `entry-duplicate`),
+  and every entry names a construct of the documents (`construct-dangling`).
+
+Which rule translates a construct of each kind, and when one must, is one table
+(`sce-ttcn3-validator/src/rules.rs`). A rule writes a construct always, or when the documents fix it without the exit and entry set of any transition: a test
+case the suite executes and its configuration, an atomic state that waits in an `alt`, a branch of such a state or
+of an ancestor, an eventless transition checked with its guard, and the content of a transition written as one of
+these. Whether an entry those sets decide is owed (the content of an `<onentry>`, `<onexit>` or `<initial>`, the E12
+of a top-level `<final>`, the `goto` of an eventless transition) is a question of the sets, which the third check
+computes; the first asks of such an entry only that it name a construct of the documents. Every export the tests of
+`sce-build` make of the fixtures is held to the validator (`a_ttcn3_export_is_validated_apart_from_the_exporter`).
+
 ### 9.5 The exporter
 
 The export is the translation `T` of §9.1, written by `sce-build/src/ttcn3_export` and run by
