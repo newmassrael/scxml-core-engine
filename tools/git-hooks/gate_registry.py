@@ -2189,7 +2189,11 @@ GATES: dict[str, dict] = {
                   "sce-build/src/**", "tests/ecmascript/**",
                   # The test log's wire schema, which the runtime's
                   # `TestEveryKindIsOneTheSchemaNames` reads at run time.
-                  "schemas/sce-test-log.v1.schema.json"],
+                  "schemas/sce-test-log.v1.schema.json",
+                  # The test log every runtime writes of the generated suite,
+                  # which the Go suite runner's test of `answers_the_job`
+                  # reads at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
         "deps": ["codegen-build"],
         # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
         # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
