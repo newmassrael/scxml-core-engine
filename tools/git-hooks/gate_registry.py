@@ -46,6 +46,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import importlib.util
 import json
 import pathlib
 import re
@@ -1904,6 +1906,14 @@ GATES: dict[str, dict] = {
         "workflows": ["spec-snapshot-drift.yml"],
         "runner_workflow": True,
         "cost_s": 13,
+        # Its tooling suite judges the citations of every tree the ledgers
+        # enrol, so those trees are its trigger, derived from the ledgers'
+        # configs (`enrolled_by`, see `enrolled_globs`) and never listed here.
+        # Until 2026-11-09 the trigger was the workflow's filter alone, and
+        # bx-fleet check learn found it reading 1072 files that filter did not
+        # name. The workflow's own `paths:` cannot derive, so CI starts this
+        # lane for fewer paths than a push selects it for.
+        "enrolled_by": "docs/*/*/mnemosyne.toml",
         "summary": "spec snapshot integrity + verifies-catalog drift",
         # `check_spec_drift.py --mode integrity` is the offline mode: it hashes
         # the snapshot against its recorded provenance. The `upstream` mode,
@@ -3313,6 +3323,61 @@ def script_code(path: Path) -> str:
     )
 
 
+def enrolled_globs(repo_root: Path, configs: str):
+    """The trees the ledgers matching `configs` enrol, as trigger globs.
+
+    A ledger's `mnemosyne.toml` lists, under
+    `[plugins.set_equality_validator]`, the paths whose citations it judges.
+    They are read with the reader the citation gate itself uses
+    (`paths_from_toml` in tools/mnemosyne-adoption/migrate_citations.py), so
+    the two cannot parse the list differently. A directory becomes
+    `<dir>/**` and a file stays itself; each ledger's own directory joins as
+    well, since its config decides the set and its store is what the
+    citations are judged against.
+
+    `None` when the set cannot be read: no config matches, the reader cannot
+    be loaded, or a config has no such list. The caller reads that as the
+    catch-all, the safe direction, the same answer `workflow_paths` gives for
+    a workflow it cannot find.
+
+    Read once per process and root: `select` derives the triggers for every
+    call, and the self-test calls it dozens of times.
+    """
+    key = (str(repo_root), configs)
+    if key not in _ENROLLED:
+        _ENROLLED[key] = _read_enrolled(repo_root, configs)
+    cached = _ENROLLED[key]
+    return None if cached is None else list(cached)
+
+
+_ENROLLED: dict[tuple[str, str], list[str] | None] = {}
+
+
+def _read_enrolled(repo_root: Path, configs: str):
+    """`enrolled_globs` without the cache."""
+    found = sorted(repo_root.glob(configs))
+    reader = repo_root / "tools" / "mnemosyne-adoption" / "migrate_citations.py"
+    if not found or not reader.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sce_enrolment_reader", reader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        globs: list[str] = []
+        for config in found:
+            # The ledger's own directory: the config, its store and the
+            # document it is made from, which the ledger's tooling reads.
+            globs.append(f"{config.parent.relative_to(repo_root).as_posix()}/**")
+            for absolute in module.paths_from_toml(str(config)):
+                rel = Path(absolute).relative_to(module.REPO_ROOT).as_posix()
+                globs.append(f"{rel}/**" if (repo_root / rel).is_dir()
+                             else rel)
+    except (Exception, SystemExit):
+        return None
+    return list(dict.fromkeys(globs))
+
+
 def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
     """Each gate's trigger globs, derived from its workflow and its own lists.
 
@@ -3343,6 +3408,11 @@ def gate_triggers(repo_root: Path) -> dict[str, list[str]]:
                 continue
             globs.extend(wf_globs)
         globs.extend(spec.get("extra", []))
+        if spec.get("enrolled_by"):
+            # What the ledgers enrol, read from their configs on every call:
+            # a tree enrolled tomorrow selects the gate on the same commit.
+            globs.extend(enrolled_globs(repo_root, spec["enrolled_by"])
+                         or ["**"])
         triggers[slug] = list(dict.fromkeys(globs))
     return triggers
 
@@ -6728,6 +6798,103 @@ def self_test(repo_root: Path) -> int:
                 f"{' and '.join(asks_git)} ask git for the repository root; "
                 f"bx runs a narrowed unit in a copy of its inputs that holds "
                 f"no .git, so the unit could only end 'could not measure'")
+
+    # The trees and triggers the two checks below read, as they stand.
+    tracked_now = tracked_paths(repo_root)
+    triggers_now = gate_triggers(repo_root)
+
+    # every-enrolled-tree-triggers-the-gate-that-judges-it. `spec-snapshot`'s
+    # tooling suite judges the citations of every path a ledger enrols, so a
+    # change to any tracked file under one must select it. Asked of the
+    # tracked files rather than of the globs, so a directory that lost its
+    # `/**`, a file that gained one, or a config the glob stopped matching
+    # each fail here.
+    cases += 1
+    configs = sorted(repo_root.glob(GATES["spec-snapshot"]["enrolled_by"]))
+    reader_path = (repo_root / "tools" / "mnemosyne-adoption"
+                   / "migrate_citations.py")
+    if len(configs) < 5 or not reader_path.is_file():
+        failures.append(
+            f"enrolment: {len(configs)} ledger config(s) matched "
+            f"{GATES['spec-snapshot']['enrolled_by']!r} and the reader is "
+            f"{'present' if reader_path.is_file() else 'missing'}; there were "
+            f"five when spec-snapshot's trigger was derived from them")
+    else:
+        reader_spec = importlib.util.spec_from_file_location(
+            "_sce_enrolment_self_test", reader_path)
+        reader = importlib.util.module_from_spec(reader_spec)
+        reader_spec.loader.exec_module(reader)
+        snapshot_regexes = [glob_to_regex(g)
+                            for g in triggers_now["spec-snapshot"]]
+        if "**" in triggers_now["spec-snapshot"]:
+            failures.append(
+                "enrolment: spec-snapshot's trigger fell back to the "
+                "catch-all, so its enrolled trees were not read")
+        judged = 0
+        for config in configs:
+            enrolled = [Path(p).relative_to(reader.REPO_ROOT).as_posix()
+                        for p in reader.paths_from_toml(str(config))]
+            ledger_dir = config.parent.relative_to(repo_root).as_posix()
+            for rel in enrolled + [ledger_dir]:
+                under = [p for p in tracked_now
+                         if p == rel or p.startswith(rel.rstrip("/") + "/")]
+                judged += len(under)
+                missing = [p for p in under
+                           if not any(r.match(p) for r in snapshot_regexes)]
+                if missing:
+                    failures.append(
+                        f"enrolment: {config.relative_to(repo_root)} enrols "
+                        f"{rel!r}, and {missing[:3]} reach no trigger of "
+                        f"spec-snapshot, which judges their citations")
+        if judged == 0:
+            failures.append(
+                "enrolment: the ledgers enrol no tracked file, so the check "
+                "that spec-snapshot is triggered by them reads nothing")
+    # A set that cannot be read is the catch-all, never an empty trigger.
+    cases += 1
+    if enrolled_globs(repo_root, "docs/no-such-ledger/*/mnemosyne.toml") \
+            is not None:
+        failures.append(
+            "enrolment: a ledger glob matching no config yielded globs; the "
+            "trigger has to fall back to the catch-all instead")
+
+    # the-mesh-catalog's-witnesses-trigger-its-guard. `spec-snapshot` checks
+    # the mesh verifies-catalog against the `SCE-VERIFIES:` markers in the
+    # files `TEST_TREES` names in its generator, so each of those files is a
+    # reason to run it. The tuple is that list's one home; read here rather
+    # than restated, so a witness added there and not to the workflow's
+    # `paths:` fails this instead of leaving a catalog edit unguarded, the
+    # state bx-fleet check learn found on 2026-11-09 (five of them missing).
+    cases += 1
+    generator = (repo_root / "tools" / "mnemosyne-adoption"
+                 / "gen_mesh_verifies_catalog.py")
+    witness_globs: list[str] = []
+    if generator.is_file():
+        tree = ast.parse(generator.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "TEST_TREES"
+                            for t in node.targets)
+                    and isinstance(node.value, (ast.Tuple, ast.List))):
+                witness_globs = [e.value for e in node.value.elts
+                                 if isinstance(e, ast.Constant)
+                                 and isinstance(e.value, str)]
+    if not witness_globs:
+        failures.append(
+            "spec-snapshot: no TEST_TREES tuple was read from "
+            "tools/mnemosyne-adoption/gen_mesh_verifies_catalog.py, so the "
+            "check that its witnesses trigger the gate reads nothing")
+    snapshot_trigger = [glob_to_regex(g) for g in
+                        triggers_now.get("spec-snapshot", [])]
+    for witness in witness_globs:
+        regex = glob_to_regex(witness)
+        unguarded = [p for p in tracked_now if regex.match(p)
+                     and not any(t.match(p) for t in snapshot_trigger)]
+        if unguarded:
+            failures.append(
+                f"spec-snapshot: TEST_TREES names {witness!r}, and "
+                f"{unguarded[:3]} reach no trigger of the gate; add it to "
+                f"spec-snapshot-drift.yml's `paths:`")
 
     # the-plan-is-the-selection. The push used to run exactly the gates
     # `select` chose; it now hands bx the units `plan_units` makes of that
