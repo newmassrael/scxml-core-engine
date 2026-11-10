@@ -5425,8 +5425,14 @@ enum UnionStart {
 impl UnionStart {
     /// How `var` starts, or `None` for a variable of no union.
     fn of(var: &crate::model::Variable) -> Option<Self> {
+        Self::of_type(var.value_type.as_ref()?)
+    }
+
+    /// How a variable of the type `ty` starts, or `None` for a type that is
+    /// no union and no union that may be absent.
+    fn of_type(ty: &crate::forge::model::AlgorithmValueType) -> Option<Self> {
         use crate::forge::model::AlgorithmValueType;
-        match var.value_type.as_ref()? {
+        match ty {
             AlgorithmValueType::Union { .. } => Some(Self::Built),
             AlgorithmValueType::Optional { elem }
                 if matches!(**elem, AlgorithmValueType::Union { .. }) =>
@@ -7544,6 +7550,23 @@ fn declare_composed(
             None => {
                 let ty = spelling.record_type(alias);
                 if declarations.declared.insert(ty.clone()) {
+                    // A union has no value to start at (docs/adr/0092, amendment of
+                    // 2026-11-07), so a record that holds one cannot start every
+                    // member at its zero, as a record of a backend that does must.
+                    let no_zero = composed::holds_no_zero(
+                        &crate::forge::value_type::ValueType::Record {
+                            alias: alias.clone(),
+                        },
+                        None,
+                        &records,
+                    )
+                    .map_err(refused)?;
+                    if no_zero && spelling.record_starts_at_zero() {
+                        return Err(refused(format!(
+                            "the record `{alias}` holds a union, a value with no zero, and a {lang} \
+                             record starts every member at its zero"
+                        )));
+                    }
                     let members = composed::record_members(alias, &records, &enums, &*spelling)
                         .map_err(refused)?;
                     // A value a host makes is held to every bound where it is
@@ -16520,6 +16543,11 @@ impl StaticTarget for SwiftTarget {
                         elem.scalar()
                             .is_none_or(|ty| !matches!(ty, SceType::Enum(_) | SceType::Bytes))
                     })
+                    // A union, built where it is declared, and one that may be absent
+                    // (docs/adr/0092, amendment of 2026-11-07), the machine's own enum of
+                    // the cases the walks over a composed value declare
+                    // ([`crate::forge::composed_lowering::SwiftComposed`]).
+                    || UnionStart::of_type(t).is_some()
                     // `T?` over the element Swift spells ([`algorithm_optional_spelled`]).
                     || t.optional_elem().is_some_and(|elem| {
                         crate::forge::generator::algorithm_optional_spelled(Language::Swift, elem)
@@ -16667,7 +16695,11 @@ impl StaticTarget for SwiftTarget {
     // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
         use crate::forge::composed_lowering::{ComposedSpelling, SwiftCarrier, SwiftComposed};
-        SwiftComposed::new(machine, SwiftCarrier::Json).record_type(alias)
+        SwiftComposed {
+            machine,
+            carrier: SwiftCarrier::Json,
+        }
+        .record_type(alias)
     }
     // The runtime's `PayloadValue` reads each constructor of a composed payload,
     // and its typed writers write the JSON the inject seam carries as the event's
@@ -16676,12 +16708,10 @@ impl StaticTarget for SwiftTarget {
         &self,
         machine: &'a str,
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
-        Some(Box::new(
-            crate::forge::composed_lowering::SwiftComposed::new(
-                machine,
-                crate::forge::composed_lowering::SwiftCarrier::Json,
-            ),
-        ))
+        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::SwiftCarrier::Json,
+        }))
     }
     // The walks of `composed_spelling`, the JSON they write held as the
     // `WireValue` every param of a `<send>` is held in (`wire_value`) until the
@@ -16690,12 +16720,10 @@ impl StaticTarget for SwiftTarget {
         &self,
         machine: &'a str,
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
-        Some(Box::new(
-            crate::forge::composed_lowering::SwiftComposed::new(
-                machine,
-                crate::forge::composed_lowering::SwiftCarrier::Wire,
-            ),
-        ))
+        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::SwiftCarrier::Wire,
+        }))
     }
     // A struct of the schema's fields in the schema's order, named as the author
     // wrote them because an expression reads a field by that name
@@ -17016,26 +17044,43 @@ impl StaticTarget for SwiftTarget {
                 SceType::Enum(reference) => enum_reader(&reference.alias, value)?,
             })
         };
-        let schema = lift.record()?;
-        let mut members = Vec::with_capacity(schema.fields.len());
-        for field in &schema.fields {
-            let at = format!("r.field(\"{}\")", field.id);
-            let reader = match &field.sce_type {
-                EntryType::Scalar(ty) => read(ty, field.max_size, &format!("(try {at})"))?,
-                // The present value is bound to a name of its own inside the closure.
-                EntryType::Optional { elem } => format!(
-                    "try {at}.optional {{ present in {} }}",
-                    read(elem, field.max_size, "present")?
-                ),
-            };
-            members.push((self.record_field(&field.id), reader));
-        }
-        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
         let path_bound = lift.path_bound()?;
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "nil".to_string(),
-            |json| format!("\"{}\"", filters::escape_swift(json.clone())),
-        );
+        let (text, depth) = (lift.text, lift.depth);
+        let schema_name = filters::escape_swift(lift.alias.to_string());
+        // The call that reads the text: a record field by field through `liftRecord`, or a
+        // union whole through `liftValue`, by the reader a delivery's field of the union is
+        // read by (docs/adr/0092, section 6.1 item 5), which has no defaults to read.
+        let call = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let mut members = Vec::with_capacity(schema.fields.len());
+                for field in &schema.fields {
+                    let at = format!("r.field(\"{}\")", field.id);
+                    let reader = match &field.sce_type {
+                        EntryType::Scalar(ty) => read(ty, field.max_size, &format!("(try {at})"))?,
+                        // The present value is bound to a name of its own inside the closure.
+                        EntryType::Optional { elem } => format!(
+                            "try {at}.optional {{ present in {} }}",
+                            read(elem, field.max_size, "present")?
+                        ),
+                    };
+                    members.push((self.record_field(&field.id), reader));
+                }
+                let record =
+                    self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "nil".to_string(),
+                    |json| format!("\"{}\"", filters::escape_swift(json.clone())),
+                );
+                format!(
+                    "liftRecord({text}, schema: \"{schema_name}\", depth: {depth}, pathBound: \
+                     {path_bound}, defaults: {defaults}, read: {{ r in {record} }})"
+                )
+            }
+            Lifted::Union { reader } => format!(
+                "liftValue({text}, schema: \"{schema_name}\", depth: {depth}, pathBound: \
+                 {path_bound}, read: {reader})"
+            ),
+        };
         // The refusal, as a record of the standard refusal document.
         let (code_alias, code_model) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
@@ -17058,12 +17103,8 @@ impl StaticTarget for SwiftTarget {
             &members_of_refusal,
         );
         Some(format!(
-            "switch liftRecord({text}, schema: \"{schema}\", depth: {depth}, pathBound: {path_bound}, \
-             defaults: {defaults}, read: {{ r in {record} }}) {{ case .success(let sceLifted): {write}; \
-             {absent}; case .failure(let sceRefusal): {refused} }}",
-            text = lift.text,
-            schema = filters::escape_swift(lift.alias.to_string()),
-            depth = lift.depth,
+            "switch {call} {{ case .success(let sceLifted): {write}; {absent}; case \
+             .failure(let sceRefusal): {refused} }}",
             write = self.assign(lift.location, "sceLifted"),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_record),

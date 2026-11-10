@@ -35,29 +35,6 @@ use super::*;
 pub struct SwiftComposed<'a> {
     pub machine: &'a str,
     pub carrier: SwiftCarrier,
-    /// Whether the spelling names a read of a union's tag, which is how a
-    /// backend says it holds a union at all
-    /// ([`ComposedSpelling::union_tag_read`]). A machine takes it from the
-    /// backend's row ([`Self::new`]), so the spelling and the row cannot
-    /// disagree; a test of the spellings that are written before the row says
-    /// so sets it itself.
-    pub unions: bool,
-}
-
-impl<'a> SwiftComposed<'a> {
-    /// The spelling of the machine `machine`, as the backend's row of the one
-    /// table of what each backend lowers says it holds
-    /// ([`crate::forge::event_schema_check::ComposedLowering::of`]).
-    pub fn new(machine: &'a str, carrier: SwiftCarrier) -> Self {
-        Self {
-            machine,
-            carrier,
-            unions: crate::forge::event_schema_check::ComposedLowering::of(
-                crate::generator::Language::Swift,
-            )
-            .unions,
-        }
-    }
 }
 
 /// Where a Swift writer's JSON goes: the writers spell every composed value as
@@ -140,7 +117,7 @@ pub(crate) fn swift_shared_read(field: &str) -> String {
 /// read, a place as a record's field is; or the accessor of a field several
 /// cases share ([`shared_plain_field`]). `Err` for a field the cases left share
 /// whose value is not copied as it is read, which no accessor answers yet.
-fn swift_union_member(
+pub(crate) fn swift_union_member(
     union: &ScopedUnion,
     left: &[&ScopedCase],
     member: &str,
@@ -678,6 +655,10 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
 
+    // Every member of a Swift record starts at its zero ([`SwiftComposed::zero_of`]).
+    fn record_starts_at_zero(&self) -> bool {
+        true
+    }
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Swift row): named by the union's document, so one union is one type of the
     // machine whichever alias names it.
@@ -693,9 +674,8 @@ impl ComposedSpelling for SwiftComposed<'_> {
     }
     // The tag is read by the one property every union of a Swift unit and of a
     // Swift machine answers it by, whatever key it is written under on the wire.
-    // A machine that holds no union yet ([`SwiftComposed::unions`]) names none.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        self.unions.then(|| SWIFT_UNION_KIND.to_string())
+        Some(SWIFT_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
         swift_case_read(variant)
@@ -727,9 +707,11 @@ impl ComposedSpelling for SwiftComposed<'_> {
         let mut proven = String::new();
         for case in &def.cases {
             let ident = &case.ident;
+            // The tag's variant is the member the machine's enum declares it as, already
+            // qualified by the enum's type ([`MachineEnum::variants`]).
             kind_arms.push_str(&format!(
-                "        case .{ident}:\n            return {}.{}\n",
-                def.tag_ty, case.tag_ident
+                "        case .{ident}:\n            return {}\n",
+                case.tag_ident
             ));
             match &case.record {
                 Some(record) => {
@@ -816,7 +798,7 @@ impl ComposedSpelling for SwiftComposed<'_> {
                     Some(record) => format!("{case}(try ({record})({SWIFT_READ_BINDING}))"),
                     None => case,
                 };
-                format!("case {}.{}: return {value}; ", read.tag_ty, arm.tag_ident)
+                format!("case {}: return {value}; ", arm.tag_ident)
             })
             .collect();
         format!(
@@ -915,15 +897,14 @@ mod tests {
     const SWIFT: SwiftComposed<'static> = SwiftComposed {
         machine: "M",
         carrier: SwiftCarrier::Json,
-        unions: true,
     };
 
     /// The Swift row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
-    /// composed value sent (docs/adr/0086, sections 5 and 6), and no union held
-    /// yet (docs/adr/0092, section 7).
+    /// composed value sent (docs/adr/0086, sections 5 and 6), and a union held
+    /// (docs/adr/0092, section 7).
     #[test]
-    fn the_swift_row_lowers_every_composed_position_but_a_union() {
+    fn the_swift_row_lowers_every_composed_position_and_holds_a_union() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Swift),
@@ -931,10 +912,25 @@ mod tests {
                 name: "swift",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 sends: true,
             }
         );
+    }
+
+    /// A union has no value to start at (docs/adr/0092, amendment of 2026-11-07),
+    /// and what holds one directly or through a record is built whole: a list and
+    /// a value that may be absent start empty and absent, whatever they hold.
+    #[test]
+    fn a_swift_value_holds_no_zero_where_a_union_is_in_it() {
+        let shapes = shapes();
+        let holds = |text: &str| holds_no_zero(&ty(text), None, &shapes).expect("judged");
+        assert!(holds("union:Shape"));
+        assert!(!holds("optional<union:Shape>"));
+        assert!(!holds("list<union:Shape>[2]"));
+        assert!(!holds("record:Radius"));
+        assert!(!holds("uint16"));
+        assert!(SWIFT.record_starts_at_zero());
     }
 
     /// The head of a Swift reader that answers `ty`, as the tests below spell
@@ -1163,7 +1159,6 @@ mod tests {
         let wire = SwiftComposed {
             machine: "M",
             carrier: SwiftCarrier::Wire,
-            unions: true,
         };
         let written = writer(
             &ty("list<list<uint8>[2]>[2]"),
@@ -1270,7 +1265,9 @@ mod tests {
     }
 
     /// The tag's enum as a Swift machine declares it: a variant is the member
-    /// of the enum's type its document's name spells in lowerCamelCase.
+    /// of the enum's type its document's name spells in lowerCamelCase, held as
+    /// the reference a use writes, qualified by the type
+    /// (`StaticTarget::enum_variant`).
     fn swift_kinds() -> std::collections::BTreeMap<String, MachineEnum> {
         [(
             "Kind".to_string(),
@@ -1278,9 +1275,9 @@ mod tests {
                 alias: "Kind".to_string(),
                 ty: "MKindEnum".to_string(),
                 variants: vec![
-                    ("dot".to_string(), "dot".to_string()),
-                    ("circle".to_string(), "circle".to_string()),
-                    ("disc".to_string(), "disc".to_string()),
+                    ("dot".to_string(), "MKindEnum.dot".to_string()),
+                    ("circle".to_string(), "MKindEnum.circle".to_string()),
+                    ("disc".to_string(), "MKindEnum.disc".to_string()),
                 ],
             },
         )]

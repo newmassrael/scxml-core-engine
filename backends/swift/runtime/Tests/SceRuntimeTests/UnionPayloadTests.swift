@@ -83,3 +83,47 @@ private func readUnionShape(_ data: String) throws -> UnionShape {
         unionJSON(tag: "kind", variant: "absolute", [.integer("year", 2027), .integer("month", 3), .integer("day", 3)])
             == #"{"day":3,"kind":"absolute","month":3,"year":2027}"#)
 }
+
+/// A lift into a union reads the whole text as one value of it, by the reader a delivery's field
+/// of the union is read by, or answers the refusal as data: the tag first, whatever its place in
+/// the text; and what is refused before the value is read is what a lift of a record refuses.
+@Test func aLiftReadsAUnionWholeOrAnswersItsRefusal() throws {
+    let read = { (object: PayloadValue) throws -> UnionShape in
+        try object.union(
+            tag: "kind",
+            { tag -> UnionShapeKind in
+                let name = try tag.name()
+                switch name {
+                case "dot": return .dot
+                case "circle": return .circle
+                case "disc": return .disc
+                default: throw tag.unknownVariant(name, alias: "ShapeKind")
+                }
+            },
+            { kind, object -> UnionShape in
+                switch kind {
+                case .dot: return .dot
+                case .circle: return .circle(try object.record { try $0.unsigned("radius") })
+                case .disc: return .disc(try object.record { try $0.unsigned("radius") })
+                }
+            })
+    }
+    let lift = { (text: String) in liftValue(text, schema: "Shape", depth: 2, pathBound: 256, read: read) }
+    #expect((try? lift(#"{"radius":4,"kind":"disc"}"#).get()) == .disc(4))
+    #expect((try? lift(#"{"kind":"dot","radius":null}"#).get()) == .dot)
+    let refused: [(String, RefusalCode, String)] = [
+        (" \t", .notJson, ""),
+        ("[1]", .notObject, ""),
+        (#"{"radius":2}"#, .missing, "/kind"),
+        (#"{"kind":"oval"}"#, .unknownVariant, "/kind"),
+        (#"{"kind":"circle"}"#, .missing, "/radius"),
+    ]
+    for (text, code, pointer) in refused {
+        guard case .failure(let refusal) = lift(text) else {
+            Issue.record("\(text): read, the lift refuses it as \(code)")
+            continue
+        }
+        #expect(refusal.code == code, "\(text): \(refusal.reason)")
+        #expect(refusal.pointer == pointer, "\(text): \(refusal.reason)")
+    }
+}

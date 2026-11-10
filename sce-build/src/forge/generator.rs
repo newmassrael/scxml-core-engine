@@ -7216,7 +7216,14 @@ struct SwiftPayloadParts {
     params: Vec<String>,
     /// The lift's statements that read each member out of the decoded
     /// `fields` into `payload`, one line each, throwing the first refusal.
+    /// For a payload that holds no zero ([`Self::zeroless`]) they declare
+    /// `payload` too, built whole after every member is read.
     reads: String,
+    /// Whether a member of the struct has no value to start at (a union,
+    /// docs/adr/0092, amendment of 2026-11-07), so the struct is built whole by
+    /// the initializer of every member: it has no `init()`, and the policy's view
+    /// of it holds nothing until a delivery sets it.
+    zeroless: bool,
     /// The JSON of the defaults of the fields a later revision added, or
     /// `None` for a schema that added none.
     defaults: Option<String>,
@@ -7278,6 +7285,7 @@ fn swift_entry_payload(
         field_lines,
         params,
         reads,
+        zeroless: false,
         defaults: crate::forge::schema_revision::defaults_wire(schema),
         prelude: String::new(),
         typed_payload: format!("{struct_name}({})", inits.join(", ")),
@@ -7329,7 +7337,10 @@ fn swift_composed_payload(
         .iter()
         .map(|e| (e.alias.clone(), e.machine_enum()))
         .collect();
-    let spelling = composed::SwiftComposed::new(machine_name, composed::SwiftCarrier::Json);
+    let spelling = composed::SwiftComposed {
+        machine: machine_name,
+        carrier: composed::SwiftCarrier::Json,
+    };
     let walked = |result: Result<Vec<(String, String)>, String>| {
         result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
     };
@@ -7353,15 +7364,53 @@ fn swift_composed_payload(
         .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
     // Each member read into the payload by its own reader, a closure of the value
     // the field's name holds.
-    let reads: String = readers
+    //
+    // A member that has no value to start at (a union, docs/adr/0092, amendment of
+    // 2026-11-07, or a record that holds one) makes the struct built whole: each
+    // member is read into a local of its own, so no one statement is a nest of every
+    // reader the type checker would have to solve together, and the payload is
+    // built by the initializer of every member once all are read.
+    let no_zero: Vec<bool> = held
+        .schema
+        .fields
         .iter()
-        .map(|(id, read)| {
-            format!(
-                "            payload.{id} = try ({read})(fields.field(\"{}\"))\n",
-                filters::escape_swift(id.clone())
-            )
+        .map(|field| {
+            composed::holds_no_zero(&field.sce_type, Some(held.alias), &records)
+                .unwrap_or_else(|why| panic!("{}", unlowered(&why)))
         })
         .collect();
+    let zeroless = no_zero.iter().any(|no_zero| *no_zero);
+    let reads: String = if zeroless {
+        let locals: String = readers
+            .iter()
+            .enumerate()
+            .map(|(index, (id, read))| {
+                format!(
+                    "            let sceField{index} = try ({read})(fields.field(\"{}\"))\n",
+                    filters::escape_swift(id.clone())
+                )
+            })
+            .collect();
+        let inits: Vec<String> = readers
+            .iter()
+            .enumerate()
+            .map(|(index, (id, _))| format!("{id}: sceField{index}"))
+            .collect();
+        format!(
+            "{locals}            let payload = {struct_name}({})\n",
+            inits.join(", ")
+        )
+    } else {
+        readers
+            .iter()
+            .map(|(id, read)| {
+                format!(
+                    "            payload.{id} = try ({read})(fields.field(\"{}\"))\n",
+                    filters::escape_swift(id.clone())
+                )
+            })
+            .collect()
+    };
     let mut prelude: String = checks
         .iter()
         .map(|check| format!("        {check}\n"))
@@ -7377,13 +7426,21 @@ fn swift_composed_payload(
     SwiftPayloadParts {
         field_lines: members
             .iter()
-            .map(|(id, ty)| format!("    var {id}: {ty} = {}\n", spelling.zero_of(ty)))
+            .zip(&no_zero)
+            .map(|((id, ty), no_zero)| {
+                if *no_zero {
+                    format!("    var {id}: {ty}\n")
+                } else {
+                    format!("    var {id}: {ty} = {}\n", spelling.zero_of(ty))
+                }
+            })
             .collect(),
         params: members
             .iter()
             .map(|(id, ty)| format!("{id}: {ty}"))
             .collect(),
         reads,
+        zeroless,
         defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
         prelude,
         typed_payload: PAYLOAD_LOCAL.to_string(),
@@ -7443,6 +7500,7 @@ pub fn build_swift_event_payload(
             field_lines,
             params,
             reads,
+            zeroless,
             defaults,
             prelude,
             typed_payload,
@@ -7459,10 +7517,16 @@ pub fn build_swift_event_payload(
             ),
             None => "try PayloadFields.decode(metadata.data)".to_string(),
         };
+        // A payload that holds no zero declares itself in its reads, built whole.
+        let declare = if zeroless {
+            String::new()
+        } else {
+            format!("            var payload = {struct_name}()\n")
+        };
         lift_cases.push_str(&format!(
             "        case .{case}:\n\
              \x20           let fields = {decode}\n\
-             \x20           var payload = {struct_name}()\n\
+             {declare}\
              {reads}\
              \x20           {field} = payload\n\
              \x20           pendingPayloadTag = .{case}\n"
@@ -7474,7 +7538,14 @@ pub fn build_swift_event_payload(
              /// values to the inject seam below.\n\
              struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
-        policy_fields.push_str(&format!("    var {field} = {struct_name}()\n"));
+        // The policy's view of a payload that holds no zero is set by every delivery
+        // before anything reads it, and holds nothing until then: an implicitly
+        // unwrapped optional, which a read of a member needs no unwrapping of.
+        if zeroless {
+            policy_fields.push_str(&format!("    var {field}: {struct_name}!\n"));
+        } else {
+            policy_fields.push_str(&format!("    var {field} = {struct_name}()\n"));
+        }
         populate_cases.push_str(&format!(
             "        case let payload as {struct_name}:\n\
              \x20           pendingPayloadTag = .{case}\n\

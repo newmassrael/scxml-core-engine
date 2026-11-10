@@ -320,7 +320,10 @@ impl ComposedLowering {
 
             Language::C11 => none,
 
-            Language::Swift => walks,
+            Language::Swift => Self {
+                unions: true,
+                ..walks
+            },
         }
     }
 }
