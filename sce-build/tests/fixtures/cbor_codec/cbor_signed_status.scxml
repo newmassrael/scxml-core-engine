@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  An enum whose carrier is signed, with a negative variant: a CBOR codec writes
+  an enum as the unsigned integer its carrier holds, and no unsigned integer
+  carries -1, so a codec of it states that its encode may fail
+  (`codec_cbor_signed_enum.scxml`). The first variant is the one a value made by
+  default holds, and is one the encode writes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="cbor_signed_status"
+       sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="nominal" value="0"/>
+      <sce:variant name="high" value="5"/>
+      <sce:variant name="fault" value="-1"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map whose lists of records have a lower count (docs/adr/0085, Landing
+  order step 3a): `seen`, required, of one or two records of
+  `cbor_causal_entry`, and `context`, which may be absent, of one to three. A
+  list holds no more records than its bound by its type, as Rust's
+  `BoundedList` holds it; a value of fewer than its lower count has no
+  encoding, so the encode refuses it with `CborOutOfRange` before the first
+  byte, and the codec states that its encode may fail. The C++ encode refuses
+  what the Rust encode refuses
+  (`a_cpp_cbor_encode_refuses_what_the_rust_encode_refuses.rs`, and
+  `codec_source_generated_test` runs it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_record_list_least"
+       sce:encode-may-fail="true" version="1.0">
+  <sce:import kind="event-schema" src="cbor_causal_entry.scxml" as="CausalEntry"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="seen" sce:type="list&lt;record:CausalEntry&gt;[1..2]" sce:key="0" sce:direction="out"/>
+    <data id="context" sce:type="optional&lt;list&lt;record:CausalEntry&gt;[1..3]&gt;" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>

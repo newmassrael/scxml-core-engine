@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map whose entries are values of an enum with a signed carrier
+  (SCE_FORGE.md section 4.6.1): `status` required under key 0 and `detail`
+  that may be absent under key 1. A negative value has no unsigned integer, so
+  the encode refuses it with `CborOutOfRange` before the first byte, and the
+  codec states that its encode may fail. The C++ encode refuses what the Rust
+  encode refuses (`a_cpp_cbor_encode_refuses_what_the_rust_encode_refuses.rs`,
+  and `codec_source_generated_test` runs it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_signed_enum"
+       sce:encode-may-fail="true" version="1.0">
+  <sce:import kind="enum" src="cbor_signed_status.scxml" as="Status"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="status" sce:type="enum:Status" sce:key="0" sce:direction="out"/>
+    <data id="detail" sce:type="optional&lt;enum:Status&gt;" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>

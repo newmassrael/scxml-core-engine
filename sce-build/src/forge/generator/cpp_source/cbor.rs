@@ -12,53 +12,38 @@
 //! customization points and checked by `is_source`. A text or a byte string is
 //! presented within its bound (`Text`, `Bytes`; docs/adr/0077 §3), and a list
 //! of records within its count as a view of the payload type its event
-//! schema's own unit declares (`List`; docs/adr/0085, Landing order step 3a),
-//! so the encode over any source refuses nothing but where an enum's carrier
-//! is signed, which is not printed yet. The encoding rule is the one the Rust
-//! printer writes (`rust_source::cbor`): the map head, then each entry present
-//! in ascending key order, every head in its shortest form (RFC 8949 §4.2.1),
-//! a list of records as a definite-length array of one map per record, each
-//! field under its id as text (docs/adr/0086, section 9.2).
+//! schema's own unit declares (`List`; docs/adr/0085, Landing order step 3a).
+//! What no type holds is refused, where the plan's totality names it and as
+//! the Rust printer refuses it: a negative value of an enum whose carrier is
+//! signed, a list of fewer records than its lower count, and a record whose
+//! byte string, which the schema's unit holds in a `std::vector` with no
+//! bound, is past its bound. Each is found before the first byte is written,
+//! so a refusal leaves the sink untouched. The encoding rule is the one the
+//! Rust printer writes (`rust_source::cbor`): the map head, then each entry
+//! present in ascending key order, every head in its shortest form (RFC 8949
+//! §4.2.1), a list of records as a definite-length array of one map per
+//! record, each field under its id as text (docs/adr/0086, section 9.2).
 
 use super::super::*;
 use super::source_readers;
 use crate::forge::cbor_codec;
-use crate::forge::encode_plan::{CborItem, CborPlan, CborValue};
+use crate::forge::codec_totality::RefusalKind;
+use crate::forge::encode_plan::{Carrier, CborItem, CborPlan, CborValue};
 use crate::forge::model::CborEntry;
 use crate::forge::value_type::ValueType;
 use crate::generator::Language;
 
-/// Every form of the CBOR codec `plan` the C++ printer does not print yet: an
-/// encode that can refuse, which an enum of a signed carrier or a list's lower
-/// count makes, and a list of records with a byte string field, which the
-/// schema's C++ unit holds in a `std::vector` with no bound, so no view of the
-/// records holds it within its own. A text field is held in the `OwnedText`
-/// of its bound (docs/adr/0086, section 7.4), which holds it within it.
-/// `imports` are the codec's own, which declare its records.
+/// Every form of the CBOR codec `plan` the C++ printer does not print yet:
+/// none, since every CBOR plan is printed. An encode that can refuse is
+/// printed with its checks before the first byte (`refusal_checks`), and a
+/// record's byte string is held in the `std::vector` of the schema's unit and
+/// held to its bound by those checks. The caller asks every plan alike, as it
+/// asks a positional one, so a form a later plan adds is named here.
 pub(in super::super) fn unlowered_forms(
-    plan: &CborPlan<'_>,
-    imports: &[ImportContext],
+    _plan: &CborPlan<'_>,
+    _imports: &[ImportContext],
 ) -> Vec<String> {
-    let mut forms = Vec::new();
-    if !plan.totality.is_total() {
-        forms.push("an encode that can refuse".to_string());
-    }
-    let scope = crate::forge::generator::import_type_scope(imports);
-    let unbounded = plan.entries.iter().any(|item| {
-        item.entry
-            .record_list()
-            .and_then(|list| scope.records.get(list.record))
-            .is_some_and(|record| {
-                record
-                    .fields
-                    .iter()
-                    .any(|(_, ty)| matches!(ty, ValueType::Bytes { .. }))
-            })
-    });
-    if unbounded {
-        forms.push("a list of records with a byte string field".to_string());
-    }
-    forms
+    Vec::new()
 }
 
 /// The type a present value of the leaf entry `e` is, asked of an entry that
@@ -68,8 +53,9 @@ fn leaf(e: &CborEntry) -> &SceType {
         .expect("a leaf entry has a leaf type; a list of records is asked apart")
 }
 
-/// A field of a record a printed list holds: a boolean, an unsigned integer or
-/// a text, the only fields a record of a printed map has (`unlowered_forms`).
+/// A field of a record a printed list holds: a boolean, an unsigned integer, a
+/// text or a byte string, the only fields a record a CBOR list holds has
+/// (`cbor_codec::record_list_unlowered`).
 struct RecordField {
     /// The field's id, the text its key is.
     key: String,
@@ -92,6 +78,13 @@ enum RecordFieldKind {
     /// A text of at most `max` UTF-8 bytes, held in the `OwnedText` of that
     /// bound (docs/adr/0086, section 7.4), so its write refuses nothing.
     Text {
+        max: u32,
+    },
+    /// A byte string of at most `max` bytes, held in the `std::vector` of the
+    /// schema's unit, which carries no bound: the read holds it to `max`, and
+    /// the map's encode refuses one past it before the first byte
+    /// (`refusal_checks`).
+    Bytes {
         max: u32,
     },
 }
@@ -124,6 +117,12 @@ fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<R
                 RecordFieldKind::Text { max: max.max },
                 crate::forge::composed_lowering::cpp_text_type(max.max),
             ),
+            // The schema's unit holds a byte string in the language's own
+            // vector (`cbor_codec::record_unbounded_bytes`).
+            ValueType::Bytes { max } => (
+                RecordFieldKind::Bytes { max: max.max },
+                l.type_name(&SceType::Bytes).into_owned(),
+            ),
             ValueType::Scalar(t) => {
                 let kind = match cbor_codec::record_field(ty) {
                     Some(("bool", _)) => RecordFieldKind::Bool,
@@ -131,12 +130,16 @@ fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<R
                         wide: *t == SceType::Uint64,
                     },
                     _ => unreachable!(
-                        "a record of a printed map holds a boolean, an unsigned integer or a text"
+                        "a record's scalar field is a boolean or an unsigned integer \
+                         (`cbor_codec::record_list_unlowered`)"
                     ),
                 };
                 (kind, l.type_name(t).into_owned())
             }
-            _ => unreachable!("a record of a printed map holds no byte string (`unlowered_forms`)"),
+            _ => unreachable!(
+                "a record a CBOR list holds is a map of unsigned integers, booleans, texts and \
+                 byte strings (`cbor_codec::record_list_unlowered`)"
+            ),
         };
         RecordField {
             key: id.clone(),
@@ -199,6 +202,11 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
                 RecordFieldKind::Text { .. } => {
                     format!("cbor::write_text(w, record.{}.inner())", f.name)
                 }
+                // Within its bound: the map's encode refused one past it
+                // before the first byte (`refusal_checks`).
+                RecordFieldKind::Bytes { .. } => {
+                    format!("cbor::write_bytes(w, record.{})", f.name)
+                }
             };
             write.push_str(&format!(
                 "        if (auto _e = cbor::write_text(w, {key:?}); _e) return _e;\n\
@@ -242,6 +250,13 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
                      \x20               if (!held_{name}) return std::nullopt;\n",
                     name = f.name,
                     ty = f.ty
+                ),
+                // Read within the bound, as the Rust printer reads it, into
+                // the vector the field is.
+                RecordFieldKind::Bytes { max } => format!(
+                    "                held_{name} = cbor::read_bytes(c, {max});\n\
+                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    name = f.name
                 ),
             };
             reads.push_str(&format!(
@@ -368,15 +383,6 @@ fn bound_args(e: &CborEntry, exact: bool) -> String {
     }
 }
 
-/// The bound a list of records is held to, as `Max` or `Max, Min`.
-fn list_bound_args(max: u32, min: u32) -> String {
-    if min > 0 {
-        format!("{max}, {min}")
-    } else {
-        max.to_string()
-    }
-}
-
 fn entry<'p>(
     l: &LangCtx,
     imports: &[ImportContext],
@@ -387,9 +393,12 @@ fn entry<'p>(
     if let Some(list) = e.record_list() {
         // A view of the schema's payload within the list's count, held in the
         // owning list of the same bound (docs/adr/0065 §6 R2, docs/adr/0081
-        // step 4), as a positional codec holds a list of entries.
+        // step 4), as a positional codec holds a list of entries. Only the
+        // most it holds is the type's, as Rust's `BoundedList` holds it: the
+        // lower count is the encode's to refuse (`refusal_checks`), where the
+        // plan's totality names it, so the two languages refuse one value.
         let payload = cbor_codec::record_payload_type(Language::Cpp, imports, list.record);
-        let bound = list_bound_args(list.max, list.min);
+        let bound = list.max;
         return Entry {
             item,
             name: l.codec_field_id(&e.id),
@@ -456,7 +465,8 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
             "if (auto _e = cbor::write_bytes(w, v.inner()); _e) return _e;".to_string()
         }
         // An unsigned carrier's every value is an unsigned integer; a signed
-        // one is not printed (`unlowered_forms`).
+        // one's negative value was refused before the first byte
+        // (`refusal_checks`), so what is left is one.
         CborValue::Enum { .. } => format!(
             "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>({})); _e) return _e;",
             l.codec_carrier_expr(leaf(entry.item.entry), "v")
@@ -467,7 +477,8 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
         }
         // A definite-length array of the records, each the map `Records`
         // writes (docs/adr/0086, section 9.2). The view holds the list within
-        // its count, so nothing is checked.
+        // its count, and what it does not hold was refused before the first
+        // byte (`refusal_checks`), so nothing is checked here.
         CborValue::RecordList { .. } => format!(
             "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;\n\
              \x20           for (const auto& _record : v) {{\n\
@@ -476,6 +487,98 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
             record_fns(entry).1
         ),
     }
+}
+
+/// How a statement about the value of `entry` opens, and what the value is
+/// read as inside it: a required entry in a block of its own, and one the map
+/// may lack only where the value holds it.
+fn present(entry: &Entry<'_>) -> (String, String) {
+    if entry.required() {
+        ("        {\n".to_string(), format!("_e_{}", entry.name))
+    } else {
+        (
+            format!("        if (_e_{}) {{\n", entry.name),
+            format!("*_e_{}", entry.name),
+        )
+    }
+}
+
+/// The statements that refuse the value `v` of `entry` where the encoding
+/// cannot carry it, or `None` where its type holds all the encoding asks. The
+/// encode runs them before the first byte is written, so a refusal leaves the
+/// sink untouched (docs/adr/0065 §2). Each refusal is one the plan's totality
+/// names at the entry, and the one the Rust printer writes there
+/// (`rust_source::cbor`): `CodecError::CborOutOfRange` for a negative value of
+/// an enum whose carrier is signed, which no unsigned integer carries; for a
+/// list of fewer records than its lower count, which the view of the list
+/// does not hold; and for a record whose byte string is past its bound, which
+/// the schema's unit holds in a `std::vector` with no bound.
+fn refusal_checks(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    plan: &CborPlan<'_>,
+    entry: &Entry<'_>,
+) -> Option<String> {
+    let e = entry.item.entry;
+    let refuse = || {
+        format!(
+            "return ::SCE::Forge::{};",
+            plan.totality.require(RefusalKind::CborOutOfRange, &e.id)
+        )
+    };
+    let mut checks: Vec<String> = Vec::new();
+    match entry.item.value {
+        CborValue::Enum {
+            carrier: Carrier::Signed,
+        } => checks.push(format!(
+            "if ({} < 0) {}",
+            l.codec_carrier_expr(leaf(e), "v"),
+            refuse()
+        )),
+        CborValue::RecordList { min } => {
+            if min > 0 {
+                checks.push(format!("if (v.size() < {min}) {}", refuse()));
+            }
+            let alias = e
+                .record_list()
+                .map(|list| list.record)
+                .expect("a list entry holds a list of records");
+            let unbounded = crate::forge::generator::import_type_scope(imports)
+                .records
+                .get(alias)
+                .map(|record| cbor_codec::record_unbounded_bytes(&record.fields))
+                .unwrap_or_default();
+            if !unbounded.is_empty() {
+                let refusal = refuse();
+                let mut each = String::new();
+                for (id, max) in &unbounded {
+                    let field =
+                        crate::forge::generator::event_schema_field_ident(id, Language::Cpp);
+                    each.push_str(&format!(
+                        "                if (_record.{field}.size() > {max}) {refusal}\n"
+                    ));
+                }
+                checks.push(format!(
+                    "for (const auto& _record : v) {{\n{each}            }}"
+                ));
+            }
+        }
+        _ => {}
+    }
+    if checks.is_empty() {
+        return None;
+    }
+    let (open, value) = present(entry);
+    let body: String = checks
+        .iter()
+        .map(|check| format!("            {check}\n"))
+        .collect();
+    Some(format!(
+        "{open}\
+         \x20           const auto& v = {value};\n\
+         {body}\
+         \x20       }}\n"
+    ))
 }
 
 /// The statements that read the value of `entry` into its local, which the
@@ -639,6 +742,14 @@ pub(in super::super) fn render(
             ty = e.presented()
         ));
     }
+    // What the encoding cannot carry is refused before the first byte, each
+    // entry's in the order the encode would meet it: ascending key, as the
+    // Rust encode's count over a sink that only counts meets it.
+    for &index in &plan.by_key {
+        if let Some(checks) = refusal_checks(l, imports, plan, &entries[index]) {
+            encode.push_str(&checks);
+        }
+    }
     let required = plan.required();
     let optional: Vec<&Entry<'_>> = entries.iter().filter(|e| !e.required()).collect();
     if optional.is_empty() {
@@ -654,14 +765,7 @@ pub(in super::super) fn render(
     encode.push_str("        if (auto _e = cbor::write_map_head(w, _count); _e) return _e;\n");
     for &index in &plan.by_key {
         let e = &entries[index];
-        let (open, value) = if e.required() {
-            ("        {\n".to_string(), format!("_e_{}", e.name))
-        } else {
-            (
-                format!("        if (_e_{}) {{\n", e.name),
-                format!("*_e_{}", e.name),
-            )
-        };
+        let (open, value) = present(e);
         encode.push_str(&format!(
             "{open}\
              \x20           const auto& v = {value};\n\
@@ -678,11 +782,21 @@ pub(in super::super) fn render(
     if !held_records.is_empty() {
         out.push_str(&records_struct(&held_records, struct_name));
     }
+    let total = plan.totality.is_total();
+    let refuses = if total {
+        "It refuses nothing; what it returns is\n\
+         /// the sink's own failure, and it throws only what a read of `src` throws."
+    } else {
+        "A value the\n\
+         /// encoding cannot carry is refused with `CodecError::CborOutOfRange` before\n\
+         /// the first byte is written, so the sink is left untouched; otherwise what\n\
+         /// it returns is the sink's own failure, and it throws only what a read of\n\
+         /// `src` throws."
+    };
     out.push_str(&format!(
         "/// The encode of `{struct_name}` over any source of it: the map head counting\n\
          /// the entries present, then each in ascending key order, every head in its\n\
-         /// shortest form (RFC 8949 §4.2.1). It refuses nothing; what it returns is\n\
-         /// the sink's own failure, and it throws only what a read of `src` throws.\n\
+         /// shortest form (RFC 8949 §4.2.1). {refuses}\n\
          struct Wire {{\n\
          \x20   template <class S>\n\
          \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {{\n\
@@ -695,17 +809,22 @@ pub(in super::super) fn render(
         names.join(", ")
     ));
 
-    out.push_str(&value_class(l, imports, &entries, struct_name));
+    out.push_str(&value_class(l, imports, &entries, struct_name, total));
+    // Every refusal the totality analysis names is one the encode writes
+    // (docs/adr/0065 §2).
+    plan.totality.assert_all_written(struct_name);
     out
 }
 
 /// The value: made by its constructor, each entry read by its accessor,
-/// decoded from a map and encoded as any source is.
+/// decoded from a map and encoded as any source is. `total` is whether the
+/// encode refuses no value, which the vector its bytes are returned in says.
 fn value_class(
     l: &LangCtx,
     imports: &[ImportContext],
     entries: &[Entry<'_>],
     struct_name: &str,
+    total: bool,
 ) -> String {
     let params: Vec<String> = entries
         .iter()
@@ -833,6 +952,28 @@ fn value_class(
             args.push(format!("/*{name}=*/_b_{name}", name = e.name));
         }
     }
+    // The vector of the bytes is an optional only where the encode can refuse
+    // the value, as the positional and content-line values answer theirs.
+    let (refuses, encoded, refused, to_vec) = if total {
+        (
+            "It refuses nothing; what it returns is the sink's own failure.",
+            "std::vector<std::uint8_t>",
+            "",
+            "\x20       (void)encode(sink);\n\
+             \x20       return out;\n",
+        )
+    } else {
+        (
+            "A value the encoding cannot carry is refused before the\n\
+             \x20   /// first byte is written; otherwise what it returns is the sink's own failure.",
+            "std::optional<std::vector<std::uint8_t>>",
+            "; `std::nullopt` when encode refuses the value",
+            "\x20       if (encode(sink)) {\n\
+             \x20           return std::nullopt;\n\
+             \x20       }\n\
+             \x20       return out;\n",
+        )
+    };
     out.push_str(&format!(
         "\n\
          \x20   /// Decode one map from `cursor`. On success the cursor advances past it;\n\
@@ -846,16 +987,15 @@ fn value_class(
          \x20       return value;\n\
          \x20   }}\n\n\
          \x20   /// Encode this map into `w`: the encode over any source, this value one of\n\
-         \x20   /// them. It refuses nothing; what it returns is the sink's own failure.\n\
+         \x20   /// them. {refuses}\n\
          \x20   [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {{\n\
          \x20       return Wire::encode_source(*this, w);\n\
          \x20   }}\n\n\
-         \x20   /// `encode` into a new vector.\n\
-         \x20   [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {{\n\
+         \x20   /// `encode` into a new vector{refused}.\n\
+         \x20   [[nodiscard]] {encoded} encode_to_vec() const {{\n\
          \x20       std::vector<std::uint8_t> out;\n\
          \x20       ::SCE::Forge::VectorSink sink(out);\n\
-         \x20       (void)encode(sink);\n\
-         \x20       return out;\n\
+         {to_vec}\
          \x20   }}\n\n\
          private:\n\
          \x20   static std::optional<{struct_name}> decode_at(::SCE::Forge::SceCursor& c) {{\n\

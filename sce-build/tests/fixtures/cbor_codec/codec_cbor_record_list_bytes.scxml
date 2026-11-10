@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map whose lists hold records with a byte string (docs/adr/0085,
+  Landing order step 3a): `latest`, required, of at most two records of
+  `cbor_digest_entry`, and `pending`, which may be absent, of at most three.
+  The schema's unit holds the record's `bytes[4]` in the language's own vector,
+  which carries no bound, so a record past it has no encoding: the encode
+  refuses it with `CborOutOfRange` before the first byte, and the codec states
+  that its encode may fail. C11, whose unit borrows the byte string, refuses
+  the codec by name. The C++ encode refuses what the Rust encode refuses
+  (`a_cpp_cbor_encode_refuses_what_the_rust_encode_refuses.rs`, and
+  `codec_source_generated_test` runs it).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_record_list_bytes"
+       sce:encode-may-fail="true" version="1.0">
+  <sce:import kind="event-schema" src="cbor_digest_entry.scxml" as="DigestEntry"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="latest" sce:type="list&lt;record:DigestEntry&gt;[2]" sce:key="0" sce:direction="out"/>
+    <data id="pending" sce:type="optional&lt;list&lt;record:DigestEntry&gt;[3]&gt;" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>
