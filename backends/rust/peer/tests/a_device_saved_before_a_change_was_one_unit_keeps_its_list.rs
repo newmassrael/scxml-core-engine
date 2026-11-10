@@ -389,7 +389,7 @@ fn a_forged_part_is_refused_by_the_relay_and_the_core() {
     }
     assert!(
         Relay::open(
-            store_of(&[forged.clone()]),
+            store_of(std::slice::from_ref(&forged)),
             Authority::new([3; 32], "the-relay"),
             Limits::default()
         )

@@ -2406,6 +2406,7 @@ mod tests {
                 steps: Vec::new(),
                 owed: 0,
                 token: None,
+                raised: None,
             };
             serde_json::from_str(&outcome_text(&Ok(outcome))).unwrap()
         };
