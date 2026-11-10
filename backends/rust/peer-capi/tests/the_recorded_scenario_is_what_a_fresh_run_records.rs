@@ -19,7 +19,16 @@
 // changes reach alice's machine whole, a write and its write-over as one (docs/adr/0085, section
 // 1); a device restored from its sealed state needs no key given again, says it waits for its own
 // chain, keeps a new change until the chain is read back and then signs it, and gives a change it
-// holds as held; another content under a dot a device signed is refused; a round that loses its
+// holds as held; another content under a dot a device signed is refused; a device started again
+// from an older state whose copy keeps a journal offers two changes that wait, the round reads its
+// chain back, says its own stamp rose, and withdraws the first, which goes back along the chain,
+// with the one after it; a copy that keeps a journal has the change it offers signed in the call,
+// refused when it is in another's name, and held back from the relay as a record until its host
+// recorded it, and a device started again from its state and its journal signs nothing again, is
+// handed its history in causal order with a change that waits as provisional, and has that change
+// signed and held back as a record by the round that reads its chain back (docs/adr/0083 and 0093);
+// a device that wrote nothing since it was told more marks it, and the stable cut moves by the mark
+// (docs/adr/0085); a round that loses its
 // transport ends, and the next goes on; and a device taken off is
 // refused by the relay, so that what it writes afterwards reaches no one. Bob's device is handed no
 // token: it logs in at the relay with his person's key (ADR 0080), over a connection that presents
@@ -216,6 +225,30 @@ fn text(value: &str) -> CString {
     CString::new(value).expect("a text of the scenario holds no NUL")
 }
 
+/// The word a recording names what the core did with a send or an offer by.
+fn kept_word(kept: i32) -> String {
+    match kept {
+        SCE_PEER_KEPT_TAKEN => "taken",
+        SCE_PEER_KEPT_HELD => "held",
+        SCE_PEER_KEPT_NOT_SIGNED => "not_signed",
+        SCE_PEER_KEPT_REFUSED => "refused",
+        SCE_PEER_KEPT_WAITING => "waiting",
+        other => panic!("{other} is no answer to a send"),
+    }
+    .to_string()
+}
+
+/// What a copy that keeps a journal offers its host for a change of one write of `value` to field
+/// 3 of row `id`, stamped by `node` at `wall` and closed by the command `command`:
+/// `record_list.made`'s payload.
+fn made(id: u32, node: u64, wall: i64, value: i64, command: u64) -> String {
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": id, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}],
+        "command": command.to_string()})
+    .to_string()
+}
+
 /// One device's core, reached through the C ABI as a lane reaches it.
 struct Core(*mut ScePeer);
 
@@ -333,15 +366,90 @@ impl Core {
             },
             "outbound",
         );
-        let answer = match kept {
-            SCE_PEER_KEPT_TAKEN => "taken",
-            SCE_PEER_KEPT_HELD => "held",
-            SCE_PEER_KEPT_NOT_SIGNED => "not_signed",
-            SCE_PEER_KEPT_REFUSED => "refused",
-            SCE_PEER_KEPT_WAITING => "waiting",
-            other => panic!("{other} is no answer to a send"),
-        };
-        (answer.to_string(), taken(reason).unwrap_or_default())
+        (kept_word(kept), taken(reason).unwrap_or_default())
+    }
+
+    /// The verdict the core gave a change the copy offered, and why when it refused it or keeps it
+    /// waiting.
+    fn made(&mut self, data: &str) -> (String, String) {
+        let data = text(data);
+        let mut kept = -1;
+        let mut reason = empty();
+        // SAFETY: a live handle, a NUL-terminated text, and places valid for a write.
+        check(
+            unsafe { sce_peer_made(self.0, data.as_ptr(), &mut kept, &mut reason) },
+            "made",
+        );
+        (kept_word(kept), taken(reason).unwrap_or_default())
+    }
+
+    /// The records the host has not recorded, as the ABI's JSON text.
+    fn records(&mut self) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, and a place valid for a write.
+        check(
+            unsafe { sce_peer_take_records(self.0, &mut out) },
+            "take_records",
+        );
+        taken(out).expect("the records are a text")
+    }
+
+    fn recorded(&mut self, through: u64) {
+        // SAFETY: a live handle.
+        check(unsafe { sce_peer_recorded(self.0, through) }, "recorded");
+    }
+
+    /// The records of a journal given back, and how many the core did not hold.
+    fn restore_records(&mut self, records: &str) -> u64 {
+        let records = text(records);
+        let mut count = u64::MAX;
+        // SAFETY: a live handle, a NUL-terminated text, and a place valid for a write.
+        check(
+            unsafe { sce_peer_restore_records(self.0, records.as_ptr(), &mut count) },
+            "restore_records",
+        );
+        count
+    }
+
+    /// The whole history, as the ABI's JSON text.
+    fn history(&mut self) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, no cut, and a place valid for a write.
+        check(
+            unsafe { sce_peer_history(self.0, std::ptr::null(), &mut out) },
+            "history",
+        );
+        taken(out).expect("a history is a text")
+    }
+
+    /// The stable cut, as the ABI's JSON text.
+    fn stable_cut(&mut self) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, and a place valid for a write.
+        check(
+            unsafe { sce_peer_stable_cut(self.0, &mut out) },
+            "stable_cut",
+        );
+        taken(out).expect("a cut is a text")
+    }
+
+    /// The number of the mark the core signed, 0 when none was owed.
+    fn mark(&mut self) -> u64 {
+        let mut seq = u64::MAX;
+        // SAFETY: a live handle, and a place valid for a write.
+        check(unsafe { sce_peer_mark(self.0, &mut seq) }, "mark");
+        seq
+    }
+
+    /// The highest stamp of the device's own changes, and whether its chain was read back.
+    fn own_stamp(&mut self) -> (i64, u32, i32) {
+        let (mut wall_time, mut counter, mut read_back) = (-1i64, u32::MAX, -1i32);
+        // SAFETY: a live handle, and places valid for a write.
+        check(
+            unsafe { sce_peer_own_stamp(self.0, &mut wall_time, &mut counter, &mut read_back) },
+            "own_stamp",
+        );
+        (wall_time, counter, read_back)
     }
 
     fn start(&mut self, kind: &str) {
@@ -688,6 +796,68 @@ impl Recording {
         kept
     }
 
+    /// The verdict the core of `device` gives the change its copy offered.
+    fn made(&mut self, device: usize, data: &str) -> String {
+        let (kept, reason) = self.core(device).made(data);
+        self.steps
+            .push(json!({"device": device, "op": "made", "data": data,
+                               "kept": kept, "reason": reason}));
+        kept
+    }
+
+    /// The records `device`'s host has not recorded, as the ABI's text and as JSON.
+    fn records(&mut self, device: usize) -> (String, Value) {
+        let records = self.core(device).records();
+        self.steps
+            .push(json!({"device": device, "op": "records", "text": records}));
+        let value = serde_json::from_str(&records).expect("the records are JSON");
+        (records, value)
+    }
+
+    fn recorded(&mut self, device: usize, through: u64) {
+        self.core(device).recorded(through);
+        self.steps
+            .push(json!({"device": device, "op": "recorded", "through": through}));
+    }
+
+    fn restore_records(&mut self, device: usize, records: &str) -> u64 {
+        let count = self.core(device).restore_records(records);
+        self.steps
+            .push(json!({"device": device, "op": "restore_records",
+                               "records": records, "count": count}));
+        count
+    }
+
+    fn history(&mut self, device: usize) -> Value {
+        let history = self.core(device).history();
+        self.steps
+            .push(json!({"device": device, "op": "history", "text": history}));
+        serde_json::from_str(&history).expect("a history is JSON")
+    }
+
+    fn stable_cut(&mut self, device: usize) -> Value {
+        let cut = self.core(device).stable_cut();
+        self.steps
+            .push(json!({"device": device, "op": "stable_cut", "text": cut}));
+        serde_json::from_str(&cut).expect("a cut is JSON")
+    }
+
+    fn mark(&mut self, device: usize) -> u64 {
+        let seq = self.core(device).mark();
+        self.steps
+            .push(json!({"device": device, "op": "mark", "seq": seq}));
+        seq
+    }
+
+    fn own_stamp(&mut self, device: usize) -> (i64, u32, i32) {
+        let (wall_time, counter, read_back) = self.core(device).own_stamp();
+        self.steps.push(
+            json!({"device": device, "op": "own_stamp", "wall_time": wall_time,
+                               "counter": counter, "read_back": read_back}),
+        );
+        (wall_time, counter, read_back)
+    }
+
     fn start(&mut self, device: usize, kind: &str) {
         self.core(device).start(kind);
         self.steps
@@ -762,7 +932,7 @@ impl Recording {
 
     fn into_scenario(self) -> Value {
         json!({
-            "version": 5,
+            "version": 6,
             "list": LIST,
             "devices": self.devices,
             "steps": self.steps,
@@ -968,6 +1138,34 @@ fn record() -> Value {
     assert_eq!(refused(&rebuilt), 0, "{rebuilt}");
     assert_eq!(rebuilt["pushed"], 0, "nothing new: {rebuilt}");
 
+    // Bob's device is started again from the same older state, and his copy, which keeps a journal
+    // now, offers two changes before his chain is read back: both wait. The first is stamped before
+    // the change of his the state lacks, so it never will be signed, and the one after it was made
+    // on a state that held it. The round reads his chain back, says his own stamp rose to that
+    // change's, and withdraws both, earliest first (docs/adr/0093, sections 4.4 and 6.2).
+    assert_eq!(run.restore(AT_BOB, &key, &sealed), 2);
+    assert_eq!(run.made(AT_BOB, &made(5, BOB, 2500, 25, 3)), "waiting");
+    assert_eq!(run.made(AT_BOB, &made(6, BOB, 6000, 60, 4)), "waiting");
+    let withdrawn = run.round(AT_BOB, "sync");
+    assert_eq!(refused(&withdrawn), 0, "{withdrawn}");
+    assert_eq!(withdrawn["pushed"], 0, "{withdrawn}");
+    assert_eq!(withdrawn["taken"], json!([]), "{withdrawn}");
+    assert_eq!(
+        withdrawn["withdrawn"].as_array().map(Vec::len),
+        Some(2),
+        "{withdrawn}"
+    );
+    assert_eq!(withdrawn["withdrawn"][0]["wallTime"], "2500", "{withdrawn}");
+    assert_eq!(
+        withdrawn["raised"],
+        json!({"wallTime": "3000", "counter": 0}),
+        "{withdrawn}"
+    );
+    assert_eq!(
+        withdrawn["rebuild"], false,
+        "withdrawn in place: {withdrawn}"
+    );
+
     // Alice's transport fails in the middle of a round; the round ends, and the next goes on.
     run.start(AT_ALICE, "sync");
     assert!(run.ask(AT_ALICE).is_some(), "the round asks");
@@ -978,6 +1176,71 @@ fn record() -> Value {
     let told = run.round(AT_ALICE, "sync");
     assert_eq!(named(&told, CHANGE), 1, "bob's new change: {told}");
     assert_eq!(refused(&told), 0, "{told}");
+
+    // Alice's copy keeps a journal (docs/adr/0083, section 3; docs/adr/0093, section 3): the change
+    // it offers is signed in the call, the verdict given at once, and is a record her host journals,
+    // which the relay is given only once her host says it recorded it. A change offered in bob's
+    // name is refused.
+    let older_alice = run.save(AT_ALICE, &key);
+    assert_eq!(run.made(AT_ALICE, &made(4, ALICE, 5000, 50, 1)), "taken");
+    assert_eq!(
+        run.made(AT_ALICE, &made(4, BOB, 5000, 50, 2)),
+        "refused",
+        "a change in bob's name"
+    );
+    let (journal, records) = run.records(AT_ALICE);
+    assert_eq!(records[0]["seq"], "1", "{records}");
+    let held_back = run.round(AT_ALICE, "sync");
+    assert_eq!(held_back["pushed"], 0, "nothing not recorded: {held_back}");
+    run.recorded(AT_ALICE, 1);
+    assert_eq!(run.records(AT_ALICE).1, json!([]));
+    let given = run.round(AT_ALICE, "sync");
+    assert_eq!(given["pushed"], 1, "her change, once recorded: {given}");
+
+    // Alice's device is started again from the state saved before her change, and her host gives
+    // back the record its journal holds: nothing is signed again. Her copy offers a change before
+    // her chain is read back, which waits; the history her rebuilt machine is given is bob's three
+    // changes and hers in causal order, each with its tag, and the one that waits, provisional.
+    // The round reads her chain back, signs the change that waited, which is a record held back
+    // until she recorded it, and says her own stamp rose.
+    assert_eq!(run.restore(AT_ALICE, &key, &older_alice), 3, "bob's three");
+    assert_eq!(run.restore_records(AT_ALICE, &journal), 1);
+    assert_eq!(run.made(AT_ALICE, &made(5, ALICE, 6000, 60, 3)), "waiting");
+    let history = run.history(AT_ALICE);
+    let changes = history["changes"].as_array().expect("a history's changes");
+    assert_eq!(changes.len(), 5, "{history}");
+    assert_eq!(changes[3]["author"], "1", "{history}");
+    assert_eq!(changes[3]["context"], json!([["2", "3"]]), "{history}");
+    assert_eq!(changes[4]["provisional"], true, "{history}");
+    assert_eq!(run.own_stamp(AT_ALICE), (5000, 0, 0));
+    let confirmed = run.round(AT_ALICE, "sync");
+    assert_eq!(refused(&confirmed), 0, "{confirmed}");
+    assert_eq!(confirmed["taken"].as_array().map(Vec::len), Some(1));
+    assert_eq!(confirmed["pushed"], 0, "a record not recorded: {confirmed}");
+    assert_eq!(
+        confirmed["raised"],
+        json!({"wallTime": "6000", "counter": 0}),
+        "{confirmed}"
+    );
+    assert_eq!(run.own_stamp(AT_ALICE), (6000, 0, 1));
+    let (_, records) = run.records(AT_ALICE);
+    assert_eq!(records[0]["seq"], "2", "{records}");
+    run.recorded(AT_ALICE, 2);
+    let given = run.round(AT_ALICE, "sync");
+    assert_eq!(given["pushed"], 1, "{given}");
+
+    // Bob's machine is told her two changes, and he has written nothing since: he marks what he
+    // was told. His mark reaches the relay and her core, which tells her machine nothing of it, and
+    // the stable cut is every change of both (docs/adr/0085, sections 3.1 and 4).
+    let read = run.round(AT_BOB, "sync");
+    assert_eq!(named(&read, CHANGE), 2, "{read}");
+    assert_eq!(run.mark(AT_BOB), 4, "his fourth operation");
+    assert_eq!(run.mark(AT_BOB), 0, "nothing more was told since");
+    let marked = run.round(AT_BOB, "sync");
+    assert_eq!(marked["pushed"], 1, "{marked}");
+    let read_mark = run.round(AT_ALICE, "sync");
+    assert_eq!(read_mark["events"], json!([]), "{read_mark}");
+    assert_eq!(run.stable_cut(AT_ALICE), json!([["1", "2"], ["2", "4"]]));
 
     // Alice takes bob off: his chain ends at the last operation of his her device holds, and her
     // round gives the relay the entry.
@@ -1102,6 +1365,30 @@ fn replay(scenario: &Value) -> usize {
                 "step {at}"
             ),
             "joined" => assert_eq!(core.joined(number("node")), field("text"), "step {at}"),
+            "made" => assert_eq!(
+                core.made(&field("data")),
+                (field("kept"), field("reason")),
+                "step {at}"
+            ),
+            "records" => assert_eq!(core.records(), field("text"), "step {at}"),
+            "recorded" => core.recorded(number("through")),
+            "restore_records" => assert_eq!(
+                core.restore_records(&field("records")),
+                number("count"),
+                "step {at}"
+            ),
+            "history" => assert_eq!(core.history(), field("text"), "step {at}"),
+            "stable_cut" => assert_eq!(core.stable_cut(), field("text"), "step {at}"),
+            "mark" => assert_eq!(core.mark(), number("seq"), "step {at}"),
+            "own_stamp" => assert_eq!(
+                core.own_stamp(),
+                (
+                    step["wall_time"].as_i64().expect("a wall time"),
+                    u32::try_from(number("counter")).unwrap(),
+                    i32::try_from(number("read_back")).unwrap(),
+                ),
+                "step {at}"
+            ),
             other => panic!("step {at}: `{other}` is no step of the scenario"),
         }
     }

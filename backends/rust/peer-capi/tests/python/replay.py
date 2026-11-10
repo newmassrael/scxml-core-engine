@@ -14,7 +14,7 @@ import ctypes
 import json
 import sys
 
-ABI_VERSION = 7
+ABI_VERSION = 8
 OK = 0
 KEPT = {"taken": 0, "held": 1, "not_signed": 2, "refused": 3, "waiting": 4}
 KINDS = {"sync": 0, "resync": 1, "reread": 2}
@@ -67,6 +67,28 @@ def load(path):
         "sce_peer_invitation_read": (ctypes.c_int32, [u8p, ctypes.c_size_t, bufp]),
         "sce_peer_join": (ctypes.c_int32, [vp, u8p, ctypes.c_size_t, bufp]),
         "sce_peer_joined": (ctypes.c_int32, [vp, ctypes.c_uint64, bufp]),
+        "sce_peer_made": (
+            ctypes.c_int32,
+            [vp, cp, ctypes.POINTER(ctypes.c_int32), bufp],
+        ),
+        "sce_peer_take_records": (ctypes.c_int32, [vp, bufp]),
+        "sce_peer_recorded": (ctypes.c_int32, [vp, ctypes.c_uint64]),
+        "sce_peer_restore_records": (
+            ctypes.c_int32,
+            [vp, cp, ctypes.POINTER(ctypes.c_uint64)],
+        ),
+        "sce_peer_history": (ctypes.c_int32, [vp, cp, bufp]),
+        "sce_peer_stable_cut": (ctypes.c_int32, [vp, bufp]),
+        "sce_peer_mark": (ctypes.c_int32, [vp, ctypes.POINTER(ctypes.c_uint64)]),
+        "sce_peer_own_stamp": (
+            ctypes.c_int32,
+            [
+                vp,
+                ctypes.POINTER(ctypes.c_int64),
+                ctypes.POINTER(ctypes.c_uint32),
+                ctypes.POINTER(ctypes.c_int32),
+            ],
+        ),
     }
     for name, (restype, argtypes) in sig.items():
         function = getattr(lib, name)
@@ -272,6 +294,52 @@ def main():
         elif op == "joined":
             check(lib.sce_peer_joined(peer, step["node"], ctypes.byref(out)), "joined")
             expect(taken(out), step["text"], "the devices that joined")
+        elif op == "made":
+            kept = ctypes.c_int32(-1)
+            check(
+                lib.sce_peer_made(peer, step["data"].encode(), ctypes.byref(kept), ctypes.byref(out)),
+                "made",
+            )
+            if kept.value != KEPT[step["kept"]]:
+                die("the core did not give the verdict recorded")
+            expect(taken(out), step["reason"], "the reason of the refusal or of the wait")
+        elif op == "records":
+            check(lib.sce_peer_take_records(peer, ctypes.byref(out)), "take_records")
+            expect(taken(out), step["text"], "the records")
+        elif op == "recorded":
+            check(lib.sce_peer_recorded(peer, step["through"]), "recorded")
+        elif op == "restore_records":
+            count = ctypes.c_uint64(2**64 - 1)
+            check(
+                lib.sce_peer_restore_records(peer, step["records"].encode(), ctypes.byref(count)),
+                "restore_records",
+            )
+            if count.value != step["count"]:
+                die("the records given back held another number of new ones than was recorded")
+        elif op == "history":
+            check(lib.sce_peer_history(peer, None, ctypes.byref(out)), "history")
+            expect(taken(out), step["text"], "the history")
+        elif op == "stable_cut":
+            check(lib.sce_peer_stable_cut(peer, ctypes.byref(out)), "stable_cut")
+            expect(taken(out), step["text"], "the stable cut")
+        elif op == "mark":
+            seq = ctypes.c_uint64(2**64 - 1)
+            check(lib.sce_peer_mark(peer, ctypes.byref(seq)), "mark")
+            if seq.value != step["seq"]:
+                die("the core signed another mark than was recorded")
+        elif op == "own_stamp":
+            wall_time = ctypes.c_int64(-1)
+            counter = ctypes.c_uint32(2**32 - 1)
+            read_back = ctypes.c_int32(-1)
+            check(
+                lib.sce_peer_own_stamp(
+                    peer, ctypes.byref(wall_time), ctypes.byref(counter), ctypes.byref(read_back)
+                ),
+                "own_stamp",
+            )
+            got = (wall_time.value, counter.value, read_back.value)
+            if got != (step["wall_time"], step["counter"], step["read_back"]):
+                die(f"the core's own stamp {got} is not the recorded one")
         else:
             die(f"a step the replay does not know: {op}")
         steps += 1

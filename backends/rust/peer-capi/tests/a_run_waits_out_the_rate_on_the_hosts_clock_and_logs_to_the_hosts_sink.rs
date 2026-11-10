@@ -462,8 +462,8 @@ fn a_link_of_the_librarys_own_takes_no_pause_and_a_host_link_takes_one_or_none()
         );
         sce_peer_link_free(host);
     }
-    assert_eq!(SCE_PEER_ABI_VERSION, 7);
-    assert_eq!(sce_peer_abi_version(), 7);
+    assert_eq!(SCE_PEER_ABI_VERSION, 8);
+    assert_eq!(sce_peer_abi_version(), 8);
 }
 
 /// What a sink was given: each record's level, target and line.

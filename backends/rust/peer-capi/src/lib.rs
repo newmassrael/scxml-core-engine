@@ -89,7 +89,20 @@ use serde_json::{json, Value};
 /// (docs/adr/0085, section 1), so what [`sce_peer_outbound`] takes and the events an outcome holds
 /// are of another shape than the parts `record_list.write` and `record_list.supersede` of version 6,
 /// which the core no longer signs: a changed shape of a text, which makes a new number.
-pub const SCE_PEER_ABI_VERSION: u32 = 7;
+/// Version 8: the core of a copy that keeps a journal (docs/adr/0083, landing 3; docs/adr/0085,
+/// landing 5; docs/adr/0093, section 6). A change the copy offers is signed in the call that takes
+/// it ([`sce_peer_made`]), and is a record the host journals ([`sce_peer_take_records`]) that no
+/// round gives the relay before the host says it recorded it ([`sce_peer_recorded`]), which a lane
+/// of version 7 never says; the outcome holds `withdrawn` in place of `dropped`, a send that never
+/// will be signed withdrawn with every send after it and the machine built again for none of them,
+/// and `raised` when the device's own stamp rose; the word that an instant is settled
+/// (`sce_peer_floor_event`) is gone, since the list reads no floor, and the stable cut
+/// ([`sce_peer_stable_cut`]) and a device's mark ([`sce_peer_mark`]) say what every member was
+/// told; and a host started again gives back its journal's records
+/// ([`sce_peer_restore_records`]), recalls the history ([`sce_peer_history`]) and raises its
+/// copy's clock to the device's own stamp ([`sce_peer_own_stamp`]). The sealed state is the core's
+/// version 6, which holds the outbox.
+pub const SCE_PEER_ABI_VERSION: u32 = 8;
 
 pub const SCE_PEER_OK: i32 = 0;
 pub const SCE_PEER_ERR_NOTHING_ASKED: i32 = 1;
@@ -441,10 +454,16 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
                     .into_iter()
                     .map(|(event, data)| json!([event, data]))
                     .collect::<Vec<_>>(),
-                "dropped": outcome
-                    .dropped()
+                "withdrawn": outcome
+                    .withdrawn()
                     .into_iter()
-                    .map(|(event, data, why)| json!([event, data, why]))
+                    .map(|one| json!({
+                        "event": one.event,
+                        "data": one.data,
+                        "wallTime": one.wall_time.to_string(),
+                        "counter": one.counter,
+                        "why": one.why,
+                    }))
                     .collect::<Vec<_>>(),
                 "rebuild": outcome.rebuild(),
                 "stalled": outcome.stalled(),
@@ -465,6 +484,14 @@ fn outcome_text(outcome: &Result<Outcome, CourierError>) -> String {
             // signed two histories.
             if let Some(frozen) = outcome.conflicted() {
                 value["conflicted"] = json!(frozen.to_string());
+            }
+            // Written only for a round that raised the device's own stamp: the host gives its copy
+            // `record_list.raise` with it (docs/adr/0093, section 4.3).
+            if let Some((wall_time, counter)) = outcome.raised {
+                value["raised"] = json!({
+                    "wallTime": wall_time.to_string(),
+                    "counter": counter,
+                });
             }
             value
         }
@@ -842,19 +869,309 @@ pub unsafe extern "C" fn sce_peer_outbound(
             put(reason, ScePeerBuf::EMPTY);
             (handle(peer)?, text(event)?, text(data)?)
         };
-        let (answer, why) = match held.peer.outbound(event, data) {
-            Kept::Taken => (SCE_PEER_KEPT_TAKEN, None),
-            Kept::Held => (SCE_PEER_KEPT_HELD, None),
-            Kept::NotSigned => (SCE_PEER_KEPT_NOT_SIGNED, None),
-            Kept::Refused(why) => (SCE_PEER_KEPT_REFUSED, Some(why)),
-            Kept::Waiting(why) => (SCE_PEER_KEPT_WAITING, Some(why)),
-        };
+        let answer = held.peer.outbound(event, data);
         // SAFETY: `kept` is valid for a write, `reason` null or valid for one.
+        unsafe { put_kept(answer, kept, reason) };
+        Ok(())
+    })
+}
+
+/// Put what the core did with a send where the caller said: its `SCE_PEER_KEPT_*` at `kept`, and
+/// why at `reason` when it was refused or waits.
+///
+/// # Safety
+/// `kept` is valid for a write; `reason` is null or valid for a write.
+unsafe fn put_kept(answer: Kept, kept: *mut i32, reason: *mut ScePeerBuf) {
+    let (answer, why) = match answer {
+        Kept::Taken => (SCE_PEER_KEPT_TAKEN, None),
+        Kept::Held => (SCE_PEER_KEPT_HELD, None),
+        Kept::NotSigned => (SCE_PEER_KEPT_NOT_SIGNED, None),
+        Kept::Refused(why) => (SCE_PEER_KEPT_REFUSED, Some(why)),
+        Kept::Waiting(why) => (SCE_PEER_KEPT_WAITING, Some(why)),
+    };
+    // SAFETY: the promises in the function's contract.
+    unsafe {
+        put(kept, answer);
+        if let Some(why) = why {
+            put(reason, ScePeerBuf::of(why.into_bytes()));
+        }
+    }
+}
+
+/// The change a copy that keeps a journal offered its host: `record_list.made`'s JSON payload,
+/// NUL-terminated, the change and the command that closed it ([`Peer::made`]). It is signed as one
+/// operation in this call, and `kept` is set to the verdict the host gives the copy:
+/// `SCE_PEER_KEPT_TAKEN` is `accepted`, `_HELD` `held`, `_WAITING` `waiting` and `_REFUSED`
+/// `refused`, with `reason` (which may be null) set to why for the last two and to an empty buffer
+/// otherwise. What is signed is a record ([`sce_peer_take_records`]) no round gives the relay
+/// before the host says it recorded it ([`sce_peer_recorded`]).
+///
+/// # Safety
+/// `peer` is a live handle; `data` is a NUL-terminated string; `kept` is valid for a write;
+/// `reason` is null or valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_made(
+    peer: *mut ScePeer,
+    data: *const c_char,
+    kept: *mut i32,
+    reason: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(kept)?;
+        // SAFETY: the promises in the function's contract.
+        let (held, data) = unsafe {
+            put(reason, ScePeerBuf::EMPTY);
+            (handle(peer)?, text(data)?)
+        };
+        let answer = held.peer.made(data);
+        // SAFETY: `kept` is valid for a write, `reason` null or valid for one.
+        unsafe { put_kept(answer, kept, reason) };
+        Ok(())
+    })
+}
+
+/// The records of the device's own operations the host has not said it recorded, in the order of
+/// their numbers, as one JSON array in `out`: each `{"seq", "event", "data"}`, the number as text,
+/// and `data` the text the relay is given ([`Peer::take_records`]). They stay until
+/// [`sce_peer_recorded`] says so; an empty array when there are none.
+///
+/// # Safety
+/// `peer` is a live handle; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_take_records(peer: *mut ScePeer, out: *mut ScePeerBuf) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let records: Vec<Value> = held
+            .peer
+            .take_records()
+            .into_iter()
+            .map(|record| {
+                json!({"seq": record.seq.to_string(), "event": record.event, "data": record.data})
+            })
+            .collect();
+        let text = Value::Array(records).to_string();
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// The host recorded every operation of the device's chain up to `through` in its journal: the next
+/// round gives the relay what it lacks of them ([`Peer::recorded`]).
+///
+/// # Safety
+/// `peer` is a live handle.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_recorded(peer: *mut ScePeer, through: u64) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract.
+        let held = unsafe { handle(peer)? };
+        held.peer.recorded(through);
+        Ok(())
+    })
+}
+
+/// Take back what the host's journal holds of the device's own operations past the sealed state it
+/// restored: `records` is a NUL-terminated JSON array in the form [`sce_peer_take_records`] gives
+/// ([`Peer::restore_records`]). `kept` (may be null) is set to how many the core did not hold.
+/// `SCE_PEER_ERR_BAD_ARGUMENT` when the text is not that array, `SCE_PEER_ERR_UNREADABLE` when a
+/// record is not one of the device's own or does not hold, the records before it kept.
+///
+/// # Safety
+/// `peer` is a live handle; `records` is a NUL-terminated string; `kept` is null or valid for a
+/// write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_restore_records(
+    peer: *mut ScePeer,
+    records: *const c_char,
+    kept: *mut u64,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promises in the function's contract.
+        let (held, records) = unsafe { (handle(peer)?, text(records)?) };
+        let pairs = records_of(records).ok_or_else(|| {
+            fail(
+                SCE_PEER_ERR_BAD_ARGUMENT,
+                "the records are not a JSON array of {seq, event, data}",
+            )
+        })?;
+        let restored = held.peer.restore_records(&pairs).map_err(from_error)?;
+        // SAFETY: `kept` is null or valid for a write.
+        unsafe { put(kept, restored as u64) };
+        Ok(())
+    })
+}
+
+/// The records a host gives back, read from the text [`sce_peer_take_records`] wrote.
+fn records_of(text: &str) -> Option<Vec<(String, String)>> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    value
+        .as_array()?
+        .iter()
+        .map(|record| {
+            Some((
+                record.get("event")?.as_str()?.to_string(),
+                record.get("data")?.as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// A cut a lane gives, as the pairs [`numbered`] writes: `[[node, seq], ...]`, each number as
+/// text.
+fn cut_of(text: &str) -> Option<Vec<(u64, u64)>> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    value
+        .as_array()?
+        .iter()
+        .map(|pair| {
+            let pair = pair.as_array().filter(|pair| pair.len() == 2)?;
+            let number = |at: usize| pair[at].as_str()?.parse::<u64>().ok();
+            Some((number(0)?, number(1)?))
+        })
+        .collect()
+}
+
+/// The history a machine built again is given, as one JSON object in `out` ([`Peer::history`]):
+/// `roster`, the pairs of the event's name and its payload a round tells the roster in, and
+/// `changes`, every change the core holds that a round would tell, the device's own included, in
+/// causal order, from the cut `after` on (a NUL-terminated JSON array of `[node, seq]` pairs, each
+/// number as text, as [`sce_peer_stable_cut`] gives; null for the whole history), then the device's
+/// own changes that wait to be signed. Each change is `{"event", "data", "provisional"}`, with
+/// `author`, `seq` (as text) and `context` (pairs as text) when it has a tag; a change that waits has
+/// none and is `provisional`. `SCE_PEER_ERR_BAD_ARGUMENT` when `after` is not such an array.
+///
+/// # Safety
+/// `peer` is a live handle; `after` is null or a NUL-terminated string; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_history(
+    peer: *mut ScePeer,
+    after: *const c_char,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let cut = if after.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: not null, and NUL-terminated by the caller's promise.
+            let given = unsafe { text(after)? };
+            cut_of(given).ok_or_else(|| {
+                fail(
+                    SCE_PEER_ERR_BAD_ARGUMENT,
+                    "the cut is not a JSON array of [node, seq] pairs",
+                )
+            })?
+        };
+        let history = held.peer.history(&cut);
+        let changes: Vec<Value> = history
+            .changes
+            .iter()
+            .map(|told| {
+                let mut change = json!({
+                    "event": told.event,
+                    "data": told.data,
+                    "provisional": told.provisional(),
+                });
+                if let Some(tag) = &told.tag {
+                    change["author"] = json!(tag.author.to_string());
+                    change["seq"] = json!(tag.seq.to_string());
+                    change["context"] = json!(numbered(&tag.context).collect::<Vec<_>>());
+                }
+                change
+            })
+            .collect();
+        let text = json!({
+            "roster": history
+                .roster
+                .iter()
+                .map(|(event, data)| json!([event, data]))
+                .collect::<Vec<_>>(),
+            "changes": changes,
+        })
+        .to_string();
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// The stable cut, as one JSON array of `[node, seq]` pairs in `out`, each number as text, lowest
+/// node first ([`Peer::stable_cut`]): for each device, the highest number of its chain every member
+/// is known to have been told. The host folds its journal at it.
+///
+/// # Safety
+/// `peer` is a live handle; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_stable_cut(peer: *mut ScePeer, out: *mut ScePeerBuf) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let cut = held.peer.stable_cut();
+        let text = Value::Array(numbered(&cut).collect()).to_string();
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        Ok(())
+    })
+}
+
+/// Sign a mark of what the machine was told, when one is owed ([`Peer::mark`]): `seq` (may be null)
+/// is set to the number the mark took, 0 when none was owed. The next round gives it the relay.
+///
+/// # Safety
+/// `peer` is a live handle; `seq` is null or valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_mark(peer: *mut ScePeer, seq: *mut u64) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract.
+        let held = unsafe { handle(peer)? };
+        let marked = held.peer.mark().unwrap_or(0);
+        // SAFETY: `seq` is null or valid for a write.
+        unsafe { put(seq, marked) };
+        Ok(())
+    })
+}
+
+/// The highest stamp of the device's own changes the core holds, 0 and 0 when it holds none, and
+/// whether it has read its own chain back, 1 or 0 ([`Peer::own_stamp`], docs/adr/0093, section
+/// 6.3): a copy's next stamp exceeds it, which the host gives as `record_list.raise`.
+///
+/// # Safety
+/// `peer` is a live handle; `wall_time`, `counter` and `read_back` are each null or valid for a
+/// write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_own_stamp(
+    peer: *mut ScePeer,
+    wall_time: *mut i64,
+    counter: *mut u32,
+    read_back: *mut i32,
+) -> i32 {
+    guard(|| {
+        // SAFETY: the promise in the function's contract.
+        let held = unsafe { handle(peer)? };
+        let own = held.peer.own_stamp();
+        let (wall, count) = own.stamp.unwrap_or((0, 0));
+        // A stamp's counter is a `uint32` of its change's schema, and the trust signs no wider one.
+        let count = u32::try_from(count).unwrap_or(u32::MAX);
+        // SAFETY: each is null or valid for a write.
         unsafe {
-            put(kept, answer);
-            if let Some(why) = why {
-                put(reason, ScePeerBuf::of(why.into_bytes()));
-            }
+            put(wall_time, wall);
+            put(counter, count);
+            put(read_back, i32::from(own.read_back));
         }
         Ok(())
     })
@@ -1213,35 +1530,6 @@ pub unsafe extern "C" fn sce_peer_take_outcome(peer: *mut ScePeer, out: *mut Sce
         if let Some(outcome) = held.peer.take_outcome() {
             // SAFETY: `out` is valid for a write.
             unsafe { put(out, ScePeerBuf::of(outcome_text(&outcome).into_bytes())) };
-        }
-        Ok(())
-    })
-}
-
-/// The word the machine is told that the instant `before` is settled, as the JSON pair of the
-/// event's name and its payload text, when the checkpoints the device holds make a settlement of it
-/// with `digest`; an empty buffer when they do not ([`Peer::floor_event`]).
-///
-/// # Safety
-/// `peer` is a live handle; `out` is valid for a write.
-#[no_mangle]
-pub unsafe extern "C" fn sce_peer_floor_event(
-    peer: *mut ScePeer,
-    before: i64,
-    digest: u32,
-    out: *mut ScePeerBuf,
-) -> i32 {
-    guard(|| {
-        required(out)?;
-        // SAFETY: the promises in the function's contract.
-        let held = unsafe {
-            put(out, ScePeerBuf::EMPTY);
-            handle(peer)?
-        };
-        if let Some((event, data)) = held.peer.floor_event(before, digest) {
-            let pair = json!([event, data]).to_string();
-            // SAFETY: `out` is valid for a write.
-            unsafe { put(out, ScePeerBuf::of(pair.into_bytes())) };
         }
         Ok(())
     })

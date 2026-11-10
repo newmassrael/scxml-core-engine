@@ -548,17 +548,81 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
             SCE_PEER_ERR_NULL_ARGUMENT
         );
 
-        // No checkpoint makes a settlement here, and that is an empty buffer, not a failure.
-        let mut floor = empty();
+        // The outbox of a device that signed nothing: no record, an empty history and cut, no
+        // mark owed and no own stamp, each an answer and not a failure. A change offered in
+        // another's name is refused with why, an offer that is no change too, and what a text
+        // must be is checked before anything is taken.
+        assert_eq!(text_of(peer, sce_peer_take_records).as_deref(), Some("[]"));
+        assert_eq!(text_of(peer, sce_peer_stable_cut).as_deref(), Some("[]"));
+        let mut history = empty();
         assert_eq!(
-            sce_peer_floor_event(peer, 30_000, 7, &mut floor),
-            SCE_PEER_OK
+            sce_peer_history(peer, std::ptr::null(), &mut history),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
         );
-        assert_eq!(taken(floor), None);
+        let history: Value = serde_json::from_str(&taken(history).unwrap()).unwrap();
+        assert_eq!(history["changes"], json!([]), "{history}");
+        let mut history = empty();
         assert_eq!(
-            sce_peer_floor_event(peer, 30_000, 7, std::ptr::null_mut()),
+            sce_peer_history(peer, c"[[\"1\"]]".as_ptr(), &mut history),
+            SCE_PEER_ERR_BAD_ARGUMENT
+        );
+        assert_eq!(
+            sce_peer_history(peer, std::ptr::null(), std::ptr::null_mut()),
             SCE_PEER_ERR_NULL_ARGUMENT
         );
+        let mut marked = u64::MAX;
+        assert_eq!(sce_peer_mark(peer, &mut marked), SCE_PEER_OK);
+        assert_eq!(marked, 0, "no mark is owed");
+        let (mut wall, mut counter, mut read_back) = (-1i64, u32::MAX, -1i32);
+        assert_eq!(
+            sce_peer_own_stamp(peer, &mut wall, &mut counter, &mut read_back),
+            SCE_PEER_OK
+        );
+        assert_eq!((wall, counter, read_back), (0, 0, 1));
+        let mut kept = -1;
+        let mut reason = empty();
+        assert_eq!(
+            sce_peer_made(peer, write.as_ptr(), &mut kept, &mut reason),
+            SCE_PEER_OK
+        );
+        assert_eq!(
+            kept, SCE_PEER_KEPT_REFUSED,
+            "node 1 signs nothing in node 2's name"
+        );
+        assert!(!taken(reason).expect("a refusal says why").is_empty());
+        let mut kept = -1;
+        assert_eq!(
+            sce_peer_made(
+                peer,
+                c"not a change".as_ptr(),
+                &mut kept,
+                std::ptr::null_mut()
+            ),
+            SCE_PEER_OK
+        );
+        assert_eq!(kept, SCE_PEER_KEPT_REFUSED);
+        assert_eq!(
+            sce_peer_made(
+                peer,
+                write.as_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut()
+            ),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        let mut restored = u64::MAX;
+        assert_eq!(
+            sce_peer_restore_records(peer, c"[]".as_ptr(), &mut restored),
+            SCE_PEER_OK
+        );
+        assert_eq!(restored, 0);
+        assert_eq!(
+            sce_peer_restore_records(peer, c"{}".as_ptr(), std::ptr::null_mut()),
+            SCE_PEER_ERR_BAD_ARGUMENT
+        );
+        assert_eq!(sce_peer_recorded(peer, 5), SCE_PEER_OK);
 
         // Bytes that are no sealed state are refused, and a sealed state that does not open under
         // the key for this list and node is refused with its own status; the core takes nothing of
@@ -1195,7 +1259,25 @@ fn script_of(scenario: &Value) -> String {
                 text("fingerprint")
             ),
             "joined" => format!("joined {device} {} {}", step["node"], text("text")),
-            "request" | "respond" | "outcome" | "standing" => {
+            "made" => format!(
+                "made {device} {} {} {}",
+                text("data"),
+                word("kept"),
+                text("reason")
+            ),
+            "recorded" => format!("recorded {device} {}", step["through"]),
+            "restore_records" => format!(
+                "restore_records {device} {} {}",
+                text("records"),
+                step["count"]
+            ),
+            "mark" => format!("mark {device} {}", step["seq"]),
+            "own_stamp" => format!(
+                "own_stamp {device} {} {} {}",
+                step["wall_time"], step["counter"], step["read_back"]
+            ),
+            "request" | "respond" | "outcome" | "standing" | "records" | "history"
+            | "stable_cut" => {
                 format!("{op} {device} {}", text("text"))
             }
             "fail" => format!("fail {device} {}", text("reason")),

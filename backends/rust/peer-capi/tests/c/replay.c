@@ -34,6 +34,17 @@
  *   make_invited <d> <invitation>        the device's core made from the invitation, given its person
  *   join <d> <invitation> <fingerprint>  a join under the invitation begins, showing the fingerprint
  *   joined <d> <node> <text>             the devices that joined under the invitation of node
+ *   made <d> <data> <taken|held|not_signed|refused|waiting> <reason>
+ *                           the change a copy offered, and the verdict the core gave it
+ *   records <d> <text>      the records the host has not recorded
+ *   recorded <d> <through>  the host recorded every record up to through
+ *   restore_records <d> <records> <count>  a journal's records given back, and how many were new
+ *   history <d> <text>      the whole history
+ *   stable_cut <d> <text>   the stable cut
+ *   mark <d> <seq>          the number of the mark signed, 0 when none was owed
+ *   own_stamp <d> <wall_time> <counter> <read_back>
+ *                           the highest stamp of the device's own changes, and whether its chain
+ *                           was read back
  */
 
 #include <stdint.h>
@@ -440,6 +451,58 @@ int main(int argc, char **argv) {
             char *want = text_of(need());
             check(sce_peer_joined(peer, node, &out), "joined");
             expect_text(taken(out), want, "the devices that joined");
+        } else if (strcmp(op, "made") == 0) {
+            char *data = text_of(need());
+            int32_t want = kept_of(need());
+            char *reason = text_of(need());
+            int32_t kept = -1;
+            check(sce_peer_made(peer, data, &kept, &out), "made");
+            if (kept != want) {
+                die("the core did not give the verdict recorded");
+            }
+            expect_text(taken(out), reason, "the reason of the refusal or of the wait");
+            free(data);
+        } else if (strcmp(op, "records") == 0) {
+            char *want = text_of(need());
+            check(sce_peer_take_records(peer, &out), "take_records");
+            expect_text(taken(out), want, "the records");
+        } else if (strcmp(op, "recorded") == 0) {
+            check(sce_peer_recorded(peer, strtoull(need(), NULL, 10)), "recorded");
+        } else if (strcmp(op, "restore_records") == 0) {
+            char *records = text_of(need());
+            uint64_t want = strtoull(need(), NULL, 10);
+            uint64_t count = UINT64_MAX;
+            check(sce_peer_restore_records(peer, records, &count), "restore_records");
+            if (count != want) {
+                die("the records given back held another number of new ones than was recorded");
+            }
+            free(records);
+        } else if (strcmp(op, "history") == 0) {
+            char *want = text_of(need());
+            check(sce_peer_history(peer, NULL, &out), "history");
+            expect_text(taken(out), want, "the history");
+        } else if (strcmp(op, "stable_cut") == 0) {
+            char *want = text_of(need());
+            check(sce_peer_stable_cut(peer, &out), "stable_cut");
+            expect_text(taken(out), want, "the stable cut");
+        } else if (strcmp(op, "mark") == 0) {
+            uint64_t want = strtoull(need(), NULL, 10);
+            uint64_t seq = UINT64_MAX;
+            check(sce_peer_mark(peer, &seq), "mark");
+            if (seq != want) {
+                die("the core signed another mark than was recorded");
+            }
+        } else if (strcmp(op, "own_stamp") == 0) {
+            int64_t want_wall = strtoll(need(), NULL, 10);
+            uint32_t want_counter = (uint32_t)strtoul(need(), NULL, 10);
+            int32_t want_read_back = (int32_t)strtol(need(), NULL, 10);
+            int64_t wall_time = -1;
+            uint32_t counter = UINT32_MAX;
+            int32_t read_back = -1;
+            check(sce_peer_own_stamp(peer, &wall_time, &counter, &read_back), "own_stamp");
+            if (wall_time != want_wall || counter != want_counter || read_back != want_read_back) {
+                die("the core's own stamp is not the recorded one");
+            }
         } else {
             die("a step the replay does not know");
         }
