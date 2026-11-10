@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 278
+engine-documents 279
 native-prefix-documents 2
-datamodel-variable-init 504
+datamodel-variable-init 505
 transition-guard 258
-assign-action 432
+assign-action 437
 child-invoke-needs-script-engine 59
 log-expr 46
 send-param-expr 49
@@ -129,6 +129,18 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
+2026-11-08 without this table, and it exists to need an engine.
+- `backends/c/tests/integration_resources/a_script_machine_owns_each_event_text`
+  (67b7e26597) is the carrier of what a C11 machine whose data model is a script
+  engine does with each event's text (docs/adr/0086, section 8.5 (a)): it holds
+  the text in the allocator of its engine, moved from holder to holder and freed
+  once, so the engine is what the document tests.
+
+It raised `engine-documents` by one, `assign-action` by five and
+`datamodel-variable-init` by one, as the census measured it. Tree Hygiene was
+red from the first push that reached this test until this entry.
 
 ⚠ **2026-11-10, deliberately, two days late:** three documents landed on
 2026-11-07 and 2026-11-08 without this table, and each exists to need an engine.
