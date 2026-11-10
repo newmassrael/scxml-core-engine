@@ -13,9 +13,12 @@ mod codec_cbor_map {
 }
 
 // The Mesh envelope (`sce:std/mesh/envelope.scxml`) and the standard enums
-// it imports, as siblings — the envelope names them `super::pattern_kind`
-// and so on.
+// and the event schema it imports, as siblings: the envelope names them
+// `super::pattern_kind`, `super::causal_entry` and so on.
 mod mesh {
+    pub mod causal_entry {
+        include!(concat!(env!("OUT_DIR"), "/causal_entry.rs"));
+    }
     pub mod pattern_kind {
         include!(concat!(env!("OUT_DIR"), "/pattern_kind.rs"));
     }
