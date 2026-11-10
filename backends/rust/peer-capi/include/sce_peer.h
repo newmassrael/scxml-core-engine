@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-#define SCE_PEER_ABI_VERSION 7u
+#define SCE_PEER_ABI_VERSION 8u
 
 #define SCE_PEER_OK 0
 #define SCE_PEER_ERR_NOTHING_ASKED 1
@@ -162,10 +162,37 @@ int32_t sce_peer_remove_member(ScePeer *peer, uint64_t node);
 /* What the device stands at in its list, as one JSON text. */
 int32_t sce_peer_standing(ScePeer *peer, ScePeerBuf *out);
 
-/* What the machine sent: *kept is SCE_PEER_KEPT_*, and *reason (may be NULL) says why when refused or
- * kept waiting. A send the device may not sign yet waits, with every send after it, and the round
- * that reads what it waits for signs it (the outcome's taken) or refuses it (the outcome's dropped). */
+/* What the machine of a copy that keeps no journal sent: *kept is SCE_PEER_KEPT_*, and *reason (may be
+ * NULL) says why when refused or kept waiting. A send the device may not sign yet waits, with every
+ * send after it, and the round that reads what it waits for signs it (the outcome's taken) or
+ * withdraws it with every send after it (the outcome's withdrawn). */
 int32_t sce_peer_outbound(ScePeer *peer, const char *event, const char *data, int32_t *kept, ScePeerBuf *reason);
+
+/* The outbox of a copy that keeps a journal. The change the copy offered (record_list.made's payload)
+ * is signed in the call: *kept is the verdict the lane gives the copy (TAKEN accepted, HELD held,
+ * WAITING waiting, REFUSED refused), and *reason (may be NULL) says why for the last two. What is
+ * signed is a record, given as a JSON array of {seq, event, data}, that the lane appends to its
+ * journal; no round gives the relay an operation of the device from the first record not recorded
+ * on, until the lane says it recorded every one up to through. A lane started again gives its
+ * journal's records back, in the same form, after the sealed state: *kept (may be NULL) is how many
+ * the core did not hold. */
+int32_t sce_peer_made(ScePeer *peer, const char *data, int32_t *kept, ScePeerBuf *reason);
+int32_t sce_peer_take_records(ScePeer *peer, ScePeerBuf *out);
+int32_t sce_peer_recorded(ScePeer *peer, uint64_t through);
+int32_t sce_peer_restore_records(ScePeer *peer, const char *records, uint64_t *kept);
+
+/* What a machine built again is given, as one JSON object {roster, changes}: every change the core
+ * holds in causal order with its tag (author, seq, context), from the cut after on (a JSON array of
+ * [node, seq] pairs, or NULL for the whole history), then the device's own changes that wait,
+ * provisional. The stable cut is such an array: what every member is known to have been told. A
+ * device that has not written for a while signs a mark (*seq the number it took, 0 when none was
+ * owed), which the next round gives the relay. *wall_time and *counter are the highest stamp of the
+ * device's own changes the core holds (0 and 0 for none), and *read_back 1 once it read its own
+ * chain back; any of the three may be NULL. */
+int32_t sce_peer_history(ScePeer *peer, const char *after, ScePeerBuf *out);
+int32_t sce_peer_stable_cut(ScePeer *peer, ScePeerBuf *out);
+int32_t sce_peer_mark(ScePeer *peer, uint64_t *seq);
+int32_t sce_peer_own_stamp(ScePeer *peer, int64_t *wall_time, uint32_t *counter, int32_t *read_back);
 
 /* An exchange with the relay: begun, then each request polled and answered (or failed) until the
  * poll gives an empty buffer, then its outcome taken once. */
@@ -202,9 +229,6 @@ int32_t sce_peer_invite_under(ScePeer *peer, const char *relay, const char *audi
 int32_t sce_peer_invitation_read(const uint8_t *invitation, size_t len, ScePeerBuf *out);
 int32_t sce_peer_join(ScePeer *peer, const uint8_t *invitation, size_t len, ScePeerBuf *fingerprint);
 int32_t sce_peer_joined(ScePeer *peer, uint64_t node, ScePeerBuf *out);
-
-/* The event that says an instant is settled, as the JSON pair [name, payload]; empty when it is not. */
-int32_t sce_peer_floor_event(ScePeer *peer, int64_t before, uint32_t digest, ScePeerBuf *out);
 
 /* What the device keeps, its secrets with the rest, as one sealed state, and taking it back into a
  * core just made for the same list and given nothing else.

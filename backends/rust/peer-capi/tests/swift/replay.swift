@@ -363,6 +363,58 @@ final class Replayer {
                 let want = text()
                 check(sce_peer_joined(peer, node, &out), "joined")
                 expect(taken(out), want, "the devices that joined")
+            case "made":
+                let data = text()
+                let want = kept(need())
+                let reason = text()
+                var answer: Int32 = -1
+                check(sce_peer_made(peer, data, &answer, &out), "made")
+                if answer != want {
+                    die("the core did not give the verdict recorded")
+                }
+                expect(taken(out), reason, "the reason of the refusal or of the wait")
+            case "records":
+                let want = text()
+                check(sce_peer_take_records(peer, &out), "take_records")
+                expect(taken(out), want, "the records")
+            case "recorded":
+                check(sce_peer_recorded(peer, number()), "recorded")
+            case "restore_records":
+                let records = text()
+                let want = number()
+                var count: UInt64 = .max
+                check(sce_peer_restore_records(peer, records, &count), "restore_records")
+                if count != want {
+                    die("the records given back held another number of new ones than was recorded")
+                }
+            case "history":
+                let want = text()
+                check(sce_peer_history(peer, nil, &out), "history")
+                expect(taken(out), want, "the history")
+            case "stable_cut":
+                let want = text()
+                check(sce_peer_stable_cut(peer, &out), "stable_cut")
+                expect(taken(out), want, "the stable cut")
+            case "mark":
+                let want = number()
+                var seq: UInt64 = .max
+                check(sce_peer_mark(peer, &seq), "mark")
+                if seq != want {
+                    die("the core signed another mark than was recorded")
+                }
+            case "own_stamp":
+                guard let wantWall = Int64(need()),
+                      let wantCounter = UInt32(need()),
+                      let wantReadBack = Int32(need()) else {
+                    die("an own stamp is three numbers")
+                }
+                var wallTime: Int64 = -1
+                var counter: UInt32 = .max
+                var readBack: Int32 = -1
+                check(sce_peer_own_stamp(peer, &wallTime, &counter, &readBack), "own_stamp")
+                if wallTime != wantWall || counter != wantCounter || readBack != wantReadBack {
+                    die("the core's own stamp is not the recorded one")
+                }
             default:
                 die("a step the replay does not know: \(op)")
             }

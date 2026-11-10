@@ -56,6 +56,14 @@ type step struct {
 	Secret      string `json:"secret"`
 	Invitation  string `json:"invitation"`
 	Fingerprint string `json:"fingerprint"`
+	// The outbox's steps: the records given back, how far the host recorded, the mark signed and
+	// the device's own stamp.
+	Records  string `json:"records"`
+	Through  uint64 `json:"through"`
+	Seq      uint64 `json:"seq"`
+	WallTime int64  `json:"wall_time"`
+	Counter  uint32 `json:"counter"`
+	ReadBack int32  `json:"read_back"`
 }
 
 // given gives the core of d its person, and the administrator's key when it holds one.
@@ -362,6 +370,52 @@ func main() {
 			check(C.sce_peer_joined(peer, C.uint64_t(s.Node), &out), "joined")
 			joined, _ := taken(out)
 			expect(joined, s.Text, "the devices that joined")
+		case "made":
+			data := cstring(s.Data)
+			var kept C.int32_t = -1
+			check(C.sce_peer_made(peer, data, &kept, &out), "made")
+			free(data)
+			if kept != keptOf(s.Kept) {
+				fail("the core did not give the verdict recorded")
+			}
+			reason, _ := taken(out)
+			expect(reason, s.Reason, "the reason of the refusal or of the wait")
+		case "records":
+			check(C.sce_peer_take_records(peer, &out), "take_records")
+			records, _ := taken(out)
+			expect(records, s.Text, "the records")
+		case "recorded":
+			check(C.sce_peer_recorded(peer, C.uint64_t(s.Through)), "recorded")
+		case "restore_records":
+			records := cstring(s.Records)
+			var count C.uint64_t
+			check(C.sce_peer_restore_records(peer, records, &count), "restore_records")
+			free(records)
+			if uint64(count) != s.Count {
+				fail("the records given back held another number of new ones than was recorded")
+			}
+		case "history":
+			check(C.sce_peer_history(peer, nil, &out), "history")
+			history, _ := taken(out)
+			expect(history, s.Text, "the history")
+		case "stable_cut":
+			check(C.sce_peer_stable_cut(peer, &out), "stable_cut")
+			cut, _ := taken(out)
+			expect(cut, s.Text, "the stable cut")
+		case "mark":
+			var seq C.uint64_t
+			check(C.sce_peer_mark(peer, &seq), "mark")
+			if uint64(seq) != s.Seq {
+				fail("the core signed another mark than was recorded")
+			}
+		case "own_stamp":
+			var wallTime C.int64_t
+			var counter C.uint32_t
+			var readBack C.int32_t
+			check(C.sce_peer_own_stamp(peer, &wallTime, &counter, &readBack), "own_stamp")
+			if int64(wallTime) != s.WallTime || uint32(counter) != s.Counter || int32(readBack) != s.ReadBack {
+				fail("the core's own stamp is not the recorded one")
+			}
 		default:
 			fail("a step the replay does not know: %s", s.Op)
 		}

@@ -392,6 +392,56 @@ int main(int argc, char **argv) {
             const std::string want = tokens.text();
             check(sce_peer_joined(peer, node, &out), "joined");
             expect_text(taken(out), want, "the devices that joined");
+        } else if (op == "made") {
+            const std::string data = tokens.text();
+            const int32_t want = kept_of(tokens.need());
+            const std::string reason = tokens.text();
+            int32_t kept = -1;
+            check(sce_peer_made(peer, data.c_str(), &kept, &out), "made");
+            if (kept != want) {
+                die("the core did not give the verdict recorded");
+            }
+            expect_text(taken(out), reason, "the reason of the refusal or of the wait");
+        } else if (op == "records") {
+            const std::string want = tokens.text();
+            check(sce_peer_take_records(peer, &out), "take_records");
+            expect_text(taken(out), want, "the records");
+        } else if (op == "recorded") {
+            check(sce_peer_recorded(peer, tokens.number()), "recorded");
+        } else if (op == "restore_records") {
+            const std::string records = tokens.text();
+            const uint64_t want = tokens.number();
+            uint64_t count = UINT64_MAX;
+            check(sce_peer_restore_records(peer, records.c_str(), &count), "restore_records");
+            if (count != want) {
+                die("the records given back held another number of new ones than was recorded");
+            }
+        } else if (op == "history") {
+            const std::string want = tokens.text();
+            check(sce_peer_history(peer, nullptr, &out), "history");
+            expect_text(taken(out), want, "the history");
+        } else if (op == "stable_cut") {
+            const std::string want = tokens.text();
+            check(sce_peer_stable_cut(peer, &out), "stable_cut");
+            expect_text(taken(out), want, "the stable cut");
+        } else if (op == "mark") {
+            const uint64_t want = tokens.number();
+            uint64_t seq = UINT64_MAX;
+            check(sce_peer_mark(peer, &seq), "mark");
+            if (seq != want) {
+                die("the core signed another mark than was recorded");
+            }
+        } else if (op == "own_stamp") {
+            const int64_t want_wall = std::stoll(tokens.need());
+            const auto want_counter = static_cast<uint32_t>(tokens.number());
+            const auto want_read_back = static_cast<int32_t>(std::stol(tokens.need()));
+            int64_t wall_time = -1;
+            uint32_t counter = UINT32_MAX;
+            int32_t read_back = -1;
+            check(sce_peer_own_stamp(peer, &wall_time, &counter, &read_back), "own_stamp");
+            if (wall_time != want_wall || counter != want_counter || read_back != want_read_back) {
+                die("the core's own stamp is not the recorded one");
+            }
         } else {
             die("a step the replay does not know");
         }

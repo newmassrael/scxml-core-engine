@@ -23,8 +23,8 @@ class ScePeerException(val status: Int, message: String) : RuntimeException(mess
 /**
  * What the core did with a send of the machine (`SCE_PEER_KEPT_*`). [WAITING] is a send the device
  * may not sign yet, kept with every send after it: the round that reads what it waits for signs it
- * and gives it the relay (the outcome's `taken`), or refuses it when the log says the person never
- * may (the outcome's `dropped`, and `rebuild`).
+ * (the outcome's `taken`), or withdraws it with every send after it when it never will be signed
+ * (the outcome's `withdrawn`).
  */
 enum class Kept(val code: Int) {
     TAKEN(ScePeerAbi.KEPT_TAKEN),
@@ -41,6 +41,9 @@ enum class Kept(val code: Int) {
 
 /** What the core did with a send, and why when it refused it or keeps it waiting. */
 data class Sent(val kept: Kept, val reason: String?)
+
+/** The highest stamp of the device's own changes, and whether its core has read its own chain back. */
+data class OwnStamp(val wallTime: Long, val counter: Long, val readBack: Boolean)
 
 /** A device's sealed state, and the data key it was sealed under, for the host to wrap. */
 class Sealed(val state: ByteArray, val key: ByteArray)
@@ -240,10 +243,75 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
         return lib.text(out)
     }
 
-    fun floorEvent(before: Long, digest: Int): String? {
+    /**
+     * The change a copy that keeps a journal offered (`record_list.made`'s JSON payload), signed in
+     * the call (`sce_peer_made`): the verdict the host gives the copy, [Kept.TAKEN] `accepted`,
+     * [Kept.HELD] `held`, [Kept.WAITING] `waiting`, [Kept.REFUSED] `refused`, and why for the last two.
+     */
+    fun made(data: String): Sent {
+        val kept = IntByReference(-1)
+        val reason = Buf()
+        lib.check(lib.sce_peer_made(pointer, data, kept, reason), "made")
+        return Sent(Kept.of(kept.value), lib.text(reason))
+    }
+
+    /**
+     * The records the host has not said it recorded, as the JSON array of the ABI
+     * (`sce_peer_take_records`): what the host appends to its journal before [recorded].
+     */
+    fun takeRecords(): String {
         val out = Buf()
-        lib.check(lib.sce_peer_floor_event(pointer, before, digest, out), "floor_event")
-        return lib.text(out)
+        lib.check(lib.sce_peer_take_records(pointer, out), "take_records")
+        return lib.text(out) ?: throw IllegalStateException("the core gave no records")
+    }
+
+    /** The host recorded every record up to [through] (`sce_peer_recorded`): the next round gives them the relay. */
+    fun recorded(through: Long) = lib.check(lib.sce_peer_recorded(pointer, through), "recorded")
+
+    /**
+     * Gives back the records a journal holds past the sealed state restored, in the form [takeRecords]
+     * gives (`sce_peer_restore_records`); how many the core did not hold.
+     */
+    fun restoreRecords(records: String): Long {
+        val kept = LongByReference(-1)
+        lib.check(lib.sce_peer_restore_records(pointer, records, kept), "restore_records")
+        return kept.value
+    }
+
+    /**
+     * The history a machine built again is given, as the JSON object of the ABI (`sce_peer_history`),
+     * from the cut [after] (a JSON array of `[node, seq]` pairs) on, or the whole of it.
+     */
+    fun history(after: String? = null): String {
+        val out = Buf()
+        lib.check(lib.sce_peer_history(pointer, after, out), "history")
+        return lib.text(out) ?: throw IllegalStateException("the core gave no history")
+    }
+
+    /** The stable cut, as the JSON array of `[node, seq]` pairs of the ABI (`sce_peer_stable_cut`). */
+    fun stableCut(): String {
+        val out = Buf()
+        lib.check(lib.sce_peer_stable_cut(pointer, out), "stable_cut")
+        return lib.text(out) ?: throw IllegalStateException("the core gave no cut")
+    }
+
+    /** Signs a mark when one is owed (`sce_peer_mark`): its number, 0 when none was. */
+    fun mark(): Long {
+        val seq = LongByReference(-1)
+        lib.check(lib.sce_peer_mark(pointer, seq), "mark")
+        return seq.value
+    }
+
+    /**
+     * The highest stamp of the device's own changes (0 and 0 for none), and whether the core has read
+     * its own chain back (`sce_peer_own_stamp`): what the host gives its copy as `record_list.raise`.
+     */
+    fun ownStamp(): OwnStamp {
+        val wallTime = LongByReference(-1)
+        val counter = IntByReference(-1)
+        val readBack = IntByReference(-1)
+        lib.check(lib.sce_peer_own_stamp(pointer, wallTime, counter, readBack), "own_stamp")
+        return OwnStamp(wallTime.value, counter.value.toLong() and 0xffffffffL, readBack.value != 0)
     }
 
     /**

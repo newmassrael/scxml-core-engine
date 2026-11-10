@@ -21,7 +21,7 @@ import com.sun.jna.ptr.LongByReference
 /** The numbers of `include/sce_peer.h`, by the names it gives them without `SCE_PEER_`. */
 object ScePeerAbi {
     /** `SCE_PEER_ABI_VERSION`: the ABI this binding declares. */
-    const val VERSION = 7
+    const val VERSION = 8
 
     const val OK = 0
     const val ERR_NOTHING_ASKED = 1
@@ -188,7 +188,14 @@ interface ScePeerLib : Library {
     fun sce_peer_respond(peer: Pointer, response: String): Int
     fun sce_peer_fail(peer: Pointer, reason: String): Int
     fun sce_peer_take_outcome(peer: Pointer, out: Buf): Int
-    fun sce_peer_floor_event(peer: Pointer, before: Long, digest: Int, out: Buf): Int
+    fun sce_peer_made(peer: Pointer, data: String, kept: IntByReference, reason: Buf): Int
+    fun sce_peer_take_records(peer: Pointer, out: Buf): Int
+    fun sce_peer_recorded(peer: Pointer, through: Long): Int
+    fun sce_peer_restore_records(peer: Pointer, records: String, kept: LongByReference?): Int
+    fun sce_peer_history(peer: Pointer, after: String?, out: Buf): Int
+    fun sce_peer_stable_cut(peer: Pointer, out: Buf): Int
+    fun sce_peer_mark(peer: Pointer, seq: LongByReference?): Int
+    fun sce_peer_own_stamp(peer: Pointer, wallTime: LongByReference?, counter: IntByReference?, readBack: IntByReference?): Int
     fun sce_peer_save_sealed(peer: Pointer, state: Buf, key: ByteArray): Int
     fun sce_peer_save_sealed_under(peer: Pointer, key: ByteArray, state: Buf): Int
     fun sce_peer_restore_sealed(

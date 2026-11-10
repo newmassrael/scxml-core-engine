@@ -34,7 +34,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
-private const val ABI_VERSION = 7
+private const val ABI_VERSION = 8
 private const val OK = 0
 private val KEPT = mapOf("taken" to 0, "held" to 1, "not_signed" to 2, "refused" to 3, "waiting" to 4)
 private val KINDS = mapOf("sync" to 0, "resync" to 1, "reread" to 2)
@@ -270,6 +270,50 @@ fun main(args: Array<String>) {
                 val node = step.getValue("node").jsonPrimitive.long
                 check(lib.sce_peer_joined(peer, node, out), "joined")
                 expect(taken(out), text("text"), "the devices that joined")
+            }
+            "made" -> {
+                val kept = IntByReference(-1)
+                check(lib.sce_peer_made(peer, text("data"), kept, out), "made")
+                if (kept.value != KEPT[text("kept")]) die("the core did not give the verdict recorded")
+                expect(taken(out), text("reason"), "the reason of the refusal or of the wait")
+            }
+            "records" -> {
+                check(lib.sce_peer_take_records(peer, out), "take_records")
+                expect(taken(out), text("text"), "the records")
+            }
+            "recorded" -> check(lib.sce_peer_recorded(peer, step.getValue("through").jsonPrimitive.long), "recorded")
+            "restore_records" -> {
+                val count = LongByReference(-1)
+                check(lib.sce_peer_restore_records(peer, text("records"), count), "restore_records")
+                if (count.value != step.getValue("count").jsonPrimitive.long) {
+                    die("the records given back held another number of new ones than was recorded")
+                }
+            }
+            "history" -> {
+                check(lib.sce_peer_history(peer, null, out), "history")
+                expect(taken(out), text("text"), "the history")
+            }
+            "stable_cut" -> {
+                check(lib.sce_peer_stable_cut(peer, out), "stable_cut")
+                expect(taken(out), text("text"), "the stable cut")
+            }
+            "mark" -> {
+                val seq = LongByReference(-1)
+                check(lib.sce_peer_mark(peer, seq), "mark")
+                if (seq.value != step.getValue("seq").jsonPrimitive.long) die("the core signed another mark than was recorded")
+            }
+            "own_stamp" -> {
+                val wallTime = LongByReference(-1)
+                val counter = IntByReference(-1)
+                val readBack = IntByReference(-1)
+                check(lib.sce_peer_own_stamp(peer, wallTime, counter, readBack), "own_stamp")
+                val got = Triple(wallTime.value, counter.value.toLong() and 0xffffffffL, readBack.value)
+                val want = Triple(
+                    step.getValue("wall_time").jsonPrimitive.long,
+                    step.getValue("counter").jsonPrimitive.long,
+                    step.getValue("read_back").jsonPrimitive.int,
+                )
+                if (got != want) die("the core's own stamp $got is not the recorded one")
             }
             else -> die("a step the replay does not know: $op")
         }
