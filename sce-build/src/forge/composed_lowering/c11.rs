@@ -764,6 +764,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: false,
+                records: false,
                 sends: true,
             }
         );

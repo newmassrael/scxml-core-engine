@@ -410,12 +410,12 @@ fn a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name() {
 
 #[test]
 fn a_variable_that_names_a_composed_record_is_refused_by_name() {
-    // A record, an element of a list and an optional record alike: the record
-    // holds a list (`tags`) at whatever depth the variable names it.
+    // A record and an element of a list alike: the record holds a list
+    // (`tags`) at whatever depth the variable names it, and no backend holds
+    // either.
     for data in [
         r#"<data id="kept" sce:type="record:Item"/>"#,
         r#"<data id="kept" sce:type="list&lt;record:Item&gt;[2]"/>"#,
-        r#"<data id="kept" sce:type="optional&lt;record:Item&gt;" expr="null"/>"#,
     ] {
         let out = refusal_of(
             &["check"],
@@ -424,6 +424,41 @@ fn a_variable_that_names_a_composed_record_is_refused_by_name() {
         assert!(out.contains("the field `tags`"), "{out}");
         assert!(out.contains("a statechart's variable"), "{out}");
     }
+}
+
+/// Pinned by `ComposedLowering::of`'s `records`: an optional record that holds
+/// a list starts absent until a lift writes it whole (docs/adr/0087, "Landing
+/// order" item 8). Each backend whose row holds one takes the variable, and
+/// each other backend, asked of the table, refuses it by its own name.
+#[test]
+fn an_optional_variable_of_a_composed_record_is_held_where_its_row_says() {
+    let document = reader(
+        r#"<data id="kept" sce:type="optional&lt;record:Item&gt;" expr="null"/>"#,
+        "",
+        r#"<transition event="go" target="idle"/>"#,
+    );
+    let mut held = 0;
+    for (language, row) in checked_backends() {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            &[("batch_reader.scxml", &document)],
+            "batch_reader.scxml",
+        );
+        if row.records {
+            held += 1;
+            assert!(ok, "{language} holds the variable:\n{out}");
+            continue;
+        }
+        assert!(!ok, "{language} holds no such variable yet:\n{out}");
+        assert!(out.contains("generate/unsupported-feature"), "{out}");
+        assert!(out.contains("the field `tags`"), "{out}");
+        assert!(out.contains("a statechart's variable"), "{out}");
+        assert!(
+            out.contains(&format!("has no {language} lowering")),
+            "{out}"
+        );
+    }
+    assert!(held > 0, "some backend holds the variable");
 }
 
 #[test]

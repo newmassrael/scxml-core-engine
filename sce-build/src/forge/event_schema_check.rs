@@ -240,6 +240,14 @@ pub struct ComposedLowering {
     /// holds none reads no payload that holds a union at any depth either,
     /// whatever it reads of any other composed value.
     pub unions: bool,
+    /// Whether it holds a statechart's variable of `optional<record:R>` whose
+    /// record `R` holds a composition at any depth, starting absent, and lowers
+    /// the `<sce:lift>` that writes a value of `R` into it whole (docs/adr/0087,
+    /// section 2.1 and "Landing order" item 8): the machine's own record, read
+    /// out of the text by the composed walk of its type and kept in a saved
+    /// state by its type. A lowering that holds none refuses such a variable by
+    /// name, and with it every lift of such a record, which writes one.
+    pub records: bool,
     /// Whether it lowers a `<send>` of the event of a schema that holds a
     /// composition (section 5.2): each composed field given by a `<param>`
     /// that names a place whose type fits the field's, written by walking the
@@ -260,6 +268,7 @@ impl ComposedLowering {
         reads: true,
         copies: true,
         unions: false,
+        records: false,
         sends: true,
     };
 
@@ -272,6 +281,7 @@ impl ComposedLowering {
         reads: true,
         copies: true,
         unions: true,
+        records: true,
         sends: true,
     };
 
@@ -282,7 +292,10 @@ impl ComposedLowering {
     /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`])
     /// reads a composed payload at any depth, takes a list whole and sends a
     /// composed value; one whose spelling holds a union reads a payload that
-    /// holds one too; every other backend lowers no composed value yet.
+    /// holds one too; one whose lift reads a value whole by the walk and whose
+    /// saved state keeps a record by its type holds a variable of a record that
+    /// holds a composition ([`Self::records`]); every other backend lowers no
+    /// composed value yet.
     ///
     /// A backend's step flips its own row and nothing else: the rows stand a
     /// line apart, so two steps landed side by side touch no line in common,
@@ -296,6 +309,7 @@ impl ComposedLowering {
             reads: false,
             copies: false,
             unions: false,
+            records: false,
             sends: false,
         };
         let walks = Self {
@@ -307,6 +321,7 @@ impl ComposedLowering {
         match language {
             Language::Rust => Self {
                 unions: true,
+                records: true,
                 ..walks
             },
 
@@ -333,8 +348,10 @@ impl ComposedLowering {
 /// a variable whose type is a composition no slot's lowering holds
 /// ([`crate::forge::value_type::WrittenType::slot_view`]), a variable whose
 /// type names, at any depth, a record of a schema whose field is a list, a
-/// record or an optional over either, a read of `_event.data` on a transition
-/// taken on such a schema's event (unless `lowering` reads one,
+/// record or an optional over either (but `optional<record:R>` itself where
+/// `lowering` holds one, [`ComposedLowering::records`]), a read of
+/// `_event.data` on a transition taken on such a schema's event (unless
+/// `lowering` reads one,
 /// [`ComposedLowering::reads`]), a `<send>` of that event (unless `lowering`
 /// sends one, [`ComposedLowering::sends`]) and a `<raise>` of it, a read of a
 /// payload that holds a union at any depth where `lowering` holds none
@@ -406,6 +423,7 @@ fn first_unlowered_composed_use(
         reads: lowers_reads,
         copies: lowers_copies,
         unions: lowers_unions,
+        records: lowers_records,
         sends: lowers_sends,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
@@ -463,12 +481,31 @@ fn first_unlowered_composed_use(
                 at,
             );
         }
+        // A variable of `optional<record:R>` whose `R` holds a composition is
+        // the machine's own record where the lowering holds one, starting
+        // absent until a lift writes it whole ([`ComposedLowering::records`]);
+        // the records `R` holds are declared with it. Every other variable that
+        // names such a record, itself or inside a list, is refused by name.
+        let held_whole = if lowers_records {
+            ty.optional_elem().and_then(|elem| elem.record_alias())
+        } else {
+            None
+        };
+        let position = if lowers_records && ty.record_alias().is_some() {
+            "a statechart's variable that is not optional (one of `optional<record:R>` starts \
+             absent and is written whole by a lift)"
+        } else {
+            "a statechart's variable"
+        };
         for alias in ty.record_aliases() {
+            if held_whole == Some(alias) {
+                continue;
+            }
             let Some(schema) = scxml.imported_records.get(alias) else {
                 continue;
             };
             if let Err(composed) = schema.entry_schema() {
-                return refused(schema, composed, "a statechart's variable", at);
+                return refused(schema, composed, position, at);
             }
         }
         if ty.list_elem().is_some() {
@@ -2650,6 +2687,10 @@ mod tests {
             some_backend(|lowering| lowering.unions)
         );
         assert_eq!(
+            ComposedLowering::ANY_BACKEND.records,
+            some_backend(|lowering| lowering.records)
+        );
+        assert_eq!(
             ComposedLowering::ANY_BACKEND.sends,
             some_backend(|lowering| lowering.sends)
         );
@@ -2680,6 +2721,9 @@ mod tests {
             assert_eq!(lowering.copies, read.is_some(), "{language:?}");
             assert_eq!(lowering.sends, sent.is_some(), "{language:?}");
             assert_eq!(lowering.unions, holds_unions, "{language:?}");
+            // A record that holds a composition is read out of a lift's text by
+            // the walks, so a backend holds one only where it spells them.
+            assert!(!lowering.records || read.is_some(), "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

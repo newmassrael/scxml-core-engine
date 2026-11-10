@@ -2141,33 +2141,12 @@ impl<'a> Judge<'a> {
                 "schema",
             ));
         }
-        // A schema one of whose fields holds a list or a record is read once
-        // the composed readers lower for every backend (docs/adr/0086, step 3;
-        // docs/adr/0087, section 7.1): refused by name until then, never read
-        // in part.
-        if !union && !self.schemas.contains_key(schema) {
-            let composed = self.lift_schemas[schema]
-                .fields
-                .iter()
-                .find_map(|field| field.entry_field().err())
-                .map(|composed| {
-                    format!(
-                        "the field `{}` holds `{}`",
-                        composed.field, composed.composition.place
-                    )
-                })
-                .unwrap_or_else(|| "a field holds a list or a record".to_string());
-            return Err(located(
-                crate::forge::error::GenerateError::unsupported(format!(
-                    "<sce:lift schema=\"{schema}\">: {composed}, and a lift reads a record whose \
-                     fields are numbers, truth values, enums, texts, byte strings or optional \
-                     ones of them; a record that holds a list or a record is read once every \
-                     backend lowers the composed readers (docs/adr/0087, section 7.1)"
-                ))
-                .into(),
-                "schema",
-            ));
-        }
+        // A schema one of whose fields holds a list or a record is read as any
+        // other is (docs/adr/0087, "Landing order" item 8): its depth and its
+        // longest pointer are the type's, below. Whether a backend holds the
+        // variable it is lifted into is the one table of what each lowers
+        // ([`crate::forge::event_schema_check::ComposedLowering::records`]),
+        // which refuses it by name where it does not.
 
         // The location: a variable of the record or the union, or of an
         // optional one.

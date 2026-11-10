@@ -1136,6 +1136,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: true,
+                records: false,
                 sends: true,
             }
         );

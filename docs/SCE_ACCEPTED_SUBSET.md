@@ -4926,10 +4926,13 @@ stands in goes on, and after it `why` says which of the two happened. What each 
 must be is judged where the document is read:
 
 - `schema` is an event schema the document imports (`validation/invalid-attribute`,
-  with the aliases it imports), whose fields are numbers, truth values, closed enums,
-  bounded texts and byte strings, or optional ones of them; one holding a list or a
-  record is `generate/unsupported-feature` until every backend reads one
-  (docs/adr/0087, section 7.1);
+  with the aliases it imports), or a union it imports (docs/adr/0092); a schema whose
+  record holds a list or a record at any depth is read as any other is, by the reader
+  of a delivery of its type (docs/adr/0087, Landing order item 8), into a variable of
+  `optional<record:R>`, which starts absent: a backend whose row of "Which backend
+  lowers a composed value" does not hold `records` refuses that variable by its own
+  name (`generate/unsupported-feature`), and with it the lift, and a variable of
+  `record:R` of such a record is refused on every backend;
 - `location` is a variable of `record:R` or `optional<record:R>`, `R` the document
   `schema` names, and `refusal` another variable, of `optional<record:L>`, `L` the
   document `sce:std/lift/refusal.scxml` by whatever alias it is imported
@@ -4945,7 +4948,9 @@ Under any other data model the element is `scxml/static-datamodel-rule`.
 
 The reader refuses before it reads a field, in this order: a text that is empty or
 only whitespace (`notJson`); a container opened deeper than the deepest a value of `R`
-holds (`tooDeep`, its bound that depth, which is 1 for every schema a lift reads now),
+holds (`tooDeep`, its bound that depth: 1 for a record of entries, one more for each
+list and record a value of `R` holds inside another, 3 for a record of a list of
+records),
 decided over the text's brackets alone before the text is read as JSON, so neither the
 work nor the stack of a lift grows with what a text nests; then a text that is not one
 JSON object, as a delivery is refused. A `tooDeep` refusal names the container it
@@ -5512,26 +5517,29 @@ rows below are that table as it stands: the test
 renders each row from it and holds this list to them, so the list cannot say
 what the build does not. `reads` is a statechart's read of a composed payload at
 any depth, `copies` a list taken whole into a list variable, `unions` a variable
-of a union and a payload that holds one, and `sends` a `<send>` of a composed
-value by its name. `ecmascript` is the Interpreter's lowering. A backend refuses
-by its own name each position it does not lower.
+of a union and a payload that holds one, `records` a variable of
+`optional<record:R>` whose record holds a composition, which starts absent and
+a `<sce:lift>` of `R` writes whole (docs/adr/0087, Landing order item 8), and
+`sends` a `<send>` of a composed value by its name. `ecmascript` is the
+Interpreter's lowering. A backend refuses by its own name each position it does
+not lower.
 
 <!-- composed-lowering-rows: begin -->
-- `rust` lowers reads, copies, unions, sends; refuses none
+- `rust` lowers reads, copies, unions, records, sends; refuses none
 
-- `cpp` lowers reads, copies, sends; refuses unions
+- `cpp` lowers reads, copies, sends; refuses unions, records
 
-- `kotlin` lowers reads, copies, sends; refuses unions
+- `kotlin` lowers reads, copies, sends; refuses unions, records
 
-- `go` lowers reads, copies, sends; refuses unions
+- `go` lowers reads, copies, sends; refuses unions, records
 
-- `python` lowers reads, copies, sends; refuses unions
+- `python` lowers reads, copies, sends; refuses unions, records
 
-- `c11` lowers reads, copies, sends; refuses unions
+- `c11` lowers reads, copies, sends; refuses unions, records
 
-- `swift` lowers reads, copies, unions, sends; refuses none
+- `swift` lowers reads, copies, unions, sends; refuses records
 
-- `ecmascript` lowers reads, copies, sends; refuses unions
+- `ecmascript` lowers reads, copies, sends; refuses unions, records
 <!-- composed-lowering-rows: end -->
 
 The fixtures `static_composed_payload` and `static_composed_send`

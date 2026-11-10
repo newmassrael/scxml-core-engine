@@ -62,6 +62,7 @@ fn row(lowering: ComposedLowering) -> String {
         ("reads", lowering.reads),
         ("copies", lowering.copies),
         ("unions", lowering.unions),
+        ("records", lowering.records),
         ("sends", lowering.sends),
     ];
     let side = |lowered: bool| {

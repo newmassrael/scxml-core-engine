@@ -26,7 +26,7 @@ use sce_build::forge::event_schema_check::ComposedLowering;
 use sce_build::generator::{lowers_static_datamodel, Language};
 
 /// A position of a composed value the table answers for a backend: its
-/// `reads`, `copies`, `unions` or `sends`.
+/// `reads`, `copies`, `unions`, `records` or `sends`.
 pub type Position = fn(ComposedLowering) -> bool;
 
 /// Each backend a `check -l <name>` judges a whole `sce-static` document for,

@@ -808,6 +808,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: true,
+                records: true,
                 sends: true,
             }
         );

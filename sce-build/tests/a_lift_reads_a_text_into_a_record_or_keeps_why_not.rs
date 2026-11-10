@@ -10,6 +10,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
+use common::composed_lowering::{lowering, refusing_or_skip};
 use sce_build::generator::Language;
 use tempfile::tempdir;
 
@@ -203,13 +206,80 @@ fn a_schema_the_document_does_not_import_is_an_invalid_attribute() {
     );
 }
 
+/// [`statechart`] under `sce-static` with `listed`, a variable of the record whose
+/// field holds a list, in place of `other`, and `body` on the line of the lift.
+fn listed_statechart(body: &str) -> String {
+    statechart("sce-static", body).replace(
+        r#"<data id="other" sce:type="optional&lt;record:Copied&gt;" expr="null"/>"#,
+        r#"<data id="listed" sce:type="optional&lt;record:Listed&gt;" expr="null"/>"#,
+    )
+}
+
+/// A lift of the record whose field holds a list into `listed`.
+const LIFT_LISTED: &str =
+    r#"      <sce:lift text="said" schema="Listed" location="listed" refusal="why"/>"#;
+
+/// A schema whose field holds a list is lifted as any other is (docs/adr/0087,
+/// "Landing order" item 8): the judge takes it, and each backend whose row of the
+/// one table holds a variable of such a record (`ComposedLowering::records`) lowers
+/// the lift into it.
 #[test]
-fn a_schema_that_holds_a_list_is_refused_by_name() {
-    let (ok, out) =
-        check(r#"      <sce:lift text="said" schema="Listed" location="answer" refusal="why"/>"#);
-    assert!(!ok);
-    assert_refused_at(&out, "generate/unsupported-feature", LIFT_LINE);
-    assert!(out.contains("tags"), "the refusal names the field:\n{out}");
+fn a_schema_that_holds_a_list_is_lifted_into_a_variable_of_its_record() {
+    let siblings = siblings();
+    let borrowed: Vec<(&str, &str)> = siblings.iter().map(|(n, t)| (*n, t.as_str())).collect();
+    let doc = listed_statechart(LIFT_LISTED);
+    assert!(doc.contains("location=\"listed\"") && doc.contains("<data id=\"listed\""));
+    let (ok, out) = run(&["check"], &doc, &borrowed);
+    assert!(
+        ok,
+        "the judge takes a lift of a record that holds a list:\n{out}"
+    );
+    let holding = lowering(|row| row.records);
+    assert!(
+        !holding.is_empty(),
+        "some backend holds a variable of a record that holds a list"
+    );
+    for language in holding {
+        let (ok, out) = run(&["check", "-l", language], &doc, &borrowed);
+        assert!(ok, "{language} lifts a record that holds a list:\n{out}");
+    }
+}
+
+/// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
+/// each backend whose row holds no variable of a record that holds a list refuses
+/// that variable by its own name where it is declared, and with it the lift that
+/// writes it; so does the Interpreter's lowering, whose row holds none either.
+#[test]
+fn a_schema_that_holds_a_list_is_refused_by_name_where_its_variable_is_not_held() {
+    let siblings = siblings();
+    let borrowed: Vec<(&str, &str)> = siblings.iter().map(|(n, t)| (*n, t.as_str())).collect();
+    let doc = listed_statechart(LIFT_LISTED);
+    for language in refusing_or_skip(
+        |row| row.records,
+        "a_schema_that_holds_a_list_is_refused_by_name_where_its_variable_is_not_held",
+    ) {
+        let (ok, out) = run(&["check", "-l", language], &doc, &borrowed);
+        assert!(!ok, "{language} holds no such variable yet:\n{out}");
+        assert!(
+            out.contains("\"code\":\"generate/unsupported-feature\""),
+            "{language} refuses it by name:\n{out}"
+        );
+        assert!(
+            out.contains("a statechart's variable"),
+            "the refusal names the variable:\n{out}"
+        );
+        assert!(out.contains("tags"), "the refusal names the field:\n{out}");
+        assert!(
+            out.contains(&format!("has no {language} lowering")),
+            "the refusal names the backend:\n{out}"
+        );
+    }
+    let (ok, out) = run(&["lower"], &doc, &borrowed);
+    assert!(!ok, "the Interpreter holds no such variable yet:\n{out}");
+    assert!(
+        out.contains("generate/unsupported-feature") && out.contains("has no ecmascript lowering"),
+        "the Interpreter refuses it by its own name:\n{out}"
+    );
 }
 
 #[test]

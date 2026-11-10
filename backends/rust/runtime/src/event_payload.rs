@@ -258,15 +258,18 @@ pub fn lift_record<T>(
     lifted
 }
 
-/// What a `<sce:lift>` into a variable of a union reads (docs/adr/0092,
-/// section 6.1 item 5): `text` as one value of the union named `schema`, which
-/// `read` reads out of the whole object it is handed, by the reader a
-/// delivery's field of the union is read by ([`PayloadValue::union`]: its tag
-/// first, then the record of the case the tag names); or the refusal of the
-/// first place that is not one. What is refused before the value is read is
-/// what [`PayloadFields::lift`] refuses, a text that is no object among it,
-/// and a union has no defaults: its revision is its tag enum's, so no field is
-/// added to a case by one. Logged as [`lift_record`] logs.
+/// What a `<sce:lift>` of a value read whole reads: `text` as one value of the
+/// union or the record named `schema`, which `read` reads out of the whole
+/// object it is handed, by the reader a delivery's field of that type is read
+/// by; or the refusal of the first place that is not one. A union
+/// (docs/adr/0092, section 6.1 item 5) is read by [`PayloadValue::union`], its
+/// tag first, then the record of the case the tag names, and has no defaults:
+/// its revision is its tag enum's, so no field is added to a case by one. A
+/// record that holds a list or a record at any depth (docs/adr/0087, "Landing
+/// order" item 8) is read by [`PayloadValue::record`], which is handed the
+/// defaults of the fields a later revision added. What is refused before the
+/// value is read is what [`PayloadFields::lift`] refuses, a text that is no
+/// object among it. Logged as [`lift_record`] logs.
 pub fn lift_value<T>(
     text: &str,
     schema: &str,

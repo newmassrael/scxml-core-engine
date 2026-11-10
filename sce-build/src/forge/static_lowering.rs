@@ -1061,22 +1061,26 @@ pub enum Lifted<'a> {
     /// A record of an event schema whose fields are each one entry, which a
     /// target reads field by field.
     Record(&'a EntrySchema),
-    /// A value of a union, put into a union variable whole (docs/adr/0092,
-    /// section 6.1 item 5): `reader` is the expression that reads it out of
-    /// the value its binding names, spelled by the target's composed walk
-    /// ([`crate::forge::composed_lowering::reader`]), which only a target that
-    /// spells a composed value is handed.
-    Union { reader: String },
+    /// A value read whole by the composed walk of its type: a union, put into
+    /// a union variable whole (docs/adr/0092, section 6.1 item 5), or a record
+    /// that holds a list or a record at any depth, put into a variable of it
+    /// (docs/adr/0087, "Landing order" item 8). `reader` is the expression
+    /// that reads it out of the value its binding names, spelled by the
+    /// target's composed walk ([`crate::forge::composed_lowering::reader`]),
+    /// which only a target that spells a composed value is handed; a record's
+    /// reader reads the defaults of the fields a later revision added itself.
+    Whole { reader: String },
 }
 
 impl<'a> LiftStatement<'a> {
-    /// The schema of the record the text is read as, or `None` for a lift into
-    /// a union ([`Lifted::Union`]), which a target that reads only records
-    /// refuses by name by answering `None` from its lift.
+    /// The schema of the record the text is read as, or `None` for a lift of a
+    /// value read whole ([`Lifted::Whole`]), which a target that reads only
+    /// records field by field refuses by name by answering `None` from its
+    /// lift.
     pub fn record(&self) -> Option<&'a EntrySchema> {
         match self.lifted {
             Lifted::Record(schema) => Some(schema),
-            Lifted::Union { .. } => None,
+            Lifted::Whole { .. } => None,
         }
     }
 
@@ -4611,7 +4615,8 @@ impl StaticTarget for RustTarget {
     // The runtime's `lift_record` reads the text and hands the record of its
     // fields to the readers a composed record is read by (`RustComposed`), so a
     // field is held to its type by the very call a delivery's is; its
-    // `lift_value` reads a union whole by the composed reader of the union. A
+    // `lift_value` reads a union, or a record that holds a list or a record,
+    // whole by the composed reader of its type. A
     // refusal is matched code by code onto the machine's enum of the standard
     // refusal document, an exhaustive match the compiler holds to the
     // runtime's codes. The pointer fits the record's path: the judge held its
@@ -4662,9 +4667,10 @@ impl StaticTarget for RustTarget {
         let path_bound = lift.path_bound()?;
         let schema = filters::escape_rust(lift.alias.to_string());
         // The call that reads the text: a record field by field through
-        // `lift_record`, or a union whole through `lift_value`, by the reader
-        // a delivery's field of the union is read by (docs/adr/0092, section
-        // 6.1 item 5), which has no defaults to read.
+        // `lift_record`, or a value whole through `lift_value`, by the reader
+        // a delivery's field of its type is read by (docs/adr/0092, section
+        // 6.1 item 5; docs/adr/0087, "Landing order" item 8), which reads a
+        // record's defaults itself.
         let call = match &lift.lifted {
             Lifted::Record(entries) => {
                 let mut members = Vec::with_capacity(entries.fields.len());
@@ -4695,7 +4701,7 @@ impl StaticTarget for RustTarget {
                     depth = lift.depth,
                 )
             }
-            Lifted::Union { reader } => format!(
+            Lifted::Whole { reader } => format!(
                 "{PAYLOAD}::lift_value(&{text}, \"{schema}\", {depth}, {path_bound}, |v| {reader})",
                 text = lift.text,
                 depth = lift.depth,
@@ -5642,6 +5648,103 @@ fn union_variable_field(
     })
 }
 
+/// The alias of the record a statechart's variable of `optional<record:R>`
+/// holds where `R` holds a list or a record at any depth, which no record of
+/// entries in `records` describes; `None` for every other variable.
+fn composed_record_of<'v>(
+    var: &'v crate::model::Variable,
+    records: &BTreeMap<String, EntrySchema>,
+) -> Option<&'v str> {
+    var.value_type
+        .as_ref()?
+        .optional_elem()?
+        .record_alias()
+        .filter(|alias| !records.contains_key(*alias))
+}
+
+/// The field a statechart's variable of `optional<record:R>` is held in where
+/// `R` (`alias`) holds a list or a record at any depth (docs/adr/0087,
+/// "Landing order" item 8): the target's optional type over the machine's own
+/// record, declared with every record, enum and union it holds, each described
+/// for a saved state ([`ComposedHolder::Variable`]). It starts absent, and a
+/// `<sce:lift>` of `R` writes it whole. The one table of what each target
+/// lowers refused it by name where the target holds none
+/// ([`crate::forge::event_schema_check::ComposedLowering::records`]), so a
+/// refusal here names a model that table never read.
+fn composed_record_variable_field(
+    var: &crate::model::Variable,
+    alias: &str,
+    model: &SCXMLModel,
+    declarations: &mut TypeDeclarations<'_>,
+) -> Result<StaticField, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    use crate::forge::value_type::ValueType;
+    let target = declarations.target;
+    let machine = declarations.machine;
+    let what = format!(
+        "<data id=\"{}\" sce:type=\"optional<record:{alias}>\">",
+        var.id
+    );
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "{what}: {why} (docs/adr/0087, \"Landing order\" item 8)"
+        ))
+    };
+    let record = ValueType::Record {
+        alias: alias.to_string(),
+    };
+    let enums = declare_composed(
+        declarations,
+        model,
+        &record,
+        ComposedHolder::Variable,
+        &refused,
+    )?;
+    let spelling = target.composed_spelling(machine).ok_or_else(|| {
+        refused(format!(
+            "{} has no lowering of a composed value yet",
+            target.name()
+        ))
+    })?;
+    let held = composed::StatechartRecords::of(model);
+    let record_ty =
+        composed::machine_type(&record, None, &held, &enums, &*spelling).map_err(refused)?;
+    let field_ty = composed::machine_type(
+        &ValueType::Optional {
+            elem: Box::new(record),
+        },
+        None,
+        &held,
+        &enums,
+        &*spelling,
+    )
+    .map_err(refused)?;
+    let init = absent_value(target, &record_ty, &what)?;
+    Ok(StaticField {
+        id: var.id.clone(),
+        name: target.field_name(&var.id),
+        ty: field_ty.clone(),
+        init,
+        published: var.direction == Some(crate::forge::model::Direction::Out),
+        // Owned and compared whole: a host is lent it, and the snapshot clones
+        // it, as a union variable is.
+        view: Some(field_ty),
+        read: None,
+        bound: None,
+        // A saved state holds it as `null` or as the record it holds, which
+        // the machine's own record type writes and reads back by its type
+        // (docs/adr/0055, section 4).
+        saved_kind: "optional",
+        saved_type: record_ty,
+        saved_elem: Some("record"),
+        elem_ty: None,
+        reader: None,
+        holds_bytes: false,
+        seeded: false,
+        module_parameter: false,
+    })
+}
+
 /// The optional place of a present value of `elem`, held to `bound` where it
 /// is a text or a byte string ([`OptionalPlace`]).
 fn optional_place(
@@ -6367,6 +6470,20 @@ pub fn lower(
                 if start == UnionStart::Absent {
                     rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
                 }
+                fields.push(field);
+                continue;
+            }
+            // An optional record whose record holds a list or a record at any
+            // depth is held in the target's optional type over the machine's
+            // own record, declared with every record and enum it holds, and
+            // starts absent until a lift writes it whole (docs/adr/0087,
+            // "Landing order" item 8).
+            if let Some(alias) = composed_record_of(var, &records) {
+                let field = composed_record_variable_field(var, alias, model, &mut declarations)?;
+                if let Some(element) = target.data_element(&var.id, &field.init) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
+                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
                 fields.push(field);
                 continue;
             }
@@ -7966,6 +8083,25 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                     ));
                 }
             }
+        }
+        // A record that holds a list or a record at any depth, which only an
+        // optional variable holds (docs/adr/0087, "Landing order" item 8), is
+        // named by its document and each field's type, as a union's case is,
+        // so a change of the record moves the shape as a change of a record of
+        // entries does.
+        if let Some(record) = shaped
+            .as_ref()
+            .and_then(|t| t.record_alias())
+            .filter(|alias| !entry_records.contains_key(*alias))
+            .and_then(|alias| type_scope.records.get(alias))
+        {
+            let fields = record
+                .fields
+                .iter()
+                .map(|(id, ty)| format!("{id}:{ty}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            text.line(&format!("record {} {} {fields}", var.id, record.name));
         }
         // A record's fields, whether it is the variable or the element of the
         // list the variable is: what a saved state names of it.
@@ -17420,8 +17556,8 @@ impl StaticTarget for SwiftTarget {
         let (text, depth) = (lift.text, lift.depth);
         let schema_name = filters::escape_swift(lift.alias.to_string());
         // The call that reads the text: a record field by field through `liftRecord`, or a
-        // union whole through `liftValue`, by the reader a delivery's field of the union is
-        // read by (docs/adr/0092, section 6.1 item 5), which has no defaults to read.
+        // value whole through `liftValue`, by the reader a delivery's field of its type is
+        // read by (docs/adr/0092, section 6.1 item 5), which reads a record's defaults itself.
         let call = match &lift.lifted {
             Lifted::Record(schema) => {
                 let mut members = Vec::with_capacity(schema.fields.len());
@@ -17448,7 +17584,7 @@ impl StaticTarget for SwiftTarget {
                      {path_bound}, defaults: {defaults}, read: {{ r in {record} }})"
                 )
             }
-            Lifted::Union { reader } => format!(
+            Lifted::Whole { reader } => format!(
                 "liftValue({text}, schema: \"{schema_name}\", depth: {depth}, pathBound: \
                  {path_bound}, read: {reader})"
             ),
@@ -19211,45 +19347,43 @@ fn lower_action(
             let unlowered = |why: &str| GenerateError::unsupported(format!("{construct}: {why}"));
             let alias = action.lift_schema.trim();
             let location = action.location.trim();
-            // A union is read whole by the composed reader of its type, which
-            // only a target that spells a composed value has (docs/adr/0092,
-            // section 6.1 item 5); a record field by field by the target.
-            let (lifted, location_optional) = if rewrites.type_scope.unions.contains_key(alias) {
-                use crate::forge::value_type::ValueType;
-                let to = ctx
-                    .value_of(location)
-                    .ok_or_else(|| unlowered("its location names no variable this build typed"))?;
-                let (Some(names), Some(spelling)) = (
-                    rewrites.composed.as_ref(),
-                    target.composed_spelling(rewrites.machine),
-                ) else {
-                    return Err(unlowered(&format!(
-                        "{lang} spells no union (docs/adr/0092, section 7)"
-                    )));
-                };
-                let reader = crate::forge::composed_lowering::reader(
-                    &ValueType::Union {
-                        alias: alias.to_string(),
-                    },
-                    None,
-                    &names.records,
-                    &names.enums,
-                    &*spelling,
-                    spelling.read_binding(),
-                )
-                .map_err(|why| unlowered(&why))?;
-                (
-                    Lifted::Union { reader },
-                    matches!(to.ty, ValueType::Optional { .. }),
-                )
-            } else {
-                let schema = rewrites.schemas.get(alias).ok_or_else(|| {
-                    unlowered("its schema is no record of entries this build read")
-                })?;
-                (
+            // A record of entries is read field by field by the target. A union,
+            // and a record that holds a list or a record at any depth, are read
+            // whole by the composed reader of their type, which only a target
+            // that spells a composed value has (docs/adr/0092, section 6.1 item
+            // 5; docs/adr/0087, "Landing order" item 8).
+            let (lifted, location_optional) = match rewrites.schemas.get(alias) {
+                Some(schema) if !rewrites.type_scope.unions.contains_key(alias) => (
                     Lifted::Record(schema),
                     rewrites.optional_records.contains_key(location),
-                )
+                ),
+                _ => {
+                    use crate::forge::value_type::ValueType;
+                    let to = ctx.value_of(location).ok_or_else(|| {
+                        unlowered("its location names no variable this build typed")
+                    })?;
+                    let (Some(names), Some(spelling)) = (
+                        rewrites.composed.as_ref(),
+                        target.composed_spelling(rewrites.machine),
+                    ) else {
+                        return Err(unlowered(&format!(
+                            "{lang} spells no composed value (docs/adr/0086, section 7.3)"
+                        )));
+                    };
+                    let reader = crate::forge::composed_lowering::reader(
+                        &crate::forge::lift::lifted_type(alias, &rewrites.type_scope),
+                        None,
+                        &names.records,
+                        &names.enums,
+                        &*spelling,
+                        spelling.read_binding(),
+                    )
+                    .map_err(|why| unlowered(&why))?;
+                    (
+                        Lifted::Whole { reader },
+                        matches!(to.ty, ValueType::Optional { .. }),
+                    )
+                }
             };
             let refusal = action.lift_refusal.trim();
             let refusal_place = rewrites
@@ -19271,7 +19405,7 @@ fn lower_action(
                 .map_err(|e| unlowered(&format!("its schema has no depth: {e}")))?;
             let defaults = match &lifted {
                 Lifted::Record(schema) => crate::forge::schema_revision::defaults_wire(schema),
-                Lifted::Union { .. } => None,
+                Lifted::Whole { .. } => None,
             };
             let statement = LiftStatement {
                 machine: rewrites.machine,
