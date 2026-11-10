@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: the entry of `codec_chain_handed`, which takes a flag
+  input it does not say.
+
+  `value` is on the wire where the caller hands `after_marker` set, or where
+  the entry's own `wide` flag is set. The disjunction names no one flag the
+  entry could set, so the entry does not say the input: whoever writes it
+  hands it, and the encode refuses a value whose `value` disagrees with the
+  gate (`PresentIfMismatch`).
+
+  Wire shape: the header, then `value` where the gate holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_handed_entry">
+  <sce:flag-inputs>
+    <sce:flag-input name="after_marker" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="ext_id" bit="0" width="4"/>
+      <sce:flag name="wide"   bit="6"/>
+      <sce:flag name="Z"      bit="7"/>
+    </sce:flags>
+    <sce:field id="value" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="after_marker || header.wide"/>
+  </datamodel>
+</scxml>
