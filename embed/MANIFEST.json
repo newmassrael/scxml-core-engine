@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "f4a7885",
+  "embed_version": "f0342bc",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 605,
@@ -3686,7 +3686,8 @@
         "VariantArmNotBuilt",
         "LengthOutOfRange",
         "TooManyElements",
-        "UndeclaredEnumValue"
+        "UndeclaredEnumValue",
+        "InconsistentSource"
       ]
     },
     {
