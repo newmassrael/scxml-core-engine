@@ -880,9 +880,21 @@ impl LoopVariables {
         }
     }
 
-    /// `ctx` with the loop's variables added: the scope of its body.
+    /// [`Self::bind`] for a loop over a list a place holds rather than a list
+    /// variable (docs/adr/0086, section 6.1): its item is a part of a composed
+    /// value too ([`TypeCtx::place_items`]).
+    pub fn bind_item_of_a_place<'s, 'c: 's>(&'s self, ctx: &TypeCtx<'c>) -> TypeCtx<'s> {
+        let mut inner = self.bind(ctx);
+        inner.place_items.insert(self.item.as_str());
+        inner
+    }
+
+    /// `ctx` with the loop's variables added: the scope of its body. The item
+    /// is a value of the loop's own, which hides a part of a composed value an
+    /// enclosing loop named alike ([`Self::bind_item_of_a_place`]).
     pub fn bind<'s, 'c: 's>(&'s self, ctx: &TypeCtx<'c>) -> TypeCtx<'s> {
         let mut inner: TypeCtx<'s> = ctx.clone();
+        inner.place_items.remove(self.item.as_str());
         match &self.place {
             // Its fields are read through its type, and are the whole of what
             // it may be asked for.

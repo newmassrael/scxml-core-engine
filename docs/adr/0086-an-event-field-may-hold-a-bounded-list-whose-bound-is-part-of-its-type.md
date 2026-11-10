@@ -546,7 +546,11 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    (`sce_static_list_uint8_2_t`, `<machine>_record_item_list_3_t`, `sce_static_string_8_list_4_t`) and
    declared under a guard of that name (`c11_list_type`, `c11_list_def` in
    `sce-build/src/forge/static_lowering.rs`), apart from the schema unit's `sce_list_*` names, so a program that
-   includes both declares neither twice.
+   includes both declares neither twice. A text a composed value holds is the buffer of its bound
+   (`sce_static_string_<N>_t`), as a text variable and a record's text field are, and an expression reads it as
+   the buffer's text at any depth (`read_composed_texts_through_buffers`, `sce-build/src/forge/expr.rs`, landed
+   2026-11-11): the first landing of the step refused such a read by name while its row said the C11 machine
+   reads what section 6.1 names, and a row claims every read section 6.1 names or none.
 
 2. **C11 lays out every composition statically.** Each distinct composition is one named type, its name mangled
    from its structure (`sce_list_3_list_4_string_8_t`), declared once under a guard as `sce_static_string_<N>_t` is

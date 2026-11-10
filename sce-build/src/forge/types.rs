@@ -1493,6 +1493,15 @@ pub struct TypeCtx<'a> {
     /// The scope the records of [`TypeCtx::values`] are read in, the
     /// statechart's own ([`crate::forge::value_path::statechart_scope`]).
     pub value_scope: Option<&'a crate::forge::value_type::TypeScope>,
+    /// Each name of [`TypeCtx::values`] that is the item of a `<foreach>` over a
+    /// list a place holds, the payload or an enclosing loop's item, rather than
+    /// a list variable (docs/adr/0086, section 6.1): a part of a composed value,
+    /// whose texts are held where the composed value holds them, as every place
+    /// below the payload of an event whose schema holds a composition is.
+    ///
+    /// ⚠ Empty everywhere but the body of such a loop, and emptiness is what
+    /// keeps every other name's reads exactly what they were.
+    pub place_items: std::collections::HashSet<&'a str>,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1558,6 +1567,7 @@ impl<'a> TypeCtx<'a> {
             proven: crate::forge::narrowing::Facts::none(),
             values: HashMap::new(),
             value_scope: None,
+            place_items: std::collections::HashSet::new(),
         }
     }
 

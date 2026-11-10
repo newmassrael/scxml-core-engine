@@ -871,6 +871,12 @@ fn resolve_then_rename(
     if matches!(target, ExprTarget::C) && ctx.joins_into_buffers {
         lower_string_concatenation(ast, ctx);
     }
+    // A text a composed value holds is a buffer of its bound in C, read as the
+    // buffer's text: after the joins, whose operands are read so too, and before
+    // rename, while each place is still the path the author wrote.
+    if matches!(target, ExprTarget::C) {
+        read_composed_texts_through_buffers(ast, ctx, renames);
+    }
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
     }
@@ -5421,66 +5427,68 @@ pub(crate) fn written_place(text: &str) -> Option<String> {
     place_path(&parse_to_ast(text.trim()).ok()?)
 }
 
-/// What [`composed_text_read`] asks of the lowering that reads an expression:
-/// whether a path is one it spells for itself (a variable, a field of a record
-/// variable or of a loop's record item), which it reads where the target holds
-/// it, and whether a name is the item of a loop over a list a place holds, a
-/// part of a composed value.
-pub(crate) struct ComposedParts<'a> {
-    pub renamed: &'a dyn Fn(&str) -> bool,
-    pub item_of_a_place: &'a dyn Fn(&str) -> bool,
-}
+/// The member of a C11 text buffer (`sce_static_string_<N>_t`, a text of at
+/// most `N` UTF-8 bytes and its terminator) that holds its text, which is what
+/// a C11 expression reads a text as: a `const char *`.
+pub(crate) const C_BUFFER_TEXT: &str = "data";
 
-/// The first read in `expr`, typed in `ctx`, of a text or a byte string as a
-/// value at a place a composed value holds (docs/adr/0086, section 6.1): a
-/// field, an element or a present value below the payload of an event whose
-/// schema holds a composition, or the item of a loop over a list a place holds
-/// and any place below it, as it is written. A path the lowering spells for
-/// itself ([`ComposedParts::renamed`]) is none of these. `None` for an
-/// expression that reads none, or that does not type.
-pub(crate) fn composed_text_read(
-    expr: &str,
+/// Each text a composed value holds, read as a value, read through the buffer
+/// that holds it, for C (docs/adr/0086, sections 6 and 7.1, the C11 row). A
+/// statechart reads a composed payload as it reads a variable of the same type
+/// (section 6), and C11 holds a text of a composed value, at any depth, in the
+/// buffer of its bound, as it holds a text variable and a record's text field:
+/// an expression reads each as the buffer's text ([`C_BUFFER_TEXT`]).
+///
+/// A member read names the buffer's member in its own name (`note.data`), as
+/// the field of an element a list variable of records is indexed at is renamed
+/// to (`rename_identifiers`), so a checked index read reads the text inside its
+/// conditional and gives the empty text where it fails. Any other place, the
+/// item of a loop and an element read by its index, is read through a member of
+/// its own. Left as they are: a place the lowering spells for itself
+/// (`renames`), which it spells through the buffer already; a present value of
+/// an optional text, which [`c_present_read`] reads through its buffer; and a
+/// byte string, which a composed value holds in the `{data, len}` struct every
+/// C11 byte-string expression reads.
+fn read_composed_texts_through_buffers(
+    node: &mut TypedExpr,
     ctx: &TypeCtx<'_>,
-    parts: &ComposedParts<'_>,
-) -> Option<String> {
-    let expr = expr.trim();
-    if expr.is_empty() {
-        return None;
+    renames: &HashMap<&str, &str>,
+) {
+    for child in node.children_mut() {
+        read_composed_texts_through_buffers(child, ctx, renames);
     }
-    let ast = resolve(expr, ctx).ok()?;
-    first_composed_text_read(&ast, ctx, parts, expr)
-}
-
-/// [`composed_text_read`] over `node` and every node below it, `source` the
-/// expression's text.
-fn first_composed_text_read(
-    node: &TypedExpr,
-    ctx: &TypeCtx<'_>,
-    parts: &ComposedParts<'_>,
-    source: &str,
-) -> Option<String> {
-    if matches!(node.ty, InferredType::Str | InferredType::Bytes) {
-        if let Some(path) = place_path(node) {
-            if held_by_a_composed_value(&path, ctx, parts) {
-                return Some(
-                    node.span
-                        .clone()
-                        .and_then(|span| source.get(span))
-                        .map_or(path, str::to_string),
-                );
-            }
-        }
+    if node.ty != InferredType::Str
+        || matches!(optional_form(node), Some(OptionalForm::Proven { .. }))
+    {
+        return;
     }
-    node.children()
-        .into_iter()
-        .find_map(|child| first_composed_text_read(child, ctx, parts, source))
+    let held = place_path(node).is_some_and(|path| held_by_a_composed_value(&path, ctx, renames));
+    if !held {
+        return;
+    }
+    if let ExprKind::Member { property, .. } = &mut node.kind {
+        property.push('.');
+        property.push_str(C_BUFFER_TEXT);
+        return;
+    }
+    let buffer = std::mem::replace(node, TypedExpr::new(ExprKind::NullLit));
+    *node = TypedExpr {
+        span: buffer.span.clone(),
+        ty: InferredType::Str,
+        kind: ExprKind::Member {
+            object: Box::new(buffer),
+            property: C_BUFFER_TEXT.to_string(),
+        },
+    };
 }
 
 /// Whether the place `path` names is held by a composed value: a place below
 /// the payload with a composed value on the way to it, or the item of a loop
-/// over a list a place holds or a place below it, which no rename spells.
-fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, parts: &ComposedParts<'_>) -> bool {
-    if (parts.renamed)(path) {
+/// over a list a place holds ([`TypeCtx::place_items`]) or a place below it,
+/// which no rename spells. No variable holds one: a variable whose type names
+/// a record that holds a composition is refused where it is declared.
+fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&str, &str>) -> bool {
+    if renames.contains_key(path) {
         return false;
     }
     let payload = crate::forge::event_schema_check::EVENT_DATA_PATH;
@@ -5504,7 +5512,7 @@ fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, parts: &ComposedParts
         }
         _ => {
             let root = path.split(['.', '[']).next().unwrap_or(path);
-            (parts.item_of_a_place)(root)
+            ctx.place_items.contains(root)
         }
     }
 }
@@ -12393,7 +12401,9 @@ fn c_optional_constructor(elem: OptionalElem, present: Option<&str>) -> Result<S
 /// value of an optional value read it the same way.
 pub(crate) fn c_present_read(subject: &str, ty: InferredType) -> String {
     match ty {
-        InferredType::Optional(OptionalElem::Str) => format!("{subject}.value.data"),
+        InferredType::Optional(OptionalElem::Str) => {
+            format!("{subject}.{OPTIONAL_VALUE}.{C_BUFFER_TEXT}")
+        }
         InferredType::Optional(OptionalElem::Bytes) => {
             format!("(sce_forge_bytes_view_t){{ {subject}.value.data, {subject}.value.len }}")
         }

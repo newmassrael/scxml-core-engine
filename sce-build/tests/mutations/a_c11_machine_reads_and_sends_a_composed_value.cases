@@ -9,8 +9,8 @@
 # payload by one function of the machine per type over the runtime's bounded
 # readers, names the path of a refused place in a buffer of the longest path the
 # type has, writes a composed value where its pair stands, holding a host's
-# value to its type as it writes it, and refuses by name a read of a text it
-# holds in a buffer as a value. Each case takes one of those decisions away and
+# value to its type as it writes it, and reads a text it holds in a buffer as
+# the buffer's text. Each case takes one of those decisions away and
 # has to turn the pin test red on its own.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
@@ -81,16 +81,38 @@ edit("sce-build/src/forge/static_lowering.rs",
 PY
 
 # A text a composed value holds in its buffer is read as the pointer every C
-# text expression is, which is C that does not compile, not a refusal by name.
+# text expression is, which is C that does not compile (docs/adr/0086,
+# section 6).
 mutation_case "a composed text is read as a pointer" <<'PY'
-edit("sce-build/src/forge/static_lowering.rs",
-     r'''    // expression reads as the pointer every text expression is.
-    fn reads_composed_text(&self) -> bool {
-        false
+edit("sce-build/src/forge/expr.rs",
+     r'''    if matches!(target, ExprTarget::C) {
+        read_composed_texts_through_buffers(ast, ctx, renames);
     }''',
-     r'''    // expression reads as the pointer every text expression is.
-    fn reads_composed_text(&self) -> bool {
-        true
+     r'''    if matches!(target, ExprTarget::C) {
+        let _ = (ctx, renames);
+    }''')
+PY
+
+# The item of a loop over a list a place holds is taken for a value of the
+# loop's own, so a text it holds, or a text below it, is read as a pointer.
+mutation_case "a loop's item over a place is no part of a composed value" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     r'''                loop_variables.bind_item_of_a_place(ctx)''',
+     r'''                loop_variables.bind(ctx)''')
+PY
+
+# A text field read through a checked index is read through its buffer outside
+# the conditional, whose other arm is the empty text: a struct and a pointer
+# are no one type, and the C does not compile.
+mutation_case "a member's text is read outside its checked index" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''    if let ExprKind::Member { property, .. } = &mut node.kind {
+        property.push('.');
+        property.push_str(C_BUFFER_TEXT);
+        return;
+    }''',
+     r'''    if let ExprKind::Member { .. } = &mut node.kind {
+        let _ = C_BUFFER_TEXT;
     }''')
 PY
 

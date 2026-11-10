@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::filters;
 use crate::forge::error::GenerateError;
 use crate::forge::expr::{
-    transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
+    transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal, C_BUFFER_TEXT,
     RUST_LIST_DESTINATION,
 };
 use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, SceType};
@@ -1682,16 +1682,6 @@ pub trait StaticTarget {
     /// `<invoke>`'s `<param>`, a `<donedata>` and a `<content expr>`.
     fn composed_param_writes(&self) -> bool {
         false
-    }
-    /// Whether an expression reads, as a value, a text or a byte string a
-    /// composed value holds at any depth (docs/adr/0086, section 6.1): its
-    /// length, a comparison of it, a send of it as a scalar param. A target
-    /// that holds such a text in a buffer of its bound that no expression of
-    /// it reads as a text (C11, whose expressions read a text as a pointer)
-    /// reads it whole only (a copy, a send of the value that holds it), and
-    /// refuses such a read by name where the expression is lowered.
-    fn reads_composed_text(&self) -> bool {
-        true
     }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
@@ -6317,7 +6307,6 @@ pub fn lower(
         payload_enum_paths: Default::default(),
         payload_fields: Default::default(),
         loop_records: Default::default(),
-        place_items: Default::default(),
         lists: list_vars,
         strings: string_vars,
         bytes: bytes_vars,
@@ -8749,11 +8738,6 @@ struct Rewrites<'m> {
     /// The record items of the `<foreach>`es the walk is inside, each with the
     /// alias of the schema it holds.
     loop_records: std::cell::RefCell<Vec<(String, String)>>,
-    /// The items of the `<foreach>`es the walk is inside that walk a list a
-    /// place holds rather than a list variable (docs/adr/0086, section 6.1):
-    /// each a part of a composed value, whose texts are held where the
-    /// composed value holds them ([`Self::composed_text_refused`]).
-    place_items: std::cell::RefCell<Vec<String>>,
     lists: ListVars,
     strings: StringVars,
     /// The byte-string variables, each held to its bound as a string is.
@@ -9047,43 +9031,6 @@ impl Rewrites<'_> {
         lower(&rewrite.text, &local)
     }
 
-    /// Refuse by name, for a target that reads no text a composed value holds
-    /// ([`StaticTarget::reads_composed_text`]), an expression `text` that reads
-    /// one as a value (docs/adr/0086, section 7.3): the place is a buffer of its
-    /// bound, which such a target's expressions do not read as a text. A path
-    /// the lowering spells for itself (`renames`) is the target's own reading of
-    /// the place, and is not refused.
-    fn composed_text_refused(
-        &self,
-        text: &str,
-        ctx: &crate::forge::types::TypeCtx<'_>,
-        renames: &HashMap<&str, &str>,
-    ) -> Result<(), Refusal> {
-        if self.target.reads_composed_text() {
-            return Ok(());
-        }
-        let renamed = |path: &str| renames.contains_key(path);
-        let items = self.place_items.borrow();
-        let item_of_a_place = |name: &str| items.iter().any(|item| item == name);
-        let parts = crate::forge::expr::ComposedParts {
-            renamed: &renamed,
-            item_of_a_place: &item_of_a_place,
-        };
-        match crate::forge::expr::composed_text_read(text, ctx, &parts) {
-            None => Ok(()),
-            Some(read) => Err(crate::forge::error::ExprError::UnsupportedConstruct {
-                construct: format!(
-                    "`{read}`, a text or a byte string a composed value holds, read as a value: \
-                     it has no {} lowering yet, and is taken whole only, copied or sent by the \
-                     name of the value that holds it (docs/adr/0086, section 7.3)",
-                    self.target.name()
-                ),
-                observed: Some(read),
-            }
-            .at(None)),
-        }
-    }
-
     /// [`transpile_into_owned`] of `text`, with its state calls rewritten
     /// ([`Self::with_state_calls`]).
     fn owned(
@@ -9093,7 +9040,6 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
-        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             transpile_into_owned(text, target, ctx, renames, slot)
@@ -9138,7 +9084,6 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
-        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             if slot.is_optional() {
@@ -9158,7 +9103,6 @@ impl Rewrites<'_> {
         renames: &HashMap<&str, &str>,
         slot: InferredType,
     ) -> Result<Receiving, Refusal> {
-        self.composed_text_refused(text, ctx, renames)?;
         let target = self.target.expr_target();
         self.with_state_calls(text, renames, |text, renames| {
             transpile_into_receiving(text, target, ctx, renames, slot)
@@ -14993,11 +14937,6 @@ impl StaticTarget for CTarget {
     fn composed_param_writes(&self) -> bool {
         true
     }
-    // A text a composed value holds is a buffer of its bound, which no C
-    // expression reads as the pointer every text expression is.
-    fn reads_composed_text(&self) -> bool {
-        false
-    }
     // Plain data by the record rule: a struct of the schema's fields in the
     // schema's order, copied by assignment, and the borrowed view a host reads
     // a published list of them through. An enum field is held in the machine's
@@ -15244,7 +15183,7 @@ impl StaticTarget for CTarget {
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::scalar);
         if matches!(held, Some(SceType::String)) {
-            format!("{field_ref}.data")
+            format!("{field_ref}.{C_BUFFER_TEXT}")
         } else {
             field_ref
         }
@@ -15255,12 +15194,14 @@ impl StaticTarget for CTarget {
         format!("memmove({target}, {value}, strlen({value}) + 1u);")
     }
     // A record's string field is the buffer of its bound, which an expression
-    // reads as the buffer's text, as it reads a string variable's.
+    // reads as the buffer's text, as it reads a string variable's, and as it
+    // reads a text a composed value holds at any depth (docs/adr/0086, section
+    // 6).
     fn record_string_read(&self, record: &str, field: &str) -> Option<String> {
-        Some(format!("{record}.{field}.data"))
+        Some(format!("{record}.{field}.{C_BUFFER_TEXT}"))
     }
     fn assign_string_field(&self, target: &str, field: &str, value: &str) -> String {
-        self.assign_string(&format!("{target}.{field}.data"), value)
+        self.assign_string(&format!("{target}.{field}.{C_BUFFER_TEXT}"), value)
     }
     // The buffer a literal fills, as a variable's does ([`Self::string_storage`]).
     fn record_string_literal(&self, bound: u32, literal: &str) -> String {
@@ -19530,7 +19471,15 @@ fn lower_action(
                     None,
                 ),
             };
-            let mut inner = loop_variables.bind(ctx);
+            // The item of a loop over a list a place holds is a part of a composed
+            // value, whose texts are held where the value holds them
+            // (docs/adr/0086, section 6.1).
+            let over_a_place = matches!(walked.element, WalkedElement::Place(_));
+            let mut inner = if over_a_place {
+                loop_variables.bind_item_of_a_place(ctx)
+            } else {
+                loop_variables.bind(ctx)
+            };
             // A fact proven before the loop holds in its body only if nothing in
             // the body ends it, as the judge read it (docs/adr/0055, section 3).
             inner.proven = crate::forge::narrowing::loop_entry(&ctx.proven, &action.actions);
@@ -19582,16 +19531,9 @@ fn lower_action(
                         .map(|(from, to)| (from.as_str(), to.as_str())),
                 )
                 .collect();
-            let over_a_place = matches!(walked.element, WalkedElement::Place(_));
-            if over_a_place {
-                rewrites.place_items.borrow_mut().push(item.to_string());
-            }
             rewrites.loop_depth.set(depth + 1);
             let lowered = lower_actions(&mut action.actions, &inner, &inner_renames, rewrites);
             rewrites.loop_depth.set(depth);
-            if over_a_place {
-                rewrites.place_items.borrow_mut().pop();
-            }
             if holds_a_record.is_some() {
                 rewrites.loop_records.borrow_mut().pop();
             }
