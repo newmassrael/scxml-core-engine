@@ -288,11 +288,32 @@ const OPEN_ANSWER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmln
   </datamodel>
 </scxml>"#;
 
+/// An answer schema whose record holds a list of records with a lower count:
+/// a plan of one to three steps (docs/adr/0087, "Landing order" item 8).
+const PLAN: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="plan" sce:event-name="probe.plan">
+  <sce:import kind="event-schema" src="plan_step.scxml" as="Step"/>
+  <datamodel>
+    <data id="steps" sce:type="list&lt;record:Step&gt;[1..3]" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+
+/// One step of [`PLAN`].
+const PLAN_STEP: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="plan_step" sce:event-name="probe.plan.step">
+  <datamodel>
+    <data id="title" sce:type="string[8]" sce:direction="in"/>
+    <data id="at" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+
 /// The siblings every model probe is read beside.
-const MODEL_SIBLINGS: [(&str, &str); 3] = [
+const MODEL_SIBLINGS: [(&str, &str); 5] = [
     ("answer.scxml", ANSWER),
     ("open_kind.scxml", OPEN_KIND),
     ("open_answer.scxml", OPEN_ANSWER),
+    ("plan.scxml", PLAN),
+    ("plan_step.scxml", PLAN_STEP),
 ];
 
 /// A `sce-static` statechart that asks `invoke_type` for a text, the invoke
@@ -420,6 +441,41 @@ fn the_build_writes_the_answer_schema_and_the_table_of_its_grammars() {
                 written.contains("json-schema.org/draft/2020-12/schema"),
                 "{language}: the table holds no JSON Schema:\n{written}"
             );
+        }
+    }
+}
+
+/// An answer schema whose record holds a list of records is named as any other
+/// is (docs/adr/0087, "Landing order" item 8): the build writes its id into the
+/// request, and the machine's table holds the composed record's JSON Schema,
+/// its list's lower and upper counts and the step's record among its `$defs`,
+/// beside its GBNF grammar, both folded from the type as a record of entries'
+/// are. C and C++ hold each grammar as characters, so only the id is read as
+/// text there.
+#[test]
+fn an_answer_schema_whose_record_holds_a_list_is_in_the_table_with_its_grammars() {
+    let doc = model_generate(MODEL_GENERATE, r#" sce:answer="Plan""#, "").replace(
+        r#"<sce:import kind="event-schema" src="answer.scxml" as="Answer"/>"#,
+        r#"<sce:import kind="event-schema" src="plan.scxml" as="Plan"/>
+  <sce:import kind="event-schema" src="plan_step.scxml" as="Step"/>"#,
+    );
+    assert!(doc.contains(r#"as="Plan""#), "the probe imports the plan");
+    for language in languages() {
+        let (ok, text, written) = generate(language, &doc);
+        assert!(ok, "{language} did not generate: {text}");
+        assert!(
+            written.contains("urn:sce:schema:plan:1"),
+            "{language}: neither the request nor the table names the plan:\n{written}"
+        );
+        if !matches!(language, "c11" | "cpp") {
+            // `defs/plan_step` is the step's `$ref`, read past the `$` a
+            // language escapes in a text.
+            for part in ["minItems", "maxItems", "defs/plan_step", "root ::="] {
+                assert!(
+                    written.contains(part),
+                    "{language}: the table holds no `{part}`:\n{written}"
+                );
+            }
         }
     }
 }
