@@ -5,8 +5,9 @@
 # count check where the send writes the list (`composed_wire_value`, `ComposedSpelling::send_counted`).
 #
 # Each case takes one of those away, and the tests under study must turn red: the relation's own
-# test, the judge's accepting test over every backend that sends, and the Rust machine of
-# `static_composed_send`, which must hold `held` to its count.
+# test, the judge's accepting test over every backend that sends, the Rust machine of
+# `static_composed_send`, which must hold `held` to its count, and its Go machine, which must
+# refuse the event whole where `held` is short of it (`Param::native_send_least`).
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_list_sent_short_of_its_fields_lower_count_is_held_when_it_runs.cases`.
@@ -37,8 +38,14 @@ PY
 
 mutation_case "a list short of its field's lower count is written with no check" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "    let (wired, fails) = match unproven_count(&place.ty, param.name, sent_as, rewrites) {",
-     "    let (wired, fails) = match None::<u32> {")
+     "    let least = unproven_count(&place.ty, param.name, sent_as, rewrites);",
+     "    let least = None::<u32>;")
+PY
+
+mutation_case "a list short of its field's lower count is left out as a pair and the rest still sent" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                param.native_send_least = value.send_least;",
+     "                param.native_send_least = None;")
 PY
 
 mutation_case "the field is looked up among the schemas of one entry per field, which hold no list" <<'PY'

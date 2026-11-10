@@ -518,10 +518,30 @@
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})
 			} else {
+{% if param.native_send_least %}
+{# docs/adr/0086, section 15.6 (`Param::native_send_least`): the failure is the
+   list falling short of the lower count of the field it is sent as. That is not
+   a value that could not be read, whose pair §scxml-5.7.1 leaves out while the
+   message still goes: sent without the pair, the event would be refused again
+   where it is read, a second error.execution for the one short list. The event
+   is refused here, whole, before any arm below delivers it. Every action list
+   of a Go machine is a function of its own (`in_action_block`), so the return
+   ends the block, as the arguments' own refusals above do. #}
+				// docs/adr/0086, section 15.6: the list is short of its field's
+				// lower count, so the event is refused whole: one error, nothing
+				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+{% if 'error.execution' in model.events %}
+				errEvt := sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> holds fewer elements than the {{ param.native_send_least }} its field's type declares, so the event is not sent")
+				errEvt.Metadata.SendID = {{ send_id_go }}
+				engine.Raise(errEvt)
+{% endif %}
+				return
+{% else %}
 {% if 'error.execution' in model.events %}
 				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
 {% endif %}
 				paramFailed = true
+{% endif %}
 			}
 {% else %}
 			parts = append(parts, sce.EventDataParam{Name: "{{ param.name | escape_go }}", Value: sceValue})

@@ -1430,6 +1430,22 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_fails: bool,
+    /// Codegen-internal: the lower count of the field a `<send>` writes this
+    /// param's list into that the list's own type does not prove, which the
+    /// send holds it to when it runs (docs/adr/0086, section 15.6); `None` for
+    /// every other param. A list short of it is not a value that could not be
+    /// read, whose pair §scxml-5.7.1 leaves out while the message still goes,
+    /// but a value the event cannot carry: the event is refused whole, one
+    /// `error.execution` and nothing delivered, and the error ends the block
+    /// (§scxml-4.9). Sent without the pair instead, the event is refused again
+    /// where it is read, a second error for the one short list. A template
+    /// whose `<send>` reads the count's failure through [`Self::native_fails`]
+    /// reads this to end the send there. Set by
+    /// [`crate::forge::static_lowering`], outside the IR contract, for the
+    /// reason [`Self::native_value`] gives.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_send_least: Option<u32>,
 }
 
 /// §scxml-5.2: Datamodel variable
