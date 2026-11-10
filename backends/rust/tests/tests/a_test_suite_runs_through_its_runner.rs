@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::saved_state::SavedValue;
 use sce_rust_runtime::test::{
-    run_suite, CaseResult, Duration, Features, Instant, LogKind, Message, ModuleParameters,
-    SystemAdapter, Verdict,
+    run_suite, run_suite_with_traces, CaseResult, Duration, Features, Instant, LogKind, Message,
+    ModuleParameters, SystemAdapter, Trace, Verdict,
 };
 use sce_rust_tests::integration::static_datamodel::{
     answers_the_job, asking_configuration, job_reply, job_request, reply_ok, runtime_suite,
@@ -239,6 +239,125 @@ fn a_generated_test_case_writes_its_test_log() {
             .strip_suffix('\n')
             .expect("the shared log ends in one newline")
     );
+}
+
+/// The recorded input trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10):
+/// the input the Responder above gives the case when it answers with success,
+/// the reply of 0 to job 7 at 500, as a file every backend's player reads.
+const ANSWERS_THE_JOB_TRACE: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/test_profile/runtime/traces/answers_the_job.json"
+);
+
+/// The directory of the suite's committed traces.
+fn traces_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../sce-build/tests/fixtures/test_profile/runtime/traces")
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
+/// committed trace of `answers_the_job` writes the test log every runtime
+/// writes of it, byte for byte: the configuration's unit reads the reply from
+/// its canonical form and writes it back the same, and the clock advances to
+/// the trace's instant as it did to the Responder's.
+#[test]
+fn a_recorded_trace_replays_to_the_test_log_every_runtime_writes() {
+    let results = run_suite_with_traces(
+        &runtime_suite::suite(),
+        &world(&[]),
+        |_: &str| Trace::parse(ANSWERS_THE_JOB_TRACE),
+        &ModuleParameters::default(),
+    )
+    .expect("the suite declares every module parameter overridden");
+    assert_eq!(names(&results), ["answers_the_job"]);
+    assert_eq!(results[0].result.verdict, Verdict::Pass);
+    assert_eq!(
+        results[0].canonical_log("runtime_suite"),
+        ANSWERS_THE_JOB_LOG
+            .strip_suffix('\n')
+            .expect("the shared log ends in one newline")
+    );
+}
+
+/// A directory of the runner's logs, made empty, which `name` keeps apart
+/// from every other test's.
+fn log_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "sce-runtime-suite-runner-{}-{name}",
+        std::process::id()
+    ));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).expect("an earlier run's logs are removed");
+    }
+    dir
+}
+
+/// The suite's runner program, given `args` after the directories of the
+/// traces and of the logs.
+fn run_program(logs: &std::path::Path, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_runtime_suite_runner"))
+        .arg("--trace-dir")
+        .arg(traces_dir())
+        .arg("--log-dir")
+        .arg(logs)
+        .args(args)
+        .output()
+        .expect("the runner program runs")
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
+/// its world selects against its trace and writes `<case>.log.json`, the
+/// canonical log with nothing after it, and prints each case's verdict; a
+/// module parameter's value on its command line replaces its default, and one
+/// the suite does not declare is refused with exit status 2 before any case
+/// runs.
+#[test]
+fn the_suites_runner_program_writes_the_log_of_each_trace() {
+    let logs = log_dir("default");
+    let output = run_program(&logs, &[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "answers_the_job pass\n"
+    );
+    let log = std::fs::read_to_string(logs.join("answers_the_job.log.json"))
+        .expect("the log of the case is written");
+    assert_eq!(
+        log,
+        ANSWERS_THE_JOB_LOG
+            .strip_suffix('\n')
+            .expect("the shared log ends in one newline")
+    );
+    std::fs::remove_dir_all(&logs).expect("the logs are removed");
+
+    let logs = log_dir("overridden");
+    let output = run_program(&logs, &["--world", "", "--module-parameter", "job=9"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let log = std::fs::read_to_string(logs.join("answers_the_job.log.json"))
+        .expect("the log of the case is written");
+    assert!(
+        log.contains("\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}"),
+        "the request names the job of the value given: {log}"
+    );
+    std::fs::remove_dir_all(&logs).expect("the logs are removed");
+
+    let logs = log_dir("undeclared");
+    let output = run_program(&logs, &["--module-parameter", "limit=1"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("the suite declares no module parameter 'limit'"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!logs.exists(), "no case ran, so no log was written");
 }
 
 /// §11.8: a world runs the test cases whose selection it satisfies, in the
