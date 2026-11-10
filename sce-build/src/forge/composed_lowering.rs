@@ -77,7 +77,7 @@ pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member};
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};
 pub(crate) use rust::{
     rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
-    rust_union_member, rust_union_tag_method, RUST_EMPTY_LIST, RUST_PORTABLE,
+    rust_union_member, rust_union_tag_method, rust_unit_union_read, RUST_EMPTY_LIST, RUST_PORTABLE,
 };
 pub(crate) use swift::{
     swift_case_ident, swift_case_read, swift_raise_checks, swift_union_member, SWIFT_UNION_KIND,

@@ -668,20 +668,23 @@ impl AlgorithmWalk<'_, '_> {
                 init_spelling,
                 ..
             } => self.expect(init, init_spelling.as_ref(), &Slot::Named),
+            // A union local's tag is a value of its enum, and each field of its
+            // case is held to the enum it declares, as a record local's field
+            // is (docs/adr/0092, section 6.1 item 5).
+            AlgorithmStmt::UnionVar { name, fields, .. } => {
+                for field in fields {
+                    let slot = self.place(&format!("{name}.{}", field.name));
+                    self.expect(&field.expr, field.expr_spelling.as_ref(), &slot)?;
+                }
+                Ok(())
+            }
             AlgorithmStmt::Assign {
                 target,
                 expr,
                 expr_spelling,
                 ..
             } => {
-                let target = target.trim();
-                let slot = match self.types.enum_at(target) {
-                    Some(alias) => Slot::Enum(alias.to_string()),
-                    None => self
-                        .types
-                        .enum_at(&present_value_path(target))
-                        .map_or(Slot::Scalar, |alias| Slot::OptionalEnum(alias.to_string())),
-                };
+                let slot = self.place(target.trim());
                 self.expect(expr, expr_spelling.as_ref(), &slot)
             }
             AlgorithmStmt::Append {
@@ -741,6 +744,18 @@ impl AlgorithmWalk<'_, '_> {
                 cond,
                 cond_spelling,
             } => self.expect(cond, cond_spelling.as_ref(), &Slot::Scalar),
+        }
+    }
+
+    /// The place the path `target` names is, as a value written to it stands in
+    /// it: a place of an enum, of an optional value of one, or of a number.
+    fn place(&self, target: &str) -> Slot {
+        match self.types.enum_at(target) {
+            Some(alias) => Slot::Enum(alias.to_string()),
+            None => self
+                .types
+                .enum_at(&present_value_path(target))
+                .map_or(Slot::Scalar, |alias| Slot::OptionalEnum(alias.to_string())),
         }
     }
 

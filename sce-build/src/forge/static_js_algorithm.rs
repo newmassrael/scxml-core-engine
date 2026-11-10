@@ -635,6 +635,15 @@ impl Body<'_> {
                 }
                 format!("var {name} = {{{}}};", members.join(", "))
             }
+            // A union an algorithm holds is not lowered here yet (docs/adr/0092,
+            // Landing order step 5), as its parameter and its return are not
+            // ([`holds`]).
+            AlgorithmStmt::UnionVar { name, alias, .. } => {
+                return Err(refuse(
+                    self.algorithm,
+                    format!("the union local `{name}` of type `union:{alias}`"),
+                ))
+            }
             // A record received whole from a call.
             AlgorithmStmt::RecordFromCall {
                 name, alias, init, ..
@@ -891,7 +900,8 @@ fn holds(ty: &AlgorithmValueType) -> bool {
             _ => false,
         },
         AlgorithmValueType::Record { .. } => true,
-        // No slot holds a union yet (docs/adr/0092, section 7).
+        // This lowering does not hold an algorithm's union yet (docs/adr/0092,
+        // Landing order step 5).
         AlgorithmValueType::Union { .. } => false,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
@@ -997,7 +1007,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
             .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type),
         // A list is returned by name, never judged as an operand. A union is
-        // refused by the guard above, as no slot holds one yet.
+        // refused by the guard above, as this lowering holds none yet.
         Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. }) => {
             InferredType::Unknown
         }

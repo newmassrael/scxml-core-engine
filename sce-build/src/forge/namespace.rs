@@ -196,9 +196,9 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
             );
             for binding in m.body_bindings() {
                 let what = match binding {
-                    AlgorithmBinding::Local { .. } | AlgorithmBinding::RecordLocal { .. } => {
-                        Declared::Local
-                    }
+                    AlgorithmBinding::Local { .. }
+                    | AlgorithmBinding::RecordLocal { .. }
+                    | AlgorithmBinding::UnionLocal { .. } => Declared::Local,
                     AlgorithmBinding::ForeachItem { .. } => Declared::LoopItem,
                 };
                 out.push((binding.name(), what));

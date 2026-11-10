@@ -1608,12 +1608,14 @@ pub enum ValidationError {
     AlgorithmLvalueUnsupported { target: String, restriction: String },
 
     /// RFC §synth-5-A: an algorithm declares a non-void `<sce:return type>`
-    /// in the signature but the body contains no terminal
-    /// `<sce:return expr>` along every code path. v1 detects only the
-    /// trivial case (last statement is not a return); flow-sensitive
-    /// path tracking is not implemented until a consumer needs it.
+    /// in the signature and a path reaches the end of its body without
+    /// `<sce:return expr>`. A body that holds no union must end in a
+    /// `<sce:return>`; one that holds a union may end where its tag's tests
+    /// have returned on every case, a point no path passes (docs/adr/0092,
+    /// section 6.1 item 4), and is refused while a case is left there.
     #[error(
-        "algorithm: signature declares return type but body's last statement is not <sce:return>"
+        "algorithm: signature declares return type but a path reaches the end of the body \
+         without <sce:return>"
     )]
     AlgorithmReturnMissing,
 

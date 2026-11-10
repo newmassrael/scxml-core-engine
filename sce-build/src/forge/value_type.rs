@@ -1297,6 +1297,20 @@ impl WrittenType {
         }
     }
 
+    /// The import alias a union names, or `None` for any other type. An
+    /// optional union is not a union: it may be absent.
+    pub fn union_alias(&self) -> Option<&str> {
+        match self {
+            Self::Union { alias } => Some(alias),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::Record { .. }
+            | Self::List { .. }
+            | Self::Optional { .. } => None,
+        }
+    }
+
     /// The element of an optional value, or `None` for any other type.
     pub fn optional_elem(&self) -> Option<&Self> {
         match self {
@@ -1331,6 +1345,12 @@ impl WrittenType {
         Self::read(s).ok().filter(|ty| ty.slot_view().is_ok())
     }
 
+    /// [`Self::from_attr`] for an algorithm's parameter, return or local, whose
+    /// slot holds a union whole too ([`Self::algorithm_view`]).
+    pub fn algorithm_from_attr(s: &str) -> Option<Self> {
+        Self::read(s).ok().filter(|ty| ty.algorithm_view().is_ok())
+    }
+
     /// The type as the lowerings of a slot (an algorithm's parameter, return
     /// and local, a statechart's variable) hold it today: a scalar, a text or a
     /// byte string; a record; a list of fixed-width numbers, `bool` or
@@ -1338,8 +1358,10 @@ impl WrittenType {
     /// type is a composition those lowerings do not hold yet, named by the
     /// part of it they stop at, so that a lowering refuses it by name
     /// (docs/adr/0086, section 7.3), as [`ValueType::entry`] does for an
-    /// event schema's field. No slot holds a union yet (docs/adr/0092, landing
-    /// order), at any depth.
+    /// event schema's field. A union is held only by the positions that say so
+    /// beside this one: a statechart's variable where its lowering holds one
+    /// ([`Self::variable_view`]) and an algorithm's slot, whole
+    /// ([`Self::algorithm_view`]) (docs/adr/0092, landing order).
     pub fn slot_view(&self) -> Result<&Self, Composition> {
         match self {
             Self::Scalar(_) | Self::Text { .. } | Self::Bytes { .. } | Self::Record { .. } => {
@@ -1370,6 +1392,21 @@ impl WrittenType {
         match self {
             Self::Union { .. } if unions => Ok(self),
             Self::Optional { elem } if unions && matches!(**elem, Self::Union { .. }) => Ok(self),
+            _ => self.slot_view(),
+        }
+    }
+
+    /// The type as an algorithm's parameter, return or local holds it: what
+    /// every slot holds ([`Self::slot_view`]), and `union:U` whole
+    /// (docs/adr/0092, section 1.1 item 3, Landing order step 5). A union
+    /// inside a list or an optional value is a composition no algorithm holds
+    /// yet, refused by name as every slot refuses one (docs/adr/0086, section
+    /// 7.3). Which backend lowers an algorithm's union is said where the
+    /// algorithm is rendered
+    /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
+    pub fn algorithm_view(&self) -> Result<&Self, Composition> {
+        match self {
+            Self::Union { .. } => Ok(self),
             _ => self.slot_view(),
         }
     }
@@ -6354,6 +6391,26 @@ mod tests {
         assert!(WrittenType::read("uint8")
             .unwrap()
             .variable_view(false)
+            .is_ok());
+    }
+
+    /// An algorithm's slot holds `union:U` whole (docs/adr/0092, Landing order
+    /// step 5), and a union inside an optional value or a list is still a
+    /// composition no slot holds, refused by the union it stops at.
+    #[test]
+    fn an_algorithm_slot_holds_a_union_whole_and_no_union_inside_another_type() {
+        let union = WrittenType::read("union:Shape").unwrap();
+        assert!(union.algorithm_view().is_ok());
+        assert_eq!(union.union_alias(), Some("Shape"));
+        let optional = WrittenType::read("optional<union:Shape>").unwrap();
+        assert_eq!(optional.algorithm_view().unwrap_err().place, "union:Shape");
+        assert_eq!(optional.union_alias(), None);
+        let listed = WrittenType::read("list<union:Shape>[2]").unwrap();
+        assert_eq!(listed.algorithm_view().unwrap_err().place, "union:Shape");
+        // Every type a slot holds, an algorithm's slot holds too.
+        assert!(WrittenType::read("record:Item")
+            .unwrap()
+            .algorithm_view()
             .is_ok());
     }
 

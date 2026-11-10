@@ -244,7 +244,12 @@ impl Names {
                     self.value_ty(sce_type);
                     self.opt_expr(init.as_deref(), init_spelling.as_ref())?;
                 }
-                AlgorithmStmt::RecordVar { alias, fields, .. } => {
+                // A union local names its union; the record of the case it
+                // builds is named by no expression, and is read from the
+                // union's cases where the imports are in hand
+                // ([`crate::forge::algorithm_union::built_case_records`]).
+                AlgorithmStmt::RecordVar { alias, fields, .. }
+                | AlgorithmStmt::UnionVar { alias, fields, .. } => {
                     self.name(alias);
                     for f in fields {
                         self.expr(&f.expr, f.expr_spelling.as_ref())?;

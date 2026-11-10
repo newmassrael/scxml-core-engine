@@ -653,6 +653,9 @@ fn eval_stmt(
         | AlgorithmStmt::RecordFromCall { name, alias, .. } => Err(ConstFoldKind::NotFoldable(
             format!("local '{name}' is a record:{alias}, and a build-time fold computes scalars"),
         )),
+        AlgorithmStmt::UnionVar { name, alias, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "local '{name}' is a union:{alias}, and a build-time fold computes scalars"
+        ))),
         AlgorithmStmt::Assign { target, expr, .. } => {
             let target = target.trim();
             // Identifier-only LValues in fold bodies. Member/Index
@@ -1471,6 +1474,38 @@ mod tests {
                 GenerateError::ConstNotFoldable { ref detail, .. } if detail.contains("<sce:call")
             ),
             "call inside fold must be rejected; got {call_err:?}"
+        );
+    }
+
+    /// A union local inside a fold body is refused by name: a fold computes the
+    /// scalar elements of a build-time array (docs/adr/0092, Landing order
+    /// step 5).
+    #[test]
+    fn fold_body_rejects_a_union_local() {
+        let fold = FoldBody {
+            range_start: 0,
+            range_end: 1,
+            iter_var: "i".into(),
+            elem_type: SceType::Uint16,
+            body: vec![AlgorithmStmt::UnionVar {
+                name: "when".into(),
+                name_spelling: None,
+                alias: "DateExpression".into(),
+                type_spelling: None,
+                fields: Vec::new(),
+            }],
+            yield_expr: "i".into(),
+            yield_spelling: None,
+        };
+        let mut budget = Budget::default();
+        let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                GenerateError::ConstNotFoldable { ref detail, .. }
+                    if detail.contains("union:DateExpression")
+            ),
+            "a union local inside a fold must be refused; got {err:?}"
         );
     }
 

@@ -5414,6 +5414,26 @@ pub enum AlgorithmStmt {
         #[serde(skip)]
         init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
+    /// `<sce:var name=... type="union:<alias>">` with one `<sce:set>` that
+    /// names the tag with a variant of its enum and one per field of that
+    /// case's record — a union local, built whole (docs/adr/0092, section 6.1
+    /// item 5). Which case the tag names, and whether the other fields are
+    /// exactly that case's, need the union and are judged where the import is
+    /// resolved.
+    ///
+    /// A variant of its own rather than a `RecordVar`: a union names a union
+    /// document, not an event-schema, and its fields depend on its tag.
+    UnionVar {
+        name: String,
+        #[serde(skip)]
+        name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        /// The import alias of the union the local is a value of.
+        #[serde(rename = "union")]
+        alias: String,
+        #[serde(skip)]
+        type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        fields: Vec<RecordFieldInit>,
+    },
     /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
     /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a
     /// one-level member access only; a computed index (`buf[i]`) is rejected
@@ -5562,6 +5582,9 @@ pub enum AlgorithmBinding<'a> {
     /// `<sce:var name type="record:<alias>">` — a record local, typed by the
     /// imported event-schema `alias` names.
     RecordLocal { name: &'a str, alias: &'a str },
+    /// `<sce:var name type="union:<alias>">` — a union local, typed by the
+    /// imported union `alias` names (docs/adr/0092, section 6.1 item 5).
+    UnionLocal { name: &'a str, alias: &'a str },
 }
 
 impl<'a> AlgorithmBinding<'a> {
@@ -5570,9 +5593,39 @@ impl<'a> AlgorithmBinding<'a> {
         match self {
             AlgorithmBinding::Local { name, .. }
             | AlgorithmBinding::ForeachItem { name, .. }
-            | AlgorithmBinding::RecordLocal { name, .. } => name,
+            | AlgorithmBinding::RecordLocal { name, .. }
+            | AlgorithmBinding::UnionLocal { name, .. } => name,
         }
     }
+}
+
+/// Each parameter and local of `union:<alias>` of the algorithm whose
+/// signature is `signature` and whose body is `body`, by name, with the alias
+/// of its union, parameters first and then locals in source order
+/// (docs/adr/0092, Landing order step 5). One answer for the parser, which
+/// leaves a body that holds one to the judge of its returns, and for every
+/// reader that types or lowers one.
+pub fn algorithm_unions<'a>(
+    signature: &'a AlgorithmSignature,
+    body: &'a [AlgorithmStmt],
+) -> Vec<(&'a str, &'a str)> {
+    let mut bindings = Vec::new();
+    collect_algorithm_bindings(body, &mut bindings);
+    signature
+        .params
+        .iter()
+        .filter_map(|p| {
+            p.sce_type
+                .union_alias()
+                .map(|alias| (p.name.as_str(), alias))
+        })
+        .chain(bindings.into_iter().filter_map(|binding| match binding {
+            AlgorithmBinding::UnionLocal { name, alias } => Some((name, alias)),
+            AlgorithmBinding::Local { .. }
+            | AlgorithmBinding::ForeachItem { .. }
+            | AlgorithmBinding::RecordLocal { .. } => None,
+        }))
+        .collect()
 }
 
 /// Every name `stmts` introduces, in source order, nested bodies included.
@@ -5591,6 +5644,9 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             AlgorithmStmt::RecordVar { name, alias, .. }
             | AlgorithmStmt::RecordFromCall { name, alias, .. } => {
                 out.push(AlgorithmBinding::RecordLocal { name, alias });
+            }
+            AlgorithmStmt::UnionVar { name, alias, .. } => {
+                out.push(AlgorithmBinding::UnionLocal { name, alias });
             }
             AlgorithmStmt::Foreach {
                 item, source, body, ..
@@ -5658,6 +5714,23 @@ impl AlgorithmModel {
     pub fn output_buffer(&self) -> Option<&str> {
         output_buffer_of(&self.signature, &self.body)
     }
+
+    /// Each parameter and local of `union:<alias>`, by name, with its union's
+    /// alias ([`algorithm_unions`]).
+    pub fn unions(&self) -> Vec<(&str, &str)> {
+        algorithm_unions(&self.signature, &self.body)
+    }
+
+    /// Whether the algorithm holds a union anywhere: a parameter, a local or
+    /// its return (docs/adr/0092, Landing order step 5).
+    pub fn holds_union(&self) -> bool {
+        !self.unions().is_empty()
+            || self
+                .signature
+                .return_type
+                .as_ref()
+                .is_some_and(|ty| ty.union_alias().is_some())
+    }
 }
 
 /// SCE byte-buffer-build (SCE_FORGE.md §4.12): the buffer local an algorithm
@@ -5722,6 +5795,7 @@ fn collect_buffers_and_returns<'a>(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { expr: None, .. }

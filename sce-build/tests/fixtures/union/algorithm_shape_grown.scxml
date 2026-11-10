@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A shape grown from a dot into a circle of `radius`, and any other shape as
+     it is: an algorithm that returns a union, the one it was given or one it
+     builds as the case its tag names (docs/adr/0092, section 6.1 item 5 and
+     Landing order step 5). Building the circle names its record, which the
+     algorithm imports. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shape_grown" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:signature>
+    <sce:param name="shape" type="union:Shape"/>
+    <sce:param name="radius" type="uint16"/>
+    <sce:return type="union:Shape"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="shape.kind !== ShapeKind.dot">
+      <sce:return expr="shape"/>
+    </sce:if>
+    <sce:var name="grown" type="union:Shape">
+      <sce:set name="kind" expr="ShapeKind.circle"/>
+      <sce:set name="radius" expr="radius"/>
+    </sce:var>
+    <sce:return expr="grown"/>
+  </sce:body>
+</scxml>

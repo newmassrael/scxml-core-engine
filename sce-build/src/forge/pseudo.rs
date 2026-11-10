@@ -1213,6 +1213,31 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 }
             });
         }
+        // A union local is built whole as a record local is: the declaration,
+        // then one nested `field = expr` line for its tag and each field of its
+        // case, in the order the author gave them (docs/adr/0092, section 6.1
+        // item 5).
+        AlgorithmStmt::UnionVar {
+            name,
+            alias,
+            fields,
+            ..
+        } => {
+            out.line_of(vec![
+                Part::Word(Word::Var),
+                Part::Text(format!(
+                    "{}: {}{}",
+                    text(name),
+                    crate::forge::model::AlgorithmValueType::UNION_PREFIX,
+                    text(alias)
+                )),
+            ]);
+            out.nested(|out| {
+                for f in fields {
+                    out.line(&format!("{} = {}", text(&f.name), text(&f.expr)));
+                }
+            });
+        }
         // A record local received whole from a call: one line, as a scalar
         // local with an `init` is.
         AlgorithmStmt::RecordFromCall {

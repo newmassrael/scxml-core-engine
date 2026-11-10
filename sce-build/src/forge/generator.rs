@@ -33040,6 +33040,11 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 "the <sce:var name=\"{name}\">, a name Swift reserves,"
             )),
             AlgorithmStmt::RecordFromCall { .. } => None,
+            // A union an algorithm holds is not lowered on Swift yet
+            // (docs/adr/0092, Landing order step 5).
+            AlgorithmStmt::UnionVar { name, alias, .. } => Some(format!(
+                "the <sce:var name=\"{name}\"> of union:{alias}"
+            )),
             AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
@@ -39273,6 +39278,150 @@ pub(crate) fn order_record_fields<'f>(
     Ok(declared.iter().map(|id| given[id]).collect())
 }
 
+/// The field and the value of each field of `record` a record built whole
+/// gives, in the record's order, `ordered` the `<sce:set>` of each in that
+/// order ([`order_record_fields`]): a text, or a text that may be absent, built
+/// as a record's text is written everywhere ([`lower_field_text_write`]), and
+/// any other value the expression held to the type of the field. The one
+/// lowering of a record local's fields and of the record a union local's case
+/// holds (SCE_FORGE.md §4.12; docs/adr/0092, section 6.1 item 5).
+fn record_field_inits(
+    record: &RecordImport,
+    ordered: &[&crate::forge::model::RecordFieldInit],
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+) -> Result<Vec<(String, String)>, ForgeError> {
+    let mut inits: Vec<(String, String)> = Vec::new();
+    for (field, f) in record.fields.iter().zip(ordered) {
+        let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
+        let value = if field.holds_text() {
+            lower_field_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
+        } else {
+            expr::transpile_into(
+                &f.expr,
+                ctx.l.expr_target(),
+                type_ctx,
+                ctx.renames,
+                crate::forge::types::InferredType::of_field(&field.ty),
+            )
+            .map_err(|refusal| site.place(refusal))?
+        };
+        inits.push((event_schema_field_ident(&field.id, ctx.lang), value));
+    }
+    Ok(inits)
+}
+
+/// The type the union `alias` an algorithm imports is spelled as on the
+/// backend of `l`: the type its own unit declares (docs/adr/0092, section 7, the
+/// Rust row), named through the module the algorithm's import line brings in,
+/// as an event schema's record is ([`event_schema_payload_type`]). A backend
+/// that does not lower an algorithm's union refuses the algorithm by name
+/// before its body is rendered
+/// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]), so asked of one
+/// it is a fault of the pipeline, not of the document.
+fn algorithm_union_type(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    alias: &str,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let import = imports
+        .iter()
+        .find(|i| i.kind == "union" && i.alias == alias)
+        .ok_or_else(|| {
+            GenerateError::InvalidConfig(format!(
+                "`union:{alias}` names no union the algorithm imports, which the parser refuses \
+                 before a backend renders it"
+            ))
+        })?;
+    match l.lang {
+        Language::Rust => Ok(format!("{}::{}", import.namespace, import.type_name)),
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11
+        | Language::Swift => Err(GenerateError::InvalidConfig(format!(
+            "an algorithm's union reached the renderer of {}, which lowers none in an \
+             algorithm (docs/adr/0092, Landing order step 5)",
+            l.lang.canonical_name()
+        ))
+        .into()),
+    }
+}
+
+/// The statement that closes the body of the algorithm `name` on `lang` at a
+/// point no path reaches: its end, where the tests of a union's tag have
+/// returned on every case (docs/adr/0092, section 6.1 item 4). The judge proved
+/// the point unreached before any backend was asked; the target's compiler
+/// cannot see that it is, and asks the body for a value there. Rust's
+/// `unreachable!` is the expression of the function's type that says so. Only a
+/// body that holds a union ends this way, and a backend that does not lower one
+/// refused the algorithm before its body was rendered, so asked of one it is a
+/// fault of the pipeline, not of the document.
+fn unreached_end(lang: crate::generator::Language, name: &str) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => Ok(format!(
+            "    unreachable!(\"{name}: every case of its union returned before the end of its \
+             body\")"
+        )),
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11
+        | Language::Swift => Err(GenerateError::InvalidConfig(format!(
+            "algorithm '{name}' ends where every case of a union returned, which the renderer \
+             of {} does not close, as it lowers no union in an algorithm (docs/adr/0092, \
+             Landing order step 5)",
+            lang.canonical_name()
+        ))
+        .into()),
+    }
+}
+
+/// Refuse the algorithm `m` on `lang` by name (`generate/unsupported-feature`)
+/// when it holds a union, in a parameter, a local or its return, and `lang`
+/// does not lower one in an algorithm yet (docs/adr/0092, Landing order step 5):
+/// the algorithm is valid and judged on every backend, and a backend joins
+/// [`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`] when it lowers one.
+fn reject_union_in_unsupported_lang(
+    m: &AlgorithmModel,
+    lang: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    use crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS;
+    if !m.holds_union() || ALGORITHM_UNION_BACKENDS.contains(&lang) {
+        return Ok(());
+    }
+    let held = match m.unions().first() {
+        Some((name, alias)) => format!("`{name}` of union:{alias}"),
+        None => format!(
+            "a return of {}",
+            m.signature
+                .return_type
+                .as_ref()
+                .map(AlgorithmValueType::as_attr)
+                .unwrap_or_default()
+        ),
+    };
+    let served: Vec<&'static str> = ALGORITHM_UNION_BACKENDS
+        .iter()
+        .map(|candidate| candidate.canonical_name())
+        .collect();
+    Err(GenerateError::unsupported_at(
+        format!(
+            "algorithm '{}' holds {held}, and {} does not lower a union in an algorithm yet \
+             (docs/adr/0092, Landing order step 5; lowered for: {})",
+            m.name,
+            lang.canonical_name(),
+            served.join(", ")
+        ),
+        m.source_location.clone(),
+    )
+    .into())
+}
+
 /// The record type `record:<alias>` names, judged for what v1 can carry
 /// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
 /// fixed-width number, a `bool`, an enum, or a `string` the schema bounds with
@@ -39957,6 +40106,7 @@ fn record_locals(
                     walk(body, out)
                 }
                 AlgorithmStmt::Var { .. }
+                | AlgorithmStmt::UnionVar { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
                 | AlgorithmStmt::Return { .. }
@@ -40006,6 +40156,7 @@ fn optional_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &AlgorithmValueType)> {
                 }
                 AlgorithmStmt::RecordVar { .. }
                 | AlgorithmStmt::RecordFromCall { .. }
+                | AlgorithmStmt::UnionVar { .. }
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
                 | AlgorithmStmt::Return { .. }
@@ -40195,6 +40346,7 @@ fn collect_bc_foreach_member_types(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -40316,6 +40468,7 @@ fn collect_append_buffers(
             }
             AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -40668,6 +40821,7 @@ struct AlgorithmBodyCfg<'a> {
     borrowed_records: &'a std::collections::HashSet<String>,
     absences: &'a TypedAbsences,
     channel: ReturnChannel<'a>,
+    unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -40709,6 +40863,7 @@ fn lower_algorithm_body(
         borrowed_records: cfg.borrowed_records,
         absences: cfg.absences,
         channel: cfg.channel,
+        unions: cfg.unions,
     };
     lower_algorithm_block(
         stmts,
@@ -40785,6 +40940,7 @@ fn collect_algorithm_assigned_roots(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -40832,6 +40988,9 @@ struct AlgorithmLowerCtx<'a> {
     /// How the body returns its value, and a failure in its place when the
     /// algorithm declares `may-fail` (SCE_FORGE.md §3.4.1).
     channel: ReturnChannel<'a>,
+    /// The unions the body's parameters and locals hold (docs/adr/0092,
+    /// Landing order step 5): what a union local's case is read from.
+    unions: &'a crate::forge::algorithm_union::AlgorithmUnions<'a>,
 }
 
 /// Lower one statement ([`lower_algorithm_stmt`]) and the return of any
@@ -40859,6 +41018,7 @@ fn lower_algorithm_stmt_and_check(
         AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Call { .. }
@@ -40987,6 +41147,7 @@ fn lower_algorithm_stmt(
         borrowed_records,
         absences,
         channel,
+        unions,
     } = ctx;
     // The statement's expressions are read where `proven` holds: a `.value` the
     // narrowing admitted is a proven read here too.
@@ -41213,26 +41374,7 @@ fn lower_algorithm_stmt(
                 name,
                 name_spelling.as_ref(),
             )?;
-            let mut inits: Vec<(String, String)> = Vec::new();
-            for (field, f) in record.fields.iter().zip(ordered) {
-                let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
-                // A text, or a text that may be absent, is built as a record's text is
-                // written everywhere ([`lower_field_text_write`]); any other value is
-                // the expression held to the type of the field.
-                let value = if field.holds_text() {
-                    lower_field_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
-                } else {
-                    expr::transpile_into(
-                        &f.expr,
-                        l.expr_target(),
-                        type_ctx,
-                        renames,
-                        InferredType::of_field(&field.ty),
-                    )
-                    .map_err(|refusal| site.place(refusal))?
-                };
-                inits.push((event_schema_field_ident(&field.id, lang), value));
-            }
+            let inits = record_field_inits(record, &ordered, ctx, type_ctx)?;
             let local = l.local_id(name);
             let ty = &record.qualified_type;
             let joined = |sep: &str| {
@@ -41334,6 +41476,41 @@ fn lower_algorithm_stmt(
                 }
             };
             out.push_str(&line);
+        }
+        // docs/adr/0092, section 6.1 item 5: a union local, built whole as the
+        // case its tag names, holding that case's record built from the other
+        // `<sce:set>`s as a record local's fields are. The judge held the build
+        // to its case and fields before any backend was asked, and refuses a
+        // write of the local, so it is declared once and never changed.
+        AlgorithmStmt::UnionVar {
+            name,
+            name_spelling,
+            alias,
+            fields,
+            ..
+        } => {
+            let element = format!("<sce:var name=\"{name}\">");
+            let built = unions.built(name, name_spelling.as_ref(), alias, fields)?;
+            let union_type = algorithm_union_type(l, imports, alias)?;
+            let case = crate::forge::composed_lowering::rust_case_ident(&built.case.variant.name);
+            let value = match built.record.as_deref() {
+                None => format!("{union_type}::{case}"),
+                Some(record_alias) => {
+                    let record = resolve_record(imports, record_alias, None, &element)?;
+                    let inits = record_field_inits(record, &built.fields, ctx, type_ctx)?;
+                    let joined = inits
+                        .iter()
+                        .map(|(field, value)| format!("{field}: {value}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "{union_type}::{case}({} {{ {joined} }})",
+                        record.qualified_type
+                    )
+                }
+            };
+            // `algorithm_union_type` has refused every backend but Rust.
+            out.push_str(&format!("{pad}let {} = {value};\n", l.local_id(name)));
         }
         AlgorithmStmt::Assign {
             target,
@@ -42470,6 +42647,13 @@ fn lower_algorithm_stmt(
                     let value =
                         ListSpelling::new(l, elem, imports)?.return_value(&l.local_id(name));
                     channel.value(pad, &value, true)
+                }
+                // A union return (docs/adr/0092, Landing order step 5): the
+                // returned value is a union parameter or local of the same
+                // union, by name, which the judge held it to before any backend
+                // was asked; the body's own, so it moves.
+                Some(rhs) if return_value.and_then(|t| t.union_alias()).is_some() => {
+                    channel.value(pad, &l.local_id(rhs.trim()), false)
                 }
                 // A record return (SCE_FORGE.md §4.12): the returned value is
                 // a record parameter or local of the same schema, by name —
@@ -44330,6 +44514,54 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// number the build resolved it to — what `_x.limits.<name>` reads
     /// (docs/adr/0050).
     limits: Vec<(String, crate::forge::type_ctx::BuildLimit)>,
+    /// Every parameter and local of `union:<alias>` (docs/adr/0092, Landing
+    /// order step 5), by name, with its union's alias: a place of the one value
+    /// type, read through its tag and the fields of the cases a test of the tag
+    /// leaves it in ([`crate::forge::value_path`]).
+    pub(crate) unions: Vec<(&'a str, &'a str)>,
+    /// The scope the algorithm's imports name enums, records and unions in
+    /// ([`import_type_scope`]): what a union place is walked in.
+    pub(crate) scope: crate::forge::value_type::TypeScope,
+}
+
+/// Refuse the union `alias` an algorithm's parameter, local or return holds
+/// where no algorithm holds it yet: a union whose document was not read, and
+/// one a case of which holds a record with a field that is no entry, a list, a
+/// record or a union at any depth, which no algorithm holds in a record yet
+/// (docs/adr/0086, section 7.3). The refusal names the union, the case, the
+/// record and the field.
+fn refuse_unheld_union(
+    scope: &crate::forge::value_type::TypeScope,
+    alias: &str,
+) -> Result<(), ForgeError> {
+    let union = scope.unions.get(alias).ok_or_else(|| -> ForgeError {
+        GenerateError::unsupported(format!(
+            "`union:{alias}` names a union whose document was not read, so no algorithm can \
+             hold it"
+        ))
+        .into()
+    })?;
+    for case in &union.cases {
+        let Some(record) = case.record.as_deref() else {
+            continue;
+        };
+        let fields = union
+            .scope
+            .records
+            .get(record)
+            .map(|r| r.fields.as_slice())
+            .unwrap_or_default();
+        if let Some((id, ty)) = fields.iter().find(|(_, ty)| ty.entry().is_err()) {
+            return Err(GenerateError::unsupported(format!(
+                "`union:{alias}`, whose case `{}` holds `record:{record}` with the field `{id}` \
+                 of type {ty}, which an algorithm does not hold in a record yet \
+                 (docs/adr/0086, section 7.3)",
+                case.variant.name
+            ))
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Each bound the locals of `body` name (`sce:limit` beside a `capacity`), with the
@@ -44455,7 +44687,8 @@ impl<'a> AlgorithmTypes<'a> {
                     sce_type.list_elem().map(|elem| (name, elem))
                 }
                 crate::forge::model::AlgorithmBinding::ForeachItem { .. }
-                | crate::forge::model::AlgorithmBinding::RecordLocal { .. } => None,
+                | crate::forge::model::AlgorithmBinding::RecordLocal { .. }
+                | crate::forge::model::AlgorithmBinding::UnionLocal { .. } => None,
             })
             .collect();
         for binding in bindings {
@@ -44545,6 +44778,9 @@ impl<'a> AlgorithmTypes<'a> {
                 }
                 // Registered with its fields from the record bindings below.
                 crate::forge::model::AlgorithmBinding::RecordLocal { .. } => continue,
+                // A place of the one value type, registered as the union
+                // parameters are ([`AlgorithmTypes::type_ctx`]).
+                crate::forge::model::AlgorithmBinding::UnionLocal { .. } => continue,
             };
             env.push((binding.name().to_string(), ty));
         }
@@ -44682,6 +44918,19 @@ impl<'a> AlgorithmTypes<'a> {
                         },
                     )),
             );
+        // docs/adr/0092, Landing order step 5: a parameter, a local and the
+        // return of `union:<alias>`, each a union every case of which holds a
+        // record an algorithm holds.
+        let scope = import_type_scope(imports);
+        let unions = m.unions();
+        let returned_union = m
+            .signature
+            .return_type
+            .as_ref()
+            .and_then(AlgorithmValueType::union_alias);
+        for alias in unions.iter().map(|&(_, alias)| alias).chain(returned_union) {
+            refuse_unheld_union(&scope, alias)?;
+        }
 
         Ok(Self {
             env,
@@ -44702,7 +44951,75 @@ impl<'a> AlgorithmTypes<'a> {
             text_members,
             member_lens,
             limits,
+            unions,
+            scope,
         })
+    }
+
+    /// The unions the algorithm holds, in the scope its imports name them in
+    /// ([`crate::forge::algorithm_union::AlgorithmUnions`]).
+    pub(crate) fn union_rules(&self) -> crate::forge::algorithm_union::AlgorithmUnions<'_> {
+        crate::forge::algorithm_union::AlgorithmUnions {
+            scope: &self.scope,
+            held: &self.unions,
+        }
+    }
+
+    /// The alias of the enum the path `path` reads through a union parameter or
+    /// local holds a value of (docs/adr/0092, section 6.1), by the alias the
+    /// algorithm imports that enum under: the tag (`when.kind`), a value of the
+    /// tag's enum; a field of a case (`when.weekday`), a value of the enum the
+    /// cases that declare it each give it; and the present value of an optional
+    /// field of one (`when.due.value`). `None` for any other path, for a field
+    /// the cases give two types, and for an enum the algorithm does not import.
+    fn union_enum_at(&self, path: &str) -> Option<&str> {
+        use crate::forge::value_type::ValueType;
+        let (holder, member) = path.split_once('.')?;
+        let &(_, alias) = self.unions.iter().find(|(name, _)| *name == holder)?;
+        let union = self.scope.unions.get(alias)?;
+        let (field, present) = match member.split_once('.') {
+            None => (member, false),
+            Some((field, rest)) if rest == crate::forge::expr::OPTIONAL_VALUE => (field, true),
+            Some(_) => return None,
+        };
+        let held = if field == union.tag {
+            if present {
+                return None;
+            }
+            union.scope.enums.get(&union.tag_enum)?
+        } else {
+            let mut found: Option<(&crate::forge::value_type::TypeScope, &ValueType)> = None;
+            for case in &union.cases {
+                let Some(record) = case
+                    .record
+                    .as_deref()
+                    .and_then(|record| union.scope.records.get(record))
+                else {
+                    continue;
+                };
+                if let Some((_, ty)) = record.fields.iter().find(|(id, _)| id == field) {
+                    match found {
+                        Some((_, held)) if held != ty => return None,
+                        _ => found = Some((&record.scope, ty)),
+                    }
+                }
+            }
+            let (record_scope, ty) = found?;
+            let reference = match (ty, present) {
+                (ValueType::Scalar(SceType::Enum(reference)), false) => reference,
+                (ValueType::Optional { elem }, true) => match &**elem {
+                    ValueType::Scalar(SceType::Enum(reference)) => reference,
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            record_scope.enums.get(&reference.alias)?
+        };
+        self.scope
+            .enums
+            .iter()
+            .find(|(_, own)| *own == held)
+            .map(|(alias, _)| alias.as_str())
     }
 
     /// The alias of the enum the parameter, local, loop item or record field at
@@ -44731,7 +45048,8 @@ impl<'a> AlgorithmTypes<'a> {
                 .optional_enums
                 .iter()
                 .find(|(present, _)| present == path)
-                .map(|(_, alias)| alias.as_str()),
+                .map(|(_, alias)| alias.as_str())
+                .or_else(|| self.union_enum_at(path)),
         }
     }
 
@@ -44877,6 +45195,25 @@ impl<'a> AlgorithmTypes<'a> {
         for path in &self.text_members {
             type_ctx.insert_record_text(path.as_str());
         }
+        // A union parameter or local is a declared name with no operand type of
+        // its own, read through its value: its tag, and a field of the cases a
+        // test of the tag leaves (docs/adr/0092, section 6.1), walked in the
+        // scope the algorithm's imports name the union in, as a statechart's
+        // union variable is.
+        if !self.unions.is_empty() {
+            type_ctx.value_scope = Some(&self.scope);
+            for &(name, alias) in &self.unions {
+                type_ctx.insert_var(name, InferredType::Unknown);
+                type_ctx.insert_value(
+                    name,
+                    crate::forge::value_path::Place::of(
+                        crate::forge::value_type::ValueType::Union {
+                            alias: alias.to_string(),
+                        },
+                    ),
+                );
+            }
+        }
         // What `_x.limits.<name>` reads (docs/adr/0050).
         for (name, value) in &self.limits {
             type_ctx.limits.insert(name.as_str(), *value);
@@ -44999,6 +45336,7 @@ fn render_algorithm(
     // the sidecar emitter. The previously-required `render_algorithm`
     // gate was deleted in the final (Python) closure.
     reject_may_fail_in_unsupported_lang(m, lang)?;
+    reject_union_in_unsupported_lang(m, lang)?;
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
 
@@ -45135,7 +45473,15 @@ fn render_algorithm(
             ));
         }
     }
-    let type_ctx = types.type_ctx(m, imports);
+    let mut type_ctx = types.type_ctx(m, imports);
+    // docs/adr/0092, Landing order step 5: a union the algorithm holds is the
+    // type its own unit declares, which a read of its member is spelled on.
+    for &(_, alias) in &types.unions {
+        type_ctx
+            .unit_unions
+            .insert(alias, algorithm_union_type(&l, imports, alias)?);
+    }
+    let unions = types.union_rules();
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
     // each `<sce:import kind="bounded-collection">` adds a
@@ -45160,6 +45506,11 @@ fn render_algorithm(
                     &format!("<sce:param name=\"{}\">", p.name),
                 )?;
                 return Ok(l.place_param(&p.name, &record.qualified_type));
+            }
+            // A union is passed by value, as a record is: the type its own unit
+            // declares (docs/adr/0092, Landing order step 5).
+            if let Some(alias) = p.sce_type.union_alias() {
+                return Ok(l.place_param(&p.name, &algorithm_union_type(&l, imports, alias)?));
             }
             if let Some(elem) = p.sce_type.list_elem() {
                 return Ok(
@@ -45293,6 +45644,12 @@ fn render_algorithm(
         Some(alias) => Some(resolve_record(imports, alias, None, "<sce:return>")?),
         None => None,
     };
+    // A union return is the type the union's own unit declares, by value, as a
+    // record return is (docs/adr/0092, Landing order step 5).
+    let return_union = declared_return
+        .and_then(|t| t.union_alias())
+        .map(|alias| algorithm_union_type(&l, imports, alias))
+        .transpose()?;
     // An optional return (docs/adr/0055) is the optional type by value, as a
     // parameter of it is.
     let return_optional = declared_return
@@ -45329,6 +45686,16 @@ fn render_algorithm(
         ) if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
+        (
+            _,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift,
+        ) if return_union.is_some() => return_union.clone().expect("guarded by the arm"),
         (
             _,
             Language::Rust
@@ -45652,6 +46019,7 @@ fn render_algorithm(
             borrowed_records: &types.borrowed_records,
             absences: &absences,
             channel,
+            unions: &unions,
         },
         // A `may-fail` Kotlin body sits inside the `try` that turns a failure
         // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`), and a Swift one
@@ -45662,6 +46030,17 @@ fn render_algorithm(
             1
         },
     )?;
+    // docs/adr/0092, section 6.1 item 4: a body that holds a union may end where
+    // its tag's tests have returned on every case, a point the judge proved no
+    // path passes ([`crate::forge::narrowing::check_algorithm`]) and the target's
+    // compiler cannot see. The body is closed there by the target's statement
+    // that the point is not reached; a body whose last statement returns on
+    // every path the compiler sees needs none.
+    let body = if declared_return.is_some() && !crate::forge::narrowing::always_returns(&m.body) {
+        format!("{body}\n{}", unreached_end(lang, &m.name)?)
+    } else {
+        body
+    };
 
     let needs_span = m
         .signature
