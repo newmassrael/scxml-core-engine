@@ -1,6 +1,8 @@
 # SCE TTCN-3 conformance lane — design
 
-- Status: design of ADR 0091 order of work step 5, written 2026-11-10. Nothing of the lane is built in SCE yet. The
+- Status: design of ADR 0091 order of work step 5, written 2026-11-10. Of what SCE gives the lane, the canonical log
+  the lane compares is in place (order of work step 6, TP §12.5): all seven native runtimes write it, and each is held
+  to one expected log. The trace surface and native trace replay (S1) and the corpus (S2) are not built yet. The
   lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`, which exists and is private for
   now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The SCE-side slices S1 and S2 come
   first, then the downstream slices D1 to D5 (§13).
@@ -82,7 +84,7 @@ SCE holds no directory of the downstream's code, and no copy of it.
 | `S_Types.manifest.json` | the export | the downstream's generator (DD §9.3), value model (DD §8.3) and logger plugin |
 | `S.witness.json` | the export | `sce-ttcn3-validate`, which the downstream runs as a process |
 | a trace, `sce-test-trace.v1` (§10) | the corpus (SCE); the recorder (downstream, DD §8.1) | the native runners (SCE); the trace player (downstream) |
-| a canonical log, `sce-test-log.v1` (ADR 0091 answer 8) | the native runners (SCE); the logger plugin (downstream) | the lane's comparison (downstream); SCE's corpus check (§12) |
+| a canonical log, `sce-test-log.v1` (ADR 0091 answer 8, TP §12.5) | the native runtimes, through their runners (SCE); the logger plugin (downstream) | the lane's comparison (downstream); SCE's corpus check (§12) |
 | a codec document (`sce:kind="codec"`, `SCE_FORGE.md` §4.6) | the corpus and consumers | the downstream's codec bindings, for the format's parameters only (DD §8.4) |
 | `sce-codegen`, `sce-ttcn3-validate`, each backend's runner (§10.5) | SCE | the downstream's lane, run as processes |
 
@@ -141,7 +143,7 @@ which states its stability and how a change is announced.
 | the types manifest `S_Types.manifest.json` | `schemas/sce-ttcn3-types-manifest.v1.schema.json` | `pre-release` | yes |
 | the correspondence witness `S.witness.json` | `schemas/sce-ttcn3-witness.v1.schema.json` | `pre-release` | yes |
 | the recorded input trace `sce-test-trace.v1` | `schemas/sce-test-trace.v1.schema.json` (S1) | `pre-release` | planned (§10.4) |
-| the canonical log `sce-test-log.v1` | `schemas/sce-test-log.v1.schema.json` (order of work step 6) | `pre-release` | planned (ADR 0091 answer 8) |
+| the canonical log `sce-test-log.v1`, under TP §12.5 | `schemas/sce-test-log.v1.schema.json` | `pre-release` | yes |
 | the authoring grammar, of which the codec bindings read codec documents | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `pre-release` | yes |
 
 Beside the files, the downstream runs SCE's programs. Their command lines are part of the contract, stated here and
@@ -152,7 +154,7 @@ in each program's usage. Design choice: a change to one is announced as a change
 | `sce-codegen export-ttcn3` | writes the two modules, the manifest and the witness of one suite, all or nothing (TP §9.5) |
 | `sce-ttcn3-validate <suite.scxml> <export directory>` | exit 0 with no violation, 1 with one or more, 2 when an input is not read (TP §9.4) |
 | `sce-codegen check-trace <suite> <trace>` (S1, design choice) | refuses a trace that does not fit the suite (§10.2) |
-| each backend's runner (S1) | runs one test case of a generated suite against one trace and writes its result, the canonical log once step 6 lands (§10.5) |
+| each backend's runner (S1) | runs one test case of a generated suite against one trace and writes its result with its canonical log, which every native runtime writes already (TP §12.5, §10.5) |
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -200,8 +202,8 @@ surface, `sce-test-trace.v1`, `pre-release`. Each record holds:
 |---|---|
 | `at` | the instant, in microseconds since the test case started, as a decimal string: digits only, no leading zero |
 | `port` | the system port it arrives on: the `id` of an `<sce:system-port>` of the test case's configuration |
-| `type` | the message's type: the record's name, as the types module and the manifest name it (TP §9.5, the name contract) |
-| `value` | the message, in the canonical value form (§10.3) |
+| `type` | the message's type: the record's name, as the types module and the manifest name it (TP §9.5, the name contract), which is the `type` a message record of the log carries (TP §12.5) |
+| `value` | the message, in the value form of TP §12.5 (§10.3) |
 
 `at` is a string because the manifest writes every value that may pass 2^53 as the text of its digits, and an
 instant is a 64-bit integer.
@@ -227,27 +229,13 @@ same instants by construction, which is what C3's comparison assumes.
 
 ### 10.3 The canonical value form
 
-The trace's values and the canonical log's values are one form. TP §12.5 names the log's records but does not yet fix
-the form of their values: it says the log's schema is fixed with the equivalence law (order of work step 6). This
-design states what the form must be. The first slice that lands a schema using it (S1, for the trace, or step 6, for
-the log) writes it into TP §12.5, which then owns it.
+A trace's values are in the value form of the canonical log, TP §12.5 ("The value form" and "The text"), unchanged.
+The form has one definition, there, with the log's schema, `schemas/sce-test-log.v1.schema.json`, and this design
+states none of its own. So a value a trace hands the run and the same value in the `message-received` record the run
+writes are the same bytes, and a backend's trace player reads the form its log writer writes (§10.5).
 
-| SCE type (TP §6.3) | Canonical value |
-|---|---|
-| `intN`, `uintN` | a string of decimal digits, with `-` before a negative, no leading zero |
-| `bool` | `true` or `false` |
-| `enum:X` | a string: the variant's name |
-| `string[N]` | a JSON string |
-| `bytes[N]` | a string of lower-case hexadecimal digits, two to an octet |
-| `record:X`, an event schema | an object with one member for each field that is present, named as the field is declared. An absent optional field has no member |
-| `list<T>[M..B]` | an array of the elements' values |
-| `union:X` | an object with one member, named by the variant of the case, whose value is the case's record, or `{}` for a case that holds none |
-| `float32`, `float64` | none: not in the profile (TP §8.1) |
-
-The text is JCS: object members in its order, strings in its escaping, and no number anywhere, since every integer is
-a string. JCS writes a number as the shortest form of an IEEE 754 double, which cannot hold every `int64` or `uint64`.
-The value is always read against its type from the manifest, so a text, a byte string and a variant's name are never
-mistaken for one another.
+A value is read against its type, which the record's `type` names in the manifest, so a text, a byte string and a
+variant's name are never mistaken for one another.
 
 ### 10.4 The surface, planned for slice S1
 
@@ -271,17 +259,21 @@ This design writes no schema. Slice S1 lands the surface as `SCE_WIRE_CONTRACTS.
 Every backend's test runtime already has a system adapter shaped after TRI (TP §12.2), and it is pulled by the run:
 the instant of the next input, and the inputs due at an instant. Slice S1 adds to each of the seven runtimes a trace
 player behind that interface, which reads a trace file, and generates for each record type of a suite the conversion
-from the canonical value to the backend's record. Step 6's log writer needs the same conversion in the other
-direction. The two are generated as one pair per type, so that the value form has one implementation per backend.
-Slice S1 also adds, per backend, a runner program that runs one test case of a generated suite against one trace and
-writes the result. When step 6 lands the canonical log, the runner writes that log. The downstream's lane calls the
-runners as processes.
+from the canonical value to the backend's record. The conversion in the other direction is in place: the unit of
+every template over a record declares its record's type name and the writer of its value's form, over the walk of a
+record's types that every backend's generator shares (`forge::generator::test_template_walk::canonical_value`, TP
+§12.5). S1 generates each reader from the same walk, so that one walk decides a type's form in both directions on
+every backend. Slice S1 also adds, per backend, a runner program that runs one test case of a generated suite against
+one trace and writes the result with its canonical log, which every native runtime writes already (TP §12.5). The
+downstream's lane calls the runners as processes.
 
 ## 11. The lane
 
 The lane runner's steps, why a disagreement between the two runs is never resolved, the canonical order of a log's
 records, which backends take part, and where the lane runs, SCE's CI job among them. This section lives in
-`docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, under the same number.
+`docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, under the same number. On SCE's side every one of
+the seven native runtimes writes the log the lane compares, held to one expected log (§13.3), so each can take part
+once its runner replays a trace (S1).
 
 ## 12. The corpus
 
@@ -298,7 +290,10 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
 - **`job_suite`, `ping_suite`, `orders_suite` and `nested_suite`** (`sce-build/tests/fixtures/test_profile/`, its
   `assembly/`, and `sce-build/tests/fixtures/ttcn3_export/`) are exported and validated, and their documents are
   generated, but no suite of them runs end to end.
-- **No suite has a trace or an expected log.** No mapped message type of any suite has a codec document (DD §8.4).
+- **One test case has an expected log, and no suite has a trace.** The run of `answers_the_job` of `runtime_suite`,
+  in a world with no feature and answered with success by the tests' system adapter, is held on all seven backends to
+  `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json` (TP §12.5). Its input comes from
+  that adapter, not from a trace. No mapped message type of any suite has a codec document (DD §8.4).
 
 ### 12.2 The rows of ADR 0091 §2
 
@@ -366,8 +361,8 @@ listed in DD §13.2.
 
 **S1: the trace surface and native trace replay.**
 
-- The schema, the const and the row of §10.4, `sce-codegen check-trace`, and the canonical value form written into TP
-  §12.5 (§10.3), if step 6 has not written it first.
+- The schema, the const and the row of §10.4, and `sce-codegen check-trace`. The trace's values take the form TP
+  §12.5 defines (§10.3).
 - The trace player and the generated value conversions of every backend, and each backend's runner (§10.5).
 - Tests: per backend, a trace of `runtime_suite` replays to the verdicts its test cases expect, and `check-trace`
   refuses each case of §10.2.
@@ -382,8 +377,8 @@ listed in DD §13.2.
   - per backend, every trace of the corpus replays to its expected log, byte for byte;
   - a test of SCE holds the corpus to ADR 0091 §2 and §3: each row and each refusal names the suite or the fixture
     that covers it.
-- Depends on the schema and the native writers of `sce-test-log.v1` (order of work step 6), which the expected logs
-  are written in. The traces and the codec documents do not depend on it, and can land first.
+- The expected logs are written in `sce-test-log.v1`, whose schema and native writers are in place (§13.3). The
+  traces they are written for are replayed through S1. The codec documents depend on neither, and can land first.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
 
 ### 13.2 In the downstream
@@ -392,16 +387,19 @@ Slices D1 to D5: the skeleton, its licence and the adapter interface; the pinned
 patch; the reference adapters and the codecs; the binding and the logger; the lane and C3. This section lives in
 `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, under the same number.
 
-### 13.3 How the slices meet order of work step 6
+### 13.3 Order of work step 6's log is in place
 
-Step 6 lands the schema of the canonical log, its row of `SCE_WIRE_CONTRACTS.md`, and the native runtimes' writers.
-S2's expected logs, D4's logger and D5's comparison (DD §13.2) all need them. So the schema and the writers of step 6
-land before S2's expected logs and before D4. Step 6 stays the step that holds the law over the whole corpus.
+Step 6's canonical log is in place: its schema, `schemas/sce-test-log.v1.schema.json` (`pre-release`), its row of
+`SCE_WIRE_CONTRACTS.md`, and its writers in all seven native runtimes (Rust, C++, Kotlin, Go, Python, C11 and Swift),
+each held to one expected log, `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`
+(TP §12.5). What S2's expected logs, D4's logger and D5's comparison (DD §13.2) need from step 6 is therefore there,
+and none of them waits on it. What remains of C3 is the TTCN-3 side, D4's logger plugin writing the same log from
+Titan's events and D5's comparison of the two logs, and the corpus they run over, S2's traces and expected logs
+replayed through S1. Step 6 stays the step that holds the law over the whole corpus, which D5 applies to S2's corpus.
 
 ## 14. What this design leaves open
 
 - **The names of -5 and -6.** DD §7.2 is checked against the two texts in slice D1 (DD §13.2).
-- **Where the canonical value form is owned.** §10.3 states it, and TP §12.5 takes it over in S1 or in step 6.
 - **SCE's own codecs in the lane.** In the lane the native side holds values and uses no codec (TP §12.2), so only the
   TTCN-3 side encodes. Comparing SCE's generated codecs with the reference bindings, byte for byte on the same values,
   would be a check of its own. D3's tests decode SCE's bytes for a few shapes. A check over the corpus is not part of
@@ -409,3 +407,7 @@ land before S2's expected logs and before D4. Step 6 stays the step that holds t
 - **Positional binary codecs.** They have no reference binding (DD §8.4).
 - **A second TTCN-3 tool.** Running the suite on a second tool, by a binding of the same interface, remains the
   stronger form of C1 (answer 1). It is not planned.
+
+Closed since the design was written: **where the canonical value form is owned.** TP §12.5 owns it, with the log's
+schema, and §10.3 refers to it for the trace's values. The form there writes a byte string in upper-case hex. This
+design's earlier statement of the form, which wrote it in lower-case, is withdrawn.
