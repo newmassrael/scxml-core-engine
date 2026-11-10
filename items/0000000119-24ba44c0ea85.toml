@@ -6,3 +6,9 @@ commit = "00ab1345494c72773dd4477f7560833f8925238a"
 base = "41f37d75de8969c8ccb16f9141231d96bfab6eba"
 machine = "mf977c53d872e"
 at = 1794289383
+
+[return]
+reason = "conflict"
+detail = "backends/swift/tests/Sources/StaticDatamodelMachines/static_union_sm.swift backends/swift/tests/Tests/StaticDatamodelTests/ScalarScenarioTests.swift sce-build/src/forge/composed_lowering.rs sce-build/src/forge/composed_lowering/swift.rs"
+report = "mf977c53d872e:0000000119-24ba44c0ea85/attempt-2.log"
+at = 1794290616
