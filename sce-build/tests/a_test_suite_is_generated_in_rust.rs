@@ -227,6 +227,41 @@ fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
     assert!(!serving.contains("fn read_"), "{serving}");
 }
 
+/// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
+/// record of every form of the canonical value generates a public reader and
+/// writer of each, which `backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs`
+/// compiles and round-trips, in shapes clippy's `-D warnings` does not refuse.
+#[test]
+fn a_configuration_reads_a_record_of_every_form() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
+    let forms = file_at(&path, "forms_configuration");
+    for record in ["order_placed", "job_status", "form_extras"] {
+        for needle in [
+            format!("pub fn read_{record}(value: &::sce_rust_runtime::json::Value)"),
+            format!("pub fn canonical_{record}(value: &"),
+            format!("(\"sut\", \"{record}\") => Ok(::sce_rust_runtime::test::Message::new("),
+        ] {
+            assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+        }
+    }
+    for needle in [
+        "::sce_rust_runtime::test::from_canonical::open_enumerated(",
+        "::sce_rust_runtime::test::from_canonical::nullable(",
+        "::sce_rust_runtime::test::from_canonical::union_case(",
+        "::sce_rust_runtime::test::from_canonical::bytes(",
+        ".transpose()?",
+    ] {
+        assert!(forms.contains(needle), "`{needle}` in\n{forms}");
+    }
+    // The readers and writers stand between the factory of the machines, whose
+    // `return None` is the template's, and `input`.
+    let readers = between(&forms, "pub fn read_", "pub fn input(");
+    for refused in ["return ", "None => None", "while let", "Ok(read?)"] {
+        assert!(!readers.contains(refused), "`{refused}` in\n{readers}");
+    }
+}
+
 /// §11.7: a test case is its name and its configuration's tables, reached
 /// through the configuration's unit.
 #[test]

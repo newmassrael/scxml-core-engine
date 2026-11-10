@@ -158,6 +158,8 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
 UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
+# ... and the enum of an open set form_extras holds a value of (below).
+UNIONS+=(shape_kind_open)
 # The test components tests/a_test_component_runs_through_its_doors.rs runs through the
 # profile's runtime (docs/SCE_TEST_PROFILE.md §12.3), each its statechart machine and the
 # component beside it, generated beside the records and the templates their machines
@@ -175,6 +177,13 @@ TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # (tests/integration/ATestSuiteRunsEndToEndTest.cpp).
 TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
 TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
+# The configuration whose system port takes a record of every form of the canonical value
+# (docs/SCE_TTCN3_LANE.md §10.3, §10.5), so its unit's reader and writer of each form are
+# compiled; tests/a_record_reads_back_the_form_it_writes.rs round-trips a value of each and
+# replays a trace of them. Its records beside form_extras (order_placed, job_status) and the
+# enums and union they hold are generated above. The port type writes no file.
+TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
+TRACE_FORMS=(form_extras forms_listener forms_configuration replays_every_form)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -209,6 +218,9 @@ done
 for document in "${TEST_PROFILE_RUNTIME[@]}" "${TEST_COMPONENTS[@]}" "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l rust -o "$TMP/"
 done
+for document in "${TRACE_FORMS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l rust -o "$TMP/"
+done
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -232,4 +244,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} ${TRACE_FORMS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"

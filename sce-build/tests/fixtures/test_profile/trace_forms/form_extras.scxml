@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TTCN3_LANE.md §10.3, docs/SCE_TEST_PROFILE.md §12.5: the forms of
+     the canonical value that order_placed and job_status, the other records a
+     system port of forms_configuration takes, do not hold: a value of an enum
+     of an open set, a list of optional elements, a 64-bit integer, a list with a
+     lower count, an optional list and a list of lists. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="form_extras"
+       sce:event-name="form.extras">
+  <sce:import kind="enum" src="../../union/shape_kind_open.scxml" as="Shape"/>
+  <datamodel>
+    <data id="shape" sce:type="enum:Shape" sce:direction="in"/>
+    <data id="slots" sce:type="list&lt;optional&lt;uint16&gt;&gt;[3]" sce:direction="in"/>
+    <data id="least" sce:type="int64" sce:direction="in"/>
+    <data id="flags" sce:type="list&lt;bool&gt;[1..2]" sce:direction="in"/>
+    <data id="spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;" sce:direction="in"/>
+    <data id="grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>

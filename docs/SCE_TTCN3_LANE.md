@@ -329,7 +329,14 @@ What is in place, on Rust:
 - The tests. The trace of `answers_the_job`, `sce-build/tests/fixtures/test_profile/runtime/traces/answers_the_job.json`,
   is the input the Rust suite runner's test adapter gives that test case, as a file; the generated `runtime_suite`
   replayed from it writes `expected_logs/answers_the_job.json` byte for byte, through `run_suite_with_traces` and
-  through the program (`backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs`).
+  through the program (`backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs`). The configuration of
+  `sce-build/tests/fixtures/test_profile/trace_forms/` takes on its system port a record of every form of the
+  canonical value (`order_placed`, `job_status` and `form_extras`), so its unit's reader and writer of each form are
+  compiled; a value of each reads back from the text its writer gives, a malformed spelling of each is refused by
+  name, and a trace of the three replays to a log that holds each value as the trace does
+  (`backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs`). The generated readers are written in
+  shapes clippy's `-D warnings` does not refuse, with no `allow`: a value that may be absent is an `Option` mapped to
+  its read and transposed, a union a `match` whose last arm is its last case, a list a `for` loop.
 
 The other six backends follow the same design: the reader of each form in the runtime beside its writers, the reader
 of each record and `input` in the unit of a configuration over the same walk, a player behind the system adapter, the
