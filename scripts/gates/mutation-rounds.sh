@@ -126,13 +126,13 @@ declare -A TARGETS_OF=()
 declare -A NEEDS_OF=()
 declare -A CASES_OF=()
 # `env` is the fourth key a casefile declares that this gate ACTS on: a
-# `mutation_env RUSTUP_TOOLCHAIN=<toolchain>` is a toolchain the round needs and
-# the job does not have, and the gate installs it below, before the round.
+# `mutation_env RUSTUP_TOOLCHAIN=<toolchain>` is a toolchain the round needs, and
+# the gate requires it below, before the round. It is a declared toolchain
+# (`[platform.linux.tools.rust-nightly]` in bx.toml carries Miri and rust-src
+# for the rounds that run under Miri or a sanitizer), which a build machine has
+# before this gate is placed there; the round itself puts it on PATH and checks
+# that Miri is in it when the casefile declares `mutation_under_miri`.
 declare -A ENV_OF=()
-# A casefile that declares `mutation_under_miri` needs the `miri` component on
-# that toolchain, which a minimal install does not carry: the fifth key this gate
-# acts on, read from the same `--declares` output.
-declare -A MIRI_OF=()
 # The whole corpus is declared by ONE call. It used to be one call per casefile,
 # 169 of them on 2026-10-01 at about half a second each, and this gate runs once
 # per push and several times over inside the test that holds it. `--declares`
@@ -158,7 +158,6 @@ to remove."
             target|oracle) TARGETS_OF["$casefile"]+="$value"$'\n' ;;
             needs) NEEDS_OF["$casefile"]+="$value"$'\n' ;;
             env) ENV_OF["$casefile"]+="$value"$'\n' ;;
-            miri) MIRI_OF["$casefile"]=1 ;;
             cases) CASES_OF["$casefile"]="$value" ;;
         esac
     done <<<"$declared"
@@ -441,10 +440,11 @@ failed=()
 for casefile in "${SELECTED[@]}"; do
     sce_gate_step "round: $casefile${SCE_MUTATION_SHARD:+ (shard $SCE_MUTATION_SHARD)}"
     round=(scripts/mutate ${shard_args[@]+"${shard_args[@]}"} "$casefile")
-    # A toolchain the casefile declared is installed here, where the job knows
-    # what it was handed, and checked again by the round itself, which refuses a
-    # host that lacks it. `rust-src` because a sanitizer build rebuilds the
-    # standard library from it. A casefile that declares none costs nothing.
+    # A toolchain the casefile declared is required here, where the job knows
+    # what it was handed: absent, the gate ends as "could not run" (a hosted
+    # runner installs it), never as a red the casefile did not earn. The round
+    # finds it again by the same place and refuses a host that lacks it. A
+    # casefile that declares none costs nothing.
     toolchain=""
     while IFS= read -r pair; do
         if [[ "$pair" == RUSTUP_TOOLCHAIN=* ]]; then
@@ -453,14 +453,7 @@ for casefile in "${SELECTED[@]}"; do
     done <<<"${ENV_OF[$casefile]:-}"
     if [[ -n "$toolchain" ]]; then
         sce_gate_step "toolchain: $toolchain (declared by $casefile)"
-        components=(--component rust-src)
-        components_named="rust-src"
-        if [[ -n "${MIRI_OF[$casefile]:-}" ]]; then
-            components+=(--component miri)
-            components_named="rust-src and miri"
-        fi
-        rustup toolchain install "$toolchain" --profile minimal "${components[@]}" >/dev/null 2>&1 \
-            || sce_gate_fail "install the toolchain $toolchain that $casefile declares, with $components_named"
+        sce_gate_require_rust "$toolchain"
     fi
     if [[ "${NEEDS_OF[$casefile]:-}" == *"http-fixture"* ]]; then
         round=(sce_gate_with_http_fixture_server "${round[@]}")

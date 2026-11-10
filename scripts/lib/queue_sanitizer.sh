@@ -11,6 +11,15 @@
 # A date spelled in each would be two answers to one question, and the day
 # they differ the casefile would be judging a build the gate does not run.
 #
+# The date is the repository's one nightly, `SCE_RUST_NIGHTLY` in
+# scripts/lib/rust_toolchains.sh, which bx.toml declares with Miri and rust-src
+# (`[platform.linux.tools.rust-nightly]`) and which the threaded emscripten tree
+# builds with too: a second pin of the same date would be a second table at the
+# same place. Moving it moves both uses, so both are run again on the new date.
+#
 # Sourced, never run. The reasoning for the date, and how to move it, is in
 # `forge-rust.sh` beside the commands that use it.
-QUEUE_SANITIZER_NIGHTLY="nightly-2026-10-08"
+
+# shellcheck source=rust_toolchains.sh
+source "$(dirname "${BASH_SOURCE[0]}")/rust_toolchains.sh"
+QUEUE_SANITIZER_NIGHTLY="$SCE_RUST_NIGHTLY"

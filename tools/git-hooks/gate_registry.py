@@ -3381,9 +3381,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
 
     A UNIT'S VERDICT IS KEPT (`cache`) only when all of these hold:
       * the plan names the Rust release (`rust`), because every unit's argv
-        then carries it and a new stable release is a new key. Without it a
-        unit runs whatever stable its machine syncs to, which is not in the
-        key;
+        then carries it and a new pinned release is a new key. Without it a
+        unit runs whatever cargo its machine has on PATH, which is not in
+        the key;
       * the tracked tree is HEAD's (`tree_is_head`, see
         `tracked_tree_is_head`);
       * every gate the unit runs declares `cache: True`;
@@ -3476,6 +3476,271 @@ def registry_source() -> list[str]:
     call the disagreement a defect.
     """
     return pathlib.Path(__file__).read_text(encoding="utf-8").splitlines()
+
+
+# ── The Rust toolchains bx.toml declares ──────────────────────────
+#
+# Every toolchain a gate runs is a `[platform.linux.tools.rust*]` table of
+# bx.toml whose install is `scripts/install_rust.sh`: bx installs each once per
+# build machine and places a unit only where the tables its command line names
+# by `needed_by` are installed. No gate installs one there (the header of
+# `scripts/lib/rust_toolchains.sh` says why). That makes the tables a claim
+# with three halves, and each can go stale without a gate turning red: the
+# release and the nightly are pinned in `scripts/lib/rust_toolchains.sh`, the
+# release each package builds with is its manifest's `rust-version`, and the
+# units that need a table are the ones whose gates ask for it. A table a unit
+# needs and does not name is a unit placed on a machine without its compiler,
+# which ends "could not run"; one it names and does not need keeps that unit
+# off every machine that lacks it, for nothing.
+RUST_TOOLCHAIN_INSTALL = "scripts/install_rust.sh"
+RUST_TOOLCHAIN_PINS = "scripts/lib/rust_toolchains.sh"
+RUST_TOOLCHAIN_PLACE = "~/.local/rust/{version}"
+# What a rustup command that adds a toolchain or a part of one looks like. No
+# gate body and not the runner runs one; the gate library alone does, for a
+# hosted runner (`sce_gate_require_rust` and its siblings).
+RUSTUP_INSTALLS = re.compile(
+    r"\brustup\s+(?:toolchain\s+install|target\s+add|component\s+add)\b")
+
+
+def bx_tool_tables(repo_root: Path) -> dict[str, dict]:
+    """The `[platform.linux.tools.<name>]` tables of bx.toml, by name.
+
+    Read by its lines, as bx's shell reads a tool table: each value on one
+    line, a quoted string or an array of them (bx refuses any other spelling
+    in a tool table). Not a TOML parser because the one in the standard
+    library arrived in Python 3.11, and a build machine runs this on 3.10.
+    """
+    tables: dict[str, dict] = {}
+    current = None
+    for raw in (repo_root / "bx.toml").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            header = re.fullmatch(r"\[platform\.linux\.tools\.([A-Za-z0-9_.-]+)\]",
+                                  line)
+            current = tables.setdefault(header.group(1), {}) if header else None
+            continue
+        pair = re.fullmatch(r"([a-z_]+)\s*=\s*(.+)", line)
+        if current is None or not pair:
+            continue
+        key, value = pair.group(1), pair.group(2).strip()
+        if value.startswith("["):
+            current[key] = [a or b for a, b in
+                            re.findall(r'"([^"]*)"|\'([^\']*)\'', value)]
+        elif value[:1] in ('"', "'") and value[-1:] == value[:1]:
+            current[key] = value[1:-1]
+    return tables
+
+
+def bx_tool_version(repo_root: Path, table: dict):
+    """A tool table's version as bx resolves it, or None when it has none.
+
+    Written (`version`), or the first group of the lines of `version_file`
+    that `version_pattern` matches, every one of which must say the same.
+    """
+    if "version" in table:
+        return table["version"]
+    file, pattern = table.get("version_file"), table.get("version_pattern")
+    if not file or not pattern or not (repo_root / file).is_file():
+        return None
+    found = set()
+    for line in (repo_root / file).read_text(encoding="utf-8").splitlines():
+        match = re.search(pattern, line)
+        if match:
+            found.add(match.group(1))
+    return found.pop() if len(found) == 1 else None
+
+
+def workspace_rust_versions(repo_root: Path) -> dict[str, list[str]]:
+    """Each `rust-version` the workspace's packages declare, with the packages.
+
+    The members are the root manifest's `members` list and a member that says
+    `rust-version.workspace = true` declares the root's, which is what
+    `cargo metadata` reports and `scripts/gates/rust-version.sh` builds by.
+    """
+    root_text = (repo_root / "Cargo.toml").read_text(encoding="utf-8")
+    members_block = re.search(r"^members\s*=\s*\[(.*?)\]", root_text, re.M | re.S)
+    members = re.findall(r'"([^"]+)"', members_block.group(1)) if members_block else []
+    workspace = re.search(r'^\[workspace\.package\][^\[]*?^rust-version\s*=\s*"([^"]+)"',
+                          root_text, re.M | re.S)
+    declared: dict[str, list[str]] = {}
+    for member in members:
+        manifest = repo_root / member / "Cargo.toml"
+        if not manifest.is_file():
+            continue
+        text = manifest.read_text(encoding="utf-8")
+        own = re.search(r'^rust-version\s*=\s*"([^"]+)"', text, re.M)
+        inherited = re.search(r"^rust-version\.workspace\s*=\s*true", text, re.M)
+        if own:
+            version = own.group(1)
+        elif inherited and workspace:
+            version = workspace.group(1)
+        else:
+            continue
+        declared.setdefault(version, []).append(member)
+    return declared
+
+
+def msrv_release(version: str):
+    """The release a `rust-version` names: `1.87` is `1.87.0`, the oldest it
+    admits (`sce_rust_msrv_release` in scripts/lib/rust_toolchains.sh)."""
+    if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        return version
+    if re.fullmatch(r"[0-9]+\.[0-9]+", version):
+        return version + ".0"
+    return None
+
+
+def rust_toolchain_failures(repo_root: Path) -> list[str]:
+    """What is wrong with the Rust toolchains bx.toml declares, as sentences."""
+    failures: list[str] = []
+    tables = {name: spec for name, spec in bx_tool_tables(repo_root).items()
+              if RUST_TOOLCHAIN_INSTALL in spec.get("install", "")}
+    if not tables:
+        return [f"bx.toml declares no Rust toolchain: no [platform.linux.tools.*] "
+                f"table installs with {RUST_TOOLCHAIN_INSTALL}"]
+
+    pin_text = (repo_root / RUST_TOOLCHAIN_PINS).read_text(encoding="utf-8")
+    pins: dict[str, str] = {}
+    for var in ("SCE_RUST_RELEASE", "SCE_RUST_NIGHTLY"):
+        pin = re.search(rf'^{var}="([^"]+)"$', pin_text, re.M)
+        if pin:
+            pins[var] = pin.group(1)
+        else:
+            failures.append(f"{RUST_TOOLCHAIN_PINS} has no {var}=\"...\" line")
+
+    install_head = (f"RUSTUP_HOME={{scratch}}/rh CARGO_HOME={{scratch}}/ch "
+                    f"bash {RUST_TOOLCHAIN_INSTALL} {{version}} {{prefix}}")
+    versions: dict[str, str] = {}
+    for name, spec in sorted(tables.items()):
+        version = bx_tool_version(repo_root, spec)
+        if version is None:
+            failures.append(f"[platform.linux.tools.{name}] resolves to no one version")
+            continue
+        versions[name] = version
+        shape = {
+            "install": spec.get("install", "").startswith(install_head),
+            "path": spec.get("path") == RUST_TOOLCHAIN_PLACE + "/bin/cargo",
+            "prefix_link": spec.get("prefix_link") == RUST_TOOLCHAIN_PLACE,
+            "install_inputs": spec.get("install_inputs") == [RUST_TOOLCHAIN_INSTALL],
+            "needed_by": bool(spec.get("needed_by")),
+        }
+        for key, ok in shape.items():
+            if not ok:
+                failures.append(
+                    f"[platform.linux.tools.{name}] {key} is {spec.get(key)!r}: every "
+                    f"Rust toolchain is installed by `{install_head} ...`, linked at "
+                    f"{RUST_TOOLCHAIN_PLACE} where the gates look, keyed by "
+                    f"{RUST_TOOLCHAIN_INSTALL}, and needed by the units named")
+
+    by_version: dict[str, list[str]] = {}
+    for name, version in versions.items():
+        by_version.setdefault(version, []).append(name)
+    for version, names in sorted(by_version.items()):
+        if len(names) > 1:
+            failures.append(
+                f"Rust {version} is declared by {sorted(names)}: two tables of one "
+                f"toolchain are two store entries linked at one place")
+
+    def table_of(var: str):
+        names = by_version.get(pins.get(var, ""), [])
+        if not names:
+            failures.append(f"no [platform.linux.tools.rust*] table declares "
+                            f"{var} ({pins.get(var)}), so bx installs it nowhere")
+        return names[0] if names else None
+
+    release = table_of("SCE_RUST_RELEASE")
+    nightly = table_of("SCE_RUST_NIGHTLY")
+    if release and tables[release].get("version_file") != RUST_TOOLCHAIN_PINS:
+        failures.append(f"[platform.linux.tools.{release}] does not read the release "
+                        f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")
+    if nightly and tables[nightly].get("version_file") != RUST_TOOLCHAIN_PINS:
+        failures.append(f"[platform.linux.tools.{nightly}] does not read the nightly "
+                        f"from {RUST_TOOLCHAIN_PINS}, the one line that pins it")
+
+    # The release each package declares, and a table for each, in both directions.
+    declared = workspace_rust_versions(repo_root)
+    if not declared:
+        failures.append("no workspace package declares a rust-version, so the "
+                        "MSRV tables below are held to nothing")
+    wanted: dict[str, list[str]] = {}
+    for version, packages in declared.items():
+        release_of = msrv_release(version)
+        if release_of is None:
+            failures.append(f"rust-version {version!r} of {packages} is not a release")
+        else:
+            wanted.setdefault(release_of, []).extend(packages)
+    msrv = {name: version for name, version in versions.items()
+            if name not in (release, nightly)}
+    for version in sorted(set(wanted) - set(msrv.values())):
+        failures.append(
+            f"{sorted(wanted[version])} declare rust-version {version} and no "
+            f"[platform.linux.tools.rust*] table declares Rust {version}, so "
+            f"`rust-version` could not run on any build machine")
+    for name in sorted(n for n, v in msrv.items() if v not in wanted):
+        failures.append(
+            f"[platform.linux.tools.{name}] declares Rust {msrv[name]}, which no "
+            f"workspace package names as its rust-version: a toolchain installed "
+            f"for nothing, and a unit kept off every machine without it")
+
+    # The units each table must be named by: the plan's unit for every gate,
+    # and the gates whose scripts ask for a toolchain beyond the release.
+    def asks(slug: str) -> str:
+        script = gate_script(repo_root, slug)
+        if not script.is_file():
+            return ""
+        code = script_code(script)
+        if "sce_rust_msrv_release" in code:
+            return "msrv"
+        if "sce_gate_require_rust " in code or "sce_gate_configure_wasm_tree" in code:
+            return "nightly"
+        return ""
+
+    kind = {slug: asks(slug) for slug in GATES}
+    lines = {}
+    for slug in GATES:
+        unit = plan_units({slug}, rust=pins.get("SCE_RUST_RELEASE", "0.0.0"),
+                          head="0" * 40)
+        lines[slug] = " ".join(unit[0]["argv"]) if unit else ""
+
+    def named(name: str, line: str) -> bool:
+        return any(e and e in line for e in tables[name].get("needed_by", []))
+
+    for name in sorted(versions):
+        if name == release:
+            want_kind = None
+        elif name == nightly:
+            want_kind = "nightly"
+        else:
+            want_kind = "msrv"
+        for slug in sorted(GATES):
+            closure = {slug} | transitive_deps(slug)
+            needs = want_kind is None or any(kind[s] == want_kind for s in closure)
+            if needs and not named(name, lines[slug]):
+                failures.append(
+                    f"the unit `{lines[slug]}` needs [platform.linux.tools.{name}] "
+                    f"and its needed_by {tables[name].get('needed_by')} does not "
+                    f"name it, so bx may place it on a machine without that Rust")
+            if not needs and named(name, lines[slug]):
+                failures.append(
+                    f"[platform.linux.tools.{name}]'s needed_by "
+                    f"{tables[name].get('needed_by')} names the unit `{lines[slug]}`, "
+                    f"which needs no such Rust, and keeps it off machines without it")
+    if release and named(release, "bash scripts/gate --plan --all"):
+        failures.append(f"[platform.linux.tools.{release}]'s needed_by names the plan "
+                        f"command, which reads the pin and runs no compiler")
+
+    # Nothing in the runner or a gate body installs any part of a toolchain.
+    bodies = [repo_root / "scripts" / "gate"] + [gate_script(repo_root, s) for s in GATES]
+    for body in bodies:
+        if body.is_file() and RUSTUP_INSTALLS.search(script_code(body)):
+            failures.append(
+                f"{body.relative_to(repo_root)} installs a toolchain, a target or a "
+                f"component through rustup; a build machine runs units side by side "
+                f"in one rustup home, so what a gate needs is declared in bx.toml "
+                f"and asked for through scripts/gates/lib.sh")
+    return failures
 
 
 def self_test(repo_root: Path) -> int:
@@ -4954,6 +5219,13 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             f"plan-empty: an empty selection is planned as {plan_units(set())} "
             f"and said as {empty}")
+
+    # every-rust-toolchain-is-declared-pinned-and-named-by-its-units. The
+    # tables, the pins, the packages' rust-version lines and the units that
+    # need each table, held to one another (see "The Rust toolchains bx.toml
+    # declares" above).
+    cases += 1
+    failures.extend(f"rust-toolchains: {f}" for f in rust_toolchain_failures(repo_root))
 
     if failures:
         for f in failures:

@@ -33,11 +33,15 @@
 # rustc warns differently from the one the workspace's `-D warnings` policy is
 # held to by the clippy gate, and the claim checked here is that the package
 # compiles.
+#
+# The release a declaration names is `x.y.0` for `rust-version = "x.y"`: the
+# oldest compiler it admits, which is the one that holds it to its word. Each
+# is a toolchain of its own in bx.toml (`[platform.linux.tools.rust-msrv-*]`),
+# which a build machine has before this gate is placed there; the registry's
+# self-test holds those tables to the declarations below. The gate installs
+# none of them (`sce_gate_require_rust` in lib.sh says why).
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-
-command -v rustup >/dev/null 2>&1 \
-    || sce_gate_cannot_run "rustup is not on PATH; each declared toolchain is installed through it"
 
 # `version<TAB>package` for every workspace member, `-` for one that declares
 # nothing.
@@ -56,15 +60,18 @@ if [[ -n "$undeclared" ]]; then
     sce_gate_fail "these packages declare no rust-version, so nothing says which Rust they need: $(tr '\n' ' ' <<<"$undeclared")"
 fi
 
+source "$SCE_REPO_ROOT/scripts/lib/rust_toolchains.sh"
+
 for version in $(cut -f1 <<<"$declarations" | sort -uV); do
     packages=()
     while IFS=$'\t' read -r declared name; do
         [[ "$declared" == "$version" ]] && packages+=(-p "$name")
     done <<<"$declarations"
-    sce_gate_step "Rust $version: ${packages[*]}"
-    rustup toolchain install "$version" --profile minimal --no-self-update >/dev/null \
-        || sce_gate_cannot_run "rustup could not install Rust $version"
-    RUSTFLAGS="--cap-lints warn" cargo "+$version" check --locked --lib --bins \
+    release="$(sce_rust_msrv_release "$version")" \
+        || sce_gate_fail "rust-version \"$version\" is not a release (x.y or x.y.z): ${packages[*]}"
+    sce_gate_step "Rust $release: ${packages[*]}"
+    sce_gate_require_rust "$release"
+    RUSTFLAGS="--cap-lints warn" PATH="$SCE_GATE_RUST_BIN:$PATH" cargo check --locked --lib --bins \
         --target-dir "target/rust-version/$version" "${packages[@]}" \
-        || sce_gate_fail "a package that declares rust-version $version does not build with Rust $version"
+        || sce_gate_fail "a package that declares rust-version $version does not build with Rust $release"
 done

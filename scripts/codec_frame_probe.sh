@@ -27,8 +27,8 @@
 # with `nm --print-size`.
 #
 # The disassembler is binutils for ARM (`arm-none-eabi-objdump`) when the
-# machine has it, else LLVM's `llvm-objdump` from the rustup component
-# `llvm-tools`, and the symbol reader the `nm` beside it (`arm-none-eabi-nm`,
+# machine has it, else LLVM's `llvm-objdump` from the `llvm-tools` the Rust
+# release is declared with, and the symbol reader the `nm` beside it (`arm-none-eabi-nm`,
 # `llvm-nm`), else the host's `nm`. The script prints which it used.
 #
 # Usage (from the repository root):
@@ -105,20 +105,24 @@ for codec in "${CODECS[@]}"; do
     fi
 done
 
-rustup target add "$TARGET" >/dev/null 2>&1 || true
+# The target and llvm-tools are part of the Rust release's declaration
+# (`[platform.linux.tools.rust]` in bx.toml), and `nostd-mcu`, which runs this,
+# has checked the target already. Nothing is added to a toolchain here: what is
+# missing is said, with the install that carries it.
+[[ -d "$(rustc --print target-libdir --target "$TARGET" 2>/dev/null)" ]] \
+    || { echo "codec_frame_probe: $(rustc --version 2>/dev/null || echo 'the Rust on PATH') has no $TARGET standard library; the pinned release carries it (scripts/install_rust.sh --declared with the SCE_RUST_RELEASE of scripts/lib/rust_toolchains.sh)" >&2; exit 1; }
 cargo build --release --manifest-path "$PROBE/Cargo.toml" --target "$TARGET" >&2 \
     || { echo "codec_frame_probe: the probe did not build" >&2; exit 1; }
 [[ -f "$LIB" ]] || { echo "codec_frame_probe: no staticlib at $LIB" >&2; exit 1; }
 
 # A tool for ARM objects: binutils for ARM when present, else LLVM's from the
-# rustup component, else (for the symbol reader only) the host's.
+# llvm-tools of the Rust on PATH, else (for the symbol reader only) the host's.
 arm_tool() {
     local gnu="$1" llvm="$2" host="${3:-}"
     if command -v "$gnu" >/dev/null 2>&1; then
         command -v "$gnu"
         return
     fi
-    rustup component add llvm-tools >/dev/null 2>&1 || true
     local candidate
     candidate="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/$llvm"
     if [[ -x "$candidate" ]]; then
@@ -133,7 +137,7 @@ arm_tool() {
 OBJDUMP="$(arm_tool arm-none-eabi-objdump llvm-objdump)"
 NM="$(arm_tool arm-none-eabi-nm llvm-nm nm)"
 [[ -n "$OBJDUMP" ]] \
-    || { echo "codec_frame_probe: no ARM disassembler: arm-none-eabi-objdump, or the rustup component llvm-tools" >&2; exit 1; }
+    || { echo "codec_frame_probe: no ARM disassembler: arm-none-eabi-objdump, or llvm-objdump from the llvm-tools the Rust release is declared with" >&2; exit 1; }
 [[ -n "$NM" ]] || { echo "codec_frame_probe: no symbol reader" >&2; exit 1; }
 echo "codec_frame_probe: $(rustc --version); disassembler $OBJDUMP; symbols $NM"
 if [[ -n "$AT" ]]; then

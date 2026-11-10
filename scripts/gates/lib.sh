@@ -568,25 +568,25 @@ SCE_WASM_WEB_BUILD_DIR="build_wasm_web"
 # (scripts/lib/wasm_rust.sh says which, and why the tree with threads needs a
 # pinned nightly). Both trees link that frontend, so both configures ask here.
 #
-# A lane that sets SCE_REQUIRE_TOOLS is claiming the check ran, and installs
-# what is missing; a developer's machine is told the one command instead, since
-# installing a toolchain is not a side effect of a configure. It lives in the
-# gate rather than in each workflow so that every lane, the pre-push gate and a
-# local `scripts/build_wasm.sh` get the same answer from one place.
+# Where it is missing, a hosted runner installs it, as every gate's missing
+# toolchain is installed there (`sce_gate_require_rust` below), and anywhere
+# else the configure is refused with what is missing and the command for it:
+# a build machine has every declared toolchain before a unit runs, and on a
+# developer's machine installing a toolchain is not a side effect of a
+# configure. It lives in the gate rather than in each workflow so that every
+# lane, the pre-push gate and a local `scripts/build_wasm.sh` get the same
+# answer from one place.
 sce_gate_prepare_wasm_rust() {
     local threads="$1"
     # shellcheck disable=SC1091
     source "$SCE_REPO_ROOT/scripts/lib/wasm_rust.sh"
     sce_wasm_rust_present "$threads" && return 0
-    case "${SCE_REQUIRE_TOOLS:-}" in
-        "" | 0 | false)
-            echo "the emscripten trees build the ECMAScript frontend with Rust; install it with: source scripts/lib/wasm_rust.sh && sce_wasm_rust_install" >&2
-            return 1
-            ;;
-        *)
-            sce_wasm_rust_install
-            ;;
-    esac
+    if sce_rust_on_hosted_runner; then
+        sce_wasm_rust_install "$threads" || return 1
+        sce_wasm_rust_present "$threads" && return 0
+    fi
+    echo "the emscripten trees build the ECMAScript frontend with Rust: $(sce_wasm_rust_missing "$threads")" >&2
+    return 1
 }
 sce_gate_configure_wasm_build_dir() {
     local dir="$1" threads="$2"
@@ -602,6 +602,88 @@ sce_gate_configure_wasm_tree() {
 }
 sce_gate_configure_wasm_web_tree() {
     sce_gate_configure_wasm_build_dir "$SCE_WASM_WEB_BUILD_DIR" OFF
+}
+
+# ── The Rust a gate needs beyond the release the runner chose ──
+#
+# The runner puts the Rust release on PATH (`scripts/gate`, "The Rust release
+# the gates run on"). A gate that needs another toolchain (the pinned nightly,
+# the release a package names as its `rust-version`), or a target or component
+# of the release, asks here.
+#
+# A TOOLCHAIN is where its declaration puts it, ~/.local/rust/<toolchain>
+# (scripts/lib/rust_toolchains.sh): every toolchain a gate uses is a
+# `[platform.linux.tools.rust*]` table of bx.toml, and a build machine has each
+# one before a unit that needs it is placed there. A TARGET or COMPONENT of the
+# release is part of that release's declaration. So a gate installs nothing on
+# a build machine, where units run side by side in one account and rustup run
+# concurrently in one home left a toolchain half installed (2026-10-20).
+#
+# A hosted runner is one job in one account, and its toolchain is the lane's
+# own setup: what is missing is installed there, a toolchain by its declared
+# install (`scripts/install_rust.sh --declared`, into ~/.local/rust/ with a
+# rustup home of its own) and a target or component with the lane's rustup,
+# onto the lane's release. Anywhere else a missing one ends the gate with 3,
+# "could not run", naming the command that installs it: what is missing is the
+# machine's, not the tree's.
+
+# Sets SCE_GATE_RUST_BIN to the `bin/` of declared toolchain `$1` (`1.87.0`,
+# `nightly-2026-10-08`), for a command that runs on it:
+#   PATH="$SCE_GATE_RUST_BIN:$PATH" cargo ...
+# Called directly, never in `$(...)`: it ends the gate when the toolchain is
+# absent, and an exit in a subshell would end only the subshell.
+SCE_GATE_RUST_BIN=""
+sce_gate_require_rust() {
+    local toolchain="$1"
+    # Sourced here for the reason `sce_build_jobs` sources its library inside the
+    # function: a gate that never asks must not need the file.
+    # shellcheck disable=SC1091
+    source "$SCE_REPO_ROOT/scripts/lib/rust_toolchains.sh"
+    if ! SCE_GATE_RUST_BIN="$(sce_rust_toolchain_bin "$toolchain")" && sce_rust_on_hosted_runner; then
+        sce_gate_step "Rust $toolchain: installing the declared toolchain on this hosted runner"
+        bash "$SCE_REPO_ROOT/scripts/install_rust.sh" --declared "$toolchain" >&2 \
+            || sce_gate_fail "scripts/install_rust.sh --declared $toolchain did not install it"
+        SCE_GATE_RUST_BIN="$(sce_rust_toolchain_bin "$toolchain")" || SCE_GATE_RUST_BIN=""
+    fi
+    [[ -n "$SCE_GATE_RUST_BIN" ]] \
+        || sce_gate_cannot_run "Rust $toolchain is not installed at $(sce_rust_toolchain_dir "$toolchain"). A build machine gets it from bx.toml (bx-provision <alias> --apply installs every [platform.linux.tools.rust*] table); anywhere else: scripts/install_rust.sh --declared $toolchain"
+    sce_gate_step "Rust $toolchain from $(sce_rust_toolchain_dir "$toolchain")"
+}
+
+# Whether the Rust on PATH has the standard library of target `$1`. Asked of
+# the compiler, not of rustup: the release the runner chose may be no rustup's.
+sce_gate_rust_has_target() {
+    [[ -d "$(rustc --print target-libdir --target "$1" 2>/dev/null)" ]]
+}
+
+# The Rust on PATH has target `$1`, or the gate ends. A machine that has a
+# compiler and not the target fails inside cargo with "can't find crate for
+# `core`", which reads as a fault in the tree.
+sce_gate_require_rust_target() {
+    local target="$1"
+    sce_gate_rust_has_target "$target" && return 0
+    # shellcheck disable=SC1091
+    source "$SCE_REPO_ROOT/scripts/lib/rust_toolchains.sh"
+    if sce_rust_on_hosted_runner; then
+        sce_gate_step "Rust target $target: added to the lane's toolchain"
+        rustup target add "$target" >&2 || sce_gate_fail "rustup target add $target"
+        sce_gate_rust_has_target "$target" && return 0
+    fi
+    sce_gate_cannot_run "the $target standard library is not part of $(rustc --version 2>/dev/null || echo 'the Rust on PATH'). The pinned release carries it ([platform.linux.tools.rust] of bx.toml): a build machine gets it from bx-provision <alias> --apply, anywhere else from scripts/install_rust.sh --declared <the SCE_RUST_RELEASE of scripts/lib/rust_toolchains.sh>"
+}
+
+# The path of LLVM tool `$1` (`llvm-size`, `llvm-objdump`) that ships in the
+# `llvm-tools` component of the Rust on PATH, or nothing when that toolchain
+# has no such component.
+sce_gate_rust_llvm_tool() {
+    local candidate
+    # shellcheck disable=SC1091
+    source "$SCE_REPO_ROOT/scripts/lib/rust_toolchains.sh"
+    candidate="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/$1"
+    if [[ ! -x "$candidate" ]] && sce_rust_on_hosted_runner; then
+        rustup component add llvm-tools >/dev/null 2>&1 || true
+    fi
+    [[ -x "$candidate" ]] && printf '%s\n' "$candidate"
 }
 
 # Remove ctest log temporaries that interrupted runs left behind.

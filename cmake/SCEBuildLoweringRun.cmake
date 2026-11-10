@@ -20,10 +20,12 @@
 #                            differ in RUSTFLAGS and in `-Z build-std` sharing
 #                            one would each rebuild the other's artifact on
 #                            every build.
-#   SCE_LOWERING_NIGHTLY     a pinned nightly toolchain; non-empty rebuilds the
-#                            standard library with atomics and bulk-memory
-#                            (the pin's header, scripts/lib/wasm_rust.sh, says
-#                            why a threaded emscripten link needs that).
+#   SCE_LOWERING_NIGHTLY_BIN the `bin/` of the pinned nightly toolchain;
+#                            non-empty builds with its cargo, its `bin/` first
+#                            on PATH so that rustc is its own too, and rebuilds
+#                            the standard library with atomics and bulk-memory
+#                            (scripts/lib/wasm_rust.sh says why a threaded
+#                            emscripten link needs that).
 set(_cargo_env "")
 set(_cargo_args rustc -p sce-build --lib --release
     --crate-type staticlib --no-default-features --features ffi
@@ -34,9 +36,10 @@ endif()
 if(SCE_LOWERING_TARGET_DIR)
     list(APPEND _cargo_env "CARGO_TARGET_DIR=${SCE_LOWERING_TARGET_DIR}")
 endif()
-if(SCE_LOWERING_NIGHTLY)
+if(SCE_LOWERING_NIGHTLY_BIN)
+    set(SCE_CARGO "${SCE_LOWERING_NIGHTLY_BIN}/cargo")
     list(APPEND _cargo_env
-        "RUSTUP_TOOLCHAIN=${SCE_LOWERING_NIGHTLY}"
+        "PATH=${SCE_LOWERING_NIGHTLY_BIN}:$ENV{PATH}"
         "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals")
     list(APPEND _cargo_args -Z build-std=std,panic_abort)
 endif()

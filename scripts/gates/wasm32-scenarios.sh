@@ -39,11 +39,11 @@ CRATE="sce-rust-scenarios"
 NODE_RUNNER="backends/rust/scenarios/wasm/run.mjs"
 CHROME_RUNNER="backends/rust/scenarios/wasm/run_chrome.mjs"
 
-# The target's standard library is a rustup component, not part of the
-# toolchain: a machine that has a compiler and not this component fails inside
-# cargo with "can't find crate for `core`", which reads as a fault in the tree.
-[[ -d "$(rustc --print target-libdir --target "$TARGET" 2>/dev/null)" ]] \
-    || sce_gate_cannot_run "the $TARGET standard library is not installed (rustup target add $TARGET)"
+# The target's standard library is a part of a toolchain a compiler can be
+# without: a machine that has a compiler and not this target fails inside cargo
+# with "can't find crate for `core`", which reads as a fault in the tree. The
+# Rust release is declared with it (`[platform.linux.tools.rust]` in bx.toml).
+sce_gate_require_rust_target "$TARGET"
 
 command -v node >/dev/null 2>&1 \
     || sce_gate_cannot_run "node is not on PATH; the module is run under Node"

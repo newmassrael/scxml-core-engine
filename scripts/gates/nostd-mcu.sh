@@ -14,15 +14,17 @@
 # like result_large_err) slips every host-target gate and surfaces only on
 # the cloud no_std workflow. This mirrors that workflow: build + clippy the
 # runtime for thumbv7em, then generate and compile the allocator-free probe
-# machines. `rustup target add` is idempotent — a no-op when the target is
-# present, an auto-install otherwise — so the gate always runs rather than
-# silently skipping on a fresh checkout.
+# machines. Both MCU targets, and the llvm-tools the size and stack readers
+# fall back on, are part of the Rust release's declaration
+# (`[platform.linux.tools.rust]` in bx.toml), so the gate checks them and adds
+# nothing; a machine without one ends the gate as "could not run" rather than
+# skipping it (`sce_gate_require_rust_target` in lib.sh).
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CODEGEN="$(sce_gate_codegen)"
 
-rustup target add thumbv7em-none-eabihf >/dev/null 2>&1 || true
+sce_gate_require_rust_target thumbv7em-none-eabihf
 
 # The bare-metal profile is the runtime without its `std` feature
 # (docs/adr/0053): no features at all.
@@ -55,7 +57,7 @@ cargo test -p sce-rust-runtime --no-default-features --features std \
 # for thumbv6m (a firmware codec crate) found out from its own CI, after a pin moved, that `queue::hazard`
 # was compiled on every target. thumbv7em, the target above, has the compare-and-swap and cannot show it.
 sce_gate_step "forge runtime, no read-modify-write atomics (thumbv6m)"
-rustup target add thumbv6m-none-eabi >/dev/null 2>&1 || true
+sce_gate_require_rust_target thumbv6m-none-eabi
 cargo build -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi \
     || sce_gate_fail "forge runtime build for thumbv6m"
 cargo clippy -p sce-forge-runtime --no-default-features --target=thumbv6m-none-eabi -- -D warnings \
@@ -198,16 +200,13 @@ FOOTPRINT_BUDGET="backends/rust/probes/nostd-footprint/footprint.budget"
 source "$FOOTPRINT_BUDGET"
 
 # A section-size reader for ARM objects: binutils for ARM when the machine has
-# it, else LLVM's, a rustup component as the disassembler below is.
+# it, else LLVM's, from the release's llvm-tools as the disassembler below is.
 sce_footprint_size_tool() {
     if command -v arm-none-eabi-size >/dev/null 2>&1; then
         command -v arm-none-eabi-size
         return
     fi
-    rustup component add llvm-tools >/dev/null 2>&1 || true
-    local candidate
-    candidate="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-size"
-    [[ -x "$candidate" ]] && printf '%s\n' "$candidate"
+    sce_gate_rust_llvm_tool llvm-size
 }
 
 # Build the probe with the features given and print its `.text` plus `.rodata`.
@@ -220,7 +219,7 @@ sce_footprint_image() {
         || sce_gate_fail "footprint probe produced no staticlib at $FOOTPRINT_LIB ($label)"
     local tool
     tool="$(sce_footprint_size_tool)"
-    [[ -n "$tool" ]] || sce_gate_fail "no ARM size reader: arm-none-eabi-size, or the rustup component llvm-tools"
+    [[ -n "$tool" ]] || sce_gate_fail "no ARM size reader: arm-none-eabi-size, or llvm-size from the llvm-tools the Rust release is declared with"
     "$tool" -A -d "$FOOTPRINT_LIB" 2>/dev/null |
         awk '$1 ~ /^\.(text|rodata)/ { s += $2 } END { printf "%d\n", s }'
 }
@@ -349,19 +348,14 @@ sce_footprint_weigh() {
     sce_footprint_stack "$label" "$stack_roots" "$stack_budget"
 }
 
-# A disassembler for ARM Thumb: binutils for ARM when the machine has it, else LLVM's, which is
-# a rustup component (installed here the way the target is, and a no-op when present).
+# A disassembler for ARM Thumb: binutils for ARM when the machine has it, else LLVM's, from the
+# llvm-tools component the Rust release is declared with.
 sce_stack_objdump() {
     if command -v arm-none-eabi-objdump >/dev/null 2>&1; then
         command -v arm-none-eabi-objdump
         return
     fi
-    rustup component add llvm-tools >/dev/null 2>&1 || true
-    local sysroot host candidate
-    sysroot="$(rustc --print sysroot)"
-    host="$(rustc -vV | sed -n 's/^host: //p')"
-    candidate="$sysroot/lib/rustlib/$host/bin/llvm-objdump"
-    [[ -x "$candidate" ]] && printf '%s\n' "$candidate"
+    sce_gate_rust_llvm_tool llvm-objdump
 }
 
 # The stack of the deepest call chain the engine drives, which `.text` cannot say: a change can
@@ -375,7 +369,7 @@ sce_footprint_stack() {
     local objdump disassembly lo hi bytes report
     objdump="$(sce_stack_objdump)"
     [[ -n "$objdump" ]] \
-        || sce_gate_fail "no ARM disassembler: arm-none-eabi-objdump, or the rustup component llvm-tools"
+        || sce_gate_fail "no ARM disassembler: arm-none-eabi-objdump, or llvm-objdump from the llvm-tools the Rust release is declared with"
     disassembly="$(mktemp)"
     sce_gate_on_exit "rm -f '$disassembly'"
     "$objdump" -d -r -C --no-show-raw-insn "$FOOTPRINT_LIB" >"$disassembly" 2>/dev/null \

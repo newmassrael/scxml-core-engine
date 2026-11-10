@@ -91,17 +91,22 @@ cargo test --release -p sce-forge-runtime --target-dir target/loom \
 # What neither sees is a lost or duplicated element, which is layers 2 and 3.
 # The date itself is in `scripts/lib/queue_sanitizer.sh`, which a mutation
 # casefile reads too, so that the gate and the casefile cannot disagree.
+#
+# The toolchain is the declared one, with Miri and rust-src
+# (`[platform.linux.tools.rust-nightly]` in bx.toml), found where its
+# declaration puts it; this gate installs nothing (`sce_gate_require_rust` in
+# lib.sh says why). Its `bin/` goes first on PATH for the commands below and
+# for none above, so cargo, cargo-miri and rustc are the nightly's own.
 source "$SCE_REPO_ROOT/scripts/lib/queue_sanitizer.sh"
 sce_gate_step "queue runtime under Miri and ThreadSanitizer"
-rustup toolchain install "$QUEUE_SANITIZER_NIGHTLY" --profile minimal \
-    --component miri --component rust-src >/dev/null 2>&1 \
-    || sce_gate_fail "install $QUEUE_SANITIZER_NIGHTLY with miri and rust-src"
-cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime --lib queue:: \
+sce_gate_require_rust "$QUEUE_SANITIZER_NIGHTLY"
+NIGHTLY_PATH="$SCE_GATE_RUST_BIN:$PATH"
+PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib queue:: \
     || sce_gate_fail "Rust forge queue unit tests under Miri"
 # Several seeds, because Miri's weak-memory emulation picks which store a load
 # sees from the seed and one seed explores one choice.
 MIRIFLAGS="-Zmiri-many-seeds=0..8" \
-    cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime \
+    PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime \
     --test queue_threads \
     || sce_gate_fail "Rust forge queue threads under Miri"
 # The bounded broadcast log (ADR 0062 section 6, layer 5), under Miri alone. Every
@@ -115,16 +120,16 @@ MIRIFLAGS="-Zmiri-many-seeds=0..8" \
 # `broadcast_log::`: the algorithm is written once in `broadcast_log_core`, over the
 # width of the stamp, and the filter must reach its unit tests and the narrow row's
 # as well as the 64-bit alias's.
-cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime --lib broadcast_log \
+PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime --lib broadcast_log \
     || sce_gate_fail "Rust forge broadcast log unit tests under Miri"
 MIRIFLAGS="-Zmiri-many-seeds=0..8" \
-    cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime \
+    PATH="$NIGHTLY_PATH" cargo miri test -p sce-forge-runtime \
     --test broadcast_log_threads \
     || sce_gate_fail "Rust forge broadcast log threads under Miri"
 # `-Zbuild-std` because ThreadSanitizer needs the standard library
 # instrumented too, or every use of a std lock or channel reads as a race. Its
 # own target directory, so the flag does not invalidate the ordinary build.
-cargo "+$QUEUE_SANITIZER_NIGHTLY" test -Zbuild-std \
+PATH="$NIGHTLY_PATH" cargo test -Zbuild-std \
     --target x86_64-unknown-linux-gnu --target-dir target/tsan \
     --config 'build.rustflags=["-Zsanitizer=thread"]' \
     -p sce-forge-runtime --test queue_threads \

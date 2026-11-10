@@ -9,7 +9,9 @@
 # `wasm32-unknown-emscripten`, and which toolchain builds it depends on the
 # tree (SCE_WASM_THREADS in the root CMakeLists.txt):
 #
-#   without threads  the stable toolchain and its prebuilt standard library.
+#   without threads  the release on PATH and its prebuilt standard library,
+#                    the target being part of the release's declaration
+#                    (`[platform.linux.tools.rust]` in bx.toml).
 #   with threads     `-pthread` makes the link's memory shared, and wasm-ld
 #                    refuses a shared memory when any object was not compiled
 #                    with atomics and bulk-memory. The prebuilt standard
@@ -18,41 +20,65 @@
 #                    those two features on.
 #
 # A floating `nightly` would turn the first language-level change of a night
-# into a red wasm lane no commit of ours caused, so the nightly is pinned. Two
-# things read the pin: `cmake/SCEBuildLowering.cmake`, which parses the line
-# below (so it stays a plain `NAME="value"` assignment), and the gates that
-# configure an emscripten tree (`sce_gate_prepare_wasm_rust` in
-# scripts/gates/lib.sh), which install the toolchain through
-# `sce_wasm_rust_install` when the lane sets SCE_REQUIRE_TOOLS. A date spelled
-# in each would be two answers to one question.
+# into a red wasm lane no commit of ours caused, so the nightly is pinned: it is
+# the repository's one nightly, `SCE_RUST_NIGHTLY` in
+# scripts/lib/rust_toolchains.sh, declared with rust-src and this target as
+# `[platform.linux.tools.rust-nightly]` in bx.toml, and found where that
+# declaration puts it (~/.local/rust/<nightly>). `cmake/SCEBuildLowering.cmake`
+# reads the same line and builds with that directory's cargo. Moving the pin:
+# change the date there, install it (`scripts/install_rust.sh --declared
+# <nightly>`), then build the threaded emscripten tree.
 #
-# Sourced, never run. Moving the pin: change the date, run
-# `sce_wasm_rust_install` once, then the threaded emscripten tree's build.
-SCE_WASM_RUST_NIGHTLY="nightly-2026-10-08"
+# Sourced, never run.
 
-# Install what building the frontend for the emscripten target needs: the
-# target for the stable toolchain (the tree without threads) and, for the
-# pinned nightly, the target plus the standard library's sources that
-# `-Z build-std` compiles (the tree with threads). Idempotent.
-sce_wasm_rust_install() {
-    rustup target add wasm32-unknown-emscripten || return 1
-    rustup toolchain install "${SCE_WASM_RUST_NIGHTLY}" --profile minimal \
-        --component rust-src --target wasm32-unknown-emscripten || return 1
+# shellcheck source=rust_toolchains.sh
+source "$(dirname "${BASH_SOURCE[0]}")/rust_toolchains.sh"
+SCE_WASM_RUST_NIGHTLY="$SCE_RUST_NIGHTLY"
+SCE_WASM_RUST_TARGET="wasm32-unknown-emscripten"
+
+# Whether the standard library of the target is in the Rust on PATH. Asked of
+# the compiler, not of rustup: the release the runner chose may be no rustup's.
+sce_wasm_rust_release_has_target() {
+    [ -d "$(rustc --print target-libdir --target "$SCE_WASM_RUST_TARGET" 2>/dev/null)" ]
 }
 
-# Whether what `sce_wasm_rust_install` installs is there for a tree with
-# (`ON`) or without (`OFF`) threads. Asked of the installed toolchains only: a
-# rustup command that names a toolchain it does not hold installs it as a side
-# effect, which a question must not do.
+# Whether the declared nightly is installed with what the threaded tree takes
+# from it: the target's standard library and the sources `-Z build-std` builds.
+sce_wasm_rust_nightly_present() {
+    local dir
+    sce_rust_toolchain_bin "$SCE_WASM_RUST_NIGHTLY" >/dev/null || return 1
+    dir="$(sce_rust_toolchain_dir "$SCE_WASM_RUST_NIGHTLY")"
+    [ -d "$dir/lib/rustlib/$SCE_WASM_RUST_TARGET/lib" ] && [ -d "$dir/lib/rustlib/src/rust/library" ]
+}
+
+# Whether what a tree with (`ON`) or without (`OFF`) threads needs is there. A
+# question only: nothing is installed by asking it.
 sce_wasm_rust_present() {
-    local threads="$1" listed
-    listed="$(rustup target list --installed 2>/dev/null)"
-    case "$listed" in *wasm32-unknown-emscripten*) ;; *) return 1 ;; esac
-    [ "$threads" = "ON" ] || return 0
-    listed="$(rustup toolchain list 2>/dev/null)"
-    case "$listed" in *"${SCE_WASM_RUST_NIGHTLY}"*) ;; *) return 1 ;; esac
-    listed="$(rustup target list --installed --toolchain "${SCE_WASM_RUST_NIGHTLY}" 2>/dev/null)"
-    case "$listed" in *wasm32-unknown-emscripten*) ;; *) return 1 ;; esac
-    listed="$(rustup component list --installed --toolchain "${SCE_WASM_RUST_NIGHTLY}" 2>/dev/null)"
-    case "$listed" in *rust-src*) ;; *) return 1 ;; esac
+    sce_wasm_rust_release_has_target || return 1
+    [ "$1" = "ON" ] || return 0
+    sce_wasm_rust_nightly_present
+}
+
+# What is missing for a tree with (`ON`) or without (`OFF`) threads, and the
+# command for each, as one sentence.
+sce_wasm_rust_missing() {
+    local missing=()
+    sce_wasm_rust_release_has_target \
+        || missing+=("the $SCE_WASM_RUST_TARGET target of $(rustc --version 2>/dev/null || echo 'the Rust on PATH') (the pinned release carries it: scripts/install_rust.sh --declared $SCE_RUST_RELEASE)")
+    if [ "$1" = "ON" ] && ! sce_wasm_rust_nightly_present; then
+        missing+=("Rust $SCE_WASM_RUST_NIGHTLY with rust-src and the $SCE_WASM_RUST_TARGET target at $(sce_rust_toolchain_dir "$SCE_WASM_RUST_NIGHTLY") (scripts/install_rust.sh --declared $SCE_WASM_RUST_NIGHTLY)")
+    fi
+    local IFS=';'
+    printf '%s\n' "${missing[*]+${missing[*]}}" | sed 's/;/; /g'
+}
+
+# Install what is missing for a tree with (`ON`) or without (`OFF`) threads, on
+# a hosted runner only (`sce_gate_prepare_wasm_rust` in scripts/gates/lib.sh):
+# the target onto the lane's own release with the lane's rustup, and the
+# declared nightly with its declared install.
+sce_wasm_rust_install() {
+    sce_wasm_rust_release_has_target || rustup target add "$SCE_WASM_RUST_TARGET" || return 1
+    [ "$1" = "ON" ] || return 0
+    sce_wasm_rust_nightly_present && return 0
+    bash "$(dirname "${BASH_SOURCE[0]}")/../install_rust.sh" --declared "$SCE_WASM_RUST_NIGHTLY"
 }

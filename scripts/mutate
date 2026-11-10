@@ -876,9 +876,33 @@ mutation_apply_env() {
 # A declared toolchain is one this host has. Checked before the build rather
 # than left to cargo, whose message for a toolchain that is not installed
 # names the proxy and not the casefile that asked for it.
+#
+# Where it is found, in order. The toolchain bx.toml declares
+# (`[platform.linux.tools.rust*]`), at ~/.local/rust/<toolchain>
+# (scripts/lib/rust_toolchains.sh): its `bin/` goes first on PATH, so cargo,
+# cargo-miri and rustc are its own and no rustup proxy is asked, and it is the
+# only one a build machine has, since its gates never install one through
+# rustup. Else one rustup holds under that name, which the declared
+# environment variable selects through the proxies, as on a developer's
+# machine that installed it that way.
 mutation_check_toolchain() {
-    local toolchain="${MUTATION_ENV_VALUE[RUSTUP_TOOLCHAIN]:-}"
+    local toolchain="${MUTATION_ENV_VALUE[RUSTUP_TOOLCHAIN]:-}" bin
     [[ -n "$toolchain" ]] || return 0
+    # shellcheck source=lib/rust_toolchains.sh
+    source "$SCE_REPO_ROOT/scripts/lib/rust_toolchains.sh"
+    if bin="$(sce_rust_toolchain_bin "$toolchain")"; then
+        PATH="$bin:$PATH"
+        export PATH
+        dim "declared toolchain is installed: $toolchain ($(sce_rust_toolchain_dir "$toolchain"))"
+        if [[ -n "$MUTATION_UNDER_MIRI" ]] && ! cargo miri --version >/dev/null 2>&1; then
+            red "the casefile declares 'mutation_under_miri' and the toolchain $toolchain"
+            red "at $(sce_rust_toolchain_dir "$toolchain") has no Miri. Every case below would"
+            red "read as CAUGHT for that reason. Its table in bx.toml names the components it"
+            red "is installed with; add miri there."
+            return 1
+        fi
+        return 0
+    fi
     if command -v rustup >/dev/null 2>&1 && rustup run "$toolchain" rustc --version >/dev/null 2>&1; then
         dim "declared toolchain is installed: $toolchain"
         # A round under Miri also needs the component, which a minimal install of
@@ -890,7 +914,8 @@ mutation_check_toolchain() {
             red ""
             red "  rustup component add miri --toolchain $toolchain"
             red ""
-            red "The mutation-rounds gate installs it for the rounds that declare it."
+            red "A toolchain bx.toml declares carries it from its own install instead:"
+            red "  scripts/install_rust.sh --declared $toolchain"
             return 1
         fi
         return 0
@@ -899,10 +924,15 @@ mutation_check_toolchain() {
     red "such toolchain. Every case below would read as CAUGHT for that reason rather"
     red "than for the clause it defends."
     red ""
+    red "  scripts/install_rust.sh --declared $toolchain"
+    red ""
+    red "installs it where a build machine has it, when bx.toml declares it (a"
+    red "[platform.linux.tools.rust*] table); one it does not declare, through rustup:"
+    red ""
     red "  rustup toolchain install $toolchain --profile minimal --component rust-src"
     red ""
-    red "The mutation-rounds gate installs it for the rounds that declare it; by hand,"
-    red "install it first."
+    red "A build machine has every declared toolchain before a round is placed there;"
+    red "by hand, install it first."
     return 1
 }
 

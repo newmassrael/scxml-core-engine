@@ -82,25 +82,39 @@ set(_SCE_LOWERING_PATHFILE "${CMAKE_BINARY_DIR}/sce_lowering_path.txt")
 #
 # An emscripten tree builds for `wasm32-unknown-emscripten`, into a cargo
 # directory of its own under the tree's binary directory (see
-# SCEBuildLoweringRun.cmake for why). A tree with threads also names the
-# pinned nightly, which `scripts/lib/wasm_rust.sh` owns and installs; it is
-# read here rather than spelled so the pin has one home.
+# SCEBuildLoweringRun.cmake for why). A tree with threads builds with the
+# pinned nightly (`scripts/lib/wasm_rust.sh` says why), read here from the
+# line that pins it rather than spelled, so the pin has one home. The nightly
+# is the toolchain bx.toml declares (`[platform.linux.tools.rust-nightly]`),
+# found where that declaration puts it, ~/.local/rust/<nightly>, and built
+# with by its own cargo with its `bin/` first on PATH: no rustup proxy is asked
+# which toolchain is meant, so a build machine that has no rustup toolchain of
+# that name builds it the same.
 set(_SCE_LOWERING_TARGET "")
 set(_SCE_LOWERING_TARGET_DIR "")
-set(_SCE_LOWERING_NIGHTLY "")
+set(_SCE_LOWERING_NIGHTLY_BIN "")
 if(EMSCRIPTEN)
     set(_SCE_LOWERING_TARGET "wasm32-unknown-emscripten")
     set(_SCE_LOWERING_TARGET_DIR "${CMAKE_BINARY_DIR}/sce_lowering_cargo")
     if(SCE_WASM_THREADS)
-        file(STRINGS "${_SCE_LOWERING_ROOT}/scripts/lib/wasm_rust.sh" _pin
-             REGEX "^SCE_WASM_RUST_NIGHTLY=\"nightly-[0-9-]+\"$")
-        if(NOT _pin MATCHES "^SCE_WASM_RUST_NIGHTLY=\"(nightly-[0-9-]+)\"$")
+        file(STRINGS "${_SCE_LOWERING_ROOT}/scripts/lib/rust_toolchains.sh" _pin
+             REGEX "^SCE_RUST_NIGHTLY=\"nightly-[0-9-]+\"$")
+        if(NOT _pin MATCHES "^SCE_RUST_NIGHTLY=\"(nightly-[0-9-]+)\"$")
             message(FATAL_ERROR
-                "SCE: scripts/lib/wasm_rust.sh no longer has a "
-                "SCE_WASM_RUST_NIGHTLY=\"nightly-<date>\" line, and the "
+                "SCE: scripts/lib/rust_toolchains.sh no longer has a "
+                "SCE_RUST_NIGHTLY=\"nightly-<date>\" line, and the "
                 "threaded emscripten tree builds the frontend with it.")
         endif()
-        set(_SCE_LOWERING_NIGHTLY "${CMAKE_MATCH_1}")
+        set(_sce_lowering_nightly "${CMAKE_MATCH_1}")
+        set(_SCE_LOWERING_NIGHTLY_BIN "$ENV{HOME}/.local/rust/${_sce_lowering_nightly}/bin")
+        if(NOT EXISTS "${_SCE_LOWERING_NIGHTLY_BIN}/cargo")
+            message(FATAL_ERROR
+                "SCE: the threaded emscripten tree builds the ECMAScript "
+                "frontend with Rust ${_sce_lowering_nightly}, and it is not "
+                "installed at ${_SCE_LOWERING_NIGHTLY_BIN}. A build machine "
+                "gets it from bx.toml (bx-provision <alias> --apply); anywhere "
+                "else: scripts/install_rust.sh --declared ${_sce_lowering_nightly}")
+        endif()
     endif()
 endif()
 
@@ -111,7 +125,7 @@ execute_process(
             -DSCE_LOWERING_PATHFILE=${_SCE_LOWERING_PATHFILE}
             -DSCE_LOWERING_TARGET=${_SCE_LOWERING_TARGET}
             -DSCE_LOWERING_TARGET_DIR=${_SCE_LOWERING_TARGET_DIR}
-            -DSCE_LOWERING_NIGHTLY=${_SCE_LOWERING_NIGHTLY}
+            -DSCE_LOWERING_NIGHTLY_BIN=${_SCE_LOWERING_NIGHTLY_BIN}
             -P "${CMAKE_CURRENT_LIST_DIR}/SCEBuildLoweringRun.cmake"
     RESULT_VARIABLE _sce_lowering_rc
 )
@@ -119,10 +133,11 @@ if(NOT _sce_lowering_rc EQUAL 0)
     if(EMSCRIPTEN)
         message(FATAL_ERROR
             "SCE: building sce-build's lowering staticlib for "
-            "${_SCE_LOWERING_TARGET} failed (${_sce_lowering_rc}). The "
-            "toolchain it needs is installed by `sce_wasm_rust_install` in "
-            "scripts/lib/wasm_rust.sh (the target, and for a tree with "
-            "threads the pinned nightly with rust-src).")
+            "${_SCE_LOWERING_TARGET} failed (${_sce_lowering_rc}). It needs "
+            "the target in the Rust release on PATH, and for a tree with "
+            "threads the pinned nightly with rust-src; scripts/lib/wasm_rust.sh "
+            "says where each comes from (`sce_wasm_rust_missing` names what "
+            "is absent).")
     endif()
     message(FATAL_ERROR
         "SCE: building sce-build's lowering staticlib failed (${_sce_lowering_rc}). "
