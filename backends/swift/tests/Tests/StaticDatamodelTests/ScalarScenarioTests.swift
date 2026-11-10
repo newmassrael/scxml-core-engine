@@ -794,6 +794,62 @@ private func liftedText() -> Machine {
     )
 }
 
+// A union as a scenario writes it (docs/adr/0092, section 2.1): an object of the fields of its case
+// beside its tag, under `kind`, as the declared name of the case.
+private func unionShape(_ shape: StaticUnionUnionShapeUnion) -> JSONValue {
+    let tagged = { (name: String, fields: [(key: String, value: JSONValue)]) -> JSONValue in
+        .object([(key: "kind", value: .text(name))] + fields)
+    }
+    switch shape {
+    case .dot:
+        return tagged("dot", [])
+    case .circle(let record):
+        return tagged("circle", [(key: "radius", value: integer(record.radius))])
+    case .disc(let record):
+        return tagged("disc", [(key: "radius", value: integer(record.radius))])
+    case .rect(let record):
+        return tagged(
+            "rect", [(key: "width", value: integer(record.width)), (key: "height", value: integer(record.height))])
+    case .label(let record):
+        return tagged(
+            "label", [(key: "text", value: .text(record.text)), (key: "note", value: optionalText(record.note))])
+    case .path(let record):
+        return tagged("path", [(key: "points", value: .array(record.points.map { integer($0) }))])
+    }
+}
+
+private func unionPayload() -> Machine {
+    let policy = StaticUnionPolicy()
+    let why = { (w: StaticUnionLiftRefusalRecord) -> JSONValue in
+        .object([
+            (key: "code", value: .text(w.code.declaredName)),
+            (key: "path", value: .text(w.path)),
+            (key: "bound", value: optionalInteger(w.bound)),
+        ])
+    }
+    return drive(
+        policy,
+        variables: [
+            "built": { unionShape(policy.built) },
+            "kept": { policy.kept.map(unionShape) ?? .null },
+            "last_kind": { .text(policy.lastKind.declaredName) },
+            "radius": { integer(policy.radius) },
+            "width": { integer(policy.width) },
+            "height": { integer(policy.height) },
+            "labels": { integer(policy.labels) },
+            "points": { integer(policy.points) },
+            "dots": { integer(policy.dots) },
+            "many_radius": { integer(policy.manyRadius) },
+            "many_width": { integer(policy.manyWidth) },
+            "many_shapes": { integer(policy.manyShapes) },
+            "maybe_width": { integer(policy.maybeWidth) },
+            "refusals": { integer(policy.refusals) },
+            "lifted": { policy.lifted.map(unionShape) ?? .null },
+            "lift_why": { policy.liftWhy.map(why) ?? .null },
+        ]
+    )
+}
+
 private func schemaRevision() -> Machine {
     let policy = StaticSchemaRevisionPolicy()
     return drive(
@@ -1570,6 +1626,14 @@ private func recordBytes() -> Machine {
 // Swift restores a saved tree.
 @Test func aTreeOfSessionsAnswersAsItsSavedFormWouldWithoutTheRestores() {
     replay("static_invoke_tree", invokeTree())
+}
+
+// A payload that holds a union, read by testing its tag (docs/adr/0092). The step marked `restore`
+// saves the machine, discards it and restores it, which Swift does not do for a machine that holds a
+// union yet, so it is replayed as the steps without it: the scenario states that every expected value
+// is the one a run without the restore holds. The line comes off when Swift saves a union.
+@Test func aUnionPayloadAnswersAsItsSavedFormWouldWithoutTheRestore() {
+    replay("static_union", unionPayload(), skipping: ["restore"])
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {

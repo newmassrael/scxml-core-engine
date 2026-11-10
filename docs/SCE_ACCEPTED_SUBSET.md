@@ -5482,7 +5482,7 @@ by its own name each position it does not lower.
 
 - `c11` lowers none; refuses reads, copies, unions, sends
 
-- `swift` lowers reads, copies, sends; refuses unions
+- `swift` lowers reads, copies, unions, sends; refuses none
 
 - `ecmascript` lowers reads, copies, sends; refuses unions
 <!-- composed-lowering-rows: end -->

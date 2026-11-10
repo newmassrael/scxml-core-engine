@@ -223,11 +223,38 @@ public func liftRecord<T>(
     defaults: String?,
     read: (PayloadFields) throws -> T
 ) -> Result<T, PayloadRefusal> {
+    lifted("record", schema) {
+        try read(PayloadFields.lift(text, depth: depth, pathBound: pathBound, defaults: defaults))
+    }
+}
+
+/// What a `<sce:lift>` into a union reads (docs/adr/0092, section 6.1 item 5): `text` as
+/// one value of the union named `schema`, which `read` reads out of the whole object it is
+/// handed, by the reader a delivery's field of the union is read by (`PayloadValue.union`:
+/// its tag first, then the record of the case the tag names); or the refusal of the first
+/// place that is not one. What is refused before the value is read is what
+/// `PayloadFields.lift` refuses, and a union has no defaults: its revision is its tag
+/// enum's, so no field is added to a case by one. Logged as `liftRecord` logs.
+public func liftValue<T>(
+    _ text: String,
+    schema: String,
+    depth: Int,
+    pathBound: Int,
+    read: (PayloadValue) throws -> T
+) -> Result<T, PayloadRefusal> {
+    lifted("value", schema) {
+        try read(PayloadFields.lift(text, depth: depth, pathBound: pathBound, defaults: nil).object)
+    }
+}
+
+/// The outcome of one lift, logged with the schema's name and, for a refusal, its code,
+/// pointer and bound, never the text. `what` is what the text is read as.
+private func lifted<T>(_ what: String, _ schema: String, _ body: () throws -> T) -> Result<T, PayloadRefusal> {
     let refusal: PayloadRefusal
     do {
-        let lifted = try read(PayloadFields.lift(text, depth: depth, pathBound: pathBound, defaults: defaults))
-        sceLog("<sce:lift>: the text is a record of \(schema)")
-        return .success(lifted)
+        let value = try body()
+        sceLog("<sce:lift>: the text is a \(what) of \(schema)")
+        return .success(value)
     } catch let refused as PayloadRefusal {
         refusal = refused
     } catch {
@@ -236,7 +263,7 @@ public func liftRecord<T>(
         refusal = PayloadRefusal(String(describing: error), code: .notJson, pointer: "")
     }
     sceLog(
-        "<sce:lift>: the text is no record of \(schema): \(refusal.code.declaredName) at '\(refusal.pointer)', "
+        "<sce:lift>: the text is no \(what) of \(schema): \(refusal.code.declaredName) at '\(refusal.pointer)', "
             + "bound \(refusal.bound.map { String($0) } ?? "none") (\(refusal.reason))"
     )
     return .failure(refusal)
@@ -277,6 +304,12 @@ public struct PayloadFields {
         self.fields = fields
         self.prefix = prefix
         self.pointer = pointer
+    }
+
+    /// These fields as the one object they are members of: the value a union is read out of
+    /// (`liftValue`).
+    fileprivate var object: PayloadValue {
+        PayloadValue(value: .object(fields), path: prefix, pointer: pointer)
     }
 
     /// Reads an event's data as the fields it names.
