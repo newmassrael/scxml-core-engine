@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
+// source-hash: 81a3de342b33c3189f4a5813894163bc1e16bfc77aa7ead74e709e8ba7b570b9
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml
@@ -86,6 +86,9 @@ data class StaticComposedPayloadItemRecord(val id: UInt, val amount: Long, val l
         com.sce.runtime.ValueBounds.bytes("blob", blob, 4)
         com.sce.runtime.ValueBounds.list("tags", tags, 4) { scePath0, sceValue0 -> com.sce.runtime.ValueBounds.text(scePath0, sceValue0, 8) }
     }
+
+    /** What a value is read back from a saved state through (`fromSaved`). */
+    companion object
 }
 // --- State Machine (W3C SCXML) ---
 
