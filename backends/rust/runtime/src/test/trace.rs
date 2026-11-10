@@ -233,7 +233,12 @@ impl Trace {
             test_case: name_of(test_case, "the trace's test case")?,
             inputs: read,
         };
-        if trace.canonical_text() != body {
+        // A value with no canonical text, a number past the range of a double
+        // among them, is a trace not written in it either: it is refused here
+        // as one, never handed to `canonical_text`, which holds that a trace
+        // has that text.
+        let canonical = json::write_canonical(&trace.canonical_value()).ok();
+        if canonical.as_deref() != Some(body) {
             return Err(TraceRefusal::new(
                 "the trace is not written in its one canonical text, the JSON Canonicalization \
                  Scheme",
@@ -251,6 +256,16 @@ impl Trace {
     /// that names a member twice, which no canonical value holds and
     /// [`Trace::parse`] refuses.
     pub fn canonical_text(&self) -> String {
+        json::write_canonical(&self.canonical_value()).unwrap_or_else(|refused| {
+            panic!(
+                "the trace of {} {} is not canonical: {refused}",
+                self.suite, self.test_case
+            )
+        })
+    }
+
+    /// The trace as the one JSON value its canonical text writes.
+    fn canonical_value(&self) -> Value {
         let text = |text: &str| Value::Text(text.to_string());
         let inputs = self
             .inputs
@@ -264,18 +279,12 @@ impl Trace {
                 ])
             })
             .collect();
-        let trace = Value::Object(vec![
+        Value::Object(vec![
             ("schema".to_string(), text(TEST_TRACE_SCHEMA)),
             ("suite".to_string(), text(&self.suite)),
             ("test_case".to_string(), text(&self.test_case)),
             ("inputs".to_string(), Value::Array(inputs)),
-        ]);
-        json::write_canonical(&trace).unwrap_or_else(|refused| {
-            panic!(
-                "the trace of {} {} is not canonical: {refused}",
-                self.suite, self.test_case
-            )
-        })
+        ])
     }
 }
 
@@ -475,6 +484,21 @@ mod tests {
         );
         assert!(
             refused(out_of_order.to_string()).contains("input 1, at 4, comes after an input at 5")
+        );
+    }
+
+    /// A number past the range of a double has no canonical text, so a trace
+    /// whose value holds one is refused as not written in it, not a panic of
+    /// the reader. The twin of the Kotlin case of the same name.
+    #[test]
+    fn a_trace_whose_value_holds_a_number_past_a_double_is_refused() {
+        let from = "{\"code\":\"0\",\"job\":\"7\"}";
+        assert!(ONE_INPUT.contains(from), "{from}");
+        let text = ONE_INPUT.replacen(from, "1e400", 1);
+        let refused = Trace::parse(&text).expect_err("a value with no canonical text");
+        assert_eq!(
+            refused.reason(),
+            "the trace is not written in its one canonical text, the JSON Canonicalization Scheme"
         );
     }
 

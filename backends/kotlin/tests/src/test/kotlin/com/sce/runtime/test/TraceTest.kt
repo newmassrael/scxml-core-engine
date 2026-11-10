@@ -118,7 +118,12 @@ class TraceTest {
     @Test
     fun `a trace whose value holds a number past a double is refused`() {
         val text = changed("{\"code\":\"0\",\"job\":\"7\"}", "1e400")
-        assertTrue(refused(text).contains("one canonical text"), text)
+        // The Rust reader refuses the same text in the same words
+        // (`a_trace_whose_value_holds_a_number_past_a_double_is_refused`).
+        assertEquals(
+            "the trace is not written in its one canonical text, the JSON Canonicalization Scheme",
+            refused(text),
+        )
     }
 
     /**
