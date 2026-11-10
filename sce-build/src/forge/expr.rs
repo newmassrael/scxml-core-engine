@@ -862,6 +862,9 @@ fn resolve_then_rename(
     if matches!(target, ExprTarget::Rust | ExprTarget::Swift) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
     }
+    if matches!(target, ExprTarget::Swift) {
+        reject_zeroless_element_reads(ast, ctx)?;
+    }
     // A C string is a bounded buffer: a join of strings the data model sizes is
     // written into one the lowering sizes, and one it cannot size is refused at
     // emission, by name.
@@ -1239,6 +1242,42 @@ fn lower_union_reads(
             .into_iter()
             .try_for_each(|child| lower_union_reads(child, ctx, facts, target)),
     }
+}
+
+/// Refuse, for the Swift machine, an index read of a list whose elements are
+/// unions, or unions that may be absent. A Swift machine reads an element of a
+/// list through a checked read that records an index outside the list as the
+/// failure the statement ends at and answers the element type's zero
+/// (`Checked.atDefault`, a `SceDefault`); a union has no value to start at
+/// (docs/adr/0092, amendment of 2026-11-07), so there is none to answer, and the
+/// read would be Swift that does not compile. A loop over the list reads each
+/// element where it is, with no index outside it.
+fn reject_zeroless_element_reads(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+    use crate::forge::value_type::ValueType;
+    if let ExprKind::Index { object, .. } = &expr.kind {
+        let element = place_path(object)
+            .and_then(|path| ctx.value_of(&path))
+            .and_then(|place| place.element());
+        let holds_union = |ty: &ValueType| match ty {
+            ValueType::Union { .. } => true,
+            ValueType::Optional { elem } => matches!(**elem, ValueType::Union { .. }),
+            _ => false,
+        };
+        if element.is_some_and(|element| holds_union(&element.ty)) {
+            return Err(ExprError::UnsupportedConstruct {
+                construct: "an index read of a list whose elements are unions: a Swift machine \
+                            answers an index outside a list with its element type's zero, and a \
+                            union has none (docs/adr/0092, amendment of 2026-11-07); read the \
+                            elements in a <foreach>"
+                    .to_string(),
+                observed: None,
+            }
+            .at(expr.span.clone()));
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_zeroless_element_reads(child, ctx))
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or
