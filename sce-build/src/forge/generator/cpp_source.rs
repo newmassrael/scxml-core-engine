@@ -4836,6 +4836,8 @@ fn derive_number(
     let disagree = || refusal(plan, RefusalKind::InconsistentSource, &named);
     // The number, and where it may not be there, the test that it is.
     let (size, present) = match measures {
+        // Nothing measured: zero, as the Rust encode's `combine` holds it.
+        [] => ("0".to_string(), None),
         [one] => (one.size.clone(), one.present.clone()),
         _ => {
             let there = |m: &MeasureText| m.present.clone().unwrap_or_else(|| "false".to_string());
