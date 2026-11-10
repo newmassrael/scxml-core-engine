@@ -819,7 +819,6 @@ private func unionShape(_ shape: StaticUnionUnionShapeUnion) -> JSONValue {
 }
 
 private func unionPayload() -> Machine {
-    let policy = StaticUnionPolicy()
     let why = { (w: StaticUnionLiftRefusalRecord) -> JSONValue in
         .object([
             (key: "code", value: .text(w.code.declaredName)),
@@ -827,9 +826,8 @@ private func unionPayload() -> Machine {
             (key: "bound", value: optionalInteger(w.bound)),
         ])
     }
-    return drive(
-        policy,
-        variables: [
+    return driveSaved({ StaticUnionPolicy() }) { policy in
+        [
             "built": { unionShape(policy.built) },
             "kept": { policy.kept.map(unionShape) ?? .null },
             "last_kind": { .text(policy.lastKind.declaredName) },
@@ -847,7 +845,7 @@ private func unionPayload() -> Machine {
             "lifted": { policy.lifted.map(unionShape) ?? .null },
             "lift_why": { policy.liftWhy.map(why) ?? .null },
         ]
-    )
+    }
 }
 
 private func schemaRevision() -> Machine {
@@ -1628,12 +1626,10 @@ private func recordBytes() -> Machine {
     replay("static_invoke_tree", invokeTree())
 }
 
-// A payload that holds a union, read by testing its tag (docs/adr/0092). The step marked `restore`
-// saves the machine, discards it and restores it, which Swift does not do for a machine that holds a
-// union yet, so it is replayed as the steps without it: the scenario states that every expected value
-// is the one a run without the restore holds. The line comes off when Swift saves a union.
-@Test func aUnionPayloadAnswersAsItsSavedFormWouldWithoutTheRestore() {
-    replay("static_union", unionPayload(), skipping: ["restore"])
+// A payload that holds a union, read by testing its tag (docs/adr/0092). The step marked `restore` saves
+// the machine, discards it and restores it from the text, every union read back by its tag.
+@Test func aUnionPayloadIsReadByItsTagAndASavedMachineHoldsItsUnionsAgain() {
+    replay("static_union", unionPayload())
 }
 
 @Test func aSendHandsItsIdToTheVariableItNames() {

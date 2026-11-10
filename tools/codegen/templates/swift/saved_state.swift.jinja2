@@ -23,11 +23,11 @@
    record's own `toSaved`; a list writes each element so, and a value that may be absent is `null` or as its
    present value is written (docs/adr/0055, section 4). #}
 {%- macro saved_write(field) -%}
-{%- if field.saved_kind == 'optional' and field.saved_elem == 'record' -%}
+{%- if field.saved_kind == 'optional' and field.saved_elem in ['record', 'union'] -%}
 SavedValues.optional({{ field.name }}) { $0.toSaved() }
 {%- elif field.saved_kind == 'optional' -%}
 SavedValues.optional({{ field.name }}) { SavedValues.of($0) }
-{%- elif field.saved_kind == 'record' -%}
+{%- elif field.saved_kind in ['record', 'union'] -%}
 {{ field.name }}.toSaved()
 {%- elif field.saved_kind == 'record_list' -%}
 SavedValues.list({{ field.name }}) { $0.toSaved() }
@@ -50,7 +50,7 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {%- elif field.saved_kind == 'record_list' -%}
 try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.bound is not none else '.max' }}) { e, w in {{ saved_present(field.saved_type, 'record', 'e', 'w', none) }} }
 {%- else -%}
-{{ saved_present(field.saved_type, field.saved_kind if field.saved_kind in ['enum', 'record'] else 'scalar', value, what, field.bound) }}
+{{ saved_present(field.saved_type, field.saved_kind if field.saved_kind in ['enum', 'record', 'union'] else 'scalar', value, what, field.bound) }}
 {%- endif -%}
 {%- endmacro %}
 {#- Builds the session of `<invoke>` `entry` as the saved child names it, of the policy `policy_type`, judges the state it

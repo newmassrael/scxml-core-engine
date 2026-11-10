@@ -169,3 +169,24 @@ private enum Shade: UInt8, SavedEnumeration {
     #expect(refusal { try SavedValues.field(record, "item", "count") } == "'item' has no field 'count'")
     #expect(refusal { try SavedValues.field(.number("1"), "item", "id") } == "'item' is not an object")
 }
+
+// A union is one object, its tag under the tag's key as the declared name of its case, before the fields of the
+// case's record (docs/adr/0092, section 6.1 item 7), read back by its tag first.
+@Test func aUnionIsItsTagBesideTheFieldsOfItsCaseAndIsReadBackByItsTag() throws {
+    let circle = SavedValues.union(
+        tag: "kind", variant: "circle", SavedValues.record([(key: "radius", value: .number("7"))]))
+    #expect(writeJSON(circle) == "{\"kind\":\"circle\",\"radius\":7}")
+    #expect(writeJSON(SavedValues.union(tag: "kind", variant: "dot", nil)) == "{\"kind\":\"dot\"}")
+    #expect(try SavedValues.unionTag(circle, "shape", tag: "kind") == "circle")
+    // The tag is read wherever it stands, and the fields beside it are the case's record's to read.
+    let tagLast = JSONValue.object([(key: "radius", value: .number("7")), (key: "kind", value: .text("disc"))])
+    #expect(try SavedValues.unionTag(tagLast, "shape", tag: "kind") == "disc")
+    #expect(try SavedValues.uint16(SavedValues.field(tagLast, "shape", "radius"), "shape.radius") == 7)
+    #expect(refusal { try SavedValues.unionTag(.number("1"), "shape", tag: "kind") } == "'shape' is not an object")
+    #expect(
+        refusal { try SavedValues.unionTag(.object([(key: "radius", value: .number("7"))]), "shape", tag: "kind") }
+            == "'shape' has no field 'kind'")
+    #expect(
+        refusal { try SavedValues.unionTag(.object([(key: "kind", value: .number("3"))]), "shape", tag: "kind") }
+            == "'shape.kind' is not a text")
+}

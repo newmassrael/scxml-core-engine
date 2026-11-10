@@ -91,6 +91,126 @@ pub(crate) fn swift_case_read(variant: &str) -> String {
     )
 }
 
+/// The Swift expression that writes the value of `ty` held at `value` as a saved
+/// state does (`SavedValues` of the runtime): a number, a truth value, a text, a
+/// byte string and an enum by `of`, a value that may be absent as `null` or as its
+/// present value, a list element by element, and a record and a union by their own
+/// `toSaved`. `depth` names the parameter of each nested closure, so none hides its
+/// holder's. `Err` for a byte string inside a list, which a saved state would write
+/// as an array of numbers where it writes a byte string as its text.
+fn swift_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<String, String> {
+    let element = format!("sceSaved{depth}");
+    Ok(match ty {
+        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
+            format!("SavedValues.of({value})")
+        }
+        ValueType::Optional { elem } => format!(
+            "SavedValues.optional({value}) {{ {element} in {} }}",
+            swift_saved_write(elem, &element, depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            format!(
+                "SavedValues.list({value}) {{ {element} in {} }}",
+                swift_saved_write(elem, &element, depth + 1)?
+            )
+        }
+        ValueType::Record { .. } | ValueType::Union { .. } => format!("{value}.toSaved()"),
+    })
+}
+
+/// The Swift expression that reads the saved value `saved` (an expression), named
+/// `what` in a refusal (an expression of a `String`), as a value of `ty`: as
+/// [`swift_saved_write`] writes it, a text and a byte string held to the bound the
+/// machine keeps them to, an enum by its own type, a record and a union by their own
+/// `fromSaved`.
+fn swift_saved_read(
+    spelling: &SwiftComposed<'_>,
+    ty: &ValueType,
+    within: Option<&str>,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    saved: &str,
+    what: &str,
+    depth: usize,
+) -> Result<String, String> {
+    let (inner_saved, inner_what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(reference)) => {
+            let held = enums.get(&reference.alias).ok_or_else(|| {
+                format!(
+                    "the enum `{}` a saved value holds is no enum the machine holds",
+                    reference.alias
+                )
+            })?;
+            format!(
+                "try SavedValues.enumeration({saved}, {what}, as: {}.self)",
+                held.ty
+            )
+        }
+        ValueType::Scalar(scalar) => {
+            format!("try SavedValues.{}({saved}, {what})", scalar.as_attr())
+        }
+        ValueType::Text { max } => {
+            format!(
+                "try SavedValues.string({saved}, {what}, capacity: {})",
+                max.max
+            )
+        }
+        ValueType::Bytes { max } => {
+            format!(
+                "try SavedValues.bytes({saved}, {what}, capacity: {})",
+                max.max
+            )
+        }
+        ValueType::Optional { elem } => format!(
+            "try SavedValues.optional({saved}, {what}) {{ {inner_saved}, {inner_what} in {} }}",
+            swift_saved_read(
+                spelling,
+                elem,
+                within,
+                records,
+                enums,
+                &inner_saved,
+                &inner_what,
+                depth + 1
+            )?
+        ),
+        ValueType::List { elem, max } => format!(
+            "try SavedValues.list({saved}, {what}, capacity: {}) {{ {inner_saved}, {inner_what} in {} }}",
+            max.max,
+            swift_saved_read(
+                spelling,
+                elem,
+                within,
+                records,
+                enums,
+                &inner_saved,
+                &inner_what,
+                depth + 1
+            )?
+        ),
+        ValueType::Record { alias } => {
+            let held = records.record(within, alias)?;
+            format!(
+                "try {}.fromSaved({saved}, {what})",
+                spelling.record_type(held.alias)
+            )
+        }
+        ValueType::Union { alias } => {
+            let held = records.union(within, alias)?;
+            format!(
+                "try {}.fromSaved({saved}, {what})",
+                spelling.union_type(&held.union.name)
+            )
+        }
+    })
+}
+
 /// The name a Swift union reader binds the case the tag named to.
 const SWIFT_CASE_BINDING: &str = "sceCase";
 
@@ -658,6 +778,104 @@ impl ComposedSpelling for SwiftComposed<'_> {
     // Every member of a Swift record starts at its zero ([`SwiftComposed::zero_of`]).
     fn record_starts_at_zero(&self) -> bool {
         true
+    }
+    // The record's saved form, an object of its fields keyed by their ids in the
+    // schema's order, each written and read as its type says
+    // ([`swift_saved_write`], [`swift_saved_read`]): what a variable that holds the
+    // record writes it by (`SavedValues`), and a union whose case it is.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        let mut writes = String::new();
+        let mut reads = Vec::new();
+        for field in &held.schema.fields {
+            let id = literal(&field.id);
+            let written = swift_saved_write(&field.sce_type, &format!("self.{}", field.id), 0)
+                .map_err(|why| {
+                    format!("the field `{}` of `{}`: {why}", field.id, held.schema.name)
+                })?;
+            writes.push_str(&format!("            (key: {id}, value: {written}),\n"));
+            let read = swift_saved_read(
+                self,
+                &field.sce_type,
+                Some(held.alias),
+                records,
+                enums,
+                &format!("try SavedValues.field(value, what, {id})"),
+                &format!(
+                    "\"\\(what).{}\"",
+                    crate::filters::escape_swift(field.id.clone())
+                ),
+                0,
+            )?;
+            reads.push(format!("{}: {read}", field.id));
+        }
+        let built = if reads.is_empty() {
+            format!("{ty}()")
+        } else {
+            format!(
+                "{ty}(\n            {}\n        )",
+                reads.join(",\n            ")
+            )
+        };
+        Ok(Some(format!(
+            "extension {ty} {{\n    /// This value as a saved state writes it.\n    public func \
+             toSaved() -> JSONValue {{\n        SavedValues.record([\n{writes}        ])\n    }}\n\n    \
+             /// The value a saved state holds, refused unless it is one.\n    public static func \
+             fromSaved(_ value: JSONValue, _ what: String) throws -> {ty} {{\n        {built}\n    \
+             }}\n}}"
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its case
+    // (docs/adr/0092, section 6.1 item 7): written by `SavedValues.union` over the
+    // record's own `toSaved`, and read by its tag first, which names the record the
+    // rest of the object is read as, a name no case has refused by the union's.
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = literal(&records.union_of_key(key)?.union.tag);
+        let name = crate::filters::escape_swift(def.name.clone());
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let (ident, variant) = (&case.ident, literal(&case.variant));
+            match &case.record {
+                Some(record) => {
+                    writes.push_str(&format!(
+                        "        case .{ident}(let sceRecord): return SavedValues.union(tag: {tag}, \
+                         variant: {variant}, sceRecord.toSaved())\n"
+                    ));
+                    reads.push_str(&format!(
+                        "        case {variant}: return .{ident}(try {record}.fromSaved(value, what))\n"
+                    ));
+                }
+                None => {
+                    writes.push_str(&format!(
+                        "        case .{ident}: return SavedValues.union(tag: {tag}, variant: \
+                         {variant}, nil)\n"
+                    ));
+                    reads.push_str(&format!("        case {variant}: return .{ident}\n"));
+                }
+            }
+        }
+        Ok(Some(format!(
+            "extension {ty} {{\n    /// This value as a saved state writes it.\n    public func \
+             toSaved() -> JSONValue {{\n        switch self {{\n{writes}        }}\n    }}\n\n    \
+             /// The value a saved state holds, refused unless it is one of the cases of \
+             `{name}`.\n    public static func fromSaved(_ value: JSONValue, _ what: String) throws \
+             -> {ty} {{\n        let sceTag = try SavedValues.unionTag(value, what, tag: {tag})\n        \
+             switch sceTag {{\n{reads}        default: throw StateRefusal(\"'\\(what)' \
+             (\\(sceTag)) is not a case of {name}\")\n        }}\n    }}\n}}",
+            ty = def.ty,
+        )))
     }
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Swift row): named by the union's document, so one union is one type of the
