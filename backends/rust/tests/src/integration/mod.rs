@@ -6,13 +6,14 @@
 //! See `docs/SCE_INTEGRATION_FIXTURE_LAYOUT.md` for the per-backend
 //! policy governing this layer. Each sub-module is a state machine
 //! generated from the canonical fixture at
-//! `integration_resources/<stem>/<stem>.scxml` by a dedicated regen script
-//! (e.g. `scripts/regen_donedata_local_invoke.sh`). The files under each
-//! sub-directory carry the standard §6.2.6 `SCE-GENERATED` drift
-//! header and `SCE-MAP:` markers; only this `mod.rs` is hand-authored,
-//! so the W3C regen pipeline (`sce-codegen generate-w3c -l rust`)
-//! never touches it and adding or dropping an integration fixture is
-//! a single-line edit here.
+//! `integration_resources/<stem>/<stem>.scxml` by the actions declared in
+//! `tools/codegen/trees/rust-integration.toml` and written by
+//! `scripts/materialize.sh rust-integration`. The files under each
+//! sub-directory, their `mod.rs` included, carry a generated header and
+//! `SCE-MAP:` markers; only this `mod.rs` is hand-authored, so neither
+//! that tree nor the W3C one (`sce-codegen generate-w3c -l rust`) touches
+//! it, and adding or dropping an integration fixture is a single-line edit
+//! here.
 //!
 //! Two entries do not come from there. `ai_loop` is generated from the
 //! worked example at `examples/ai_loop/ai_loop.scxml`, so that a document
@@ -20,7 +21,7 @@
 //! C++ driver next to it and `tests/ai_loop.rs` here.
 //! `integration_stem_registration` enumerates `integration_resources/` and
 //! so does not reach it — the example is not on the seven-channel contract,
-//! and its regen script says why.
+//! and its generation in the tree manifest says why.
 //!
 //! `parallel_region_root_external_domain` is the other, and it is outside for
 //! the opposite reason: it is a document the seven-channel contract would be
