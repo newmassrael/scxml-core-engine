@@ -1,0 +1,158 @@
+# Mutation cases for docs/adr/0096 on the Python channel: a machine whose
+# script session cannot be established does not start, and its host is told
+# why; an invoked child that cannot start is a failed invoke.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_python_machine_whose_script_session_fails_does_not_start.cases`.
+#
+# The session used to be made by the engine's construction, so a failure
+# escaped `Engine.__init__` (a child's on its parent's stack), and a bind that
+# failed escaped `initialize` after the run was marked running and its inbox
+# opened. Each case below puts back one piece of that shape and names the test
+# that must go red. The script engine of the oracle is a double over the Lua
+# engine that fails the step a case asks for, so the failure is reached through
+# the engine a generated machine is handed, as a host's would be.
+#
+# The values a refusal hands its host, and the Lua engine's library step, are
+# held on their own in `integration/script_session/`, which is the second
+# oracle; the generated machine is where the runtime and template halves can
+# only be seen together.
+#
+# The Python machines are generated and gitignored, so the regeneration runs
+# after each case and is what carries a mutated template into the tests. The
+# edits to the runtime are read from disk on every run, which is the evidence
+# the harness asks of a runtime target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/a_child_may_send_many_events_in_one_tick/test_a_machine_whose_script_session_fails_does_not_start.py integration/script_session/test_a_script_session_failure_names_its_step.py
+mutation_regen scripts/regen_a_child_may_send_many_events_in_one_tick_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/script_session.py backends/python/runtime/sce_runtime/scripting/lua_engine.py tools/codegen/templates/python/invoke_methods.py.jinja2
+mutation_oracles backends/python/tests/integration/a_child_may_send_many_events_in_one_tick/test_a_machine_whose_script_session_fails_does_not_start.py backends/python/tests/integration/script_session/test_a_script_session_failure_names_its_step.py
+
+# ── The start goes on past a session that failed ────────────────────
+#
+# `initialize` drops the failure and enters the initial configuration anyway,
+# over a session that is not there.
+# Killer: `test_a_start_whose_session_cannot_be_established_is_refused_with_the_step`,
+# whose start raises no `ScriptSessionUnavailable` (the content run over no
+# session raises the engine's `SessionNotFoundError` in its place).
+
+mutation_case "initialize enters the machine past a session that failed" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        failure = self._establish_script_session()\n        if failure is not None:\n            raise ScriptSessionUnavailable(failure)\n        self._is_running = True\n",
+     "        self._establish_script_session()\n        self._is_running = True\n")
+PY
+
+# ── The resumed start goes on past a session that failed ────────────
+#
+# Killer: `test_a_resumed_start_whose_session_cannot_be_established_is_refused`,
+# whose `enter_at` reaches the datamodel over no session.
+
+mutation_case "enter_at enters the configuration past a session that failed" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        failure = self._establish_script_session()\n        if failure is not None:\n            return ConfigurationVerdict(\n                ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE, failure\n            )\n",
+     "        self._establish_script_session()\n")
+PY
+
+# ── The checked root start lets the refusal escape ──────────────────
+#
+# Killer: `test_the_checked_root_start_is_refused_for_the_session`, whose
+# `initialize_as_root` raises instead of answering the refusal.
+
+mutation_case "initialize_as_root raises the refusal it should answer" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        try:\n            self.initialize()\n        except ScriptSessionUnavailable as refused:\n            return RootStartRefusal.ScriptSession(refused.failure)\n        return None\n",
+     "        self.initialize()\n        return None\n")
+PY
+
+# ── A library that did not load is the engine's own failure ─────────
+#
+# The creation failure is no longer told apart, so a build that shipped a
+# chunk that does not load is reported as a session the engine could not make.
+# Killers: the `LIBRARY` round of
+# `test_a_start_whose_session_cannot_be_established_is_refused_with_the_step`,
+# `test_the_checked_root_start_is_refused_for_the_session`, and every library
+# case of `test_a_script_session_failure_names_its_step.py`.
+
+mutation_case "a library that did not load is reported as the create step" <<'PY'
+edit("backends/python/runtime/sce_runtime/script_session.py",
+     "            ScriptSessionStage.LIBRARY\n            if _library_in_chain(failure)\n",
+     "            ScriptSessionStage.CREATE\n            if _library_in_chain(failure)\n")
+PY
+
+# ── A bind that failed leaves its session behind ────────────────────
+#
+# Killers: `test_a_session_whose_system_variables_cannot_be_bound_is_released`
+# (nothing is destroyed) and every `SYSTEM_VARIABLES` round of
+# `_assert_nothing_started` (a session is live).
+
+mutation_case "a failed bind of the system variables keeps its session" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            engine.destroy_session(self._session_id)\n            return ScriptSessionFailure.of_system_variables(failure)\n",
+     "            return ScriptSessionFailure.of_system_variables(failure)\n")
+PY
+
+# ── A second start runs over the session the last run left ──────────
+#
+# The start no longer releases what an earlier run left readable, and the Lua
+# engine's `create_session` keeps a session it already holds, so the second run
+# reads the first one's datamodel.
+# Killer: `test_a_second_start_makes_its_session_anew`, which finds the
+# session of the stopped run never destroyed.
+
+mutation_case "a start keeps the session an earlier run left" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        self._release_script_session()\n        engine = self._script_engine\n",
+     "        engine = self._script_engine\n")
+PY
+
+# ── Half the shared library is optional again ───────────────────────
+#
+# The JSON builtins are loaded only when their file is there, as they once
+# were, so a build that shipped half the library makes a session all the same.
+# Killer: `test_the_lua_engine_requires_the_json_builtins`, whose session is
+# made without them.
+
+mutation_case "the JSON builtins are optional again" <<'PY'
+edit("backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+     "    _run_library_chunk(\n        runtime,\n        \"JSON builtins\",\n        _read_library_file(\"JSON builtins\", \"json_builtins.lua\"),\n    )\n",
+     "    if os.path.exists(os.path.join(_SHARED_SCRIPTING_DIR, \"json_builtins.lua\")):\n        _run_library_chunk(\n            runtime,\n            \"JSON builtins\",\n            _read_library_file(\"JSON builtins\", \"json_builtins.lua\"),\n        )\n")
+PY
+
+# ── The refused child is not caught ─────────────────────────────────
+#
+# The child's refusal escapes the parent's start, so one child that cannot
+# start ends its parent's run.
+# Killer: `test_a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_child`,
+# whose parent's `initialize` raises.
+
+mutation_case "the refusal of a child escapes its parent's start" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     "                try:\n                    _invoke.start(engine)\n                except _ScriptSessionUnavailable as _refused:\n",
+     "                _invoke.start(engine)\n                if False:\n")
+PY
+
+# ── The refused child is kept in the tree ───────────────────────────
+#
+# Killer: `test_a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_child`,
+# whose post naming the child is taken.
+
+mutation_case "the child whose start was refused stays in the tree" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        child._close_inbox()\n        child.detach_mesh()\n",
+     "        child.detach_mesh()\n")
+PY
+
+# ── The refused child raises nothing ────────────────────────────────
+#
+# The invoke ends without a child and without telling the document.
+# Killer: `test_a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_child`,
+# whose `last_unhandled_error` finds no error.execution.
+
+mutation_case "the child whose start was refused raises no error.execution" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        event = self._policy.get_event_from_name(\"error.execution\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                EventMetadata(\n                    event_type=\"platform\",\n                    data=failure.child_start_refusal(invoked_as),\n",
+     "        event = self._policy.get_event_from_name(\"error.no-such-event\")\n        if event is not None:\n            self.raise_internal(\n                event,\n                EventMetadata(\n                    event_type=\"platform\",\n                    data=failure.child_start_refusal(invoked_as),\n")
+PY
