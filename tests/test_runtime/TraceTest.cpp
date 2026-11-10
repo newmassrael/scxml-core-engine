@@ -140,6 +140,15 @@ TEST(TheTrace, ThatIsNotOfItsShapeIsRefusedByName) {
               std::string::npos);
 }
 
+/// A number past the range of a double has no canonical text, so a trace whose
+/// value holds one is refused as not written in it. The twin of the Rust and
+/// Kotlin cases of the same subject.
+TEST(TheTrace, WhoseValueHoldsANumberPastADoubleIsRefused) {
+    const std::string text = changed("{\"code\":\"0\",\"job\":\"7\"}", "1e400");
+    EXPECT_EQ(reason([&] { (void)Trace::parse(text); }),
+              "the trace is not written in its one canonical text, the JSON Canonicalization Scheme");
+}
+
 /// An input on a port the configuration does not have, or of a type its port
 /// does not take, is refused, naming which.
 TEST(TheTrace, AnInputTheConfigurationDoesNotTakeIsRefusedByName) {
