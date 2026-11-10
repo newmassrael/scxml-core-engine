@@ -20421,6 +20421,10 @@ struct WireValue {
     /// where its pair stands rather than a value
     /// ([`StaticTarget::composed_param_writes`]).
     writes: bool,
+    /// The lower count of the field the value is sent as that its own type
+    /// does not prove, which the send holds it to when it runs
+    /// ([`crate::model::Param::native_send_least`]); `None` where there is none.
+    send_least: Option<u32>,
 }
 
 /// The most bytes of the JSON the data of a `<send>` or of a `<donedata>` is
@@ -20650,15 +20654,15 @@ fn lower_wire_value(
     let place_measure = crate::forge::expr::written_place(written)
         .and_then(|path| ctx.value_of(&path))
         .map(|place| place_json(&place, &rewrites.type_scope, written));
-    if let Some((wired, fails)) =
-        composed_wire_value(param, sent_as, &construct, ctx, renames, rewrites)?
+    if let Some(composed) = composed_wire_value(param, sent_as, &construct, ctx, renames, rewrites)?
     {
         return Ok(Some(WireValue {
-            text: wired,
-            fails,
+            text: composed.text,
+            fails: composed.fails,
             json: place_measure
                 .unwrap_or_else(|| unbounded_value(written, "names no place a type bounds")),
             writes: rewrites.target.composed_param_writes(),
+            send_least: composed.least,
         }));
     }
     // Typed as it is lowered ([`Rewrites::as_lowered`]).
@@ -20749,6 +20753,7 @@ fn lower_wire_value(
                 )
             }),
             writes: false,
+            send_least: None,
         }));
     }
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
@@ -20766,6 +20771,7 @@ fn lower_wire_value(
             fails: value.can_fail,
             json: place_measure.unwrap_or_else(|| enum_json(&alias, ctx, written)),
             writes: false,
+            send_least: None,
         }));
     }
     let slot = ty
@@ -20808,6 +20814,7 @@ fn lower_wire_value(
         json: place_measure
             .unwrap_or_else(|| scalar_json(slot, &lowered, ctx, &rewrites.type_scope)),
         writes: false,
+        send_least: None,
     }))
 }
 
@@ -20828,7 +20835,8 @@ fn lower_wire_value(
 /// which no variable proves (section 15.6,
 /// [`crate::forge::value_type::fits_but_for_count`]). Its write is then held
 /// to the count when it runs ([`composed::ComposedSpelling::send_counted`])
-/// and can fail, which the answer's `bool` says. A place read through an
+/// and can fail, which [`ComposedWire::fails`] says, and a list short of it
+/// refuses the event whole ([`ComposedWire::least`]). A place read through an
 /// index, whose read can fail where the write cannot say so, a target that
 /// sends no composed value and one that holds no such count are refused by
 /// name.
@@ -20839,7 +20847,7 @@ fn composed_wire_value(
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<Option<(String, bool)>, GenerateError> {
+) -> Result<Option<ComposedWire>, GenerateError> {
     use crate::forge::composed_lowering as composed;
     let written = param.written;
     let Some((path, place)) = crate::forge::expr::written_place(written)
@@ -20885,7 +20893,8 @@ fn composed_wire_value(
     );
     // The lower count of the field the value is sent as that the place's type
     // does not prove, held where the value is written.
-    let (wired, fails) = match unproven_count(&place.ty, param.name, sent_as, rewrites) {
+    let least = unproven_count(&place.ty, param.name, sent_as, rewrites);
+    let (wired, fails) = match least {
         None => (wired, false),
         Some(least) => {
             let counted = spelling
@@ -20913,7 +20922,26 @@ fn composed_wire_value(
     } else {
         rewrites.note(written, param.spelling, &held);
     }
-    Ok(Some((wired, fails)))
+    Ok(Some(ComposedWire {
+        text: wired,
+        fails,
+        least,
+    }))
+}
+
+/// A composed value a `<param>` carries, as [`composed_wire_value`] lowers it.
+struct ComposedWire {
+    /// What the target's send holds the param in.
+    text: String,
+    /// Whether writing it can fail, through the failure the target's `<send>`
+    /// reads a param's failure from: the count check of [`Self::least`] on a
+    /// target that writes the param as a value.
+    fails: bool,
+    /// The lower count of the field the list is sent as that its own type does
+    /// not prove, which the send holds it to when it runs; a list short of it
+    /// refuses the event whole (docs/adr/0086, section 15.6). `None` where the
+    /// value proves its count or no field states one.
+    least: Option<u32>,
 }
 
 /// The lower count of the field `name` of the schema the document imports for
@@ -20964,6 +20992,7 @@ fn lower_wire_param(
                 param.native_value = value.text;
                 param.native_fails = value.fails;
                 param.native_writes = value.writes;
+                param.native_send_least = value.send_least;
                 value.json
             }
             None => literal_json(param.is_static_literal, &param.static_value),

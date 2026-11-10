@@ -424,6 +424,46 @@ fn a_list_sent_short_of_its_fields_count_is_held_to_it_on_rust() {
     );
 }
 
+/// Pinned by `Param::native_send_least` (`sce-build/src/model.rs`), which
+/// `composed_wire_value` sets (`sce-build/src/forge/static_lowering.rs`), and
+/// the `<send>` of `tools/codegen/templates/go/actions/send.go.jinja2`: the Go
+/// machine of `static_composed_send` refuses `counted.sent` whole where `held`
+/// is short of the one element its field asks, the one error raised and the
+/// block ended before the event is delivered. Left out as a pair that could not
+/// be read, the rest of the event was sent and refused again where it was
+/// read, two errors for the one short list (docs/adr/0086, section 15.6).
+#[test]
+fn a_list_sent_short_of_its_fields_count_refuses_the_go_send_whole() {
+    let code = generated_sender(
+        sce_build::generator::Language::Go,
+        "static_composed_send_sm.go",
+    );
+    let refusal = "<send> <param name='kept'> holds fewer elements than the 1 its field's type \
+                   declares, so the event is not sent";
+    assert_eq!(
+        code.matches(refusal).count(),
+        2,
+        "the two sends of `held` refuse the event whole where it is short:\n{code}"
+    );
+    assert!(
+        !code.contains("<send> <param name='kept'> failed to evaluate"),
+        "a short list is not a pair left out of an event still sent:\n{code}"
+    );
+    for (at, _) in code.match_indices(refusal) {
+        let rest = &code[at..];
+        let delivered = rest
+            .find("engine.Raise(meta)")
+            .expect("the send delivers its event below the refusal");
+        assert!(
+            rest[..delivered]
+                .lines()
+                .any(|line| line.trim() == "return"),
+            "the refusal ends the block before the event is delivered:\n{}",
+            &rest[..delivered]
+        );
+    }
+}
+
 /// Pinned by the place `Judge::composed_param` asks the value for
 /// (`sce-build/src/forge/static_datamodel.rs`).
 #[test]
