@@ -154,6 +154,46 @@
     }
 {% endif %}
 
+{# Byte cases stated as the codec's interface presents the value
+   (docs/adr/0081 §5), the same cases the Rust fragment runs: each `source` is
+   the printed value, made by its constructor from the case, written by the
+   generator from the codec's plan, and its bytes were computed by an
+   independent model. The value is encoded over a sink and compared with the
+   bytes (law 4 of docs/adr/0058 §5), and the bytes are decoded and what the
+   decode presents compared with the value, element by element and, for a body
+   or a list, into each element of the codec it holds (law 1). The bindings are
+   the byte strings and the entries a view of the value views. Each check is in
+   parentheses, which keep the commas of the lambdas it holds from the macro.
+   Independent of `oracle_eligible`, which speaks of the `cases`. #}
+{% for s in f.sources %}
+    {
+{% for b in s.bindings %}
+        {{ b }}
+{% endfor %}
+        const SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} value = {{ s.literal }};
+        std::vector<std::uint8_t> encoded;
+        ::SCE::Forge::VectorSink sink(encoded);
+        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink);
+        CHECK(!refused.has_value(), "{{ f.name }} source {{ loop.index0 }}: encode refused: %s", "{{ s.note }}");
+        const std::vector<std::uint8_t> expected{ {{ s.encoded | join(", ") }} };
+        CHECK(encoded == expected,
+              "{{ f.name }} source {{ loop.index0 }}: %s: size actual=%zu expected=%zu",
+              "{{ s.note }}", encoded.size(), expected.size());
+        ::SCE::Forge::SceCursor cursor(expected.data(), expected.size());
+        {# The flag inputs the parent hands the decode, in declaration order. #}
+        const auto decoded = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor{% for v in s.inputs %}, {{ v }}{% endfor %});
+        CHECK(decoded.has_value(), "{{ f.name }} source {{ loop.index0 }}: decode refused: %s", "{{ s.note }}");
+        if (decoded.has_value()) {
+            CHECK(cursor.remaining() == 0,
+                  "{{ f.name }} source {{ loop.index0 }}: the decode left bytes of the frame unread");
+{% for c in s.checks %}
+            CHECK(({{ c.holds }}),
+                  "{{ f.name }} source {{ loop.index0 }}: the decode presents another %s", "{{ c.element }}");
+{% endfor %}
+        }
+    }
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. C++ returns one sentinel for every failure, so `r.symbol` is absent
    here and the first assertion is that the decode refused. A refusal for a

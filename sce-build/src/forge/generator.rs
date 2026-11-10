@@ -52,6 +52,14 @@ pub(crate) use rust_source::{
     ReadHeld as RustReadHeld,
 };
 
+/// A byte case of the C++ conformance harness, its source a value the printed
+/// codec's constructor makes (docs/adr/0081 §5). See
+/// [`cpp_source::source_case::source_case`]; it reads the codecs a codec holds
+/// through the same [`RustHeldCodecs`] the Rust case does.
+pub(crate) use cpp_source::source_case::{
+    source_case as cpp_source_case, CodecPath as CppCodecPath,
+};
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(

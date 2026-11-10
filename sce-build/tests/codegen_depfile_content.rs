@@ -1208,8 +1208,8 @@ fn source_set_members_are_declared_prerequisites() {
 /// must not name it — resting on a catalog shape the probe never produces.
 /// This constructs that shape twice. With the `rejects` arrays stripped, a
 /// route that prints a codec's plan still bakes its byte cases stated as the
-/// interface presents the value, its `sources` (docs/adr/0081 §5: Rust so
-/// far), and C11 still bakes the tolerance and the per-fixture cases; the
+/// interface presents the value, its `sources` (docs/adr/0081 §5: Rust and
+/// C++), and C11 still bakes the tolerance and the per-fixture cases; the
 /// others have nothing left to bake. With the `sources` stripped as well, only
 /// C11 has.
 #[test]
@@ -1223,7 +1223,7 @@ fn the_oracle_is_declared_only_where_it_is_read() {
     let shapes = [
         Shape {
             strips: &["rejects"],
-            readers: &[Language::C11, Language::Rust],
+            readers: &[Language::C11, Language::Rust, Language::Cpp],
         },
         Shape {
             strips: &["rejects", "sources"],

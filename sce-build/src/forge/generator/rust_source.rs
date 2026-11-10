@@ -231,7 +231,6 @@ pub(crate) fn source_case(
 }
 
 /// The flag inputs a byte case hands its codec.
-#[derive(Default)]
 struct HandedInputs {
     /// `decode`'s arguments, in the order the codec declares the inputs.
     args: Vec<String>,
@@ -240,14 +239,16 @@ struct HandedInputs {
     said: Vec<(String, String)>,
 }
 
-/// The flag inputs a case hands the codec at `path` ([`HandedInputs`]), each
-/// one the value says (docs/adr/0065 §6 R4a). An input the value does not say
-/// is one the encode takes as an argument, which a case does not spell yet.
-fn handed_inputs(
-    plan: &EncodePlan<'_>,
-    path: &CodecPath,
+/// The flag inputs a case hands the codec `plan` (`{"name": 0 | 1}`, or `null`
+/// for a codec that takes none), each with the value the case hands it, in the
+/// order the codec declares them: each one the value says (docs/adr/0065 §6
+/// R4a). An input the value does not say is one the encode takes as an
+/// argument, which a case does not spell yet. Every printer's case reads its
+/// inputs here.
+pub(super) fn case_inputs<'p>(
+    plan: &EncodePlan<'p>,
     inputs: &serde_json::Value,
-) -> Result<HandedInputs, String> {
+) -> Result<Vec<(&'p FlagInput, u64)>, String> {
     if let Some(input) = plan.given.first() {
         return Err(format!(
             "the value does not say the flag input `{}`, which its encode takes, and a case \
@@ -255,9 +256,10 @@ fn handed_inputs(
             input.name
         ));
     }
-    let declared = &plan.model.flag_inputs;
+    let model: &'p CodecModel = plan.model;
+    let declared = &model.flag_inputs;
     let object = match inputs {
-        serde_json::Value::Null if declared.is_empty() => return Ok(HandedInputs::default()),
+        serde_json::Value::Null if declared.is_empty() => return Ok(Vec::new()),
         serde_json::Value::Object(object) => object,
         _ => return Err("a case of a codec that takes flag inputs states `inputs`".to_string()),
     };
@@ -267,14 +269,29 @@ fn handed_inputs(
     {
         return Err(format!("`{extra}` is no flag input of the codec"));
     }
+    declared
+        .iter()
+        .map(|input| {
+            object
+                .get(&input.name)
+                .and_then(serde_json::Value::as_u64)
+                .filter(|v| *v <= 1)
+                .map(|value| (input, value))
+                .ok_or_else(|| format!("the case hands `{}` as 0 or 1", input.name))
+        })
+        .collect()
+}
+
+/// The flag inputs a case hands the codec at `path` ([`HandedInputs`]), as
+/// [`case_inputs`] reads them.
+fn handed_inputs(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    inputs: &serde_json::Value,
+) -> Result<HandedInputs, String> {
     let mut args = Vec::new();
     let mut said = Vec::new();
-    for input in declared {
-        let value = object
-            .get(&input.name)
-            .and_then(serde_json::Value::as_u64)
-            .filter(|v| *v <= 1)
-            .ok_or_else(|| format!("the case hands `{}` as 0 or 1", input.name))?;
+    for (input, value) in case_inputs(plan, inputs)? {
         args.push(value.to_string());
         let says = format!(
             "{}::{}Wire::input_{}(&parts)",
@@ -295,8 +312,9 @@ fn handed_inputs(
     Ok(HandedInputs { args, said })
 }
 
-/// Refuse what a literal does not spell yet.
-fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
+/// Refuse what a literal does not spell yet: the shapes every printer's case
+/// refuses alike, since no case of the catalog states one (docs/adr/0081 §5).
+pub(super) fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
     if let Some(variant) = &plan.model.variant {
         // A peeked byte's tag is the arm's own first byte, which the arm's value
         // states: the literal is the one of a variant whose tag is derived.
@@ -316,16 +334,14 @@ fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
     Ok(())
 }
 
-/// The `{Codec}Parts` literal of `source`, binding each body and list it holds
-/// first, in `bindings`: a temporary in a call's argument lives only to the end
-/// of its statement, so a list of entries is a named array.
-fn parts_literal(
+/// The members `source` states of a value of the codec `plan` (docs/adr/0081
+/// §5): a JSON object, each member an element the value presents, a group of
+/// them by its gates, or the variant's arm. A shape the literal does not spell
+/// yet is refused first ([`spelled`]). Every printer's case reads a value here.
+pub(super) fn source_members<'s>(
     plan: &EncodePlan<'_>,
-    path: &CodecPath,
-    source: &serde_json::Value,
-    held: &mut dyn HeldCodecs,
-    bindings: &mut Vec<String>,
-) -> Result<String, String> {
+    source: &'s serde_json::Value,
+) -> Result<&'s serde_json::Map<String, serde_json::Value>, String> {
     spelled(plan)?;
     let object = source
         .as_object()
@@ -339,6 +355,20 @@ fn parts_literal(
             "the source states `{extra}`, which the value does not present"
         ));
     }
+    Ok(object)
+}
+
+/// The `{Codec}Parts` literal of `source`, binding each body and list it holds
+/// first, in `bindings`: a temporary in a call's argument lives only to the end
+/// of its statement, so a list of entries is a named array.
+fn parts_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    source: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let object = source_members(plan, source)?;
     let mut members = Vec::new();
     for group in plan.groups() {
         let label = gates_label(group);
@@ -385,12 +415,67 @@ fn parts_literal(
 
 /// The member a source states a variant's arm by, and the accessor of it
 /// (docs/adr/0058 §1, `fn body(&self)`).
-const VARIANT_MEMBER: &str = "body";
+pub(super) const VARIANT_MEMBER: &str = "body";
 
-/// The arm of the variant a source states as `{"arm": alias, "body": ..}` for a
-/// known arm or `{"tag": n, "body": ..}` for the default arm (ADR 0081 §5): the
-/// `{Codec}PartsBody` arm holding the body, bound first, and for the default arm
-/// the tag it holds.
+/// The arm of a variant a source states (ADR 0081 §5).
+pub(super) struct ChosenArm<'p> {
+    /// Its place among the plan's arms.
+    pub(super) index: usize,
+    /// The import alias of its codec.
+    pub(super) codec: &'p str,
+    /// For the default arm, the tag it holds; `None` for a known arm.
+    pub(super) default_tag: Option<u64>,
+}
+
+/// The arm of the variant of `plan` a source states as `{"arm": alias, "body":
+/// ..}` for a known arm or `{"tag": n, "body": ..}` for the default arm (ADR
+/// 0081 §5), and the body it holds. Every printer's case reads a variant here.
+pub(super) fn variant_choice<'p, 's>(
+    plan: &EncodePlan<'p>,
+    json: &'s serde_json::Value,
+) -> Result<(ChosenArm<'p>, &'s serde_json::Value), String> {
+    let object = json
+        .as_object()
+        .ok_or_else(|| "a variant is a JSON object".to_string())?;
+    let body = object
+        .get("body")
+        .ok_or_else(|| "a variant states `body`, the arm's value".to_string())?;
+    let (index, default_tag) = match (object.get("arm"), object.get("tag"), object.len()) {
+        (Some(alias), None, 2) => {
+            let alias = alias
+                .as_str()
+                .ok_or_else(|| "`arm` is the alias of the arm's codec".to_string())?;
+            let index = plan
+                .arms
+                .iter()
+                .position(|a| a.codec == alias && a.tag.is_some())
+                .ok_or_else(|| format!("no known arm holds `{alias}`"))?;
+            (index, None)
+        }
+        (None, Some(tag), 2) => {
+            let tag = tag
+                .as_u64()
+                .ok_or_else(|| "`tag` is the number the default arm holds".to_string())?;
+            let index = plan
+                .arms
+                .iter()
+                .position(|a| a.tag.is_none())
+                .ok_or_else(|| "the variant has no default arm".to_string())?;
+            (index, Some(tag))
+        }
+        _ => return Err("a variant states `arm` or `tag`, and `body`".to_string()),
+    };
+    let chosen = ChosenArm {
+        index,
+        codec: plan.arms[index].codec,
+        default_tag,
+    };
+    Ok((chosen, body))
+}
+
+/// The arm of the variant a source states, as [`variant_choice`] reads it: the
+/// `{Codec}PartsBody` arm holding the body, bound first, and for the default
+/// arm the tag it holds.
 fn variant_literal(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -398,56 +483,24 @@ fn variant_literal(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    let object = json
-        .as_object()
-        .ok_or_else(|| "a variant is a JSON object".to_string())?;
-    let body = object
-        .get("body")
-        .ok_or_else(|| "a variant states `body`, the arm's value".to_string())?;
+    let (arm, body) = variant_choice(plan, json)?;
     let enum_type = format!("{}::{}PartsBody", path.module, path.type_name);
-    let mut held_body = |alias: &str| -> Result<String, String> {
-        let literal = held.read(alias, &mut |plan, path, held| {
-            parts_literal(plan, path, body, held, bindings)
-        })?;
-        Ok(bind(bindings, None, literal))
-    };
-    match (object.get("arm"), object.get("tag"), object.len()) {
-        (Some(alias), None, 2) => {
-            let alias = alias
-                .as_str()
-                .ok_or_else(|| "`arm` is the alias of the arm's codec".to_string())?;
-            if !plan
-                .arms
-                .iter()
-                .any(|a| a.codec == alias && a.tag.is_some())
-            {
-                return Err(format!("no known arm holds `{alias}`"));
-            }
-            let name = held_body(alias)?;
-            Ok(format!(
-                "{enum_type}::{}(&{name})",
-                filters::to_pascal_case(alias.to_string())
-            ))
-        }
-        (None, Some(tag), 2) => {
-            let tag = tag
-                .as_u64()
-                .ok_or_else(|| "`tag` is the number the default arm holds".to_string())?;
-            let arm = plan
-                .arms
-                .iter()
-                .find(|a| a.tag.is_none())
-                .ok_or_else(|| "the variant has no default arm".to_string())?;
-            let name = held_body(arm.codec)?;
-            Ok(format!(
-                "{enum_type}::Default {{ tag: {}::{}::new({tag}).expect(\"the case's tag is no \
-                 arm's\"), body: &{name} }}",
-                path.module,
-                unknown_tag_type(&path.type_name)
-            ))
-        }
-        _ => Err("a variant states `arm` or `tag`, and `body`".to_string()),
-    }
+    let literal = held.read(arm.codec, &mut |plan, path, held| {
+        parts_literal(plan, path, body, held, bindings)
+    })?;
+    let name = bind(bindings, None, literal);
+    Ok(match arm.default_tag {
+        None => format!(
+            "{enum_type}::{}(&{name})",
+            filters::to_pascal_case(arm.codec.to_string())
+        ),
+        Some(tag) => format!(
+            "{enum_type}::Default {{ tag: {}::{}::new({tag}).expect(\"the case's tag is no \
+             arm's\"), body: &{name} }}",
+            path.module,
+            unknown_tag_type(&path.type_name)
+        ),
+    })
 }
 
 /// A `bool` expression that holds when `a` and `b`, references to two sources
@@ -499,10 +552,56 @@ fn variant_equal(
     ))
 }
 
-/// The value of the gate group `group` a source states as `{"arm": i, ..}`, its
-/// members by id, or `null` where the value holds no arm (ADR 0081 §5): the
-/// group's type, its arm for a group of several, each member as the arm holds
-/// it, and `Option` for a group a value may hold none of.
+/// The arm of a gate group a source states (ADR 0081 §5).
+pub(super) struct ChosenGroupArm<'g, 's> {
+    /// Its place among the group's arms.
+    pub(super) index: usize,
+    /// The arm.
+    pub(super) arm: &'g GroupArm,
+    /// The members the source states of it, by id, beside `arm`.
+    pub(super) members: &'s serde_json::Map<String, serde_json::Value>,
+}
+
+/// The arm of the gate group `group` a source states as `{"arm": i, ..}`, its
+/// members by id, or `None` where it states `null`, for a group the value may
+/// hold no arm of (ADR 0081 §5). Every printer's case reads a group here.
+pub(super) fn group_choice<'g, 's>(
+    group: &'g GateGroup,
+    json: &'s serde_json::Value,
+) -> Result<Option<ChosenGroupArm<'g, 's>>, String> {
+    if json.is_null() {
+        return if group.absent.is_some() {
+            Ok(None)
+        } else {
+            Err("the value holds an arm of it always".to_string())
+        };
+    }
+    let object = json
+        .as_object()
+        .ok_or_else(|| "a group is a JSON object or `null`".to_string())?;
+    let index = object
+        .get("arm")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|i| usize::try_from(i).ok())
+        .filter(|i| *i < group.arms.len())
+        .ok_or_else(|| "a group states `arm`, the index of one of its arms".to_string())?;
+    let arm = &group.arms[index];
+    if let Some(extra) = object
+        .keys()
+        .find(|key| *key != "arm" && !arm.fields.contains(key))
+    {
+        return Err(format!("the arm holds no `{extra}`"));
+    }
+    Ok(Some(ChosenGroupArm {
+        index,
+        arm,
+        members: object,
+    }))
+}
+
+/// The value of the gate group `group` a source states, as [`group_choice`]
+/// reads it: the group's type, its arm for a group of several, each member as
+/// the arm holds it, and `Option` for a group a value may hold none of.
 fn group_literal(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
@@ -511,27 +610,14 @@ fn group_literal(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    if json.is_null() {
-        return if group.absent.is_some() {
-            Ok("None".to_string())
-        } else {
-            Err("the value holds an arm of it always".to_string())
-        };
-    }
-    let object = json
-        .as_object()
-        .ok_or_else(|| "a group is a JSON object or `null`".to_string())?;
-    let arm = object
-        .get("arm")
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|i| group.arms.get(usize::try_from(i).ok()?))
-        .ok_or_else(|| "a group states `arm`, the index of one of its arms".to_string())?;
-    if let Some(extra) = object
-        .keys()
-        .find(|key| *key != "arm" && !arm.fields.contains(key))
-    {
-        return Err(format!("the arm holds no `{extra}`"));
-    }
+    let Some(ChosenGroupArm {
+        arm,
+        members: object,
+        ..
+    }) = group_choice(group, json)?
+    else {
+        return Ok("None".to_string());
+    };
     let mut members = Vec::new();
     let mut spell = |id: &str, bindings: &mut Vec<String>| -> Result<String, String> {
         let field = plan
@@ -606,9 +692,7 @@ fn entries_binding(
     held: &mut dyn HeldCodecs,
     bindings: &mut Vec<String>,
 ) -> Result<String, String> {
-    let rows = json
-        .as_array()
-        .ok_or_else(|| "a list is a JSON array".to_string())?;
+    let rows = entry_rows(json)?;
     let mut entries = Vec::new();
     let mut parts = String::new();
     for (i, row) in rows.iter().enumerate() {
@@ -633,25 +717,51 @@ fn entries_binding(
     ))
 }
 
+/// The entries a source states of a list or a chain (ADR 0081 §5): a JSON
+/// array, each entry a value of the entry codec.
+pub(super) fn entry_rows(json: &serde_json::Value) -> Result<&[serde_json::Value], String> {
+    json.as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| "a list is a JSON array".to_string())
+}
+
 /// A chain as an arm of a group of its kinds holds it (docs/adr/0065 §6 R6).
-struct ChainInArm<'g> {
-    group: &'g GateGroup,
-    arm: &'g GroupArm,
-    field: &'g CodecField,
+pub(super) struct ChainInArm<'g> {
+    pub(super) group: &'g GateGroup,
+    pub(super) arm: &'g GroupArm,
+    pub(super) field: &'g CodecField,
 }
 
 impl ChainInArm<'_> {
     /// Whether the arm holds the chain as a bare entry's place among the
     /// others (R6a).
-    fn placed(&self) -> bool {
+    pub(super) fn placed(&self) -> bool {
         self.group.member_is_bare() && !self.group.kinds_in(self.arm).0.is_empty()
     }
 
     /// Whether the arm may hold no chain: it is gated, and the arm holds no
     /// kind.
-    fn optional(&self) -> bool {
+    pub(super) fn optional(&self) -> bool {
         chain_optional_in(self.group, self.field, self.arm)
     }
+}
+
+/// The chain of a bare entry's arm a source states as `{"rest": [..], "place":
+/// n}` (ADR 0081 §5): the other entries, and the bare entry's place among
+/// them.
+pub(super) fn placed_parts(json: &serde_json::Value) -> Result<(&serde_json::Value, u64), String> {
+    let object = json
+        .as_object()
+        .filter(|o| o.len() == 2)
+        .ok_or_else(|| "a bare entry's chain is `{\"rest\": [..], \"place\": n}`".to_string())?;
+    let place = object
+        .get("place")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "`place` is the index of the bare entry".to_string())?;
+    let rest = object
+        .get("rest")
+        .ok_or_else(|| "`rest` holds the other entries".to_string())?;
+    Ok((rest, place))
 }
 
 /// The chain as an arm of a group of its kinds holds it (ADR 0081 §5): where
@@ -670,16 +780,7 @@ fn chain_literal(
         return Err(format!("`{}` is no chain", chain.field.id));
     };
     if chain.placed() {
-        let object = json.as_object().filter(|o| o.len() == 2).ok_or_else(|| {
-            "a bare entry's chain is `{\"rest\": [..], \"place\": n}`".to_string()
-        })?;
-        let place = object
-            .get("place")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| "`place` is the index of the bare entry".to_string())?;
-        let rest = object
-            .get("rest")
-            .ok_or_else(|| "`rest` holds the other entries".to_string())?;
+        let (rest, place) = placed_parts(json)?;
         let name = entries_binding(codec, rest, held, bindings)?;
         return Ok(format!(
             "{RUNTIME_CODEC}::Placed::new(&{name}[..], {place}).expect(\"the case's place is \
@@ -751,18 +852,8 @@ fn literal_value(
             Ok(format!("&{}", bind(bindings, None, body)))
         }
         Value::List { codec, law, .. } if !law.is_none() => {
-            // A list held to a law (docs/adr/0065 §6 R8) is its start and its
-            // entries, `{"start": {input: 0|1}, "entries": [..]}`; the runtime's
-            // constructor runs the law over them.
-            let object = json.as_object().filter(|o| o.len() == 2).ok_or_else(|| {
-                "a list held to a law is `{\"start\": .., \"entries\": ..}`".to_string()
-            })?;
-            let start = object
-                .get("start")
-                .ok_or_else(|| "the list states no `start`".to_string())?;
-            let entries = object
-                .get("entries")
-                .ok_or_else(|| "the list states no `entries`".to_string())?;
+            // The runtime's constructor runs the law over the entries.
+            let (start, entries) = lawful_parts(json)?;
             let start = law_start_literal(law, start)?;
             let array = entries_binding(codec, entries, held, bindings)?;
             Ok(format!(
@@ -788,23 +879,9 @@ fn literal_value(
             | SceType::Int16
             | SceType::Int32
             | SceType::Int64,
-        ) => json
-            .as_u64()
-            .map(|n| n.to_string())
-            .or_else(|| json.as_i64().map(|n| n.to_string()))
-            .ok_or_else(|| "an integer is a JSON integer".to_string()),
+        ) => integer_value(json).map(|n| n.to_string()),
         Value::Bytes(_) => {
-            let bytes = json
-                .as_array()
-                .ok_or_else(|| "bytes are an array of numbers".to_string())?
-                .iter()
-                .map(|b| {
-                    b.as_u64()
-                        .filter(|b| *b <= 0xFF)
-                        .map(|b| b.to_string())
-                        .ok_or_else(|| "a byte is a number in 0..=255".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let bytes: Vec<String> = byte_values(json)?.iter().map(u8::to_string).collect();
             Ok(bounded(format!("&[{}][..]", bytes.join(", "))))
         }
         Value::Text(_) => json
@@ -815,12 +892,53 @@ fn literal_value(
     }
 }
 
-/// The start of a list's law as a byte case's literal (docs/adr/0065 §6 R8),
-/// from the case's `{input: 0|1}`: for each input in the law's order, the bool
-/// the value gives a Uniform input and `()` for an input the entry before
-/// decides; a tuple where the law runs more than one. ([`law_start`] is the
-/// other direction: the value one input starts from, read off a lawful list.)
-fn law_start_literal(law: &Law, json: &serde_json::Value) -> Result<String, String> {
+/// An integer a source states (ADR 0081 §5): a JSON integer, of either sign.
+pub(super) fn integer_value(json: &serde_json::Value) -> Result<i128, String> {
+    json.as_u64()
+        .map(i128::from)
+        .or_else(|| json.as_i64().map(i128::from))
+        .ok_or_else(|| "an integer is a JSON integer".to_string())
+}
+
+/// The bytes a source states (ADR 0081 §5): an array of numbers, each a byte.
+pub(super) fn byte_values(json: &serde_json::Value) -> Result<Vec<u8>, String> {
+    json.as_array()
+        .ok_or_else(|| "bytes are an array of numbers".to_string())?
+        .iter()
+        .map(|b| {
+            b.as_u64()
+                .and_then(|b| u8::try_from(b).ok())
+                .ok_or_else(|| "a byte is a number in 0..=255".to_string())
+        })
+        .collect()
+}
+
+/// A list held to a law (docs/adr/0065 §6 R8) as a source states it, `{"start":
+/// {input: 0|1}, "entries": [..]}`: its start and its entries.
+pub(super) fn lawful_parts(
+    json: &serde_json::Value,
+) -> Result<(&serde_json::Value, &serde_json::Value), String> {
+    let object = json
+        .as_object()
+        .filter(|o| o.len() == 2)
+        .ok_or_else(|| "a list held to a law is `{\"start\": .., \"entries\": ..}`".to_string())?;
+    let start = object
+        .get("start")
+        .ok_or_else(|| "the list states no `start`".to_string())?;
+    let entries = object
+        .get("entries")
+        .ok_or_else(|| "the list states no `entries`".to_string())?;
+    Ok((start, entries))
+}
+
+/// The start of a list's law a source states, `{input: 0|1}` (docs/adr/0065 §6
+/// R8): for each input in the law's order, the bit the value gives a Uniform
+/// input, and `None` for an input the entry before decides, whose start is
+/// fixed.
+pub(super) fn law_start_bits(
+    law: &Law,
+    json: &serde_json::Value,
+) -> Result<Vec<Option<bool>>, String> {
     let object = json.as_object().ok_or_else(|| {
         "a law's start is a JSON object, one bit for each input it gives".to_string()
     })?;
@@ -835,19 +953,31 @@ fn law_start_literal(law: &Law, json: &serde_json::Value) -> Result<String, Stri
             "the start gives `{extra}`, which the law takes from no start"
         ));
     }
-    let parts = law
-        .inputs
+    law.inputs
         .iter()
         .map(|i| match i.automaton {
             Automaton::Uniform => object
                 .get(&i.input)
                 .and_then(serde_json::Value::as_u64)
                 .filter(|v| *v <= 1)
-                .map(|v| (v == 1).to_string())
+                .map(|v| Some(v == 1))
                 .ok_or_else(|| format!("the start gives `{}` as 0 or 1", i.input)),
-            Automaton::AfterKey { .. } => Ok("()".to_string()),
+            Automaton::AfterKey { .. } => Ok(None),
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect()
+}
+
+/// The start of a list's law as a byte case's literal (docs/adr/0065 §6 R8),
+/// from the bits [`law_start_bits`] reads: for each input in the law's order,
+/// the bool the value gives a Uniform input and `()` for an input the entry
+/// before decides; a tuple where the law runs more than one. ([`law_start`] is
+/// the other direction: the value one input starts from, read off a lawful
+/// list.)
+fn law_start_literal(law: &Law, json: &serde_json::Value) -> Result<String, String> {
+    let parts: Vec<String> = law_start_bits(law, json)?
+        .into_iter()
+        .map(|bit| bit.map_or_else(|| "()".to_string(), |b| b.to_string()))
+        .collect();
     Ok(match parts.as_slice() {
         [one] => one.clone(),
         many => format!("({})", many.join(", ")),
@@ -924,10 +1054,11 @@ fn value_same(
     }
 }
 
-/// `checks`, each a `bool` expression, as one that holds when every one does.
-fn all_of(checks: &[String]) -> String {
+/// `checks`, each a `bool` expression, as one that holds when every one does:
+/// Rust and C++ join them alike.
+pub(super) fn all_of(checks: &[String]) -> String {
     // Parenthesised only where they are joined: alone, a check is a block, a
-    // `match` or a comparison that needs none.
+    // `match`, a call or a comparison that needs none.
     match checks {
         [] => "true".to_string(),
         [one] => one.clone(),
@@ -1635,8 +1766,9 @@ pub(crate) fn group_arm_name(group: &GateGroup, arm: &GroupArm) -> String {
     }
 }
 
-/// The gates of a group as the document spells their disjunction.
-fn gates_label(group: &GateGroup) -> String {
+/// The gates of a group as the document spells their disjunction: the member a
+/// source states the group by (docs/adr/0081 §5).
+pub(super) fn gates_label(group: &GateGroup) -> String {
     group
         .gates
         .iter()

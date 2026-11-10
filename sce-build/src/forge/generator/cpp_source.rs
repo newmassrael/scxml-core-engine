@@ -24,6 +24,7 @@ use crate::forge::encode_plan::{
 
 pub(super) mod cbor;
 pub(super) mod content_line;
+pub(super) mod source_case;
 
 /// The first form of `plan` the C++ printer does not print yet, or `None`
 /// where it prints the codec whole. `imports` are the codec's own, which say
@@ -1381,9 +1382,6 @@ struct GroupPart<'p> {
     /// local (`_e_<member>`), or a body or a list it keeps as read
     /// (`_r_<member>`), from the arm the value holds where that arm holds it.
     members: Vec<Presented<'p>>,
-    /// The place of its first member among the codec's fields, where the
-    /// value presents it among its elements.
-    at: usize,
     /// The class of the codec's value, which names the kinds of entry its
     /// chains' gates ask for.
     struct_name: String,
@@ -1424,11 +1422,6 @@ impl<'p> GroupPart<'p> {
         let mut ids = group.fields();
         ids.sort_by_key(|id| fields.iter().position(|f| f.id == *id));
         let members: Vec<Presented<'p>> = ids.into_iter().map(presented).collect();
-        let at = members
-            .iter()
-            .filter_map(|m| fields.iter().position(|f| f.id == m.field.id))
-            .min()
-            .expect("a group holds a member");
         let name = super::rust_source::group_accessor(group);
         let class = super::rust_source::group_type(struct_name, group);
         // Two lists of one count are one member of an arm that holds both
@@ -1586,7 +1579,6 @@ impl<'p> GroupPart<'p> {
             class,
             arms,
             members,
-            at,
             struct_name: struct_name.to_string(),
         }
     }
@@ -2598,8 +2590,39 @@ impl ArmPart<'_> {
 /// An element of a printed value, or a group of its elements, in the order its
 /// fields are declared: the order of its constructor's parameters.
 enum Part {
+    /// The element at this place among the plan's elements.
     Element(usize),
+    /// The group at this place among the plan's groups.
     Group(usize),
+}
+
+/// The parts of a value of the codec `plan` in the order their fields are
+/// declared: each element where its field is, and each group where its first
+/// member is. The value's constructor takes them in this order, the arm a
+/// variant holds after them, and a byte case makes the value by it.
+fn declared_parts(plan: &EncodePlan<'_>) -> Vec<Part> {
+    let fields = &plan.model.fields;
+    let position = |id: &str| fields.iter().position(|f| f.id == id);
+    let mut parts: Vec<(usize, Part)> = plan
+        .elements
+        .iter()
+        .enumerate()
+        .map(|(index, e)| {
+            let at = position(e.field.id.as_str()).expect("an element is a field of the codec");
+            (at, Part::Element(index))
+        })
+        .chain(plan.groups().iter().enumerate().map(|(index, group)| {
+            let at = group
+                .fields()
+                .into_iter()
+                .filter_map(position)
+                .min()
+                .expect("a group holds a member");
+            (at, Part::Group(index))
+        }))
+        .collect();
+    parts.sort_by_key(|(at, _)| *at);
+    parts.into_iter().map(|(_, part)| part).collect()
 }
 
 impl<'p> Presented<'p> {
@@ -3002,27 +3025,7 @@ pub(super) fn render(
         .map(|group| GroupPart::of(plan, group, l, imports, struct_name))
         .collect();
     // The elements and the groups in the order their fields are declared.
-    let mut parts: Vec<(usize, Part)> = elements
-        .iter()
-        .enumerate()
-        .map(|(index, e)| {
-            let at = plan
-                .model
-                .fields
-                .iter()
-                .position(|f| f.id == e.field.id)
-                .expect("an element is a field of the codec");
-            (at, Part::Element(index))
-        })
-        .chain(
-            groups
-                .iter()
-                .enumerate()
-                .map(|(index, g)| (g.at, Part::Group(index))),
-        )
-        .collect();
-    parts.sort_by_key(|(at, _)| *at);
-    let parts: Vec<Part> = parts.into_iter().map(|(_, part)| part).collect();
+    let parts = declared_parts(plan);
     let part_name = |part: &Part| match part {
         Part::Element(index) => elements[*index].name.as_str(),
         Part::Group(index) => groups[*index].name.as_str(),

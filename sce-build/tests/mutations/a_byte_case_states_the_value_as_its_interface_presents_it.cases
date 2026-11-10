@@ -6,29 +6,32 @@
 # A positional codec's byte case states its value as the codec's interface
 # presents it, its `source` (docs/adr/0081 §5). The conformance generator folds
 # each `source` into the Rust harness as a literal of the codec's ready-made
-# source, `{Codec}Parts`, which the harness encodes and compares with the bytes
-# an independent model wrote. The unit test renders the harness and finds the
-# literals there, and finds none in a backend that does not print the plan.
+# source, `{Codec}Parts`, and into the C++ harness as the printed value its
+# constructor makes; each harness encodes it and compares the bytes an
+# independent model wrote. The unit tests render each harness and find the
+# literals there, and find none in a backend that does not print the plan.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --lib conformance::
-mutation_targets sce-build/src/conformance.rs sce-build/src/forge/generator/rust_source.rs
+mutation_targets sce-build/src/conformance.rs sce-build/src/forge/generator/rust_source.rs sce-build/src/forge/generator/cpp_source/source_case.rs
 mutation_oracles sce-build/src/conformance.rs
 
 mutation_case "the byte cases reach the wrong backend" <<'PY'
 edit("sce-build/src/conformance.rs",
-     r'''    if !matches!(language, Language::Rust) {''',
-     r'''    if !matches!(language, Language::Cpp) {''')
+     r'''        Language::Rust => false,''',
+     r'''        Language::Rust => true,''')
 PY
 
 mutation_case "an integer of a source is spelled as another" <<'PY'
 edit("sce-build/src/forge/generator/rust_source.rs",
-     r'''            .map(|n| n.to_string())
-            .or_else(|| json.as_i64().map(|n| n.to_string()))''',
-     r'''            .map(|n| (n ^ 1).to_string())
-            .or_else(|| json.as_i64().map(|n| n.to_string()))''')
+     r'''    json.as_u64()
+        .map(i128::from)
+        .or_else(|| json.as_i64().map(i128::from))''',
+     r'''    json.as_u64()
+        .map(|n| i128::from(n ^ 1))
+        .or_else(|| json.as_i64().map(i128::from))''')
 PY
 
 mutation_case "a gated element that is there is spelled absent" <<'PY'
@@ -38,4 +41,18 @@ edit("sce-build/src/forge/generator/rust_source.rs",
                     let _ = one;
                     "None".to_string()
                 }''')
+PY
+
+mutation_case "a C++ number is spelled as a literal of a signed type" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
+     r'''        format!("{n}u")''',
+     r'''        format!("{n}")''')
+PY
+
+mutation_case "a C++ variant holds its arm at another alternative" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
+     r'''        "{namespace}::{type_name}Variant{{std::in_place_index<{}>, {alternative}}}",
+        arm.index''',
+     r'''        "{namespace}::{type_name}Variant{{std::in_place_index<{}>, {alternative}}}",
+        arm.index + 1''')
 PY

@@ -3413,8 +3413,10 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
 /// whose encode prints the codec's plan: each `source` becomes a literal of the
 /// backend's ready-made source, after the bindings of the bodies and entries it
 /// holds, with an expression for each element that holds when a decode of the
-/// bytes presents what the literal does. Only Rust prints the plan so far; the
-/// others are handed nothing, and run their `cases` as before.
+/// bytes presents what the literal does. Rust prints the plan as `{Codec}Parts`
+/// (docs/adr/0058 §4), and C++ as the printed value its constructor makes
+/// (docs/adr/0081 step 4); the others are handed nothing, and run their `cases`
+/// as before.
 ///
 /// Answers whether anything was folded, as [`fold_reject_vectors`] does.
 fn fold_source_cases(
@@ -3433,18 +3435,31 @@ fn fold_source_cases(
         return Ok(false);
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
-    if !matches!(fixture.spec, FixtureSpec::Codec { .. }) {
+    let FixtureSpec::Codec { cpp_printed, .. } = &fixture.spec else {
         return Err(format!(
             "{where_}: 'sources' are a codec's byte cases; this fixture is not a codec"
         ));
-    }
+    };
     let rows = sources
         .as_array()
         .filter(|rows| !rows.is_empty())
         .ok_or_else(|| format!("{where_}: 'sources' must be a non-empty array"))?;
-    if !matches!(language, Language::Rust) {
-        return Ok(false);
-    }
+    // Whether the C++ printer writes the cases; otherwise the Rust printer does.
+    let cpp = match language {
+        Language::Rust => false,
+        Language::Cpp if *cpp_printed => true,
+        // A printer runs every case of every shape it prints (docs/adr/0081
+        // §5): a codec the C++ backend keeps on the template's encode has no
+        // value a constructor makes from the case, so its cases cannot run.
+        Language::Cpp => {
+            return Err(format!(
+                "{where_}: the C++ backend keeps this codec on the template's encode \
+                 (docs/adr/0081 §6), whose value no case is made into; a codec with \
+                 'sources' is one it prints from its plan"
+            ))
+        }
+        _ => return Ok(false),
+    };
     let document = fixture.document_path(resource_dir);
     let include = [resource_dir.to_path_buf()];
     let folded = crate::encode_plan_file_with_imports(
@@ -3457,10 +3472,12 @@ fn fold_source_cases(
                     "{where_}: 'sources' are written for a positional codec"
                 ));
             };
-            let path = crate::forge::generator::RustCodecPath {
+            let type_name = crate::filters::to_pascal_case(fixture.name.clone());
+            let rust_path = crate::forge::generator::RustCodecPath {
                 module: format!("{HARNESS_FIXTURES}::{}", fixture.name),
-                type_name: crate::filters::to_pascal_case(fixture.name.clone()),
+                type_name: type_name.clone(),
             };
+            let cpp_path = crate::forge::generator::CppCodecPath::new(type_name);
             rows.iter()
                 .enumerate()
                 .map(|(i, row)| {
@@ -3487,22 +3504,44 @@ fn fold_source_cases(
                         include: &include,
                     };
                     let inputs = row.get("inputs").unwrap_or(&serde_json::Value::Null);
-                    let case = crate::forge::generator::rust_source_case(
-                        plan, &path, source, inputs, &mut held,
-                    )
-                    .map_err(|e| format!("{at}: {e}"))?;
-                    let checks: Vec<serde_json::Value> = case
-                        .checks
+                    let (bindings, literal, checks, inputs, note) = if cpp {
+                        let case = crate::forge::generator::cpp_source_case(
+                            plan, &cpp_path, source, inputs, &mut held,
+                        )
+                        .map_err(|e| format!("{at}: {e}"))?;
+                        // The C++ fragment hands the note and each label to a
+                        // `printf` as a string literal's text.
+                        let checks: Vec<(String, String)> = case
+                            .checks
+                            .into_iter()
+                            .map(|(element, holds)| (crate::filters::escape_cpp(element), holds))
+                            .collect();
+                        let note = crate::filters::escape_cpp(note.to_string());
+                        (case.bindings, case.literal, checks, case.inputs, note)
+                    } else {
+                        let case = crate::forge::generator::rust_source_case(
+                            plan, &rust_path, source, inputs, &mut held,
+                        )
+                        .map_err(|e| format!("{at}: {e}"))?;
+                        (
+                            case.bindings,
+                            case.literal,
+                            case.checks,
+                            case.inputs,
+                            note.to_string(),
+                        )
+                    };
+                    let checks: Vec<serde_json::Value> = checks
                         .into_iter()
                         .map(|(element, holds)| {
                             serde_json::json!({ "element": element, "holds": holds })
                         })
                         .collect();
                     Ok(serde_json::json!({
-                        "bindings": case.bindings,
-                        "literal": case.literal,
+                        "bindings": bindings,
+                        "literal": literal,
                         "checks": checks,
-                        "inputs": case.inputs,
+                        "inputs": inputs,
                         "encoded": encoded,
                         "note": note,
                     }))
@@ -4442,8 +4481,7 @@ mod tests {
 
     /// A byte case stated as the codec's interface presents the value
     /// (docs/adr/0081 §5) reaches the Rust harness as a literal of the codec's
-    /// ready-made source, encoded and compared with its bytes; a backend whose
-    /// encode does not print the plan yet is handed none.
+    /// ready-made source, encoded and compared with its bytes.
     #[test]
     fn a_source_case_reaches_the_rust_harness_as_a_parts_literal() {
         let manifest_path =
@@ -4489,10 +4527,173 @@ mod tests {
             assert!(rust.contains(literal), "the Rust harness lacks `{literal}`");
         }
         assert!(rust.contains("CodecPresentIfBasicWire::encode_source("));
+    }
+
+    /// The same byte cases reach the C++ harness as the printed value its
+    /// constructor makes (docs/adr/0081 §5): each element that holds a bound
+    /// or a law is made by `make` of the type the class's own accessor presents
+    /// it as, a byte string and a list over a vector bound first, and a body,
+    /// a group's arm and a variant's arm by value. The value is encoded over a
+    /// sink and compared with the bytes, and a decode of the bytes compared
+    /// with it element by element.
+    #[test]
+    fn a_source_case_reaches_the_cpp_harness_as_a_constructed_value() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
         let cpp = render_harness(&manifest, Language::Cpp, &template_base, &resource_dir)
             .expect("the C++ harness renders")
             .source;
-        assert!(!cpp.contains("Parts {"), "C++ does not print the plan yet");
+        for literal in [
+            // A number, and a number a gate decides, present and absent.
+            "::SCE::Generated::CodecPresentIfBasic::CodecPresentIfBasic{1u, 4660u}",
+            "::SCE::Generated::CodecPresentIfBasic::CodecPresentIfBasic{254u, std::nullopt}",
+            // A VLE at its largest as one unsigned literal, and a codec of no
+            // element.
+            "::SCE::Generated::CodecVleZintU64::CodecVleZintU64{18446744073709551615u}",
+            "::SCE::Generated::CodecZenohDel::CodecZenohDel{}",
+            // Text made within the bound its accessor presents it in, where a
+            // gate leaves it in; its length stated, a byte past ASCII escaped.
+            "{1u, decltype(std::declval<const \
+             ::SCE::Generated::CodecPresentIfString::CodecPresentIfString&>().text())::\
+             value_type::make(std::string_view(\"abc\", 3)).value()}",
+            "make(std::string_view(\"h\\303\\251llo\", 6)).value()",
+            // Bytes, bound first as the vector their view views.
+            "const std::vector<std::uint8_t> held_0{170};",
+            "::SCE::Generated::CodecLengthRef::CodecLengthRef{2u, decltype(std::declval<const \
+             ::SCE::Generated::CodecLengthRef::CodecLengthRef&>().payload())::make(held_0)\
+             .value()}",
+            // A body, made by value by its own class.
+            "::SCE::Generated::CodecEmbedBasic::CodecEmbedBasic{2u, \
+             ::SCE::Generated::CodecZenohLocator::CodecZenohLocator{decltype(std::declval<const \
+             ::SCE::Generated::CodecZenohLocator::CodecZenohLocator&>().locator())::make(\
+             std::string_view(\"abc\", 3)).value()}}",
+            // The entries of a list, bound first as values of the codec they
+            // are, and the list made over them.
+            "const std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> held_0{\
+             ::SCE::Generated::CodecRepeatElem::CodecRepeatElem{1u}, \
+             ::SCE::Generated::CodecRepeatElem::CodecRepeatElem{43981u}};",
+            "::SCE::Generated::CodecRepeatBasic::CodecRepeatBasic{decltype(std::declval<const \
+             ::SCE::Generated::CodecRepeatBasic::CodecRepeatBasic&>().frags())::make(held_0)\
+             .value()}",
+            // A gate group: the arm the value holds at its place among the
+            // arms, and none of a group the value may hold no arm of.
+            "::SCE::Generated::CodecPresentIfLengthRef::CodecPresentIfLengthRef{0u, \
+             ::SCE::Generated::CodecPresentIfLengthRef::CodecPresentIfLengthRefFlagsHasPayload{\
+             std::in_place_index<1>, ::SCE::Generated::CodecPresentIfLengthRef::\
+             CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload{9u}}}",
+            "::SCE::Generated::CodecPresentIfDisjunction::CodecPresentIfDisjunction{2u, \
+             ::SCE::Generated::CodecPresentIfDisjunction::\
+             CodecPresentIfDisjunctionFlagsWantsAOrWantsB{std::in_place_index<1>, \
+             ::SCE::Generated::CodecPresentIfDisjunction::\
+             CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB{5u}}}",
+            "::SCE::Generated::CodecPresentIfDisjunction::CodecPresentIfDisjunction{0u, \
+             std::nullopt}",
+            // A variant's known arm, and its default arm holding the tag no arm
+            // names beside its body.
+            "::SCE::Generated::CodecVariantDispatch::CodecVariantDispatch{\
+             ::SCE::Generated::CodecVariantDispatch::CodecVariantDispatchVariant{\
+             std::in_place_index<0>, \
+             ::SCE::Generated::CodecVariantSessionOpen::CodecVariantSessionOpen{258u}}}",
+            "::SCE::Generated::CodecVariantDispatch::CodecVariantDispatchVariant{\
+             std::in_place_index<2>, ::SCE::Generated::CodecVariantDispatch::\
+             CodecVariantDispatchDefault{127u, \
+             ::SCE::Generated::CodecVariantSessionClose::CodecVariantSessionClose{9u}}}",
+            // A list held to a law: its start, and its entries made into the
+            // list the law runs over.
+            "decltype(std::declval<const \
+             ::SCE::Generated::CodecChainFlagCarrier::CodecChainFlagCarrier&>().entries())::\
+             make(true, decltype(std::declval<const \
+             ::SCE::Generated::CodecChainFlagCarrier::CodecChainFlagCarrier&>().entries())::\
+             list_type::make(held_0).value()).value()",
+            // A bare entry's place among the others, here none.
+            "const std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> \
+             held_0{};",
+            "decltype(std::declval<const ::SCE::Generated::CodecChainHasMarker::\
+             CodecChainHasMarkerExtensionsHas0x12Has0x12&>().extensions())::make(held_0, 0u)\
+             .value()",
+            // Two lists of one count, each made as the pair holds it.
+            "decltype(std::declval<const ::SCE::Generated::CodecRepeatUnconditionalCount::\
+             CodecRepeatUnconditionalCountOptionsHH&>().links_weights())::make(std::decay_t<\
+             decltype(std::declval<const decltype(std::declval<const \
+             ::SCE::Generated::CodecRepeatUnconditionalCount::\
+             CodecRepeatUnconditionalCountOptionsHH&>().links_weights())&>().first())>::make(\
+             held_0).value(), std::decay_t<decltype(std::declval<const decltype(std::declval<\
+             const ::SCE::Generated::CodecRepeatUnconditionalCount::\
+             CodecRepeatUnconditionalCountOptionsHH&>().links_weights())&>().second())>::make(\
+             held_1).value()).value()",
+            // A flag input the value says: the decode is handed it, and the
+            // value is held to saying the one the case hands.
+            "SCE::Generated::CodecZenohWireexpr::CodecZenohWireexpr::decode(cursor, 1);",
+            "::SCE::Generated::CodecZenohWireexpr::input_n(value) == 1",
+            // A decode compared element by element: a number whole, a list
+            // entry by entry into the elements of each.
+            "CHECK(((*decoded).seq() == value.seq()),",
+            "[&](const auto& xs1, const auto& ys1) { auto i1 = xs1.begin(); auto j1 = \
+             ys1.begin(); for (; i1 != xs1.end() && j1 != ys1.end(); ++i1, ++j1) { if \
+             (!((*i1).seq() == (*j1).seq())) { return false; } } return i1 == xs1.end() && j1 \
+             == ys1.end(); }((*decoded).frags(), value.frags())",
+        ] {
+            assert!(cpp.contains(literal), "the C++ harness lacks `{literal}`");
+        }
+        assert!(
+            cpp.contains("SCE::Generated::CodecPresentIfBasic::Wire::encode_source(value, sink);")
+        );
+    }
+
+    /// A byte case reaches only a harness whose printer prints the codec from
+    /// its plan: Kotlin's is handed none, and the C++ one refuses by name a
+    /// codec its backend keeps on the template's encode, whose value no case
+    /// can be made into (docs/adr/0081 §5, §6).
+    #[test]
+    fn a_source_case_reaches_no_harness_whose_printer_does_not_print_the_codec() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let reference: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&reference_path).expect("the reference reads"),
+        )
+        .expect("the reference parses");
+        // As the manifest states it: whether the C++ backend prints it is
+        // derived by the render, which this does not run, so here it does not.
+        let fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_present_if_basic")
+            .expect("the catalog holds codec_present_if_basic");
+        let mut value = serde_json::to_value(fixture).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            fixture,
+            Language::Kotlin,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("Kotlin is handed nothing");
+        assert!(
+            !folded && value.get("sources").is_none(),
+            "Kotlin does not print the plan"
+        );
+        let refused = fold_source_cases(
+            &mut value,
+            &reference,
+            fixture,
+            Language::Cpp,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect_err("a codec the C++ backend keeps on the template's encode is refused");
+        assert!(
+            refused.contains("keeps this codec on the template's encode"),
+            "{refused}"
+        );
     }
 
     /// An enum fragment must name the identifier the declaration emits,
