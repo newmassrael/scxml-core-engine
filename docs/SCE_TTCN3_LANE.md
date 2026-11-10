@@ -177,6 +177,8 @@ its verdict, since the verdict is the log's; it is 2 when the command line is no
 is refused (a parameter the suite does not declare, or a literal that is no value of its type), or a log cannot be
 written. The runner is generated per suite as the `main` of the suite's unit, which a crate makes a program with a
 binary target of one line (Rust: `<suite>::main`, over `sce_rust_runtime::test::runner`).
+On Kotlin the program is the class of the suite's unit, `<package>.<Suite>Kt`, whose `main` calls
+`com.sce.runtime.test.runnerMain` (the tests module runs `runtime_suite`'s as `:sce-kotlin-tests:runRuntimeSuite`).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -338,9 +340,15 @@ What is in place, on Rust:
   shapes clippy's `-D warnings` does not refuse, with no `allow`: a value that may be absent is an `Option` mapped to
   its read and transposed, a union a `match` whose last arm is its last case, a list a `for` loop.
 
-The other six backends follow the same design: the reader of each form in the runtime beside its writers, the reader
-of each record and `input` in the unit of a configuration over the same walk, a player behind the system adapter, the
-runner function and the program of §4.
+On Kotlin the same is in place: `com.sce.runtime.test.FromCanonical`, `Trace`, `TraceAdapter`, `runSuiteWithTraces`
+and `runRunner` (`runnerMain` on the JVM) in the runtime, `KotlinReading` beside `KotlinCanonical`, and the Kotlin
+twins of the Rust tests (`ATestSuiteRunsThroughItsRunnerTest.kt`, `ARecordReadsBackTheFormItWritesTest.kt`,
+`TraceTest.kt`), which replay the same trace to the same log byte for byte; a reader throws a `TraceRefusal` in the
+words of the Rust one.
+
+The backends not named above follow the same design: the reader of each form in the runtime beside its writers, the
+reader of each record and `input` in the unit of a configuration over the same walk, a player behind the system
+adapter, the runner function and the program of §4.
 
 ## 11. The lane
 
