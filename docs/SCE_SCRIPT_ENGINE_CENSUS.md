@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 275
+engine-documents 278
 native-prefix-documents 2
-datamodel-variable-init 502
+datamodel-variable-init 504
 transition-guard 258
-assign-action 429
+assign-action 432
 child-invoke-needs-script-engine 59
 log-expr 46
 send-param-expr 49
@@ -129,6 +129,22 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-11-10, deliberately, two days late:** three documents landed on
+2026-11-07 and 2026-11-08 without this table, and each exists to need an engine.
+- `backends/c/tests/integration_resources/system_variable_writes` (2c8580cb23)
+  is the carrier of which writes to a system variable the script engine
+  refuses, and `event_blank_fields` (c98e788063) of what a blank `_event`
+  origin and origintype are pushed as; both are C11 documents whose point is
+  the binding the generated machine gives the engine, so the engine is what
+  they test.
+- `tests/mesh/brake_causal_pool.scxml` (5a969afd05) drives a causal SOME/IP
+  pool through its generated router, with a `<param expr>` an engine reads.
+
+Together they raised `engine-documents` by three, `assign-action` by three and
+`datamodel-variable-init` by two, as the census measured them; the third
+document's cause, `send-param-expr`, was under its ceiling. Tree Hygiene was
+red from the first push that reached this test until this entry.
 
 ⚠ **2026-11-06, deliberately:** the event-origin pair (docs/adr/0090) is held
 by documents that read `_event.origin` and `_event.origintype` and keep what
