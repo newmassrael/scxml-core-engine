@@ -423,7 +423,7 @@
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
 {% set short_list_message = '"<send> <param name=' ~ (param.name | escape_swift) ~ "> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent" ~ '"' %}
-{{ send_error('error.execution', short_list_message, send_id_swift) }}
+{{ send_error('error.execution', short_list_message, send_id_swift) -}}
                             break sceBlock
 {% else %}
 {% if 'error.execution' in model.events %}
