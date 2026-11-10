@@ -5873,6 +5873,10 @@
           "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
           "symbol": "setup_system_variables",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/session_id.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

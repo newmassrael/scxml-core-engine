@@ -14,8 +14,9 @@
  * (`SCE_MAX_SESSION_ID_LEN`), or published at a location past the bytes a URI
  * is held in (`SCE_MAX_URI_LEN`) is refused with the reason, never cut and never
  * replaced by another (docs/adr/0045, "Questions the owner answered" 2). The
- * host is responsible for the id it gives naming one session: the machine
- * cannot see the other sessions of the process to compare.
+ * host is responsible for the id it gives naming one session, which §scxml-5.10
+ * requires of `_sessionid`: the machine cannot see the other sessions of the
+ * process to compare.
  *
  * Header-only and allocation-free.
  */
