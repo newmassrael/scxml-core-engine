@@ -219,7 +219,9 @@ host keeps a change by is the bytes it is signed as, its content opened, so the 
 again leaves as the operation made. The second domain, `sce-trust/event/2`, signed each part of a
 change as an event of its own (`record_list.write`, `record_list.supersede`) as texts with their
 lengths, and the first secured a test fixture's events by other names; a signature does not
-verify under two meanings, and there is no path that takes either.
+verify under two meanings. Nothing is signed under either; a part of the second is read, as a
+list held before a change was one unit holds it, and folded (below), and the first is taken by no
+path.
 
 A host admits an operation when the entry it names is the one the host holds, its author was a
 writer under that entry, the number is not past the end the log set for the device, the signature
@@ -272,6 +274,51 @@ operations finds the conflict itself.
   list no longer reads it (docs/adr/0085, section 2.1: it keeps no tombstones to forget), and the
   peer core no longer makes it (ABI version 8): the stable cut replaces it. A host still accepts one
   only with the members' settlement, or when it trusts its hub (`Trust::allow_unsigned`).
+
+### A list held before a change was one unit
+
+A relay, and a device's saved state, written before docs/adr/0085 landing 4c hold a list's
+changes as **parts**: each operation of a change an operation of its own, `record_list.write`
+(`record_write` revision 2: `id`, `field`, `value`, `text`, `wallTime`, `counter`, `nodeId`,
+`parts`, signed by `nodeId`) or `record_list.supersede` (`record_supersede` revision 2: `id`,
+`field`, `wallTime`, `counter`, `nodeId`, `by`, `parts`, `atWallTime`, `atCounter`, signed by
+`by`), signed under `sce-trust/event/2` as each field's text after its length in that order, a
+field of the second revision left out read as its default, and made an operation under
+`sce-trust/operation/1`, the domain, the event's bytes after their length and the link's `seq`,
+`prev`, `mh` and `mhh` as texts after their lengths, with no context; a write's content was sealed
+under its own stamp (`id`, `field`, `wallTime`, `counter`, `nodeId`) and `sce-trust/nonce/1` and
+`sce-trust/content/1`. `sce_rust_trust::parts` reads them and writes none (docs/adr/0085, section
+8.3):
+
+- **A part is verified as it was signed** (`Trust::take_operation`, a relay's store read back, a
+  host's text restored): the entry of the log it names, its author a writer under it, its number
+  within what the log accepted, its signature over the bytes above, its content opened under the
+  first content domain. A forged part is refused as any forged operation is. A part that carries a
+  context is refused: its author signed none, and one added on the way would be a second wire form
+  of one operation. It travels as it was signed, with no context.
+- **It is held where it stands in its author's chain**, so the device's next change is signed at
+  the number after its last part and names it, and the chain's proof is whole. A part a device
+  signed after an operation of the third domain (a change or a mark) is the device signing under a
+  domain it left: held as proof as a fork is, its chain frozen **from the part's own number**, so
+  the changes before it stay told. A part is never signed: `Trust::seal_sent` and
+  `Trust::keep_sent` take no part, and no path makes one.
+- **No machine is told a part**: `Trust::deliver` passes over each, as it passes a mark, so a
+  change after the parts is told once the parts before it in its chain are held. **What the parts
+  hold together is folded** (`Trust::fold`): the live values are the writes no write-over names,
+  each with its own dot, which the observed-remove rule makes a function of the set, so two hosts
+  that hold the same parts fold the same state whatever order they took them in; the state's clock
+  is the highest stamp of a change any part was of; and its cut is each device's highest number
+  among the parts. A part the host held as proof, or cannot open, is not folded. A machine built
+  again is given the fold first, as `record_list.restore` payloads within the build's
+  `shared_parts` (`Fold::restores`), and then the changes after the parts; a part a host did not
+  hold, taken in later, moves the fold, and the host is told to build its machine again
+  (`Trust::take_restored`).
+- **What a machine sent as parts that its person had not signed** (a host's text written then holds
+  them as waiting sends) waits again as the changes they were parts of (`parts::changes_of_sends`):
+  consecutive parts of one author and one change's stamp are one `record_list.change`, write-overs
+  first as they were sent, journalled by its host once signed. A write-over sent as a change of one
+  carried no stamp of its change, and no change can carry it: it is withdrawn with every send after
+  it, and the next signing of what waits says so once (`Waited::dropped`).
 
 ### The stable cut
 

@@ -1021,3 +1021,54 @@ Decided while landing 5, the core at change units with ADR 0083's landing 3 and 
 - **The fold of the second domain is not in this step.** Folding a relay's history of `sce-trust/event/2` (section
   8.3) needs that domain's encoder and its link's bytes, which 4c removed, back in the trust layer as a reader
   of what is held, verified as any operation is; it lands as a step of its own, 5b, with section 9.5's test.
+
+Decided while landing 5b, the fold of the second domain (2026-11-10), under the same rule and open to the owner's
+review:
+
+- **The reader is a module of its own, `sce_rust_trust::parts`, and writes nothing.** It gives the bytes a part was
+  signed as under `sce-trust/event/2` and `sce-trust/operation/1`, and what a part says; a write's content opens
+  under `sce-trust/nonce/1` and `sce-trust/content/1` (`secrecy::open_part`). No path signs a part:
+  `Trust::seal_sent` and `Trust::keep_sent` take none. The reader is held to the vectors the second domain's own
+  encoder pinned before 4c removed it (`a_byte_format_does_not_drift` at the base of landing 4), so it is the old
+  encoder's and not one that agrees only with itself. A part that carries a context is refused: its author signed
+  none, and one added on the way would be a second wire form of one operation.
+- **The fold is a state, not changes.** Section 8.3 states the rule: the live writes are the writes no write-over
+  names, a function of the set, given as the list's first stable snapshot (section 4.4). Grouping the parts back
+  into changes and delivering them was weighed and not taken: the parts carry no causal context, and the effect
+  without tombstones (section 2.2) revives a write given after the write-over that names it, which is case (b) of
+  the context. So `Trust::fold` gives the live values, each with its own dot (`record_restore` carries a value's
+  dot, which keeps every part's stamp), the clock as the highest stamp of a change any part was of, and the cut as
+  each device's highest number among the parts; a host gives it as `record_list.restore` within `shared_parts`
+  (`Fold::restores`) before the history. Two hosts that hold the same parts fold the same state whatever the order.
+- **The parts are held in their chains, and told to no machine.** The device's next change names its last part as
+  `prev`, the relay's heads and a device's own chain read back count them, and a conflict among them is proof as
+  any is. `Trust::deliver` passes a part as it passes a mark, so a change is told once the parts before it in its
+  chain are held; a part's link has no context, so nothing else waits on it. A part a host takes that it did not
+  hold moves the fold, and the round says to build the machine again (`restored`).
+- **The cut is the set's, not a time.** Section 8.3 refuses a part met "after the cut", and answer 4 reads the cut
+  as the moment of the first start. A moment is not a function of the set: two hosts that met the same operations
+  in another order would fold two states, and a device that saved a part it had not given the relay would sign its
+  next change after a number no other host could ever hold. So the cut is each device's first operation of the
+  third domain: a part is taken while it stands before every change and mark of its author's chain, and one past
+  them is the device signing under a domain it left, held as proof as a fork is, its chain frozen from the part's
+  own number so the changes before it stay told. A relay takes a part the same way, never choosing a history (ADR
+  0083 section 4). What this changes of answer 4 is that a device not yet moved is not cut off: its parts reach
+  every host and grow the fold, and a moved copy reads that domain until the device moves. Signing stays one
+  domain, and no machine is told two.
+- **A state of version 5 is opened and upgraded.** It is bound to `sce-peer/state/5`, so the core tries its own
+  version and then 5 under the same key; the text of version 5 is read as it was (no delivered vector, no outbox),
+  every part verified as it was signed. The device keeps its keys, its group's device, its log and its chain's
+  position, and waits for its own chain as every restore does. What the courier's state kept for the old machine
+  is dropped (`CourierState::forget_what_the_machine_is_owed`); the group's messages, the cursor and what is parked
+  stay. The next save is of version 6. `SAVE_VERSION`'s note that versions 3 to 5 were written by tests alone is
+  corrected: version 5 is a device's.
+- **What the old machine sent and its person had not signed is carried as changes.** Consecutive waiting parts of
+  one author under one change's stamp are one `record_list.change`, write-overs first as they were sent, journalled
+  by the host once signed and recalled meanwhile as provisional. A write-over sent as a change of one never carried
+  its change's stamp, so no change can name it: it is withdrawn with every send after it (docs/adr/0093, section
+  6.2), and the next signing of what waits says so once.
+- **The ABI stays version 8.** The fold is a function added alone (`sce_peer_fold`), and
+  `sce_peer_restore_sealed` opens a state it refused as not opened before, which no core of version 8 seals; no
+  output of before changes shape. A host that upgrades builds its machine from the fold and then the history.
+- **No fixture is recorded.** The tests build a relay's history of parts and a sealed state of version 5 with the
+  reader's bytes and the members' keys, and the reader's bytes are held to the old encoder's pinned vectors.

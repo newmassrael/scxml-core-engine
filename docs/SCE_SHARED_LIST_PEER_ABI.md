@@ -70,7 +70,11 @@ reviewer learns one set of rules:
   a device's mark say what every member was told (`sce_peer_stable_cut`, `sce_peer_mark`); a host
   started again gives back its journal's records (`sce_peer_restore_records`), recalls the history
   (`sce_peer_history`) and raises its copy's clock to the device's own stamp (`sce_peer_own_stamp`)
-  (section 4). The sealed state is the core's version 6, which holds the outbox (section 6);
+  (section 4). The sealed state is the core's version 6, which holds the outbox (section 6). The
+  fold of a list held before a change was one unit (docs/adr/0085 landing 5b) moves no number: the
+  fold (`sce_peer_fold`, section 4) is a function added alone, and `sce_peer_restore_sealed` opens
+  and upgrades a state of the core's version 5 (section 6), which it refused as not opened before:
+  a state no core of version 8 seals, and no output of before changes its shape;
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -167,6 +171,7 @@ log is written (section 7).
 | `sce_peer_restore_records(peer, records, count)` | `Peer::restore_records` | a journal's records past the sealed state restored, in the form `sce_peer_take_records` gives, taken back as the device's own; `count` (may be null) is how many the core did not hold; `SCE_PEER_ERR_BAD_ARGUMENT` for a text that is not that array, `SCE_PEER_ERR_UNREADABLE` for a record that is not the device's or does not hold |
 | `sce_peer_history(peer, after, out)` | `Peer::history` | what a machine built again is given, as one JSON object (section 4), from the cut `after` (a JSON array of `[node, seq]` pairs as texts) on, or the whole of it when `after` is null |
 | `sce_peer_stable_cut(peer, out)` | `Peer::stable_cut` | the stable cut, as a JSON array of `[node, seq]` pairs as texts: for each device, the highest number every member is known to have been told |
+| `sce_peer_fold(peer, parts, out)` | `Peer::fold` | what the parts of changes signed before a change was one unit make together, as one JSON object `{"restores", "cut"}` (section 4): the state as `record_list.restore` payload texts of at most `parts` values each, and each device's highest number among the parts as `[node, seq]` pairs as texts |
 | `sce_peer_mark(peer, seq)` | `Peer::mark` | signs a mark of what the machine was told when one is owed; `seq` (may be null) is its number, 0 when none was |
 | `sce_peer_own_stamp(peer, wall_time, counter, read_back)` | `Peer::own_stamp` | the highest stamp of the device's own changes the core holds (0 and 0 for none), and 1 once it has read its own chain back; each out may be null |
 | `sce_peer_start(peer, kind)` | `Peer::start` | begins a round: `SCE_PEER_ROUND_SYNC`, `_RESYNC` or `_REREAD` |
@@ -265,6 +270,19 @@ what it was told by a mark (`sce_peer_mark`), an operation of its chain no machi
 next round gives the relay. When "a while" is up is the host's to judge on its own clock. The host
 folds its journal at the cut (docs/adr/0085, section 4.3).
 
+**A list held before a change was one unit** (docs/adr/0085, section 8.3) holds its changes as
+parts, signed under the second event domain, which the core reads as they were signed and never
+signs (`docs/SCE_SHARED_LIST_TRUST.md` section 3). No machine is told a part: what they hold
+together is one state, the fold (`sce_peer_fold`): `{"restores", "cut"}`, `restores` the state as
+`record_list.restore` payload texts, each of at most `parts` values (the build's `shared_parts`;
+none when no value is live), every value with its own dot and every payload with the state's clock,
+and `cut` each device's highest number among the parts. A machine built again is given the restores
+first and then the history, so a copy whose host has not folded its journal yet, a device upgraded
+from a state of version 5 among them (section 6), holds what the list held. A round that takes in a
+part the core did not hold says the machine is to be built again (`rebuild`, section 5), since the
+fold moved. Two devices that hold the same parts fold the same state, whatever order they read them
+in. The fold is a function added alone, and moves no number.
+
 ## 5. A round
 
 A round is driven by its host, and the core does no I/O:
@@ -293,7 +311,7 @@ The outcome is a JSON object, read by its members' names:
 | `evicted`, `restored` | ended | the operations, each `[node, number]` as texts, the machine was told and is to be without, or was not told and is to be with |
 | `taken` | ended | the sends that waited (section 4) and were signed, a new operation each, in the order they were made, each `[name, payload text]` as the machine sent it or the copy offered it: one of a host that keeps no journal was given the relay, and one a copy offered is a record the next round gives it once the host recorded it; a send that waited and that the device held already when the round came to it (a device restored from an older state, whose chain the round read back) is in neither `taken` nor `withdrawn`, since nothing was signed for it and the host has nothing to do (the Rust outcome names it in `held`) |
 | `withdrawn` | ended | the sends that waited and never will be signed, the first and every one after it, earliest first, each `{"event", "data", "wallTime", "counter", "why"}`, the wall time as text (section 4): the host journals the withdrawal and gives the copy one `record_list.withdraw` naming the earliest |
-| `rebuild` | ended | whether the host is to build its machine again and make a resync: an operation was evicted or restored. A withdrawal is not one |
+| `rebuild` | ended | whether the host is to build its machine again and make a resync: an operation was evicted or restored, a part of a change of a list held before a change was one unit among those restored, which moves the fold the machine is built from (section 4). A withdrawal is not one |
 | `raised` | a round that raised the device's own stamp | `{"wallTime", "counter"}`, the wall time as text: the highest stamp of the device's own changes, which rose in the round (it read the device's own chain back past what the core held, or signed what waited); the host gives the copy `record_list.raise` with it. The member is not written for any other exchange |
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
 | `conflicted` | an exchange that froze the device's own chain | the number, as text, the device's own chain is frozen from: the relay answered `conflict` to an operation of the device's own (the round ended there), or a round read one that conflicts with it (`docs/SCE_SHARED_LIST_RELAY.md` sections 3 and 6). The device signs nothing more, every host that holds both freezes it at the same number, and the host tells its person that an administrator has to take the device off and grant a new one; the member is not written for any other exchange |
@@ -464,6 +482,22 @@ past the state (`sce_peer_restore_records`) and recalls the history (section 4);
 the core's version 6, which holds the records not recorded yet and which waiting changes a copy
 offered.
 Whether it still waits is in what it stands at (`awaits_own_chain`, section 8).
+
+**A state of version 5 is opened and upgraded** (docs/adr/0085, section 8.3). A device that held a
+list before a change was one unit sealed its state at the core's version 5, its operations parts of
+changes signed under the second event domain. `sce_peer_restore_sealed` takes it as it is, under the
+key it was sealed under: a state that does not open as version 6 is tried as version 5, and one that
+opens as neither is `SCE_PEER_ERR_NOT_OPENED`, as before. The device keeps its person's key, the
+administrator's key, the keys of the epochs, the group's device, the log and every part, each
+verified as it was signed and held where it stands in its chain, so its next change is signed at the
+number after its last part; it waits for its own chain as every restored device does. What its
+machine sent as parts and its person had not signed waits again as the changes they were parts of;
+a write-over sent as a change of one carried no stamp of its change and is withdrawn, with every send
+after it, in the next round's `withdrawn`. What the state kept for its machine (the events a round
+had not handed over, and what became of the sends that waited) is dropped: no machine of today takes
+a part. The host builds its machine again from the fold and the history (section 4), and the next
+save is of version 6. A state of version 5 opened so is the device's: nothing of it is asked of the
+host again.
 
 ## 7. An administrator's acts
 
