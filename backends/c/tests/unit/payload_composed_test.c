@@ -752,6 +752,64 @@ static void check_a_composed_pair_is_written_part_by_part(void) {
     }
 }
 
+/* One composed value written alone into a buffer of its own, with no object around
+ * it, as a request that carries each pair as text only is handed one: the JSON of
+ * the value, terminated; and the empty string, never a value cut short, for one
+ * that was refused, left a container open or did not fit. */
+static void check_a_value_is_written_alone(void) {
+    char buf[32];
+    sce_forge_wire_t w;
+    sce_forge_wire_begin_value(&w, buf, sizeof(buf));
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(7));
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_open_container(&w, '{');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put(&w, "\"k\":", 4u);
+    sce_forge_wire_put_value(&w, sce_forge_wire_string("x"));
+    sce_forge_wire_close(&w);
+    sce_forge_wire_close(&w);
+    if (!sce_forge_wire_end_value(&w) || strcmp(buf, "[7,{\"k\":\"x\"}]") != 0) {
+        fprintf(stderr, "FAIL: a value written alone reads `%s`\n", buf);
+        failures++;
+    }
+    sce_forge_wire_begin_value(&w, buf, sizeof(buf));
+    sce_forge_wire_put_value(&w, sce_forge_wire_bool(true));
+    if (!sce_forge_wire_end_value(&w) || strcmp(buf, "true") != 0) {
+        fprintf(stderr, "FAIL: a scalar written alone reads `%s`\n", buf);
+        failures++;
+    }
+    sce_forge_wire_begin_value(&w, buf, sizeof(buf));
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(7));
+    if (sce_forge_wire_end_value(&w) || buf[0] != '\0') {
+        fprintf(stderr, "FAIL: a value with a container left open was written as `%s`\n", buf);
+        failures++;
+    }
+    sce_forge_wire_begin_value(&w, buf, sizeof(buf));
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_refuse(&w);
+    sce_forge_wire_close(&w);
+    if (sce_forge_wire_end_value(&w) || buf[0] != '\0') {
+        fprintf(stderr, "FAIL: a refused value was written as `%s`\n", buf);
+        failures++;
+    }
+    /* Five bytes of room: `[7,8]` needs a sixth for its end. */
+    sce_forge_wire_begin_value(&w, buf, 5u);
+    sce_forge_wire_open_container(&w, '[');
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(7));
+    sce_forge_wire_next_in_container(&w);
+    sce_forge_wire_put_value(&w, sce_forge_wire_uint(8));
+    sce_forge_wire_close(&w);
+    if (sce_forge_wire_end_value(&w) || buf[0] != '\0') {
+        fprintf(stderr, "FAIL: a value past its buffer was cut to `%s`\n", buf);
+        failures++;
+    }
+}
+
 /* The path a refusal names a value by, joined from the prefix and each segment. */
 static void check_paths(void) {
     char path[16];
@@ -997,6 +1055,7 @@ int main(void) {
     check_maximal_sizes();
     check_the_writer_refuses_a_shape_it_cannot_close();
     check_a_composed_pair_is_written_part_by_part();
+    check_a_value_is_written_alone();
     check_paths();
     check_top_level_bounds_and_records();
     check_bounded_list();

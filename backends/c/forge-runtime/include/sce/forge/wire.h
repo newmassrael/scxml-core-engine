@@ -180,8 +180,12 @@ static inline void sce_forge_wire_put(sce_forge_wire_t *w, const char *text, siz
     w->len += n;
 }
 
-/* Start an object in `buf`, of `cap` bytes. */
-static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t cap) {
+/* Start one value alone in `buf`, of `cap` bytes, with no object around it: the
+ * value is written bare, by the writers a pair's value is written by (a scalar by
+ * `sce_forge_wire_put_value`, a composed value by the container writers below), and
+ * `sce_forge_wire_end_value` finishes it. What a request that carries each pair as
+ * text only is handed for a composed pair: its JSON, written where nothing else is. */
+static inline void sce_forge_wire_begin_value(sce_forge_wire_t *w, char *buf, size_t cap) {
     w->buf = buf;
     w->cap = cap;
     w->len = 0;
@@ -193,6 +197,11 @@ static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t c
     w->depth = 0u;
     w->any_at = 0u;
     w->object_at = 0u;
+}
+
+/* Start an object in `buf`, of `cap` bytes. */
+static inline void sce_forge_wire_begin(sce_forge_wire_t *w, char *buf, size_t cap) {
+    sce_forge_wire_begin_value(w, buf, cap);
     sce_forge_wire_put(w, "{", 1u);
 }
 
@@ -545,33 +554,31 @@ static inline bool sce_forge_wire_copy_since(const sce_forge_wire_t *w, size_t m
     return true;
 }
 
+/* Finish the value `sce_forge_wire_begin_value` started, terminated. False when it
+ * was refused, did not fit the buffer or left a container open, and the buffer
+ * then holds the empty string, never a value cut short (truncated JSON does not
+ * parse, so it would arrive as some other value). */
+static inline bool sce_forge_wire_end_value(sce_forge_wire_t *w) {
+    if (w->cap == 0u) {
+        return false;
+    }
+    if (w->overflow || w->depth != 0u) {
+        w->buf[0] = '\0';
+        return false;
+    }
+    w->buf[w->len] = '\0';
+    return true;
+}
+
 /* One value alone, as the JSON text of an event's data, written into `buf` of
  * `cap` bytes. False when it did not fit, and `buf` then holds the empty string,
  * never a truncated value (truncated JSON does not parse, so it would arrive as
  * some other value). */
 static inline bool sce_forge_wire_json(sce_forge_wire_value_t value, char *buf, size_t cap) {
     sce_forge_wire_t w;
-    if (cap == 0u) {
-        return false;
-    }
-    w.buf = buf;
-    w.cap = cap;
-    w.len = 0;
-    w.any = false;
-    w.overflow = false;
-    w.last_key = NULL;
-    w.last_value_at = 0;
-    w.last_count = 0;
-    w.depth = 0u;
-    w.any_at = 0u;
-    w.object_at = 0u;
+    sce_forge_wire_begin_value(&w, buf, cap);
     sce_forge_wire_put_value(&w, value);
-    if (w.overflow) {
-        buf[0] = '\0';
-        return false;
-    }
-    buf[w.len] = '\0';
-    return true;
+    return sce_forge_wire_end_value(&w);
 }
 
 /* The text a value crosses as where a request carries it as text — a host's
