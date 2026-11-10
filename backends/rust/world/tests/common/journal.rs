@@ -560,23 +560,41 @@ fn restores_of(book: &Book) -> Vec<String> {
         .values
         .chunks(PARTS)
         .map(|part| {
-            let ops: Vec<Value> = part
-                .iter()
-                .map(|value| {
-                    let mut op = value.clone();
-                    op["kind"] = json!(0);
-                    op
-                })
-                .collect();
+            let ops: Vec<Value> = part.iter().map(write_of).collect();
             json!({
                 "by": "0",
-                "wallTime": snapshot.wall_time,
-                "counter": snapshot.counter,
+                "wallTime": whole(&snapshot.wall_time).to_string(),
+                "counter": counter_of(&snapshot.counter),
                 "ops": ops,
             })
             .to_string()
         })
         .collect()
+}
+
+/// A value the copy held (`record:Value` of `mv_value`) as the write at its own dot that
+/// hands it over (`record_op`), each field written in the operation's own type: a value
+/// keeps its row and field as 64-bit numbers, carried as the text of their digits
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15), while an operation's row is a uint32 and its field
+/// a uint16, carried as numbers; a copy refuses an operation written otherwise.
+fn write_of(value: &Value) -> Value {
+    let id = u32::try_from(whole(&value["id"])).expect("a row is a uint32");
+    let field = u16::try_from(whole(&value["field"])).expect("a field is a uint16");
+    json!({
+        "kind": 0,
+        "id": id,
+        "field": field,
+        "value": whole(&value["value"]).to_string(),
+        "text": value["text"],
+        "wallTime": whole(&value["wallTime"]).to_string(),
+        "counter": counter_of(&value["counter"]),
+        "nodeId": whole(&value["nodeId"]).to_string(),
+    })
+}
+
+/// A stamp's counter, a uint32, as a number.
+fn counter_of(counter: &Value) -> u32 {
+    u32::try_from(whole(counter)).expect("a counter is a uint32")
 }
 
 /// Every change after the last fold, the copy's own with the command that ended it and
