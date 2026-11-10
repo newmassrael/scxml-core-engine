@@ -532,7 +532,7 @@ SCE::Test::TestCase endsWith(const std::string &name, const std::string &type, V
                                 self.end();
                             },
                             [](ComponentContext &, Scripted &) {}};
-    return SCE::Test::TestCase{name, lone(type), machines.factory(), {}};
+    return SCE::Test::TestCase{name, lone(type), machines.factory(), {}, SCE::Test::noInputs};
 }
 
 /// The adapters of a suite's run, each a fresh TraceAdapter, recording the test
@@ -573,8 +573,8 @@ TEST(TestSuiteRun, EachTestCaseIsAFreshRunUnderItsOwnGuard) {
     Configuration waiter = lone("Waiter");
     SCE::Test::Suite suite;
     suite.name = "guarded";
-    suite.executes.push_back(
-        SCE::Test::Execute{SCE::Test::TestCase{"stuck", waiter, waiting.factory(), {}}, 5 * SECOND, nullptr});
+    suite.executes.push_back(SCE::Test::Execute{
+        SCE::Test::TestCase{"stuck", waiter, waiting.factory(), {}, SCE::Test::noInputs}, 5 * SECOND, nullptr});
     suite.executes.push_back(SCE::Test::Execute{endsWith("quick", "Quick", Verdict::Pass), std::nullopt, nullptr});
     std::vector<std::string> built;
     const auto results = SCE::Test::runSuite(suite, {}, tracing(built));
@@ -595,7 +595,8 @@ TEST(TestSuiteRun, AnOverrideReplacesTheDefaultOfAModuleParameterTheSuiteDeclare
     suite.name = "parameters";
     suite.moduleParameters.set("job", SCE::Saved::savedWriteUint32(7));
     suite.executes.push_back(SCE::Test::Execute{
-        SCE::Test::TestCase{"reads", lone("Reader"), machines.factory(), {"job"}}, std::nullopt, nullptr});
+        SCE::Test::TestCase{"reads", lone("Reader"), machines.factory(), {"job"}, SCE::Test::noInputs}, std::nullopt,
+        nullptr});
     std::vector<std::string> built;
     auto results = SCE::Test::runSuite(suite, {}, tracing(built));
     ASSERT_EQ(results.size(), 1u);
@@ -715,7 +716,7 @@ SCE::Test::Suite suiteOf(SCE::Test::TestCase testCase) {
 /// removal of the terminated echo when the MTC ends, write no record.
 TEST(TheTestLog, ARunWritesEachRecordWhereItsEventHappens) {
     const SCE::Test::Suite suite =
-        suiteOf(SCE::Test::TestCase{"pings_the_echo", pinging(), pingingMachines().factory(), {}});
+        suiteOf(SCE::Test::TestCase{"pings_the_echo", pinging(), pingingMachines().factory(), {}, SCE::Test::noInputs});
     std::vector<std::string> built;
     const auto results = SCE::Test::runSuite(suite, {}, tracing(built));
     ASSERT_EQ(results.size(), 1u);
@@ -766,7 +767,8 @@ TEST(TheTestLog, AnErrorTheRuntimeSetsIsLoggedWithoutItsCause) {
 /// P13: a test case that cannot start, for want of an adapter, logs its start
 /// and its end alone, since no component was created.
 TEST(TheTestLog, ATestCaseThatCannotStartLogsItsStartAndEnd) {
-    const SCE::Test::Suite suite = suiteOf(SCE::Test::TestCase{"unplayed", pinging(), pingingMachines().factory(), {}});
+    const SCE::Test::Suite suite =
+        suiteOf(SCE::Test::TestCase{"unplayed", pinging(), pingingMachines().factory(), {}, SCE::Test::noInputs});
     const auto results =
         SCE::Test::runSuite(suite, {}, [](const std::string &) -> std::unique_ptr<SystemAdapter> { return nullptr; });
     ASSERT_EQ(results.size(), 1u);

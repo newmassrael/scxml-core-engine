@@ -12,7 +12,9 @@
 // a case does is its components' machines, which the run drives
 // (sce/include/test/TestCaseRun.h). The runner is a library function, with no
 // `main`: a generated or hand-written test calls it with the system adapters
-// that play the SUT.
+// that play the SUT (runSuite()), or with the recorded input trace of each
+// test case (runSuiteWithTraces()), which the program of a generated suite
+// does (sce/include/test/Runner.h).
 
 #pragma once
 
@@ -28,6 +30,7 @@
 
 #include "test/ModuleParameters.h"
 #include "test/TestCaseRun.h"
+#include "test/Trace.h"
 
 namespace SCE::Test {
 
@@ -53,6 +56,10 @@ struct TestCase {
     Configuration configuration;
     MachineFactory machines;
     std::vector<std::string> moduleParameters;
+    /// The reader of its configuration's inputs, which a trace replayed for it
+    /// is read with (runSuiteWithTraces()): which records each system port
+    /// takes, and each record's value from its canonical form.
+    InputReader inputs = noInputs;
 };
 
 /// A selection (§11.8): whether a world of the suite's features runs a test
@@ -80,6 +87,10 @@ struct Suite {
 /// name: a fresh adapter for each case, so that no case sees another's trace.
 using AdapterFactory = std::function<std::unique_ptr<SystemAdapter>(const std::string &testCase)>;
 
+/// Gives the recorded input trace of a test case, given its name; throws
+/// TraceRefusal, naming why, where there is none or it is not read.
+using TraceSource = std::function<Trace(const std::string &testCase)>;
+
 /// What the runner reports of one test case it ran.
 struct CaseResult {
     std::string testCase;
@@ -91,6 +102,65 @@ struct CaseResult {
         return result.canonicalLog(suite, testCase);
     }
 };
+
+namespace detail {
+
+/// The adapter a test case runs against, or, where it has none, why.
+struct Adapted {
+    std::unique_ptr<SystemAdapter> adapter;
+    std::string refusal;
+};
+
+/// P13: the test case @p testCase cannot start, so it ends at once with
+/// `error`. No component was created, so the test log holds its start and its
+/// end alone.
+inline CaseResult refusedCase(const std::string &testCase, std::string why) {
+    TestCaseResult result;
+    result.verdict = Verdict::Error;
+    result.log.push_back(LogRecord{0, MTC_NAME, LogKind::Error, std::move(why)});
+    result.records.push_back(TestLogRecord{0, TestLog::TestCaseStarted{}});
+    result.records.push_back(TestLogRecord{0, TestLog::TestCaseEnded{Verdict::Error}});
+    return CaseResult{testCase, std::move(result)};
+}
+
+/// The runner of runSuite() and runSuiteWithTraces(): the test cases @p world
+/// selects, each against the adapter @p adapterOf builds for it, or ended with
+/// `error` for the reason it gives where it builds none.
+inline std::vector<CaseResult> runSelected(const Suite &suite, const Features &world, const ModuleParameters &overrides,
+                                           const std::function<Adapted(const TestCase &)> &adapterOf) {
+    ModuleParameters parameters = suite.moduleParameters;
+    for (const auto &[id, value] : overrides.values()) {
+        if (!parameters.has(id)) {
+            throw std::invalid_argument("overrides the module parameter '" + id + "', which the suite '" + suite.name +
+                                        "' does not declare");
+        }
+        parameters.set(id, value);
+    }
+    std::vector<CaseResult> results;
+    for (const Execute &execute : suite.executes) {
+        if (execute.selection != nullptr && !execute.selection(world)) {
+            continue;
+        }
+        const TestCase &testCase = execute.testCase;
+        const auto missing = std::find_if(testCase.moduleParameters.begin(), testCase.moduleParameters.end(),
+                                          [&](const std::string &id) { return !parameters.has(id); });
+        if (missing != testCase.moduleParameters.end()) {
+            results.push_back(refusedCase(testCase.name, "the test case reads the module parameter '" + *missing +
+                                                             "', which is given no value"));
+            continue;
+        }
+        Adapted adapted = adapterOf(testCase);
+        if (!adapted.adapter) {
+            results.push_back(refusedCase(testCase.name, std::move(adapted.refusal)));
+            continue;
+        }
+        TestCaseRun run(testCase.configuration, testCase.machines, *adapted.adapter, execute.guard, parameters);
+        results.push_back(CaseResult{testCase.name, run.run()});
+    }
+    return results;
+}
+
+}  // namespace detail
 
 /**
  * @brief Runs the test cases of @p suite that @p world selects (P11)
@@ -108,46 +178,44 @@ struct CaseResult {
  */
 inline std::vector<CaseResult> runSuite(const Suite &suite, const Features &world, const AdapterFactory &adapters,
                                         const ModuleParameters &overrides = ModuleParameters()) {
-    ModuleParameters parameters = suite.moduleParameters;
-    for (const auto &[id, value] : overrides.values()) {
-        if (!parameters.has(id)) {
-            throw std::invalid_argument("overrides the module parameter '" + id + "', which the suite '" + suite.name +
-                                        "' does not declare");
-        }
-        parameters.set(id, value);
-    }
-    std::vector<CaseResult> results;
-    for (const Execute &execute : suite.executes) {
-        if (execute.selection != nullptr && !execute.selection(world)) {
-            continue;
-        }
-        const TestCase &testCase = execute.testCase;
-        // P13: the test case cannot start, so it ends at once with `error`. No
-        // component was created, so the test log holds its start and its end
-        // alone.
-        const auto refused = [&](std::string why) {
-            TestCaseResult result;
-            result.verdict = Verdict::Error;
-            result.log.push_back(LogRecord{0, MTC_NAME, LogKind::Error, std::move(why)});
-            result.records.push_back(TestLogRecord{0, TestLog::TestCaseStarted{}});
-            result.records.push_back(TestLogRecord{0, TestLog::TestCaseEnded{Verdict::Error}});
-            results.push_back(CaseResult{testCase.name, std::move(result)});
-        };
-        const auto missing = std::find_if(testCase.moduleParameters.begin(), testCase.moduleParameters.end(),
-                                          [&](const std::string &id) { return !parameters.has(id); });
-        if (missing != testCase.moduleParameters.end()) {
-            refused("the test case reads the module parameter '" + *missing + "', which is given no value");
-            continue;
-        }
+    return detail::runSelected(suite, world, overrides, [&](const TestCase &testCase) {
         std::unique_ptr<SystemAdapter> adapter = adapters(testCase.name);
         if (!adapter) {
-            refused("no system adapter is given for the test case");
-            continue;
+            return detail::Adapted{nullptr, "no system adapter is given for the test case"};
         }
-        TestCaseRun run(testCase.configuration, testCase.machines, *adapter, execute.guard, parameters);
-        results.push_back(CaseResult{testCase.name, run.run()});
-    }
-    return results;
+        return detail::Adapted{std::move(adapter), {}};
+    });
+}
+
+/**
+ * @brief Runs the test cases of @p suite that @p world selects, each against
+ *        its recorded input trace (docs/SCE_TTCN3_LANE.md §10.5)
+ *
+ * runSuite(), with the adapter of each test case a TraceAdapter that plays the
+ * trace @p traces gives for its name, read by the test case's configuration
+ * (TestCase::inputs).
+ *
+ * A test case whose trace is not given, is of another suite or test case, or
+ * does not fit its configuration (a port that is no system port of it, a type
+ * its port does not take, a value that does not belong to its type) ends with
+ * `error` (P13) before any component is created, its log line naming why. So
+ * does one whose components read a module parameter the run has no value for,
+ * as under runSuite(), before its trace is asked for.
+ */
+inline std::vector<CaseResult> runSuiteWithTraces(const Suite &suite, const Features &world, const TraceSource &traces,
+                                                  const ModuleParameters &overrides = ModuleParameters()) {
+    return detail::runSelected(suite, world, overrides, [&](const TestCase &testCase) {
+        try {
+            const Trace trace = traces(testCase.name);
+            if (trace.suite != suite.name || trace.testCase != testCase.name) {
+                return detail::Adapted{nullptr, "the trace is of the test case '" + trace.testCase +
+                                                    "' of the suite '" + trace.suite + "'"};
+            }
+            return detail::Adapted{std::make_unique<TraceAdapter>(trace, testCase.inputs), {}};
+        } catch (const TraceRefusal &refusal) {
+            return detail::Adapted{nullptr, "the trace is refused: " + refusal.reason()};
+        }
+    });
 }
 
 }  // namespace SCE::Test

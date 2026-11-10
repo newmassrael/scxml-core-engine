@@ -271,6 +271,12 @@ add_executable(sce_scxml_tests
     # The test log's value form and records (docs/SCE_TEST_PROFILE.md §12.5),
     # held to the schema it reads from SCE_PROJECT_ROOT.
     test_runtime/TestLogTest.cpp
+    # The recorded input trace, its player and the readers of the canonical
+    # form it holds (docs/SCE_TTCN3_LANE.md §10), held to the schema it reads
+    # from SCE_PROJECT_ROOT; and the command line of a suite's runner program
+    # (§4) with the readers of its module parameters.
+    test_runtime/TraceTest.cpp
+    test_runtime/RunnerTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
