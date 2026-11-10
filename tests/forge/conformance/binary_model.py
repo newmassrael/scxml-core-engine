@@ -68,14 +68,23 @@ What the model reads so far, and refuses by name past it:
   lists of one count, one always there and one gated on a flag, are a group
   of that flag (R5) whose arm where it holds holds both, each stated by its
   id and of one length; other lists of one count are not read yet;
+* a field of an enum the codec imports (`sce:type="enum:<alias>"`,
+  `<sce:import kind="enum">`), written as the enum's carrier (its
+  `sce:underlying-type`) and stated by the name of the variant it holds; an
+  open enum (`sce:strict-variants="false"`) holds every number of its
+  carrier, one no variant names stated as the number. A closed enum holds no
+  number no variant declares, so the decode of a frame that carries one fails;
 * a field gated on one flag of a carrier (`sce:present-if="c.f"` or `"!c.f"`),
   present exactly where the gate holds, its flag derived from its presence;
-* a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c): two or more elements
-  one flag decides, a stated length counting on the side where its content is
-  not, or the fields a disjunction `c.a || c.b` of the codec's own flags
-  decides where no other gate reads them; a body or a list it holds is stated
-  in its arm as an element is. A group of a chain's membership is not read
-  yet;
+* a gate group ([`Group`], docs/adr/0065 §6 R4b, R4c, R6): two or more
+  elements one flag decides, a stated length whose content is all on one side
+  of it counting on the other, or the fields a disjunction `c.a || c.b` of the
+  codec's own flags decides where no other gate reads them, or the fields the
+  kinds of a chain's entries decide with the flags joined to them; a body or a
+  list it holds is stated in its arm as an element is. A stated length whose
+  content is under more than one gate, or one side of none, is no member of a
+  group: it is presented alone, the value's own where all of its content is
+  absent and `null` where some is there;
 * the flag inputs a codec declares (`<sce:flag-inputs>`, one bit each): a gate
   on one is decided by the value the parent hands, which a case states in its
   `inputs`, and two elements one input decides are a group keyed by its name.
@@ -83,27 +92,39 @@ What the model reads so far, and refuses by name past it:
   each as its import binds it (`<sce:flag-bind>`): the parent's own input, or
   a flag of a carrier, which is then derived from what the held codec says
   (docs/adr/0065 §6 R4a) and is the value's own where nothing held says it.
-  The entries of a list that take inputs follow a law (R8): the list is
-  `{"start": {input: 0|1}, "entries": [..]}`, each entry handed the start for
-  an input the list binds, and, for one a chain supplies
-  (`<sce:entry-flag-bind previous-entry-id>`), whether the entry before is
-  of that kind, the first clear; a flag bound to the start is derived from it;
+  The entries of a list are handed each input it binds, and, for one a chain
+  supplies (`<sce:entry-flag-bind previous-entry-id>`), whether the entry
+  before is of that kind, the first clear. Where they say an input they take,
+  they follow a law over it (R8): the list is `{"start": {input: 0|1},
+  "entries": [..]}`, each entry handed the start for an input the list binds,
+  and a flag bound to the start is derived from it. An input they do not say
+  is no law's: the list is its entries alone, each handed the parent's input
+  or the value's own flag, or what the entry before is, as the walk writes it.
+  A codec handed an input its value does not say takes it at its encode as
+  its decode does, and a case states it in its `inputs`;
 * a variant (`<sce:variant>`), stated as its member `body`: the arm's codec
   and its value, its tag derived from the arm where a field or a carrier's
   flag holds it; where a peeked byte holds it (`<sce:peek-byte>`), the tag is
   the arm's own first byte, which the arm's value states and the decode reads
   without moving past. A variant whose caller supplies its tag is not read
   yet;
-* a disjunction of the codec's own flags one of whose flags another gate
-  reads: no group (R4c) but a check (`codec_roles::source_checks`). Each of
-  its flags is derived where something else derives it and is the value's own
-  where nothing does, and the field it gates is presented alone, present or
-  not as the value says; a value whose field contradicts the gate is one the
-  encode refuses ([`EncodeRefused`]).
+* a gate the encode cannot derive a flag from: no group (R4c, R6) but a
+  check (`codec_roles::source_checks`). It is a disjunction of the codec's own
+  flags one of whose flags another gate reads, a disjunction that reads a flag
+  input, or a gate on the kinds of a chain's entries no group holds, because
+  it joins them with an input or another chain's kinds or reads more of them
+  than a group holds. Each flag it reads is derived where something else
+  derives it and is the value's own where nothing does, an input is the one
+  the parent hands, and a kind is tested on the entries the value presents.
+  The field it gates is presented alone, present or not as the value says; a
+  value whose field contradicts the gate is one the encode refuses
+  ([`EncodeRefused`]).
 
 The encode refuses a value of the codec's interface only where the page says
 it does (docs/adr/0065 §2): a gate it cannot derive that the value
-contradicts, two things the value says of one number that disagree, or a
+contradicts, two things the value says of one number that disagree (two
+byte strings of one length, or a length the value states beside content
+that says another), a codec it holds refusing, or a
 derived number past the field that carries it where no type of the value
 bounds it. It raises [`EncodeRefused`] there, naming the refusal. A value no
 type of the interface holds (a byte string past its bound, two lists of one
@@ -170,8 +191,29 @@ READ_ATTRIBUTES = {
 
 #: The attributes of the document root the model reads. `sce:encode-may-fail`
 #: says nothing of the wire: it states that the encode refuses some value
-#: (docs/adr/0065 §1), which a refused case is held to.
-READ_ROOT_ATTRIBUTES = {"name", f"{SCE}kind", f"{SCE}default-endian", f"{SCE}encode-may-fail"}
+#: (docs/adr/0065 §1), which a refused case is held to. Nor does SCXML's own
+#: `version`.
+READ_ROOT_ATTRIBUTES = {
+    "name",
+    "version",
+    f"{SCE}kind",
+    f"{SCE}default-endian",
+    f"{SCE}encode-may-fail",
+}
+
+#: The attributes of an enum document's root the model reads: its carrier
+#: (`sce:underlying-type`) and whether a number no variant declares is a value
+#: of it (`sce:strict-variants`); and of each of its variants. A variant's
+#: `sce:text` is how a content line writes it, which says nothing of a
+#: positional wire.
+READ_ENUM_ATTRIBUTES = {
+    "name",
+    "version",
+    f"{SCE}kind",
+    f"{SCE}underlying-type",
+    f"{SCE}strict-variants",
+}
+READ_VARIANT_ATTRIBUTES = {"name", "value", f"{SCE}text"}
 
 #: The children of the document root besides its datamodel that say nothing of
 #: the wire: why the document is a codec, and its own decoded examples.
@@ -180,6 +222,10 @@ SILENT_CHILDREN = {f"{SCE}kind-basis", f"{SCE}test-vector"}
 #: How a measured element is measured: the bytes of a `length-ref` field, the
 #: entries of a list (`count=`), the encoded bytes of a body (`sce:length-from`).
 LENGTH, COUNT, BODY_LENGTH = "length", "count", "body length"
+
+#: The most atoms a group of a chain's kinds is made of (docs/adr/0065 §6 R6):
+#: a value holds an arm for each assignment of them.
+MOST_GROUP_ATOMS = 8
 
 
 class Unread(Exception):
@@ -221,6 +267,46 @@ class Flag:
     name: str
     bit: int
     width: int
+
+
+@dataclass
+class Enum:
+    """An enum a codec imports (`<sce:import kind="enum">`): the carrier its
+    values are written as, the number each variant declares, and whether a
+    number no variant declares is a value of it (`sce:strict-variants="false"`,
+    an open enum)."""
+
+    name: str
+    carrier: str
+    variants: dict[str, int]
+    open: bool
+
+    def number(self, value) -> int:
+        """The number a source's value of this enum is written as: the one the
+        variant it names declares, or, of an open enum, a number no variant
+        declares, stated as itself."""
+        if isinstance(value, str) and value in self.variants:
+            return self.variants[value]
+        if (self.open and isinstance(value, int) and not isinstance(value, bool)
+                and value not in self.variants.values()):
+            return value
+        raise ValueError(
+            f"a value of {self.name} is the name of a variant it declares"
+            + (", or a number none declares" if self.open else "")
+            + f", not {value!r}"
+        )
+
+    def value_of(self, number: int):
+        """What a decode presents for the carrier `number`: the variant that
+        declares it, or, of an open enum, the number itself where none does. A
+        closed enum holds no other number, so a frame that carries one is no
+        frame of the codec and its decode fails."""
+        for name, declared in self.variants.items():
+            if declared == number:
+                return name
+        if self.open:
+            return number
+        raise ValueError(f"{self.name} declares no variant of {number}: the decode refuses it")
 
 
 @dataclass
@@ -387,21 +473,39 @@ class Field:
     #: Of a field aligned to a DMA burst: the byte it starts at, up to which
     #: the encode writes zeros and which the decode skips to unread.
     aligned_at: int | None = None
+    #: Of a field of an imported enum (`sce:type="enum:<alias>"`): the enum.
+    enum: Enum | None = None
+
+    def law(self) -> list[str]:
+        """The inputs of this list's entries its law runs over (docs/adr/0065
+        §6 R8): each one the list hands them, as its parent's or from the entry
+        before, that they say. An input they do not say is handed to each as
+        the walk writes it, and no law holds them to it."""
+        if self.size != "list":
+            return []
+        return [name for name in [*self.binds, *self.after_key] if codec_says(self.child, name)]
 
     def lawful(self) -> bool:
-        """Whether this is a list held to a law (docs/adr/0065 §6 R8): its
-        entries take inputs, each one they say. Its value is then
-        `{"start": {..}, "entries": [..]}`, the start giving each input the
-        list hands all its entries."""
-        return self.size == "list" and bool(self.binds or self.after_key)
+        """Whether this is a list held to a law (R8): its entries say an input
+        it hands them. Its value is then `{"start": {..}, "entries": [..]}`,
+        the start giving each input of the law the list hands all its entries
+        from its parent."""
+        return bool(self.law())
 
-    def handed_entries(self, start: dict[str, int], entries: list[dict]) -> list[dict[str, int]]:
-        """What each entry of this lawful list is handed: the start for an
-        input the list hands every entry, and for one the chain supplies
-        whether the entry before is of its kind."""
+    def started(self) -> list[str]:
+        """The inputs of this list's law its start gives: those it hands every
+        entry from its parent; one the entry before decides starts clear."""
+        return [name for name in self.law() if name in self.binds]
+
+    def handed_entries(
+        self, given: dict[str, int], entries: list[dict]
+    ) -> list[dict[str, int]]:
+        """What each entry of this list is handed: `given` for an input the
+        list hands every entry, its law's start or what its parent hands, and
+        for one the chain supplies whether the entry before is of its kind."""
         out = []
         for i, _ in enumerate(entries):
-            handed = dict(start)
+            handed = dict(given)
             for name, key in self.after_key.items():
                 handed[name] = int(i > 0 and self.kind_of(entries[i - 1]) == key)
             out.append(handed)
@@ -557,12 +661,13 @@ class Codec:
     def one_flag_gated(self) -> dict[tuple[str, str], list[Field]]:
         """Each flag a gate of one flag names, a carrier's or a flag input
         (carrier empty), and the presented fields it gates; a gate a chain's
-        kinds decide belongs to their group."""
+        kinds decide belongs to their group, and one no group holds is a check
+        ([`Codec.checked`])."""
         held = self.by_kind()
         out: dict[tuple[str, str], list[Field]] = {}
         for f in self.fields:
             if (f.gate is not None and f.gate.one() is not None and self.presented(f)
-                    and f.id not in held):
+                    and f.id not in held and not f.gate.one().is_member()):
                 out.setdefault((f.gate.carrier, f.gate.flag), []).append(f)
         return out
 
@@ -615,14 +720,19 @@ class Codec:
                     break
                 atoms += [a for i, a in enumerate(more) if a not in more[:i]]
             for a in atoms:
-                if a.is_input() or (a.is_member() and a.carrier != chain.id):
-                    raise Unread(f"{self.name}: a gate joins `{a.label()}` with a chain's kinds")
-                if a.is_member() and not kind_fits(chain, a.key):
+                if a.is_member() and a.carrier == chain.id and not kind_fits(chain, a.key):
                     raise Unread(f"{self.name}: `{a.label()}` names a kind no entry can be")
-                if not a.is_member() and self.flag(a.carrier, a.flag).width != 1:
+                if not a.is_member() and not a.is_input() and self.flag(a.carrier, a.flag).width != 1:
                     raise Unread(f"{self.name}: `{a.label()}` is wider than one bit")
-            if len(atoms) > 8:
-                raise Unread(f"{self.name}: `{chain.id}`'s gates read more than eight atoms")
+            # An arm is an assignment of the atoms the value holds, so the value
+            # decides each: a flag input is the parent's, which no value holds,
+            # and another chain's kinds are that chain's. A gate that joins one
+            # with this chain's kinds, or reads more of them than a group holds,
+            # leaves every field the atoms reach to the checks (R6).
+            if len(atoms) > MOST_GROUP_ATOMS or any(
+                a.is_input() or (a.is_member() and a.carrier != chain.id) for a in atoms
+            ):
+                continue
             atoms = [a for a in atoms if a.is_member()] + [a for a in atoms if not a.is_member()]
             reached = [f for f, read in gated if any(x in atoms for x in read)]
 
@@ -660,12 +770,21 @@ class Codec:
     def checked(self, f: Field) -> bool:
         """Whether the gate of `f` is one the encode cannot derive a flag from,
         and so holds the value to, refusing one that contradicts it
-        (docs/adr/0065 §2, `codec_roles::source_checks`): a disjunction of the
-        codec's own flags that is no group (R4c), because another gate reads
-        one of its flags, so that flag is not the disjunction's to derive. Its
-        field is then presented alone, present or not as the value says."""
-        if f.gate is None or f.gate.one() is not None or f.id in self.by_kind():
+        (docs/adr/0065 §2, `codec_roles::source_checks`): a gate on the kinds
+        of a chain's entries no group holds (R6); a disjunction that reads a
+        flag input, which the parent hands and no value says (R4c); or a
+        disjunction of the codec's own flags that is no group, because another
+        gate reads one of its flags, so that flag is not the disjunction's to
+        derive. Its field is then presented alone, present or not as the value
+        says."""
+        if f.gate is None or f.id in self.by_kind():
             return False
+        if any(c.is_member() for c in f.gate.clauses):
+            return True
+        if f.gate.one() is not None:
+            return False
+        if any(c.is_input() for c in f.gate.clauses):
+            return True
         one_flag = {(c.carrier, c.flag) for g in self.fields
                     if g.gate is not None and g.gate.one() is not None for c in g.gate.clauses}
         return any(
@@ -687,20 +806,29 @@ class Codec:
         """Each flag a gate of one flag names, and every element of the value
         its gate decides with the side it is on, the value of the flag while it
         is present: the presented fields it gates, and each stated length whose
-        content it gates, which the value holds on the side where the content
-        is not (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4b)."""
+        content is all on one side of it, which the value holds on the other
+        side (`SCE_FORGE.md` §4.6, docs/adr/0065 §6 R4b). A stated length whose
+        content is under two gates, or on both sides of one, or under a gate of
+        no one flag, joins no side: it is presented alone."""
+        one_flag = self.one_flag_gated()
         out: dict[tuple[str, str], list[tuple[Field, bool]]] = {}
-        for key, gated in self.one_flag_gated().items():
+        for key, gated in one_flag.items():
             out[key] = [(f, not f.gate.when_clear) for f in gated]
         held = self.by_kind()
         for f in self.fields:
-            if self.stated(f) and f.id not in held:
-                for c in self.measured()[f.id]:
-                    if c.gate.one() is None:
-                        raise Unread(f"{self.name}: `{f.id}` measures content a disjunction gates")
-                    out.setdefault((c.gate.carrier, c.gate.flag), []).append(
-                        (f, c.gate.when_clear)
-                    )
+            if not self.stated(f) or f.id in held:
+                continue
+            sides = set()
+            for c in self.measured()[f.id]:
+                clause = c.gate.one()
+                key = (clause.carrier, clause.flag) if clause is not None else None
+                if key is None or c not in one_flag.get(key, []):
+                    sides = None
+                    break
+                sides.add((key, clause.when_clear))
+            if sides is not None and len(sides) == 1:
+                ((key, when_clear),) = sides
+                out[key].append((f, when_clear))
         # Two lists of one count, one always there and one the flag gates (R5):
         # the first is on both sides, so the arm where the flag holds holds the
         # two together, of one count, and the other the first alone.
@@ -757,12 +885,23 @@ class Codec:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
         held = self.by_kind()
         for f in self.fields:
-            if f.gate is None or f.gate.one() is not None or f.id in held:
+            if f.gate is None or f.id in held:
                 continue
+            # A gate the value is held to reads each atom as it is: a flag of
+            # one bit, an input the parent hands, a kind an entry can be. A
+            # disjunction that is a group reads set flags, an arm for each
+            # assignment of them that satisfies it.
+            checked = self.checked(f)
             for c in f.gate.clauses:
-                if c.is_input():
-                    raise Unread(f"{self.name}: the disjunction `{f.gate.text}` reads a flag input")
-                if c.when_clear or self.flag(c.carrier, c.flag).width != 1:
+                if c.is_member():
+                    chain = self.field(c.carrier)
+                    if chain.entry_id is None or not kind_fits(chain, c.key):
+                        raise Unread(f"{self.name}: `{c.label()}` names a kind no entry can be")
+                elif c.is_input():
+                    continue
+                elif f.gate.one() is not None:
+                    continue
+                elif (c.when_clear and not checked) or self.flag(c.carrier, c.flag).width != 1:
                     raise Unread(f"{self.name}: the disjunction `{f.gate.text}` is not of set flags")
         # A disjunction one of whose flags another gate reads is no group but a
         # check ([`Codec.checked`]): each of its flags is derived by what derives
@@ -858,6 +997,35 @@ def attribute_int(node, name: str, namespace: str = SCE) -> int | None:
     return int(value, 0) if value is not None else None
 
 
+def read_enum(path: Path) -> Enum:
+    """The enum at `path` (`sce:kind="enum"`), as its document declares it: its
+    carrier, an unsigned number, and each variant's name and number, within
+    the carrier, two variants never declaring one number."""
+    stem = path.stem
+    root = ET.parse(path).getroot()
+    if root.get(f"{SCE}kind") != "enum":
+        raise Unread(f"{stem}: not an enum")
+    if extra := sorted(set(root.attrib) - READ_ENUM_ATTRIBUTES):
+        raise Unread(f"{stem}: the root declares {', '.join(extra)}, which is not read yet")
+    carrier = root.get(f"{SCE}underlying-type")
+    if carrier not in WIDTH:
+        raise Unread(f"{stem}: the carrier {carrier!r} is not an unsigned number")
+    strict = root.get(f"{SCE}strict-variants", "true").strip()
+    if strict not in ("true", "false"):
+        raise Unread(f"{stem}: sce:strict-variants={strict!r} is not read yet")
+    variants: dict[str, int] = {}
+    for node in root.iter(f"{SCE}variant"):
+        if extra := sorted(set(node.attrib) - READ_VARIANT_ATTRIBUTES):
+            raise Unread(f"{stem}: a variant declares {', '.join(extra)}, which is not read yet")
+        name, value = node.get("name"), int(node.get("value"), 0)
+        if name in variants or value in variants.values() or not 0 <= value < 1 << WIDTH[carrier]:
+            raise Unread(f"{stem}: the variant `{name}` = {value} is not one more of its carrier")
+        variants[name] = value
+    if not variants:
+        raise Unread(f"{stem}: declares no variant")
+    return Enum(root.get("name"), carrier, variants, strict == "false")
+
+
 def read_codec(stem: str) -> Codec:
     """The codec `stem` of the resources, as its document declares it."""
     return read_document(RESOURCES / f"{stem}.scxml")
@@ -949,12 +1117,6 @@ def read_held(
     if child is None:
         raise Unread(f"{stem}: `{id}` holds `{alias}`, which is not imported")
     bound = bound_inputs(stem, f"`{id}`", alias, child, binds, inputs, supplied=set(after_key))
-    if kind != "embed":
-        # The entries of a list are held to a law over each input they take
-        # (docs/adr/0065 §6 R8), so each one is an input they say.
-        for name in [*bound, *after_key]:
-            if not codec_says(child, name):
-                raise Unread(f"{stem}: the entries of `{id}` take `{name}`, which they do not say")
     if kind == "embed":
         size, measured_by, most = "body", node.get(f"{SCE}length-from"), None
     elif kind == "repeat":
@@ -1081,6 +1243,7 @@ def read_document(path: Path) -> Codec:
     if root.get(f"{SCE}kind") != "codec":
         raise Unread(f"{stem}: not a codec")
     imports: dict[str, Codec] = {}
+    enums: dict[str, Enum] = {}
     #: For each import, what the parent hands each flag input of it.
     binds: dict[str, dict[str, str]] = {}
     inputs: list[str] = []
@@ -1093,12 +1256,18 @@ def read_document(path: Path) -> Codec:
                     raise Unread(f"{stem}: the flag input `{item.get('name')}` is wider than a bit")
                 inputs.append(item.get("name"))
         elif child.tag == f"{SCE}import":
-            if child.get("kind") != "codec" or set(child.attrib) - {"src", "kind", "as"}:
-                raise Unread(f"{stem}: an import other than of a codec by its file")
+            kind = child.get("kind")
+            if kind not in ("codec", "enum") or set(child.attrib) - {"src", "kind", "as"}:
+                raise Unread(f"{stem}: an import other than of a codec or an enum by its file")
             src = child.get("src")
             if src.startswith("sce:"):
                 raise Unread(f"{stem}: the standard document {src} is not read yet")
             alias = child.get("as")
+            if kind == "enum":
+                if len(child):
+                    raise Unread(f"{stem}: the import of the enum `{alias}` holds <{child[0].tag}>")
+                enums[alias] = read_enum(path.parent / src)
+                continue
             imports[alias] = read_document(path.parent / src)
             for bind in child:
                 if bind.tag != f"{SCE}flag-bind" or set(bind.attrib) != {"input", "source"}:
@@ -1127,20 +1296,28 @@ def read_document(path: Path) -> Codec:
             continue
         sce_type = node.get(f"{SCE}type")
         size_text = node.get(f"{SCE}bit-size")
+        # A field of an imported enum is written as the enum's carrier.
+        enum = None
+        written_as = sce_type
+        if (sce_type or "").startswith("enum:"):
+            enum = enums.get(sce_type.removeprefix("enum:"))
+            if enum is None:
+                raise Unread(f"{stem}: `{id}` is of `{sce_type}`, no enum the codec imports")
+            written_as = enum.carrier
         if sce_type in SEQUENCE:
             if size_text not in ("length-ref", "tail"):
                 raise Unread(f"{stem}: `{id}` is {sce_type} of bit-size {size_text!r}")
             size, bits = size_text, 0
-        elif sce_type in WIDTH:
+        elif written_as in WIDTH:
             if size_text == "vle":
-                size, bits = "vle", WIDTH[sce_type]
+                size, bits = "vle", WIDTH[written_as]
             elif size_text is not None and size_text.isdigit():
                 size, bits = "fixed", int(size_text)
                 offset = attribute_int(node, "bit-offset") or 0
                 if bits == 0 or offset < 0:
                     raise Unread(f"{stem}: `{id}` has {bits} bits at bit {offset}")
-                if bits > WIDTH[sce_type]:
-                    raise Refused(f"{stem}: `{id}` has {bits} bits, more than {sce_type} holds")
+                if bits > WIDTH[written_as]:
+                    raise Refused(f"{stem}: `{id}` has {bits} bits, more than {written_as} holds")
                 if offset + bits > 64:
                     raise Refused(f"{stem}: the word of `{id}` is {offset + bits} bits, past 64")
             else:
@@ -1170,6 +1347,7 @@ def read_document(path: Path) -> Codec:
                 arith=attribute_int(node, "length-arith") or 0,
                 most=attribute_int(node, "max-size"),
                 aligned_at=aligned_at(stem, node),
+                enum=enum,
             )
         )
     may_fail = root.get(f"{SCE}encode-may-fail", "false").strip() in ("true", "1")
@@ -1290,8 +1468,8 @@ def said_input(codec: Codec, source: dict, name: str) -> int | None:
     # value holds the list, and the arm of a variant the input is handed to.
     for f in codec.fields:
         if f.lawful() and source.get(f.id) is not None:
-            for child_input, bound in f.binds.items():
-                if bound == name:
+            for child_input in f.started():
+                if f.binds[child_input] == name:
                     return source[f.id]["start"][child_input]
         if f.size == "variant":
             arm = arm_held(codec, f, source[f.id])
@@ -1357,6 +1535,25 @@ def handed_to(
     return out
 
 
+def entries_handed(
+    codec: Codec, f: Field, source: dict, inputs: dict[str, int]
+) -> dict[str, int]:
+    """What the list `f` of `codec` hands every entry for each input it binds
+    that no law of the entries runs over (docs/adr/0065 §6 R4a, R8): the
+    parent's own input, or the bit of its carrier the value presents, since an
+    entry that does not say the input derives nothing of it."""
+    out = {}
+    started = f.started()
+    for child_input, bound in f.binds.items():
+        if child_input in started:
+            continue
+        carrier, _, flag = bound.partition(".")
+        out[child_input] = (
+            inputs[bound] if not flag else (source[carrier] >> codec.flag(carrier, flag).bit) & 1
+        )
+    return out
+
+
 def handed_on(
     codec: Codec, binds: dict[str, str], carriers: dict[str, int], inputs: dict[str, int]
 ) -> dict[str, int]:
@@ -1401,8 +1598,8 @@ def bound_flags(codec: Codec, source: dict) -> dict[tuple[str, str], int]:
     # the value holds the list (R8, the plan's `Start` measure).
     for f in codec.fields:
         if f.lawful() and source.get(f.id) is not None:
-            for child_input, bound in f.binds.items():
-                carrier, _, flag = bound.partition(".")
+            for child_input in f.started():
+                carrier, _, flag = f.binds[child_input].partition(".")
                 if flag:
                     out[(carrier, flag)] = source[f.id]["start"][child_input]
     return out
@@ -1417,7 +1614,10 @@ def holds_bytes(f: Field) -> bool:
 def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[bytes]:
     """What a present element that holds bytes writes: the bytes of a sequence,
     the frame of a body, handed the flag inputs `handed`, the frame of each
-    entry of a list, each within its bound."""
+    entry of a list, each within its bound. A list's entries are handed
+    `handed` for each input the list binds that no law of theirs runs over,
+    its start for each one that does, and what the entry before is for each
+    one the chain supplies."""
     if f.sce_type in SEQUENCE:
         data = content(f, value)
     elif f.size == "body":
@@ -1425,7 +1625,7 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
             raise ValueError(f"`{f.id}` is a body, a JSON object")
         return encode(f.child, value, handed)
     else:
-        handed_each = None
+        given = dict(handed or {})
         if f.lawful():
             # A list held to a law (R8) is its start and its entries; each
             # entry is handed the start, or whether the entry before is of a
@@ -1433,11 +1633,15 @@ def held(f: Field, value, handed: dict[str, int] | None = None) -> bytes | list[
             if not isinstance(value, dict) or sorted(value) != ["entries", "start"]:
                 raise ValueError(f"`{f.id}` is held to a law: {{\"start\": .., \"entries\": ..}}")
             start, value = value["start"], value["entries"]
-            if sorted(start) != sorted(f.binds) or any(v not in (0, 1) for v in start.values()):
-                raise ValueError(f"`{f.id}`'s start gives each of {sorted(f.binds)} as 0 or 1")
-            handed_each = f.handed_entries(start, value)
+            started = f.started()
+            if sorted(start) != sorted(started) or any(v not in (0, 1) for v in start.values()):
+                raise ValueError(f"`{f.id}`'s start gives each of {sorted(started)} as 0 or 1")
+            given |= start
         if not isinstance(value, list):
             raise ValueError(f"`{f.id}` is a list, a JSON array")
+        # An input no law runs over is handed as the walk writes the entries:
+        # an entry its value cannot say it in is held to it by its own encode.
+        handed_each = f.handed_entries(given, value) if f.child.inputs else None
         if f.end_flag is not None:
             # The chain ends on its entries' flag: it is set on every entry
             # but the last, so the chain holds one entry or more.
@@ -1605,10 +1809,12 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
         f.id: held(
             f,
             source[f.id],
-            # A body is handed its inputs here; a lawful list hands each of its
-            # entries theirs from its start (`held`).
+            # A body is handed its inputs here; a list hands each of its entries
+            # an input its law runs over from its start, and any other it binds
+            # from here (`held`).
             handed_to(codec, f.child, f.binds, source[f.id], source, inputs)
-            if f.binds and f.size == "body" else None,
+            if f.binds and f.size == "body"
+            else entries_handed(codec, f, source, inputs) if f.size == "list" else None,
         )
         for f in codec.fields
         if holds_bytes(f) and source[f.id] is not None
@@ -1691,17 +1897,22 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
             if value is None:
                 value = source[f.id] if codec.stated(f) else None
             else:
-                if codec.stated(f) and source[f.id] is not None:
-                    raise ValueError(f"{codec.name}: `{f.id}` is stated where it is derived")
                 # A derived number past its field; a stated one is the value's
                 # own number, held to its field's bits below.
                 past_measure(codec, f.id, value, f.bits)
+                # A number the value states beside content that says it is
+                # said twice, and the two must agree (docs/adr/0065 §6 R4b).
+                if codec.stated(f) and source[f.id] not in (None, value):
+                    raise EncodeRefused(INCONSISTENT_SOURCE, f"{codec.name}: `{f.id}` is "
+                                        f"stated as {source[f.id]} beside content of {value}")
             if value is None:
                 raise ValueError(f"{codec.name}: nothing says `{f.id}`")
         elif holds_bytes(f):
             data = contents[f.id]
             out += b"".join(data) if f.size == "list" else data
             continue
+        elif f.enum is not None:
+            value = f.enum.number(source[f.id])
         else:
             value = source[f.id]
         if not isinstance(value, int) or value < 0 or value >= 1 << f.bits:
@@ -1813,8 +2024,9 @@ def decode_at(
             count = None
             if f.measured_by is not None:
                 count = measure_on_wire(codec, f.measured_by, raw, carriers)
-            # A lawful list's start is what the parent hands its entries: its
-            # own input, or a flag of a carrier read before the list.
+            # What the parent hands the entries: its own input, or a flag of a
+            # carrier read before the list. A lawful list's start is that of
+            # each input its law runs over.
             start = handed_on(codec, f.binds, carriers, inputs)
             more = True
             while more and ((len(entries) < count) if count is not None else (at < end)):
@@ -1834,7 +2046,10 @@ def decode_at(
                     more = (entry[carrier] >> f.child.flag(carrier, name).bit) & 1 == 1
             if f.end_flag is not None and (not entries or more):
                 raise ValueError(f"{codec.name}: the frame ends inside `{f.id}`")
-            raw[f.id] = {"start": start, "entries": entries} if f.lawful() else entries
+            if f.lawful():
+                raw[f.id] = {"start": {n: start[n] for n in f.started()}, "entries": entries}
+            else:
+                raw[f.id] = entries
             continue
         if f.size == "vle":
             within(1, f.id)
@@ -1861,6 +2076,8 @@ def decode_at(
             continue
         if codec.stated(f) and any(raw[c.id] is not None for c in codec.measured()[f.id]):
             source[f.id] = None
+        elif f.enum is not None and raw[f.id] is not None:
+            source[f.id] = f.enum.value_of(raw[f.id])
         else:
             source[f.id] = raw[f.id]
     # A group is the arm its flags and its chain's kinds say, holding its
@@ -3232,6 +3449,176 @@ FIXTURES = {
     "codec_variant_session_open": Fixture(
         [({"version": 0x0102}, "two bytes, high first")],
         "two bytes.",
+    ),
+    "codec_length_shared": Fixture(
+        [
+            ({"alpha": [], "beta": []}, "two empty byte strings: the length is zero"),
+            ({"alpha": [1, 2], "beta": [3, 4]}, "two byte strings of one length, after it"),
+            ({"alpha": [0xA5] * 255, "beta": [0x5A] * 255},
+             "the length at the most its byte says, the bound of both byte strings"),
+        ],
+        "one length shared by two byte strings that are always there: each is held within "
+        "what the length can say by its type, and the encode refuses two that differ, since "
+        "the wire has room for one number (docs/adr/0065 §2). No value of the interface is "
+        "past its length, so none is refused as out of range.",
+        [
+            ({"alpha": [1, 2], "beta": [3]}, INCONSISTENT_SOURCE,
+             "the second byte string one byte shorter than the first"),
+            ({"alpha": [], "beta": [9]}, INCONSISTENT_SOURCE,
+             "the first byte string empty and the second not"),
+        ],
+    ),
+    "codec_length_stated": Fixture(
+        [
+            ({"flags": 0x00, "span_len": 5, "alpha": None, "beta": None},
+             "neither byte string: the value states the length"),
+            ({"flags": 0x00, "span_len": 0, "alpha": None, "beta": None},
+             "neither byte string, a stated length of zero"),
+            ({"flags": 0x01, "span_len": None, "alpha": [0x61, 0x62], "beta": None},
+             "alpha alone says the length, and has_alpha is derived"),
+            ({"flags": 0x02, "span_len": None, "alpha": None, "beta": [0x7A]},
+             "beta alone says the length, and has_beta is derived"),
+            ({"flags": 0x03, "span_len": None, "alpha": [0x78, 0x79], "beta": [1, 2]},
+             "both, of one length, which both say"),
+            ({"flags": 0x03, "span_len": None, "alpha": [], "beta": []},
+             "both there and empty: the content says zero"),
+            ({"flags": 0xFC, "span_len": 0xFF, "alpha": None, "beta": None},
+             "the bits beside the two flags are kept, and the stated length at its largest"),
+        ],
+        "one length shared by two byte strings each gated on a flag of its own. The length's "
+        "content is under two gates, so it joins no group (docs/adr/0065 §6 R4b): it is "
+        "presented alone, stated by the value where neither byte string is there and derived "
+        "where either is. The encode refuses two byte strings there of two lengths, and a "
+        "length the value states beside content that says another.",
+        [
+            ({"flags": 0x03, "span_len": None, "alpha": [1, 2], "beta": [3]}, INCONSISTENT_SOURCE,
+             "both byte strings there, of two lengths"),
+            ({"flags": 0x01, "span_len": 7, "alpha": [1, 2], "beta": None}, INCONSISTENT_SOURCE,
+             "a stated length of seven beside alpha of two bytes"),
+            ({"flags": 0x02, "span_len": 0, "alpha": None, "beta": [4]}, INCONSISTENT_SOURCE,
+             "a stated length of zero beside beta of one byte"),
+        ],
+    ),
+    "codec_encoded_length_checked": Fixture(
+        [
+            ({"inner": {"alpha": [], "beta": []}},
+             "the body of two empty byte strings is one byte long"),
+            ({"inner": {"alpha": [0x0A], "beta": [0x0B]}},
+             "the length is the count of the bytes the body encodes to"),
+            ({"inner": {"alpha": [0xA5] * 128, "beta": [0x5A] * 128}},
+             "a body of 257 bytes: the length's high byte is set"),
+        ],
+        "the encoded length of a body whose own encode can refuse, in a 16-bit field. The "
+        "body's refusal is passed on before the parent writes its first byte (docs/adr/0065 "
+        "§2). The language bounds no encoded length, so the encode can refuse one past the "
+        "field; no value of this body reaches it, its two byte strings being of at most 255 "
+        "bytes each, so no case is refused as out of range.",
+        [
+            ({"inner": {"alpha": [1, 2], "beta": [3]}}, INCONSISTENT_SOURCE,
+             "the body's two byte strings differ, which the body refuses"),
+        ],
+    ),
+    "codec_group_enum": Fixture(
+        [
+            ({"flags": 0x00, "flags.has_session": None}, "has_session clear: the carrier alone"),
+            ({"flags": 0x01,
+              "flags.has_session": {"arm": 0, "state": "defaultSession", "attempts": 0}},
+             "the first variant, at its declared 1, and no attempt"),
+            ({"flags": 0x01,
+              "flags.has_session": {"arm": 0, "state": "programming", "attempts": 5}},
+             "programming is written as its carrier 2"),
+            ({"flags": 0x01,
+              "flags.has_session": {"arm": 0, "state": "safetySystem", "attempts": 0xFF}},
+             "safetySystem is written as 64, and attempts at its largest"),
+            ({"flags": 0xFF,
+              "flags.has_session": {"arm": 0, "state": "extendedDiagnostic", "attempts": 1}},
+             "the bits beside has_session are kept"),
+            ({"flags": 0xFE, "flags.has_session": None},
+             "the bits beside has_session are kept where the group is absent"),
+        ],
+        "an imported closed enum in a group of one flag (docs/adr/0065 §6 R4b): the value "
+        "states it by the name of its variant, and the wire holds the number the variant "
+        "declares.",
+    ),
+    "codec_chain_has_input": Fixture(
+        [
+            ({"entries": [{"entry_type": 7, "ctl": 0x00, "body": 5}], "priority": 9},
+             "an entry of kind 7: priority is there", {"urgent": 0}),
+            ({"entries": [{"entry_type": 3, "ctl": 0x00, "body": 5}], "priority": None},
+             "no entry of kind 7 and urgent clear: no priority", {"urgent": 0}),
+            ({"entries": [{"entry_type": 3, "ctl": 0x00, "body": 5}], "priority": 1},
+             "urgent alone puts priority there", {"urgent": 1}),
+            ({"entries": [{"entry_type": 3, "ctl": 0x01, "body": 1},
+                          {"entry_type": 7, "ctl": 0x00, "body": 2}], "priority": 0xFF},
+             "kind 7 second and urgent set: either holds", {"urgent": 1}),
+            ({"entries": [{"entry_type": 1, "ctl": 0x01, "body": 0},
+                          {"entry_type": 7, "ctl": 0x01, "body": 0},
+                          {"entry_type": 2, "ctl": 0xFE, "body": 0}], "priority": 4},
+             "three entries, the depth, kind 7 among them; the last ctl keeps its other bits",
+             {"urgent": 0}),
+        ],
+        "a field gated on a chain's kinds or a flag input the caller hands: no group holds it, "
+        "since no value holds the input (docs/adr/0065 §6 R6). The encode is handed urgent as "
+        "its decode is, tests the gate on the entries the value presents, and refuses a "
+        "priority that disagrees with it.",
+        [
+            ({"entries": [{"entry_type": 3, "ctl": 0x00, "body": 5}], "priority": None},
+             PRESENT_IF_MISMATCH, "no priority where urgent is set", {"urgent": 1}),
+            ({"entries": [{"entry_type": 7, "ctl": 0x00, "body": 5}], "priority": None},
+             PRESENT_IF_MISMATCH, "no priority where an entry is of kind 7", {"urgent": 0}),
+            ({"entries": [{"entry_type": 3, "ctl": 0x00, "body": 5}], "priority": 5},
+             PRESENT_IF_MISMATCH, "a priority where neither holds", {"urgent": 0}),
+        ],
+    ),
+    "codec_chain_handed_entry": Fixture(
+        [
+            ({"header": 0x02, "value": None}, "handed after_marker clear, wide clear: no value",
+             {"after_marker": 0}),
+            ({"header": 0x02, "value": 0x55}, "handed after_marker set: the value is there",
+             {"after_marker": 1}),
+            ({"header": 0x42, "value": 7}, "its own wide flag: the value is there",
+             {"after_marker": 0}),
+            ({"header": 0xC4, "value": 0}, "both, and Z set, which it presents",
+             {"after_marker": 1}),
+            ({"header": 0x30, "value": None}, "the bits no flag names are kept",
+             {"after_marker": 0}),
+        ],
+        "an entry that takes a flag input it does not say: the disjunction reads the input, "
+        "so it is no group but a check (docs/adr/0065 §6 R4c). wide is the value's own, the "
+        "encode is handed after_marker, and it refuses a value that disagrees with the gate.",
+        [
+            ({"header": 0x02, "value": 5}, PRESENT_IF_MISMATCH,
+             "a value where neither the input nor wide is set", {"after_marker": 0}),
+            ({"header": 0x02, "value": None}, PRESENT_IF_MISMATCH,
+             "no value where after_marker is handed set", {"after_marker": 1}),
+            ({"header": 0x42, "value": None}, PRESENT_IF_MISMATCH,
+             "no value where its own wide flag is set", {"after_marker": 0}),
+        ],
+    ),
+    "codec_chain_handed": Fixture(
+        [
+            ({"entries": [{"header": 0x02, "value": None}]},
+             "one entry, the first: handed after_marker clear, no value"),
+            ({"entries": [{"header": 0x84, "value": None}, {"header": 0x02, "value": 0x55}]},
+             "an entry after one of identifier 4 is handed after_marker set"),
+            ({"entries": [{"header": 0xC2, "value": 7}, {"header": 0x03, "value": None}]},
+             "an entry's own wide flag, then one after identifier 2, handed it clear"),
+            ({"entries": [{"header": 0x84, "value": None}, {"header": 0x84, "value": 1},
+                          {"header": 0x82, "value": 2}, {"header": 0x01, "value": None}]},
+             "four entries, the depth: each handed what the entry before is"),
+        ],
+        "a chain that hands each entry whether the entry before has the identifier 4, an "
+        "input the entry does not say (docs/adr/0065 §6 R8b): no law holds the entries, the "
+        "list is its entries alone, and the walk hands each what the entry before is as it "
+        "writes it. An entry that refuses refuses the chain.",
+        [
+            ({"entries": [{"header": 0x84, "value": None}, {"header": 0x02, "value": None}]},
+             PRESENT_IF_MISMATCH, "no value on an entry after one of identifier 4"),
+            ({"entries": [{"header": 0x02, "value": 5}]},
+             PRESENT_IF_MISMATCH, "a value on the first entry, which is handed it clear"),
+            ({"entries": [{"header": 0x82, "value": None}, {"header": 0x04, "value": 3}]},
+             PRESENT_IF_MISMATCH, "a value on an entry after identifier 2, wide clear"),
+        ],
     ),
 }
 
