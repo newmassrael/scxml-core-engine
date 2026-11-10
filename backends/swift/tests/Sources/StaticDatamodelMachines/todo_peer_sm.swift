@@ -2019,8 +2019,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                         var sendError = EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
-
-                            break sceBlock
+break sceBlock
                         }
                     }
                     let sendEventData = payloadJSON(sendParts)
