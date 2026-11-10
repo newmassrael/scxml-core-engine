@@ -1446,6 +1446,16 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, schemars(skip))]
     pub native_send_least: Option<u32>,
+    /// Codegen-internal: the place that holds the list
+    /// [`Self::native_send_least`] holds to its count, as the target reads it;
+    /// `None` wherever that is. A target that leaves the send to an engine of
+    /// its own (the Interpreter) cannot end a send from inside a param, whose
+    /// failure §scxml-5.7.1 has the message survive, so it holds the count as
+    /// one of the send's own arguments instead, read from this place. No
+    /// template reads it. Set by [`crate::forge::static_lowering`], outside
+    /// the IR contract, for the reason [`Self::native_value`] gives.
+    #[serde(skip)]
+    pub native_send_held: Option<String>,
 }
 
 /// §scxml-5.2: Datamodel variable
