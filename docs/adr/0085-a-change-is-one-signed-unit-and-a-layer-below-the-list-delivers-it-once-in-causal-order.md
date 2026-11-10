@@ -1018,6 +1018,21 @@ Decided while landing 5, the core at change units with ADR 0083's landing 3 and 
   relay's protocol for them stay, as what shows an operation withheld (`Trust::divergences`), which an audit reads.
 - **The ABI is version 8**, the sealed state the core's version 6 (it holds the outbox), and the recorded scenario
   version 6, with steps a lane replays for each new function.
+- **What a core lacks is read from what it holds (a correction of 4b).** 4b read the gap before a device's next
+  operation from the delivered vector, which during a round lags what the core holds, since a round tells its
+  machine when it ends, after it asked for what it lacks: a gap was asked a round after the operation past it came.
+  The repair rule (section 3, "a held operation waits in the core, which asks the relay for what it lacks") is
+  about holding, so `Trust::lacking` reads the vector a delivery now would reach from what is held, and a gap is
+  asked in the round that first sees it.
+- **An eviction is of what the machine was told (a correction of 4b).** 4b reported an operation evicted, and the
+  machine to be built again without it, from the chain the core held, so an operation held and never told was
+  reported. An eviction and a restoration are notices to the machine, so both are read against the delivered
+  vector: an operation never told is never evicted, and one that enters what the core holds past how far the
+  machine was told is told by the next delivery and is no restoration. A round that takes in a device's two
+  operations at one number tells its machine neither and reports nothing to rebuild.
+- **The read-back is told before the device signs past it (a correction of 4b).** Signing raises the device's own
+  column to the new number, so the operations a round read back of the device's own chain are told once its chain
+  is confirmed, before what waited is signed; told at the round's end they were counted told and never told.
 - **The fold of the second domain is not in this step.** Folding a relay's history of `sce-trust/event/2` (section
   8.3) needs that domain's encoder and its link's bytes, which 4c removed, back in the trust layer as a reader
   of what is held, verified as any operation is; it lands as a step of its own, 5b, with section 9.5's test.
