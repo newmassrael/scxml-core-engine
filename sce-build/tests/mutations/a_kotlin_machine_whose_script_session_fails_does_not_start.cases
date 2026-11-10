@@ -1,0 +1,157 @@
+# Mutation cases for docs/adr/0096 on the Kotlin channel: a machine whose script
+# session cannot be established does not start, and its host is told why; an
+# invoked child that cannot start is a failed invoke.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_kotlin_machine_whose_script_session_fails_does_not_start.cases`.
+#
+# Establishing a session used to be lazy: the generated `ensureScriptEngine`
+# made it at the first guard, assign or script, and a failure propagated out of
+# whatever had asked, from `start` out of a coroutine the caller held no handle
+# on; every engine returned silently from a bind on a session it did not hold.
+# Each case below puts back one piece of that shape and names the test that
+# must go red. The script engine of the oracle is a double over the Lua engine
+# that fails the step a case asks for, so the failure is reached through the
+# engine a generated machine is handed, as a host's would be.
+#
+# The values a refusal hands its host are held on their own in
+# `ScriptSessionFailureTest`, which is the second oracle; the generated machine
+# is where the runtime and template halves can only be seen together.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AMachineWhoseScriptSessionFailsDoesNotStartTest' --tests 'com.sce.runtime.ScriptSessionFailureTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AMachineWhoseScriptSessionFailsDoesNotStartTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/runtime/ScriptSessionFailureTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScriptSession.kt
+
+# The template reaches the tests only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the tests, and the command is what carries a mutated
+# template into them.
+mutation_targets tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tickSm.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chattySm.kt
+mutation_regen scripts/regen_a_child_may_send_many_events_in_one_tick_kotlin.sh
+
+# ── The start goes on past a session that failed ────────────────────
+#
+# `initialize` drops the failure and enters the initial configuration anyway.
+# Killer: `a start whose session cannot be established is refused with the
+# step`, whose start throws the broken invariant of `assertScriptSession`
+# rather than the refusal.
+
+mutation_case "initialize enters the machine past a session that failed" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        establishScriptSessionForStart()?.let { throw ScriptSessionUnavailableException(it) }\n\n        syncMode = true\n",
+     "        establishScriptSessionForStart()\n\n        syncMode = true\n")
+PY
+
+# ── The coroutine start finds out inside its coroutine ──────────────
+#
+# `start` drops the failure and launches the run, the shape in which a refusal
+# could only end a coroutine the caller holds no handle on.
+# Killer: `the coroutine start throws to its caller and launches nothing`.
+
+mutation_case "start launches the run past a session that failed" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        establishScriptSessionForStart()?.let { throw ScriptSessionUnavailableException(it) }\n\n        // A run that follows a stop",
+     "        establishScriptSessionForStart()\n\n        // A run that follows a stop")
+PY
+
+# ── The resumed start goes on past a session that failed ────────────
+#
+# Killer: `a resumed start whose session cannot be established is refused`,
+# whose `enterAt` reaches the datamodel over no session.
+
+mutation_case "enterAt enters the configuration past a session that failed" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        establishScriptSessionForStart()?.let {\n            return ConfigurationVerdict(ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE, it)\n        }\n",
+     "        establishScriptSessionForStart()\n")
+PY
+
+# ── A library that did not load is the engine's own failure ─────────
+#
+# The creation failure is no longer told apart, so a build that shipped a
+# chunk that does not load is reported as a session the engine could not make.
+# Killers: `a start whose session cannot be established is refused with the
+# step` (its `LIBRARY` round names `CREATE`), `the checked root start is
+# refused for the session`, and `ScriptSessionFailureTest`.
+
+mutation_case "a library that did not load is reported as the create step" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScriptSession.kt",
+     "val stage = if (library) ScriptSessionStage.LIBRARY else ScriptSessionStage.CREATE",
+     "val stage = if (library) ScriptSessionStage.CREATE else ScriptSessionStage.CREATE")
+PY
+
+# ── A bind that failed leaves its session behind ────────────────────
+#
+# Killers: `a session whose system variables cannot be bound is released`
+# (nothing is destroyed) and every `SYSTEM_VARIABLES` round of
+# `assertNothingStarted` (a session is live).
+
+mutation_case "a failed bind of the system variables keeps its session" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            engine.destroySession(sid)\n            scriptSessionId = null\n            return ScriptSessionFailure.ofSystemVariables(failure)\n",
+     "            scriptSessionId = null\n            return ScriptSessionFailure.ofSystemVariables(failure)\n")
+PY
+
+# ── A refused machine keeps the id of a session it does not have ────
+#
+# Killer: `assertNothingStarted`, whose machine still answers the drawn id as
+# its `sessionId`.
+
+mutation_case "a session whose creation failed keeps its id" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            // The engine keeps no session for a creation that failed.\n            scriptSessionId = null\n",
+     "            // The engine keeps no session for a creation that failed.\n")
+PY
+
+# ── The generated session is taken as made whatever happened ────────
+#
+# The generated `establishScriptSession` drops what `makeScriptSession`
+# answered, so the runtime is told the session is there.
+# Killer: `a start whose session cannot be established is refused with the
+# step`, whose start throws the broken invariant rather than the refusal.
+
+mutation_case "the generated machine drops the failure of its session" <<'PY'
+edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
+     "        )?.let { return it }\n",
+     "        )\n")
+PY
+
+# ── The refused child is not caught ─────────────────────────────────
+#
+# The child's refusal escapes the parent's start, so one child that cannot
+# start ends its parent's run.
+# Killer: `a child whose session fails leaves its parent with error execution
+# and no child`, whose parent's `initialize` throws.
+
+mutation_case "the refusal of a child escapes its parent's start" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            try {\n                child.initialize()\n            } catch (refused: ScriptSessionUnavailableException) {\n                refuseChildStart(child, eventInvokeId, refused.failure)\n                return\n            }\n",
+     "            child.initialize()\n")
+PY
+
+# ── The refused child is kept in the tree ───────────────────────────
+#
+# Killer: `a child whose session fails leaves its parent with error execution
+# and no child`, whose post naming the child is taken.
+
+mutation_case "the child whose start was refused stays in the tree" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        child.assignedSessionId?.let { tree.leave(it, child) }\n",
+     "")
+PY
+
+# ── The refused child raises nothing ────────────────────────────────
+#
+# The invoke ends without a child and without telling the document. The
+# failure is still read, so the mutant compiles under warnings as errors.
+# Killer: `a child whose session fails leaves its parent with error execution
+# and no child`, whose `lastUnhandledError` finds no error.execution.
+
+mutation_case "the child whose start was refused raises no error.execution" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        resolveEventByName(\"error.execution\")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }\n",
+     "        resolveEventByName(\"error.no-such-event\")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }\n")
+PY
