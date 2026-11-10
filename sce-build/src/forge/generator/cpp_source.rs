@@ -5118,7 +5118,7 @@ mod tests {
         let code = cpp_of(stem);
         assert!(
             code.lines()
-                .any(|line| line.contains(" state_{") && line.ends_with("defaultSession};")),
+                .any(|line| line.contains(" state_{") && line.ends_with("::DefaultSession};")),
             "{stem}: the arm holds `state` from the enum's first value:\n{code}"
         );
         holds(stem, &code, "_e_state = static_cast<");
