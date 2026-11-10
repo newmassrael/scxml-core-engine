@@ -147,7 +147,8 @@ fn a_configuration_reads_the_inputs_of_its_system_ports() {
          &value) {",
         "inline ::SCE::Saved::JsonValue canonicalJobReply(const \
          ::SCE::Generated::JobReply::JobReplyPayload &value) {",
-        "::SCE::Test::FromCanonical::record(value, {\"job\", \"code\"}, \"job_reply\")",
+        "const ::SCE::Test::FromCanonical::CanonicalRecord record_0 = \
+         ::SCE::Test::FromCanonical::record(value, {\"job\", \"code\"}, \"job_reply\");",
         "::SCE::Test::FromCanonical::integer<decltype(::SCE::Generated::JobReply::JobReplyPayload::job)>(\
          ::SCE::Test::FromCanonical::field(record_0, \"job\", \"job_reply.job\"), \"job_reply.job\")",
         "if (systemPort == \"sut\" && typeName == \"job_reply\") {",
@@ -165,6 +166,11 @@ fn a_configuration_reads_the_inputs_of_its_system_ports() {
     assert!(
         !asking.contains("job_request.h"),
         "a record the system port only sends is read by no one: {asking}"
+    );
+    assert!(
+        !asking.contains("&record_"),
+        "a record's object is bound as a view by value, never as a reference a call returned: \
+         {asking}"
     );
 
     let keeping = header("keeping_configuration");

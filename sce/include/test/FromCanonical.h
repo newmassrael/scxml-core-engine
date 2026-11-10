@@ -41,6 +41,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -352,10 +353,51 @@ E openEnumerated(const Value &value, const Declared<E> &declared, E (*fromUnderl
     return read;
 }
 
+/// A record record() has held to its fields: a view of the object the value
+/// read is, which field() and optionalField() read. A view held by value, and
+/// no reference returned from a call, so the only thing it can point into is
+/// the value read, which the caller holds, and never an argument the call was
+/// handed as a temporary (the names of the fields, where it stands).
+class CanonicalRecord {
+public:
+    explicit CanonicalRecord(const Value &object) : object_(&object) {}
+
+    /// The member @p id of the object, or null where it names none.
+    const Value *member(std::string_view id) const {
+        return object_->asObject().get(id);
+    }
+
+private:
+    const Value *object_;
+};
+
+/// The elements of a list elements() has held to its bounds: a view of the
+/// array the value read is, iterated as the array is, held by value for the
+/// reason a CanonicalRecord is.
+class CanonicalList {
+public:
+    explicit CanonicalList(const SCE::Saved::JsonArray &items) : items_(&items) {}
+
+    SCE::Saved::JsonArray::const_iterator begin() const {
+        return items_->begin();
+    }
+
+    SCE::Saved::JsonArray::const_iterator end() const {
+        return items_->end();
+    }
+
+    std::size_t size() const {
+        return items_->size();
+    }
+
+private:
+    const SCE::Saved::JsonArray *items_;
+};
+
 /// A record whose fields are @p fields: an object, each member of which names
-/// one of them. Returns the object, whose fields field() and optionalField()
-/// read.
-inline const Value &record(const Value &value, const std::vector<std::string> &fields, const std::string &what) {
+/// one of them. Returns the view of the object, whose fields field() and
+/// optionalField() read.
+inline CanonicalRecord record(const Value &value, const std::vector<std::string> &fields, const std::string &what) {
     if (!value.isObject()) {
         throw detail::notA(value, what, "a record, which is an object of its fields");
     }
@@ -364,28 +406,29 @@ inline const Value &record(const Value &value, const std::vector<std::string> &f
             throw detail::refused(what, "'" + name + "' is no field of its record");
         }
     }
-    return value;
+    return CanonicalRecord(value);
 }
 
 /// The field @p id of the record @p record, whose type is not optional, so it
-/// is present.
-inline const Value &field(const Value &record, const std::string &id, const std::string &what) {
-    const Value *member = record.asObject().get(id);
+/// is present. Every parameter is taken by value, so the reference returned
+/// points into the value the record views and into no argument.
+inline const Value &field(CanonicalRecord record, std::string_view id, std::string_view what) {
+    const Value *member = record.member(id);
     if (member == nullptr) {
-        throw detail::refused(what, "the field is absent, and its type is not optional");
+        throw detail::refused(std::string(what), "the field is absent, and its type is not optional");
     }
     return *member;
 }
 
 /// The field @p id of the record @p record, whose type is optional: null where
 /// it is absent, which the canonical form writes by omitting it.
-inline const Value *optionalField(const Value &record, const std::string &id) {
-    return record.asObject().get(id);
+inline const Value *optionalField(CanonicalRecord record, std::string_view id) {
+    return record.member(id);
 }
 
-/// The elements of a list of at least @p min and at most @p max elements.
-inline const SCE::Saved::JsonArray &elements(const Value &value, std::size_t min, std::size_t max,
-                                             const std::string &what) {
+/// The elements of a list of at least @p min and at most @p max elements, as
+/// a view of its array.
+inline CanonicalList elements(const Value &value, std::size_t min, std::size_t max, const std::string &what) {
     if (!value.isArray()) {
         throw detail::notA(value, what, "a list, which is an array");
     }
@@ -394,7 +437,7 @@ inline const SCE::Saved::JsonArray &elements(const Value &value, std::size_t min
         throw detail::refused(what, "a list of " + std::to_string(items.size()) + " elements is outside its bounds, " +
                                         std::to_string(min) + " to " + std::to_string(max));
     }
-    return items;
+    return CanonicalList(items);
 }
 
 /// The elements @p items, read, as the bounded list `List` they are read

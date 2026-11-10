@@ -300,7 +300,9 @@ TEST(TheCanonicalReaders, ReadAnEnumByItsDeclaredName) {
 /// optional is present.
 TEST(TheCanonicalReaders, ReadARecordOfItsDeclaredFields) {
     const JsonValue value = parseJson("{\"code\":\"0\",\"job\":\"7\"}");
-    const JsonValue &object = FromCanonical::record(value, {"job", "code"}, "job_reply");
+    // The record is a view of `value`, held by value, so it holds no
+    // reference to the names or the place it was handed.
+    const FromCanonical::CanonicalRecord object = FromCanonical::record(value, {"job", "code"}, "job_reply");
     EXPECT_EQ(FromCanonical::integer<std::uint32_t>(FromCanonical::field(object, "job", "job_reply.job"), "job"), 7u);
     EXPECT_EQ(FromCanonical::optionalField(object, "note"), nullptr);
     const JsonValue stray = parseJson("{\"job\":\"7\",\"jobs\":\"1\"}");
@@ -308,7 +310,8 @@ TEST(TheCanonicalReaders, ReadARecordOfItsDeclaredFields) {
         reason([&] { (void)FromCanonical::record(stray, {"job", "code"}, "job_reply"); }).find("'jobs' is no field"),
         std::string::npos);
     const JsonValue shortOne = parseJson("{\"job\":\"7\"}");
-    EXPECT_EQ(reason([&] { (void)FromCanonical::field(shortOne, "code", "job_reply.code"); }),
+    const FromCanonical::CanonicalRecord partial = FromCanonical::record(shortOne, {"job", "code"}, "job_reply");
+    EXPECT_EQ(reason([&] { (void)FromCanonical::field(partial, "code", "job_reply.code"); }),
               "job_reply.code: the field is absent, and its type is not optional");
 }
 

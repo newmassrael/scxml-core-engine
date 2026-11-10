@@ -337,6 +337,14 @@ impl CppReadingAt {
 /// (`decltype` of the field, `value_type` of an optional or a list), since a
 /// C++ function infers no type from where its result goes. C++ lowers no
 /// union, so the walk's refusal of one stands.
+///
+/// No read binds a reference to what a call returns: a record's object is
+/// bound as the view `record()` returns by value (`CanonicalRecord`), a list's
+/// elements are iterated through the view `elements()` returns by value, a
+/// field read where it stands is handed straight to the reader of its form,
+/// and a value that may be absent is bound through the pointer to it. So no
+/// reference can outlive a temporary argument of the call that made it (GCC's
+/// `-Wdangling-reference`).
 pub(super) struct CppReading {
     /// The payload type of the record read.
     pub(super) payload: String,
@@ -545,9 +553,9 @@ impl CanonicalForm for CppReading {
         cpp_read_present(&element.optional, &element.cpp, binding, written)
     }
 
-    /// A lambda that binds the record's object, refused where it names a field
-    /// the record does not declare, and builds the record's struct of its
-    /// fields by position.
+    /// A lambda that binds the view of the record's object, by value, refused
+    /// where it names a field the record does not declare, and builds the
+    /// record's struct of its fields by position.
     fn record(
         &self,
         at: &CppReadingAt,
@@ -575,7 +583,8 @@ impl CanonicalForm for CppReading {
             format!("[&] {{ static_cast<void>({object}); return {built}; }}()")
         } else {
             format!(
-                "[&] {{ const {JSON_VALUE} &record_{} = {object}; return {built}; }}()",
+                "[&] {{ const {FROM_CANONICAL}::CanonicalRecord record_{} = {object}; return {built}; \
+                 }}()",
                 at.records
             )
         }
