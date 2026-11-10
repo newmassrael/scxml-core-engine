@@ -53,8 +53,9 @@ pub fn module_parameters() -> Vec<String> {
 
 /// The record `job_reply` read from the canonical form of the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5), as a recorded input trace holds it (docs/SCE_TTCN3_LANE.md
-/// §10.3), or refused, naming where its value does not belong to its type.
-fn read_job_reply(
+/// §10.3), or refused, naming where its value does not belong to its type. The inverse of
+/// `canonical_job_reply`.
+pub fn read_job_reply(
     value: &::sce_rust_runtime::json::Value,
 ) -> Result<super::job_reply::JobReplyPayload, ::sce_rust_runtime::test::TraceRefusal> {
     Ok({
@@ -79,7 +80,7 @@ fn read_job_reply(
 
 /// The record `job_reply` in the canonical form of the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
-fn canonical_job_reply(
+pub fn canonical_job_reply(
     value: &super::job_reply::JobReplyPayload,
 ) -> ::sce_rust_runtime::json::Value {
     ::sce_rust_runtime::test::canonical::record([
