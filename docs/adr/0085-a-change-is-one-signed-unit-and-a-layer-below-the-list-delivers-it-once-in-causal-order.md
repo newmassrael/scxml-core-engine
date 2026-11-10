@@ -1072,3 +1072,49 @@ review:
   output of before changes shape. A host that upgrades builds its machine from the fold and then the history.
 - **No fixture is recorded.** The tests build a relay's history of parts and a sealed state of version 5 with the
   reader's bytes and the members' keys, and the reader's bytes are held to the old encoder's pinned vectors.
+
+Decided while landing 4e, the cross product in the world over the causal route (2026-11-10), under the same rule and
+open to the owner's review:
+
+- **The world's host stands in front of a copy's sends.** A copy that keeps a journal sends `record_list.made` to
+  `#journal`, a route no Mesh binding serves, and the world had no place for a host between a machine and its
+  endpoint. `World::set_host` puts a `Host` there: every send to a Mesh route is shown to it, it answers the routes
+  that are its own and hands the others on. The journal host offers the change to the layer on `#people`, journals
+  it with the dot of the verdict, reports the record committed, which releases the change, and gives the copy the
+  verdict back on its external queue, in the one call, as ADR 0093 section 3.1 says the core answers. The host is
+  kept across a restart, since it is the host's and not the machine's. Files beyond those named:
+  `backends/rust/world/src/lib.rs` and the one line of `common/mod.rs` that names the new module.
+- **The history a rebuild reads is what the layer delivered, read as it delivered it.** The Mesh core keeps the
+  other copies' changes in its log until the cut and gives no read of it, so the host reads each change the layer
+  gives the copy through an admission that admits everything, and drops what it read at its fold, as the log drops
+  it at the cut. The journal and that history share one order, the order the copy took its changes in, which is a
+  causal order, and a recall gives them in it. Nothing of the other copies' changes is a second original: it is the
+  layer's delivery seen by the host, held no longer than the layer holds it.
+- **A fold is made where every layer is at rest.** There the stable cut covers every change the copy took in, so
+  the state at the cut is the copy's state and the host takes it whole as the snapshot. "A cut before C" is the rest
+  after the changes C writes over, "a cut past C" the rest after C and its neighbours. A fold at a cut that lags the
+  copy's state is the fold of the snapshot before it and the changes at or below the cut, which the host holds; the
+  product needs none, since each cut it names is reached at a rest.
+- **The network is held and each change given by hand.** While the changes are made every link loses what it
+  carries, and each change is given to each copy in the order the schedule names (`World::deliver_again`); then the
+  links carry again and the layers exchange vectors until they rest. That is how one network order is chosen
+  exactly, with no draw of a seed deciding it.
+- **The later change has three values.** Absent, given to every copy after C, or reaching one copy before C. Without
+  it C's write is live at the end: a live value of a change whose write-overs the cut forgot, which a snapshot past
+  C then hands over.
+- **The rebuild is of every copy in turn**, each ending with the state it had: its values, its adds and its clock's
+  wall time and counter. The clock's node is the copy's own and a state handed over does not carry it.
+- **"Each register told once per change" is held where a parent observes it.** A copy a host starts tells no parent.
+  The world holds the host's side of it: each other copy's change given to a copy once, and each of the copy's own
+  changes reported closed once. The telling is the scenario `record_list_concurrent_clears`'s (4c).
+- **The negative arm binds `#people` plainly, as the other negative arms do**, with the Mesh duplicate window. On it a
+  later change that reaches a copy before C leaves that copy apart: its write-over names a write the copy does not
+  hold yet, and C's write, taken after it, stays live there alone. Every other schedule ends alike, since the effect
+  of concurrent changes does not depend on their order and the window drops an envelope given again. The arm
+  asserts both, so the difference it holds is the one the layer removes. On a plain route nothing answers an offer,
+  and the host accepts every change itself, as a host with a layer that accepts everything does (ADR 0093 section
+  3); the change has left before it is journalled there, which is the write-ahead a causal layer gives and a plain
+  route does not.
+- **A refusal by the layer is held in the world too.** A layer with room for one change not yet stable refuses the
+  next offer: the host journals nothing of it, the copy reports it closed `noRoomForHistory` at its stamp and takes
+  nothing in, and its next change takes the number the refused one did not and reaches every copy.
