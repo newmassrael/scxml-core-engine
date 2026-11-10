@@ -279,9 +279,13 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         integration/test_untyped_data_by_name.c
         ${INTEGRATION_C_TEST_untyped_data_by_name_SOURCES}
     )
-    sce_c_link_runtime(sce_c_integration_untyped_data_by_name)
+    # A `sce-static` machine: no script engine, so the link excludes `lua` and
+    # `dom`, and its statements call the forge runtime's header-only half,
+    # reached by its include directory, as every other static machine here.
+    sce_c_link_runtime(sce_c_integration_untyped_data_by_name EXCLUDES lua dom)
     target_include_directories(sce_c_integration_untyped_data_by_name PRIVATE
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
     )
     set_target_properties(sce_c_integration_untyped_data_by_name PROPERTIES
         C_STANDARD 11
