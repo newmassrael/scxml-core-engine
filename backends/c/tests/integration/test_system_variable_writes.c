@@ -36,6 +36,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../unit/shared_table.h"
@@ -152,16 +153,14 @@ static bool bind_table_session(lua_State *L) {
 }
 
 // The table's `event` as the event record the machine's queue takes, its name in
-// `name`. False when a member cannot be read or the carrier has no such event.
-static bool read_table_event(event_t *evt, char *name, size_t name_cap) {
+// `name` and its data in `data`, of `data_cap` bytes. False when a member cannot
+// be read or the carrier has no such event.
+static bool read_table_event(event_t *evt, char *name, size_t name_cap, char *data, size_t data_cap) {
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char sendid[SCE_MAX_ID_LEN];
     char invokeid[SCE_MAX_ID_LEN];
     char origin[SCE_MAX_URI_LEN];
     char origintype[SCE_MAX_ID_LEN];
-    /* The record holds a view of its data, which the machine's queue copies: the
-       text is held here, at the size of the machine's slot. */
-    static char data[sizeof(((system_variable_writes_queued_event_t *)0)->data)];
     memset(evt, 0, sizeof(*evt));
     evt->data = data;
     if (read_field(event_object, "name", name, name_cap, NULL) != NULL ||
@@ -170,7 +169,7 @@ static bool read_table_event(event_t *evt, char *name, size_t name_cap) {
         read_field(event_object, "invokeid", invokeid, sizeof(invokeid), NULL) != NULL ||
         read_field(event_object, "origin", origin, sizeof(origin), NULL) != NULL ||
         read_field(event_object, "origintype", origintype, sizeof(origintype), NULL) != NULL ||
-        read_field(event_object, "data", data, sizeof(data), NULL) != NULL) {
+        read_field(event_object, "data", data, data_cap, NULL) != NULL) {
         (void)fprintf(stderr, "FAIL: the table's event cannot be read whole\n");
         return false;
     }
@@ -255,11 +254,25 @@ static int answer_case(sm_t *sm, const char *object, int index) {
 
     event_t evt;
     char name[SCE_MAX_ID_LEN];
-    if (!read_table_event(&evt, name, sizeof(name))) {
+    /* The record holds a view of its data, which the machine's queue copies into
+       its own heap (docs/adr/0086, section 8.6 (d)): a script machine has no slot
+       to size it by. The text is held at the size of the table's text from the
+       event on, which its data, a part of that text, cannot pass. */
+    const size_t data_cap = strlen(event_object) + 1u;
+    char *data = (char *)malloc(data_cap);
+    if (data == NULL) {
+        (void)fprintf(stderr, "FAIL: %s [%s]: the table's event data could not be held\n", group, write_lua);
         return 1;
     }
-    system_variable_writes_raise_external(sm, &evt);
-    system_variable_writes_run(sm);
+    const bool event_read = read_table_event(&evt, name, sizeof(name), data, data_cap);
+    if (event_read) {
+        system_variable_writes_raise_external(sm, &evt);
+        system_variable_writes_run(sm);
+    }
+    free(data);
+    if (!event_read) {
+        return 1;
+    }
     if (!bound_by_the_binder(L, "_event") || !bound_event_named(L, name)) {
         (void)fprintf(stderr, "FAIL: %s [%s]: the machine bound no read-only `_event` named `%s`\n", group, write_lua,
                       name);
