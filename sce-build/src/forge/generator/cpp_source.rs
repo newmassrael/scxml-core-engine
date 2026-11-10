@@ -4999,8 +4999,9 @@ fn fixed_write(plan: &EncodePlan<'_>, f: &CodecField, value: &str) -> String {
 mod tests {
     //! What the C++ printer prints for the forms it lowers, pinned on the
     //! codecs of the resources that hold them. Whether the printed C++
-    //! compiles and writes the Rust encode's bytes and refusals is held by
-    //! `positional_forms_generated_test` of the C++ conformance harness.
+    //! compiles and writes the bytes and refusals the model writes is held by
+    //! the catalog's byte cases in the C++ conformance harness, and what no
+    //! case can state by its `positional_forms_generated_test`.
 
     use std::path::{Path, PathBuf};
 

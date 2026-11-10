@@ -552,28 +552,21 @@ target_include_directories(caller_tag_variant_generated_test PRIVATE
 target_compile_options(caller_tag_variant_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME caller_tag_variant_generated COMMAND caller_tag_variant_generated_test)
 
-# Derived numbers whose encode can refuse, printed from their plan
-# (docs/adr/0081 step 4): a length two byte strings share, one the value states
-# where its gated content is absent, and the encoded length of a body that can
-# refuse, in a field that may not hold it; an enum a group holds, with the enum
-# it imports; and a gate on a chain's membership no group holds, with the
-# chain's entry codec; and an input a body says in some of its values only,
-# handed on from the codec that holds it, with the codecs of the body's arms;
-# and a chain that hands each entry an input from the entry before.
-# The test holds them to the frames and refusals the Rust
-# encode gives the same values.
+# What the C++ printer prints from a plan (docs/adr/0081 step 4) that no case
+# of the catalog can state, the catalog being the one source of byte cases: a
+# length the value states beside content that agrees, and none with no content,
+# whose decode presents another value; an enum value a closed enum does not
+# declare, which no decode refusal of the catalog names; and an input a body
+# says in some of its values only, handed on from the codec that holds it, a
+# variant whose caller hands its tag, with the codecs of the body's arms. They
+# are generated into a directory of their own, so the catalog's codecs among
+# them are not two rules' output in `GENERATED_DIR`.
 set(POSITIONAL_FORMS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/positional_forms_headers")
 file(MAKE_DIRECTORY "${POSITIONAL_FORMS_GENERATED_DIR}")
 set(POSITIONAL_FORMS_DOCUMENTS
-    "${RESOURCE_DIR}/codec_length_shared.scxml"
     "${RESOURCE_DIR}/codec_length_stated.scxml"
-    "${RESOURCE_DIR}/codec_encoded_length_checked.scxml"
     "${RESOURCE_DIR}/enum_session_state.scxml"
     "${RESOURCE_DIR}/codec_group_enum.scxml"
-    "${RESOURCE_DIR}/codec_chain_has_tagged_entry.scxml"
-    "${RESOURCE_DIR}/codec_chain_has_input.scxml"
-    "${RESOURCE_DIR}/codec_chain_handed_entry.scxml"
-    "${RESOURCE_DIR}/codec_chain_handed.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_near.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_plain.scxml"
     "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say.scxml"
