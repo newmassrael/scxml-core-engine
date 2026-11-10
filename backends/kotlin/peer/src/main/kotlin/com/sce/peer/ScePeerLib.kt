@@ -194,6 +194,7 @@ interface ScePeerLib : Library {
     fun sce_peer_restore_records(peer: Pointer, records: String, kept: LongByReference?): Int
     fun sce_peer_history(peer: Pointer, after: String?, out: Buf): Int
     fun sce_peer_stable_cut(peer: Pointer, out: Buf): Int
+    fun sce_peer_fold(peer: Pointer, parts: Int, out: Buf): Int
     fun sce_peer_mark(peer: Pointer, seq: LongByReference?): Int
     fun sce_peer_own_stamp(peer: Pointer, wallTime: LongByReference?, counter: IntByReference?, readBack: IntByReference?): Int
     fun sce_peer_save_sealed(peer: Pointer, state: Buf, key: ByteArray): Int

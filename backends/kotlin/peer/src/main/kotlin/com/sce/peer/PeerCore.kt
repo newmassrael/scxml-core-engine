@@ -295,6 +295,21 @@ class PeerCore private constructor(lib: ScePeerLib, handle: Pointer) : Handle(li
         return lib.text(out) ?: throw IllegalStateException("the core gave no cut")
     }
 
+    /**
+     * What the parts of changes signed before a change was one unit make together, as the JSON
+     * object `{"restores", "cut"}` of the ABI (`sce_peer_fold`): `restores` the state as
+     * `record_list.restore` payload texts of at most [parts] values each (the build's
+     * `shared_parts`; a `uint32_t`, whose bits [parts] holds), none when no value is live, and `cut`
+     * each device's highest number among the parts. A machine built again is given the restores
+     * first and then the [history]: what a host gives a device it upgraded from a state sealed
+     * before a change was one unit ([restoreSealed]).
+     */
+    fun fold(parts: Int): String {
+        val out = Buf()
+        lib.check(lib.sce_peer_fold(pointer, parts, out), "fold")
+        return lib.text(out) ?: throw IllegalStateException("the core gave no fold")
+    }
+
     /** Signs a mark when one is owed (`sce_peer_mark`): its number, 0 when none was. */
     fun mark(): Long {
         val seq = LongByReference(-1)
