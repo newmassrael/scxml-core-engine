@@ -1729,4 +1729,25 @@ object SavedValues {
         if (!members.containsKey(name)) throw StateRefusal("'$record' has no field '$name'")
         return members[name]
     }
+
+    /**
+     * A union (docs/adr/0092, section 6.1 item 7): one object, the tag under the
+     * key [tag] as the declared name [variant], before the members of [record],
+     * the record of the case as it writes itself, or nothing for an empty case
+     * (`null`). What a generated union writes each case with.
+     */
+    fun union(tag: String, variant: String, record: Any?): Any {
+        val members = linkedMapOf<String, Any?>(tag to variant)
+        (record as? Map<*, *>)?.forEach { (key, member) -> members[key as String] = member }
+        return members
+    }
+
+    /**
+     * The declared name of the case a saved union [value] is in: the text under
+     * its tag's key [tag], read before any field of the case, since the tag says
+     * which fields follow (docs/adr/0092, section 4). A value that is no object,
+     * that has no tag, or whose tag is not a text is refused naming [what]; a
+     * name the union has no case for is the generated reader's to refuse.
+     */
+    fun unionTag(value: Any?, what: String, tag: String): String = string(field(value, what, tag), "$what.$tag")
 }
