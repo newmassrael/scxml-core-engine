@@ -27,6 +27,9 @@
   (the one table's `records` position, the judge's refusal of a composed schema gone, the Rust lane), 3594ac5289
   (`lift_answer_list.scxml`, `static_lift_list.scxml` and its scenario on Rust), e54b07b57e (a composed answer
   schema's grammars in the machine's table), 4a11f5085b (a scenario's reading of such a variable by its type).
+  Slice 2 has landed: 91a041cfd7 (the Kotlin row of `records`, the runtime's `liftValue`, the saved form of such a
+  record beside its data class and a saved list held to its lower count), 954a0ae697 (`static_lift_list.json`
+  replayed on Kotlin, and the record restored by its type).
   What it still needs is recorded under "Landing order", item 8, and
   what was decided while landing it under "Decided while landing item 8".
 - Date: 2026-11-04
@@ -831,7 +834,8 @@ schema is refused there by name (`generate/unsupported-feature`), and the scalar
 land first. A model's answer is often a list (`{"items":[...]}`), so step 3 is a dependency of the harness's general
 use, not of this ADR's first landing. As landed (item 8, slice 1): the judge takes such a schema, and the lift writes
 it whole into a variable of `optional<record:R>` on each lane whose row of the one table of what is lowered holds
-such a variable (`ComposedLowering::records`, `sce-build/src/forge/event_schema_check.rs`), Rust first; every other
+such a variable (`ComposedLowering::records`, `sce-build/src/forge/event_schema_check.rs`), Rust first and Kotlin
+second (slice 2); every other
 lane refuses that variable by its own name (`generate/unsupported-feature`), and the lift with it, until its slice.
 
 #### 7.2 Reason
@@ -1070,8 +1074,17 @@ A feature that asks a model is tested in two layers, which answer two different 
    every other engine listed as not lowering it (`NOT_YET_LOWERED` in
    `a_static_datamodel_holds_every_variable_to_a_type.rs` and in `tests/CMakeLists.txt`); and a composed answer
    schema's JSON Schema and GBNF in the machine's answer-schema table, which the folds of step 3 already wrote and a
-   test now holds on every backend. What is left, a slice each:
-   - Kotlin, C++, C11, Go, Python and Swift: each lane's row of `records`, its saved form of a record that holds a
+   test now holds on every backend.
+
+   Landed in slice 2 (see "Status"): the Kotlin lane. Its row holds `records`; the variable is the record's data
+   class over `?`, started at `null`; the lift reads the text through the runtime's `EventPayload.liftValue`, which
+   hands the whole object to the composed reader of the record's type (the reader a delivery's field is read by,
+   with the record's defaults and each list's counts), the counterpart of Rust's `event_payload::lift_value`; the
+   record's saved form is written beside its data class and a saved list is held to its lower count (decisions 8
+   and 9); `scenarios/static_lift_list.json` is replayed by `StaticScenarioTest`, a restore of the record by
+   `ARecordThatHoldsAListIsSavedAndRestoredByItsTypeTest`, and Kotlin's line is off `NOT_YET_LOWERED`. What is
+   left, a slice each:
+   - C++, C11, Go, Python and Swift: each lane's row of `records`, its saved form of a record that holds a
      composition, its lift of a value read whole (`Lifted::Whole`) where its lift reads records field by field
      only, the replay of `static_lift_list.json` in its driver and its line off `NOT_YET_LOWERED`;
    - the Interpreter's lowering (`ComposedLowering::ECMASCRIPT`), whose refusal by name stands until then;
@@ -1111,6 +1124,20 @@ because the sections above do not settle it:
 7. **A saved state names a composed record variable by its document and each field's type**, as it names a union's
    case, so a revision of the record moves the shape and refuses a restore; the lineage that grows an earlier
    revision of a record of entries by its defaults does not reach a record that holds a composition yet.
+8. **A Kotlin record that holds a composition carries its saved form as two extensions beside its data class**,
+   `toSaved` and `fromSaved` on its companion, the names a record of entries' members have, so the machine's save
+   and restore read one spelling for either kind of record, as Swift's extension does (`saved_record_ext`). Every
+   such record declares a companion, whether or not a variable holds it: a record a payload declares first may be
+   held by a variable too, and Kotlin gives a class no companion after its declaration. Members inside the data
+   class were rejected, since the declaration a payload makes first could not gain them, and a per-type function on
+   the machine would reserve every variable name its pattern matches, as it did for a record of entries
+   (2026-09-27).
+9. **A list read back from a saved state is held to its lower count as well as to its bound** (Kotlin's
+   `SavedValues.listWithin`), refused as the restore's `StateRefusal` before the record that holds it is built. A
+   restored machine must not be the first to hold a value its type forbids, and a Kotlin record checks its bounds in
+   its `init`, which would otherwise throw out of a restore that promises a `StateRefusal`. Rust and Swift read a
+   saved list to its bound alone, so a saved state written by hand short of a lower count is restored there; each
+   owes the same rule in its own lane, which this records.
 
 ## Consequences
 
