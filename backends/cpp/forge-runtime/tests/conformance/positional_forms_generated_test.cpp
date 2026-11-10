@@ -22,12 +22,17 @@
 // codec_chain_has_input gates a field on a chain's membership or on a flag
 // input the caller hands, which no group holds: the encode tests the entries
 // of the chain the value presents, and refuses a value the gate contradicts.
+//
+// codec_some_arms_say_forward (backends/rust/forge-conformance/fixtures) hands
+// its flag input on to a body that says it in some of its values only, and
+// answers the input as the body does.
 
 #include "codec_chain_has_input.h"
 #include "codec_encoded_length_checked.h"
 #include "codec_group_enum.h"
 #include "codec_length_shared.h"
 #include "codec_length_stated.h"
+#include "codec_some_arms_say_forward.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -227,6 +232,35 @@ void a_membership_no_group_holds_is_tested_on_the_entries() {
     }
 }
 
+// An input a body always there says in some of its values only is answered as
+// the body answers it: the arm that reads it says it, the other says nothing.
+// A frame of either arm is written back byte for byte.
+void an_input_a_body_says_in_part_is_forwarded() {
+    namespace Fwd = ::SCE::Generated::CodecSomeArmsSayForward;
+
+    struct Case {
+        std::vector<std::uint8_t> frame;
+        std::uint8_t n;
+        std::optional<std::uint8_t> said;
+    };
+
+    const std::vector<Case> cases{
+        {{0x40, 7, 1, 'a'}, 1, std::optional<std::uint8_t>(1)},
+        {{0x40, 7}, 0, std::optional<std::uint8_t>(0)},
+        {{0x00, 7}, 0, std::nullopt},
+    };
+    for (const auto &c : cases) {
+        SceCursor cursor(c.frame.data(), c.frame.size());
+        const std::optional<Fwd::CodecSomeArmsSayForward> decoded = Fwd::CodecSomeArmsSayForward::decode(cursor, c.n);
+        CHECK(decoded.has_value() && cursor.remaining() == 0, "a forwarding frame decodes");
+        if (!decoded.has_value()) {
+            continue;
+        }
+        CHECK(decoded->encode_to_vec() == c.frame, "a forwarding frame is written back byte for byte");
+        CHECK(Fwd::input_n(*decoded) == c.said, "the input is what the body's arm says of it");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -237,6 +271,7 @@ int main() {
     an_encoded_length_passes_the_body_s_refusal_on();
     an_enum_a_group_holds_is_written_back();
     a_membership_no_group_holds_is_tested_on_the_entries();
+    an_input_a_body_says_in_part_is_forwarded();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

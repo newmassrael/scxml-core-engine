@@ -557,7 +557,9 @@ add_test(NAME caller_tag_variant_generated COMMAND caller_tag_variant_generated_
 # where its gated content is absent, and the encoded length of a body that can
 # refuse, in a field that may not hold it; an enum a group holds, with the enum
 # it imports; and a gate on a chain's membership no group holds, with the
-# chain's entry codec. The test holds them to the frames and refusals the Rust
+# chain's entry codec; and an input a body says in some of its values only,
+# handed on from the codec that holds it, with the codecs of the body's arms.
+# The test holds them to the frames and refusals the Rust
 # encode gives the same values.
 set(POSITIONAL_FORMS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/positional_forms_headers")
 file(MAKE_DIRECTORY "${POSITIONAL_FORMS_GENERATED_DIR}")
@@ -569,6 +571,10 @@ set(POSITIONAL_FORMS_DOCUMENTS
     "${RESOURCE_DIR}/codec_group_enum.scxml"
     "${RESOURCE_DIR}/codec_chain_has_tagged_entry.scxml"
     "${RESOURCE_DIR}/codec_chain_has_input.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_near.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_plain.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say.scxml"
+    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_forward.scxml"
 )
 set(POSITIONAL_FORMS_GENERATED_HEADERS "")
 foreach(_positional_document IN LISTS POSITIONAL_FORMS_DOCUMENTS)
