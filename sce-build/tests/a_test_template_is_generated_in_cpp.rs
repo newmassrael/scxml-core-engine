@@ -213,8 +213,8 @@ fn a_specific_templates_value_is_its_record_in_declared_order() {
     assert!(
         report.contains(
             "return SCE::Generated::JobStatus::JobStatusPayload{/*elapsed_ms=*/0, \
-             /*note=*/\"started on time\", \
-             /*codes=*/decltype(SCE::Generated::JobStatus::JobStatusPayload::codes){7}, \
+             /*note=*/::SCE::Forge::OwnedText<32>::literal(\"started on time\"), \
+             /*codes=*/decltype(SCE::Generated::JobStatus::JobStatusPayload::codes)::literal({7}), \
              /*tag=*/std::nullopt, /*retry=*/std::nullopt, /*count=*/1};"
         ),
         "{report}"
@@ -259,8 +259,7 @@ fn an_enum_a_reference_and_bytes_are_spelled_by_their_units() {
     let voucher = header_of(&imports_dir(), "voucher_is");
     assert!(
         voucher.contains(
-            "decltype(SCE::Generated::VoucherPayment::VoucherPaymentPayload::voucher_code)\
-             {0x00, 0xff, 0x10, 0xA0}"
+            "/*voucher_code=*/::SCE::Forge::OwnedBytes<4>::literal({0x00, 0xff, 0x10, 0xA0})"
         ),
         "{voucher}"
     );
