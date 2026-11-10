@@ -32,17 +32,19 @@
 #
 # rustup itself is pinned by release and digest, the way the build machines'
 # other tools are, so the install fetches nothing a digest does not check before
-# it runs: rustup-init for x86_64 Linux built against musl, which runs on any
-# glibc. The toolchain it installs is the host's, x86_64-unknown-linux-gnu, the
-# one platform bx.toml declares.
+# it runs: rustup-init for x86_64-unknown-linux-gnu, the one platform bx.toml
+# declares, whose digest is the one static.rust-lang.org publishes beside it. Not
+# the musl build: a rustup built against musl takes musl for its host and refuses
+# the gnu toolchain as one that "may not be able to run on this system" (measured
+# 2026-11-10 on a build machine), and the gnu toolchain is the one the gates run.
 #
 # What it needs and does not install: curl, sha256sum, and network access to
 # static.rust-lang.org.
 set -euo pipefail
 
 RUSTUP_INIT_REV="1.29.1"
-RUSTUP_INIT_TRIPLE="x86_64-unknown-linux-musl"
-RUSTUP_INIT_SHA256="331228566cc931f32cd684f9bebc5956a5e5d7394c8d5de595f196a658ab98e6"
+RUSTUP_INIT_TRIPLE="x86_64-unknown-linux-gnu"
+RUSTUP_INIT_SHA256="dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
 HOST="x86_64-unknown-linux-gnu"
 
 refuse() {
@@ -118,9 +120,11 @@ chmod +x "$init"
 
 # `--default-toolchain none`: the private rustup holds the one toolchain named
 # below and nothing else. The path check is skipped because the account's own
-# Rust on PATH is not what this installs or touches.
-RUSTUP_INIT_SKIP_PATH_CHECK=yes "$init" -y --no-modify-path --profile minimal --default-toolchain none
-"$CARGO_HOME/bin/rustup" toolchain install "$toolchain" --profile minimal --no-self-update "$@"
+# Rust on PATH is not what this installs or touches. The host and the toolchain
+# are named in full, so the directory copied out below is the one installed.
+RUSTUP_INIT_SKIP_PATH_CHECK=yes "$init" -y --no-modify-path --profile minimal \
+    --default-toolchain none --default-host "$HOST"
+"$CARGO_HOME/bin/rustup" toolchain install "$toolchain-$HOST" --profile minimal --no-self-update "$@"
 
 installed="$RUSTUP_HOME/toolchains/$toolchain-$HOST"
 [[ -x "$installed/bin/cargo" ]] || refuse "rustup installed no $installed/bin/cargo"
