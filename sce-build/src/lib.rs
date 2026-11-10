@@ -3267,18 +3267,57 @@ pub struct ImportedCodec {
     pub type_name: String,
 }
 
-/// [`encode_plan_file`], with the codecs the codec imports, which a reader of
-/// a codec that holds others needs to read them in turn.
+/// An enum a codec imports: the alias it is imported as, the name its document
+/// gives it, the Rust path to its type from a sibling of its importer's module
+/// (`{module}::{Type}`), and the variants it declares, in order and as the
+/// document spells them, so a caller can name a value of it.
+#[derive(Clone, Debug)]
+pub struct ImportedEnum {
+    /// The alias of `<sce:import as=..>`.
+    pub alias: String,
+    /// The `name` of the enum's document.
+    pub name: String,
+    /// The Rust path to the enum's type, as its importer names it.
+    pub rust_type: String,
+    /// The names of its variants, in declaration order.
+    pub variants: Vec<String>,
+}
+
+/// What a codec imports that a reader of its values names: the codecs it holds
+/// and the enums its fields are values of.
+#[derive(Clone, Debug, Default)]
+pub struct Imported {
+    /// The codecs it imports.
+    pub codecs: Vec<ImportedCodec>,
+    /// The enums it imports.
+    pub enums: Vec<ImportedEnum>,
+}
+
+/// [`encode_plan_file`], with the codecs and the enums the codec imports, which
+/// a reader of a codec that holds others needs to read them in turn.
 pub fn encode_plan_file_with_imports<R>(
     path: &Path,
     include_dirs: &[PathBuf],
     options: &ForgeCompileOptions,
-    read: impl FnOnce(&forge::encode_plan::CodecPlan<'_>, &[ImportedCodec]) -> R,
+    read: impl FnOnce(&forge::encode_plan::CodecPlan<'_>, &Imported) -> R,
 ) -> Result<Option<R>, forge::error::Located<forge::error::ForgeError>> {
     read_codec_file(path, include_dirs, options, |model, imports, imported| {
+        let enums = imports
+            .iter()
+            .filter(|import| import.kind == "enum")
+            .map(|import| ImportedEnum {
+                alias: import.alias.clone(),
+                name: import.enum_source_name.clone(),
+                rust_type: import.enum_qualified_type.clone(),
+                variants: import.enum_variants.clone(),
+            })
+            .collect();
         read(
             &forge::encode_plan::CodecPlan::of(&model, imports),
-            imported,
+            &Imported {
+                codecs: imported.to_vec(),
+                enums,
+            },
         )
     })
 }

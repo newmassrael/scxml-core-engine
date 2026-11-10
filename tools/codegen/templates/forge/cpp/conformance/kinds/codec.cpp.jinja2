@@ -173,7 +173,9 @@
         const SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} value = {{ s.literal }};
         std::vector<std::uint8_t> encoded;
         ::SCE::Forge::VectorSink sink(encoded);
-        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink);
+        {# The flag inputs the value does not say, which the encode is handed as
+           its decode is (docs/adr/0065 §6 R4a), in declaration order. #}
+        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink{% for v in s.encode_inputs %}, {{ v }}{% endfor %});
         CHECK(!refused.has_value(), "{{ f.name }} source {{ loop.index0 }}: encode refused: %s", "{{ s.note }}");
         const std::vector<std::uint8_t> expected{ {{ s.encoded | join(", ") }} };
         CHECK(encoded == expected,
@@ -208,7 +210,7 @@
         const SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} value = {{ r.literal }};
         std::vector<std::uint8_t> encoded;
         ::SCE::Forge::VectorSink sink(encoded);
-        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink);
+        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink{% for v in r.encode_inputs %}, {{ v }}{% endfor %});
         CHECK(refused.has_value() && *refused == {{ r.symbol }},
               "{{ f.name }} refused {{ loop.index0 }}: the encode did not answer {{ r.error }}: %s", "{{ r.note }}");
         CHECK(encoded.empty(),

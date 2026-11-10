@@ -3371,9 +3371,10 @@ fn fold_reject_vectors(
 const HARNESS_FIXTURES: &str = "fixtures";
 
 /// The codecs a codec imports, read as the codec was, for a byte case of a
-/// codec that holds others (docs/adr/0081 §5).
+/// codec that holds others (docs/adr/0081 §5); and the enums it imports, for a
+/// case that states a value of one.
 struct HeldFrom<'a> {
-    imported: &'a [crate::ImportedCodec],
+    imported: &'a crate::Imported,
     include: &'a [PathBuf],
 }
 
@@ -3385,6 +3386,7 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
     ) -> Result<String, String> {
         let from = self
             .imported
+            .codecs
             .iter()
             .find(|i| i.alias == alias)
             .ok_or_else(|| format!("no codec is imported as `{alias}`"))?;
@@ -3406,6 +3408,22 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
         )
         .map_err(|e| format!("{}: {e:?}", from.path.display()))?
         .ok_or_else(|| format!("{} is not a codec", from.path.display()))?
+    }
+
+    fn held_enum(&self, alias: &str) -> Result<crate::forge::generator::RustHeldEnum, String> {
+        let from = self
+            .imported
+            .enums
+            .iter()
+            .find(|i| i.alias == alias)
+            .ok_or_else(|| format!("no enum is imported as `{alias}`"))?;
+        // The enum is a fixture of its own, a sibling of its importer under
+        // the harness's module of fixtures.
+        Ok(crate::forge::generator::RustHeldEnum {
+            name: from.name.clone(),
+            rust_type: format!("{HARNESS_FIXTURES}::{}", from.rust_type),
+            variants: from.variants.clone(),
+        })
     }
 }
 
@@ -3465,6 +3483,7 @@ fn fold_source_cases(
                 "literal": case.literal,
                 "checks": checks,
                 "inputs": case.inputs,
+                "encode_inputs": case.encode_inputs,
                 "encoded": encoded,
                 "note": case.note,
             }))
@@ -3544,6 +3563,7 @@ fn fold_refused_cases(
             Ok(serde_json::json!({
                 "bindings": case.bindings,
                 "literal": case.literal,
+                "encode_inputs": case.encode_inputs,
                 "error": failure.wire_name(),
                 "symbol": symbol,
                 "note": case.note,
@@ -3640,6 +3660,9 @@ struct PrintedCase {
     checks: Vec<(String, String)>,
     /// The flag inputs a decode is handed, as its arguments.
     inputs: Vec<String>,
+    /// The flag inputs the encode is handed, those the value does not say, as
+    /// its arguments after the sink.
+    encode_inputs: Vec<String>,
     /// The case's note, as the harness inlines it into a string literal.
     note: String,
 }
@@ -3720,6 +3743,7 @@ fn fold_case_rows(
                                     })
                                     .collect(),
                                 inputs: case.inputs,
+                                encode_inputs: case.encode_inputs,
                                 note: crate::filters::escape_cpp(note.to_string()),
                             }
                         }
@@ -3733,6 +3757,7 @@ fn fold_case_rows(
                                 literal: case.literal,
                                 checks: case.checks,
                                 inputs: case.inputs,
+                                encode_inputs: case.encode_inputs,
                                 note: note.to_string(),
                             }
                         }
@@ -4926,6 +4951,49 @@ mod tests {
             "::SCE::Generated::CodecPresentIfChecked::CodecPresentIfChecked{0u, 258u, std::nullopt}",
             "refused.has_value() && *refused == ::SCE::Forge::CodecError::PresentIfMismatch",
             "codec_present_if_checked refused 3: the encode wrote %zu bytes before it refused",
+        ] {
+            assert!(cpp.contains(line), "the C++ harness lacks `{line}`");
+        }
+    }
+
+    /// A value of an imported enum is stated by the variant it holds and
+    /// spelled as that variant of the type each harness names the enum by; a
+    /// flag input the value does not say is handed to the encode as it is to
+    /// the decode (docs/adr/0065 §6 R4a); a number the value states while its
+    /// content is absent is an `Option` in Rust and a `std::optional` in C++;
+    /// and the refusal of an inconsistent source reaches both harnesses by the
+    /// name each runtime gives it (docs/adr/0081 §5).
+    #[test]
+    fn an_enum_a_given_input_and_a_stated_number_reach_both_harnesses() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let rust = render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
+            .expect("the Rust harness renders")
+            .source;
+        for line in [
+            "state: fixtures::enum_session_state::EnumSessionState::Programming, attempts: 5",
+            "CodecLengthStatedParts { flags: 0, span_len: Some(5), alpha: None, beta: None }",
+            "CodecChainHandedEntryWire::encode_source(\n            &parts,\n            \
+             &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded), 1,\n",
+            "CodecChainHandedEntry::decode(&mut cursor, 1)",
+            "Err(::sce_forge_runtime::codec::CodecError::InconsistentSource),",
+        ] {
+            assert!(rust.contains(line), "the Rust harness lacks `{line}`");
+        }
+        let cpp = render_harness(&manifest, Language::Cpp, &template_base, &resource_dir)
+            .expect("the C++ harness renders")
+            .source;
+        for line in [
+            "{::SCE::Generated::EnumSessionState::EnumSessionState::Programming, 5u}",
+            "::SCE::Generated::CodecLengthStated::CodecLengthStated{0u, 5u, std::nullopt, \
+             std::nullopt}",
+            "SCE::Generated::CodecChainHandedEntry::Wire::encode_source(value, sink, 1);",
+            "SCE::Generated::CodecChainHandedEntry::CodecChainHandedEntry::decode(cursor, 1);",
+            "refused.has_value() && *refused == ::SCE::Forge::CodecError::InconsistentSource",
         ] {
             assert!(cpp.contains(line), "the C++ harness lacks `{line}`");
         }

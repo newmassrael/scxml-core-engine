@@ -12,7 +12,10 @@
 # literals there, and find none in a backend that does not print the plan. A
 # refused case is folded the same way and held to the refusal its encode
 # answers, by the name each runtime gives it; a refusal the encode never
-# answers is refused by name.
+# answers is refused by name. A value of an imported enum is spelled as the
+# variant it holds, a flag input the value does not say is handed to the
+# encode as to the decode, and a number the value states while its content is
+# absent is a `std::optional` of C++ as it is an `Option` of Rust.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -70,4 +73,26 @@ edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
         arm.index''',
      r'''        "{namespace}::{type_name}Variant{{std::in_place_index<{}>, {alternative}}}",
         arm.index + 1''')
+PY
+
+mutation_case "an input the value does not say is not handed to the Rust encode" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''            given.push(value.to_string());
+            continue;''',
+     r'''            continue;''')
+PY
+
+mutation_case "a C++ enum is named from the namespace the harness is in" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
+     r'''                &format!("::{ty}"),''',
+     r'''                &ty,''')
+PY
+
+mutation_case "a C++ number the value states is held as always there" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
+     r'''                let optional = element.presence.optional();''',
+     r'''                let optional = matches!(
+                    element.presence,
+                    crate::forge::encode_plan::Presence::Gated
+                );''')
 PY

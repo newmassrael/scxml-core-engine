@@ -49,7 +49,7 @@ mod test_template_walk;
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
 pub(crate) use rust_source::{
     source_case as rust_source_case, CodecPath as RustCodecPath, HeldCodecs as RustHeldCodecs,
-    ReadHeld as RustReadHeld,
+    HeldEnum as RustHeldEnum, ReadHeld as RustReadHeld,
 };
 
 /// A byte case of the C++ conformance harness, its source a value the printed
