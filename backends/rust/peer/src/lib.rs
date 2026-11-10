@@ -25,6 +25,9 @@
 //!   be signed, which the copy holds provisionally; the cut is the core's word that every member
 //!   was told a change ([`Peer::stable_cut`]), and a device that has written nothing for a while
 //!   says what it was told by a mark ([`Peer::mark`]);
+//! - a list held before a change was one unit is read once as the state its parts make
+//!   ([`Peer::fold`], docs/adr/0085, section 8.3), which a machine built again is given before the
+//!   history, and a device's state sealed then is opened and upgraded ([`Peer::restore_sealed`]);
 //! - a round with the relay ([`Peer::start`]) is a sequence of request texts the core gives
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
@@ -90,6 +93,8 @@ pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRI
 // What a history gives and what a record is: an operation with its tag, and an operation of the
 // device's own its host has not recorded.
 pub use sce_rust_trust::{OwnRecord, Tag, Told};
+// What the parts of changes signed before a change was one unit make together.
+pub use sce_rust_trust::Fold;
 
 use std::collections::BTreeMap;
 
@@ -120,9 +125,17 @@ use serde_json::{json, Value};
 /// read ([`Peer::invite`], [`Peer::joined`]), which a core of version 4 would lose. Version 6
 /// holds the outbox: which operations of the device's own its host has not recorded, and which
 /// waiting sends are of a host that keeps a journal ([`Peer::made`]), which a core of version 5
-/// would lose and give the relay before the host's journal held them. States of versions 3 to 5
-/// were written by this repository's tests alone, and are not read.
+/// would lose and give the relay before the host's journal held them. States of versions 3 and 4
+/// were written by this repository's tests alone, and are not read. A state of version 5 is what
+/// a device kept before a change of the list was one unit (docs/adr/0085, landing 4c), and is
+/// read and upgraded ([`UPGRADED_VERSION`], [`Peer::restore_sealed`]).
 pub const SAVE_VERSION: u64 = 6;
+
+/// The version of a sealed state this core opens and upgrades to [`SAVE_VERSION`]: what a device
+/// kept before a change of the list was one unit, whose operations are parts of changes signed
+/// under the second event domain (`sce_rust_trust::parts`). The next save is of the version this
+/// core seals; nothing is sealed at this one again.
+pub const UPGRADED_VERSION: u64 = 5;
 
 /// The names under which the sealed state keeps what the core holds beside the person's key and the
 /// keys of the epochs ([`Trust::secrets`]).
@@ -133,9 +146,9 @@ const KEPT_GROUP_NODE: &str = "peer/group-node";
 const KEPT_GROUP_KEY: &str = "peer/group-key";
 const KEPT_GROUP_HELD: &str = "peer/group-held";
 
-/// What a sealed state is bound to beside its list and its node: the core's state, at its version.
-fn sealed_context() -> String {
-    format!("sce-peer/state/{SAVE_VERSION}")
+/// What a sealed state is bound to beside its list and its node: the core's state, at `version`.
+fn sealed_context(version: u64) -> String {
+    format!("sce-peer/state/{version}")
 }
 
 /// What a round, or a publication, came to.
@@ -260,8 +273,9 @@ impl Outcome {
 
     /// Whether the host is to build its machine again and make a [`RoundKind::Resync`]: the core
     /// found operations the machine was told and is to be without, or was not told and is to be
-    /// with ([`Round::evicted`], [`Round::restored`]). A change withdrawn is withdrawn in place
-    /// ([`Self::withdrawn`]).
+    /// with ([`Round::evicted`], [`Round::restored`]), a part of a change signed before a change
+    /// was one unit among them, which moves the state the machine is built from
+    /// ([`Peer::fold`]). A change withdrawn is withdrawn in place ([`Self::withdrawn`]).
     pub fn rebuild(&self) -> bool {
         self.rounds()
             .any(|round| !round.evicted.is_empty() || !round.restored.is_empty())
@@ -503,10 +517,11 @@ fn key_in(row: &Value, name: &str) -> Option<PublicKey> {
 }
 
 impl Saved {
-    fn read(text: &str) -> Result<Self, PeerError> {
+    /// What a state sealed at `version` holds: its text says the version it was sealed at.
+    fn read(text: &str, version: u64) -> Result<Self, PeerError> {
         let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
         let value: Value = serde_json::from_str(text).map_err(|_| unreadable("it is not JSON"))?;
-        if value.get("version").and_then(Value::as_u64) != Some(SAVE_VERSION) {
+        if value.get("version").and_then(Value::as_u64) != Some(version) {
             return Err(unreadable("it is not a version this core reads"));
         }
         let owed = value
@@ -1400,6 +1415,20 @@ impl Peer {
         }
     }
 
+    /// What the parts of changes signed before a change was one unit that the core holds make
+    /// together (docs/adr/0085, section 8.3): the state of the list they wrote, its live values
+    /// each with its own dot, its clock, and the cut it stands at. A list a device or its relay
+    /// held before the landing that made a change one unit is read once as this state: the parts
+    /// are verified as they were signed and folded in no order, so every device that holds the same
+    /// parts folds the same state, and no machine is told a part. A machine built again is given
+    /// it first, as `record_list.restore` payloads ([`Fold::restores`], within the build's
+    /// `shared_parts`), and then the history ([`Self::history`]); a round that takes in a part the
+    /// core did not hold says the machine is to be built again ([`Outcome::rebuild`]), since the
+    /// state moved. Empty for a list that holds no part.
+    pub fn fold(&self) -> Fold {
+        self.trust.fold()
+    }
+
     /// The stable cut (docs/adr/0085, sections 3 and 4): for each device, the highest number of its
     /// chain every member of the list is known to have been told, lowest node first. The host
     /// folds its journal at it: a snapshot of its copy's state with the cut, after which a rebuild
@@ -1583,7 +1612,7 @@ impl Peer {
                 .with_identity(KEPT_GROUP_KEY, device.identity())
                 .with(KEPT_GROUP_HELD, member.held_to_bytes());
         }
-        backup::seal_state(key, &sealed_context(), &contents).map_err(sealing_error)
+        backup::seal_state(key, &sealed_context(SAVE_VERSION), &contents).map_err(sealing_error)
     }
 
     /// The part of the state that is no secret, as the text the sealed state holds it in.
@@ -1647,20 +1676,42 @@ impl Peer {
     /// sends at once, and makes a [`RoundKind::Resync`] to tell the rebuilt machine the list. An
     /// older state may also hold the key of an epoch the list has had destroyed since; the same
     /// round reads the entry that destroys it, and the key is zeroed as the entry is taken.
+    ///
+    /// **A state sealed before a change was one unit is upgraded** ([`UPGRADED_VERSION`],
+    /// docs/adr/0085, section 8.3). It opens under the same key, and the device keeps everything
+    /// it held: its person's key, the administrator's key, the keys of the epochs, the group's
+    /// device, the log, and every operation, which are parts of changes signed under the second
+    /// event domain, each verified as it was signed and held where it stands in its chain, so the
+    /// device's next change is signed at the number after its last part. What its machine sent
+    /// that waited is carried as the changes it was parts of (`sce_rust_trust::Trust`'s restore),
+    /// and what the state kept for its machine is dropped: no machine of today takes a part. The
+    /// host builds its machine again, from the state the parts make ([`Self::fold`]) and then the
+    /// history ([`Self::history`]). The next save is sealed at [`SAVE_VERSION`].
     pub fn restore_sealed(
         &mut self,
         node: u64,
         sealed: &[u8],
         key: &DataKey,
     ) -> Result<usize, PeerError> {
-        let contents = backup::open_state(key, &self.list, node, &sealed_context(), sealed)
-            .map_err(sealing_error)?;
+        let open = |version: u64| {
+            backup::open_state(key, &self.list, node, &sealed_context(version), sealed)
+        };
+        // The version is bound into the sealed state, and a cipher cannot tell another version
+        // from another key: a state that does not open as this core's version is tried as the one
+        // it upgrades, and is refused as not opened when it is neither.
+        let (contents, version) = match open(SAVE_VERSION) {
+            Err(BackupError::Corrupt) => (
+                open(UPGRADED_VERSION).map_err(sealing_error)?,
+                UPGRADED_VERSION,
+            ),
+            opened => (opened.map_err(sealing_error)?, SAVE_VERSION),
+        };
         let unreadable = |why: &str| PeerError::Unreadable(why.to_string());
         let saved = contents
             .extra(KEPT_STATE)
             .and_then(|bytes| std::str::from_utf8(bytes).ok())
             .ok_or_else(|| unreadable("it holds no state of the core"))
-            .and_then(Saved::read)?;
+            .and_then(|text| Saved::read(text, version))?;
         let administrator = match contents.extra(KEPT_ADMINISTRATOR) {
             None => None,
             Some(_) => Some(
@@ -1695,6 +1746,11 @@ impl Peer {
         self.asking = None;
         self.outcome = None;
         self.state = saved.courier;
+        // What a state of the version upgraded kept for its machine is parts of changes, which no
+        // machine of today takes: the machine is built again from the fold ([`Self::fold`]).
+        if version == UPGRADED_VERSION {
+            self.state.forget_what_the_machine_is_owed();
+        }
         self.owed = saved.owed;
         self.invitations = saved.invitations;
         self.joins = saved.joins;

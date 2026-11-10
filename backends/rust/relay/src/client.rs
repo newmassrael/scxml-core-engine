@@ -330,6 +330,21 @@ impl CourierState {
         self.untold.len()
     }
 
+    /// Drop what is kept for the machine to be handed over: its events, what it is to be built
+    /// again without or with, and what became of the sends that waited. What a state written for a
+    /// machine of another form kept (one written before a change was one unit, whose machine is
+    /// built again from the fold of what its host held, docs/adr/0085, section 8.3), which no
+    /// machine of today takes. The cursor, what is parked and the group's messages stay: they are
+    /// the host's, not the machine's.
+    pub fn forget_what_the_machine_is_owed(&mut self) {
+        self.untold.clear();
+        self.evicted.clear();
+        self.restored.clear();
+        self.taken.clear();
+        self.held.clear();
+        self.dropped.clear();
+    }
+
     /// The state as one text, for a host's storage: a JSON object, every 64-bit number as text.
     pub fn to_text(&self) -> String {
         let pairs = |pairs: &[(String, String)]| {

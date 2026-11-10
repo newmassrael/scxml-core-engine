@@ -191,6 +191,14 @@ int32_t sce_peer_restore_records(ScePeer *peer, const char *records, uint64_t *k
  * chain back; any of the three may be NULL. */
 int32_t sce_peer_history(ScePeer *peer, const char *after, ScePeerBuf *out);
 int32_t sce_peer_stable_cut(ScePeer *peer, ScePeerBuf *out);
+
+/* What the parts of changes signed before a change was one unit make together, as one JSON object
+ * {restores, cut}: the state as record_list.restore payloads (JSON texts of at most parts values
+ * each, the build's shared_parts; empty when no value is live), and for each device the highest
+ * number among its parts ([node, seq] pairs). A machine built again is given the restores first,
+ * then the history. A state sealed before a change was one unit is opened by sce_peer_restore_sealed
+ * as it is and upgraded; the next save is of this core's version. */
+int32_t sce_peer_fold(ScePeer *peer, uint32_t parts, ScePeerBuf *out);
 int32_t sce_peer_mark(ScePeer *peer, uint64_t *seq);
 int32_t sce_peer_own_stamp(ScePeer *peer, int64_t *wall_time, uint32_t *counter, int32_t *read_back);
 
