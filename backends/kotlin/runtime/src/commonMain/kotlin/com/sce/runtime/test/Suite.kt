@@ -11,10 +11,12 @@
 // case's configuration from its `test-configuration`). They are data: what a
 // case does is its components' machines, which the run drives ([TestCaseRun]).
 // The runner is a library function, with no `main`: a generated or hand-written
-// test calls it with the system adapters that play the SUT.
+// test calls it with the system adapters that play the SUT ([runSuite]), or
+// with the recorded input trace of each test case ([runSuiteWithTraces]), which
+// the program of a generated suite does ([runRunner]).
 //
-// Cross-language siblings: `sce_rust_runtime::test::run_suite` (Rust),
-// `SCE::Test::runSuite` (C++).
+// Cross-language siblings: `sce_rust_runtime::test::run_suite` and
+// `run_suite_with_traces` (Rust), `SCE::Test::runSuite` (C++).
 
 package com.sce.runtime.test
 
@@ -43,6 +45,12 @@ data class TestCase(
     val machines: MachineFactory,
     /** The ids of the module parameters its components read. */
     val moduleParameters: List<String>,
+    /**
+     * The reader of its configuration's inputs, which a trace replayed for it
+     * is read with ([runSuiteWithTraces]): which records each system port
+     * takes, and each record's value from its canonical form.
+     */
+    val inputs: InputReader,
 )
 
 /**
@@ -135,6 +143,68 @@ fun runSuite(
     world: Features,
     adapters: (testCase: String) -> SystemAdapter?,
     overrides: ModuleParameters,
+): List<CaseResult> = runSelected(suite, world, overrides) { testCase ->
+    adapters(testCase.name)?.let { Adapted.Ready(it) }
+        ?: Adapted.Refused("no system adapter is given for the test case")
+}
+
+/**
+ * Runs the test cases of [suite] that [world] selects, each against its
+ * recorded input trace (docs/SCE_TTCN3_LANE.md §10.5): [runSuite], with the
+ * adapter of each test case a [TraceAdapter] that plays the trace [traces]
+ * gives for its name, read by the test case's configuration
+ * ([TestCase.inputs]). [traces] throws a [TraceRefusal] for a trace it does
+ * not have or does not read.
+ *
+ * A test case whose trace is not given, is of another suite or test case, or
+ * does not fit its configuration (a port that is no system port of it, a type
+ * its port does not take, a value that does not belong to its type) ends with
+ * `error` (P13) before any component is created, its log line naming why. So
+ * does one whose components read a module parameter the run has no value for,
+ * as under [runSuite], before its trace is asked for.
+ *
+ * @throws OverrideRefusal when [overrides] gives a module parameter the suite
+ *   does not declare, before any case runs.
+ */
+fun runSuiteWithTraces(
+    suite: Suite,
+    world: Features,
+    traces: (testCase: String) -> Trace,
+    overrides: ModuleParameters,
+): List<CaseResult> = runSelected(suite, world, overrides) { testCase ->
+    try {
+        val trace = traces(testCase.name)
+        if (trace.suite != suite.name || trace.testCase != testCase.name) {
+            Adapted.Refused(
+                "the trace is of the test case '${trace.testCase}' of the suite '${trace.suite}'",
+            )
+        } else {
+            Adapted.Ready(TraceAdapter.replaying(trace, testCase.inputs))
+        }
+    } catch (refused: TraceRefusal) {
+        Adapted.Refused("the trace is refused: ${refused.reason}")
+    }
+}
+
+/** The adapter a test case runs against, or why it is given none. */
+private sealed interface Adapted {
+    /** The adapter. */
+    class Ready(val adapter: SystemAdapter) : Adapted
+
+    /** Why there is none, which the test case ends with `error` for (P13). */
+    class Refused(val why: String) : Adapted
+}
+
+/**
+ * The runner of [runSuite] and [runSuiteWithTraces]: the test cases [world]
+ * selects, each against the adapter [adapterOf] builds for it, or ended with
+ * `error` for the reason it gives where it builds none.
+ */
+private fun runSelected(
+    suite: Suite,
+    world: Features,
+    overrides: ModuleParameters,
+    adapterOf: (TestCase) -> Adapted,
 ): List<CaseResult> {
     val parameters = suite.moduleParameters.copy()
     for ((id, value) in overrides.values) {
@@ -162,10 +232,12 @@ fun runSuite(
             )
             continue
         }
-        val adapter = adapters(testCase.name)
-        if (adapter == null) {
-            results.add(refused(testCase.name, "no system adapter is given for the test case"))
-            continue
+        val adapter = when (val adapted = adapterOf(testCase)) {
+            is Adapted.Ready -> adapted.adapter
+            is Adapted.Refused -> {
+                results.add(refused(testCase.name, adapted.why))
+                continue
+            }
         }
         val run = TestCaseRun(testCase.configuration, testCase.machines, adapter, execute.guard, parameters)
         results.add(CaseResult(testCase = testCase.name, result = run.run()))
