@@ -241,14 +241,21 @@ extension SavedValues {
         .array(value.map(element))
     }
 
-    /// A list read back element by element, only if it holds no more than the `capacity` the machine bounds
-    /// it by: a machine never holds more, and a restored one must not be the first to.
+    /// A list read back element by element, only if it holds at least `least` and no more than the `capacity`
+    /// elements the machine holds it to: a machine never holds fewer or more, and a restored one must not be
+    /// the first to. `least` is the lower count its type states (docs/adr/0086, section 15), 0 where it states
+    /// none. Both counts are held before any element is read, the lower one in the words a delivery's reader
+    /// and a host's check use (`countShort`).
     public static func list<T>(
-        _ value: JSONValue, _ what: String, capacity: Int, _ element: (JSONValue, String) throws -> T
+        _ value: JSONValue, _ what: String, least: Int = 0, capacity: Int,
+        _ element: (JSONValue, String) throws -> T
     ) throws -> [T] {
         guard case .array(let items) = value else { throw notA(value, what, "an array") }
         if items.count > capacity {
             throw StateRefusal("'\(what)' holds \(items.count) elements, past the \(capacity) it is bounded by")
+        }
+        if items.count < least {
+            throw StateRefusal("'\(what)' \(countShort(items.count, least))")
         }
         return try items.enumerated().map { index, item in try element(item, "\(what)[\(index)]") }
     }

@@ -162,6 +162,41 @@ private enum Shade: UInt8, SavedEnumeration {
             == "'picked' is not an array")
 }
 
+// A list of a type that states a lower count (docs/adr/0086, section 15) is held to both its counts before an
+// element is read, so a restore refuses a list a machine never holds, in the words a delivery's reader uses.
+@Test func aListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead() throws {
+    #expect(
+        try SavedValues.list(.array([.number("1"), .number("2")]), "items", least: 1, capacity: 2) {
+            try SavedValues.uint8($0, $1)
+        } == [1, 2])
+    #expect(
+        refusal {
+            try SavedValues.list(.array([]), "items", least: 1, capacity: 2) { try SavedValues.uint8($0, $1) }
+        } == "'items' holds 0 elements, fewer than the 1 its type declares")
+    // The count is judged before the element that is no number is read.
+    #expect(
+        refusal {
+            try SavedValues.list(.array([.text("x")]), "items", least: 2, capacity: 3) {
+                try SavedValues.uint8($0, $1)
+            }
+        } == "'items' holds 1 elements, fewer than the 2 its type declares")
+    #expect(
+        refusal {
+            try SavedValues.list(.array([.number("1"), .number("2"), .number("3")]), "items", least: 1, capacity: 2) {
+                try SavedValues.uint8($0, $1)
+            }
+        } == "'items' holds 3 elements, past the 2 it is bounded by")
+    // A list inside a list is held to its own lower count, named by its index.
+    #expect(
+        refusal {
+            try SavedValues.list(.array([.array([.number("1")]), .array([])]), "grid", capacity: 3) { row, rowWhat in
+                try SavedValues.list(row, rowWhat, least: 1, capacity: 2) { try SavedValues.uint8($0, $1) }
+            }
+        } == "'grid[1]' holds 0 elements, fewer than the 1 its type declares")
+    // A list that states no lower count reads the empty list, as it did.
+    #expect(try SavedValues.list(.array([]), "items", capacity: 2) { try SavedValues.uint8($0, $1) } == [])
+}
+
 @Test func aRecordFieldIsFoundByItsIdAndAMissingOneIsRefusedByName() throws {
     let record = SavedValues.record([(key: "id", value: .number("2")), (key: "title", value: .text("beta"))])
     #expect(writeJSON(record) == "{\"id\":2,\"title\":\"beta\"}")

@@ -138,9 +138,9 @@ impl SavedReader<'_, '_> {
     /// The Swift expression that reads the saved value `saved` (an expression), named
     /// `what` in a refusal (an expression of a `String`), as a value of `ty`: as
     /// [`swift_saved_write`] writes it, a text and a byte string held to the bound the
-    /// machine keeps them to, an enum by its own type, a record and a union by their
-    /// own `fromSaved`. `depth` names the parameters of each nested closure, so none
-    /// hides its holder's.
+    /// machine keeps them to, a list to its bound and to the lower count its type
+    /// states, an enum by its own type, a record and a union by their own `fromSaved`.
+    /// `depth` names the parameters of each nested closure, so none hides its holder's.
     fn read(
         &self,
         ty: &ValueType,
@@ -181,8 +181,16 @@ impl SavedReader<'_, '_> {
                 "try SavedValues.optional({saved}, {what}) {{ {inner_saved}, {inner_what} in {} }}",
                 self.read(elem, &inner_saved, &inner_what, depth + 1)?
             ),
+            // A list is held to the lower count its type states as well as to
+            // its bound (docs/adr/0086, section 15.6), as a delivery's reader
+            // holds it; a list that states none is read as it was.
             ValueType::List { elem, max } => format!(
-                "try SavedValues.list({saved}, {what}, capacity: {}) {{ {inner_saved}, {inner_what} in {} }}",
+                "try SavedValues.list({saved}, {what}, {}capacity: {}) {{ {inner_saved}, {inner_what} in {} }}",
+                if max.min == 0 {
+                    String::new()
+                } else {
+                    format!("least: {}, ", max.min)
+                },
                 max.max,
                 self.read(elem, &inner_saved, &inner_what, depth + 1)?
             ),
@@ -1728,5 +1736,33 @@ mod tests {
     fn a_swift_union_answers_its_tag_by_one_property() {
         assert_eq!(SWIFT.union_tag_read("kind"), Some("kind".to_string()));
         assert_eq!(SWIFT.union_tag_read("type"), Some("kind".to_string()));
+    }
+
+    /// A list that states a lower count is read back from a saved state held
+    /// to it as well as to its bound (docs/adr/0086, section 15.6), so a
+    /// restore refuses a list a delivery would; a list that states none is read
+    /// as it was, and a record a list holds by its own `fromSaved`.
+    #[test]
+    fn a_swift_saved_list_is_held_to_its_lower_count() {
+        let held = held();
+        let enums = enums();
+        let reader = SavedReader {
+            spelling: &SWIFT,
+            within: None,
+            records: &held,
+            enums: &enums,
+        };
+        let read = |text: &str| reader.read(&ty(text), "s", "w", 0).expect("a read");
+        assert_eq!(
+            read("list<record:Item>[1..3]"),
+            "try SavedValues.list(s, w, least: 1, capacity: 3) { sceSaved0, sceWhat0 in \
+             try MItemRecord.fromSaved(sceSaved0, sceWhat0) }"
+        );
+        assert_eq!(
+            read("list<list<uint8>[2]>[3]"),
+            "try SavedValues.list(s, w, capacity: 3) { sceSaved0, sceWhat0 in try \
+             SavedValues.list(sceSaved0, sceWhat0, capacity: 2) { sceSaved1, sceWhat1 in try \
+             SavedValues.uint8(sceSaved1, sceWhat1) } }"
+        );
     }
 }
