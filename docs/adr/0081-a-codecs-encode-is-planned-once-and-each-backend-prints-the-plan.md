@@ -680,6 +680,22 @@ old encode, the old encode and its templates are removed in the same landing.
    its lower count, as Rust's `BoundedList` holds it, so the two languages refuse the same values. Every CBOR
    plan is printed. A C++ test holds three CBOR fixtures, one for each refusal, to the bytes and the refusals
    of the Rust encode.
+
+   *The thirty-seventh C++ landing, 2026-11-10:* the C++ harness runs every `sources` case (§5), as the Rust
+   harness does. The generator folds each `source` into the C++ harness as the printed value its constructor
+   makes (`cpp_source::source_case`). An element that holds a bound or a law is made by `make` of the type the
+   class's own accessor presents it as, read with `decltype`, so the case names no bound, law or kind the
+   printer would have to agree with; a byte string and the entries of a list or a chain are made over a
+   `std::vector` bound first, since the views `make` takes own nothing, and a body, a group's arm and a
+   variant's arm by value, an arm at its place among the alternatives. The harness encodes the value through
+   `Wire::encode_source` over a sink and compares the bytes (law 4), then decodes the bytes and compares what
+   the decode presents with the value, element by element, each body, list, group and variant down into the
+   elements of the codecs it holds (law 1). The notation is read once for both printers: the Rust case and the
+   C++ case share the readers of a value, a group's arm, a variant's arm, a law's start, a bare entry's place
+   and the inputs, so one case states one value in both. The shapes no case states stay refused by name, as
+   in the Rust case; a codec the C++ backend kept on the template's encode would be refused by name too, and
+   none is. Every codec with `sources` that the C++ harness holds runs them; the one it does not hold,
+   `codec_dma_aligned_basic`, is an MCU-only codec no C++ tree generates.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
