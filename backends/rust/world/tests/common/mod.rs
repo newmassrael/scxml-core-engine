@@ -32,6 +32,7 @@ pub use todo_peer::{TodoPeerPersist, TodoPeerPolicy as TodoPeer};
 pub mod calendar;
 pub mod crowd;
 pub mod devices;
+pub mod journal;
 pub mod kotlin;
 pub mod presence;
 pub mod repair;
