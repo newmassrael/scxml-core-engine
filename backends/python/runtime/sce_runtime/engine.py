@@ -44,7 +44,11 @@ from typing import (
     TypeVar,
 )
 
-from .configuration import ConfigurationRejection, validate_configuration
+from .configuration import (
+    ConfigurationRejection,
+    ConfigurationVerdict,
+    validate_configuration,
+)
 from .event import EventMetadata, EventWithMetadata, is_error_event
 from .event_origin import EventOrigin
 from .host_processor import (
@@ -108,6 +112,7 @@ from .root_start import RootStartRefusal
 from .policy import StatePolicy
 from .saved_state import StateRefusal
 from .scheduler import ScheduledRoute, Scheduler
+from .script_session import ScriptSessionFailure, ScriptSessionUnavailable
 from .session_id import draw as _draw_session_id
 
 S = TypeVar("S")
@@ -277,11 +282,12 @@ class Engine(Generic[S, E]):
         # The id is allocated up front so the policy can reference it
         # immediately (helpers like `_assign` / `_guard` thread it back
         # into the IScriptEngine without an Optional check). The
-        # session itself is created here so generated policies can
-        # declare variables during `initialize_datamodel` without a
-        # later `create_session` step. Mirrors the Rust / Go / Kotlin /
-        # C++ pattern where Engine construction implicitly owns one
-        # script-engine session.
+        # session itself is not made here: every start makes it, the one
+        # place a session is made (`_establish_script_session`,
+        # docs/adr/0096), so a session that cannot be established refuses
+        # the start instead of failing the construction, and a child's
+        # session is made by the child's start rather than on its parent's
+        # stack.
         # A child is given its id by the parent that starts it,
         # `<parent>.<invokeid>`, so it comes from the tree alone and is the
         # text every backend writes (docs/adr/0045); a machine a host starts
@@ -299,7 +305,13 @@ class Engine(Generic[S, E]):
         # Q2=(a) mandatory-when-needed: every Engine now ships with its own
         # engine instance, mirroring Kotlin's constructor-injected pattern.
         self._script_engine = script_engine
-        self._script_engine.create_session(self._session_id)
+        # Whether this machine's script session is established: set by
+        # `_establish_script_session` once every step succeeded, cleared when
+        # the session is released. What runs after the start reads the session
+        # and never makes one; content that reaches a session that is not
+        # there raises the engine's `SessionNotFoundError`, a defect rather
+        # than an error of the document.
+        self._script_session_established: bool = False
         # §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine,
         # declared by the deployment before `initialize()`. The address
         # belongs to whoever runs the listener, so the engine takes it from
@@ -526,34 +538,53 @@ class Engine(Generic[S, E]):
 
     def initialize_as_root(self) -> Optional[RootStartRefusal]:
         """`initialize`, for a host that refuses to start a machine needing a
-        parent as a root (`root_start_refusal`). A refusal starts nothing."""
+        parent as a root (`root_start_refusal`).
+
+        It refuses for either of two reasons, and answers the refusal rather
+        than raising it: `RootStartRefusal.NEEDS_PARENT` before anything is
+        established, and `RootStartRefusal.ScriptSession` for a machine whose
+        script session cannot be established (docs/adr/0096). A refusal starts
+        nothing: no state is entered and no executable content runs."""
         refusal = self.root_start_refusal()
         if refusal is not None:
             return refusal
-        self.initialize()
+        try:
+            self.initialize()
+        except ScriptSessionUnavailable as refused:
+            return RootStartRefusal.ScriptSession(refused.failure)
         return None
 
     def initialize(self) -> None:
-        """Enter the initial configuration and drive the macrostep loop until stable."""
+        """Enter the initial configuration and drive the macrostep loop until stable.
+
+        The machine's script session is established first, and a machine whose
+        session cannot be established is not started (docs/adr/0096): no state
+        is entered, no executable content runs, no event is taken, the inbox is
+        not opened and the run is not marked running. Every Python machine is
+        built over a script engine, so any start may be refused this way.
+
+        Raises `ScriptSessionUnavailable`, naming the step that failed, when the
+        script session cannot be established."""
         if self._is_running:
             return
+        # §scxml-C-1-1 / §scxml-C-2-3 — bind `_sessionid` / `_name` /
+        # `_ioprocessors` into the script-engine session before any datamodel
+        # `<data>` is registered: the last of the three steps that establish
+        # the session, before anything of the run begins, so a session that
+        # cannot be established refuses the start here. The entries come from
+        # the same helper every other backend uses, so a machine reads the same
+        # entry names and the same addresses whichever one runs it. The
+        # BasicHTTP entry appears only once `basic_http_access_uri` names a
+        # deployed endpoint — advertising the processor because the document
+        # happens to `<send>` through it would publish an address nothing
+        # answers on.
+        failure = self._establish_script_session()
+        if failure is not None:
+            raise ScriptSessionUnavailable(failure)
         self._is_running = True
         # docs/adr/0084: a run that follows one that ended or was stopped takes
         # posts again; what was posted before the first run is still held.
         self._open_inbox()
-        # §scxml-C-1-1 / §scxml-C-2-3 — bind `_sessionid` / `_name` /
-        # `_ioprocessors` into the script-engine session before any datamodel
-        # `<data>` is registered. The entries come from the same helper every
-        # other backend uses, so a machine reads the same entry names and the
-        # same addresses whichever one runs it. The BasicHTTP entry appears
-        # only once `basic_http_access_uri` names a deployed endpoint —
-        # advertising the processor because the document happens to `<send>`
-        # through it would publish an address nothing answers on.
-        self._script_engine.setup_system_variables(
-            self._session_id,
-            self._policy.machine_name(),
-            io_processors.build(self._session_id, self.basic_http_access_uri),
-        )
         # §scxml-5.9.2 — register the `In(state)` predicate against
         # this engine's active configuration. The Lua engine surfaces
         # `In` as a global function in the session scope.
@@ -562,7 +593,9 @@ class Engine(Generic[S, E]):
             lambda state_id: self._policy.is_state_active(state_id, self),
         )
         # §scxml-5.3 early binding: datamodel initialisation runs before
-        # any onentry action fires.
+        # any onentry action fires: the `<data>`, the parameters a parent
+        # handed this session, then the top-level `<script>`, in the session
+        # established above.
         self._policy.initialize_datamodel(self)
         # §scxml-D-interpret: enter the document's initial transition, whose
         # source is the `<scxml>` element, through the entry procedure every
@@ -587,7 +620,7 @@ class Engine(Generic[S, E]):
 
     def enter_at(
         self, configuration: Sequence[S], current: S
-    ) -> ConfigurationRejection:
+    ) -> ConfigurationVerdict:
         """W3C SCXML 3.2 — enter a configuration this document already
         describes, without re-running the `<onentry>` actions an earlier run
         already ran.
@@ -620,6 +653,15 @@ class Engine(Generic[S, E]):
         door must never produce, because a host has no way to detect it
         afterwards.
 
+        It also refuses a machine whose script session cannot be established,
+        with `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and the
+        `ScriptSessionFailure` naming the step that failed (docs/adr/0096): the
+        session is established before the rest is touched, so nothing is
+        entered, the run is not marked running and the inbox is not opened.
+        What such a refusal does touch is a session an earlier run of this
+        engine left readable, which every start releases before it makes its
+        own.
+
         **What it does not do.** No `<onentry>` and no `<onexit>`: no state is
         entered or left. No macrostep — `initialize` settles the machine before
         returning, this does not, because the configuration handed in was
@@ -628,26 +670,31 @@ class Engine(Generic[S, E]):
         runs, so the variables exist with their document defaults and a host can
         then put its saved values back through the script engine.
 
-        The Python twin of `Engine::enter_at` (Rust), `enterAt` (C++) and
-        `EnterAt` (Go).
+        The Python twin of `Engine::enter_at` (Rust), `enterAt` (C++ and
+        Kotlin) and `EnterAt` (Go).
 
-        Returns `ConfigurationRejection.NONE` on success; the rule that was
-        broken otherwise, with the engine untouched.
+        Returns a verdict whose `rejection` is `ConfigurationRejection.NONE` on
+        success (`ConfigurationVerdict.ACCEPTED`); the rule that was broken
+        otherwise, or the failure of the script session, with the configuration
+        and the inbox untouched.
         """
         # Before anything is touched: a rejection must not half-enter.
         verdict = validate_configuration(self._policy, configuration, current)
         if verdict is not ConfigurationRejection.NONE:
-            return verdict
+            return ConfigurationVerdict(verdict)
 
         # The same three steps `initialize` takes before it walks the entry
         # path, in the same order and for the same reasons — a resumed machine
         # reads `_sessionid`, answers `In()`, and finds its `<data>` declared.
-        # Only the walk and the macrostep loop are skipped.
-        self._script_engine.setup_system_variables(
-            self._session_id,
-            self._policy.machine_name(),
-            io_processors.build(self._session_id, self.basic_http_access_uri),
-        )
+        # Only the walk and the macrostep loop are skipped. The session is
+        # established first, and one that cannot be refuses the entry before
+        # the configuration or the inbox is touched, as a configuration of
+        # another document is (docs/adr/0096).
+        failure = self._establish_script_session()
+        if failure is not None:
+            return ConfigurationVerdict(
+                ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE, failure
+            )
         self._script_engine.set_state_query_callback(
             self._session_id,
             lambda state_id: self._policy.is_state_active(state_id, self),
@@ -670,7 +717,7 @@ class Engine(Generic[S, E]):
         # docs/adr/0084: the run entered here takes posts, as one `initialize`
         # starts does.
         self._open_inbox()
-        return ConfigurationRejection.NONE
+        return ConfigurationVerdict.ACCEPTED
 
     def stop(self) -> None:
         # §scxml-D-exitInterpreter: a run the host stops is exited as one that
@@ -692,16 +739,91 @@ class Engine(Generic[S, E]):
         self._done_invoke_emitted.clear()
         # The script-engine session is NOT released here: a run ended by
         # stop() leaves its datamodel readable, as one that ended in a
-        # top-level final does. `__del__` releases it, which is where Rust's
-        # `Drop` impl on Engine releases its own.
+        # top-level final does. The next start releases it before it makes
+        # its own, and `__del__` releases it, which is where Rust's `Drop`
+        # impl on Engine releases its own.
 
     def __del__(self) -> None:
         try:
-            if getattr(self, "_session_id", ""):
-                self._script_engine.destroy_session(self._session_id)
-                self._session_id = ""
+            self._release_script_session()
         except Exception:
             pass
+
+    # ── The script session (docs/adr/0096) ─────────────────────────
+
+    def _establish_script_session(self) -> Optional[ScriptSessionFailure]:
+        """Establish this machine's script session, the first step of every
+        start (`initialize`, `initialize_as_root`, `enter_at`, and an invoked
+        child's start), and the one place a session is made (docs/adr/0096).
+
+        A session an earlier run left readable is released first: a start is
+        a new run, and its datamodel is made anew. Then the three steps, in
+        this order: create the session, which loads the shared library into
+        it, and bind the system variables `_sessionid`, `_name` and
+        `_ioprocessors`. A step that fails releases what the steps before it
+        made and is the answer, which names the step; the session is then not
+        marked established, so a later start asks for it again rather than
+        running over a session that is not there. `None` when every step
+        succeeded."""
+        self._release_script_session()
+        engine = self._script_engine
+        try:
+            engine.create_session(self._session_id)
+        except Exception as failure:
+            # The engine keeps no session for a creation that failed.
+            return ScriptSessionFailure.of_creation(failure)
+        try:
+            engine.setup_system_variables(
+                self._session_id,
+                self._policy.machine_name(),
+                io_processors.build(self._session_id, self.basic_http_access_uri),
+            )
+        except Exception as failure:
+            engine.destroy_session(self._session_id)
+            return ScriptSessionFailure.of_system_variables(failure)
+        self._script_session_established = True
+        return None
+
+    def _release_script_session(self) -> None:
+        """Destroy the established script session, if there is one."""
+        if not self._script_session_established:
+            return
+        self._script_session_established = False
+        self._script_engine.destroy_session(self._session_id)
+
+    def refuse_child_start(
+        self,
+        child: "Engine[Any, Any]",
+        invoked_as: str,
+        failure: ScriptSessionFailure,
+    ) -> None:
+        """End the `<invoke>` named `invoked_as` without a child, because the
+        start of `child` was refused for `failure`, its script session not
+        established (docs/adr/0096). The path a `src` or a `namelist` that
+        cannot be read takes: this machine keeps no child and raises
+        `error.execution`, whose data names the invoke and the step, on its
+        internal queue, and no `done.invoke` is raised for it. The child never
+        ran, so nothing it sent is delivered: its inbox closes and it leaves
+        the tree's directory it was entered in for its start, so a post naming
+        it is refused, and its Mesh router, installed before the start, is told
+        the session ended. A document that declares no `error.execution` is
+        told nothing, as for every other error event.
+
+        `invoked_as` is the id `_event.invokeid` would have carried: the id the
+        start was made under for an invoke that keeps it in an `idlocation`,
+        the document's own id otherwise. Called by the generated parent where
+        the child's start raised `ScriptSessionUnavailable`."""
+        child._close_inbox()
+        child.detach_mesh()
+        event = self._policy.get_event_from_name("error.execution")
+        if event is not None:
+            self.raise_internal(
+                event,
+                EventMetadata(
+                    event_type="platform",
+                    data=failure.child_start_refusal(invoked_as),
+                ),
+            )
 
     # ── Public introspection ───────────────────────────────────────
 

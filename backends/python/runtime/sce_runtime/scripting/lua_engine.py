@@ -39,6 +39,7 @@ between Python values and Lua values is centralised in `_python_to_lua`
 
 from __future__ import annotations
 
+import os
 import xml.dom.minidom as _minidom
 from threading import RLock
 from typing import Any, Callable, Dict, List, Optional
@@ -71,6 +72,7 @@ from .i_script_engine import (
     IScriptEngine,
     NativeMethod,
     ScriptError,
+    ScriptLibraryNotLoaded,
     ScriptRuntimeError,
     ScriptSyntaxError,
     ScriptValue,
@@ -116,6 +118,9 @@ class _LuaSession:
         # docstring) for the reasons given there.
         # `unpack_returned_tuples=True` so multi-return Lua functions
         # (e.g., `string.find`) decompose naturally on the Python side.
+        # A runtime that cannot be made is the `create` step of establishing
+        # a session; what fails from here on is the `library` step, raised
+        # as `ScriptLibraryNotLoaded` (docs/adr/0096).
         self.runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
         self.declared_vars: set = set()
         self.state_query: Optional[StateQueryCallback] = None
@@ -123,12 +128,18 @@ class _LuaSession:
         # the globals table, so it is loaded before the accessors that rely
         # on both are made.
         _install_ecmascript_builtins(self.runtime)
+        # The accessors assert that the semantics file defined the binder, so
+        # a file that loaded without it is a library that did not load.
+        try:
+            accessors = self.runtime.execute(_SESSION_ACCESSORS)
+        except lupa.LuaError as exc:
+            raise ScriptLibraryNotLoaded("the session accessors", str(exc)) from exc
         (
             self._bind_system,
             self._read_global,
             self._write_global,
             self._entries,
-        ) = self.runtime.execute(_SESSION_ACCESSORS)
+        ) = accessors
 
     def bind_system(self, name: str, value: Any) -> None:
         """Bind the system variable `name`, through the one binding the
@@ -272,7 +283,12 @@ def _install_ecmascript_builtins(runtime: Any) -> None:
 
     What remains here is what Lua cannot express or lupa needs from the host
     side: the `_NULL` / `_UNDEFINED` sentinels and the string `__add`
-    concatenation metatable."""
+    concatenation metatable.
+
+    Every chunk is required. One that cannot be read or does not run raises
+    `ScriptLibraryNotLoaded` naming it, and the session being made is not
+    kept: a session missing part of the library would run the machine over
+    operators and builtins that are not there (docs/adr/0096)."""
     globals_ = runtime.globals()
 
     # ES `null` / `undefined` collapse to nil here (matches Rust port's
@@ -286,7 +302,9 @@ def _install_ecmascript_builtins(runtime: Any) -> None:
     # ECMAScript string concatenation via `+` — install __add on the
     # string metatable so `"a" + "b"` produces `"ab"` (Lua's native `+`
     # is numeric only).
-    runtime.execute(
+    _run_library_chunk(
+        runtime,
+        "the string concatenation metatable",
         """
         local mt = getmetatable("")
         if mt then
@@ -294,7 +312,7 @@ def _install_ecmascript_builtins(runtime: Any) -> None:
                 return tostring(a) .. tostring(b)
             end
         end
-        """
+        """,
     )
 
     # `Object.keys` is in the shared semantics file loaded below, with the
@@ -302,40 +320,70 @@ def _install_ecmascript_builtins(runtime: Any) -> None:
     # which is the Lua hash layout rather than an order; the shared one sorts,
     # so the six backends answer the same array.
 
-    import os
-    # …/backends/python/runtime/sce_runtime/scripting/lua_engine.py → repo root
-    # is six directories up. It used to be four, which named
-    # `backends/python/sce/include/scripting/` — a path that has never
-    # existed, so the JSON load below silently did nothing on every run. The
-    # `os.path.exists` guard is what kept that invisible; it stays, because a
-    # packaged deployment really can lack the file, but it now guards a path
-    # that resolves in this repository.
-    here = os.path.dirname(
+    # §scxml-B-2: the ECMAScript operators Lua does not share — `+`,
+    # `==` and the bitwise family. Single source of truth at
+    # sce/include/scripting/ecma_semantics.lua, shared with every other
+    # backend. The generated code calls `_scxml_add` and `_scxml_eq` by
+    # name, so a session without the file would fail at the first `+`.
+    _run_library_chunk(
+        runtime,
+        "ECMAScript semantics",
+        _read_library_file("ECMAScript semantics", "ecma_semantics.lua"),
+    )
+
+    # JSON builtins shared with every other backend (single source of
+    # truth at sce/include/scripting/json_builtins.lua), required as the
+    # semantics file is. This load was once optional, for a deployment that
+    # carries one file of the directory and not the other; such a deployment
+    # has no semantics file either, and fails above, so the optional load
+    # only hid a build that shipped half the library.
+    _run_library_chunk(
+        runtime,
+        "JSON builtins",
+        _read_library_file("JSON builtins", "json_builtins.lua"),
+    )
+
+
+# The directory of the library every Lua backend shares,
+# `sce/include/scripting/` of the repository: six directories above this file
+# (…/backends/python/runtime/sce_runtime/scripting/lua_engine.py). It used to
+# be four, which named `backends/python/sce/include/scripting/`, a path that has
+# never existed, so the JSON load silently did nothing on every run while an
+# `os.path.exists` guard kept that invisible. A module attribute, read when a
+# session is made, so a test can point it at a directory that lacks a chunk.
+_SHARED_SCRIPTING_DIR = os.path.join(
+    os.path.dirname(
         os.path.dirname(
             os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             )
         )
-    )
+    ),
+    "sce",
+    "include",
+    "scripting",
+)
 
-    # §scxml-B-2: the ECMAScript operators Lua does not share — `+`,
-    # `==` and the bitwise family. Single source of truth at
-    # sce/include/scripting/ecma_semantics.lua, shared with every other
-    # backend. Unlike the JSON helpers below this one is required: the
-    # generated code calls `_scxml_add` and `_scxml_eq` by name, so a
-    # deployment without the file would fail at the first `+`.
-    ecma_lua = os.path.join(here, "sce", "include", "scripting", "ecma_semantics.lua")
-    with open(ecma_lua, "r", encoding="utf-8") as fh:
-        runtime.execute(fh.read())
 
-    # JSON builtins shared with every other backend (single source of
-    # truth at sce/include/scripting/json_builtins.lua). Loaded
-    # opportunistically; absent from non-monorepo deployments is
-    # acceptable — the helpers are tested by JSON-using fixtures only.
-    json_lua = os.path.join(here, "sce", "include", "scripting", "json_builtins.lua")
-    if os.path.exists(json_lua):
-        with open(json_lua, "r", encoding="utf-8") as fh:
-            runtime.execute(fh.read())
+def _read_library_file(library: str, file_name: str) -> str:
+    """The text of `file_name` in the shared library's directory, the chunk
+    named `library`; `ScriptLibraryNotLoaded` naming it when it cannot be
+    read."""
+    path = os.path.join(_SHARED_SCRIPTING_DIR, file_name)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise ScriptLibraryNotLoaded(library, str(exc)) from exc
+
+
+def _run_library_chunk(runtime: Any, library: str, chunk: str) -> None:
+    """Run `chunk`, the piece of the library named `library`, in `runtime`;
+    `ScriptLibraryNotLoaded` naming it when it does not run."""
+    try:
+        runtime.execute(chunk)
+    except lupa.LuaError as exc:
+        raise ScriptLibraryNotLoaded(library, str(exc)) from exc
 
 
 class LuaScriptEngine(IScriptEngine):
@@ -377,17 +425,22 @@ class LuaScriptEngine(IScriptEngine):
     # ── Session lifecycle ─────────────────────────────────────────
 
     def create_session(self, session_id: str) -> None:
+        """Make the session `session_id`, the shared library loaded into it.
+        A chunk of the library that does not load raises
+        `ScriptLibraryNotLoaded`; any failure keeps no session, since the
+        session is entered in the registry only once it is whole
+        (docs/adr/0096)."""
         with self._lock:
             if session_id in self._sessions:
                 return
             session = _LuaSession()
-            self._sessions[session_id] = session
             # Surface previously-registered global functions into the
             # new session — matches the C++ pattern where
             # `registerGlobalFunction` applies to every existing AND
             # future session.
             for name, callback in self._global_funcs.items():
                 self._install_native_function(session, name, callback)
+            self._sessions[session_id] = session
 
     def destroy_session(self, session_id: str) -> None:
         with self._lock:

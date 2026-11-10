@@ -270,8 +270,33 @@ class ScriptRuntimeError(ScriptError):
     """Evaluation raised at runtime (TypeError, ReferenceError, …)."""
 
 
-class SessionNotFoundError(ScriptError):
-    """Operation referenced an unknown session id."""
+class SessionNotFoundError(RuntimeError):
+    """Operation referenced a session id the engine does not hold.
+
+    Not a `ScriptError`: the error events a document handles are for errors of
+    its content, and this is none. A machine's session is made by its start,
+    the one place a session is made, before anything of the run executes
+    (docs/adr/0096), so content that reaches a session that is not there is a
+    defect of the generated code or of a host driving a machine whose start was
+    refused. It propagates instead of being taken as `error.execution`."""
+
+
+class ScriptLibraryNotLoaded(ScriptError):
+    """What `IScriptEngine.create_session` raises when a chunk of the shared
+    library did not load into the new session. The engine keeps no session
+    then, and the start that asked for it is refused at the `library` step
+    (`ScriptSessionFailure.of_creation`), which says the build is at fault
+    rather than the machine or the device.
+
+    The Kotlin sibling is `ScriptLibraryNotLoadedException`, the Go one
+    `sce.ScriptLibraryNotLoaded`."""
+
+    def __init__(self, library: str, reason: str) -> None:
+        super().__init__(f"failed to load {library}: {reason}")
+        #: The chunk that did not load, as `ECMAScript semantics`.
+        self.library = library
+        #: What loading it failed with.
+        self.reason = reason
 
 
 class VariableNotDeclaredError(ScriptError):
@@ -383,7 +408,9 @@ class IScriptEngine(ABC):
     ) -> None:
         """W3C SCXML 5.10 — bind `_sessionid`, `_name`, `_ioprocessors`
         into the session scope. Called once per session right after
-        `create_session`.
+        `create_session`, as the last step of establishing it. A binding
+        that fails raises, and the engine's start is then refused at the
+        `system-variables` step (docs/adr/0096).
 
         The descriptors arrive fully resolved from
         `sce_runtime.io_processors.build`. An implementation files each one
@@ -448,7 +475,13 @@ class IScriptEngine(ABC):
         re-initialise. Used for test isolation."""
 
     @abstractmethod
-    def create_session(self, session_id: str) -> None: ...
+    def create_session(self, session_id: str) -> None:
+        """Create the session `session_id` with the shared library loaded
+        into it, the first two steps of establishing a machine's session
+        (docs/adr/0096). Raises when it cannot: `ScriptLibraryNotLoaded`
+        for a chunk of the shared library that did not load, anything else
+        for a session the engine could not make. A creation that raised
+        keeps no session."""
 
     @abstractmethod
     def destroy_session(self, session_id: str) -> None: ...

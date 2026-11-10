@@ -26,9 +26,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Generic, List, Optional, Sequence, TypeVar
+from typing import ClassVar, Generic, List, Optional, Sequence, TypeVar
 
 from .policy import StatePolicy
+from .script_session import ScriptSessionFailure
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -63,10 +64,60 @@ class ConfigurationRejection(Enum):
     CURRENT_NOT_ATOMIC = (
         "the current state must be the atomic state the engine descended to"
     )
+    # The set is a configuration of this document, and the machine's script
+    # session could not be established, so nothing was entered
+    # (docs/adr/0096). `Engine.enter_at` refuses with it and carries the
+    # failure in its `ConfigurationVerdict`; `validate_configuration` never
+    # answers it, since it asks about the set alone.
+    SCRIPT_SESSION_UNAVAILABLE = "the machine's script session could not be established"
 
     def __str__(self) -> str:
         """The human-readable reason, for the message a refusal carries."""
         return self.value
+
+
+@dataclass(frozen=True)
+class ConfigurationVerdict:
+    """What `Engine.enter_at` answers: the rule a refused configuration broke,
+    or `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` with the failure
+    that refused the entry (docs/adr/0096).
+
+    The rejection alone is an enumeration `validate_configuration` produces
+    from the set and the document, and the failure is the script engine's
+    words, which only an entry that tried to establish the session has; so the
+    entry's answer holds both. The C++ twin is `SCE::Core::ConfigurationVerdict`,
+    the Go one `sce.ConfigurationVerdict`, the Kotlin one
+    `com.sce.runtime.ConfigurationVerdict`."""
+
+    #: ``ConfigurationRejection.NONE`` for an accepted entry, the reason
+    #: otherwise.
+    rejection: ConfigurationRejection
+    #: Set exactly when `rejection` is
+    #: ``ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE``.
+    script_session_failure: Optional[ScriptSessionFailure] = None
+
+    #: The verdict of an accepted entry.
+    ACCEPTED: ClassVar["ConfigurationVerdict"]
+
+    @property
+    def accepted(self) -> bool:
+        """Whether the entry was accepted."""
+        return self.rejection is ConfigurationRejection.NONE
+
+    @property
+    def reason(self) -> str:
+        """The human-readable reason, for the message a refusal carries; a
+        refused script session is the failure's sentence, its step and the
+        engine's words."""
+        if self.script_session_failure is not None:
+            return str(self.script_session_failure)
+        return self.rejection.value
+
+    def __str__(self) -> str:
+        return self.reason
+
+
+ConfigurationVerdict.ACCEPTED = ConfigurationVerdict(ConfigurationRejection.NONE)
 
 
 def validate_configuration(

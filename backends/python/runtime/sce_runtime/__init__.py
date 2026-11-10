@@ -20,7 +20,11 @@ from .child_mesh import (
     MeshRaise,
     mesh_event_metadata,
 )
-from .configuration import ConfigurationRejection, validate_configuration
+from .configuration import (
+    ConfigurationRejection,
+    ConfigurationVerdict,
+    validate_configuration,
+)
 from .engine import Engine
 from .event import Event, EventMetadata, EventWithMetadata
 from .event_origin import EventOrigin, origin_address_of, origin_processor_of
@@ -75,8 +79,13 @@ from .invoke import (
     document_stem,
 )
 from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
-from .root_start import RootStartRefusal
+from .root_start import RootStartNeedsParent, RootStartRefusal, RootStartScriptSession
 from .policy import StatePolicy
+from .script_session import (
+    ScriptSessionFailure,
+    ScriptSessionStage,
+    ScriptSessionUnavailable,
+)
 from . import saved_values, session_id
 from .saved_engine import (
     enter_session,
@@ -132,8 +141,10 @@ from .scripting import (
     IScriptEngine,
     LuaScriptEngine,
     ScriptError,
+    ScriptLibraryNotLoaded,
     ScriptValue,
     ScriptValueKind,
+    SessionNotFoundError,
 )
 
 __all__ = [
@@ -159,6 +170,7 @@ __all__ = [
     "ChildMeshRouters",
     "ChildSession",
     "ConfigurationRejection",
+    "ConfigurationVerdict",
     "EnabledTransition",
     "Engine",
     "EngineInbox",
@@ -200,7 +212,9 @@ __all__ = [
     "PendingInvoke",
     "RESERVED_TYPE_PREFIX",
     "RequestFieldType",
+    "RootStartNeedsParent",
     "RootStartRefusal",
+    "RootStartScriptSession",
     "SAVED_FORMAT",
     "SAVED_FORMAT_1",
     "SAVED_FORMAT_2",
@@ -210,9 +224,14 @@ __all__ = [
     "ScheduledEvent",
     "Scheduler",
     "ScriptError",
+    "ScriptLibraryNotLoaded",
+    "ScriptSessionFailure",
+    "ScriptSessionStage",
+    "ScriptSessionUnavailable",
     "ScriptValue",
     "ScriptValueKind",
     "ScxmlInvoke",
+    "SessionNotFoundError",
     "StatePolicy",
     "StateRefusal",
     "StateTarget",

@@ -58,6 +58,7 @@ from .event import EventMetadata, EventWithMetadata, event_data_text
 from .host_processor import HostInvokeRequest, HostSendRequest
 from .io_processors import scxml_origin
 from .scheduler import ScheduledRoute
+from .script_session import ScriptSessionUnavailable
 from .saved_state import (
     ACT_CHILD,
     ACT_HOST,
@@ -664,7 +665,8 @@ def enter_session(engine: Any, saved: SavedState, wall_now_ms: int) -> None:
     No ``<onentry>`` runs and no ``<data>`` is evaluated (``Engine.enter_at``): the
     run being resumed already did both, and the host calls it caused cannot be made
     twice. A configuration that is not one of this document is refused, and nothing
-    is entered.
+    is entered; so is a machine whose script session cannot be established, with the
+    ``ScriptSessionUnavailable`` its plain start raises (docs/adr/0096).
 
     The engine was built under the id `saved` names, a tree's own, which
     every child's id and a peer's address name (docs/adr/0045). `wall_now_ms` is what
@@ -679,9 +681,14 @@ def enter_session(engine: Any, saved: SavedState, wall_now_ms: int) -> None:
     (``policy.resume_children``)."""
     policy = engine.policy
     judged = _judge(policy, saved)
-    verdict = engine.enter_at(judged.configuration, judged.current)
-    if verdict is not ConfigurationRejection.NONE:
-        raise StateRefusal(f"the saved configuration is refused: {verdict}")
+    entered = engine.enter_at(judged.configuration, judged.current)
+    # A machine whose script session cannot be established is refused for the
+    # platform, not for the saved state (docs/adr/0096): the refusal its plain
+    # start raises, not a `StateRefusal` that would send a host to its record.
+    if entered.script_session_failure is not None:
+        raise ScriptSessionUnavailable(entered.script_session_failure)
+    if not entered.accepted:
+        raise StateRefusal(f"the saved configuration is refused: {entered}")
     for queued in judged.external:
         engine._external_queue.append(queued)
     _arm_pending(engine, judged.pending, wall_now_ms)
