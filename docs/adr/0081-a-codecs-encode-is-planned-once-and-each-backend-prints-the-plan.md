@@ -696,6 +696,29 @@ old encode, the old encode and its templates are removed in the same landing.
    in the Rust case; a codec the C++ backend kept on the template's encode would be refused by name too, and
    none is. Every codec with `sources` that the C++ harness holds runs them; the one it does not hold,
    `codec_dma_aligned_basic`, is an MCU-only codec no C++ tree generates.
+
+   *The thirty-eighth C++ landing, 2026-11-10:* the catalog gains refused cases (§5), which the Rust and
+   the C++ harness run as they run `sources`. Until now no positional codec of the catalog refused a value:
+   each declared its encode total, and the model refused by name every shape whose encode refuses. A
+   refused case states a value as the interface presents it and the refusal its encode answers
+   (`{"source", "inputs"?, "error", "note"}` under the fixture's `refused`), and `binary_model.py` holds the
+   encode to raising exactly that refusal (`EncodeRefused`). The model raises it only where the page says the
+   encode refuses a value of the interface (ADR 0065 §2): a gate it cannot derive that the value contradicts
+   (`present-if-mismatch`), two things the value says of one number that disagree (`inconsistent-source`),
+   a body's length past the field that carries it (`length-out-of-range`). A value no type of the interface
+   holds (a byte string past its bound, two lists of one count that differ) is no value of the codec, and a
+   case that states one is written wrong. The model reads one shape more for it: a disjunction one of whose
+   flags another gate reads is a check and not a group (R4c), its field presented alone. The new resource
+   `codec_present_if_checked` is that shape, its five sources covering each flag and each side of both
+   gates, and its four refused cases the trailer given where neither flag is set and left out where either
+   is, the value's own has_seq bit set or clear against the one seq derives. The generator reads the refusal
+   as `forge::encode_failure::EncodeFailure`, which names the runtime's symbol of each backend, and holds
+   it to the refusals the codec's totality names; a refusal a backend's runtime does not name (the C++
+   runtime has no inconsistent source yet) is refused by name. A refused case is made into the value as a
+   source is, by the same reading, and the harness holds the encode to answering that refusal and to
+   leaving the sink empty. The inconsistent source and the length out of range enter the catalog with the
+   landing that prints them in C++, since a codec that refuses them is one the C++ backend does not print
+   yet, and a harness runs every case of every shape it prints.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
