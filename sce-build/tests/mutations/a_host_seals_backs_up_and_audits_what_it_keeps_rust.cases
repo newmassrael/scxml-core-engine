@@ -46,11 +46,11 @@ PY
 
 mutation_case "A sealed text opens for another list than the one it was sealed for" <<'PY'
 edit("backends/rust/trust/src/secrecy.rs",
-     "        NONCE_DOMAIN.as_bytes(),\n        calendar.as_bytes(),",
-     "        NONCE_DOMAIN.as_bytes(),\n        &calendar.as_bytes()[..0],")
+     "        domains.nonce.as_bytes(),\n        calendar.as_bytes(),",
+     "        domains.nonce.as_bytes(),\n        &calendar.as_bytes()[..0],")
 edit("backends/rust/trust/src/secrecy.rs",
-     "        AAD_DOMAIN.as_bytes(),\n        calendar.as_bytes(),",
-     "        AAD_DOMAIN.as_bytes(),\n        &calendar.as_bytes()[..0],")
+     "        domains.aad.as_bytes(),\n        calendar.as_bytes(),",
+     "        domains.aad.as_bytes(),\n        &calendar.as_bytes()[..0],")
 PY
 
 mutation_case "A sealed text is sealed without the epoch it was sealed under bound to it" <<'PY'

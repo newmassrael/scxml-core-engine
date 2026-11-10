@@ -41,6 +41,14 @@
 //! ([`Trust::restore_records`]). What a machine built again is given is the history in causal order
 //! ([`Trust::history`]).
 //!
+//! A list a relay or a host held before a change was one unit holds parts of changes, each signed
+//! under the second event domain (`crate::parts`). They are read and never signed: each is
+//! verified as it was signed and held in its author's chain, where it keeps the device's position
+//! and the proof; no machine is told one, and what they hold together is folded once into a
+//! state ([`Trust::fold`], docs/adr/0085, section 8.3) that a machine built again is given before
+//! the changes after them. A part a device signed after a change of its own is held as proof, as
+//! a fork is.
+//!
 //! One [`Trust`] is both halves of one host: it is cloned, and a clone is put in front of the
 //! machine as its [`Admission`] and another behind it as its [`Sealer`].
 
@@ -60,6 +68,7 @@ use crate::message::{
     self, Link, CHANGE_EVENT, FLOOR_EVENT, MARK_EVENT, OPERATION_EVENTS, ROLE_EVENT,
     SETTLEMENT_FIELD, SIGNATURE_FIELD,
 };
+use crate::parts::{self, Fold};
 use crate::secrecy;
 
 /// Why a checkpoint was not made or not taken in.
@@ -208,6 +217,10 @@ struct State {
     /// ([`Trust::recorded`]): the outbox (docs/adr/0083, section 3.1). No operation of the
     /// person's chain from the lowest of them on is given to a relay ([`Trust::released_through`]).
     unrecorded: BTreeSet<u64>,
+    /// What this host's machine sent as parts of a change under the second domain that its person
+    /// had not signed, that no change can carry ([`parts::changes_of_sends`]), each `(event, data,
+    /// why)`: withdrawn, and said so by the next [`Trust::sign_waiting`].
+    unsendable: Vec<(String, String, String)>,
 }
 
 impl State {
@@ -281,6 +294,7 @@ impl Trust {
                 delivered: BTreeMap::new(),
                 unopened: BTreeMap::new(),
                 unrecorded: BTreeSet::new(),
+                unsendable: Vec::new(),
             })),
         }
     }
@@ -892,6 +906,36 @@ impl Trust {
             .collect()
     }
 
+    /// What the parts of changes signed under the second event domain that this host holds make
+    /// together (docs/adr/0085, section 8.3; `crate::parts`): the live values (the writes no
+    /// write-over names), each with its own dot, the clock of the state, and the cut it stands at,
+    /// each device's highest number among them. Read from every part of every chain the host
+    /// tells, its content opened, and in no order, since the observed-remove rule needs none: two
+    /// hosts that hold the same parts fold the same state, whatever order they took them in. No
+    /// machine is told a part ([`Self::deliver`] passes over each); a machine built again is given
+    /// this state first, as a stable state (`record_list.restore`, [`Fold::restores`]), and the
+    /// changes after it. Empty when the host holds no part.
+    pub fn fold(&self) -> Fold {
+        let state = self.state();
+        let read: Vec<(u64, u64, parts::Part)> = state
+            .ops
+            .iter()
+            .flat_map(|(node, chain)| {
+                chain
+                    .view()
+                    .filter(|held| held.wire.second_domain)
+                    .map(move |held| (*node, held))
+            })
+            .filter_map(|(node, held)| {
+                let travelling: Value = serde_json::from_str(&held.wire.data).ok()?;
+                let visible =
+                    open_part(&state, held.event, &travelling, held.wire.link.log).ok()?;
+                Some((node, held.seq(), parts::read(held.event, &visible).ok()?))
+            })
+            .collect();
+        parts::fold(read)
+    }
+
     /// Sign a mark of what this host's machine has been told, when it has been told a change of
     /// another device that the latest operation of this host's person does not say it was
     /// (docs/adr/0085, section 3.1): the number the mark takes, or `None` when none is owed or the
@@ -1320,11 +1364,11 @@ impl Trust {
     /// event and the data it goes on the wire with, what its machine sent that waits to be
     /// signed ([`Self::keep_sent`]), in order, as the machine sent it and with whether its host
     /// keeps a journal of it, and the numbers of the records its host has not recorded
-    /// ([`Self::unrecorded`]). It holds no key: a host keeps those where it keeps its person's
-    /// secret.
+    /// ([`Self::unrecorded`]); and, while any wait to be said, the sends of parts no change could
+    /// carry. It holds no key: a host keeps those where it keeps its person's secret.
     pub fn to_text(&self) -> String {
         let state = self.state();
-        json!({
+        let mut text = json!({
             "checkpoints": state.checkpoints.values().map(Checkpoint::to_value).collect::<Vec<_>>(),
             "operations": state.ops.values()
                 .flat_map(Chain::all)
@@ -1340,8 +1384,17 @@ impl Trust {
             "unrecorded": state.unrecorded.iter()
                 .map(u64::to_string)
                 .collect::<Vec<_>>(),
-        })
-        .to_string()
+        });
+        // Written only while some wait to be said, so that the text of every other host is the
+        // one it was.
+        if !state.unsendable.is_empty() {
+            text["withdrawn"] = json!(state
+                .unsendable
+                .iter()
+                .map(|(event, data, why)| json!([event, data, why]))
+                .collect::<Vec<_>>());
+        }
+        text.to_string()
     }
 
     /// Take back what [`Self::to_text`] wrote: each checkpoint and each operation that today's log
@@ -1350,6 +1403,13 @@ impl Trust {
     /// so that what it writes next is the next one. What the machine sent that waited to be signed
     /// waits again, in its order; it is judged when it is signed, as any send is. Returns how many
     /// operations and checkpoints were kept.
+    ///
+    /// A text written before a change was one unit (docs/adr/0085, landing 4c) is read as well:
+    /// its operations are parts of changes signed under the second domain, each verified as it
+    /// was signed and held where it stands in its chain ([`crate::parts`]), so the device keeps
+    /// its chain's position and every host's parts to fold ([`Self::fold`]); and what its machine
+    /// sent that waited is parts, which wait again as the changes they were parts of, journalled
+    /// by the host when signed, what no change can carry withdrawn ([`Self::sign_waiting`]).
     pub fn restore_from_text(&self, text: &str) -> usize {
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             return 0;
@@ -1393,6 +1453,7 @@ impl Trust {
                 kept += 1;
             }
         }
+        let mut parts_sent: Vec<(String, String)> = Vec::new();
         for row in rows("waiting") {
             let (Some(event), Some(data)) = (
                 row.get(0).and_then(Value::as_str),
@@ -1400,6 +1461,12 @@ impl Trust {
             ) else {
                 continue;
             };
+            // A part of a change, which a text written before a change was one unit holds: carried
+            // below as the change it was a part of, since no part is signed again.
+            if parts::event(event).is_some() {
+                parts_sent.push((event.to_string(), data.to_string()));
+                continue;
+            }
             // Whether its host keeps a journal of it: a row written before the outbox holds none,
             // and is a send of a host that keeps none.
             let journalled = row.get(2).and_then(Value::as_bool).unwrap_or(false);
@@ -1408,6 +1475,36 @@ impl Trust {
             };
             if !state.waiting.iter().any(|held| held.is_the_same(&send)) {
                 state.waiting.push(send);
+            }
+        }
+        // The parts the machine sent that the person had not signed wait again as the changes
+        // they were parts of, which the host's copy recalls as provisional and journals once a
+        // round signs them; what no change can carry is withdrawn, and the next signing of what
+        // waits says so ([`Self::sign_waiting`]).
+        let carried = parts::changes_of_sends(&parts_sent);
+        for change in carried.changes {
+            match Waiting::of(&state.calendar, CHANGE_EVENT, &change, true) {
+                Some(send) => {
+                    if !state.waiting.iter().any(|held| held.is_the_same(&send)) {
+                        state.waiting.push(send);
+                    }
+                }
+                None => state.unsendable.push((
+                    CHANGE_EVENT.to_string(),
+                    change,
+                    format!("{CHANGE_EVENT}: the parts it was carried from make no change this host signs"),
+                )),
+            }
+        }
+        state.unsendable.extend(carried.withdrawn);
+        for row in rows("withdrawn") {
+            let texts: Option<Vec<&str>> = row
+                .as_array()
+                .and_then(|texts| texts.iter().map(Value::as_str).collect());
+            if let Some([event, data, why]) = texts.as_deref() {
+                state
+                    .unsendable
+                    .push((event.to_string(), data.to_string(), why.to_string()));
             }
         }
         // The operations of the person's chain signed for a change the host keeps a journal of and
@@ -1875,9 +1972,10 @@ enum Next {
         data: String,
         context: Vec<(u64, u64)>,
     },
-    /// It is passed over and told never: a mark, which is the trust layer's and no machine's; or
-    /// an operation sealed under an epoch before this host's first, whose content this host was
-    /// given no key of (`Trust::deliver`).
+    /// It is passed over and told never: a mark, which is the trust layer's and no machine's; a
+    /// part of a change of the second domain, which no machine is told one by one and every
+    /// machine is given folded ([`Trust::fold`]); or an operation sealed under an epoch before
+    /// this host's first, whose content this host was given no key of (`Trust::deliver`).
     Pass,
 }
 
@@ -1901,7 +1999,7 @@ fn next_deliverable(state: &State, vector: &BTreeMap<u64, u64>, node: u64) -> Op
     if !met {
         return None;
     }
-    if held.event == MARK_EVENT {
+    if held.event == MARK_EVENT || held.wire.second_domain {
         return Some(Next::Pass);
     }
     Some(Next::Tell {
@@ -2251,7 +2349,13 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
         Ok(verified) => {
             let (node, seq) = (verified.author, verified.link.seq);
             let told = verified.visible.to_string();
+            let second_domain = verified.second_domain;
             let placed = hold_verified(state, event, verified, signature);
+            // A part the host did not hold moves the fold ([`Trust::fold`]), which a machine was
+            // given whole when it was built: it is built again with the fold that holds it.
+            if second_domain && placed.new && placed.applied {
+                state.restored.push((node, seq));
+            }
             Ok(Taken {
                 node,
                 seq,
@@ -2287,6 +2391,7 @@ fn hold_verified(
         data: verified.travelling.to_string(),
         link: verified.link,
         signature,
+        second_domain: verified.second_domain,
     };
     let held = Held {
         id: verified.id,
@@ -2321,6 +2426,21 @@ impl From<String> for Refusal {
     }
 }
 
+impl Refusal {
+    /// The refusal of the operation of `author` at `seq`, known to hold but for its content: a
+    /// want of a key names the operation, so that the machine's delivery knows what sealed it.
+    fn at(self, author: u64, seq: u64) -> Self {
+        match self {
+            Refusal::NoKey { reason, epoch, .. } => Refusal::NoKey {
+                reason,
+                epoch,
+                at: Some((author, seq)),
+            },
+            other => other,
+        }
+    }
+}
+
 /// An operation that holds: who made it, where it stands, and the event as its author made it
 /// (`travelling`, sealed when the list keeps content) and as the machine is told it (`visible`).
 struct Verified {
@@ -2334,8 +2454,11 @@ struct Verified {
     wid: Option<Vec<u8>>,
     travelling: Value,
     visible: Value,
-    /// What the host keeps it under: the bytes the change is signed as when the machine holds it.
+    /// What the host keeps it under: the bytes the change is signed as when the machine holds it,
+    /// or, for a part of the second domain, what the part is about.
     key: Vec<u8>,
+    /// Whether it is a part of a change signed under the second event domain (`crate::parts`).
+    second_domain: bool,
 }
 
 /// Whether an operation holds, as `event` with its link in the data and without its signature:
@@ -2351,6 +2474,9 @@ fn verify_operation(
     mut value: Value,
     signature: &[u8; 64],
 ) -> Result<Verified, Refusal> {
+    if let Some(part) = parts::event(event) {
+        return verify_part(state, part, value, signature);
+    }
     let link = Link::take_from(&mut value).map_err(|why| format!("{event}: {why}"))?;
     let signing = match message::signing(&state.calendar, event, &value) {
         Some(Ok(signing)) => signing,
@@ -2361,70 +2487,11 @@ fn verify_operation(
     let bytes = message::operation_bytes(&signing.message, &link);
     let id = message::operation_id(&bytes);
 
-    if state.log.hash_at(link.log) != Some(link.log_hash) {
-        let reason = format!(
-            "{event}: it names entry {} of the membership log, which this host does not hold as it is",
-            link.log
-        );
-        return Err(if link.log >= state.log.entries().len() as u64 {
-            Refusal::NotReached(reason)
-        } else {
-            Refusal::Refused(reason)
-        });
-    }
-    let era = state.log.era_for(author, link.log).ok_or_else(|| {
-        format!(
-            "{event}: node {author} was not a member at entry {}",
-            link.log
-        )
-    })?;
     // A mark changes nothing of the list, and every member signs one, a reader included: what a
     // member was told is what the stable cut is made of (docs/adr/0085, section 3.1).
     let mark = event == MARK_EVENT;
-    if mark && era.role < READER {
-        return Err(format!(
-            "{event}: node {author} was no member at entry {} (role {})",
-            link.log, era.role
-        )
-        .into());
-    }
-    if !mark && era.role < WRITER {
-        return Err(format!(
-            "{event}: node {author} may not write (role {} at entry {})",
-            era.role, link.log
-        )
-        .into());
-    }
-    if let Some(cutoff) = state.log.cutoff_after(author, era) {
-        if link.seq > cutoff {
-            return Err(format!(
-                "{event}: operation {} of node {author} is past {cutoff}, the last the administrators accepted of it",
-                link.seq
-            )
-            .into());
-        }
-    }
-    if !era.key.verifies(&bytes, signature) {
-        return Err(format!("{event}: the signature is not node {author}'s").into());
-    }
-    if link.seq == 0 {
-        return Err(format!("{event}: a chain begins at 1").into());
-    }
-    let floor = state.log.floor_before(author, era);
-    if link.seq <= floor {
-        return Err(format!(
-            "{event}: number {} of node {author} belongs to the chain an earlier grant ended at {floor}",
-            link.seq
-        )
-        .into());
-    }
-    // A chain begins at 1, and a new one (another key, or the device made a writer again) at the
-    // number after the end an earlier grant set: its first operation names no operation before
-    // it, and the checks of what follows and precedes stop at the edge.
-    let (segment_start, _) = chain::segment(link.seq, &state.log.cutoffs(author));
-    if link.seq == segment_start && link.prev != message::NO_OPERATION {
-        return Err(format!("{event}: it begins a chain and names an operation before it").into());
-    }
+    let signer = if mark { Signer::Member } else { Signer::Writer };
+    verify_place(state, event, author, &link, &bytes, signature, signer)?;
     // A context names what its author's machine had been told of other devices: never the author's
     // own column, which its number already orders, and only a device the log had granted by the
     // entry the operation names, since the author held no more of the log than that when it was
@@ -2458,6 +2525,7 @@ fn verify_operation(
             travelling: value.clone(),
             visible: value,
             key: bytes,
+            second_domain: false,
         });
     }
 
@@ -2465,14 +2533,8 @@ fn verify_operation(
     // is its dot: both are the author's own claims, which the chain checks.
     let stamp = message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?;
 
-    let visible = open_change(state, &value, link.log).map_err(|refusal| match refusal {
-        Refusal::NoKey { reason, epoch, .. } => Refusal::NoKey {
-            reason,
-            epoch,
-            at: Some((author, link.seq)),
-        },
-        other => other,
-    })?;
+    let visible =
+        open_change(state, &value, link.log).map_err(|refusal| refusal.at(author, link.seq))?;
     let key = message::signing(&state.calendar, event, &visible)
         .and_then(Result::ok)
         .ok_or_else(|| format!("{event}: what it holds is not a change"))?
@@ -2486,6 +2548,156 @@ fn verify_operation(
         travelling: value,
         visible,
         key,
+        second_domain: false,
+    })
+}
+
+/// Who may sign an operation: a member of any role (a mark), or a member who may write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Signer {
+    Member,
+    Writer,
+}
+
+/// Whether an operation of `author` signed as `bytes` stands where its link says, under the log
+/// this host holds: the entry of the log it names is the one this host holds, its author was a
+/// member under that entry who may sign it (`signer`), the administrators accepted the device's
+/// operations up to its number, the signature is the key's of that entry, and its number begins
+/// no chain it does not begin. What every operation is held to, whatever domain it was signed in.
+fn verify_place(
+    state: &State,
+    event: &str,
+    author: u64,
+    link: &Link,
+    bytes: &[u8],
+    signature: &[u8; 64],
+    signer: Signer,
+) -> Result<(), Refusal> {
+    if state.log.hash_at(link.log) != Some(link.log_hash) {
+        let reason = format!(
+            "{event}: it names entry {} of the membership log, which this host does not hold as it is",
+            link.log
+        );
+        return Err(if link.log >= state.log.entries().len() as u64 {
+            Refusal::NotReached(reason)
+        } else {
+            Refusal::Refused(reason)
+        });
+    }
+    let era = state.log.era_for(author, link.log).ok_or_else(|| {
+        format!(
+            "{event}: node {author} was not a member at entry {}",
+            link.log
+        )
+    })?;
+    if signer == Signer::Member && era.role < READER {
+        return Err(format!(
+            "{event}: node {author} was no member at entry {} (role {})",
+            link.log, era.role
+        )
+        .into());
+    }
+    if signer == Signer::Writer && era.role < WRITER {
+        return Err(format!(
+            "{event}: node {author} may not write (role {} at entry {})",
+            era.role, link.log
+        )
+        .into());
+    }
+    if let Some(cutoff) = state.log.cutoff_after(author, era) {
+        if link.seq > cutoff {
+            return Err(format!(
+                "{event}: operation {} of node {author} is past {cutoff}, the last the administrators accepted of it",
+                link.seq
+            )
+            .into());
+        }
+    }
+    if !era.key.verifies(bytes, signature) {
+        return Err(format!("{event}: the signature is not node {author}'s").into());
+    }
+    if link.seq == 0 {
+        return Err(format!("{event}: a chain begins at 1").into());
+    }
+    let floor = state.log.floor_before(author, era);
+    if link.seq <= floor {
+        return Err(format!(
+            "{event}: number {} of node {author} belongs to the chain an earlier grant ended at {floor}",
+            link.seq
+        )
+        .into());
+    }
+    // A chain begins at 1, and a new one (another key, or the device made a writer again) at the
+    // number after the end an earlier grant set: its first operation names no operation before
+    // it, and the checks of what follows and precedes stop at the edge.
+    let (segment_start, _) = chain::segment(link.seq, &state.log.cutoffs(author));
+    if link.seq == segment_start && link.prev != message::NO_OPERATION {
+        return Err(format!("{event}: it begins a chain and names an operation before it").into());
+    }
+    Ok(())
+}
+
+/// Whether a part of a change signed under the second event domain holds (`crate::parts`), as
+/// `event` with its link in the data and without its signature: as any operation is held
+/// ([`verify_place`]), its signature checked over the bytes of the first operation domain, and
+/// its content opened under the first content domain. It is read and never signed again
+/// (docs/adr/0085, section 8.3): what it holds is folded ([`Trust::fold`]), and where it stands
+/// among its device's operations is judged with them ([`Chain`]), a part signed after an
+/// operation of the third domain held as proof.
+fn verify_part(
+    state: &State,
+    event: &'static str,
+    mut value: Value,
+    signature: &[u8; 64],
+) -> Result<Verified, Refusal> {
+    let link = parts::take_link(&mut value).map_err(|why| format!("{event}: {why}"))?;
+    let signing = match parts::signing(&state.calendar, event, &value) {
+        Some(Ok(signing)) => signing,
+        Some(Err(error)) => return Err(format!("{event}: {error:?}").into()),
+        None => return Err(format!("{event}: it is not a part of a change").into()),
+    };
+    let author = signing.author;
+    let bytes = parts::operation_bytes(&signing.message, &link);
+    let id = message::operation_id(&bytes);
+    verify_place(
+        state,
+        event,
+        author,
+        &link,
+        &bytes,
+        signature,
+        Signer::Writer,
+    )?;
+
+    // A write's stamp is its author's clock when it wrote it, and what it was sealed under is the
+    // fields that name it: both the author's own claims, which the chain checks. A write-over has
+    // neither.
+    let write = event == parts::WRITE_EVENT;
+    let (stamp, wid) = if write {
+        (
+            Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?),
+            Some(parts::write_stamp(&value).map_err(|error| format!("{event}: {error:?}"))?),
+        )
+    } else {
+        (None, None)
+    };
+    let visible = open_part(state, event, &value, link.log)
+        .map_err(|refusal| refusal.at(author, link.seq))?;
+    // What the host keeps a part by: what it is about, its content opened.
+    let key = parts::signing(&state.calendar, event, &visible)
+        .and_then(Result::ok)
+        .ok_or_else(|| format!("{event}: what it holds is not a part of a change"))?
+        .subject;
+    Ok(Verified {
+        author,
+        link,
+        id,
+        stamp,
+        wid,
+        travelling: value,
+        visible,
+        key,
+        second_domain: true,
     })
 }
 
@@ -2502,58 +2714,21 @@ fn open_change(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal
     let refused = |reason: String| Refusal::Refused(reason);
     let writes =
         message::writes_of(wire).map_err(|error| refused(format!("{event}: {error:?}")))?;
-    let epoch_then = state.log.epoch_at(entry);
     let mut visible = wire.clone();
     for (at, stamp) in writes {
         let sealed = wire["ops"][at]
             .get("text")
             .and_then(Value::as_str)
             .unwrap_or("");
-        if epoch_then == 0 {
-            if secrecy::epoch_of(sealed).is_some() {
-                return Err(refused(format!(
-                    "{event}: its write {at} is sealed under an epoch, and the membership log it names has begun none"
-                )));
-            }
-            continue;
-        }
-        let Some(epoch) = secrecy::epoch_of(sealed) else {
-            return Err(refused(format!(
-                "{event}: the content of its write {at} is not sealed, and the list keeps content from the hub"
-            )));
+        let named = Named {
+            event,
+            write: format!("its write {at}"),
+            content: format!("the content of its write {at}"),
         };
-        if epoch == 0 || epoch > epoch_then {
-            return Err(refused(format!(
-                "{event}: its write {at} is sealed under epoch {epoch}, which the membership log it names has not begun"
-            )));
-        }
-        // A hub that holds no key carries it as it is; a host that opens refuses what the list has
-        // had destroyed the keys of, for good (it is not parked: no key will come).
-        if state.log.is_shredded(epoch) && !state.relays_sealed() {
-            return Err(refused(format!(
-                "{event}: its write {at} is sealed under epoch {epoch}, whose keys the list had destroyed"
-            )));
-        }
-        if state.relays_sealed() {
+        let Some((value, text)) = open_sealed(state, &named, entry, sealed, &stamp, secrecy::open)?
+        else {
             continue;
-        }
-        let (value, text) = secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed)
-            .map_err(|error| match error {
-                secrecy::OpenError::NotSealed => refused(format!(
-                    "{event}: the content of its write {at} is not sealed, and this host keeps content from the hub"
-                )),
-                // A key this host does not hold yet (the group's commit has not reached it) or
-                // never will (an epoch before it joined): the host asks again later, and does not
-                // take the change for one that cannot hold.
-                secrecy::OpenError::NoKey { epoch } => Refusal::NoKey {
-                    reason: format!("{event}: this host holds no key of epoch {epoch}"),
-                    epoch,
-                    at: None,
-                },
-                secrecy::OpenError::Corrupt => {
-                    refused(format!("{event}: the content of its write {at} does not open"))
-                }
-            })?;
+        };
         let object = visible["ops"][at]
             .as_object_mut()
             .ok_or_else(|| refused(format!("{event}: its write {at} is not an object")))?;
@@ -2561,6 +2736,121 @@ fn open_change(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal
         object.insert("text".to_string(), Value::String(text));
     }
     Ok(visible)
+}
+
+/// A part of a change of the second domain as the machine was told it: a write's content opened
+/// under the first content domain, as [`open_change`] opens a write of a change, and a write-over
+/// as it is.
+fn open_part(
+    state: &State,
+    event: &'static str,
+    wire: &Value,
+    entry: u64,
+) -> Result<Value, Refusal> {
+    if event != parts::WRITE_EVENT {
+        return Ok(wire.clone());
+    }
+    let stamp = parts::write_stamp(wire)
+        .map_err(|error| Refusal::Refused(format!("{event}: {error:?}")))?;
+    let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
+    let named = Named {
+        event,
+        write: "it".to_string(),
+        content: "its content".to_string(),
+    };
+    let mut visible = wire.clone();
+    if let Some((value, text)) =
+        open_sealed(state, &named, entry, sealed, &stamp, secrecy::open_part)?
+    {
+        let object = visible
+            .as_object_mut()
+            .ok_or_else(|| Refusal::Refused(format!("{event}: the data is not an object")))?;
+        object.insert("value".to_string(), Value::String(value.to_string()));
+        object.insert("text".to_string(), Value::String(text));
+    }
+    Ok(visible)
+}
+
+/// How a refusal names a sealed write: its event, the write and the write's content.
+struct Named {
+    event: &'static str,
+    write: String,
+    content: String,
+}
+
+/// What opens a sealed text: the list, the keys, the stamp it was sealed under and the text.
+type Opener = fn(
+    &str,
+    &BTreeMap<u32, secrecy::EpochKey>,
+    &[u8],
+    &str,
+) -> Result<(i64, String), secrecy::OpenError>;
+
+/// The content of one write whose text is `sealed`, judged at the entry of the log the operation
+/// names (`entry`): `None` when it stays as it is (an entry before the list began to seal, or a
+/// hub that holds no key and carries it sealed), the number and the text it opens to otherwise,
+/// by `opener` under `stamp`. Whether the list keeps content, and which epoch a write may be
+/// sealed under, is the log's at that entry: a device wrote it knowing the log up to there, and
+/// two hosts that were given the same entries in another order judge it the same.
+fn open_sealed(
+    state: &State,
+    named: &Named,
+    entry: u64,
+    sealed: &str,
+    stamp: &[u8],
+    opener: Opener,
+) -> Result<Option<(i64, String)>, Refusal> {
+    let Named {
+        event,
+        write,
+        content,
+    } = named;
+    let refused = |reason: String| Refusal::Refused(reason);
+    let epoch_then = state.log.epoch_at(entry);
+    if epoch_then == 0 {
+        if secrecy::epoch_of(sealed).is_some() {
+            return Err(refused(format!(
+                "{event}: {write} is sealed under an epoch, and the membership log it names has begun none"
+            )));
+        }
+        return Ok(None);
+    }
+    let Some(epoch) = secrecy::epoch_of(sealed) else {
+        return Err(refused(format!(
+            "{event}: {content} is not sealed, and the list keeps content from the hub"
+        )));
+    };
+    if epoch == 0 || epoch > epoch_then {
+        return Err(refused(format!(
+            "{event}: {write} is sealed under epoch {epoch}, which the membership log it names has not begun"
+        )));
+    }
+    // A hub that holds no key carries it as it is; a host that opens refuses what the list has had
+    // destroyed the keys of, for good (it is not parked: no key will come).
+    if state.log.is_shredded(epoch) && !state.relays_sealed() {
+        return Err(refused(format!(
+            "{event}: {write} is sealed under epoch {epoch}, whose keys the list had destroyed"
+        )));
+    }
+    if state.relays_sealed() {
+        return Ok(None);
+    }
+    opener(&state.calendar, &state.epoch_keys, stamp, sealed)
+        .map(Some)
+        .map_err(|error| match error {
+            secrecy::OpenError::NotSealed => refused(format!(
+                "{event}: {content} is not sealed, and this host keeps content from the hub"
+            )),
+            // A key this host does not hold yet (the group's commit has not reached it) or never
+            // will (an epoch before it joined): the host asks again later, and does not take the
+            // operation for one that cannot hold.
+            secrecy::OpenError::NoKey { epoch } => Refusal::NoKey {
+                reason: format!("{event}: this host holds no key of epoch {epoch}"),
+                epoch,
+                at: None,
+            },
+            secrecy::OpenError::Corrupt => refused(format!("{event}: {content} does not open")),
+        })
 }
 
 /// A `record_list.floor` is admitted when the members settled it: its `cert` is the checkpoints of
@@ -2684,6 +2974,7 @@ fn make_operation(
         data: travelling.to_string(),
         link,
         signature,
+        second_domain: false,
     };
     let event = signed_name(event).ok_or_else(|| format!("{event}: it is not a signed event"))?;
     let held = Held {
@@ -2722,9 +3013,15 @@ fn make_operation(
     Ok(wire)
 }
 
-/// The name of an operation's event as the host keeps it, when `event` is one: a change or a mark.
+/// The name of an operation's event as the host keeps it, when `event` is one: a change or a mark,
+/// or a part of a change signed under the second domain, which is read and never signed
+/// (`crate::parts`).
 fn signed_name(event: &str) -> Option<&'static str> {
-    OPERATION_EVENTS.iter().copied().find(|name| *name == event)
+    OPERATION_EVENTS
+        .iter()
+        .copied()
+        .find(|name| *name == event)
+        .or_else(|| parts::event(event))
 }
 
 /// The name of an event a machine sends that is signed, as the host keeps it, when `event` is one:
@@ -3170,6 +3467,9 @@ impl Trust {
                     .push((after.event.to_string(), after.data, why));
             }
         }
+        // The parts a restored text held that no change could carry, made after every change
+        // carried from them, are withdrawn after these and said so once.
+        waited.dropped.append(&mut state.unsendable);
         waited.waiting = state.waiting.len();
         waited
     }
