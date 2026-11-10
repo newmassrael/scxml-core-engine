@@ -74,8 +74,8 @@ impl EncodeFailure {
     /// The expression a harness compares an encode's refusal with on a backend
     /// whose encode of a source answers the runtime's typed error, or `None`
     /// where the backend has no name for this refusal: no harness of it can
-    /// state the case, and a fold that meets one says so by name. The C++
-    /// runtime names no inconsistent source yet.
+    /// state the case, and a fold that meets one says so by name. Rust and C++
+    /// name every refusal.
     pub fn symbol(self, lang: Language) -> Option<&'static str> {
         match lang {
             Language::Rust => Some(match self {
@@ -89,15 +89,11 @@ impl EncodeFailure {
                     "::sce_forge_runtime::codec::CodecError::InconsistentSource"
                 }
             }),
-            Language::Cpp => match self {
-                EncodeFailure::LengthOutOfRange => {
-                    Some("::SCE::Forge::CodecError::LengthOutOfRange")
-                }
-                EncodeFailure::PresentIfMismatch => {
-                    Some("::SCE::Forge::CodecError::PresentIfMismatch")
-                }
-                EncodeFailure::InconsistentSource => None,
-            },
+            Language::Cpp => Some(match self {
+                EncodeFailure::LengthOutOfRange => "::SCE::Forge::CodecError::LengthOutOfRange",
+                EncodeFailure::PresentIfMismatch => "::SCE::Forge::CodecError::PresentIfMismatch",
+                EncodeFailure::InconsistentSource => "::SCE::Forge::CodecError::InconsistentSource",
+            }),
             // These harnesses run no source of a printed encode (docs/adr/0081
             // §5), so none of them states a refused case.
             Language::Kotlin
@@ -149,18 +145,14 @@ mod tests {
         }
     }
 
-    /// Rust names every refusal; C++ names all but the inconsistent source,
-    /// which its runtime does not hold yet, and no other backend's harness
-    /// states a refused case.
+    /// Rust and C++ name every refusal, the inconsistent source among them
+    /// (`CodecError::InconsistentSource` of each runtime), and no other
+    /// backend's harness states a refused case.
     #[test]
     fn the_backends_that_name_a_refusal() {
         for f in EncodeFailure::ALL {
             assert!(f.symbol(Language::Rust).is_some(), "{f:?}");
-            assert_eq!(
-                f.symbol(Language::Cpp).is_some(),
-                f != EncodeFailure::InconsistentSource,
-                "{f:?}"
-            );
+            assert!(f.symbol(Language::Cpp).is_some(), "{f:?}");
             for lang in [
                 Language::C11,
                 Language::Go,
