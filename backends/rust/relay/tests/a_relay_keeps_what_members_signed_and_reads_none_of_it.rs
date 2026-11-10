@@ -895,6 +895,17 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
                     next,
                     more,
                 },
+                // A relay that withholds an operation from its feed withholds it when it is asked
+                // for it too: a host repairs a gap by asking (docs/adr/0085, section 3), and only
+                // another relay gives it.
+                Response::Operations { operations } => Response::Operations {
+                    operations: operations
+                        .into_iter()
+                        .filter(|(_, data)| {
+                            serde_json::from_str::<Value>(data).unwrap()["seq"] != self.hide_seq
+                        })
+                        .collect(),
+                },
                 other => other,
             })
         }
@@ -937,7 +948,9 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
         .iter()
         .filter(|(e, _)| e == "record_list.change")
         .count();
-    assert_eq!(writes, 2, "the relay passed on 1 and 3");
+    // The relay passed on 1 and 3, and the machine is told 1 alone: 3 is held until the operation
+    // before it in its chain is told, and never told past the gap (docs/adr/0085, section 3.1).
+    assert_eq!(writes, 1, "the relay passed on 1 and 3, and 3 waits for 2");
     assert_eq!(bob.heads()[0].seq, 1, "the chain is in full only to 1");
     assert_eq!(
         bob.take_checkpoint(&checkpoint),
@@ -954,7 +967,11 @@ fn a_relay_that_withholds_is_seen_and_routed_around_by_a_second_relay() {
         .iter()
         .filter(|(e, _)| e == "record_list.change")
         .collect();
-    assert_eq!(writes.len(), 1, "only the operation the host lacked");
+    assert_eq!(
+        writes.len(),
+        2,
+        "the operation the host lacked, and the one that waited on it"
+    );
     assert!(bob.divergences().is_empty());
     assert_eq!(bob.heads()[0].seq, 3);
 }
@@ -1196,16 +1213,18 @@ fn the_proof_that_a_device_signed_conflicting_operations_goes_through_a_relay_to
     assert_eq!(
         round.evicted,
         vec![(1, 1)],
-        "his machine was told the first, and forgets it"
+        "his host held the first in its device's chain, and holds it there no more"
     );
-    // The machine was told the one that held when it was taken in, and is told nothing of the one that
-    // is held only as proof.
+    // The machine is told nothing of the device from the first conflict on: a round tells its
+    // machine when it ends, by the delivered vector, and what lies at or past where a chain is
+    // frozen is told to no machine (docs/adr/0085, section 3.1, landing 4b). Both operations came in
+    // this round, so the one that held when it was taken in was never told either.
     let told = round
         .events
         .iter()
         .filter(|(event, _)| event == "record_list.change")
         .count();
-    assert_eq!(told, 1, "{:?}", round.events);
+    assert_eq!(told, 0, "{:?}", round.events);
 }
 
 /// The relay reads none of the MLS messages and bounds what it keeps of them: how big one is, that it
