@@ -574,6 +574,37 @@
           "type": "object"
         },
         {
+          "description": "`<sce:var name=... type=\"union:<alias>\">` with one `<sce:set>` that names the tag with a variant of its enum and one per field of that case's record — a union local, built whole (docs/adr/0092, section 6.1 item 5). Which case the tag names, and whether the other fields are exactly that case's, need the union and are judged where the import is resolved.\n\nA variant of its own rather than a `RecordVar`: a union names a union document, not an event-schema, and its fields depend on its tag.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/RecordFieldInit"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "union_var"
+              ],
+              "type": "string"
+            },
+            "union": {
+              "description": "The import alias of the union the local is a value of.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "name",
+            "stmt",
+            "union"
+          ],
+          "type": "object"
+        },
+        {
           "description": "`<sce:assign target=\"lvalue\" expr=\"...\"/>` — mutates an existing l-value. SCE's `validate_lvalue_shape` accepts an identifier or a one-level member access only; a computed index (`buf[i]`) is rejected because it is not a statically-known storage location. Byte buffers are built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never index writes. Stored as a raw string and validated by the parser.",
           "properties": {
             "expr": {
