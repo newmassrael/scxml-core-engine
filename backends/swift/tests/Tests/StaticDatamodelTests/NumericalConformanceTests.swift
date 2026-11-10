@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 982595e044dab87d2a02655ddc0eb9f9f68babd78e0aa16f5305c5e6c8b4eb30
+// source-hash: f3a316aacf7403325399aec899293549220a4c98b78ad03825aff15e55acb6a9
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -5619,6 +5619,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecPresentIfChecked.frameLength
 }
 
+// MARK: - codec: codec_length_shared
+
+@Test func codecLengthSharedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecLengthShared.frameLength
+}
+
+// MARK: - codec: codec_length_stated
+
+@Test func codecLengthStatedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecLengthStated.frameLength
+}
+
+// MARK: - codec: codec_encoded_length_checked
+
+@Test func codecEncodedLengthCheckedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecEncodedLengthChecked.frameLength
+}
+
+// MARK: - codec: codec_chain_has_input
+
+@Test func codecChainHasInputMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHasInput.frameLength
+}
+
+// MARK: - codec: codec_chain_handed_entry
+
+@Test func codecChainHandedEntryMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHandedEntry.frameLength
+}
+
+// MARK: - codec: codec_chain_handed
+
+@Test func codecChainHandedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecChainHanded.frameLength
+}
+
 // MARK: - codec: codec_present_if_disjunction
 
 @Test func codecPresentIfDisjunctionMatchesReference() throws {
@@ -6322,6 +6370,50 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(EnumUdsNrc.responsePending.declaredName == "responsePending", "enum_uds_nrc.responsePending declared name")
+}
+
+// MARK: - enum: enum_session_state
+
+@Test func enumSessionStateMatchesReference() throws {
+
+    let spec = try oracleSpec("enums", "enum_session_state")
+    let variants = try oracleArray(spec.member("variants"))
+
+    // Count first: a vocabulary that gained or lost a variant without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(variants.count == 4, "enum_session_state: oracle variant count")
+    guard variants.count == 4 else {
+        return
+    }
+
+    #expect(try oracleText(variants[0].member("name")) == "defaultSession", "enum_session_state variant 0 name")
+    #expect(
+        try oracleNumberText(variants[0].member("value")) == String(EnumSessionState.defaultSession.rawValue),
+        "enum_session_state.defaultSession"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumSessionState.defaultSession.declaredName == "defaultSession", "enum_session_state.defaultSession declared name")
+    #expect(try oracleText(variants[1].member("name")) == "programming", "enum_session_state variant 1 name")
+    #expect(
+        try oracleNumberText(variants[1].member("value")) == String(EnumSessionState.programming.rawValue),
+        "enum_session_state.programming"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumSessionState.programming.declaredName == "programming", "enum_session_state.programming declared name")
+    #expect(try oracleText(variants[2].member("name")) == "extendedDiagnostic", "enum_session_state variant 2 name")
+    #expect(
+        try oracleNumberText(variants[2].member("value")) == String(EnumSessionState.extendedDiagnostic.rawValue),
+        "enum_session_state.extendedDiagnostic"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumSessionState.extendedDiagnostic.declaredName == "extendedDiagnostic", "enum_session_state.extendedDiagnostic declared name")
+    #expect(try oracleText(variants[3].member("name")) == "safetySystem", "enum_session_state variant 3 name")
+    #expect(
+        try oracleNumberText(variants[3].member("value")) == String(EnumSessionState.safetySystem.rawValue),
+        "enum_session_state.safetySystem"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(EnumSessionState.safetySystem.declaredName == "safetySystem", "enum_session_state.safetySystem declared name")
 }
 
 // MARK: - enum: pattern_kind
