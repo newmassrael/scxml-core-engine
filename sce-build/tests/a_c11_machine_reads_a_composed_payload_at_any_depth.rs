@@ -33,9 +33,11 @@
 //! * A `<send>` that names each composed field's place, each written where
 //!   its pair stands, and one that gives a field of the first revision no
 //!   value, refused.
-//! * A text a composed payload holds, read as a value, refused by name on
-//!   C11, which holds it in its buffer; and a payload that holds a union,
-//!   refused by name on C11, which holds no union yet (docs/adr/0092, section 7).
+//! * A text a composed value holds, read as a value at any depth, read as the
+//!   text of the buffer C11 holds it in, as a text variable's is; a byte string
+//!   it holds read as the struct it is held in; and a payload that holds a
+//!   union, refused by name on C11, which holds no union yet (docs/adr/0092,
+//!   section 7).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -495,35 +497,80 @@ fn a_send_that_gives_a_first_revision_field_no_value_is_refused_on_c11() {
     assert!(ok, "`late` is a list the second revision added:\n{out}");
 }
 
-/// Pinned by `Rewrites::composed_text_refused` and `CTarget::reads_composed_text`
-/// (`sce-build/src/forge/static_lowering.rs`) and `composed_text_read`
-/// (`sce-build/src/forge/expr.rs`): a text a composed payload holds is a buffer
-/// of its bound on C11, which no C11 expression reads as a text, so a read of
-/// one as a value is refused by name where the machine is generated, rather
-/// than written as C that reads a buffer as a pointer; at the top level, at
-/// depth 3, and as the item of a loop over a list of texts.
+/// Pinned by `read_composed_texts_through_buffers` and
+/// `held_by_a_composed_value` (`sce-build/src/forge/expr.rs`), which
+/// `resolve_then_rename` runs for C, and by
+/// `LoopVariables::bind_item_of_a_place` (`sce-build/src/forge/type_ctx.rs`):
+/// a statechart reads a composed payload as it reads a variable of the same
+/// type (docs/adr/0086, section 6), and a text a composed value holds is the
+/// buffer of its bound on C11, so a read of one as a value is the buffer's text,
+/// as a text variable's is. At the top level, compared and measured; at depth
+/// 3 through a checked index, which gives the empty text where it fails; a field
+/// of the record item of a loop over the payload's list; an element of a list
+/// of texts by its index; the item of a loop over a list of texts; and taken
+/// into a text variable. A byte string a composed value holds is the
+/// `{data, len}` struct every C11 byte-string expression reads, and is read as
+/// it stands.
 #[test]
-fn a_text_a_composed_payload_holds_read_as_a_value_is_refused_by_name_on_c11() {
-    for read in [
-        r#"<if cond="_event.data.note === 'ab'"><assign location="seen" expr="1"/></if>"#,
-        r#"<if cond="len(_event.data.items) &gt; 0 &amp;&amp; _event.data.items[0].label === 'ab'"><assign location="seen" expr="1"/></if>"#,
-        r#"<foreach array="_event.data.items" item="row"><foreach array="row.tags" item="word"><if cond="word === 'ab'"><assign location="seen" expr="1"/></if></foreach></foreach>"#,
+fn a_text_a_composed_value_holds_is_read_as_the_text_of_its_buffer_on_c11() {
+    let set = |expr: &str| format!(r#"<assign location="seen" expr="{expr}"/>"#);
+    let when = |cond: &str| format!(r#"<if cond="{cond}"><assign location="seen" expr="1"/></if>"#);
+    let over_items =
+        |body: String| format!(r#"<foreach array="_event.data.items" item="row">{body}</foreach>"#);
+    for (read, lowered) in [
+        (
+            when("_event.data.note === 'ab'"),
+            "strcmp(sm->pending_payload.as.batch_sent.note.data, \"ab\") == 0",
+        ),
+        (
+            set("len(_event.data.note)"),
+            "strlen(sm->pending_payload.as.batch_sent.note.data)",
+        ),
+        (
+            when("len(_event.data.items) &gt; 0 &amp;&amp; _event.data.items[0].label === 'ab'"),
+            ".items.data[0].label.data : \"\")",
+        ),
+        (
+            over_items(when("row.label === 'ab'")),
+            "strcmp(row.label.data, \"ab\") == 0",
+        ),
+        (
+            over_items(when("len(row.tags) &gt; 0 &amp;&amp; row.tags[0] === 'ab'")),
+            "row.tags.data[0].data : \"\")",
+        ),
+        (
+            over_items(format!(
+                r#"<foreach array="row.tags" item="word">{}</foreach>"#,
+                when("word === 'ab'")
+            )),
+            "strcmp(word.data, \"ab\") == 0",
+        ),
+        (
+            over_items(r#"<assign location="last" expr="row.label"/>"#.to_string()),
+            "row.label.data",
+        ),
+        (
+            over_items(when("row.blob === 'ab'")),
+            "row.blob.len == 2 && memcmp(row.blob.data, \"ab\", 2) == 0",
+        ),
     ] {
-        let document = READER.replace(
-            "<transition event=\"batch.sent\" target=\"idle\">",
-            &format!("<transition event=\"batch.sent\" target=\"idle\">\n      {read}"),
-        );
-        let Err(refusal) = c11_generated("batch_reader.scxml", &document) else {
-            panic!("C11 reads no text a composed payload holds as a value: {read}");
-        };
+        let document = READER
+            .replace(
+                "<data id=\"seen\" sce:type=\"uint32\" expr=\"0\" sce:direction=\"out\"/>",
+                "<data id=\"seen\" sce:type=\"uint32\" expr=\"0\" sce:direction=\"out\"/>\n    \
+                 <data id=\"last\" sce:type=\"string[8]\" expr=\"''\"/>",
+            )
+            .replace(
+                "<transition event=\"batch.sent\" target=\"idle\">",
+                &format!("<transition event=\"batch.sent\" target=\"idle\">\n      {read}"),
+            );
+        let code = c11_generated("batch_reader.scxml", &document)
+            .unwrap_or_else(|refusal| panic!("C11 reads {read}: {refusal}"));
         assert!(
-            refusal.contains("a text or a byte string a composed value holds, read as a value")
-                && refusal.contains("has no C11 lowering yet"),
-            "{read}: {refusal}"
+            code.contains(lowered),
+            "{read}: expected `{lowered}` in:\n{code}"
         );
     }
-    // The same document reads its numbers and lengths, which C11 lowers.
-    reader_machine();
 }
 
 /// A reader of `shapes.sent` that tests the tag of the payload's `one`,

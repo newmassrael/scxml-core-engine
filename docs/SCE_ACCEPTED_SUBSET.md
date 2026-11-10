@@ -5448,10 +5448,12 @@ and refuses the delivery whole at the first value outside its type, before any o
 it is kept; the reason names the path (`items/2/tags/0`) in a buffer of the longest
 path the type has, so it is never cut. `len`, an index, a field of a record element
 and a `<foreach>` over a list the payload or an enclosing loop's item holds lower at
-any depth. A text or a byte string a composed value holds is held in its buffer,
-which a C11 expression does not read as a text: it is taken whole (forwarded by a
-`<send>`, copied with the value that holds it), and a read of it as a value is
-refused by name. The inject seam, `<machine>_raise_<event>_typed`, writes what a host
+any depth. A text a composed value holds, at any depth, is held in the buffer of its
+bound, and an expression reads it as the buffer's text, as it reads a text variable's:
+a guard compares it, `len` measures it, and an `<assign>` takes it into a text
+variable; a checked index read of one gives the empty text where the index is
+outside its list. A byte string a composed value holds is held in the `{data, len}`
+struct a byte-string variable is held in, and is read as one is. The inject seam, `<machine>_raise_<event>_typed`, writes what a host
 hands it as its JSON, part by part, and holds each part to its type as it writes it:
 a list past the room of its type, a text with no end in its buffer, a byte string
 past its buffer and an enum value no variant names each make the seam answer false

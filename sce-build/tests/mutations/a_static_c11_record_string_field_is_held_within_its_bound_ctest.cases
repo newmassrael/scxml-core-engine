@@ -32,6 +32,6 @@ PY
 
 mutation_case "a string is copied into the field without its terminator" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "        self.assign_string(&format!(\"{target}.{field}.data\"), value)",
-     "        format!(\"memmove({target}.{field}.data, {value}, strlen({value}));\")")
+     "        self.assign_string(&format!(\"{target}.{field}.{C_BUFFER_TEXT}\"), value)",
+     "        format!(\"memmove({target}.{field}.{C_BUFFER_TEXT}, {value}, strlen({value}));\")")
 PY
