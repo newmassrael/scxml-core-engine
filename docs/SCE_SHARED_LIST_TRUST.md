@@ -258,11 +258,32 @@ operations finds the conflict itself.
   (`Wire`), with its number and its signature; it cannot make one. Who wrote a value over is the
   change's author, signed with it; no copy sends a write-over again as itself, so no host puts an
   author back on one.
-- **A settled instant** (`record_list.floor`) is the core's word that an instant is settled, made
-  from the members' settlement (below). The list no longer reads it (docs/adr/0085, section 2.1:
-  it keeps no tombstones to forget), and the stable cut that replaces it is the core's, in its
-  landing 5; until then a host still accepts one only with the members' settlement, or when it
-  trusts its hub (`Trust::allow_unsigned`).
+- **A mark** (`sce_trust.mark`, `message::MARK`) is an operation of its author's chain that carries
+  no change: its event holds its author, `by`, and nothing else, and what it says is its link's
+  causal context, what the author's machine had been told of every other device (docs/adr/0085,
+  section 3.1). A member that has written nothing since its machine was told a change of another's
+  signs one when its host asks (`Trust::sign_mark`), a reader included, so that what every member
+  was told is known; a mark is owed for a change told and not for a mark told, so two members that
+  only mark do not answer each other for ever. It is verified as any operation is, its author a
+  member of any role under the entry it names; it is told to no machine (`Trust::deliver` passes
+  it), no machine sends one (`Trust::seal_sent` refuses it), and a copy behind a Mesh endpoint is
+  told none (`Admission::admit` refuses it).
+- **A settled instant** (`record_list.floor`) is the members' settlement of an instant (below). The
+  list no longer reads it (docs/adr/0085, section 2.1: it keeps no tombstones to forget), and the
+  peer core no longer makes it (ABI version 8): the stable cut replaces it. A host still accepts one
+  only with the members' settlement, or when it trusts its hub (`Trust::allow_unsigned`).
+
+### The stable cut
+
+A change is **stable** once every member has been told it (docs/adr/0085, sections 3 and 4). What
+a member was told is read from its latest operation a host holds: the causal context of its link,
+and the operation's own number for its own column; a member of which a host holds no operation was
+told nothing. The **stable cut** (`Trust::stable_cut`) is, for each device, the pointwise minimum of
+those vectors over the current members (every node whose latest grant gives a role), and of what the
+host's own machine was told, so that a host never folds past what its own copy holds. A member that
+writes nothing moves the cut by its marks alone. A host folds its journal at the cut and recalls only
+the history after it (`Trust::history`). The checkpoints below stay as what shows an operation
+withheld, which an audit reads; they are no longer the word of stability.
 
 ### Checkpoints, settlement and withholding
 
@@ -462,11 +483,33 @@ not be signed yet: a log not begun, a log that grants the person nothing yet (or
 key the device signs with), a list that keeps its content under an epoch whose key the host does not
 hold, and a host waiting for its own chain. What never may, under the log the host holds: a person
 whose latest grant does not let them write, a key the log replaced, a frozen chain, a forked log, a
-host with no person. A send of the second kind is refused at once, and one that waited is refused when
-the log comes to say so (`Waited::dropped`); a send of another content under the stamp of a write that
-waits, or that the device signed, is refused at once; the same send made again waits once. What
+host with no person. A send of the second kind is refused at once. One that waited and never will be
+signed (the log comes to say so, or it would conflict with what the device signed, a stamp that goes
+back along its chain among them) is withdrawn, and so is every send after it, in order, each with why
+(`Waited::dropped`, docs/adr/0093, section 6.2): each was made on a state that held the one before
+it, and its copy withdraws the same suffix. A send of another content under the stamp of a write
+that waits, or that the device signed, is refused at once; the same send made again waits once. What
 waits is in `Trust::to_text`, in its order, and comes back with `restore_from_text`; it is judged
 when it is signed, as any send is.
+
+### A change its host keeps a journal of
+
+A host whose copy keeps a journal gives the trust the change the copy offered
+(`Trust::keep_made`), which is kept as any send is: signed now, or kept waiting and signed by a round.
+The operation signed for it is a **record** (`Trust::unrecorded`: its number, its event and the
+text a relay is given), which the host appends to its journal and then says it recorded
+(`Trust::recorded`); a courier gives a relay no operation of the person's chain from the first record
+not recorded on (`Trust::released_through`, `docs/SCE_SHARED_LIST_RELAY.md` section 6), so nothing
+the person is shown as saved reaches anyone before the journal holds it (docs/adr/0083, section 3.1).
+What is not recorded is in `Trust::to_text`. A host started again from a state older than its journal
+gives back the records past it (`Trust::restore_records`): each is verified as an operation from
+anyone is, must be the host's person's own, and is held as recorded, its machine counted as told it.
+The highest stamp of the person's changes the trust holds (`Trust::own_stamp`) is what a copy's next
+stamp must exceed (docs/adr/0093, section 4.3). What a machine built again is given is the history
+(`Trust::history`): every operation the trust holds that a round would tell, the person's own
+included, in the causal order `Trust::deliver` tells them in, each with its tag read from its link,
+from a stable cut on, and then what waits to be signed, with no tag, which the copy holds
+provisionally (docs/adr/0093, section 6.1).
 
 ### A copy of a device's secrets
 
