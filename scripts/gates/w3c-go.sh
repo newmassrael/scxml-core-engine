@@ -39,6 +39,17 @@ sce_gate_step "running the Go conformance suite"
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
+# Why a `go test -v` log failed, on stderr: each failing case and package, the
+# line its assertion wrote (`x_test.go:44: ...`), a panic, and a build error
+# (`# pkg` and the `file:line:` under it). The suite's step used to keep only
+# the `FAIL` lines, so a red verdict named the case and not what it saw, and
+# the case had to be run again to learn it (2026-11-10, a composed-send case).
+# One reader for every `go test` of this gate, so no step reports less.
+go_failures() {
+    grep -E '^(--- FAIL|FAIL|panic:|# )|^\s+.*_test\.go:[0-9]+:|^[^ ]+\.(go|scxml):[0-9]+' "$1" \
+        | head -n 60 >&2
+}
+
 # `-v` matches the lane, whose summary step counts the per-case `--- PASS:`
 # lines out of this log. It also gives this gate a case count rather than a
 # package count to hold a floor against.
@@ -47,7 +58,7 @@ status=0
 cat "$LOG/go.log"
 
 if (( status != 0 )); then
-    grep -E '^(--- FAIL|FAIL)' "$LOG/go.log" | head -n 20 >&2
+    go_failures "$LOG/go.log"
     sce_gate_fail "Go conformance suite failed"
 fi
 
@@ -76,7 +87,7 @@ for module in lua runtime; do
     ( cd "backends/go/$module" && go test ./... -v -count=1 ) \
         >"$LOG/go-$module.log" 2>&1 || module_status=$?
     if (( module_status != 0 )); then
-        grep -E '^(--- FAIL|FAIL|\s+.*_test\.go:)' "$LOG/go-$module.log" | head -n 40 >&2
+        go_failures "$LOG/go-$module.log"
         sce_gate_fail "the Go $module module's tests failed"
     fi
     # Same floor logic as the suite: a package that compiled nothing exits 0
