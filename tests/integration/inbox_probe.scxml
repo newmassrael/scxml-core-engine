@@ -19,7 +19,7 @@
   engine, the C11 machine and the Rust engine are driven with it, each machine
   generated with the host-invoker declaration `x-sce-host`
   (tests/CMakeLists.txt and backends/c/tests/CMakeLists.txt at build time, and
-  scripts/regen_host_processor.sh for the committed Rust tree).
+  tools/codegen/trees/rust-integration.toml for the committed Rust tree).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="inbox_probe" datamodel="ecmascript" initial="running">

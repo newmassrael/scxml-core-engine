@@ -32,8 +32,8 @@
   the data does not fit is, and `answered` does not move.
 
   Generated with the invoker declaration naming the type x-sce-host
-  (scripts/regen_host_processor.sh and the other host-processor scripts name the
-  flag; an XML comment cannot spell a double hyphen).
+  (the generation of each channel names the flag; an XML comment cannot spell
+  a double hyphen).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static"

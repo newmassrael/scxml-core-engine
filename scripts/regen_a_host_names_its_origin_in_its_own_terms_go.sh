@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml.
 #
-# Mirrors scripts/regen_a_host_names_its_origin_in_its_own_terms.sh (Rust), with
-# the same `--host-invoker x-sce-host` declaration the driver registers an
-# invoker for. Only `*_sm.go` is copied back, so the hand-authored `*_test.go`
-# next to the generated file is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), with the same
+# `--host-invoker x-sce-host` declaration the driver registers an invoker for.
+# Only `*_sm.go` is copied back, so the hand-authored `*_test.go` next to the
+# generated file is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_host_names_its_origin_in_its_own_terms_go.sh

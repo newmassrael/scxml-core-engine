@@ -22,7 +22,7 @@
 //
 // Fixture: tests/integration/external_chain_is_bounded.scxml. It is outside
 // `integration_resources/` for the reason
-// `scripts/regen_external_chain_is_bounded.sh` states.
+// `tools/codegen/trees/rust-integration.toml` states.
 //
 // Regeneration: automatic at CMake build time via
 // `sce_generate_static_integration_test(external_chain_is_bounded ...)`

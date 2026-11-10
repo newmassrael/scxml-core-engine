@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_send_content_expr_is_the_payload/a_send_content_expr_is_the_payload.scxml.
 #
-# Mirrors scripts/regen_a_send_content_expr_is_the_payload.sh (Rust). The tree
-# lives under `com/sce/integration/`, which `--kotlin-package-prefix` names in
-# every emitted `package` header.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The tree lives under
+# `com/sce/integration/`, which `--kotlin-package-prefix` names in every
+# emitted `package` header.
 #
 # Usage (from repo root):
 #   scripts/regen_a_send_content_expr_is_the_payload_kotlin.sh

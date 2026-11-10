@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_computed_event_name_is_matched_like_any_other.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

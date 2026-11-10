@@ -127,7 +127,7 @@
   the other states cannot reach, since each leaves only on a host event.
 
   The generated machine is compiled with the host-invoker declaration
-  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  `x-sce-host` (the generation of each channel names the flag; an XML
   comment cannot spell a double hyphen).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"

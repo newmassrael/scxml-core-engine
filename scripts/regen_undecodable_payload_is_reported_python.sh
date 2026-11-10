@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/undecodable_payload_is_reported/undecodable_payload_is_reported.scxml.
 #
-# Mirrors scripts/regen_undecodable_payload_is_reported.sh (Rust). Only `*_sm.py`
-# is copied back, so the hand-authored
-# `test_undecodable_payload_is_reported_aot.py` next to it is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.py` is copied
+# back, so the hand-authored `test_undecodable_payload_is_reported_aot.py`
+# next to it is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_undecodable_payload_is_reported_python.sh

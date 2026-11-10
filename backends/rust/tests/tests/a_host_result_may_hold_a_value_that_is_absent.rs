@@ -7,8 +7,9 @@
 //
 // The committed machine under `src/integration/host_processor/` is generated
 // from `sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml`
-// (regen: `scripts/regen_host_processor.sh`) and is constructed with NO script
-// engine: a `datamodel="sce-static"` machine holds its variables as fields.
+// (regen: `scripts/materialize.sh rust-integration`) and is constructed with
+// NO script engine: a `datamodel="sce-static"` machine holds its variables as
+// fields.
 //
 // The host answers through the generated typed interface, so the record it hands
 // in holds each field that may be absent as an `Option`; the engine delivers the
@@ -28,8 +29,9 @@ use sce_rust_tests::integration::host_processor::{
     StatechartHostInvokerOptionalXSceHostInvoker as XSceHostInvoker,
 };
 
-/// The type the fixture was compiled for; `scripts/regen_host_processor.sh`
-/// passes the same string to the invoker declaration.
+/// The type the fixture was compiled for;
+/// `tools/codegen/trees/rust-integration.toml` passes the same string to the
+/// invoker declaration.
 const DECLARED_TYPE: &str = "x-sce-host";
 
 /// A host implementing the generated interface; its work outlives the call, so

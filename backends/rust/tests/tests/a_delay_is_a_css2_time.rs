@@ -7,7 +7,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_delay_is_a_css2_time.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_runtime::SceClock;
 use sce_rust_tests::integration::a_delay_is_a_css2_time::{

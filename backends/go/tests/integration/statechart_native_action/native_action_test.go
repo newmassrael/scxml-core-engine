@@ -5,8 +5,8 @@
 //
 // The committed machine beside this file is generated from
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`
-// (regen: `scripts/regen_native_action.sh`), the same document the Rust, C++,
-// C11, Kotlin and Python channels drive. Because the tree is part of the
+// (regen: `scripts/regen_native_action_go.sh`), the same document the Rust,
+// C++, C11, Kotlin and Python channels drive. Because the tree is part of the
 // module it is REALLY compiled: the generated policy takes a
 // `StatechartNativeActionActions` implementation at construction and carries
 // no script engine at all, so this gate proves the engine-free dispatch

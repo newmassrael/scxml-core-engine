@@ -7,8 +7,9 @@
 # canonical fixture at
 # integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml.
 #
-# Mirrors scripts/regen_autoforward_internal_queue.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. Only `*_sm.go` is copied back, so the
 # hand-authored `autoforward_internal_queue_test.go` next to the generated

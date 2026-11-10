@@ -6,11 +6,11 @@
 # from the canonical fixture at
 # integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml.
 #
-# Mirrors scripts/regen_an_origin_is_the_address_its_sender_published.sh (Rust):
-# the fixture is staged into a tmp dir so the split-out synth-invoke child lands
-# outside the tracked tree, each child is generated into the parent's package,
-# and only `*_sm.go` is copied back, so the hand-authored `*_test.go` beside
-# them is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml): the fixture is staged into a tmp
+# dir so the split-out synth-invoke child lands outside the tracked tree, each
+# child is generated into the parent's package, and only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` beside them is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_an_origin_is_the_address_its_sender_published_go.sh

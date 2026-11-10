@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml.
 #
-# Mirrors scripts/regen_a_delayed_http_send_is_posted_when_due.sh (Rust). The tree
-# lives under `com/sce/integration/`, which `--kotlin-package-prefix` names in
-# every emitted `package` header.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The tree lives under
+# `com/sce/integration/`, which `--kotlin-package-prefix` names in every
+# emitted `package` header.
 #
 # Usage (from repo root):
 #   scripts/regen_a_delayed_http_send_is_posted_when_due_kotlin.sh

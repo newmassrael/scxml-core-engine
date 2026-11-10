@@ -23,7 +23,7 @@
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml
 // (shared with the Rust / C11 / Go / Kotlin / Python channels;
 // `tests/CMakeLists.txt` compiles it here with the same `--host-processor`
-// declaration `scripts/regen_host_processor.sh` passes there).
+// declaration `tools/codegen/trees/rust-integration.toml` passes there).
 
 #include "statechart_delayed_host_send_sm.h"
 

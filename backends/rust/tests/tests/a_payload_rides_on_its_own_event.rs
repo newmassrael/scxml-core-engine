@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_payload_rides_on_its_own_event.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::a_payload_rides_on_its_own_event::{
     APayloadRidesOnItsOwnEventEvent as Event, APayloadRidesOnItsOwnEventPolicy as Policy,

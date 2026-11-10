@@ -14,7 +14,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_assignment_keeps_the_document_it_is_given.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

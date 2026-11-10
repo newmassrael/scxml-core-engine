@@ -24,10 +24,10 @@
 //
 // Fixture: tests/integration/external_chain_is_bounded.scxml. It is outside
 // `integration_resources/` for the reason
-// `scripts/regen_external_chain_is_bounded.sh` states.
+// `tools/codegen/trees/rust-integration.toml` states.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_external_chain_is_bounded.sh
+//   scripts/materialize.sh rust-integration
 
 use std::num::NonZeroU32;
 use std::sync::{Arc, OnceLock};

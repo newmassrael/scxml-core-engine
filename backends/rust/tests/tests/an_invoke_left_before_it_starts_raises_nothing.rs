@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_invoke_left_before_it_starts_raises_nothing.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::an_invoke_left_before_it_starts_raises_nothing::{
     AnInvokeLeftBeforeItStartsRaisesNothingEvent as Event,

@@ -24,7 +24,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_processor.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::{Arc, Mutex};
 
@@ -33,8 +33,9 @@ use sce_rust_tests::integration::host_processor::{
     StatechartDelayedHostSendPolicy as Policy, StatechartDelayedHostSendState as State,
 };
 
-/// The type the fixture was compiled for; `scripts/regen_host_processor.sh`
-/// passes this same string to `--host-processor`.
+/// The type the fixture was compiled for;
+/// `tools/codegen/trees/rust-integration.toml` passes this same string to
+/// `--host-processor`.
 const DECLARED_TYPE: &str = "x-sce-host";
 
 /// What the handler saw, in call order: the engine's own reading of "now" at

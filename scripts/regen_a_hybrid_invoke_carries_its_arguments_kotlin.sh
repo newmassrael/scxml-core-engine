@@ -6,10 +6,11 @@
 # a_hybrid_invoke_carries_its_arguments from the canonical fixture at
 # integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml.
 #
-# Mirrors scripts/regen_a_hybrid_invoke_carries_its_arguments.sh (Rust).
-# `--parent-stem` puts each candidate in the parent's package: Kotlin gives
-# every document a package of its own, so without it the parent's reference
-# to a candidate class does not resolve.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). `--parent-stem` puts each
+# candidate in the parent's package: Kotlin gives every document a package
+# of its own, so without it the parent's reference to a candidate class
+# does not resolve.
 #
 # Usage (from repo root):
 #   scripts/regen_a_hybrid_invoke_carries_its_arguments_kotlin.sh

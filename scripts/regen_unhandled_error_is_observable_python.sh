@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml.
 #
-# Mirrors scripts/regen_unhandled_error_is_observable.sh (Rust). Only `*_sm.py`
-# is copied back, so the hand-authored
-# `test_unhandled_error_is_observable_aot.py` next to it is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.py` is copied
+# back, so the hand-authored `test_unhandled_error_is_observable_aot.py`
+# next to it is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_unhandled_error_is_observable_python.sh

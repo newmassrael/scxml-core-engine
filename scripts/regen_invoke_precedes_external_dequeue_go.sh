@@ -7,12 +7,13 @@
 # canonical fixture at
 # integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml.
 #
-# Mirrors scripts/regen_invoke_precedes_external_dequeue.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
-# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
-# during the codegen run. Only `*_sm.go` is copied back, so the
-# hand-authored `invoke_precedes_external_dequeue_test.go` next to the generated
-# files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root during
+# the codegen run. Only `*_sm.go` is copied back, so the hand-authored
+# `invoke_precedes_external_dequeue_test.go` next to the generated files is
+# never touched.
 #
 # The generated tree lives under `backends/go/tests/integration/<stem>/`
 # rather than `backends/go/tests/<stem>/` so the W3C IRP and integration

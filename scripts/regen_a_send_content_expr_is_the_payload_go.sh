@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_send_content_expr_is_the_payload/a_send_content_expr_is_the_payload.scxml.
 #
-# Mirrors scripts/regen_a_send_content_expr_is_the_payload.sh (Rust). Only
-# `*_sm.go` is copied back, so the hand-authored `*_test.go` next to the
-# generated file is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` next to the generated file is
+# never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_send_content_expr_is_the_payload_go.sh

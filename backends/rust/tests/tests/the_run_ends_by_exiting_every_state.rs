@@ -14,7 +14,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_the_run_ends_by_exiting_every_state.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::the_run_ends_by_exiting_every_state::{
     TheRunEndsByExitingEveryStateEvent as Event, TheRunEndsByExitingEveryStatePolicy as Policy,

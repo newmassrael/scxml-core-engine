@@ -27,7 +27,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_ancestor_entry_is_not_default_entry.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::ancestor_entry_is_not_default_entry::{
     AncestorEntryIsNotDefaultEntryEvent as Event, AncestorEntryIsNotDefaultEntryPolicy as Policy,

@@ -7,9 +7,9 @@
 # from the canonical fixture at
 # integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml.
 #
-# Mirrors scripts/regen_eventless_macrostep_is_bounded.sh (Rust). Only `*Sm.kt`
-# is copied back, so the hand-authored driver under `src/test/kotlin/` is never
-# touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*Sm.kt` is copied back, so
+# the hand-authored driver under `src/test/kotlin/` is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_eventless_macrostep_is_bounded_kotlin.sh

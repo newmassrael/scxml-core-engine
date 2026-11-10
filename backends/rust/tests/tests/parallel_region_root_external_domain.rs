@@ -40,7 +40,7 @@
 // has not been repaired yet.)
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_region_root_external_domain.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::parallel_region_root_external_domain::{
     ParallelRegionRootExternalDomainEvent as Event,

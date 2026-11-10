@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_bad_invoke_argument_is_reported_once.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::a_bad_invoke_argument_is_reported_once::{
     ABadInvokeArgumentIsReportedOnceEvent as Event,

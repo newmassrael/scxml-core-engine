@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml.
 #
-# Mirrors scripts/regen_invoke_expression_failure_is_reported.sh (Rust),
-# including its child pass: the parent imports the generated hybrid stub
-# by module name, so the stub has to be generated or the import fails at
-# run time rather than at build time.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), including its child pass:
+# the parent imports the generated hybrid stub by module name, so the
+# stub has to be generated or the import fails at run time rather than
+# at build time.
 #
 # As with the other Python integration regens, the generated tree is
 # `.gitignored` and CI runs this script before pytest, so the committed

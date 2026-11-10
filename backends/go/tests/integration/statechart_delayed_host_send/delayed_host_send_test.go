@@ -24,7 +24,7 @@
 // (canonical, shared with the Rust / C++ / C11 / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_processor.sh
+//   scripts/regen_host_processor_go.sh
 
 package statechart_delayed_host_send
 
@@ -35,7 +35,7 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 )
 
-// The type the fixture was compiled for. `scripts/regen_host_processor.sh`
+// The type the fixture was compiled for. `scripts/regen_host_processor_go.sh`
 // passes this same string to `--host-processor`.
 const declaredType = "x-sce-host"
 

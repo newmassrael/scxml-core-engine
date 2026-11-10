@@ -23,7 +23,7 @@ What the cases measure:
   what shows the refusal reached no action.
 
 Regeneration (after fixture or template edit):
-  ``scripts/regen_native_action.sh``
+  ``scripts/regen_native_action_python.sh``
 """
 from __future__ import annotations
 

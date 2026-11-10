@@ -23,7 +23,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_eventless_macrostep_is_bounded.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::Arc;
 

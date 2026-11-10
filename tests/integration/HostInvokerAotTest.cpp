@@ -28,7 +28,7 @@
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
 // (shared with the Rust and Go channels; `tests/CMakeLists.txt` compiles it
 // here with the same `--host-invoker` declaration
-// `scripts/regen_host_processor.sh` passes there).
+// `tools/codegen/trees/rust-integration.toml` passes there).
 
 #include "statechart_host_invoker_sm.h"
 

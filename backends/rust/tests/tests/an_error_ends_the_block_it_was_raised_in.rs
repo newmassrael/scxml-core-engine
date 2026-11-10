@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_error_ends_the_block_it_was_raised_in.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::an_error_ends_the_block_it_was_raised_in::{
     AnErrorEndsTheBlockItWasRaisedInEvent as Event,

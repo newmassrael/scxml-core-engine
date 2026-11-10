@@ -567,11 +567,11 @@ void expect(const char *what, bool held) {
 /// `the_strategy_a_host_edits_is_the_strategy_it_can_read_back` and
 /// `the_standing_instructions_can_be_read_back_off_the_machine` in
 /// `backends/rust/tests/tests/ai_loop.rs`. Asserting it on both engines is
-/// what `scripts/regen_ai_loop.sh` says this pair is for: a clause only one
-/// engine honours has to fail on the other. The topology clauses were paired
-/// that way from the start; the datamodel ones were not, and for a while the
-/// Rust side asserted a readable document while this side reached around the
-/// machine for the same values by hand.
+/// what `tools/codegen/trees/rust-integration.toml` says this pair is for: a
+/// clause only one engine honours has to fail on the other. The topology
+/// clauses were paired that way from the start; the datamodel ones were not,
+/// and for a while the Rust side asserted a readable document while this side
+/// reached around the machine for the same values by hand.
 void readback() {
     std::cout << "\n-- the document a host edits is the document it can read back\n";
     Machine machine;

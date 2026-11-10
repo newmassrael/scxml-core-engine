@@ -19,7 +19,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_done_state_is_delivered.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::parallel_done_state_is_delivered::{
     ParallelDoneStateIsDeliveredEvent as Event, ParallelDoneStateIsDeliveredPolicy as Policy,

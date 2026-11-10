@@ -6,7 +6,8 @@
 # from the canonical fixture at
 # integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml.
 #
-# Mirrors scripts/regen_invoke_param_error_starts_the_child.sh (Rust).
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml).
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_param_error_starts_the_child_python.sh

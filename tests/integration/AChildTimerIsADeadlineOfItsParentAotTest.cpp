@@ -16,7 +16,7 @@
 //
 // Fixture: tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml.
 // It is outside `integration_resources/` for the reason
-// `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh` states.
+// `tools/codegen/trees/rust-integration.toml` states.
 //
 // Regeneration: automatic at CMake build time via
 // `sce_generate_static_integration_test(a_child_timer_is_a_deadline_of_its_parent ...)`

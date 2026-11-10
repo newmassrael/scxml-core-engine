@@ -6,12 +6,13 @@
 # invoke_expression_failure_is_reported from the canonical fixture at
 # integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml.
 #
-# Mirrors scripts/regen_invoke_expression_failure_is_reported.sh (Rust).
-# The child pass is kept even though Kotlin's parent template resolves a
-# hybrid `<invoke>` through its own runtime loader rather than importing
-# the generated stub: the stub costs one small file, and a regen whose
-# output set depends on which backend it is would make the four scripts
-# stop being mirrors of one another.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The child pass is kept
+# even though Kotlin's parent template resolves a hybrid `<invoke>`
+# through its own runtime loader rather than importing the generated
+# stub: the stub costs one small file, and a regen whose output set
+# depends on which backend it is would make the four scripts stop being
+# mirrors of one another.
 #
 # Idempotency: re-runs are byte-stable for unchanged inputs and generator.
 #

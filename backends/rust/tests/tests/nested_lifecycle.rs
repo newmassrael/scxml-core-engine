@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_nested_lifecycle.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::nested_lifecycle::{
     nested_lifecycle_transition_function as tf, NestedLifecyclePolicy,

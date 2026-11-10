@@ -6,11 +6,12 @@
 # from the canonical fixture at
 # integration_resources/the_run_ends_by_exiting_every_state/the_run_ends_by_exiting_every_state.scxml.
 #
-# Mirrors scripts/regen_the_run_ends_by_exiting_every_state.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so any hand-authored `*_test.go` next to the
-# generated files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run. Only `*_sm.go` is copied
+# back, so any hand-authored `*_test.go` next to the generated files is
+# never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_the_run_ends_by_exiting_every_state_go.sh

@@ -15,10 +15,10 @@
 //
 // The committed SM under `src/integration/host_processor/` is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml`
-// WITH the declaration (regen: `scripts/regen_host_processor.sh`). Because
-// the tree is part of the crate it is really type-checked; these tests drive
-// that one binary twice, so what they measure is the registration and not
-// the build.
+// WITH the declaration (regen: `scripts/materialize.sh rust-integration`).
+// Because the tree is part of the crate it is really type-checked; these tests
+// drive that one binary twice, so what they measure is the registration and
+// not the build.
 //
 // The pair is the whole contract:
 //
@@ -36,10 +36,11 @@ use std::sync::{Arc, Mutex};
 use sce_rust_runtime::{Engine, HostSendRequest, HostSendResponse, IScriptEngine};
 use sce_rust_tests::integration::host_processor::StatechartHostProcessorPolicy as Policy;
 
-/// The type the fixture was compiled for. `scripts/regen_host_processor.sh`
-/// passes this same string to `--host-processor`; a test that registered a
-/// different one would measure nothing and pass, so the two spellings are
-/// asserted to be one by the `refused` counter below rather than trusted.
+/// The type the fixture was compiled for.
+/// `tools/codegen/trees/rust-integration.toml` passes this same string to
+/// `--host-processor`; a test that registered a different one would measure
+/// nothing and pass, so the two spellings are asserted to be one by the
+/// `refused` counter below rather than trusted.
 const DECLARED_TYPE: &str = "x-sce-host";
 
 fn started() -> (Engine<Policy>, Arc<dyn IScriptEngine>) {

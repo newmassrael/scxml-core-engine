@@ -22,7 +22,7 @@
 // (canonical, shared with every other channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_session_ids_are_distinct.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

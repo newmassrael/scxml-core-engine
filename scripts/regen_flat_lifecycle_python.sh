@@ -6,7 +6,8 @@
 # flat_lifecycle_transition_function}.py from the canonical fixture at
 # integration_resources/flat_lifecycle/flat_lifecycle.scxml.
 #
-# Mirrors scripts/regen_flat_lifecycle.sh (Rust). The document declares its
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The document declares its
 # transition function (`sce:transition-function="emit"`,
 # docs/SCE_TRANSITION_FUNCTION.md), which Python generates as a module of its own
 # beside the machine's.

@@ -32,7 +32,7 @@
   The document sits beside its drivers rather than under
   `integration_resources/`: a stem there is a seven-channel contract, and C11
   and the C++ Interpreter expose no next-deadline query to ask. See
-  `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh`.
+  `tools/codegen/trees/rust-integration.toml`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="a_child_timer_is_a_deadline_of_its_parent" datamodel="ecmascript"

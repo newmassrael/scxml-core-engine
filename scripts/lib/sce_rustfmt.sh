@@ -12,7 +12,7 @@
 # rather than a convenience: rustfmt resolves `mod` declarations, so a file
 # missing anywhere under the package aborts the format step of a script that
 # has nothing to do with it. Measured: deleting one integration artifact
-# made `regen_autoforward_dequeue_point.sh` fail with
+# made the Rust regeneration script of `autoforward_dequeue_point` fail with
 # "failed to resolve mod `autoforward_done_invoke__sce_synth_invoke__inv_watch_sm`"
 # — a tree it does not own — and the script that WOULD have restored that
 # file never ran, because the umbrella stops at the first failure.

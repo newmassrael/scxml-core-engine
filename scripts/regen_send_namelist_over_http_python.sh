@@ -6,7 +6,8 @@
 # send_namelist_over_http_sm.py from the canonical fixture at
 # integration_resources/send_namelist_over_http/send_namelist_over_http.scxml.
 #
-# Mirrors scripts/regen_send_namelist_over_http.sh (Rust).
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml).
 #
 # Usage (from repo root):
 #   scripts/regen_send_namelist_over_http_python.sh

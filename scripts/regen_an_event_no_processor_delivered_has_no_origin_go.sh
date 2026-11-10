@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml.
 #
-# Mirrors scripts/regen_an_event_no_processor_delivered_has_no_origin.sh (Rust),
-# with the same `--host-processor x-sce-host` declaration the driver registers
-# a processor for. Only `*_sm.go` is copied back, so the hand-authored
-# `*_test.go` next to the generated file is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), with the same
+# `--host-processor x-sce-host` declaration the driver registers a processor
+# for. Only `*_sm.go` is copied back, so the hand-authored `*_test.go` next to
+# the generated file is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_an_event_no_processor_delivered_has_no_origin_go.sh

@@ -21,7 +21,8 @@
 //
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
 // (shared with the other channels; `tests/CMakeLists.txt` compiles it here with the
-// same invoker declaration `scripts/regen_host_processor.sh` passes there).
+// same invoker declaration `tools/codegen/trees/rust-integration.toml` passes
+// there).
 
 #include "statechart_host_invoker_optional_sm.h"
 

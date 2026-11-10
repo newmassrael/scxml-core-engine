@@ -21,7 +21,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_expression_failure_is_reported.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

@@ -5,12 +5,13 @@
 # Regenerate backends/go/tests/integration/a_child_timer_is_a_deadline_of_its_parent/*_sm.go
 # from tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml.
 #
-# Mirrors scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh (Rust),
-# which says why the document is not under `integration_resources/`. The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so any hand-authored `*_test.go` next to the
-# generated files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), which says why the document
+# is not under `integration_resources/`. The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the canonical
+# fixture root during the codegen run. Only `*_sm.go` is copied back, so
+# any hand-authored `*_test.go` next to the generated files is never
+# touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh

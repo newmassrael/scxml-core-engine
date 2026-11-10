@@ -5,11 +5,11 @@
 # Regenerate backends/python/tests/integration/a_child_timer_is_a_deadline_of_its_parent/*_sm.py
 # from tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml.
 #
-# Mirrors scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh (Rust),
-# which says why the document is not under `integration_resources/`. The
-# generated modules are gitignored like every other module in
-# `backends/python/tests/integration/`; the `w3c-python` gate regenerates them,
-# and this script is for a local run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), which says why the document is
+# not under `integration_resources/`. The generated modules are gitignored like
+# every other module in `backends/python/tests/integration/`; the `w3c-python`
+# gate regenerates them, and this script is for a local run.
 #
 # Usage (from repo root):
 #   scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh

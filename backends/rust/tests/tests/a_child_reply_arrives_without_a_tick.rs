@@ -9,7 +9,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_reply_arrives_without_a_tick.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::a_child_reply_arrives_without_a_tick::{
     AChildReplyArrivesWithoutATickEvent as Event, AChildReplyArrivesWithoutATickPolicy as Policy,

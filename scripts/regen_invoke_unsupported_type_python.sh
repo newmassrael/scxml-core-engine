@@ -6,11 +6,11 @@
 # from the canonical fixture at
 # integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml.
 #
-# Mirrors scripts/regen_invoke_unsupported_type.sh (Rust), including its
-# lack of a synth-invoke child loop: the fixture's `<invoke>` names a
-# `type` no processor implements, so W3C SCXML 6.4.1 classification
-# completes before any child document would be resolved and codegen emits
-# no child.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), including its lack of a
+# synth-invoke child loop: the fixture's `<invoke>` names a `type` no
+# processor implements, so W3C SCXML 6.4.1 classification completes
+# before any child document would be resolved and codegen emits no child.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated
 # tree is `.gitignored` (mirroring the W3C IRP Python pattern under

@@ -1151,7 +1151,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # ceiling never applies: the host call that drained it did not return. The
     # fixture holds every engine to one budget on external events
     # (ARCHITECTURE.md "External-Event Budget"). Named through SCXML_FILE rather
-    # than by stem for the reason `scripts/regen_external_chain_is_bounded.sh`
+    # than by stem for the reason `tools/codegen/trees/rust-integration.toml`
     # states: a stem under `integration_resources/` is a seven-channel commitment.
     sce_generate_static_integration_c_test(external_chain_is_bounded "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/tests/integration/external_chain_is_bounded.scxml"

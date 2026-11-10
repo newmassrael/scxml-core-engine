@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml.
 #
-# Mirrors scripts/regen_internal_chain_is_bounded.sh (Rust). Only `*_sm.py`
-# is copied back, so the hand-authored
-# `test_internal_chain_is_bounded_aot.py` next to it is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.py` is copied back, so
+# the hand-authored `test_internal_chain_is_bounded_aot.py` next to it is never
+# touched.
 #
 # Usage (from repo root):
 #   scripts/regen_internal_chain_is_bounded_python.sh

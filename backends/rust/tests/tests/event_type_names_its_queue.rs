@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_type_names_its_queue.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::event_type_names_its_queue::{
     EventTypeNamesItsQueuePolicy as Policy, EventTypeNamesItsQueueState as State,

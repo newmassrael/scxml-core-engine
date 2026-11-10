@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml.
 #
-# Mirrors scripts/regen_a_hybrid_invoke_carries_its_arguments.sh (Rust). The
-# children are the declared candidates, and `--parent-stem` puts them in the
-# parent's package, which Go requires: one package per directory.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The children are the declared
+# candidates, and `--parent-stem` puts them in the parent's package, which
+# Go requires: one package per directory.
 #
 # Usage (from repo root):
 #   scripts/regen_a_hybrid_invoke_carries_its_arguments_go.sh

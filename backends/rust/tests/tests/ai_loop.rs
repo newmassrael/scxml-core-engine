@@ -25,7 +25,7 @@
 // Fixture: examples/ai_loop/ai_loop.scxml
 //
 // Regeneration (after example or template edit):
-//   scripts/regen_ai_loop.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_tests::integration::ai_loop::{AiLoopEvent, AiLoopPolicy, AiLoopState};

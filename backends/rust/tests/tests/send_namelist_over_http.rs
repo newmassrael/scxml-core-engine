@@ -23,7 +23,7 @@
 // (canonical, shared with the other channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_send_namelist_over_http.sh
+//   scripts/materialize.sh rust-integration
 //
 // Needs the W3C harness server, like every BasicHTTP fixture here:
 //   node tests/w3c/standalone_http_server.js 8080 /test

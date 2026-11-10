@@ -6,8 +6,9 @@
 # send_namelist_over_http/ from the canonical fixture at
 # integration_resources/send_namelist_over_http/send_namelist_over_http.scxml.
 #
-# Mirrors scripts/regen_send_namelist_over_http.sh (Rust), with the
-# Kotlin package-prefix flip the other integration stems use.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), with the Kotlin package-prefix
+# flip the other integration stems use.
 #
 # Usage (from repo root):
 #   scripts/regen_send_namelist_over_http_kotlin.sh

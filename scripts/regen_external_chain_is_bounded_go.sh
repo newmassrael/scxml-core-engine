@@ -5,10 +5,10 @@
 # Regenerate backends/go/tests/integration/external_chain_is_bounded/*_sm.go
 # from tests/integration/external_chain_is_bounded.scxml.
 #
-# Mirrors scripts/regen_external_chain_is_bounded.sh (Rust), which says why the
-# document is not under `integration_resources/`. Only `*_sm.go` is copied
-# back, so the hand-authored `*_test.go` next to the generated file is never
-# touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), which says why the document
+# is not under `integration_resources/`. Only `*_sm.go` is copied back, so
+# the hand-authored `*_test.go` next to the generated file is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_external_chain_is_bounded_go.sh

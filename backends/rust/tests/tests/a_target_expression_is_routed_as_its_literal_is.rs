@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_target_expression_is_routed_as_its_literal_is.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

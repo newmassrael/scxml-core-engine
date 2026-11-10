@@ -6,8 +6,9 @@
 # invoke fixtures under sce-build/tests/fixtures/host_processor/, one directory
 # under backends/go/tests/integration/ for each document.
 #
-# The Go half of `regen_host_processor.sh`, which says what each document
-# measures and why it is a document of its own; it was part of that script until
+# The Go half of the host-processor generation whose Rust half
+# `tools/codegen/trees/rust-integration.toml` declares; each document's own
+# comment says what it measures. It was part of the Rust script until
 # 2026-11-07. It is a script of its own because the regeneration runs as one bx
 # action per language tree (bx.toml, the `regen-*` actions), and a script that
 # writes the Rust and the Go trees belongs to no one action.
@@ -38,8 +39,9 @@ source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
 
-# The declared types, the same strings `regen_host_processor.sh` gives the Rust
-# trees and the runtime tests register.
+# The declared types, the same strings
+# `tools/codegen/trees/rust-integration.toml` gives the Rust trees and the
+# runtime tests register.
 HOST_PROCESSOR="x-sce-host"
 HOST_INVOKER="x-sce-host"
 

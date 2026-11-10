@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_cancelling_an_invoke_raises_nothing.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::cancelling_an_invoke_raises_nothing::{
     CancellingAnInvokeRaisesNothingEvent as Event, CancellingAnInvokeRaisesNothingPolicy as Policy,

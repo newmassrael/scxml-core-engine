@@ -6,10 +6,10 @@
 # from the canonical fixture at
 # integration_resources/invoke_candidate_selects_the_child/invoke_candidate_selects_the_child.scxml.
 #
-# Mirrors scripts/regen_invoke_candidate_selects_the_child.sh (Rust). The
-# parent imports each candidate module by name, so every declared candidate
-# has to be generated or the selection fails at run time rather than at
-# build time.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The parent imports each
+# candidate module by name, so every declared candidate has to be generated
+# or the selection fails at run time rather than at build time.
 #
 # As with the other Python integration regens, the generated tree is
 # `.gitignored` and CI runs this script before pytest.

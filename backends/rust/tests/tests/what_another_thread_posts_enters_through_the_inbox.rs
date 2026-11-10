@@ -27,9 +27,10 @@
 //
 // Fixture: tests/integration/inbox_probe.scxml, generated with the host-invoker
 // declaration `x-sce-host` into src/integration/host_processor/ by
-// scripts/regen_host_processor.sh. `taken` is what the machine took, in order,
-// as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The child sessions'
-// cases drive sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml,
+// tools/codegen/trees/rust-integration.toml. `taken` is what the machine took,
+// in order, as `ping:<data>;`, `done:<data>;` and `failed:<data>;`. The child
+// sessions' cases drive
+// sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml,
 // as a_child_sessions_host_invocation_is_served_by_the_trees_host.rs does, and
 // static_invoke_ending_order.scxml beside it.
 
@@ -53,8 +54,8 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
     StaticInvokeTreePersist, StaticInvokeTreePolicy,
 };
 
-/// The type the fixture was generated for (`HOST_INVOKER` in
-/// scripts/regen_host_processor.sh).
+/// The type the fixture was generated for (`--host-invoker` in
+/// tools/codegen/trees/rust-integration.toml).
 const TYPE: &str = "x-sce-host";
 /// The fixture's one host-run invocation.
 const JOB: &str = "job";

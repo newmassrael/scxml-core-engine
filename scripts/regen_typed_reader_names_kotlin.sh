@@ -7,9 +7,9 @@
 # from the canonical fixture at
 # integration_resources/typed_reader_names/typed_reader_names.scxml.
 #
-# Mirrors scripts/regen_typed_reader_names.sh (Rust). Only `*Sm.kt`
-# is copied back, so the hand-authored driver under `src/test/kotlin/` is never
-# touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*Sm.kt` is copied back, so
+# the hand-authored driver under `src/test/kotlin/` is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_typed_reader_names_kotlin.sh

@@ -11,7 +11,8 @@
 # `statechart_native_action` package, the Kotlin `NativeActionTest`, the C++
 # `NativeActionAotTest` and the C11 `c11_integration_native_action` runner.
 #
-# A separate script from `regen_native_action.sh`, and the reason is the same
+# A separate script from the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), and the reason is the same
 # one `regen_host_processor_python.sh` gives: `backends/python/tests/
 # integration/*/*_sm.py` is GITIGNORED, so there is no committed artefact for
 # `regen_all_committed_trees.sh` to keep current. What produces the module is

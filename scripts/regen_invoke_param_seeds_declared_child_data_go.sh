@@ -7,10 +7,11 @@
 # canonical fixture at
 # integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml.
 #
-# Mirrors scripts/regen_invoke_param_seeds_declared_child_data.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children (sce-build/src/parser.rs:1804-1805) out of the canonical fixture
-# root during the codegen run. Only `*_sm.go` is copied back, so the
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps
+# SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
+# during the codegen run. Only `*_sm.go` is copied back, so the
 # hand-authored `invoke_param_seeds_declared_child_data_test.go` next to the
 # generated files is never touched.
 #

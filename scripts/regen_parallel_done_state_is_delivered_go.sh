@@ -6,11 +6,12 @@
 # from the canonical fixture at
 # integration_resources/parallel_done_state_is_delivered/parallel_done_state_is_delivered.scxml.
 #
-# Mirrors scripts/regen_parallel_done_state_is_delivered.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so any hand-authored `*_test.go` next to the
-# generated files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run. Only `*_sm.go` is copied
+# back, so any hand-authored `*_test.go` next to the generated files is
+# never touched.
 #
 # The generated tree lives under `backends/go/tests/integration/<stem>/`
 # rather than `backends/go/tests/<stem>/` so the W3C IRP and integration

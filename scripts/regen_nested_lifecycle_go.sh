@@ -6,7 +6,8 @@
 # the package directory nested_lifecycle_transition_function/ beside it from the
 # canonical fixture at integration_resources/nested_lifecycle/nested_lifecycle.scxml.
 #
-# Mirrors scripts/regen_nested_lifecycle.sh (Rust). The document declares its
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The document declares its
 # transition function (`sce:transition-function="emit"`,
 # docs/SCE_TRANSITION_FUNCTION.md), which Go generates as a package of its own:
 # a directory inside the machine's, named after it. Only `*_sm.go` and that

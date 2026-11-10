@@ -12,7 +12,7 @@
 //
 // The committed machine beside this file is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml`
-// WITH the declaration (regen: `scripts/regen_host_processor.sh`), the same
+// WITH the declaration (regen: `scripts/regen_host_processor_go.sh`), the same
 // document the Rust, C++ and C11 channels drive. Because the tree is part of
 // the module it is really compiled; these tests drive that one machine several
 // times, so what they measure is the registration and not the build.
@@ -39,7 +39,7 @@ import (
 	scegotest "github.com/newmassrael/sce-go-tests/harness"
 )
 
-// The type the fixture was compiled for. `scripts/regen_host_processor.sh`
+// The type the fixture was compiled for. `scripts/regen_host_processor_go.sh`
 // passes this same string to `--host-processor`; a test registering a different
 // one would measure nothing and pass, so the `refused` counter is asserted
 // rather than the registration trusted.

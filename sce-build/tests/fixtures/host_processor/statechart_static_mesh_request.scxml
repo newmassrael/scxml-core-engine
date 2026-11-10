@@ -40,7 +40,8 @@
     refused   1 — no router was registered, or the router has no binding for the
                   peer: error.execution (W3C SCXML 6.4.1).
 
-  Generated with NO host declaration (scripts/regen_host_processor.sh).
+  Generated with NO host declaration (the generation of each channel names
+  none).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static"

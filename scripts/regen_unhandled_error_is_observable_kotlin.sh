@@ -7,9 +7,9 @@
 # from the canonical fixture at
 # integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml.
 #
-# Mirrors scripts/regen_unhandled_error_is_observable.sh (Rust). Only `*Sm.kt`
-# is copied back, so the hand-authored driver under `src/test/kotlin/` is never
-# touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*Sm.kt` is copied back, so
+# the hand-authored driver under `src/test/kotlin/` is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_unhandled_error_is_observable_kotlin.sh

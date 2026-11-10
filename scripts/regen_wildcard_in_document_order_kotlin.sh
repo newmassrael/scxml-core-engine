@@ -6,12 +6,13 @@
 # from the canonical fixture at
 # integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml.
 #
-# Mirrors scripts/regen_wildcard_in_document_order.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. integration_resources/wildcard_in_document_order/
-# stays a parent-only canonical surface; synth-invoke children are
-# derived and live only in $TMP.
+# stays a parent-only canonical surface; synth-invoke children are derived
+# and live only in $TMP.
 #
 # The generated tree lives under `com/sce/integration/` instead of
 # `com/sce/generated/` so the W3C IRP and integration package roots

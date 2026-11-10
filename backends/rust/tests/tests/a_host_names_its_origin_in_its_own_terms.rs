@@ -10,7 +10,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_host_names_its_origin_in_its_own_terms.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::{Arc, Mutex};
 

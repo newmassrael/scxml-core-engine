@@ -5,10 +5,11 @@
 # Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_region_root_external_domain/
 # from tests/integration/parallel_region_root_external_domain.scxml.
 #
-# The Kotlin half of the transition-domain witness. The Rust half is
-# `scripts/regen_parallel_region_root_external_domain.sh`, the Go half
-# `..._go.sh`, the Python half `..._python.sh`, and the two C++ drivers plus the
-# C11 one build from the same document through CMake.
+# The Kotlin half of the transition-domain witness. The Rust half is generated
+# from `tools/codegen/trees/rust-integration.toml`, the Go half
+# `scripts/regen_parallel_region_root_external_domain_go.sh`, the Python half
+# `..._python.sh`, and the two C++ drivers plus the C11 one build from the same
+# document through CMake.
 #
 # This channel is the LAST of the six to get a witness, and it is the one that
 # needed no repair to pass: Kotlin was already the only engine filtering

@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_may_send_many_events_in_one_tick.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::a_child_may_send_many_events_in_one_tick::{
     AChildMaySendManyEventsInOneTickEvent as Event,

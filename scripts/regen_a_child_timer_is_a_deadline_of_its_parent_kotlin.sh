@@ -6,10 +6,11 @@
 # backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_timer_is_a_deadline_of_its_parent/
 # from tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml.
 #
-# Mirrors scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh (Rust),
-# which says why the document is not under `integration_resources/`. The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), which says why the document
+# is not under `integration_resources/`. The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the canonical
+# fixture root during the codegen run.
 #
 # Usage (from repo root):
 #   scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh

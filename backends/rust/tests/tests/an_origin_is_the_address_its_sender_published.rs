@@ -9,7 +9,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_origin_is_the_address_its_sender_published.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

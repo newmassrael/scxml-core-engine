@@ -6,8 +6,9 @@
 # empty_finalize_updates_the_location/ from the canonical fixture at
 # integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml.
 #
-# Mirrors scripts/regen_empty_finalize_updates_the_location.sh (Rust), with
-# the Kotlin package-prefix flip the other integration stems use.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), with the Kotlin package-prefix
+# flip the other integration stems use.
 #
 # Usage (from repo root):
 #   scripts/regen_empty_finalize_updates_the_location_kotlin.sh

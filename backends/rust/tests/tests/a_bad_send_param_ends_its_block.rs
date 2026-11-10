@@ -12,7 +12,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_bad_send_param_ends_its_block.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::a_bad_send_param_ends_its_block::{
     ABadSendParamEndsItsBlockEvent as Event, ABadSendParamEndsItsBlockPolicy as Policy,

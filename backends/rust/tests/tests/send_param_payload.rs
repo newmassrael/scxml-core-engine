@@ -22,7 +22,7 @@
 // (canonical, shared with the Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_send_param_payload.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

@@ -17,10 +17,10 @@
 //
 // Fixture: tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml.
 // It is outside `integration_resources/` for the reason
-// `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh` states.
+// `tools/codegen/trees/rust-integration.toml` states.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_runtime::{Engine, SceClock, StatePolicy};
 use sce_rust_tests::integration::a_child_timer_is_a_deadline_of_its_parent::{

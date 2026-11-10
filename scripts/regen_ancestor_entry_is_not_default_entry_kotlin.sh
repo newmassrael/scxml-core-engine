@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml.
 #
-# Mirrors scripts/regen_ancestor_entry_is_not_default_entry.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # The generated tree lives under `com/sce/integration/` instead of
 # `com/sce/generated/` so the W3C IRP and integration package roots stay

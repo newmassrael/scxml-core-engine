@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_event_keeps_the_name_it_was_sent_under.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

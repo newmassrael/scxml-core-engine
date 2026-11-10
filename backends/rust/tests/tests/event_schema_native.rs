@@ -7,7 +7,7 @@
 //
 // The committed SM under `src/integration/event_schema_native/` is
 // generated from `sce-build/tests/fixtures/event_schema/statechart_minimal.scxml`
-// (regen: `scripts/regen_event_schema_native.sh`). Because this file is
+// (regen: `scripts/materialize.sh rust-integration`). Because this file is
 // part of the crate, it is REALLY type-checked — unlike the
 // `forge_codegen_event_schema_smoke.rs` gate, which uses `syn::parse_file`
 // (syntax only) and therefore cannot catch a Rust semantic error such as

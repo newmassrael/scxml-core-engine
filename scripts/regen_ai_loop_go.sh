@@ -5,11 +5,12 @@
 # Regenerate backends/go/tests/integration/ai_loop/ from the worked example at
 # examples/ai_loop/ai_loop.scxml.
 #
-# The Go half of what `scripts/regen_ai_loop.sh` does for Rust, and it exists
-# for the reason that script's header names: a clause asserted in one channel
-# is that engine's word for the document rather than the document's own. Two
-# channels made the claim "two engines, one document"; a third makes it a claim
-# about the document. `sce-build/tests/ai_loop_channel_parity.rs` is what holds
+# The Go half of the Rust generation of the same example
+# (tools/codegen/trees/rust-integration.toml), and it exists because a clause
+# asserted in one channel is that engine's word for the document rather than
+# the document's own. Two channels made the claim "two engines, one document";
+# a third makes it a claim about the document.
+# `sce-build/tests/ai_loop_channel_parity.rs` is what holds
 # every registered channel to the same scenario set, and this script is how the
 # Go one gets a machine to assert against.
 #
@@ -46,7 +47,7 @@ trap 'rm -rf "$TMP"' EXIT
 cp "$FIXTURE" "$TMP/$STEM.scxml"
 
 # W3C SCXML 6.2.5: the document declares its acts as sends the HOST serves. The
-# same declaration is spelled in `scripts/regen_ai_loop.sh`,
+# same declaration is spelled in `tools/codegen/trees/rust-integration.toml`,
 # `examples/ai_loop/CMakeLists.txt` and `tests/CMakeLists.txt`; without it here
 # codegen emits the refusal and every act in the Go channel raises
 # `error.execution` instead of reaching a host.
@@ -58,11 +59,12 @@ cp "$FIXTURE" "$TMP/$STEM.scxml"
     --host-processor x-sce-host
 
 # The document carries no `<invoke>` today, so this loop runs zero times. It is
-# here rather than left out because `scripts/regen_ai_loop.sh` handles the same
-# case on the Rust side: an example that grows an inline `<invoke><content>`
-# child would otherwise leave this channel generating a parent that references
-# types no file in the package defines, and the two channels would disagree
-# about the document at the next edit rather than at this one.
+# here rather than left out because the Rust generation handles the same case
+# (`--children` in `tools/codegen/trees/rust-integration.toml`): an example
+# that grows an inline `<invoke><content>` child would otherwise leave this
+# channel generating a parent that references types no file in the package
+# defines, and the two channels would disagree about the document at the next
+# edit rather than at this one.
 for child in "$TMP"/"${STEM}"__sce_synth_invoke__*.scxml; do
     [[ -f "$child" ]] || continue
     "$CODEGEN" generate "$child" \

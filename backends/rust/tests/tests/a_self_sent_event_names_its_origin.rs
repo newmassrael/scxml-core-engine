@@ -8,7 +8,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_self_sent_event_names_its_origin.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_runtime::SceClock;
 use sce_rust_tests::integration::a_self_sent_event_names_its_origin::{

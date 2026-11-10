@@ -26,7 +26,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_undecodable_payload_is_reported.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::Arc;
 

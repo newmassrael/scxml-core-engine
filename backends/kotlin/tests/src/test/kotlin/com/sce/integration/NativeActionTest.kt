@@ -6,9 +6,9 @@
 //
 // The committed machine is generated from
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`
-// (regen: `scripts/regen_native_action.sh`), the same document the Rust, Go,
-// Python, C++ and C11 channels drive. Because the tree is part of this module
-// it is REALLY compiled: the generated class takes a
+// (regen: `scripts/regen_native_action_kotlin.sh`), the same document the
+// Rust, Go, Python, C++ and C11 channels drive. Because the tree is part of
+// this module it is REALLY compiled: the generated class takes a
 // `StatechartNativeActionActions` implementation as its first constructor
 // parameter and carries no script engine at all, so this gate proves the
 // engine-free dispatch surface compiles AND that the effects actually fire.

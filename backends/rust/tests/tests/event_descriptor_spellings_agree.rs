@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_descriptor_spellings_agree.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

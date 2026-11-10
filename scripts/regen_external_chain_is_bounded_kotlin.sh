@@ -6,10 +6,11 @@
 # backends/kotlin/tests/src/main/kotlin/com/sce/integration/external_chain_is_bounded/
 # from tests/integration/external_chain_is_bounded.scxml.
 #
-# Mirrors scripts/regen_external_chain_is_bounded.sh (Rust), which says why the
-# document is not under `integration_resources/`. `--kotlin-package-prefix`
-# flips the emitted `package` header off `com.sce.generated.<stem>` so the driver
-# beside it can import the machine.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), which says why the document is
+# not under `integration_resources/`. `--kotlin-package-prefix` flips the
+# emitted `package` header off `com.sce.generated.<stem>` so the driver beside
+# it can import the machine.
 #
 # Usage (from repo root):
 #   scripts/regen_external_chain_is_bounded_kotlin.sh

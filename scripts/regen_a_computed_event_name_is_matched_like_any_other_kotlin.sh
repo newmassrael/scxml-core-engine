@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_other.scxml.
 #
-# Mirrors scripts/regen_a_computed_event_name_is_matched_like_any_other.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the canonical
+# fixture root during the codegen run.
 # integration_resources/a_computed_event_name_is_matched_like_any_other/ stays a
 # parent-only canonical surface; synth-invoke children are derived and live only
 # in $TMP.

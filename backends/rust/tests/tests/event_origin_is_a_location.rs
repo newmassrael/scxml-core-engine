@@ -27,7 +27,7 @@
 // (canonical, shared with the C++ / Go / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_origin_is_a_location.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

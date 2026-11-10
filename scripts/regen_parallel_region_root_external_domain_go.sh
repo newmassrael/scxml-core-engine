@@ -5,9 +5,9 @@
 # Regenerate backends/go/tests/integration/parallel_region_root_external_domain/
 # from tests/integration/parallel_region_root_external_domain.scxml.
 #
-# The Go half of the transition-domain witness; the Rust half is
-# `scripts/regen_parallel_region_root_external_domain.sh` and the two C++
-# drivers build from the same document through CMake.
+# The Go half of the transition-domain witness; the Rust half is generated
+# from `tools/codegen/trees/rust-integration.toml` and the two C++ drivers
+# build from the same document through CMake.
 #
 # The source is NOT under `integration_resources/`, and that is deliberate.
 # A stem there is a seven-channel contract that `integration_stem_registration.rs`

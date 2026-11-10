@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml.
 #
-# Mirrors scripts/regen_invoke_param_error_starts_the_child.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so the hand-authored `*_test.go` is untouched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run. Only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` is untouched.
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_param_error_starts_the_child_go.sh

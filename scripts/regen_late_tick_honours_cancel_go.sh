@@ -7,8 +7,9 @@
 # canonical fixture at
 # integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml.
 #
-# Mirrors scripts/regen_late_tick_honours_cancel.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. Only `*_sm.go` is copied back, so the
 # hand-authored `late_tick_honours_cancel_test.go` next to the generated

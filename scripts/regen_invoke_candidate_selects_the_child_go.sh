@@ -6,10 +6,10 @@
 # from the canonical fixture at
 # integration_resources/invoke_candidate_selects_the_child/invoke_candidate_selects_the_child.scxml.
 #
-# Mirrors scripts/regen_invoke_candidate_selects_the_child.sh (Rust). The
-# children are the declared candidates — real machines — and `--parent-stem`
-# puts them in the parent's package, which Go requires: one package per
-# directory.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The children are the declared
+# candidates — real machines — and `--parent-stem` puts them in the parent's
+# package, which Go requires: one package per directory.
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_candidate_selects_the_child_go.sh

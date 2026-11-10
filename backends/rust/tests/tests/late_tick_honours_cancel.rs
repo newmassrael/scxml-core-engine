@@ -20,7 +20,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_late_tick_honours_cancel.sh
+//   scripts/materialize.sh rust-integration
 
 use std::cell::Cell;
 use std::time::{Duration, Instant};

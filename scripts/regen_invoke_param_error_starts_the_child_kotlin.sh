@@ -6,8 +6,9 @@
 # invoke_param_error_starts_the_child/ from the canonical fixture at
 # integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml.
 #
-# Mirrors scripts/regen_invoke_param_error_starts_the_child.sh (Rust), with
-# the Kotlin package-prefix flip the other integration stems use.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), with the Kotlin package-prefix
+# flip the other integration stems use.
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_param_error_starts_the_child_kotlin.sh

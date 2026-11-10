@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_bad_send_argument_discards_its_message/a_bad_send_argument_discards_its_message.scxml.
 #
-# Mirrors scripts/regen_a_bad_send_argument_discards_its_message.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under

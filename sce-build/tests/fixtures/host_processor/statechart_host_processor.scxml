@@ -36,7 +36,7 @@
   the `<send>` executes, not when a delayed one fires.
 
   The generated machine is compiled with the host-processor declaration
-  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  `x-sce-host` (the generation of each channel names the flag; an XML
   comment cannot spell a double hyphen). Driven with a handler registered
   it must reach `served`; driven with none it must reach `refused` — the
   same binary, so the pair measures the registration and not the build.

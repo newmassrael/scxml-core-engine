@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml.
 #
-# Mirrors scripts/regen_a_delayed_http_send_is_posted_when_due.sh (Rust). As with
-# the other Python integration regens, the generated tree is `.gitignored` and
-# CI runs this script before pytest.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). As with the other Python
+# integration regens, the generated tree is `.gitignored` and CI runs this
+# script before pytest.
 #
 # Usage (from repo root):
 #   scripts/regen_a_delayed_http_send_is_posted_when_due_python.sh

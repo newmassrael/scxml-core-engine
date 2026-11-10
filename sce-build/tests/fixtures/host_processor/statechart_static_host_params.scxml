@@ -73,9 +73,8 @@
   the wire.
 
   Generated with BOTH host declarations, processor and invoker, naming the type
-  x-sce-host (scripts/regen_host_processor.sh and
-  scripts/regen_host_processor_kotlin.sh name the flags; an XML comment cannot
-  spell a double hyphen).
+  x-sce-host (the generation of each channel names the flags; an XML comment
+  cannot spell a double hyphen).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static"

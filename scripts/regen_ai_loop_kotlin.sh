@@ -5,10 +5,11 @@
 # Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/ai_loop/
 # from the worked example at examples/ai_loop/ai_loop.scxml.
 #
-# The Kotlin half of what `scripts/regen_ai_loop.sh` (Rust) and
-# `scripts/regen_ai_loop_go.sh` (Go) do, and it exists for the reason those
-# headers name: a clause asserted in one channel is that engine's word for the
-# document rather than the document's own.
+# The Kotlin half of what the Rust generation of the same example
+# (tools/codegen/trees/rust-integration.toml) and `scripts/regen_ai_loop_go.sh`
+# (Go) do, and it exists for the reason the Go header names: a clause asserted
+# in one channel is that engine's word for the document rather than the
+# document's own.
 # `sce-build/tests/ai_loop_channel_parity.rs` holds every registered channel to
 # the same scenario set, and this script is how the Kotlin one gets a machine to
 # assert against.
@@ -42,7 +43,7 @@ PACKAGE_PREFIX="com.sce.integration"
 # Kept in one place here and asserted from the driver, so the string the build
 # was given and the string the host registers cannot drift into two. W3C SCXML
 # 6.2.5: the document declares its acts as sends the HOST serves, and the same
-# declaration is spelled in `scripts/regen_ai_loop.sh`,
+# declaration is spelled in `tools/codegen/trees/rust-integration.toml`,
 # `scripts/regen_ai_loop_go.sh`, `examples/ai_loop/CMakeLists.txt` and
 # `tests/CMakeLists.txt`. Without it codegen emits the refusal and every act in
 # this channel raises `error.execution` instead of reaching a host.

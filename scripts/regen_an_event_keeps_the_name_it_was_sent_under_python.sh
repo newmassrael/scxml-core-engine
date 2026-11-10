@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under.scxml.
 #
-# Mirrors scripts/regen_an_event_keeps_the_name_it_was_sent_under.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under

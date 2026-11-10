@@ -12,7 +12,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_late_data_binds_on_first_entry.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::late_data_binds_on_first_entry::{
     LateDataBindsOnFirstEntryEvent as Event, LateDataBindsOnFirstEntryPolicy as Policy,

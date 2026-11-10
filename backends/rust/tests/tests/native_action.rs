@@ -6,11 +6,12 @@
 //
 // The committed SM under `src/integration/native_action/` is generated from
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`
-// (regen: `scripts/regen_native_action.sh`). Because the tree is part of the
-// crate it is REALLY type-checked: the generated `Policy` is generic over a
-// host `Actions` impl and carries NO `IScriptEngine`, so this gate proves the
-// engine-free dispatch surface compiles AND that the side effects actually
-// fire — the runtime behaviour the form/byte-golden layers cannot give.
+// (regen: `scripts/materialize.sh rust-integration`). Because the tree is part
+// of the crate it is REALLY type-checked: the generated `Policy` is generic
+// over a host `Actions` impl and carries NO `IScriptEngine`, so this gate
+// proves the engine-free dispatch surface compiles AND that the side effects
+// actually fire — the runtime behaviour the form/byte-golden layers cannot
+// give.
 //
 // `append_fragment_payload` reads two typed `_event.data` fields (a `bytes`
 // payload lowered to `&[u8]`, a `uint32` offset lowered to `u32`) bound from

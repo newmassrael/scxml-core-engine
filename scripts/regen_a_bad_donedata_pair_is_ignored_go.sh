@@ -6,11 +6,12 @@
 # from the canonical fixture at
 # integration_resources/a_bad_donedata_pair_is_ignored/a_bad_donedata_pair_is_ignored.scxml.
 #
-# Mirrors scripts/regen_a_bad_donedata_pair_is_ignored.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so any hand-authored `*_test.go` next to the
-# generated files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run. Only `*_sm.go` is copied
+# back, so any hand-authored `*_test.go` next to the generated files is
+# never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_bad_donedata_pair_is_ignored_go.sh

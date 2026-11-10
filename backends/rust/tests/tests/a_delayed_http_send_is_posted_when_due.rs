@@ -9,7 +9,7 @@
 // (canonical, shared with the C++ AOT / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_delayed_http_send_is_posted_when_due.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::{Arc, Mutex};
 

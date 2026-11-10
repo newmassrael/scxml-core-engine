@@ -33,7 +33,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_precedes_dequeue_midrun.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

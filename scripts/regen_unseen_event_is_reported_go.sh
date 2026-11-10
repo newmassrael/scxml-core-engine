@@ -6,11 +6,12 @@
 # from the canonical fixture at
 # integration_resources/unseen_event_is_reported/unseen_event_is_reported.scxml.
 #
-# Mirrors scripts/regen_unseen_event_is_reported.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of
-# the canonical fixture root during the codegen run. Only `*_sm.go` is copied
-# back, so the hand-authored `unseen_event_is_reported_test.go` next to the
-# generated files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps
+# SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the canonical
+# fixture root during the codegen run. Only `*_sm.go` is copied back, so the
+# hand-authored `unseen_event_is_reported_test.go` next to the generated files
+# is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_unseen_event_is_reported_go.sh

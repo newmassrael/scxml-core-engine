@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_send_content_expr_is_the_payload/a_send_content_expr_is_the_payload.scxml.
 #
-# Mirrors scripts/regen_a_send_content_expr_is_the_payload.sh (Rust). As with
-# the other Python integration regens, the generated tree is `.gitignored` and
-# CI runs this script before pytest.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). As with the other Python
+# integration regens, the generated tree is `.gitignored` and CI runs this
+# script before pytest.
 #
 # Usage (from repo root):
 #   scripts/regen_a_send_content_expr_is_the_payload_python.sh

@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_event_fields.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

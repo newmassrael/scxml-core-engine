@@ -6,8 +6,9 @@
 # from the canonical fixture at
 # integration_resources/error_cascade_is_bounded/error_cascade_is_bounded.scxml.
 #
-# Mirrors scripts/regen_error_cascade_is_bounded.sh (Rust). Only `*_sm.go` is
-# copied back, so the hand-authored `*_test.go` next to it is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` next to it is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_error_cascade_is_bounded_go.sh

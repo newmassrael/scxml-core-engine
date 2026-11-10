@@ -28,7 +28,7 @@
 // (canonical, shared with the Rust channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_processor.sh
+//   scripts/regen_host_processor_go.sh
 
 package statechart_host_invoker
 
@@ -43,7 +43,7 @@ import (
 	scegotest "github.com/newmassrael/sce-go-tests/harness"
 )
 
-// The type the fixture was compiled for. `scripts/regen_host_processor.sh`
+// The type the fixture was compiled for. `scripts/regen_host_processor_go.sh`
 // passes this same string to `--host-invoker`; a test registering a different
 // one would measure nothing and pass, so the `refused` counter is asserted
 // rather than the registration trusted.

@@ -6,11 +6,12 @@
 # from the canonical fixture at
 # integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml.
 #
-# Mirrors scripts/regen_invoke_expression_failure_is_reported.sh (Rust),
-# including its child pass: the fixture's `<invoke>` names its target
-# through an expression, so codegen writes an immediate-`<final>` stub
-# beside the parent (docs/SCE_ACCEPTED_SUBSET.md §2.13) and the parent
-# instantiates that stub by name.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml), including its child pass: the
+# fixture's `<invoke>` names its target through an expression, so codegen
+# writes an immediate-`<final>` stub beside the parent
+# (docs/SCE_ACCEPTED_SUBSET.md §2.13) and the parent instantiates that stub
+# by name.
 #
 # Idempotency: re-runs are byte-stable for unchanged inputs and generator.
 #

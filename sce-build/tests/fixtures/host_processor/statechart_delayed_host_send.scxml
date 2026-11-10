@@ -47,7 +47,7 @@
   this one owns only when that dispatch happens.
 
   The generated machine is compiled with the host-processor declaration
-  `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
+  `x-sce-host` (the generation of each channel names the flag; an XML
   comment cannot spell a double hyphen). The handler each channel registers
   answers `turn.done` and counts its calls, so a channel also asserts that
   the cancelled send never reached the host at all.

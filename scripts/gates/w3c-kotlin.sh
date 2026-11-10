@@ -385,9 +385,10 @@ kotlin_tree_for_language() {
         # directory is one the fan-out did not drive.
         #
         # ⚠⚠ And the producers are found by WHAT THEY WRITE, not by what they
-        # are called. Measured 2026-08-30: `regen_native_action.sh` emits the
-        # Rust, Go AND Kotlin trees from one script, so a glob over
-        # `regen_*_kotlin.sh` misses `com/sce/integration/statechart_native_action`
+        # are called. Measured 2026-08-30: the per-document script that then
+        # regenerated `native_action` emitted the Rust, Go AND Kotlin trees from
+        # one script, so a glob over `regen_*_kotlin.sh` missed
+        # `com/sce/integration/statechart_native_action`
         # — which would leave exactly one directory in the committed language
         # and hang this suite for the same reason the whole block exists.
         local kt_root="$tree/backends/kotlin/tests/src/main/kotlin"

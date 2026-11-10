@@ -866,9 +866,9 @@ sce_add_state_machine(
 # The typed `<param>` of a host-served `<send>` and `<invoke>`: the one fixture
 # that needs BOTH host declarations, because it sends to the host and invokes it.
 # The same document the Rust, Go and Kotlin channels drive, compiled here with the
-# declarations `scripts/regen_host_processor.sh` passes there — codegen decides at
-# compile time whether a host-typed element dispatches or refuses, so the flags
-# are spelled here and not only in the test.
+# declarations `tools/codegen/trees/rust-integration.toml` passes there — codegen
+# decides at compile time whether a host-typed element dispatches or refuses, so
+# the flags are spelled here and not only in the test.
 sce_add_state_machine(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
@@ -877,7 +877,7 @@ sce_add_state_machine(
 )
 # The host-run invocation a saved state holds and a restore starts again
 # (docs/adr/0045); generated with the invoker declaration
-# `scripts/regen_host_processor.sh` passes.
+# `tools/codegen/trees/rust-integration.toml` passes.
 sce_add_state_machine(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
@@ -891,8 +891,8 @@ sce_add_state_machine(
 )
 # A host-run `<invoke>` whose `sce:result` record holds values that may be absent
 # (docs/adr/0055, step 10): the host answers through the generated typed
-# interface, with the invoker declaration `scripts/regen_host_processor.sh`
-# passes.
+# interface, with the invoker declaration
+# `tools/codegen/trees/rust-integration.toml` passes.
 sce_add_state_machine(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
@@ -2617,7 +2617,7 @@ sce_generate_static_integration_test(late_tick_honours_cancel ${STATIC_INTEGRATI
 # that invoked it, because the parent is what ticks its children — so the answer
 # to "when do I next need a tick?" has to count the child's timers. The fixture
 # sits beside its AOT driver rather than under `integration_resources/` for the
-# reason `scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh` states:
+# reason `tools/codegen/trees/rust-integration.toml` states:
 # C11 and the C++ Interpreter expose no such query, so a stem there would
 # commit to channels with nothing to assert. It has an inline `<invoke>`, so it
 # is generated through this function (which declares the child's files) rather
@@ -2630,7 +2630,7 @@ sce_generate_static_integration_test(a_child_timer_is_a_deadline_of_its_parent $
 # never applies: the host call that drained it did not return. The fixture holds
 # every engine to one budget on external events (ARCHITECTURE.md "External-Event
 # Budget"). It sits beside its drivers rather than under `integration_resources/`
-# for the reason `scripts/regen_external_chain_is_bounded.sh` states.
+# for the reason `tools/codegen/trees/rust-integration.toml` states.
 sce_generate_static_integration_test(external_chain_is_bounded ${STATIC_INTEGRATION_OUTPUT_DIR}
     SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/external_chain_is_bounded.scxml)
 
@@ -2979,8 +2979,8 @@ sce_add_state_machine(
 )
 
 # §scxml-6.2.5: the host-served Event I/O Processor, compiled for C++ with the
-# same declaration `scripts/regen_host_processor.sh` passes for Rust. The
-# fixture lives beside the build tests rather than under
+# same declaration `tools/codegen/trees/rust-integration.toml` passes for Rust.
+# The fixture lives beside the build tests rather than under
 # `integration_resources/` for the reason `ai_loop` does: a stem there is a
 # seven-channel commitment (19 sites, enforced by
 # `integration_stem_registration.rs`), and five of those backends have no
@@ -3060,7 +3060,9 @@ sce_add_state_machine(
 
 # §scxml-G-7: `<sce:action>` native host dispatch, compiled for C++ from the
 # same document the Rust, Go, Kotlin, Python and C11 channels drive
-# (`scripts/regen_native_action.sh` commits the three that keep a tree).
+# (`tools/codegen/trees/rust-integration.toml`,
+# `scripts/regen_native_action_go.sh` and `scripts/regen_native_action_kotlin.sh`
+# commit the three that keep a tree).
 #
 # No declaration flag here, unlike the three above, and that is the difference
 # between the two seams rather than an omission: a host-served `<send type>` is

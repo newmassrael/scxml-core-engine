@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/event_descriptor_spellings_agree/event_descriptor_spellings_agree.scxml.
 #
-# Mirrors scripts/regen_event_descriptor_spellings_agree.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
-# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
-# during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root during
+# the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated
 # tree is `.gitignored` (mirroring the W3C IRP Python pattern under

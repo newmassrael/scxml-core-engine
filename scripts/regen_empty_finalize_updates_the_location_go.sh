@@ -6,8 +6,9 @@
 # from the canonical fixture at
 # integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml.
 #
-# Mirrors scripts/regen_empty_finalize_updates_the_location.sh (Rust). Only
-# `*_sm.go` is copied back, so the hand-authored `*_test.go` is untouched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` is untouched.
 #
 # Usage (from repo root):
 #   scripts/regen_empty_finalize_updates_the_location_go.sh

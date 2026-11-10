@@ -32,8 +32,8 @@
   the rule at work.
 
   Generated with the processor declaration naming the type x-sce-host
-  (scripts/regen_host_processor.sh and scripts/regen_host_processor_kotlin.sh
-  name the flag; an XML comment cannot spell a double hyphen).
+  (the generation of each channel names the flag; an XML comment cannot spell
+  a double hyphen).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static"

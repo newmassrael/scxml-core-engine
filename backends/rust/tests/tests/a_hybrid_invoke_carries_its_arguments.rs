@@ -12,7 +12,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_hybrid_invoke_carries_its_arguments.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

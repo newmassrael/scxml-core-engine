@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml.
 #
-# Mirrors scripts/regen_an_error_ends_the_block_it_was_raised_in.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under

@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml.
 #
-# Mirrors scripts/regen_parallel_completion_raises_done_state.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # The generated tree lives under `com/sce/integration/` instead of
 # `com/sce/generated/` so the W3C IRP and integration package roots stay

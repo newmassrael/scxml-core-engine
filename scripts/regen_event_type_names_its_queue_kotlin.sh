@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/event_type_names_its_queue/event_type_names_its_queue.scxml.
 #
-# Mirrors scripts/regen_event_type_names_its_queue.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # The generated tree lives under `com/sce/integration/` instead of
 # `com/sce/generated/` so the W3C IRP and integration package roots stay

@@ -6,9 +6,9 @@
 # send_namelist_over_http_sm.go from the canonical fixture at
 # integration_resources/send_namelist_over_http/send_namelist_over_http.scxml.
 #
-# Mirrors scripts/regen_send_namelist_over_http.sh (Rust). Only `*_sm.go`
-# is copied back, so a hand-authored `*_test.go` next to the generated
-# files is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.go` is copied back,
+# so a hand-authored `*_test.go` next to the generated files is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_send_namelist_over_http_go.sh

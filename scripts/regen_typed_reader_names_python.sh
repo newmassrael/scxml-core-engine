@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/typed_reader_names/typed_reader_names.scxml.
 #
-# Mirrors scripts/regen_typed_reader_names.sh (Rust). Only `*_sm.py`
-# is copied back, so the hand-authored
-# `test_typed_reader_names_aot.py` next to it is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.py` is copied back,
+# so the hand-authored `test_typed_reader_names_aot.py` next to it is never
+# touched.
 #
 # Usage (from repo root):
 #   scripts/regen_typed_reader_names_python.sh

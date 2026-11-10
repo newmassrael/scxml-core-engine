@@ -6,8 +6,9 @@
 # from the canonical fixture at
 # integration_resources/donedata_late_completion/donedata_late_completion.scxml.
 #
-# Mirrors scripts/regen_donedata_late_completion.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. integration_resources/donedata_late_completion/
 # stays a parent-only canonical surface; synth-invoke children are

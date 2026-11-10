@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_delay_is_a_css2_time/a_delay_is_a_css2_time.scxml.
 #
-# Mirrors scripts/regen_a_delay_is_a_css2_time.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
+# canonical fixture root during the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under

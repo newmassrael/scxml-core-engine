@@ -14,9 +14,9 @@
 //
 // The committed SM under `src/integration/host_processor/` is generated
 // from `sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml`
-// WITH the declaration (regen: `scripts/regen_host_processor.sh`). One
-// binary, driven three ways, so what these measure is the registration and
-// not the build.
+// WITH the declaration (regen: `scripts/materialize.sh rust-integration`).
+// One binary, driven three ways, so what these measure is the registration
+// and not the build.
 //
 // What this gate does NOT claim, because SCE does not route it: parent-to-
 // child `<send target="#_invokeid">`, `autoforward`, and `<finalize>`.
@@ -33,8 +33,9 @@ use sce_rust_tests::integration::host_processor::{
     StatechartHostInvokerPolicy as Policy, StatechartHostInvokerXSceHostInvoker as XSceHostInvoker,
 };
 
-/// The type the fixture was compiled for; `scripts/regen_host_processor.sh`
-/// passes the same string to the invoker flag.
+/// The type the fixture was compiled for;
+/// `tools/codegen/trees/rust-integration.toml` passes the same string to the
+/// invoker flag.
 const DECLARED_TYPE: &str = "x-sce-host";
 
 fn started() -> (Engine<Policy>, Arc<dyn IScriptEngine>) {

@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_onexit_runs_before_the_state_leaves.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::onexit_runs_before_the_state_leaves::{
     OnexitRunsBeforeTheStateLeavesEvent as Event, OnexitRunsBeforeTheStateLeavesPolicy as Policy,

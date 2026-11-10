@@ -6,10 +6,11 @@
 # from the canonical fixture at
 # integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml.
 #
-# Mirrors scripts/regen_autoforward_done_invoke.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
-# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
-# during the codegen run.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root during
+# the codegen run.
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated
 # tree is `.gitignored` (mirroring the W3C IRP Python pattern under

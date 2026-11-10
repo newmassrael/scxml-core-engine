@@ -12,7 +12,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_event_no_processor_delivered_has_no_origin.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_runtime::{HostSendRequest, HostSendResponse};
 use sce_rust_tests::integration::an_event_no_processor_delivered_has_no_origin::{

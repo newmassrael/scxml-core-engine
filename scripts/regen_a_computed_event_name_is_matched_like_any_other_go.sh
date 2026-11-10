@@ -7,12 +7,12 @@
 # canonical fixture at
 # integration_resources/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_other.scxml.
 #
-# Mirrors scripts/regen_a_computed_event_name_is_matched_like_any_other.sh (Rust). The
-# TMP-staging pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke
-# children out of the canonical fixture root during the codegen run. Only
-# `*_sm.go` is copied back, so the hand-authored
-# `a_computed_event_name_is_matched_like_any_other_test.go` next to the generated files
-# is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern keeps SCE
+# Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the canonical
+# fixture root during the codegen run. Only `*_sm.go` is copied back, so the
+# hand-authored `a_computed_event_name_is_matched_like_any_other_test.go` next
+# to the generated files is never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_computed_event_name_is_matched_like_any_other_go.sh

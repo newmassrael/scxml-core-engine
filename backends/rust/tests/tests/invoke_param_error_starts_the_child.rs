@@ -20,7 +20,7 @@
 // (canonical, shared with the other channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_param_error_starts_the_child.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

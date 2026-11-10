@@ -17,7 +17,8 @@
 //
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 // (shared with the Rust, Go and Kotlin channels; `tests/CMakeLists.txt` compiles it
-// here with the same two declarations `scripts/regen_host_processor.sh` passes).
+// here with the same two declarations `tools/codegen/trees/rust-integration.toml`
+// passes).
 
 #include "statechart_static_host_params_sm.h"
 

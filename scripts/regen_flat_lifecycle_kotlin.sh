@@ -6,7 +6,8 @@
 # from the canonical fixture at
 # integration_resources/flat_lifecycle/flat_lifecycle.scxml.
 #
-# Mirrors scripts/regen_flat_lifecycle.sh (Rust). The document declares its
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The document declares its
 # transition function (`sce:transition-function="emit"`,
 # docs/SCE_TRANSITION_FUNCTION.md), so generation writes the machine,
 # `flat_lifecycleSm.kt`, and the function, `flat_lifecycleTransitionFunction.kt`,

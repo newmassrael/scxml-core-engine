@@ -23,7 +23,7 @@
 // (canonical, shared with the other channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_empty_finalize_updates_the_location.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

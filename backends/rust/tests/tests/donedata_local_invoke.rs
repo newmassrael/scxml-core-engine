@@ -15,7 +15,7 @@
 // Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_donedata_local_invoke.sh
+//   scripts/materialize.sh rust-integration
 //
 // The script wraps the mktemp + per-child --as-child workflow so the
 // synth-invoke side files (Mesh §9.6.6 rule 1 pins them adjacent to the

@@ -6,8 +6,8 @@
 # canonical W3C SCXML G.7 `<sce:action>` fixture at
 # sce-build/tests/fixtures/event_schema/statechart_native_action.scxml.
 #
-# The Go tree of the fixture `regen_native_action.sh` regenerates for Rust (that
-# script says why the document has one script per backend). Named for the
+# The Go tree of the fixture whose Rust tree
+# `tools/codegen/trees/rust-integration.toml` declares. Named for the
 # document's own stem rather than for the axis, unlike the Rust tree: a Go
 # package name comes from the emitted file, so a directory named anything else
 # puts two package names in one directory and the module stops building.

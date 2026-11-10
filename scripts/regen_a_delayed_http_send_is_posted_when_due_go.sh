@@ -6,9 +6,10 @@
 # from the canonical fixture at
 # integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml.
 #
-# Mirrors scripts/regen_a_delayed_http_send_is_posted_when_due.sh (Rust). Only
-# `*_sm.go` is copied back, so the hand-authored `*_test.go` next to the
-# generated file is never touched.
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). Only `*_sm.go` is copied
+# back, so the hand-authored `*_test.go` next to the generated file is
+# never touched.
 #
 # Usage (from repo root):
 #   scripts/regen_a_delayed_http_send_is_posted_when_due_go.sh

@@ -20,7 +20,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_regions_take_own_transitions.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::parallel_regions_take_own_transitions::{
     ParallelRegionsTakeOwnTransitionsEvent as Event,

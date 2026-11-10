@@ -9,7 +9,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_error_inside_a_foreach_ends_its_block.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::an_error_inside_a_foreach_ends_its_block::{
     AnErrorInsideAForeachEndsItsBlockEvent as Event,

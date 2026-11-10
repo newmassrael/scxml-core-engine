@@ -34,7 +34,7 @@
 //
 // Fixture: tests/integration/external_chain_is_bounded.scxml (outside
 // `integration_resources/` for the reason
-// `scripts/regen_external_chain_is_bounded.sh` states).
+// `tools/codegen/trees/rust-integration.toml` states).
 
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"

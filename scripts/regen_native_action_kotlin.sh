@@ -6,8 +6,8 @@
 # from the canonical W3C SCXML G.7 `<sce:action>` fixture at
 # sce-build/tests/fixtures/event_schema/statechart_native_action.scxml.
 #
-# The Kotlin tree of the fixture `regen_native_action.sh` regenerates for Rust
-# (that script says why the document has one script per backend). Its own
+# The Kotlin tree of the fixture whose Rust tree
+# `tools/codegen/trees/rust-integration.toml` declares. Its own
 # directory because a Kotlin package is a directory, the same constraint the Go
 # tree states in `regen_native_action_go.sh`.
 #

@@ -19,7 +19,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_nested_final_not_terminal.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

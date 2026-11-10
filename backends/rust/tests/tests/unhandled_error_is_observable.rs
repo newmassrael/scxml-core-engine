@@ -37,7 +37,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_unhandled_error_is_observable.sh
+//   scripts/materialize.sh rust-integration
 
 use std::sync::Arc;
 

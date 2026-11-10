@@ -31,8 +31,8 @@
 //
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
 // (shared with the Rust channel; `tests/CMakeLists.txt` compiles it here with
-// the same `--host-processor` declaration `scripts/regen_host_processor.sh`
-// passes there).
+// the same `--host-processor` declaration
+// `tools/codegen/trees/rust-integration.toml` passes there).
 
 #include "statechart_host_processor_sm.h"
 

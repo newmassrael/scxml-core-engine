@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_done_invoke.sh
+//   scripts/materialize.sh rust-integration
 
 use std::time::Duration;
 

@@ -6,8 +6,9 @@
 # from the canonical fixture at
 # integration_resources/session_ids_are_distinct/session_ids_are_distinct.scxml.
 #
-# Mirrors scripts/regen_session_ids_are_distinct.sh (Rust). The TMP-staging
-# pattern keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
+# Mirrors the Rust generation of the same fixture
+# (tools/codegen/trees/rust-integration.toml). The TMP-staging pattern
+# keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children
 # (sce-build/src/parser.rs:1804-1805) out of the canonical fixture root
 # during the codegen run. integration_resources/session_ids_are_distinct/
 # stays a parent-only canonical surface; synth-invoke children are

@@ -20,7 +20,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_data_arrives_as_sent.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::event_data_arrives_as_sent::{
     EventDataArrivesAsSentEvent as Event, EventDataArrivesAsSentPolicy as Policy,

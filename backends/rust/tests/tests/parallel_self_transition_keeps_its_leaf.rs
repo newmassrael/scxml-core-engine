@@ -22,7 +22,7 @@
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_self_transition_keeps_its_leaf.sh
+//   scripts/materialize.sh rust-integration
 
 use sce_rust_tests::integration::parallel_self_transition_keeps_its_leaf::{
     ParallelSelfTransitionKeepsItsLeafEvent as Event,
