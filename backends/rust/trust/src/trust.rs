@@ -189,9 +189,11 @@ struct State {
     /// device's operations froze its chain below them. For the host to rebuild its machine without
     /// them ([`Trust::take_evicted`]).
     evicted: Vec<(u64, u64)>,
-    /// Operations that were not told to the machine and are now: a conflict that held a device's
-    /// chain below it went away with the operations that made it (an entry of the log put them past
-    /// a cutoff). The machine is built again as for `evicted` ([`Trust::take_restored`]).
+    /// Operations that entered what the host holds of a device's chain at a number its machine was
+    /// told past: a conflict that held a device's chain below it went away with the operations that
+    /// made it (an entry of the log put them past a cutoff). The machine is built again as for
+    /// `evicted` ([`Trust::take_restored`]). One that enters past how far the machine was told is
+    /// told by the next delivery, and is no notice.
     restored: Vec<(u64, u64)>,
     /// The keys of the epochs this host holds. A host that holds any keeps the content of every
     /// write from the hub, and takes no write that is not sealed.
@@ -1074,8 +1076,17 @@ impl Trust {
     /// device's next operation held, and what the context of each device's next operation names
     /// that the host does not hold. What a host asks a relay for, so that an operation lost on its
     /// way is repaired and never skipped (docs/adr/0085, section 3).
+    ///
+    /// It is read from what the host holds, not from what its machine was told so far: the next
+    /// operation of a device is the one after everything the host holds that its machine may be
+    /// told, as a delivery now would tell it. A round tells its machine when it ends, after it asked
+    /// for what it lacks, so a gap read from what was told would be asked a round after the
+    /// operation past it came.
     pub fn lacking(&self) -> Vec<(u64, u64, u64)> {
         let state = self.state();
+        // What the machine would have been told were it told everything it may be now.
+        let mut vector = state.delivered.clone();
+        deliver_from(&state, &mut vector);
         let mut wanted: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
         let mut want = |node: u64, from: u64, to: u64| {
             if from <= to {
@@ -1085,7 +1096,7 @@ impl Trust {
             }
         };
         for (node, chain) in &state.ops {
-            let next = delivered_through(&state, *node) + 1;
+            let next = through_in(&vector, *node) + 1;
             if chain.frozen().is_some_and(|from| next >= from) {
                 continue;
             }
@@ -1093,12 +1104,11 @@ impl Trust {
                 // The next is held: what its context names that the host does not hold.
                 Some(held) => {
                     for (other, seq) in &held.wire.link.context {
-                        if dependency_met(&state, *other, *seq) {
+                        if dependency_met_in(&state, &vector, *other, *seq) {
                             continue;
                         }
                         let to = told_ceiling(&state, *other).map_or(*seq, |top| top.min(*seq));
-                        let from =
-                            first_not_held(&state, *other, delivered_through(&state, *other) + 1);
+                        let from = first_not_held(&state, *other, through_in(&vector, *other) + 1);
                         want(*other, from, to);
                     }
                 }
@@ -1582,8 +1592,9 @@ fn own_chain_walk(state: &State, published: &[Head]) -> Option<(u64, u64)> {
     ))
 }
 
-/// What the machine is told of `node`: the number and id of each operation, in order.
-fn told_of(state: &State, node: u64) -> Vec<(u64, [u8; 32])> {
+/// What the host holds of `node`'s chain as what a machine may be told: the number and id of each
+/// operation below where the chain is frozen, in order.
+fn held_of(state: &State, node: u64) -> Vec<(u64, [u8; 32])> {
     state
         .ops
         .get(&node)
@@ -1611,17 +1622,19 @@ fn sync_tables(state: &mut State, node: u64) {
     }
 }
 
-/// What changed in what the machine is told of `node` between `before` and now: the operations that
-/// left it are for the host to rebuild its machine without, and those that entered, with. `new` is
-/// an operation that was just given and is told now: the machine is told it as it is taken in, and
-/// it is no change to what was told before.
+/// What changed in what the host holds of `node`'s chain between `before` and now ([`held_of`]),
+/// and what the machine is to be told of it: the operations that left it and that the machine was
+/// told are for the host to rebuild its machine without, and those that entered at a number the
+/// machine was told past, with. An operation the machine was never told is no notice: it holds
+/// nothing of it, and is told what enters when it may be ([`Trust::deliver`]). `new` is an
+/// operation that was just given, and is no change to what was held before.
 fn tell_what_changed(
     state: &mut State,
     node: u64,
     before: &[(u64, [u8; 32])],
     new: Option<(u64, [u8; 32])>,
 ) {
-    let after = told_of(state, node);
+    let after = held_of(state, node);
     let left: Vec<u64> = before
         .iter()
         .filter(|one| !after.contains(one))
@@ -1635,12 +1648,20 @@ fn tell_what_changed(
     if left.is_empty() && entered.is_empty() {
         return;
     }
-    state
-        .evicted
-        .extend(left.into_iter().map(|seq| (node, seq)));
-    state
-        .restored
-        .extend(entered.into_iter().map(|seq| (node, seq)));
+    // A notice to the machine is of what it was told: an operation past how far it was told the
+    // device it holds nothing of, and one held anew past it is told by the next delivery.
+    let told = delivered_through(state, node);
+    state.evicted.extend(
+        left.into_iter()
+            .filter(|seq| *seq <= told)
+            .map(|seq| (node, seq)),
+    );
+    state.restored.extend(
+        entered
+            .into_iter()
+            .filter(|seq| *seq <= told)
+            .map(|seq| (node, seq)),
+    );
     sync_tables(state, node);
 }
 
@@ -1652,7 +1673,7 @@ fn tell_what_changed(
 fn evict_past_the_cutoff(state: &mut State) {
     let nodes: Vec<u64> = state.ops.keys().copied().collect();
     for node in nodes {
-        let before = told_of(state, node);
+        let before = held_of(state, node);
         let cutoffs = state.log.cutoffs(node);
         let Some(chain) = state.ops.get(&node) else {
             continue;
@@ -1720,12 +1741,16 @@ fn conflict_of(chain: &Chain, inserted: &chain::Inserted) -> Option<Conflict> {
 fn hold(state: &mut State, node: u64, held: Held) -> Placed {
     let (seq, id) = (held.seq(), held.id);
     let cutoffs = state.log.cutoffs(node);
+    // How far the machine was told the device: what lies past it the machine holds nothing of, and
+    // is never to be built again without.
+    let told_through = delivered_through(state, node);
     let chain = state.ops.entry(node).or_default();
-    // An operation can only freeze its chain lower than it was, never raise it, so what the machine
-    // was told and is told no more is what lies from the place the chain freezes at. That place is
-    // known before the operation goes in, and only what lies from it is read: a write at the end of a
-    // long chain, which freezes nothing, costs the chain nothing.
-    let told_above: Vec<(u64, [u8; 32])> = match chain.probe(&held, &cutoffs) {
+    // An operation can only freeze its chain lower than it was, never raise it, so what the host
+    // holds of the device and holds no more is what lies from the place the chain freezes at, and
+    // what the machine was told of it and is told no more is that, up to how far the machine was
+    // told. That place is known before the operation goes in, and only what lies from it is read: a
+    // write at the end of a long chain, which freezes nothing, costs the chain nothing.
+    let held_above: Vec<(u64, [u8; 32])> = match chain.probe(&held, &cutoffs) {
         Some((at, _)) if chain.frozen().is_none_or(|from| at < from) => {
             chain.view_from(at).map(|one| (one.seq(), one.id)).collect()
         }
@@ -1741,15 +1766,17 @@ fn hold(state: &mut State, node: u64, held: Held) -> Placed {
         };
     }
     let conflict = conflict_of(chain, &inserted);
-    let left: Vec<u64> = told_above
+    let left: Vec<u64> = held_above
         .into_iter()
         .filter(|(at, held_id)| !chain.at(*at).is_some_and(|one| one.id == *held_id))
         .map(|(at, _)| at)
         .collect();
     if !left.is_empty() {
-        state
-            .evicted
-            .extend(left.into_iter().map(|seq| (node, seq)));
+        state.evicted.extend(
+            left.iter()
+                .filter(|seq| **seq <= told_through)
+                .map(|seq| (node, *seq)),
+        );
         sync_tables(state, node);
     }
     let told = state
@@ -1934,14 +1961,9 @@ fn told_ceiling(state: &State, node: u64) -> Option<u64> {
     }
 }
 
-/// Whether the machine was told what a context's entry for `node` at `seq` names: every operation
-/// of the device up to `seq`, or, when no machine will ever be told the device up to `seq`
-/// ([`told_ceiling`]), every operation of it any machine will be told.
-fn dependency_met(state: &State, node: u64, seq: u64) -> bool {
-    dependency_met_in(state, &state.delivered, node, seq)
-}
-
-/// [`dependency_met`] for a machine told up to `vector`.
+/// Whether a machine told up to `vector` was told what a context's entry for `node` at `seq` names:
+/// every operation of the device up to `seq`, or, when no machine will ever be told the device up
+/// to `seq` ([`told_ceiling`]), every operation of it any machine will be told.
 fn dependency_met_in(state: &State, vector: &BTreeMap<u64, u64>, node: u64, seq: u64) -> bool {
     let told = through_in(vector, node);
     told >= seq || told_ceiling(state, node).is_some_and(|top| top < seq && told >= top)
