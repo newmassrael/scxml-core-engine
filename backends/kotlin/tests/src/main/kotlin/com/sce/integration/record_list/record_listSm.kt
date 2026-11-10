@@ -2717,7 +2717,6 @@ RecordListEvent.RecordList.Refused,
 
 
             if (run send@{
-            var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "by", (vOfferedAt.nodeId).toString())
 
@@ -2728,8 +2727,11 @@ RecordListEvent.RecordList.Refused,
             try {
                 putParam(sendPayload, "ops", run { if ((vOffered).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vOffered).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(RecordListEvent.Error.Execution, "<send> <param name='ops'> could not be read")
-                paramFailed = true
+                // docs/adr/0086, section 15.6: the list is short of its field's lower
+                // count, so the event is refused whole: one error, nothing delivered,
+                // and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                raisePlatformError(RecordListEvent.Error.Execution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_9")
+                return@send true
             }
 
             putParam(sendPayload, "command", (vClosingCommand).toString())
@@ -2767,7 +2769,7 @@ RecordListEvent.RecordList.Refused,
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
                 raisePlatformError(RecordListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_9")
             }
-            paramFailed
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
@@ -3546,7 +3548,6 @@ RecordListEvent.RecordList.Pending,
 
 
             if (run send@{
-            var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "by", (vDot.nodeId).toString())
 
@@ -3557,8 +3558,11 @@ RecordListEvent.RecordList.Pending,
             try {
                 putParam(sendPayload, "ops", run { if ((vTaking).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vTaking).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(RecordListEvent.Error.Execution, "<send> <param name='ops'> could not be read")
-                paramFailed = true
+                // docs/adr/0086, section 15.6: the list is short of its field's lower
+                // count, so the event is refused whole: one error, nothing delivered,
+                // and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                raisePlatformError(RecordListEvent.Error.Execution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_22")
+                return@send true
             }
 
             val sendData = buildJsonFromParams(sendPayload)
@@ -3594,7 +3598,7 @@ RecordListEvent.RecordList.Pending,
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
                 raisePlatformError(RecordListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
             }
-            paramFailed
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.

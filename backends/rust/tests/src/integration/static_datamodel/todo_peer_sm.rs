@@ -4111,8 +4111,6 @@ impl StatePolicy for TodoPeerPolicy {
                     {
                         let send_id: &str = "__send_3";
 
-                        let mut _param_failed = false;
-
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
                         // rather than its text — a receiver reading `_event.data.value === 42`
@@ -4154,10 +4152,14 @@ impl StatePolicy for TodoPeerPolicy {
                 wire_params.entry("ops".to_string()).or_default().push(val);
             }
             Err(_) => {
-                ::sce_rust_runtime::sce_log_error!("send param 'ops' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send> <param name='ops'> could not be read"));
-                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
-                _param_failed = true;
+                ::sce_rust_runtime::sce_log_error!("send param 'ops' is short of its field's lower count");
+                // docs/adr/0086, section 15.6: the list is short of its field's
+                // lower count, so the event is refused whole: one error, nothing
+                // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(TodoPeerEvent::ErrorExecution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
+                err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
+                engine.raise(err_meta);
+                break 'action_block;
             }
         }
                             ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
@@ -4199,12 +4201,6 @@ impl StatePolicy for TodoPeerPolicy {
                             }
                         }
 
-                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
-                        // this element was processed, so the rest of the block does not run —
-                        // from however deep a <foreach> it came.
-                        if _param_failed {
-                            break 'action_block;
-                        }
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
                     }

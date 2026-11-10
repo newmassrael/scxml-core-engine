@@ -796,8 +796,14 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                         if !sceFailure.failed {
                             sendParts.append(PayloadPair("kept", sceValue))
                         } else {
-                            engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> failed to evaluate"))
-                            paramFailed = true
+                            // docs/adr/0086, section 15.6: the list is short of its field's
+                            // lower count, so the event is refused whole: one error, nothing
+                            // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        sendError.metadata.sendID = "__send_1"
+                        engine.raise(sendError)
+
+                            break sceBlock
                         }
                     }
                     do {
@@ -912,8 +918,14 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                         if !sceFailure.failed {
                             sendParts.append(PayloadPair("kept", sceValue))
                         } else {
-                            engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> failed to evaluate"))
-                            paramFailed = true
+                            // docs/adr/0086, section 15.6: the list is short of its field's
+                            // lower count, so the event is refused whole: one error, nothing
+                            // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        sendError.metadata.sendID = "__send_2"
+                        engine.raise(sendError)
+
+                            break sceBlock
                         }
                     }
                     do {

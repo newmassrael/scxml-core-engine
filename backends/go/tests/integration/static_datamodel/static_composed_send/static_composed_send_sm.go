@@ -1535,8 +1535,13 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "kept", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> failed to evaluate"))
-				paramFailed = true
+				// docs/adr/0086, section 15.6: the list is short of its field's
+				// lower count, so the event is refused whole: one error, nothing
+				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt.Metadata.SendID = "__send_1"
+				engine.Raise(errEvt)
+				return
 			}
 		}
 		{
@@ -1666,8 +1671,13 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "kept", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> failed to evaluate"))
-				paramFailed = true
+				// docs/adr/0086, section 15.6: the list is short of its field's
+				// lower count, so the event is refused whole: one error, nothing
+				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt.Metadata.SendID = "__send_2"
+				engine.Raise(errEvt)
+				return
 			}
 		}
 		{

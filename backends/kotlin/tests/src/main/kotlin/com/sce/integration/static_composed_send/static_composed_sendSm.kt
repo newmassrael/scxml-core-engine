@@ -743,13 +743,15 @@ class StaticComposedSendStateMachine(
 
 
             if (run send@{
-            var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             try {
                 putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> could not be read")
-                paramFailed = true
+                // docs/adr/0086, section 15.6: the list is short of its field's lower
+                // count, so the event is refused whole: one error, nothing delivered,
+                // and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_1")
+                return@send true
             }
 
             putParam(sendPayload, "hops", (3).toLong())
@@ -758,7 +760,7 @@ class StaticComposedSendStateMachine(
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
             raiseInternal(StaticComposedSendEvent.Counted.Sent, EventMetadata.internal(sendData))
-            paramFailed
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
@@ -827,13 +829,15 @@ class StaticComposedSendStateMachine(
 
 
             if (run send@{
-            var paramFailed = false
             val sendPayload = mutableMapOf<String, Any?>()
             try {
                 putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> could not be read")
-                paramFailed = true
+                // docs/adr/0086, section 15.6: the list is short of its field's lower
+                // count, so the event is refused whole: one error, nothing delivered,
+                // and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_2")
+                return@send true
             }
 
             putParam(sendPayload, "hops", (3).toLong())
@@ -842,7 +846,7 @@ class StaticComposedSendStateMachine(
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
             raiseInternal(StaticComposedSendEvent.Counted.Sent, EventMetadata.internal(sendData))
-            paramFailed
+            false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
