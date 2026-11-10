@@ -484,15 +484,22 @@ fn a_send_that_gives_a_first_revision_field_no_value_is_refused_on_swift() {
     assert!(ok, "`late` is a list the second revision added:\n{out}");
 }
 
-/// Pinned by `SwiftTarget::unsupported` (`sce-build/src/forge/static_lowering.rs`):
-/// a field of a record that holds a composed value is a member of the struct
-/// Swift holds it in and a label of its initializer, so a name Swift reserves
-/// is refused by name rather than written as a member that does not compile.
+/// A field of a record that holds a composed value is a member of the struct
+/// Swift holds it in and a label of its initializer, so a name Swift reserves is
+/// refused by name rather than written as a member that does not compile. The
+/// document is judged for the reserved words of the language it is built for
+/// before the Swift gate reads it (`validation/reserved-code-identifier`, SCE
+/// Accepted Subset §2.14), so that is the refusal a build for Swift answers; the
+/// gate's own sentence of the same field (`SwiftTarget::unsupported`,
+/// `sce-build/src/forge/static_lowering.rs`) backs it for a route that skips the
+/// validation.
 #[test]
 fn a_composed_record_whose_field_swift_reserves_is_refused_by_name() {
     let item =
         std::fs::read_to_string(fixtures().join("event_batch_item.scxml")).expect("the item");
-    let reserved = item.replace("<data id=\"label\"", "<data id=\"default\"");
+    // A word only Swift reserves, so the refusal names Swift and no other
+    // backend: `default` is reserved in C++ as well, and is refused for that.
+    let reserved = item.replace("<data id=\"label\"", "<data id=\"fileprivate\"");
     assert_ne!(reserved, item, "the item declares `label`");
     let dir = tempdir().expect("tempdir");
     for sibling in SIBLINGS {
@@ -507,11 +514,13 @@ fn a_composed_record_whose_field_swift_reserves_is_refused_by_name() {
         READER,
     );
     assert!(!ok, "a member Swift reserves is no member:\n{out}");
-    assert!(out.contains("generate/unsupported-feature"), "{out}");
-    assert!(
-        out.contains("the field `default` of `event_batch_item`, which holds a composed value"),
-        "{out}"
-    );
+    for part in [
+        "validation/reserved-code-identifier",
+        "<data id=\\\"fileprivate\\\">",
+        "'fileprivate' is a reserved word in swift",
+    ] {
+        assert!(out.contains(part), "expected `{part}` in:\n{out}");
+    }
 }
 
 /// A reader of `shapes.sent` that tests the tag of the payload's `one`,
@@ -546,12 +555,14 @@ const SHAPES: [&str; 5] = [
 ];
 
 /// Pinned by the union arm of the gate's read (`first_unlowered_composed_use`,
-/// `sce-build/src/forge/event_schema_check.rs`) and by `union_reached`
-/// (`sce-build/src/forge/composed_lowering.rs`): Swift reads a composed
-/// payload, holds no union, and so refuses a read of a payload that holds one
-/// by its own name, naming the field and the union.
+/// `sce-build/src/forge/event_schema_check.rs`) and by the Swift row of the
+/// table of what each backend lowers (`ComposedLowering::of`): Swift reads a
+/// composed payload and holds a union (docs/adr/0092, section 7), so a read of
+/// a payload that holds one, by the tag it tests, is accepted. A backend that
+/// holds none refuses it by its own name
+/// (`a_union_type_is_read_and_refused_by_name_where_it_is_not_lowered`).
 #[test]
-fn a_payload_that_holds_a_union_stays_refused_by_name_on_swift() {
+fn a_payload_that_holds_a_union_is_read_by_its_tag_on_swift() {
     let unions = repo_root().join("sce-build/tests/fixtures/union");
     let (ok, out) = run(
         &["check", "-l", "swift"],
@@ -560,12 +571,9 @@ fn a_payload_that_holds_a_union_stays_refused_by_name_on_swift() {
         "shapes_reader.scxml",
         SHAPES_READER,
     );
-    assert!(!ok, "Swift holds no union yet:\n{out}");
-    for part in [
-        "generate/unsupported-feature",
-        "the field `one` holds `union:Shape`",
-        "a statechart's read of `_event.data` has no swift lowering of its union",
-    ] {
-        assert!(out.contains(part), "expected `{part}` in:\n{out}");
-    }
+    assert!(ok, "Swift holds a union:\n{out}");
+    assert!(
+        !out.contains("has no swift lowering of its union"),
+        "Swift lowers the union a payload holds:\n{out}"
+    );
 }
