@@ -1784,7 +1784,7 @@ The same refusal answers every start:
 | Rust | `initialize(&mut self) -> Result<(), P::StartFailure>`, `#[must_use]` | `ScriptSessionFailure { stage, message }`, `#[non_exhaustive]`, the engine's `message` under `std` only (a `no_std` build has no engine and holds the step alone); a policy without a script engine has `Infallible`, so its start is `.unwrap_or_else(\|never\| match never {})` | landed |
 | C++ | `[[nodiscard]] std::optional<SCE::ScriptSessionFailure> initialize()`; `static constexpr bool START_MAY_BE_REFUSED` is `false` for a machine without a script engine, whose host may `static_assert` it | `SCE::ScriptSessionFailure { ScriptSessionStage stage; std::string message; }` (`common/ScriptSessionFailure.h`), `describe()` the sentence; `initializeAsRoot` answers `RootStartRefusal::ScriptSession(failure)` beside `RootStartRefusal::NeedsParent`; `enterAt` answers a `Core::ConfigurationVerdict` equal to `ConfigurationRejection::ScriptSessionUnavailable` and carrying the failure | landed |
 | Go | `Initialize() error`, which answers nil for a machine without a script engine (its policy's `NeedsScriptEngine` is `false`) | `*sce.ScriptSessionFailure { Stage ScriptSessionStage; Message string }` (`backends/go/runtime/script_session.go`), an `error` whose `Error()` is the sentence; `ScriptSessionStageCreate`, `ScriptSessionStageLibrary`, `ScriptSessionStageSystemVariables`; an engine's `CreateSession` names the `library` step by answering `*sce.ScriptLibraryNotLoaded`; `InitializeAsRoot` answers `RootStartNeedsParent` or an error that `errors.Is` `RootStartScriptSession` and `errors.As` the failure; `EnterAt` answers a `ConfigurationVerdict` whose `Rejection` is `ConfigurationScriptSessionUnavailable` and whose `ScriptSessionFailure` is the failure | landed |
-| Kotlin | `initialize()` and `start(scope)` throw | `ScriptSessionUnavailableException`; `start` establishes before it launches its coroutine | pending |
+| Kotlin | `initialize()` and `start(scope)` throw `ScriptSessionUnavailableException`, which a machine without a script engine never throws; `start` establishes the session on the caller's thread, before it launches its coroutine | `com.sce.runtime.ScriptSessionFailure(stage: ScriptSessionStage, message: String)` (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScriptSession.kt`), whose `toString()` is the sentence, carried as `ScriptSessionUnavailableException.failure`; `ScriptSessionStage.CREATE`, `LIBRARY`, `SYSTEM_VARIABLES`, each `toString()` the step's name; an engine's `createSession` names the `library` step by throwing `ScriptLibraryNotLoadedException`; `initializeAsRoot` and `startAsRoot` answer `RootStartRefusal.ScriptSession(failure)` beside `RootStartRefusal.NeedsParent` (still spelt `RootStartRefusal.NEEDS_PARENT`); `enterAt` answers a `ConfigurationVerdict` whose `rejection` is `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and whose `scriptSessionFailure` is the failure | landed |
 | Python | `initialize()` raises | `ScriptSessionUnavailable`, before the run is marked running | pending |
 | Swift | `initialize() throws` | `ScriptSessionFailure: Error` | pending |
 | C11 | `_init*` returns `<name>_start_status_t` (`warn_unused_result`) | `<NAME>_START_SCRIPT_SESSION_UNAVAILABLE` | pending |
@@ -1837,3 +1837,22 @@ host) and
 (a generated machine over a double of the Lua engine that fails each step on
 request); mutation casefile
 `sce-build/tests/mutations/a_go_machine_whose_script_session_fails_does_not_start.cases`.
+
+Kotlin producer: `establishScriptSession` in
+`tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2`, which takes
+the three steps through the runtime's `StateMachineEngine.makeScriptSession`;
+`StateMachineEngine.initialize`, `start`, `initializeAsRoot`, `startAsRoot`
+and `enterAt` call it before the run is marked running or its inbox opened,
+`start` on the caller's thread before it launches its coroutine. The generated
+`declareDatamodel` then applies the `<data>`, the parameters the parent
+handed it and the top-level `<script>`, in that order, and what runs after the
+start asserts the session is there (`assertScriptSession`). The child's start
+is `StateMachineEngine.startInvoke`, which ends a refused child's invoke in
+`refuseChildStart` with the `error.execution` data
+`ScriptSessionFailure.childStartRefusal`. Tests:
+`backends/kotlin/tests/src/test/kotlin/com/sce/runtime/ScriptSessionFailureTest.kt`
+(the values a refusal hands its host) and
+`backends/kotlin/tests/src/test/kotlin/com/sce/integration/AMachineWhoseScriptSessionFailsDoesNotStartTest.kt`
+(a generated machine over a double of the Lua engine that fails each step on
+request); mutation casefile
+`sce-build/tests/mutations/a_kotlin_machine_whose_script_session_fails_does_not_start.cases`.
