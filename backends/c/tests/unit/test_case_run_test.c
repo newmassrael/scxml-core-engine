@@ -1594,6 +1594,29 @@ static void the_bounds_a_line_past_its_detail_is_counted_and_ends_with_error(voi
     CHECK(result->verdict == SCE_TEST_VERDICT_ERROR, "verdict %d", (int)result->verdict);
 }
 
+// The start of a machine that refuses it, as a generated component refuses a
+// session id its name gives that the build cannot hold.
+static void refuses_its_start(const sce_test_component_context_t *context, scripted_t *self) {
+    (void)self;
+    sce_test_context_error(context, "the start was refused for the test's own reason");
+}
+
+// P13: an error a machine reports of its own start ends the run with `error`,
+// its words in the log under the component's name.
+static void test_case_run_test_an_error_a_machine_reports_ends_the_run(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(&machines, "Refuser", refuses_its_start, idle);
+    trace_adapter_t adapter;
+    const sce_test_configuration_t configuration = lone("Refuser");
+    const sce_test_case_result_t *result =
+        run_case(&configuration, &machines, &replaying(&adapter, NULL, 0u)->adapter, NULL);
+    CHECK(result->verdict == SCE_TEST_VERDICT_ERROR, "verdict %d", (int)result->verdict);
+    CHECK(has_error_naming(result, "the start was refused for the test's own reason"),
+          "the run logged the machine's words");
+    CHECK(logged(result, "mtc", SCE_TEST_LOG_ERROR), "the error is the MTC's");
+}
+
 // A table of module parameters holds SCE_TEST_MAX_MODULE_PARAMETERS: one more id
 // is refused, and a value for an id it holds still replaces the old one.
 static void the_bounds_a_module_parameter_past_the_table_is_refused(void) {
@@ -2110,6 +2133,7 @@ int main(void) {
     test_case_run_test_a_component_reads_the_module_parameter_its_run_is_given();
     test_case_run_test_a_module_parameter_the_run_is_not_given_is_an_error();
     test_case_run_test_a_module_parameter_of_another_type_is_an_error();
+    test_case_run_test_an_error_a_machine_reports_ends_the_run();
     test_case_run_test_a_component_type_with_no_machine_is_an_error();
     test_case_run_test_a_send_to_an_absent_peer_is_an_error();
     test_suite_run_runs_the_test_cases_a_world_selects_in_the_suites_order();

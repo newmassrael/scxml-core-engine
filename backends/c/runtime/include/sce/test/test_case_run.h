@@ -1158,6 +1158,20 @@ static inline void sce_test_context_kill(const sce_test_component_context_t *con
 /* ── Module parameters (§11.5, §11.8) ── */
 
 /**
+ * A dynamic error the component's machine met where nothing in the run's
+ * doors reports it (P13): the run ends with `error`, `why` in its log under
+ * the component's name. What a generated component reports of a start its
+ * machine refused, such as a session id its name gives that the build cannot
+ * hold, so the machine is not run under an id made up in its place.
+ */
+static inline void sce_test_context_error(const sce_test_component_context_t *context, const char *why) {
+    if (sce_test_context_entity_(context) == NULL) {
+        return;
+    }
+    sce_test_run_fail_(context->run, context->name, "%s", why);
+}
+
+/**
  * Reads the module parameters of the run into the variables the component
  * declares as module parameters, before its machine starts: `read` is handed
  * them and `user_data`, and answers whether it read them. A value the run was

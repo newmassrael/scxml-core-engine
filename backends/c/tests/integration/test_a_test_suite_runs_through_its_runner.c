@@ -268,6 +268,27 @@ static void every_component_is_handed_back(void) {
           "the run hands every component back when it ends");
 }
 
+// docs/adr/0045: each component's session is named by the component, as on every
+// other backend: the MTC's is `mtc` and a PTC's the name its configuration gives
+// it, not an id the machine drew (`<machine>_session_<n>`). Read off the storage
+// the run handed back, which keeps the machine it tore down.
+static void each_component_runs_under_its_configuration_name(void) {
+    const coordinator_t *served_mtc = &suite_storage.serves_a_ptc_machines.coordinator_components[0].machine;
+    const answerer_t *served_ptc = &suite_storage.serves_a_ptc_machines.answerer_components[0].machine;
+    const ptc_keeper_t *keeping_mtc = &suite_storage.keeps_a_ptc_machines.ptc_keeper_components[0].machine;
+    const idler_t *kept_ptc = &suite_storage.keeps_a_ptc_machines.idler_components[0].machine;
+    CHECK(strcmp(answerer_session_id(served_ptc), "answerer") == 0, "the PTC `answerer` ran as the session `%s`",
+          answerer_session_id(served_ptc));
+    CHECK(strcmp(answerer_scxml_location(served_ptc), "sce://scxml/answerer") == 0, "the PTC `answerer` published `%s`",
+          answerer_scxml_location(served_ptc));
+    CHECK(strcmp(idler_session_id(kept_ptc), "idler") == 0, "the PTC `idler` ran as the session `%s`",
+          idler_session_id(kept_ptc));
+    CHECK(strcmp(coordinator_session_id(served_mtc), "mtc") == 0, "the MTC ran as the session `%s`",
+          coordinator_session_id(served_mtc));
+    CHECK(strcmp(ptc_keeper_session_id(keeping_mtc), "mtc") == 0, "the MTC ran as the session `%s`",
+          ptc_keeper_session_id(keeping_mtc));
+}
+
 static const char *const EVERY_FEATURE[] = {"ptcs", "removal", "guard"};
 
 // P11, P12, P13, P14: in a world with every feature the suite runs every test
@@ -445,6 +466,7 @@ static void test_reads_the_module_parameters_its_configuration_names(void) {
 int main(void) {
     test_runs_every_test_case_of_a_world_with_the_verdict_it_expects();
     every_component_is_handed_back();
+    each_component_runs_under_its_configuration_name();
     test_fails_a_job_the_system_under_test_answers_with_a_failure();
     every_component_is_handed_back();
     test_a_generated_test_case_writes_its_test_log();

@@ -8406,7 +8406,9 @@ SCE_SM_FN static bool {{ P }}_component_accept_module_parameters(void *user_data
 /* The component's machine starts: its doors are given to the construction, which keeps them before
    the first `<onentry>` runs, and the context is set on the machine the construction has just
    cleared, before the initial configuration is entered (`_init_enter`). A component that declares a
-   module parameter reads the run's value of each into its variable between the two. */
+   module parameter reads the run's value of each into its variable between the two. The session is
+   named by the component, as on every backend (docs/adr/0045): its name is the id the construction
+   is given, as `_init_with_session_id` gives a host's. */
 SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self,
                                               const sce_test_component_context_t *context) {
     {{ P }}_t *sm = &(({{ P }}_component_t *)(void *)self)->machine;
@@ -8422,7 +8424,17 @@ SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self
     memset(&invokers, 0, sizeof(invokers));
     (void)sce_host_invoker_register(&invokers, "{{ test_component_invoke_type | escape_c }}", {{ P }}_component_invoke, sm);
 {% endif %}
-    (void){{ P }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+    /* The name is `mtc` or the id of the `<invoke>` that creates the PTC, and every `<invoke id>` is
+       refused where its document is parsed unless it is an XML Name, which is an Nmtoken. A name is
+       therefore refused only when it does not fit the bytes this build holds a session id or its
+       location in: the run ends in error (P13), the reason in its log, and the machine is neither
+       constructed nor entered, so its `release` tears down storage the construction never touched. */
+    const sce_start_refusal_t refused =
+        {{ P }}_init_construct(sm, false, sce_test_context_name(context){% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+    if (refused != SCE_START_REFUSAL_NONE) {
+        sce_test_context_error(context, sce_start_refusal_text(refused));
+        return;
+    }
     sm->test_context = *context;
 {% if model.test_component.module_parameters %}
     /* §11.5, §11.8: the module parameters take the suite's values before the initial configuration is

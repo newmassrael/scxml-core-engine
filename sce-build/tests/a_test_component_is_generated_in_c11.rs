@@ -208,7 +208,10 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
             );
         }
         let start = &source[at(&source, &format!("{name}_component_start("))..];
-        let constructed = at(start, &format!("(void){name}_init_construct(sm, false"));
+        let constructed = at(
+            start,
+            &format!("{name}_init_construct(sm, false, sce_test_context_name(context)"),
+        );
         let set = at(start, "sm->test_context = *context;");
         let entered = at(start, &format!("{name}_init_enter(sm);"));
         assert!(
@@ -275,6 +278,52 @@ fn the_entry_into_the_initial_configuration_is_its_own_half_of_init() {
         half[init..].contains("    idler_init_enter(sm);\n"),
         "{half}"
     );
+}
+
+/// docs/adr/0045: a component's session is named by the component, `mtc` or
+/// the PTC's id, as on every other backend: the construction is given the
+/// context's name as the id a host gives a root, and a name it refuses ends
+/// the run in error, with the reason, before the context is set or the initial
+/// configuration entered. The header declares the entry a host gives a root's
+/// id through, which the same construction serves. What the names are when the
+/// suite runs is held by
+/// `backends/c/tests/integration/test_a_test_suite_runs_through_its_runner.c`.
+#[test]
+fn a_component_names_its_session_after_itself() {
+    for (name, _, _) in COMPONENTS {
+        let source = file(name, &format!("{name}_sm.c"));
+        let start = &source[at(&source, &format!("{name}_component_start("))..];
+        let constructed = at(
+            start,
+            &format!("{name}_init_construct(sm, false, sce_test_context_name(context)"),
+        );
+        let refused = at(
+            start,
+            "        sce_test_context_error(context, sce_start_refusal_text(refused));\n        \
+             return;\n",
+        );
+        let set = at(start, "sm->test_context = *context;");
+        let entered = at(start, &format!("{name}_init_enter(sm);"));
+        assert!(
+            constructed < refused && refused < set && set < entered,
+            "{name}: a refused name ends the start before the context is set:\n{start}"
+        );
+        assert!(
+            !start[..set].contains(&format!("(void){name}_init_construct(")),
+            "{name}: the construction's refusal is read, not dropped"
+        );
+        let header = file(name, &format!("{name}_sm.h"));
+        assert!(
+            header.contains(&format!(
+                "sce_start_refusal_t {name}_init_with_session_id({name}_t *sm,\n"
+            )),
+            "{name}'s header declares the start under a given id:\n{header}"
+        );
+        assert!(
+            header.contains("\n#include \"sce/session_id.h\"\n"),
+            "{name}'s header includes what the start answers"
+        );
+    }
 }
 
 /// P2, P3, §12.3: every branch is a transition on the snapshot event, tried in
@@ -853,7 +902,10 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
         "the value is read before it is written"
     );
     let start = &source[at(&source, "param_asker_component_start(")..];
-    let constructed = at(start, "(void)param_asker_init_construct(sm, false");
+    let constructed = at(
+        start,
+        "param_asker_init_construct(sm, false, sce_test_context_name(context)",
+    );
     let set = at(start, "sm->test_context = *context;");
     let read = at(
         start,
