@@ -21,12 +21,11 @@ use super::rust_test_template::{
     rust_literal as literal, rust_record_type, RustCanonical, RustReading,
 };
 use super::test_tables::{
-    configuration_rows, execute_rows, module_parameter_defaults, selection_body, system_port_rows,
-    test_case_configuration, trace_record_rows, EndpointRow,
+    configuration_rows, execute_rows, module_parameter_defaults, selection_body,
+    test_case_configuration, trace_records, EndpointRow,
 };
 use super::test_template_walk::{
-    canonical_form, canonical_value, hex_octets, integer_literal, log_type_name, CanonicalForm,
-    CanonicalSpelling,
+    canonical_form, canonical_value, hex_octets, integer_literal, CanonicalForm, CanonicalSpelling,
 };
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
@@ -139,16 +138,13 @@ pub(super) fn render_test_configuration_rust(
 type TraceInputs = (Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>);
 
 /// The inputs a recorded trace may carry on the system ports of the test
-/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5): each system port's
-/// id; an arm of the unit's `input` per port and record its type's `in` list
-/// names, in document order; and each record's reader and writer of its
-/// canonical form, once ([`trace_record_rows`]), both over the one walk of the
-/// form ([`canonical_form`]), so the value a trace hands the run and the value
-/// the test log writes of it are the same bytes.
-///
-/// Each record is named by its type in the test log ([`log_type_name`]), which
-/// names its functions; two records of one name are refused by name, as the
-/// types module of the export would hold them under one name.
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5), as every backend
+/// reads them ([`trace_records`]): each system port's id; an arm of the unit's
+/// `input` per port and record its type's `in` list names, in document order;
+/// and each record's reader and writer of its canonical form, once, both over
+/// the one walk of the form ([`canonical_form`]), so the value a trace hands
+/// the run and the value the test log writes of it are the same bytes. Each
+/// record is named by its type in the test log, which names its functions.
 fn trace_inputs(
     m: &TestConfigurationModel,
     imports: &[ImportContext],
@@ -161,55 +157,51 @@ fn trace_inputs(
             why,
         )
     };
-    let ports = system_port_rows(m, imports)?;
-    let readers = trace_record_rows(m, &ports)?
-        .into_iter()
-        .map(|row| {
+    let traced = trace_records(m, imports)?;
+    let readers = traced
+        .records
+        .iter()
+        .map(|record| {
+            let row = &record.row;
             let reading = RustReading {
-                what: row.type_name.clone(),
+                what: record.type_name.clone(),
             };
-            let read_expr = canonical_form(
-                &reading,
-                &row.input.record_type,
-                &reading.root(),
-                row.input.scope,
-            )
-            .map_err(refused)?;
+            let read_expr = canonical_form(&reading, &row.record_type, &reading.root(), row.scope)
+                .map_err(refused)?;
             let canonical_expr = canonical_value(
                 &RustCanonical,
-                &row.input.record_type,
+                &row.record_type,
                 &RustCanonical.root(),
-                row.input.scope,
+                row.scope,
             )
             .map_err(refused)?;
             Ok(serde_json::json!({
-                "type": row.type_name,
-                "read": format!("read_{}", row.type_name),
-                "canonical": format!("canonical_{}", row.type_name),
-                "payload": rust_record_type(row.input.record),
+                "type": record.type_name,
+                "read": format!("read_{}", record.type_name),
+                "canonical": format!("canonical_{}", record.type_name),
+                "payload": rust_record_type(row.record),
                 "read_expr": read_expr,
                 "canonical_expr": canonical_expr,
             }))
         })
         .collect::<Result<Vec<_>, ForgeError>>()?;
-    let inputs = ports
+    let inputs = traced
+        .arms
         .iter()
-        .flat_map(|port| port.inputs.iter().map(move |input| (port.id, input)))
-        .map(|(port, input)| {
-            let type_name = log_type_name(input.record);
+        .map(|arm| {
             serde_json::json!({
-                "port": literal(port),
-                "type": literal(&type_name),
+                "port": literal(arm.port),
+                "type": literal(&arm.type_name),
                 "event": format!(
                     "super::{}::EVENT_NAME",
-                    filters::to_snake_case(input.record.name.clone())
+                    filters::to_snake_case(arm.record.name.clone())
                 ),
-                "read": format!("read_{type_name}"),
-                "canonical": format!("canonical_{type_name}"),
+                "read": format!("read_{}", arm.type_name),
+                "canonical": format!("canonical_{}", arm.type_name),
             })
         })
         .collect();
-    let system_ports = ports.iter().map(|port| literal(port.id)).collect();
+    let system_ports = traced.system_ports.iter().map(|id| literal(id)).collect();
     Ok((system_ports, inputs, readers))
 }
 

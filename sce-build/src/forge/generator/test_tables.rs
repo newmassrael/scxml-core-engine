@@ -233,47 +233,88 @@ pub(super) fn system_port_rows<'a>(
         .collect()
 }
 
-/// A record the unit of a configuration reads from a recorded input trace and
-/// writes in the canonical form (docs/SCE_TTCN3_LANE.md §10.5), once however
-/// many of its system ports take it: its type name in the test log, which
-/// names its reader and its writer, and the row of the first port that takes
-/// it.
-pub(super) struct TraceRecordRow<'r, 'a> {
-    /// The record's type in the test log ([`log_type_name`]).
+/// A record a recorded input trace may carry, as the unit of a configuration
+/// reads it: the name of its type in the test log ([`log_type_name`]), which
+/// names the unit's reader and writer of it, and its row.
+pub(super) struct TraceRecord<'a> {
     pub(super) type_name: String,
-    /// The first input row that takes it.
-    pub(super) input: &'r TraceInputRow<'a>,
+    pub(super) row: TraceInputRow<'a>,
 }
 
-/// Each record the system ports `ports` of the test configuration `m` take,
-/// once, in the order a port first takes it.
+/// One arm of the `input` of a configuration's unit: a system port, the name
+/// of a record its type's `in` list names, and the record.
+pub(super) struct TraceArm<'a> {
+    pub(super) port: &'a str,
+    pub(super) type_name: String,
+    pub(super) record: &'a ScopedRecord,
+}
+
+/// What the unit of a configuration writes of the inputs a recorded trace may
+/// carry ([`trace_records`]).
+pub(super) struct TraceRecords<'a> {
+    /// Each system port's id, in document order.
+    pub(super) system_ports: Vec<&'a str>,
+    /// An arm of `input` per system port and record its type's `in` list
+    /// names, in document order.
+    pub(super) arms: Vec<TraceArm<'a>>,
+    /// Each record once, in the order the arms first name it: the unit
+    /// declares its reader and its writer once.
+    pub(super) records: Vec<TraceRecord<'a>>,
+}
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m`, whose imports are `imports` (docs/SCE_TTCN3_LANE.md
+/// §10.2, §10.5), as every backend's unit of it writes them: the system ports
+/// ([`system_port_rows`]), an arm per port and record, and each record once,
+/// by its type in the test log ([`log_type_name`]).
 ///
-/// Refused by name where two records are named alike, as the types module of
-/// the export would hold them under one name.
-pub(super) fn trace_record_rows<'r, 'a>(
-    m: &TestConfigurationModel,
-    ports: &'r [SystemPortRow<'a>],
-) -> Result<Vec<TraceRecordRow<'r, 'a>>, ForgeError> {
-    let mut rows: Vec<TraceRecordRow<'r, 'a>> = Vec::new();
-    for input in ports.iter().flat_map(|port| &port.inputs) {
-        let type_name = log_type_name(input.record);
-        match rows.iter().find(|row| row.type_name == type_name) {
-            Some(row) if row.input.record.identity != input.record.identity => {
-                return Err(refused(
-                    ForgeKind::TestConfiguration,
-                    &m.name,
-                    m.source_location.as_ref(),
-                    format!(
-                        "two records its system ports take are named '{type_name}': {} and {}",
-                        row.input.record.identity, input.record.identity
-                    ),
-                ));
+/// Two records of one name are refused by name, as the types module of the
+/// export would hold them under one name.
+pub(super) fn trace_records<'a>(
+    m: &'a TestConfigurationModel,
+    imports: &'a [ImportContext],
+) -> Result<TraceRecords<'a>, ForgeError> {
+    let ports = system_port_rows(m, imports)?;
+    let mut arms = Vec::new();
+    let mut records: Vec<TraceRecord<'a>> = Vec::new();
+    for port in &ports {
+        for input in &port.inputs {
+            let type_name = log_type_name(input.record);
+            match records.iter().find(|read| read.type_name == type_name) {
+                Some(read) if read.row.record.identity != input.record.identity => {
+                    return Err(refused(
+                        ForgeKind::TestConfiguration,
+                        &m.name,
+                        m.source_location.as_ref(),
+                        format!(
+                            "two records its system ports take are named '{type_name}': {} and \
+                             {}",
+                            read.row.record.identity, input.record.identity
+                        ),
+                    ));
+                }
+                Some(_) => {}
+                None => records.push(TraceRecord {
+                    type_name: type_name.clone(),
+                    row: TraceInputRow {
+                        record_type: input.record_type.clone(),
+                        scope: input.scope,
+                        record: input.record,
+                    },
+                }),
             }
-            Some(_) => {}
-            None => rows.push(TraceRecordRow { type_name, input }),
+            arms.push(TraceArm {
+                port: port.id,
+                type_name,
+                record: input.record,
+            });
         }
     }
-    Ok(rows)
+    Ok(TraceRecords {
+        system_ports: ports.iter().map(|port| port.id).collect(),
+        arms,
+        records,
+    })
 }
 
 // ── §11.7: the test case ───────────────────────────────────────

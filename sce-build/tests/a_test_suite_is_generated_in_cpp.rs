@@ -316,3 +316,94 @@ fn the_kind_examples_generate_their_tables() {
         .unwrap_or_else(|e| panic!("the example configuration generates on C++: {e:?}"));
     assert!(configuration[0].1.contains("return {\"elapsed_limit\"};"));
 }
+
+/// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports
+/// take that the export would name alike, the stems of their files, are
+/// refused by name, since one reader and one type of the test log would hold
+/// both. The twin of the Kotlin and Rust tests of the same name, over the one
+/// refusal of the shared rows (`test_tables::trace_records`).
+#[test]
+fn two_records_named_alike_are_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let record = |name: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}" sce:event-name="{name}.event">
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+        )
+    };
+    for (folder, name) in [("a", "twin_a"), ("b", "twin_b")] {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir(&folder).expect("a folder");
+        std::fs::write(folder.join("twin.scxml"), record(name)).expect("the record is written");
+    }
+    let documents = [
+        (
+            "twins_port.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="twins_port">
+  <sce:import kind="event-schema" src="a/twin.scxml" as="TwinA"/>
+  <sce:import kind="event-schema" src="b/twin.scxml" as="TwinB"/>
+  <sce:message type="TwinA" direction="in"/>
+  <sce:message type="TwinB" direction="in"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_listener.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="twins_listener"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:test-port id="sut" type="TwinsPort"/>
+  <state id="waiting">
+    <transition sce:receive="sut" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_configuration.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="twins_configuration">
+  <sce:import kind="test-component" src="twins_listener.scxml" as="TwinsListener"/>
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:mtc type="TwinsListener"/>
+  <sce:system-port id="sut" type="TwinsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>
+"#,
+        ),
+    ];
+    for (file, text) in documents {
+        std::fs::write(dir.path().join(file), text).expect("the document is written");
+    }
+    let Err(err) = generate(&dir.path().join("twins_configuration.scxml")) else {
+        panic!("two records named alike generated on C++");
+    };
+    let ForgeError::Generate(boxed) = err.error else {
+        panic!("not a generation refusal: {err:?}");
+    };
+    let GenerateError::UnsupportedFeature { detail, .. } = *boxed else {
+        panic!("not an unsupported feature");
+    };
+    assert!(
+        detail.starts_with("test-configuration 'twins_configuration': "),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("two records its system ports take are named 'twin': "),
+        "{detail}"
+    );
+}
