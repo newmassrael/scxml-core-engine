@@ -854,6 +854,14 @@ Titan's clock must compare instants as integers of microseconds (§3.3). Titan h
 the sum of a start instant and a duration in `double` arithmetic can differ in its last bit from the instant a trace
 gives for the same moment, which would order a timeout and an input differently on the two sides.
 
+The lane itself is designed in `docs/SCE_TTCN3_LANE.md` (ADR 0091 order of work step 5). Everything that touches
+Titan lives in a separate EPL-2.0 repository, `sce-ttcn3-titan`, which uses SCE only as a tool: the adapter
+interface, the reference adapters and codec bindings, the Titan binding, the pinned Titan with this change, and the
+lane runner. SCE keeps the export, the validator, the wire surfaces the two share, the native runners with trace
+replay, and the corpus with its traces and expected logs. The change above is stated there as a protocol of the Main
+Controller, with its states and messages (§9.2 of that document), together with the recorded input trace both runs
+read (§10).
+
 ## 11. Document forms
 
 This section fixes the XML of the six kinds (ADR 0091 §2, answer 5). The names are those of answer 5: every element
