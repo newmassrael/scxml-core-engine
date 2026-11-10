@@ -80,12 +80,12 @@ PY
 
 mutation_case "A reader's mark is refused" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    if mark && era.role < READER {",
-     "    if mark && era.role < WRITER {")
+     "    if signer == Signer::Member && era.role < READER {",
+     "    if signer == Signer::Member && era.role < WRITER {")
 PY
 
 mutation_case "A machine is told a mark" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    if held.event == MARK_EVENT {\n        return Some(Next::Pass);",
-     "    if false {\n        return Some(Next::Pass);")
+     "    if held.event == MARK_EVENT || held.wire.second_domain {\n        return Some(Next::Pass);",
+     "    if held.wire.second_domain {\n        return Some(Next::Pass);")
 PY

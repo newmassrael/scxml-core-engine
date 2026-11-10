@@ -40,7 +40,7 @@ PY
 
 mutation_case "a refusal is told without the reason the layer gave" <<'PY'
 edit("stdlib/shared/record_list.scxml",
-     '''<assign location="refusedFor" expr="_event.data.reason ?? Refusal.peerRefused"/>''',
+     '''<assign location="refusedFor" expr="_event.data.reason.value"/>''',
      '''<assign location="refusedFor" expr="Refusal.peerRefused"/>''')
 PY
 
