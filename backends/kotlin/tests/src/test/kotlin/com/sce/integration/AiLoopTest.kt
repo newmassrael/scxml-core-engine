@@ -984,7 +984,7 @@ class AiLoopTest {
         assertNotNull(current, "the current state's own name `$journalledCurrent` did not read back")
 
         assertEquals(
-            ConfigurationRejection.NONE, resumed.enterAt(configuration, current!!),
+            ConfigurationRejection.NONE, resumed.enterAt(configuration, current!!).rejection,
             "a configuration this document published is one it can be put back into",
         )
 

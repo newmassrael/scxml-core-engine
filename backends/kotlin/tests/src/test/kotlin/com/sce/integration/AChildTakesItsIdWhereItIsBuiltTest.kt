@@ -40,7 +40,7 @@ private class IdMachine : StateMachineEngine<IdOnlyState, IdOnlyEvent>() {
 
     override fun executeTransitionContent(source: IdOnlyState, transitionIndex: Int) {}
 
-    /** Open this session's script session, as a generated `ensureScriptEngine` does, and name it. */
+    /** Open this session's script session, as a start's `makeScriptSession` does, and name it. */
     fun openScriptSession(): String = allocateScriptSession()
 
     /** The id this session's script session was opened under, if one was. */

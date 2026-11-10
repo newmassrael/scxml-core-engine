@@ -100,7 +100,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.NONE,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
             "a configuration of the document was refused",
         )
         assertEquals(
@@ -128,7 +128,7 @@ class ConfigurationEntryTest {
             sm.enterAt(
                 listOf(StatechartNativeActionState.Assembling),
                 StatechartNativeActionState.Assembling,
-            ),
+            ).rejection,
             "a single-state configuration was refused",
         )
         assertEquals(
@@ -145,7 +145,7 @@ class ConfigurationEntryTest {
         val sm = newParallel()
         assertEquals(
             ConfigurationRejection.EMPTY,
-            sm.enterAt(emptyList(), ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(emptyList(), ParallelRegionsTakeOwnTransitionsState.Working).rejection,
             "a machine is never in nothing",
         )
     }
@@ -159,7 +159,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.COMPOUND_CHILD_COUNT,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
             "`running` was given two active children, which is a configuration the " +
                 "document has no reading for",
         )
@@ -179,7 +179,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.PARALLEL_REGION_MISSING,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
             "`budget` is a region of `run` and a run is always in both at once",
         )
     }
@@ -198,7 +198,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.ANCESTOR_MISSING,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
             "`working` is a child of `running`, which the set does not hold",
         )
     }
@@ -212,7 +212,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.DUPLICATE,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
         )
     }
 
@@ -226,7 +226,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.ROOT_COUNT,
-            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(configuration, ParallelRegionsTakeOwnTransitionsState.Working).rejection,
         )
     }
 
@@ -235,7 +235,7 @@ class ConfigurationEntryTest {
         val sm = newParallel()
         assertEquals(
             ConfigurationRejection.CURRENT_NOT_ACTIVE,
-            sm.enterAt(atWork(), ParallelRegionsTakeOwnTransitionsState.Judging),
+            sm.enterAt(atWork(), ParallelRegionsTakeOwnTransitionsState.Judging).rejection,
             "the current state is the one the machine is standing in, so it is in the " +
                 "set by definition",
         )
@@ -249,7 +249,7 @@ class ConfigurationEntryTest {
         val sm = newParallel()
         assertEquals(
             ConfigurationRejection.CURRENT_NOT_ATOMIC,
-            sm.enterAt(atWork(), ParallelRegionsTakeOwnTransitionsState.Running),
+            sm.enterAt(atWork(), ParallelRegionsTakeOwnTransitionsState.Running).rejection,
         )
     }
 
@@ -264,7 +264,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.EMPTY,
-            sm.enterAt(emptyList(), ParallelRegionsTakeOwnTransitionsState.Working),
+            sm.enterAt(emptyList(), ParallelRegionsTakeOwnTransitionsState.Working).rejection,
         )
 
         assertEquals(before, sm.currentState.value, "a refused entry moved the current state")
@@ -334,7 +334,7 @@ class ConfigurationEntryTest {
 
         assertEquals(
             ConfigurationRejection.NONE,
-            reader.enterAt(configuration, current!!),
+            reader.enterAt(configuration, current!!).rejection,
             "a configuration a run actually reached was refused on the way back",
         )
         assertEquals(configuration.toSet(), reader.activeConfiguration)
