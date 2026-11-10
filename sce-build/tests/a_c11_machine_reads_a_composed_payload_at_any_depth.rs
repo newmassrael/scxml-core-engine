@@ -402,6 +402,42 @@ fn a_send_a_host_serves_hands_it_each_composed_value_as_its_json() {
     );
 }
 
+/// Pinned by the `native_writes` arm of `send_payload_json` without `json`
+/// (`tools/codegen/templates/c/state_machine.c.jinja2`) and by
+/// `sce_forge_wire_begin_value` and `sce_forge_wire_end_value`
+/// (`sce/forge/wire.h`): a BasicHTTP request carries its pairs as the POST's
+/// form and no payload, so a composed value's text, its JSON, is
+/// written alone into the row of its pair, and a value that is no text refuses
+/// the send; no object is written for the pairs to be read back from.
+#[test]
+fn a_basic_http_send_writes_each_composed_value_alone_into_its_row() {
+    let text =
+        std::fs::read_to_string(fixtures().join("static_composed_send.scxml")).expect("fixture");
+    let over_http = text.replace(
+        "<send event=\"batch.sent\" target=\"#_internal\">",
+        "<send event=\"batch.sent\" type=\"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor\" \
+         target=\"http://example.invalid/hook\">",
+    );
+    assert_ne!(over_http, text, "the fixture sends to the machine itself");
+    let code = c11_machine("static_composed_send.scxml", &over_http);
+    holds(
+        &code,
+        &[
+            "sce_forge_wire_begin_value(&sce_wire_value_, SCE_SCRATCH_BUF(pairs[1]),",
+            "if (!sce_forge_wire_end_value(sce_wire)) {",
+            "\"<send> <param name='items'> does not fit a request's parameter, so the message \
+             was not sent\"",
+            "_host_params[_host_param_count].name = \"items\";",
+            "_host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[1]);",
+        ],
+    );
+    assert!(
+        !code.contains("sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\")"),
+        "no pair of the composed value is written into an object:\n{code}"
+    );
+    assert!(!code.contains("sce_forge_wire_copy_since("), "{code}");
+}
+
 /// `sce-codegen <args> <file>` over `document` written as `name` in a
 /// directory that holds `siblings` of `from`, and whether it succeeded, with
 /// what it said.

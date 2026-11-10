@@ -332,6 +332,10 @@ pub const REASONS: &[Reason] = &[
         text: "<send> <content expr> does not fit a request's content, so the message was not sent",
     },
     Reason {
+        row: "send_param_past_request",
+        text: "<send> <param name='{0}'> does not fit a request's parameter, so the message was not sent",
+    },
+    Reason {
         row: "send_content_failed",
         text: "<send> <content> failed to evaluate",
     },

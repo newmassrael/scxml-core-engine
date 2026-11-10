@@ -1867,3 +1867,92 @@ fn the_parse_reads_functions_calls_and_marked_blocks() {
         .collect();
     assert_eq!(calls, vec!["named helper", "pointer now"]);
 }
+
+/// A machine with a script engine whose only sends are BasicHTTP ones: a
+/// namelist (W3C test518), a `<param>` its engine computes, and a literal
+/// `<param>` (W3C test519).
+const BASIC_HTTP_SENDS: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+       datamodel="ecmascript" name="probe">
+  <datamodel><data id="v" expr="1"/></datamodel>
+  <state id="s">
+    <onentry>
+      <send event="named" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://localhost:1/probe" namelist="v"/>
+      <send event="computed" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://localhost:1/probe"><param name="a" expr="v + 1"/></send>
+      <send event="written" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://localhost:1/probe"><param name="b" expr="'x'"/></send>
+    </onentry>
+  </state>
+</scxml>
+"##;
+
+/// The BasicHTTP processor's request carries its pairs as the POST's form and
+/// no payload, so its send evaluates the pairs once and writes no JSON of them
+/// into the scratch's payload: no `_ed` is declared, which the compiler would
+/// refuse as set and never read, and the request's event data is empty. A send
+/// a host serves is handed the payload, and still builds it.
+#[test]
+fn a_basic_http_send_builds_no_payload_and_a_host_served_send_does() {
+    let (_, source) = generated(BASIC_HTTP_SENDS, &[], &[]);
+    assert!(
+        !source.contains("const char *_ed"),
+        "a BasicHTTP send declares no payload:\n{source}"
+    );
+    assert!(
+        !source.contains("JSON.stringify(_scxml_params("),
+        "a BasicHTTP send serialises no payload:\n{source}"
+    );
+    assert!(
+        source.contains("(void)luaL_dostring(sm->L, \"_sce_send_pairs = {}\");")
+            && source.contains("o[#o + 1] = p[1]; o[#o + 1] = _w(p[2])"),
+        "the namelist and the computed param are evaluated once and read as text:\n{source}"
+    );
+    assert!(
+        source.contains("static const char _host_param_value_0[] = "),
+        "the literal param crosses as its literal:\n{source}"
+    );
+    assert_eq!(
+        source.matches("_host_req.event_data = \"\";").count(),
+        3,
+        "each BasicHTTP request's event data is empty:\n{source}"
+    );
+    let hosts = [
+        "--host-processor",
+        "x-sce-host",
+        "--host-invoker",
+        "x-app-host",
+    ];
+    let (_, served) = generated(SCRIPTED, &[], &hosts);
+    assert!(
+        served.contains("return JSON.stringify(_scxml_params(table.unpack(_sce_send_pairs)))")
+            && served.contains("_host_req.event_data = _ed;"),
+        "a send a host serves is handed the payload it builds:\n{served}"
+    );
+}
+
+/// The same under `sce-static`: a BasicHTTP send writes each pair as the text
+/// its form carries and nothing else, from the one value the machine's fields
+/// give it: no JSON object is begun in the scratch's payload, no `_ed` is
+/// declared, and a text that does not fit its row refuses the send, never cut.
+#[test]
+fn a_static_basic_http_send_writes_its_pairs_as_text_only() {
+    let doc = std::fs::read_to_string(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/static_send_http.scxml"),
+    )
+    .expect("the BasicHTTP machine");
+    let (_, source) = generated(&doc, &[], &[]);
+    assert!(
+        !source.contains("const char *_ed") && !source.contains("sce_forge_wire_begin(&sce_wire_"),
+        "a BasicHTTP send builds no payload:\n{source}"
+    );
+    assert!(
+        source.contains("if (sce_forge_wire_text(sce_value, SCE_SCRATCH_BUF(pairs[")
+            && source.contains(
+                "\"<send> <param name='count'> does not fit a request's parameter, so the \
+                 message was not sent\""
+            ),
+        "each pair is written as text, refused whole past its row:\n{source}"
+    );
+}

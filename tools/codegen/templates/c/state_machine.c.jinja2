@@ -81,126 +81,11 @@
                     lua_pop(sm->L, 1);
                 }
 {% endmacro %}
-{# `keep_pairs`: leave the evaluated pairs in `_sce_send_pairs` after the JSON
-   is taken, for the host-served arm, which reads its text params from the
-   same evaluation rather than evaluating each `<param>` a second time. It
-   clears them itself. #}
-{# `host_texts`: the send is one a host serves, whose request carries the same
-   pairs as text. The caller has declared `_host_params` and `_host_param_count`,
-   and each pair that crosses is written as text too, into its own row of the
-   scratch's pairs (docs/adr/0086, section 8.5 (d)), from the one value that is
-   written into the JSON. #}
-{% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false, host_texts=false) %}
-                /* docs/adr/0086, sections 8.5 (d) and 8.6 (d): the payload is
-                   written into the machine's own scratch, never a stack's, and
-                   `_ed` views it once it is written. */
-                const char *_ed = "";
-{% if static_datamodel %}
-                /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
-                   `<param>`'s value is native code (`Param::native_value`) read
-                   from the machine's own fields when the `<send>` runs, and the
-                   pairs are written as the JSON object of the event's data, with
-                   no script engine. §scxml-5.7.1: a pair whose value failed to
-                   compute — or whose location is empty — raises error.execution
-                   and is left out, the message still goes with the others, and the
-                   error ends the block once it has (4.9). */
-                {
-                    sce_forge_wire_t sce_wire_;
-                    sce_forge_wire_begin(&sce_wire_, SCE_SCRATCH_BUF(payload), SCE_SCRATCH_CAP(payload));
-                    _ed = SCE_SCRATCH_BUF(payload);
-{# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
-   "JSON Object Key Order"): a pair left out leaves the order of the others as
-   it was, so the names are sorted here, once, and not at run time. #}
-{% for param in params | sort(attribute='name', case_sensitive=true) %}
-{% if param.is_static_literal %}
-                    {
-                        /* A host keeps a pointer to the text until it is called:
-                           an array of static storage, of any length. */
-                        static const char sce_param_text_[] = {{ param.static_value | c_char_array_init }};
-                        sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
-                                            sce_forge_wire_string(sce_param_text_));
-{% if host_texts %}
-                        _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                        _host_params[_host_param_count].value = sce_param_text_;
-                        _host_param_count++;
-{% endif %}
-                    }
-{% elif param.native_writes %}
-                    {
-                        /* docs/adr/0086, section 5.3: a composed value, written part
-                           by part where its pair stands by the statements the walk
-                           over its type spells (`Param::native_writes`). The build
-                           proved it fits the field, so nothing of it fails; a part
-                           past a bound refuses the whole payload, never cuts it. */
-                        sce_forge_wire_t *const sce_wire = &sce_wire_;
-                        sce_forge_wire_pair_key(sce_wire, "\"{{ param.name | escape_json_string | escape_c }}\"");
-{% if host_texts %}
-                        /* A send a host serves carries the pair as text too: the
-                           JSON of the value, read back from the payload it was
-                           written into, so it is written once. A value refused as
-                           it was written is no text, and the payload's end refuses
-                           the send. */
-                        const size_t sce_value_at = sce_forge_wire_mark(sce_wire);
-{% endif %}
-{{ param.native_value }}
-{% if host_texts %}
-                        if (sce_forge_wire_copy_since(sce_wire, sce_value_at,
-                                SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]), SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {
-                            _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                            _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
-                            _host_param_count++;
-                        }
-{% endif %}
-                    }
-{% elif param.native_value %}
-                    {
-                        sce_forge_algorithm_failure_t sce_failure_ = {0};
-                        const sce_forge_wire_value_t sce_value = {{ param.native_value }};
-                        if (!sce_failure_.failed) {
-                            sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
-{% if host_texts %}
-                            if (sce_forge_wire_text(sce_value, SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]),
-                                                    SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {
-                                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                                _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
-                                _host_param_count++;
-                            }
-{% endif %}
-                        } else {
-                            {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                                sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                                {{ reason("param_failed", "<send>", param.name) }});
-                            _param_failed = true;
-                        }
-                    }
-{% else %}
-                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        {{ reason("param_names_no_location", "<send>", param.name) }});
-                    _param_failed = true;
-{% endif %}
-{% endfor %}
-                    if (!sce_forge_wire_end(&sce_wire_)) {
-                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            {{ reason("send_payload_past_slot") }});
-                        return;
-                    }
-                }
-{% elif not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
-                /* W3C SCXML 6.2: every value is a literal, so the payload —
-                   the JSON the arm below serialises to (W3C SCXML B.2.9) —
-                   is finished at codegen time, and `_ed` views it where it
-                   stands, in static storage, which every receiver copies. */
-                {
-                    static const char _lit[] = {{ params | static_params_json | c_char_array_init }};
-{% if not model.needs_script_engine %}
-                    _Static_assert(sizeof(_lit) <= {{ data_slot.name }},
-                                   "<send>'s literal payload does not fit {{ data_slot.name }}");
-{% endif %}
-                    _ed = _lit;
-                }
-{% else %}
+{# Evaluate a `<send>`'s namelist and `<param>`s once, in document order, into
+   the pairs `_sce_send_pairs` of `sm->L`, each a name and its value: what the
+   JSON payload is serialised from, and what a request that carries its pairs
+   as text reads them from. #}
+{% macro send_pairs_gather(params, namelist, csym_prefix, machine) %}
                 (void)luaL_dostring(sm->L, "_sce_send_pairs = {}");
 {% for var_name in (namelist or '').split() %}
                 /* W3C SCXML 6.2 + C.1 (test553): an undeclared name is an
@@ -242,6 +127,192 @@
                 }
 {% endif %}
 {% endfor %}
+{% endmacro %}
+{# `keep_pairs`: leave the evaluated pairs in `_sce_send_pairs` after the JSON
+   is taken, for the host-served arm, which reads its text params from the
+   same evaluation rather than evaluating each `<param>` a second time. It
+   clears them itself. #}
+{# `host_texts`: the send is one a host serves, whose request carries the same
+   pairs as text. The caller has declared `_host_params` and `_host_param_count`,
+   and each pair that crosses is written as text too, into its own row of the
+   scratch's pairs (docs/adr/0086, section 8.5 (d)), from the one value that is
+   written into the JSON. #}
+{# `json`: false for a send whose request carries its pairs as text and nothing
+   else — a BasicHTTP POST, whose form is the pairs (§scxml-C-2) — which is
+   handed no payload, so none is built and no `_ed` is declared. The pairs are
+   still evaluated here, once: under `sce-static` each is written as text only
+   (the caller passes `host_texts`), a composed value's text, its JSON, alone
+   in the pair's own row, and a text that does not fit its row is not cut: the
+   message is not sent (W3C SCXML 6.2) and the block stops. With a script
+   engine they are left in `_sce_send_pairs` for the caller to read, as
+   `keep_pairs` leaves them, and a literal-only send evaluates nothing, since
+   its texts are the literals. #}
+{% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false, host_texts=false, json=true) %}
+{% if json %}
+                /* docs/adr/0086, sections 8.5 (d) and 8.6 (d): the payload is
+                   written into the machine's own scratch, never a stack's, and
+                   `_ed` views it once it is written. */
+                const char *_ed = "";
+{% endif %}
+{% if static_datamodel %}
+                /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
+                   `<param>`'s value is native code (`Param::native_value`) read
+                   from the machine's own fields when the `<send>` runs, and the
+                   pairs are written, with no script engine, as the JSON object
+                   of the event's data or, for a request that carries them as
+                   text only, as that text. §scxml-5.7.1: a pair whose value
+                   failed to compute — or whose location is empty — raises
+                   error.execution and is left out, the message still goes with
+                   the others, and the error ends the block once it has (4.9). */
+                {
+{% if json %}
+                    sce_forge_wire_t sce_wire_;
+                    sce_forge_wire_begin(&sce_wire_, SCE_SCRATCH_BUF(payload), SCE_SCRATCH_CAP(payload));
+                    _ed = SCE_SCRATCH_BUF(payload);
+{% endif %}
+{# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
+   "JSON Object Key Order"): a pair left out leaves the order of the others as
+   it was, so the names are sorted here, once, and not at run time. #}
+{% for param in params | sort(attribute='name', case_sensitive=true) %}
+{% if param.is_static_literal %}
+                    {
+                        /* A host keeps a pointer to the text until it is called:
+                           an array of static storage, of any length. */
+                        static const char sce_param_text_[] = {{ param.static_value | c_char_array_init }};
+{% if json %}
+                        sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"",
+                                            sce_forge_wire_string(sce_param_text_));
+{% endif %}
+{% if host_texts %}
+                        _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                        _host_params[_host_param_count].value = sce_param_text_;
+                        _host_param_count++;
+{% endif %}
+                    }
+{% elif param.native_writes and not json %}
+                    {
+                        /* §scxml-C-2: a request that carries its pairs as text
+                           only is handed no payload, so a composed value's text,
+                           its JSON, is written alone into the pair's own row by
+                           the statements the walk over its type spells
+                           (`Param::native_writes`). A part past a bound, or a
+                           value past the row, is no text, and the message is not
+                           sent. */
+                        sce_forge_wire_t sce_wire_value_;
+                        sce_forge_wire_begin_value(&sce_wire_value_, SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]),
+                                                   SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]));
+                        sce_forge_wire_t *const sce_wire = &sce_wire_value_;
+{{ param.native_value }}
+                        if (!sce_forge_wire_end_value(sce_wire)) {
+                            {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                                {{ reason("send_param_past_request", param.name) }});
+                            return;
+                        }
+                        _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                        _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
+                        _host_param_count++;
+                    }
+{% elif param.native_writes %}
+                    {
+                        /* docs/adr/0086, section 5.3: a composed value, written part
+                           by part where its pair stands by the statements the walk
+                           over its type spells (`Param::native_writes`). The build
+                           proved it fits the field, so nothing of it fails; a part
+                           past a bound refuses the whole payload, never cuts it. */
+                        sce_forge_wire_t *const sce_wire = &sce_wire_;
+                        sce_forge_wire_pair_key(sce_wire, "\"{{ param.name | escape_json_string | escape_c }}\"");
+{% if host_texts %}
+                        /* A send a host serves carries the pair as text too: the
+                           JSON of the value, read back from the payload it was
+                           written into, so it is written once. A value refused as
+                           it was written is no text, and the payload's end refuses
+                           the send. */
+                        const size_t sce_value_at = sce_forge_wire_mark(sce_wire);
+{% endif %}
+{{ param.native_value }}
+{% if host_texts %}
+                        if (sce_forge_wire_copy_since(sce_wire, sce_value_at,
+                                SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]), SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {
+                            _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                            _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
+                            _host_param_count++;
+                        }
+{% endif %}
+                    }
+{% elif param.native_value %}
+                    {
+                        sce_forge_algorithm_failure_t sce_failure_ = {0};
+                        const sce_forge_wire_value_t sce_value = {{ param.native_value }};
+                        if (!sce_failure_.failed) {
+{% if json %}
+                            sce_forge_wire_pair(&sce_wire_, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
+{% endif %}
+{% if host_texts %}
+                            if (sce_forge_wire_text(sce_value, SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]),
+                                                    SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {
+                                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
+                                _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);
+                                _host_param_count++;
+{% if json %}
+                            }
+{% else %}
+                            } else {
+                                /* §scxml-C-2: the text is all the request carries of
+                                   the pair, and a text that does not fit its row is
+                                   not cut: the message is not sent. */
+                                {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                                    sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                                    {{ reason("send_param_past_request", param.name) }});
+                                return;
+                            }
+{% endif %}
+{% endif %}
+                        } else {
+                            {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                                sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                                {{ reason("param_failed", "<send>", param.name) }});
+                            _param_failed = true;
+                        }
+                    }
+{% else %}
+                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("param_names_no_location", "<send>", param.name) }});
+                    _param_failed = true;
+{% endif %}
+{% endfor %}
+{% if json %}
+                    if (!sce_forge_wire_end(&sce_wire_)) {
+                        {{ csym_prefix }}{{ machine }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                            {{ reason("send_payload_past_slot") }});
+                        return;
+                    }
+{% endif %}
+                }
+{% elif not json %}
+{% if namelist or params | rejectattr("is_static_literal") | list | length > 0 %}
+                /* §scxml-C-2: the request carries the pairs as text and no
+                   payload, so they are evaluated and left for the caller to
+                   read, and no JSON is serialised from them. */
+{{ send_pairs_gather(params, namelist, csym_prefix, machine) }}
+{% endif %}
+{% elif not namelist and params | rejectattr("is_static_literal") | list | length == 0 %}
+                /* W3C SCXML 6.2: every value is a literal, so the payload —
+                   the JSON the arm below serialises to (W3C SCXML B.2.9) —
+                   is finished at codegen time, and `_ed` views it where it
+                   stands, in static storage, which every receiver copies. */
+                {
+                    static const char _lit[] = {{ params | static_params_json | c_char_array_init }};
+{% if not model.needs_script_engine %}
+                    _Static_assert(sizeof(_lit) <= {{ data_slot.name }},
+                                   "<send>'s literal payload does not fit {{ data_slot.name }}");
+{% endif %}
+                    _ed = _lit;
+                }
+{% else %}
+{{ send_pairs_gather(params, namelist, csym_prefix, machine) }}
 {# W3C SCXML B.2.9: the pairs leave the data model as JSON, which keeps each
    value's type for the receiver to reconstruct it. When `JSON.stringify`
    fails, the message is not sent and error.execution says why. #}
@@ -1230,20 +1301,26 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
    the request's event data; the host's text params are the same evaluation's
    pairs, read in document order with repeats kept, so no `<param>` is
    evaluated twice. A literal-only payload is finished at codegen time and its
-   pairs are the literals themselves, so nothing is evaluated at all. #}
+   pairs are the literals themselves, so nothing is evaluated at all.
+
+   A BasicHTTP request is handed no payload: its POST is a form of the pairs
+   (§scxml-C-2), so `_perform_basic_http` reads the text params and never the
+   event data, and the payload macro evaluates the pairs without building the
+   JSON (`json`). #}
 {% set host_pair_cap = (action.params | default([]) | length) + ((action.namelist or '').split() | length) %}
 {% set host_literal_only = not action.namelist and (action.params | rejectattr("is_static_literal") | list | length == 0) %}
 {% if (action.params or action.namelist) and static_datamodel %}
                 /* SCE Accepted Subset §2.15: under `sce-static` each pair is a
-                   typed value of the machine's own fields, which crosses twice —
-                   as the text the host's `params` carry and as a pair of the JSON
-                   `event_data` — written from the one value by the payload macro,
-                   with no script engine to read them back from. */
+                   typed value of the machine's own fields, which crosses as the
+                   text the host's `params` carry and, unless the request is a
+                   BasicHTTP form, as a pair of the JSON `event_data` too —
+                   written from the one value by the payload macro, with no
+                   script engine to read them back from. */
                 sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
-{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, true) }}
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, true, not basic_http) }}
 {% elif action.params or action.namelist %}
-{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
+{{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, false, not basic_http) }}
                 sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
 {% if host_literal_only %}

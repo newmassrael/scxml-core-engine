@@ -223,8 +223,8 @@ PY
 
 mutation_case "a send param whose value failed is written anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                        if (!sce_failure_.failed) {\n                            sce_forge_wire_pair(&sce_wire_,",
-     "                        if (!sce_failure_.failed || true) {\n                            sce_forge_wire_pair(&sce_wire_,")
+     "                        if (!sce_failure_.failed) {\n{% if json %}\n                            sce_forge_wire_pair(&sce_wire_,",
+     "                        if (!sce_failure_.failed || true) {\n{% if json %}\n                            sce_forge_wire_pair(&sce_wire_,")
 PY
 
 mutation_case "a quote inside a string is written unescaped" <<'PY'
