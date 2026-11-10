@@ -72,9 +72,11 @@ PY
 
 # Re-aimed 2026-11-01: Swift is served now, so the reason names cpp and c11 alone and
 # takes the emitless sentence as an argument; the mutant still drops the whole reason.
+# Re-aimed 2026-11-10: the reason names rust too, whose integration tree is declared
+# (ADR 0097).
 mutation_case "a restricted route stops saying why it is restricted" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate{}",\n                emitless_sentence(". ", " too"),\n            )),',
+     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. rust is absent because its integration tree \\\n                 is declared in tools/codegen/trees/rust-integration.toml and written by \\\n                 `sce-codegen materialize rust-integration`{}",\n                emitless_sentence(". ", " too"),\n            )),',
      '            LanguageRoute::GenerateIntegration => None,')
 PY
 

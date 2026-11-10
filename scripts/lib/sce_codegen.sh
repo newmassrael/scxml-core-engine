@@ -92,8 +92,8 @@ sce_codegen_shim_backend() {
 }
 
 # ⚠⚠⚠ SCOPED TO ONE BACKEND LANGUAGE, and that is not caution either.
-# Measured 2026-08-30: `scripts/regen_native_action.sh` emits the Rust, Go AND
-# Kotlin trees from a single script, so a shim that rewrote every `generate`
+# Measured 2026-08-30: `scripts/regen_native_action.sh` emitted the Rust, Go AND
+# Kotlin trees from a single script then, so a shim that rewrote every `generate`
 # handed Rust `--script-engine ecmascript` and the generator refused —
 # *"backend 'rust' cannot emit for --script-engine ecmascript"*. The selection
 # belongs to the emissions for ONE backend, exactly as

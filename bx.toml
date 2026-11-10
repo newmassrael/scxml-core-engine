@@ -567,9 +567,9 @@ run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalo
 #
 # WHAT IS ONE STEP, AND WHY. A step owns trees, and its parts are one step where a real
 # read-after-write or a shared tree joins them:
-#   - regen-rust-tests: the W3C, integration and nine per-document Rust trees all write into
-#     backends/rust/tests, and its last stage, `cargo fmt -p sce-rust-tests`, reads and rewrites
-#     every file the others write. The integration stems are a directory each under src/integration,
+#   - regen-rust-tests: the W3C, integration and static datamodel Rust trees all write into
+#     backends/rust/tests. The first two are declared trees (tools/codegen/trees/rust-w3c.toml,
+#     rust-integration.toml) whose integration stems are a directory each under src/integration,
 #     found at run time, so no output can be declared for each.
 #   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
 #     com/sce/generated, the W3C tree, and its machines under com/sce/integration, the integration one.

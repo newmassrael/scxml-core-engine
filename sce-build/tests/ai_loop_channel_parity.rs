@@ -63,7 +63,8 @@ struct Channel {
     /// The file that points this channel's machine at the document.
     generator: &'static str,
     /// The text `generator` must contain. Spelled per channel because a CMake
-    /// registration and a shell script name the same file differently, and
+    /// registration, a tree manifest and a shell script name the same file
+    /// differently, and
     /// checked against `AI_LOOP_DOCUMENT` below — so a channel cannot be
     /// registered with a reference that names some other document.
     names_document: &'static str,
@@ -112,8 +113,8 @@ const CHANNELS: &[Channel] = &[
         engine: "Rust AOT",
         driver: "backends/rust/tests/tests/ai_loop.rs",
         scenario: r"#\[test\]\s+fn\s+(\w+)",
-        generator: "scripts/regen_ai_loop.sh",
-        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+        generator: "tools/codegen/trees/rust-integration.toml",
+        names_document: "[\"generate\", \"examples/ai_loop/ai_loop.scxml\"",
     },
     Channel {
         engine: "C++ AOT",

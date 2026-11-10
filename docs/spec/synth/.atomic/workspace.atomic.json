@@ -6143,10 +6143,6 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_donedata_local_invoke.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_donedata_local_invoke_go.sh",
           "kind": "references"
         },
@@ -6160,10 +6156,6 @@
         },
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_autoforward_event_fields.sh",
           "kind": "references"
         },
         {
@@ -6183,19 +6175,11 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_autoforward_done_invoke.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_autoforward_done_invoke_go.sh",
           "kind": "references"
         },
         {
           "file": "scripts/regen_autoforward_done_invoke_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_autoforward_internal_queue.sh",
           "kind": "references"
         },
         {
@@ -6207,19 +6191,11 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_autoforward_dequeue_point.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_autoforward_dequeue_point_go.sh",
           "kind": "references"
         },
         {
           "file": "scripts/regen_autoforward_dequeue_point_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_nested_final_not_terminal.sh",
           "kind": "references"
         },
         {
@@ -6231,10 +6207,6 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_invoke_precedes_external_dequeue.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_invoke_precedes_external_dequeue_go.sh",
           "kind": "references"
         },
@@ -6243,19 +6215,11 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_invoke_precedes_dequeue_midrun.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_invoke_precedes_dequeue_midrun_go.sh",
           "kind": "references"
         },
         {
           "file": "scripts/regen_invoke_precedes_dequeue_midrun_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_donedata_late_completion.sh",
           "kind": "references"
         },
         {
@@ -6271,10 +6235,6 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_send_param_payload.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_send_param_payload_go.sh",
           "kind": "references"
         },
@@ -6283,19 +6243,11 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_invoke_param_seeds_declared_child_data.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_invoke_param_seeds_declared_child_data_go.sh",
           "kind": "references"
         },
         {
           "file": "scripts/regen_invoke_param_seeds_declared_child_data_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_host_event_reaches_the_child.sh",
           "kind": "references"
         },
         {
@@ -6316,10 +6268,6 @@
         },
         {
           "file": "sce-build/tests/mutations/the_regen_lane_starts_on_what_it_reproduces.cases",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_event_descriptor_spellings_agree.sh",
           "kind": "references"
         },
         {
@@ -6358,10 +6306,6 @@
         {
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "generate_headered_rust",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_wildcard_in_document_order.sh",
           "kind": "references"
         },
         {
@@ -7556,6 +7500,90 @@
       "target_kind": "section",
       "target_id": "synth-5-I",
       "reason": "the inbox ordering placement rule was removed with the ordering attribute; nothing implements it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
     }
   ],
   "frames": {},

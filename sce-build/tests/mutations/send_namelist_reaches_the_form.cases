@@ -38,7 +38,7 @@ mutation_needs http-fixture
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2
 mutation_targets backends/rust/runtime/src/helpers/event_data.rs
 mutation_targets backends/rust/tests/src/integration/send_namelist_over_http/send_namelist_over_http_sm.rs
-mutation_regen scripts/regen_send_namelist_over_http.sh
+mutation_regen scripts/materialize.sh rust-integration
 
 mutation_oracles backends/rust/tests/tests/send_namelist_over_http.rs
 

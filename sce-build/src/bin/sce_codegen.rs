@@ -2252,7 +2252,7 @@ struct GenerateArgs {
     ///
     /// Authoring workflows that stage the input file into a
     /// temporary directory before generation (e.g.
-    /// `scripts/regen_donedata_local_invoke.sh`, which copies a
+    /// `scripts/regen_donedata_local_invoke_go.sh`, which copies a
     /// tracked fixture into `mktemp -d` so synth-invoke children
     /// don't pollute the source tree) must point this back at
     /// the canonical input root, otherwise the embedded
@@ -14025,22 +14025,22 @@ fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat)
 
 // ── Subcommand: generate-integration ───────────────────────────
 
-/// Batch integration-fixture regeneration for the three committed-tree
-/// backends (Rust / Kotlin / Go). Parallel to `generate-w3c` but
+/// Batch integration-fixture regeneration for the backends whose
+/// integration tree is still written by a script each (Kotlin, Go,
+/// Python) or by one sweep (Swift). Parallel to `generate-w3c` but
 /// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures.
 ///
 /// Each `<stem>` is dispatched to the matching backend's regen script
-/// (`scripts/regen_<stem>{,_kotlin,_go}.sh`); those scripts already
+/// (`scripts/regen_<stem>{_kotlin,_go,_python}.sh`); those scripts
 /// encode the per-language TMP staging + `--input-root` override +
-/// post-processing (Rust `mod.rs` synthesis, Kotlin `// Source:`
-/// rewrite, Kotlin `--kotlin-package-prefix com.sce.integration`).
-/// Routing through a single CLI entry point keeps
-/// `scripts/regen_all_committed_trees.sh` backend-agnostic.
+/// post-processing (Kotlin `// Source:` rewrite, Kotlin
+/// `--kotlin-package-prefix com.sce.integration`).
 ///
-/// Build-time backends (cpp / c11 / pybind11 Python) are intentionally
-/// not supported here — they emit at CMake / CI time without a
-/// committed tree, so there is nothing for `generate-integration` to
-/// drive.
+/// Rust is not served: its integration tree is declared
+/// (`tools/codegen/trees/rust-integration.toml`, ADR 0097) and written by
+/// `materialize rust-integration`. Build-time backends (cpp / c11) are not
+/// served either — they emit at CMake time without a committed tree, so
+/// there is nothing for `generate-integration` to drive.
 fn cmd_generate_integration(
     language: &str,
     stem: Option<&str>,
@@ -14064,14 +14064,13 @@ fn cmd_generate_integration(
     // received nothing structured for the one route whose restriction is
     // real, and the sentence was a third copy of the set to keep current.
     let script_suffix = match lang {
-        Language::Rust => "",
         Language::Kotlin => "_kotlin",
         Language::Go => "_go",
         Language::Python => "_python",
         // Swift is one sweep over every stem, not a script each: see
         // `scripts/regen_swift_integration.sh`. The suffix is never read for it.
         Language::Swift => "",
-        Language::Cpp | Language::C11 => error_format.emit_and_exit(
+        Language::Rust | Language::Cpp | Language::C11 => error_format.emit_and_exit(
             &CliError::UnsupportedLanguage {
                 lang: lang.canonical_name().to_string(),
                 route: LanguageRoute::GenerateIntegration,
@@ -14082,7 +14081,7 @@ fn cmd_generate_integration(
 
     // ⚠ `--output-dir` is wired for Kotlin and for nothing else, so it is
     // REFUSED elsewhere rather than ignored. Only the Kotlin stem scripts read
-    // `SCE_KOTLIN_GENERATED_ROOT`; a Rust or Go run that accepted the flag
+    // `SCE_KOTLIN_GENERATED_ROOT`; a Go or Python run that accepted the flag
     // would write in place and report success, which is the failure mode a
     // caller reaches for this flag precisely to avoid — it would dirty the
     // tree it was trying to leave alone, and say nothing.
@@ -14173,10 +14172,10 @@ fn cmd_generate_integration(
         if let Some(engine) = script_engine {
             command.env("SCE_SCRIPT_ENGINE", engine);
             // ⚠ And WHICH backend it applies to, because a stem script may emit
-            // several from one file: `regen_native_action.sh` writes the Rust,
-            // Go and Kotlin trees, and Rust has no arm that emits ECMAScript.
-            // Without this scope the selection reaches all three and the
-            // generator refuses the first one it does not fit.
+            // several from one file: `regen_native_action.sh` wrote the Rust,
+            // Go and Kotlin trees until 2026-11-07, and Rust has no arm that
+            // emits ECMAScript. Without this scope the selection reached all
+            // three and the generator refused the first one it did not fit.
             command.env("SCE_SCRIPT_ENGINE_FOR", lang.canonical_name());
         }
         if let Some(dir) = output_dir {

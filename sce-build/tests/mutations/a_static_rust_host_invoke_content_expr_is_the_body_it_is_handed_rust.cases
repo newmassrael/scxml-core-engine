@@ -28,7 +28,7 @@
 mutation_tests -p sce-rust-tests --test a_static_machines_typed_params_reach_the_host
 mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/host_processor/statechart_static_host_params_sm.rs
-mutation_regen scripts/regen_host_processor.sh
+mutation_regen scripts/materialize.sh rust-integration
 mutation_oracles backends/rust/tests/tests/a_static_machines_typed_params_reach_the_host.rs sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── The body is read and handed over ───────────────────────────────

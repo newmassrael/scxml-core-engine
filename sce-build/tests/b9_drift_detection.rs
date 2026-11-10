@@ -550,7 +550,7 @@ fn verify_passes_on_real_committed_rust_donedata_tree() {
          failure here means \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing backends/rust/tests/src/integration/donedata_local_invoke/. \
-         Run `scripts/regen_donedata_local_invoke.sh` and commit the \
+         Run `scripts/materialize.sh rust-integration` and commit the \
          result. stderr:\n{stderr}"
     );
 }

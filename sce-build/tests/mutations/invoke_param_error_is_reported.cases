@@ -34,7 +34,7 @@ mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child_sm.rs
 mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe_sm.rs
 mutation_targets backends/rust/tests/src/integration/invoke_param_error_starts_the_child/mod.rs
-mutation_regen scripts/regen_invoke_param_error_starts_the_child.sh
+mutation_regen scripts/materialize.sh rust-integration
 
 mutation_oracles backends/rust/tests/tests/invoke_param_error_starts_the_child.rs
 

@@ -245,10 +245,6 @@
           "kind": "implements"
         },
         {
-          "file": "scripts/regen_event_schema_native.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_event_schema_native_go.sh",
           "kind": "references"
         },
@@ -272,7 +268,14 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "mutation_reasons": [],
+  "mutation_reasons": [
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "bytesguard-6",
+      "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    }
+  ],
   "frames": {},
   "branches": {},
   "entities": {},

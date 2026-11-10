@@ -3230,7 +3230,7 @@ mutation_check_template_bridge() {
     done <<<"$unbridged"
     red "the build step would recompile the committed generated sources"
     red "unchanged, so every case here would report INCONCLUSIVE. Declare the"
-    red "regeneration — 'mutation_regen scripts/regen_<stem>.sh' — together"
+    red "regeneration — 'mutation_regen scripts/materialize.sh <tree>' — together"
     red "with the files it writes, which are compiled into the tests and so"
     red "are mutation_targets exactly as the template is."
     return 1

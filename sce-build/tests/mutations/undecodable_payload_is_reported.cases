@@ -64,7 +64,7 @@ mutation_targets backends/rust/runtime/src/scripting/i_script_engine.rs
 mutation_targets backends/rust/runtime/src/payload_reading.rs
 mutation_targets tools/codegen/templates/rust/process_transition.rs.jinja2
 mutation_targets backends/rust/tests/src/integration/undecodable_payload_is_reported/undecodable_payload_is_reported_sm.rs
-mutation_regen scripts/regen_undecodable_payload_is_reported.sh
+mutation_regen scripts/materialize.sh rust-integration
 
 mutation_oracles backends/rust/tests/tests/undecodable_payload_is_reported.rs
 

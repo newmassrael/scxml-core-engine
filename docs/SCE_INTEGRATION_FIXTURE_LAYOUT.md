@@ -16,10 +16,12 @@ A fixture placed there is a **seven-channel commitment** — C++ Interpreter,
 C++ AOT, Rust, Go, Kotlin, Python, C11 — and the commitment splits in two.
 
 The sites that GENERATE each channel are loud when they are missing:
-`scripts/regen_<stem>{,_go,_kotlin,_python}.sh` (without them
+`scripts/regen_<stem>{_go,_kotlin,_python}.sh` (without them
 `regen_all_committed_trees.sh` exits non-zero), the `pub mod <stem>;` in the
 Rust integration tree (`rust-modrs-drift` blocks the push), and the two CMake
-registrations (the build fails).
+registrations (the build fails). The Rust machine needs no site of its own:
+`tools/codegen/trees/rust-integration.toml` generates every directory of
+`integration_resources/` (ADR 0097).
 
 The sites that ASSERT are silent. Generated code that nobody runs still
 compiles, so a stem can land with a machine in all seven channels and a test
@@ -1688,14 +1690,17 @@ When a future SCXML contract requires this layer:
    input root — nesting integration under `resources/` would fold
    the integration fixture into the W3C source-hash domain.
 2. Author per-backend regen scripts following the
-   `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh` pattern.
+   `scripts/regen_donedata_local_invoke{_kotlin,_go,_python}.sh` pattern.
    These are now thin wrappers around the canonical CLI surface
    (see step 3); each script encodes the per-language TMP staging,
-   `--input-root` override, and post-processing (Rust `mod.rs`
-   synthesis, Kotlin `// Source:` rewrite, Kotlin
-   `--kotlin-package-prefix com.sce.integration`).
+   `--input-root` override, and post-processing (Kotlin `// Source:`
+   rewrite, Kotlin `--kotlin-package-prefix com.sce.integration`).
+   Rust needs none: its integration tree is declared in
+   `tools/codegen/trees/rust-integration.toml`, which generates every
+   `integration_resources/<stem>/` dir with its children and module
+   index, and `scripts/materialize.sh rust-integration` writes it.
 3. Bulk regenerate via the uniform CLI:
-   `sce-codegen generate-integration -l <rust|kotlin|go> --stem <stem>`
+   `sce-codegen generate-integration -l <kotlin|go|python> --stem <stem>`
    (single fixture) or omit `--stem` to walk every
    `integration_resources/<stem>/` dir. The
    `scripts/regen_all_committed_trees.sh` master script bundles W3C
