@@ -526,7 +526,8 @@ fn the_kind_examples_generate_their_tables() {
     let examples = examples_dir();
     let suite = file_at(&examples.join("test-suite.scxml"), "test_suite");
     for needle in [
-        "    module_parameters.set(\"limit\", _sce_saved.saved_write_uint32(500))\n".to_string(),
+        "    module_parameters.set(\"elapsed_limit\", _sce_saved.saved_write_uint32(500))\n"
+            .to_string(),
         execute(
             "test_case",
             "10000000",
@@ -549,7 +550,7 @@ fn the_kind_examples_generate_their_tables() {
         "test_configuration",
     );
     assert!(
-        configuration.ends_with("    return [\"limit\"]"),
+        configuration.ends_with("    return [\"elapsed_limit\"]"),
         "{configuration}"
     );
     let component = machine_files(&examples.join("test-component.scxml"));
@@ -560,5 +561,8 @@ fn the_kind_examples_generate_their_tables() {
         ),
         "{component}"
     );
-    assert!(component.contains("given.of(\"limit\")"), "{component}");
+    assert!(
+        component.contains("given.of(\"elapsed_limit\")"),
+        "{component}"
+    );
 }

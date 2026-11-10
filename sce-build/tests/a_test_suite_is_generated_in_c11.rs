@@ -396,7 +396,7 @@ fn the_kind_examples_generate_their_tables() {
     assert_eq!(suite[0].0, "test_suite.h");
     for needle in [
         "\n    (void)sce_test_module_parameters_set(&storage->suite.module_parameters, \
-         \"limit\", \"500\");\n",
+         \"elapsed_limit\", \"500\");\n",
         "\n    return sce_test_enabled(world, \"session-unicast\");\n",
         "\n    storage->executes[0].guard = INT64_C(10000000);\n",
     ] {
@@ -415,5 +415,5 @@ fn the_kind_examples_generate_their_tables() {
         .unwrap_or_else(|e| panic!("the example configuration generates on C11: {e:?}"));
     assert!(configuration[0]
         .1
-        .contains("static const char *const ids[] = {\"limit\"};"));
+        .contains("static const char *const ids[] = {\"elapsed_limit\"};"));
 }

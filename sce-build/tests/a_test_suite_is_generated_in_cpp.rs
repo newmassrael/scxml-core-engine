@@ -297,7 +297,7 @@ fn the_kind_examples_generate_their_tables() {
         .unwrap_or_else(|e| panic!("the example suite generates on C++: {e:?}"));
     assert_eq!(suite[0].0, "test_suite.h");
     for needle in [
-        "suite.moduleParameters.set(\"limit\", ::SCE::Saved::savedWriteUint32(uint32_t{500}));",
+        "suite.moduleParameters.set(\"elapsed_limit\", ::SCE::Saved::savedWriteUint32(uint32_t{500}));",
         "::SCE::Test::Execute{::SCE::Generated::TestCase::testCase(), \
          ::SCE::Test::Duration{10000000}, [](const ::SCE::Test::Features &world) { return \
          ::SCE::Test::enabled(world, \"session-unicast\"); }}",
@@ -314,5 +314,5 @@ fn the_kind_examples_generate_their_tables() {
         .contains("::SCE::Generated::TestConfiguration::configuration()"));
     let configuration = generate(&examples.join("test-configuration.scxml"))
         .unwrap_or_else(|e| panic!("the example configuration generates on C++: {e:?}"));
-    assert!(configuration[0].1.contains("return {\"limit\"};"));
+    assert!(configuration[0].1.contains("return {\"elapsed_limit\"};"));
 }

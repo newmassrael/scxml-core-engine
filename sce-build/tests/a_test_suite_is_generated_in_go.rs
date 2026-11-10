@@ -594,7 +594,7 @@ fn the_kind_examples_generate_their_tables() {
     let examples = examples_dir();
     let suite = file_at(&examples.join("test-suite.scxml"), "test_suite");
     for needle in [
-        "\tmoduleParameters.Set(\"limit\", sce.SavedWriteUint32(500))\n".to_string(),
+        "\tmoduleParameters.Set(\"elapsed_limit\", sce.SavedWriteUint32(500))\n".to_string(),
         execute(
             "test_case",
             &guard(10_000_000),
@@ -616,7 +616,7 @@ fn the_kind_examples_generate_their_tables() {
         "test_configuration",
     );
     assert!(
-        configuration.contains("\treturn []string{\"limit\"}\n"),
+        configuration.contains("\treturn []string{\"elapsed_limit\"}\n"),
         "{configuration}"
     );
     let component = machine_files(&examples.join("test-component.scxml"));
@@ -625,5 +625,8 @@ fn the_kind_examples_generate_their_tables() {
         component.contains("if !context.ReadModuleParameters(policy.sceAcceptModuleParameters) {"),
         "{component}"
     );
-    assert!(component.contains("given.Of(\"limit\")"), "{component}");
+    assert!(
+        component.contains("given.Of(\"elapsed_limit\")"),
+        "{component}"
+    );
 }

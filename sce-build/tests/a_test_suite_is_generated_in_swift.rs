@@ -475,7 +475,8 @@ fn the_kind_examples_generate_their_tables() {
     let examples = examples_dir();
     let suite = file_at(&examples.join("test-suite.scxml"), "TestSuite");
     for needle in [
-        "moduleParameters.set(\"limit\", SceRuntime.SavedValues.of(500 as UInt32))\n".to_string(),
+        "moduleParameters.set(\"elapsed_limit\", SceRuntime.SavedValues.of(500 as UInt32))\n"
+            .to_string(),
         execute(
             "TestCase",
             "10000000",
@@ -502,7 +503,7 @@ fn the_kind_examples_generate_their_tables() {
         "TestConfiguration",
     );
     assert!(
-        configuration.contains("        [\"limit\"]\n"),
+        configuration.contains("        [\"elapsed_limit\"]\n"),
         "{configuration}"
     );
     let class = component_class_of(&examples.join("test-component.scxml"));

@@ -431,7 +431,7 @@ fn the_kind_examples_generate_their_tables() {
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("kind-examples");
     let suite = file_at(&examples.join("test-suite.scxml"), "TestSuite");
     for needle in [
-        "moduleParameters.set(\"limit\", com.sce.runtime.SavedValues.of(500u))".to_string(),
+        "moduleParameters.set(\"elapsed_limit\", com.sce.runtime.SavedValues.of(500u))".to_string(),
         execute(
             "test_case",
             "10000000L",
@@ -453,7 +453,7 @@ fn the_kind_examples_generate_their_tables() {
         "TestConfiguration",
     );
     assert!(
-        configuration.contains("listOf(\"limit\")"),
+        configuration.contains("listOf(\"elapsed_limit\")"),
         "{configuration}"
     );
 }

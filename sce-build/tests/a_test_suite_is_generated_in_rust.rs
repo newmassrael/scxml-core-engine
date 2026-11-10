@@ -393,7 +393,7 @@ fn the_kind_examples_generate_their_tables() {
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("kind-examples");
     let suite = file_at(&examples.join("test-suite.scxml"), "test_suite");
     for needle in [
-        "module_parameters.set(\"limit\", <u32 as \
+        "module_parameters.set(\"elapsed_limit\", <u32 as \
          ::sce_rust_runtime::saved_state::SavedValue>::to_saved(&500));"
             .to_string(),
         execute(
@@ -413,5 +413,5 @@ fn the_kind_examples_generate_their_tables() {
         &examples.join("test-configuration.scxml"),
         "test_configuration",
     );
-    assert!(configuration.contains("vec![\"limit\".to_string()]"));
+    assert!(configuration.contains("vec![\"elapsed_limit\".to_string()]"));
 }
