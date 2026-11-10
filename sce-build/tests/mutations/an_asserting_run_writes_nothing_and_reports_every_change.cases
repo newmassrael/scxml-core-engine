@@ -55,8 +55,8 @@ PY
 
 mutation_case "generate-w3c --clean and --list run under the flag" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "Commands::GenerateW3c(args) if args.clean || args.list => Some(",
-     "Commands::GenerateW3c(args) if false && (args.clean || args.list) => Some(")
+     "// having compared nothing.\n        Commands::GenerateW3c(args) if args.clean || args.list => Some(",
+     "// having compared nothing.\n        Commands::GenerateW3c(args) if false && (args.clean || args.list) => Some(")
 PY
 
 mutation_case "a file the run reads back is read from disk" <<'PY'
