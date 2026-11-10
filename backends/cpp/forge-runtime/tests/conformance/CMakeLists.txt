@@ -552,6 +552,41 @@ target_include_directories(caller_tag_variant_generated_test PRIVATE
 target_compile_options(caller_tag_variant_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME caller_tag_variant_generated COMMAND caller_tag_variant_generated_test)
 
+# Derived numbers whose encode can refuse, printed from their plan
+# (docs/adr/0081 step 4): a length two byte strings share, one the value states
+# where its gated content is absent, and the encoded length of a body that can
+# refuse, in a field that may not hold it. The test holds them to the frames
+# and refusals the Rust encode gives the same values.
+set(POSITIONAL_FORMS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/positional_forms_headers")
+file(MAKE_DIRECTORY "${POSITIONAL_FORMS_GENERATED_DIR}")
+set(POSITIONAL_FORMS_DOCUMENTS
+    "${RESOURCE_DIR}/codec_length_shared.scxml"
+    "${RESOURCE_DIR}/codec_length_stated.scxml"
+    "${RESOURCE_DIR}/codec_encoded_length_checked.scxml"
+)
+set(POSITIONAL_FORMS_GENERATED_HEADERS "")
+foreach(_positional_document IN LISTS POSITIONAL_FORMS_DOCUMENTS)
+    get_filename_component(_positional_fixture "${_positional_document}" NAME_WE)
+    sce_codegen_generation(_POSITIONAL_FORMS
+        DOCUMENT "${_positional_document}"
+        OUTPUT_DIR "${POSITIONAL_FORMS_GENERATED_DIR}"
+        LANGUAGE cpp
+        CLAIM SCE_POSITIONAL_FORMS_CPP_DECLARED_OUTPUTS
+        COMMENT "Generating C++ positional-form fixture ${_positional_fixture}")
+    list(APPEND POSITIONAL_FORMS_GENERATED_HEADERS ${_POSITIONAL_FORMS_HEADERS})
+endforeach()
+add_custom_target(generate_positional_forms_fixtures_cpp)
+target_sources(generate_positional_forms_fixtures_cpp PRIVATE ${POSITIONAL_FORMS_GENERATED_HEADERS})
+add_executable(positional_forms_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/positional_forms_generated_test.cpp")
+add_dependencies(positional_forms_generated_test generate_positional_forms_fixtures_cpp)
+set_target_properties(positional_forms_generated_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(positional_forms_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${POSITIONAL_FORMS_GENERATED_DIR}"
+)
+target_compile_options(positional_forms_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME positional_forms_generated COMMAND positional_forms_generated_test)
+
 # The queues on real threads, written as histories and judged by the command
 # every backend's histories are judged by (verification layer 2). The recorder
 # runs the runtime's queues and writes one history per run; the second test
