@@ -298,6 +298,26 @@ const IMPLEMENTED: &[Implemented] = &[
               The name appears because SCE produces the encoding, not \
               because anything branches on the document.",
     },
+    Implemented {
+        token: "RFC 8785",
+        scope: &[
+            "backends/rust/runtime/src/json.rs",
+            "sce/include/saved/SavedJson.h",
+            "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Json.kt",
+            "backends/go/runtime/json_canonical.go",
+            "backends/python/runtime/sce_runtime/saved_json.py",
+            "backends/swift/runtime/Sources/SceRuntime/Json.swift",
+        ],
+        why: "SCE writes the canonical test log (docs/SCE_TEST_PROFILE.md \
+              §12.5, ADR 0091 C3) as the JSON Canonicalization Scheme that \
+              document defines: members sorted by their UTF-16 code units, \
+              every number in the double's shortest spelling, every text in \
+              JSON.stringify's escapes. Each runtime's writer refuses a value \
+              the scheme has no text for, and its refusal names the document \
+              whose rule the value breaks, which is why it is read as code. \
+              The name appears because SCE produces the canonical text, not \
+              because anything branches on the document.",
+    },
 ];
 
 /// Modules implementing requirement closure, which no entry above may reach.
