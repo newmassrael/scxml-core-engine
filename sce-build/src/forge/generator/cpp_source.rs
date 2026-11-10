@@ -195,35 +195,12 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // embeds ([`EVERY_WIDTH_WRITTEN`]). A streamed field is written always,
     // where the value holds it (an element it presents as an optional value,
     // or a member of a group it holds), or where its gate holds
-    // ([`PRESENT_IS_HELD`], [`NO_LIST_DERIVED`]).
+    // ([`PRESENT_IS_HELD`], [`NO_LIST_DERIVED`]), which the printer tests on
+    // the carriers as the encode writes them, on the inputs it is handed, on
+    // the arm the value holds of a group whose gate is a chain's membership,
+    // and on the entries of a chain for any other membership.
     for write in &plan.program {
         match write {
-            // Written where its gate holds, which the printer tests on the
-            // carriers as the encode writes them, on the inputs it is handed,
-            // and on the arm the value holds of a group whose gate is a chain's
-            // membership.
-            Write::Streamed {
-                field,
-                guard: Guard::Gate,
-                list: None,
-            } => {
-                let testable = field.present_if.as_ref().is_some_and(|gate| {
-                    plan.clauses(gate).iter().all(|c| {
-                        matches!(
-                            c,
-                            Clause::Flag { .. }
-                                | Clause::Input { .. }
-                                | Clause::Member {
-                                    held: Some((_, Some(_))),
-                                    ..
-                                }
-                        )
-                    })
-                });
-                if !testable {
-                    forms.push(format!("`{}`, gated on a chain's membership", field.id));
-                }
-            }
             // A list is walked entry by entry, each entry written whole, a chain
             // setting on each entry but the last the flag its entries end on,
             // and one a gate decides is walked where the value holds it. An
@@ -3776,8 +3753,38 @@ pub(super) fn render(
                     let value = g.gate_value(&g.group.gates[*gate], &format!("_r_{}", g.name));
                     format!("({value} {} 0)", if *negate { "==" } else { "!=" })
                 }
-                Clause::Member { .. } => {
-                    unreachable!("`unlowered` refuses a membership no group's gate is")
+                // Any other membership: whether the chain the value holds has
+                // an entry of the kind, its entries read as the chain's own
+                // walk reads them (docs/adr/0065 §6 R6): the chain the value
+                // presents, or the one the arm it holds of the group of the
+                // chain's memberships keeps, the others of a bare entry's place
+                // (whose named entry is of the group's own kind). A chain a
+                // gate leaves out, or an arm does not hold, has none.
+                Clause::Member {
+                    chain, id, negate, ..
+                } => {
+                    let walked = element(chain)
+                        .expect("a chain whose membership a gate tests is a list the value holds");
+                    let (held, _) = walked
+                        .list
+                        .as_ref()
+                        .expect("a chain whose membership a gate tests is a list");
+                    let identifier =
+                        entry_identifier(plan, l, &held.namespace, &chain.id, "_x");
+                    let found = format!(
+                        "[&]() {{ for (const auto& _x : {}) {{ if ({identifier} == 0x{id:X}u) return true; }} return false; }}()",
+                        walked.entries()
+                    );
+                    let has = if walked.optional {
+                        format!("({}.has_value() && {found})", walked.local())
+                    } else {
+                        found
+                    };
+                    if *negate {
+                        format!("!{has}")
+                    } else {
+                        has
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -5047,6 +5054,26 @@ mod tests {
             "{stem}: the arm holds `state` from the enum's first value:\n{code}"
         );
         holds(stem, &code, "_e_state = static_cast<");
+    }
+
+    /// A gate on a chain's membership that no group holds is tested on the
+    /// entries of the chain the value presents, beside the input it is handed.
+    #[test]
+    fn a_membership_no_group_holds_is_tested_on_the_chain_s_entries() {
+        let stem = "codec_chain_has_input";
+        let code = cpp_of(stem);
+        holds(
+            stem,
+            &code,
+            "        if (([&]() { for (const auto& _x : _r_entries) { if (",
+        );
+        holds(
+            stem,
+            &code,
+            " == 0x7u) return true; } return false; }() || \
+             ((static_cast<std::uint64_t>(urgent) & 0x1ull) != 0)) != _e_priority.has_value()) \
+             return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
+        );
     }
 
     /// The encoded length of a body that can refuse passes the refusal on, and

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a field gated on a chain's membership or on a flag input
+  the caller hands (docs/adr/0065 §6 R6).
+
+  `priority` is on the wire where `entries` holds an entry whose `entry_type`
+  is 7, or where the caller hands `urgent` set. No group holds the membership:
+  the input is no flag the value holds, so the gate is not decided by an arm
+  the value holds. The encode tests it on the entries of the chain the value
+  presents and on the input it is handed, and refuses before its first byte a
+  value whose `priority` disagrees with it (`PresentIfMismatch`).
+
+  Wire shape: the chain's entries, then `priority` where the gate holds.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_has_input">
+  <sce:import src="codec_chain_has_tagged_entry.scxml" kind="codec" as="codec_chain_has_tagged_entry"/>
+  <sce:flag-inputs>
+    <sce:flag-input name="urgent" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:tlv-chain id="entries" type="codec_chain_has_tagged_entry" sce:byte="0"
+                   max-depth="3" terminate-on="entry-flag" entry-flag-name="more"
+                   entry-id="entry_type"/>
+    <sce:field id="priority" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="entries.has(7) || urgent"/>
+  </datamodel>
+</scxml>
