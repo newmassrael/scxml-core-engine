@@ -3611,7 +3611,12 @@ impl CasePrinter {
                      '{key}' is one it prints from its plan"
                 ))
             }
-            _ => None,
+            // Their encodes do not print the plan: they run the `cases`.
+            Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => None,
         })
     }
 

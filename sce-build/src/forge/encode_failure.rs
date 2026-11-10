@@ -77,24 +77,35 @@ impl EncodeFailure {
     /// state the case, and a fold that meets one says so by name. The C++
     /// runtime names no inconsistent source yet.
     pub fn symbol(self, lang: Language) -> Option<&'static str> {
-        Some(match (lang, self) {
-            (Language::Rust, EncodeFailure::LengthOutOfRange) => {
-                "::sce_forge_runtime::codec::CodecError::LengthOutOfRange"
-            }
-            (Language::Rust, EncodeFailure::PresentIfMismatch) => {
-                "::sce_forge_runtime::codec::CodecError::PresentIfMismatch"
-            }
-            (Language::Rust, EncodeFailure::InconsistentSource) => {
-                "::sce_forge_runtime::codec::CodecError::InconsistentSource"
-            }
-            (Language::Cpp, EncodeFailure::LengthOutOfRange) => {
-                "::SCE::Forge::CodecError::LengthOutOfRange"
-            }
-            (Language::Cpp, EncodeFailure::PresentIfMismatch) => {
-                "::SCE::Forge::CodecError::PresentIfMismatch"
-            }
-            _ => return None,
-        })
+        match lang {
+            Language::Rust => Some(match self {
+                EncodeFailure::LengthOutOfRange => {
+                    "::sce_forge_runtime::codec::CodecError::LengthOutOfRange"
+                }
+                EncodeFailure::PresentIfMismatch => {
+                    "::sce_forge_runtime::codec::CodecError::PresentIfMismatch"
+                }
+                EncodeFailure::InconsistentSource => {
+                    "::sce_forge_runtime::codec::CodecError::InconsistentSource"
+                }
+            }),
+            Language::Cpp => match self {
+                EncodeFailure::LengthOutOfRange => {
+                    Some("::SCE::Forge::CodecError::LengthOutOfRange")
+                }
+                EncodeFailure::PresentIfMismatch => {
+                    Some("::SCE::Forge::CodecError::PresentIfMismatch")
+                }
+                EncodeFailure::InconsistentSource => None,
+            },
+            // These harnesses run no source of a printed encode (docs/adr/0081
+            // §5), so none of them states a refused case.
+            Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => None,
+        }
     }
 }
 
