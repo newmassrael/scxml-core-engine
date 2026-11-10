@@ -355,9 +355,15 @@ pub fn nullable(value: &Value) -> Option<&Value> {
     }
 }
 
-/// A value of a union: an object of one member, the variant of its case and
-/// the case's value.
-pub fn union_case<'v>(value: &'v Value, what: &str) -> Result<(&'v str, &'v Value), TraceRefusal> {
+/// A value of a union whose cases are `variants`: an object of one member,
+/// named by one of them, the variant of its case and the case's value. A
+/// variant no case declares is refused here, so a reader that matches on the
+/// variant read has an arm for each declared one and needs none for another.
+pub fn union_case<'v>(
+    value: &'v Value,
+    variants: &[&str],
+    what: &str,
+) -> Result<(&'v str, &'v Value), TraceRefusal> {
     let Value::Object(members) = value else {
         return Err(not_a(
             value,
@@ -365,16 +371,22 @@ pub fn union_case<'v>(value: &'v Value, what: &str) -> Result<(&'v str, &'v Valu
             "a value of a union, which is an object of one member",
         ));
     };
-    match members.as_slice() {
-        [(variant, case)] => Ok((variant.as_str(), case)),
-        _ => Err(refused(
+    let [(variant, case)] = members.as_slice() else {
+        return Err(refused(
             what,
             format!(
                 "a value of a union is an object of one member, and this one has {}",
                 members.len()
             ),
-        )),
+        ));
+    };
+    if !variants.contains(&variant.as_str()) {
+        return Err(refused(
+            what,
+            format!("'{variant}' names no case of its union"),
+        ));
     }
+    Ok((variant.as_str(), case))
 }
 
 /// The value of a case of a union that holds no record: the empty object.
@@ -386,11 +398,6 @@ pub fn no_record(value: &Value, what: &str) -> Result<(), TraceRefusal> {
             "a case that holds no record is the empty object",
         )),
     }
-}
-
-/// The refusal of a value of a union whose member names none of its cases.
-pub fn unknown_variant(variant: &str, what: &str) -> TraceRefusal {
-    refused(what, format!("'{variant}' names no case of its union"))
 }
 
 #[cfg(test)]
@@ -556,19 +563,23 @@ mod tests {
                 Some(canonical::integer(1_u32)),
             )])),
         );
-        let (variant, value) = union_case(&card, "p").expect("one member");
+        let cases = ["card", "cash"];
+        let (variant, value) = union_case(&card, &cases, "p").expect("one member");
         assert_eq!(variant, "card");
         assert_eq!(
             write_canonical(value).expect("canonical"),
             "{\"amount\":\"1\"}"
         );
         let cash = canonical::union_case("cash", None);
-        let (_, value) = union_case(&cash, "p").expect("one member");
+        let (_, value) = union_case(&cash, &cases, "p").expect("one member");
         assert_eq!(no_record(value, "p"), Ok(()));
+        assert!(reason(no_record(&card, "p")).contains("is the empty object"));
         let two = parse("{\"card\":{},\"cash\":{}}").expect("JSON");
-        assert!(reason(union_case(&two, "p")).contains("this one has 2"));
-        assert!(unknown_variant("cheque", "p")
-            .reason()
-            .contains("'cheque' names no case"));
+        assert!(reason(union_case(&two, &cases, "p")).contains("this one has 2"));
+        let cheque = canonical::union_case("cheque", None);
+        assert_eq!(
+            reason(union_case(&cheque, &cases, "p")),
+            "p: 'cheque' names no case of its union"
+        );
     }
 }

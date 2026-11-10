@@ -74,15 +74,16 @@ impl RunnerOptions {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut options = RunnerOptions::default();
         let (mut trace_dir, mut log_dir, mut world) = (None, None, None);
-        let mut args = args.into_iter();
-        while let Some(option) = args.next() {
-            let value = args
-                .next()
-                .ok_or_else(|| format!("{option} is given no value"))?;
+        // Every option takes one value: the line is read a pair at a time.
+        let args: Vec<String> = args.into_iter().collect();
+        for pair in args.chunks(2) {
+            let [option, value] = pair else {
+                return Err(format!("{} is given no value", pair[0]));
+            };
             match option.as_str() {
                 "--trace-dir" if trace_dir.is_none() => trace_dir = Some(PathBuf::from(value)),
                 "--log-dir" if log_dir.is_none() => log_dir = Some(PathBuf::from(value)),
-                "--world" if world.is_none() => world = Some(value),
+                "--world" if world.is_none() => world = Some(value.clone()),
                 "--module-parameter" => {
                     let (id, literal) = value
                         .split_once('=')

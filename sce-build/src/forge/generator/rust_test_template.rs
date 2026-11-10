@@ -338,11 +338,18 @@ impl Reading {
 ///
 /// Each read is an expression of the value, whose refusal returns from the
 /// reader with `?`: a record is a block that binds its object and builds its
-/// struct, a list a loop that reads each element into a `Vec` and makes the
-/// bounded list of it, an absent field or element a `match` on its presence,
-/// a union a `match` on its case. No read is a closure, so every `?` returns
-/// from the reader itself. An integer, a text, a byte string and a list are
-/// read into the type the place they stand in holds, which Rust infers.
+/// struct, a list a `for` loop over the elements that reads each into a `Vec`
+/// and makes the bounded list of it, a value that may be absent an `Option`
+/// mapped to its read and transposed ([`read_present`]), a union a `match` on
+/// its case, whose variant the runtime has held to the declared ones. An
+/// integer, a text, a byte string and a list are read into the type the place
+/// they stand in holds, which Rust infers.
+///
+/// The generated code compiles under clippy's `-D warnings` by its shape, not
+/// by an `allow`: no `match` maps `Some` to `Some` and `None` to `None`
+/// (`manual_map`), no `return` is written (`needless_return`), no iterator is
+/// stepped by hand (`while_let_on_iterator`), and no `Ok` wraps a `?`
+/// (`needless_question_mark`).
 pub(super) struct RustReading {
     /// What the value read is named in a refusal: its record's type name.
     pub(super) what: String,
@@ -491,20 +498,14 @@ impl CanonicalForm for RustReading {
         written
     }
 
-    /// A `match` on whether the record's object names the field.
+    /// The field read where the record's object names it ([`read_present`]).
     fn optional_field(&self, field: &Reading, binding: &str, written: String) -> String {
-        format!(
-            "match {} {{ Some({binding}) => Some({written}), None => None }}",
-            field.optional
-        )
+        read_present(&field.optional, binding, written)
     }
 
-    /// A `match` on whether the element is `null`.
+    /// The element read where it is not `null` ([`read_present`]).
     fn optional_element(&self, element: &Reading, binding: &str, written: String) -> String {
-        format!(
-            "match {} {{ Some({binding}) => Some({written}), None => None }}",
-            element.optional
-        )
+        read_present(&element.optional, binding, written)
     }
 
     /// A block that binds the record's object, refused where it names a field
@@ -531,8 +532,10 @@ impl CanonicalForm for RustReading {
         }
     }
 
-    /// A `match` on the variant of the case, each arm the case's record read
-    /// or, for a case that holds none, the empty object it is.
+    /// A `match` on the variant of the case, which the runtime has held to the
+    /// declared ones, so each case has an arm and the last is the wildcard;
+    /// each arm reads the case's record or, for a case that holds none, the
+    /// empty object it is. A union of one case is that case's read alone.
     fn union(
         &self,
         at: &Reading,
@@ -542,32 +545,61 @@ impl CanonicalForm for RustReading {
         let union_type = rust_union_type(union);
         let variant = format!("variant_{}", at.depth);
         let case = format!("case_{}", at.depth);
-        let what = rust_literal(&at.what);
-        let arms: Vec<String> = cases
+        let names: Vec<String> = cases.iter().map(|(name, _)| rust_literal(name)).collect();
+        let reads: Vec<(String, String)> = cases
             .into_iter()
             .map(|(name, held)| {
                 let built = format!(
                     "{union_type}::{}",
                     crate::forge::composed_lowering::rust_case_ident(&name)
                 );
-                match held {
-                    Some((_, written)) => format!("{} => {built}({written})", rust_literal(&name)),
+                let read = match held {
+                    Some((_, written)) => format!("{built}({written})"),
                     None => format!(
-                        "{} => {{ {FROM_CANONICAL}::no_record({case}, {})?; {built} }}",
-                        rust_literal(&name),
+                        "{{ {FROM_CANONICAL}::no_record({case}, {})?; {built} }}",
                         rust_literal(&format!("{}.{name}", at.what))
                     ),
-                }
+                };
+                (rust_literal(&name), read)
             })
             .collect();
-        Ok(format!(
-            "{{ let ({variant}, {case}) = {FROM_CANONICAL}::union_case({}, {what})?; \
-             match {variant} {{ {}, _ => return Err({FROM_CANONICAL}::unknown_variant({variant}, \
-             {what})) }} }}",
+        let read_case = format!(
+            "{FROM_CANONICAL}::union_case({}, &[{}], {})?",
             at.json,
+            names.join(", "),
+            rust_literal(&at.what)
+        );
+        let Some(((_, last), arms)) = reads.split_last() else {
+            return Err(format!("the union '{}' declares no case", union.name));
+        };
+        if arms.is_empty() {
+            return Ok(format!("{{ let (_, {case}) = {read_case}; {last} }}"));
+        }
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|(name, read)| format!("{name} => {read}"))
+            .collect();
+        Ok(format!(
+            "{{ let ({variant}, {case}) = {read_case}; match {variant} {{ {}, _ => {last} }} }}",
             arms.join(", ")
         ))
     }
+}
+
+/// The type of a refusal of the readers, as the generated code names it.
+const REFUSAL: &str = "::sce_rust_runtime::test::TraceRefusal";
+
+/// The read of a value that may be absent: `optional`, an expression of the
+/// `Option<&Value>` it is, mapped where it is present, bound as `binding`, to
+/// `written`, its read. The read is the body of a closure that returns its
+/// value whole, so a `?` inside it returns the refusal from the closure, which
+/// `transpose` and the `?` after it return from the reader; the body names the
+/// value it read before it is wrapped, so no `Ok` holds a `?`.
+fn read_present(optional: &str, binding: &str, written: String) -> String {
+    format!(
+        "{optional}.map(|{binding}| -> ::std::result::Result<_, {REFUSAL}> {{ \
+         let read = {written}; Ok(read) }}).transpose()?"
+    )
 }
 
 /// The name the generated `matches` and `value` take the formal parameter
@@ -1142,15 +1174,17 @@ mod tests {
                 field("key")
             ),
             format!(
-                "rush: match {}(record_0, \"rush\") {{ Some(present_0) => Some({}(present_0, \
-                 \"order.rush\")?), None => None }}",
+                "rush: {}(record_0, \"rush\").map(|present_0| -> ::std::result::Result<_, \
+                 {REFUSAL}> {{ let read = {}(present_0, \"order.rush\")?; Ok(read) }})\
+                 .transpose()?",
                 read("optional_field"),
                 read("boolean")
             ),
             format!(
                 "tags: {{ let mut items_0 = ::std::vec::Vec::new(); for item_0 in {}({}, 0, 2, \
-                 \"order.tags\")? {{ items_0.push(match {}(item_0) {{ Some(present_1) => \
-                 Some({}(present_1, \"order.tags[]\")?), None => None }}); }} {}(items_0, \
+                 \"order.tags\")? {{ items_0.push({}(item_0).map(|present_1| -> \
+                 ::std::result::Result<_, {REFUSAL}> {{ let read = {}(present_1, \
+                 \"order.tags[]\")?; Ok(read) }}).transpose()?); }} {}(items_0, \
                  \"order.tags\")? }}",
                 read("elements"),
                 field("tags"),
@@ -1170,13 +1204,12 @@ mod tests {
                 field("code")
             ),
             format!(
-                "payment: {{ let (variant_0, case_0) = {}({}, \"order.payment\")?; match \
-                 variant_0 {{ \"card\" => {payment}::{}({{ let record_1 = {}(case_0, \
-                 &[\"amount\"], \"order.payment\")?; super::card::CardPayload {{ amount: \
-                 {}({}(record_1, \"amount\", \"order.payment.amount\")?, \
-                 \"order.payment.amount\")? }} }}), \"cash\" => {{ {}(case_0, \
-                 \"order.payment.cash\")?; {payment}::{} }}, _ => return Err({}(variant_0, \
-                 \"order.payment\")) }} }}",
+                "payment: {{ let (variant_0, case_0) = {}({}, &[\"card\", \"cash\"], \
+                 \"order.payment\")?; match variant_0 {{ \"card\" => {payment}::{}({{ let \
+                 record_1 = {}(case_0, &[\"amount\"], \"order.payment\")?; \
+                 super::card::CardPayload {{ amount: {}({}(record_1, \"amount\", \
+                 \"order.payment.amount\")?, \"order.payment.amount\")? }} }}), _ => {{ \
+                 {}(case_0, \"order.payment.cash\")?; {payment}::{} }} }} }}",
                 read("union_case"),
                 field("payment"),
                 case("card"),
@@ -1184,15 +1217,45 @@ mod tests {
                 read("integer"),
                 read("field"),
                 read("no_record"),
-                case("cash"),
-                read("unknown_variant")
+                case("cash")
             ),
         ] {
             assert!(written.contains(&needle), "`{needle}` in\n{written}");
         }
-        assert!(
-            !written.contains('|'),
-            "no read is a closure, so each `?` returns from the reader: {written}"
+        // The shapes clippy's `-D warnings` refuses are not written.
+        for refused in [
+            "return",
+            "None => None",
+            "while let",
+            "Ok(read?)",
+            "Some(Some",
+        ] {
+            assert!(!written.contains(refused), "`{refused}` in\n{written}");
+        }
+    }
+
+    /// A union of one case is that case's read alone: a `match` of one arm is
+    /// what clippy refuses as `match_single_binding`.
+    #[test]
+    fn a_union_of_one_case_is_read_without_a_match() {
+        let (ty, mut scope) = order();
+        let order = scope.records.get_mut("Order").expect("the order");
+        let payment = order.scope.unions.get_mut("Payment").expect("the payment");
+        payment.cases.truncate(1);
+        let reading = RustReading {
+            what: "order".to_string(),
+        };
+        let written = canonical_form(&reading, &ty, &reading.root(), &scope)
+            .expect("every form has a reader");
+        let union = format!(
+            "payment: {{ let (_, case_0) = {}({}(record_0, \"payment\", \"order.payment\")?, \
+             &[\"card\"], \"order.payment\")?; {}::{}({{ let record_1",
+            read("union_case"),
+            read("field"),
+            rust_union_type(&scope.records["Order"].scope.unions["Payment"]),
+            crate::forge::composed_lowering::rust_case_ident("card")
         );
+        assert!(written.contains(&union), "`{union}` in\n{written}");
+        assert!(!written.contains("match variant_0"), "{written}");
     }
 }

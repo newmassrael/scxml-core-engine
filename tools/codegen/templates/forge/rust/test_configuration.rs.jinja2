@@ -91,20 +91,21 @@ pub fn module_parameters() -> Vec<String> {
 }
 {# Each record a system port takes is read back from the canonical form and written in it
    by the one walk of the form both directions share, so the value a recorded trace hands the
-   run and the value the test log writes of it are the same bytes. Each `?` of a reader
-   returns from it: no read is a closure. #}
+   run and the value the test log writes of it are the same bytes. The readers are public,
+   so a host reads and writes a record's form with them as the runner does. #}
 {% for reader in readers %}
 
 /// The record `{{ reader.type }}` read from the canonical form of the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5), as a recorded input trace holds it (docs/SCE_TTCN3_LANE.md
-/// §10.3), or refused, naming where its value does not belong to its type.
-fn {{ reader.read }}(value: &::sce_rust_runtime::json::Value) -> Result<{{ reader.payload }}, ::sce_rust_runtime::test::TraceRefusal> {
+/// §10.3), or refused, naming where its value does not belong to its type. The inverse of
+/// `{{ reader.canonical }}`.
+pub fn {{ reader.read }}(value: &::sce_rust_runtime::json::Value) -> Result<{{ reader.payload }}, ::sce_rust_runtime::test::TraceRefusal> {
     Ok({{ reader.read_expr }})
 }
 
 /// The record `{{ reader.type }}` in the canonical form of the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
-fn {{ reader.canonical }}(value: &{{ reader.payload }}) -> ::sce_rust_runtime::json::Value {
+pub fn {{ reader.canonical }}(value: &{{ reader.payload }}) -> ::sce_rust_runtime::json::Value {
     {{ reader.canonical_expr }}
 }
 {% endfor %}
