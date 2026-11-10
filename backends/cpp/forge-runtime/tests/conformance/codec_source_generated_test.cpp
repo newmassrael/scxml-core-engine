@@ -23,9 +23,17 @@
 // which it does not present. codec_present_if_basic.scxml (a carrier whose bit
 // 0 says whether a u16 `seq` follows) presents `seq` as an optional value and
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
-// nibble holds the length of the payload after it) derives the nibble.
+// nibble holds the length of the payload after it) derives the nibble. The CBOR
+// maps whose encode refuses are sce-build/tests/fixtures/cbor_codec's
+// codec_cbor_signed_enum.scxml (an enum of a signed carrier),
+// codec_cbor_record_list_least.scxml (lists with a lower count) and
+// codec_cbor_record_list_bytes.scxml (lists of records with a byte string),
+// held to the bytes and the refusals the Rust encode writes for them.
 
 #include "codec_cbor_map.h"
+#include "codec_cbor_record_list_bytes.h"
+#include "codec_cbor_record_list_least.h"
+#include "codec_cbor_signed_enum.h"
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_chain_flag_carrier.h"
@@ -1910,6 +1918,155 @@ void a_cbor_map_is_made_within_its_bounds_and_written_in_key_order() {
           "a decoded map holds each entry it read and encodes back to its frame");
 }
 
+/// What a CBOR map's encode into an empty vector answered, and whether it left
+/// the vector empty.
+template <class V> std::pair<std::optional<::SCE::Forge::CodecError>, bool> encoded_into_empty(const V &value) {
+    std::vector<std::uint8_t> written;
+    ::SCE::Forge::VectorSink into(written);
+    const auto error = value.encode(into);
+    return std::make_pair(error, written.empty());
+}
+
+/// The answer of an encode that refused its value as the Rust encode refuses
+/// it, `CborOutOfRange`, before the first byte.
+std::pair<std::optional<::SCE::Forge::CodecError>, bool> refused_out_of_range() {
+    return std::make_pair(std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::CborOutOfRange), true);
+}
+
+namespace SignedEnum = ::SCE::Generated::CodecCborSignedEnum;
+using SignedValue = SignedEnum::CodecCborSignedEnum;
+using SignedStatus = decltype(std::declval<const SignedValue &>().status());
+
+void a_negative_value_of_a_signed_carrier_is_refused_before_the_first_byte() {
+    const auto nominal = static_cast<SignedStatus>(0);
+    const auto high = static_cast<SignedStatus>(5);
+    const auto fault = static_cast<SignedStatus>(-1);
+    // {0: 5, 1: 0}, each value the unsigned integer its carrier holds.
+    const std::vector<std::uint8_t> frame{0xA2, 0x00, 0x05, 0x01, 0x00};
+    const SignedValue value(high, nominal);
+    CHECK(value.encode_to_vec() == std::optional<std::vector<std::uint8_t>>(frame),
+          "a value of no negative number is written in key order");
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = SignedValue::decode(cursor);
+    CHECK(decoded && decoded->status() == high && decoded->detail() == std::optional<SignedStatus>(nominal),
+          "a decoded map holds each entry it read");
+
+    const SignedValue required_fault(fault, std::nullopt);
+    const SignedValue optional_fault(nominal, fault);
+    CHECK(encoded_into_empty(required_fault) == refused_out_of_range(), "a negative value of the required entry");
+    CHECK(encoded_into_empty(optional_fault) == refused_out_of_range(),
+          "a negative value of the entry after one the encode could have written");
+    CHECK(!required_fault.encode_to_vec().has_value(), "the vector of the bytes answers the refusal");
+}
+
+namespace RecordListLeast = ::SCE::Generated::CodecCborRecordListLeast;
+using LeastValue = RecordListLeast::CodecCborRecordListLeast;
+using LeastSeen = decltype(std::declval<const LeastValue &>().seen());
+using LeastContext = decltype(std::declval<const LeastValue &>().context())::value_type;
+using CausalEntry = ::SCE::Generated::CborCausalEntry::CborCausalEntryPayload;
+
+// The view of a list holds the most records it holds and not its lower count, as
+// Rust's `BoundedList` does: a value of fewer is one the encode refuses.
+static_assert(LeastSeen::most == 2 && LeastSeen::least == 0, "`seen` is viewed within its bound alone");
+static_assert(LeastContext::most == 3 && LeastContext::least == 0, "`context` is viewed within its bound alone");
+
+CausalEntry causal_entry(const std::string &author, std::uint64_t seq) {
+    CausalEntry entry;
+    entry.author = *decltype(entry.author)::make(author);
+    entry.seq = seq;
+    return entry;
+}
+
+void a_list_of_fewer_records_than_its_lower_count_is_refused_before_the_first_byte() {
+    const std::vector<CausalEntry> one{causal_entry("a", 1)};
+    const std::vector<CausalEntry> none;
+    const auto seen = LeastSeen::make(one);
+    const auto no_seen = LeastSeen::make(none);
+    const auto no_context = LeastContext::make(none);
+    CHECK(seen && no_seen && no_context, "a list of fewer records than its lower count is a value of its view");
+    if (!seen || !no_seen || !no_context) {
+        return;
+    }
+    // {0: [{"seq": 1, "author": "a"}]}: `seq` (three bytes) before `author` (six).
+    const std::vector<std::uint8_t> frame{0xA1, 0x00, 0x81, 0xA2, 0x63, 's', 'e', 'q',  0x01,
+                                          0x66, 'a',  'u',  't',  'h',  'o', 'r', 0x61, 'a'};
+    const LeastValue value(*seen, std::nullopt);
+    CHECK(value.encode_to_vec() == std::optional<std::vector<std::uint8_t>>(frame),
+          "a list of as many records as its lower count is written as an array of maps");
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = LeastValue::decode(cursor);
+    CHECK(decoded && decoded->seen().size() == 1 && decoded->seen().begin()->seq == 1 && !decoded->context(),
+          "a decoded map holds the records it read");
+
+    const LeastValue empty_seen(*no_seen, std::nullopt);
+    const LeastValue empty_context(*seen, *no_context);
+    CHECK(encoded_into_empty(empty_seen) == refused_out_of_range(), "a required list of no record");
+    CHECK(encoded_into_empty(empty_context) == refused_out_of_range(),
+          "a list of no record after a list the encode could have written");
+    CHECK(!empty_seen.encode_to_vec().has_value(), "the vector of the bytes answers the refusal");
+
+    // A frame of no record has no value either: the decode refuses it.
+    const std::vector<std::uint8_t> short_frame{0xA1, 0x00, 0x80};
+    ::SCE::Forge::SceCursor short_cursor(short_frame.data(), short_frame.size());
+    CHECK(!LeastValue::decode(short_cursor) && short_cursor.remaining() == short_frame.size(),
+          "a frame of fewer records than the lower count is refused, the cursor where it was");
+}
+
+namespace RecordListBytes = ::SCE::Generated::CodecCborRecordListBytes;
+using BytesValue = RecordListBytes::CodecCborRecordListBytes;
+using BytesLatest = decltype(std::declval<const BytesValue &>().latest());
+using BytesPending = decltype(std::declval<const BytesValue &>().pending())::value_type;
+using DigestEntry = ::SCE::Generated::CborDigestEntry::CborDigestEntryPayload;
+
+DigestEntry digest_entry(std::vector<std::uint8_t> digest, std::uint64_t seq) {
+    DigestEntry entry;
+    entry.digest = std::move(digest);
+    entry.seq = seq;
+    return entry;
+}
+
+void a_record_byte_string_past_its_bound_is_refused_before_the_first_byte() {
+    const std::vector<std::uint8_t> four{0x01, 0x02, 0x03, 0x04};
+    const std::vector<std::uint8_t> five{0x01, 0x02, 0x03, 0x04, 0x05};
+    const std::vector<DigestEntry> within{digest_entry(four, 7)};
+    const std::vector<DigestEntry> past{digest_entry(five, 7)};
+    const auto latest = BytesLatest::make(within);
+    const auto latest_past = BytesLatest::make(past);
+    const auto pending_past = BytesPending::make(past);
+    CHECK(latest && latest_past && pending_past,
+          "a list within its count is a value of its view, whatever its records hold");
+    if (!latest || !latest_past || !pending_past) {
+        return;
+    }
+    // {0: [{"seq": 7, "digest": h'01020304'}]}: `seq` (three bytes) before `digest` (six).
+    const std::vector<std::uint8_t> frame{0xA1, 0x00, 0x81, 0xA2, 0x63, 's',  'e',  'q',  0x07, 0x66, 'd',
+                                          'i',  'g',  'e',  's',  't',  0x44, 0x01, 0x02, 0x03, 0x04};
+    const BytesValue value(*latest, std::nullopt);
+    CHECK(value.encode_to_vec() == std::optional<std::vector<std::uint8_t>>(frame),
+          "a record's byte string within its bound is written as it is");
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = BytesValue::decode(cursor);
+    CHECK(decoded && decoded->latest().size() == 1 && decoded->latest().begin()->digest == four &&
+              decoded->latest().begin()->seq == 7 && !decoded->pending(),
+          "a decoded map holds the records it read");
+
+    const BytesValue past_latest(*latest_past, std::nullopt);
+    const BytesValue past_pending(*latest, *pending_past);
+    CHECK(encoded_into_empty(past_latest) == refused_out_of_range(), "a record of the required list past its bound");
+    CHECK(encoded_into_empty(past_pending) == refused_out_of_range(),
+          "a record past its bound in a list after a list the encode could have written");
+    CHECK(!past_latest.encode_to_vec().has_value(), "the vector of the bytes answers the refusal");
+
+    // A record whose byte string is past its bound has no value either: the
+    // decode refuses it.
+    std::vector<std::uint8_t> long_frame(frame.begin(), frame.end() - 5);
+    const std::vector<std::uint8_t> long_digest{0x45, 0x01, 0x02, 0x03, 0x04, 0x05};
+    long_frame.insert(long_frame.end(), long_digest.begin(), long_digest.end());
+    ::SCE::Forge::SceCursor long_cursor(long_frame.data(), long_frame.size());
+    CHECK(!BytesValue::decode(long_cursor) && long_cursor.remaining() == long_frame.size(),
+          "a record whose byte string is past its bound is refused, the cursor where it was");
+}
+
 namespace RequiredLists = ::SCE::Generated::CodecContentLineRequiredLists;
 using LinesValue = RequiredLists::CodecContentLineRequiredLists;
 using RecLine = RequiredLists::CodecContentLineRequiredListsRecLine;
@@ -2058,6 +2215,9 @@ int main() {
     a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
     a_bare_entry_is_held_as_its_place_among_the_others();
     a_cbor_map_is_made_within_its_bounds_and_written_in_key_order();
+    a_negative_value_of_a_signed_carrier_is_refused_before_the_first_byte();
+    a_list_of_fewer_records_than_its_lower_count_is_refused_before_the_first_byte();
+    a_record_byte_string_past_its_bound_is_refused_before_the_first_byte();
     a_component_of_content_lines_is_written_from_any_source_or_not_at_all();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {

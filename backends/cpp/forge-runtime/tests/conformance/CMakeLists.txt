@@ -256,17 +256,50 @@ target_compile_options(numerical_conformance_test PRIVATE
 enable_testing()
 add_test(NAME numerical_conformance COMMAND numerical_conformance_test)
 
+# The CBOR maps whose encode refuses a value no type of theirs holds back
+# (docs/adr/0081 step 4): a negative value of an enum whose carrier is signed, a
+# list of fewer records than its lower count, and a record whose byte string is
+# past its bound. The documents are sce-build's CBOR fixtures, with the enum and
+# the event schemas they import, and are generated into a directory of their
+# own, as the caller-tag variants are.
+set(CBOR_REFUSING_FIXTURE_DIR "${REPO_ROOT}/sce-build/tests/fixtures/cbor_codec")
+set(CBOR_REFUSING_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/cbor_refusing_headers")
+file(MAKE_DIRECTORY "${CBOR_REFUSING_GENERATED_DIR}")
+set(CBOR_REFUSING_DOCUMENTS
+    "${CBOR_REFUSING_FIXTURE_DIR}/cbor_causal_entry.scxml"
+    "${CBOR_REFUSING_FIXTURE_DIR}/cbor_digest_entry.scxml"
+    "${CBOR_REFUSING_FIXTURE_DIR}/cbor_signed_status.scxml"
+    "${CBOR_REFUSING_FIXTURE_DIR}/codec_cbor_signed_enum.scxml"
+    "${CBOR_REFUSING_FIXTURE_DIR}/codec_cbor_record_list_least.scxml"
+    "${CBOR_REFUSING_FIXTURE_DIR}/codec_cbor_record_list_bytes.scxml"
+)
+set(CBOR_REFUSING_GENERATED_HEADERS "")
+foreach(_cbor_refusing_document IN LISTS CBOR_REFUSING_DOCUMENTS)
+    get_filename_component(_cbor_refusing_fixture "${_cbor_refusing_document}" NAME_WE)
+    sce_codegen_generation(_CBOR_REFUSING
+        DOCUMENT "${_cbor_refusing_document}"
+        OUTPUT_DIR "${CBOR_REFUSING_GENERATED_DIR}"
+        LANGUAGE cpp
+        CLAIM SCE_CBOR_REFUSING_CPP_DECLARED_OUTPUTS
+        COMMENT "Generating C++ CBOR fixture ${_cbor_refusing_fixture}")
+    list(APPEND CBOR_REFUSING_GENERATED_HEADERS ${_CBOR_REFUSING_HEADERS})
+endforeach()
+add_custom_target(generate_cbor_refusing_fixtures_cpp)
+target_sources(generate_cbor_refusing_fixtures_cpp PRIVATE ${CBOR_REFUSING_GENERATED_HEADERS})
+
 # A printed codec's encode over a consumer's own types (docs/adr/0081, step 4),
 # at C++17, the standard the interface is for (docs/adr/0059 section 3), and
 # under the same blanket -Werror: which types are sources is asserted at compile
 # time, and that each writes the generated value's bytes at run time. It reads
-# headers the harness's generation writes, so each codec it uses is a fixture.
+# headers the harness's generation writes, so each codec it uses is a fixture,
+# and the CBOR maps whose encode refuses, from the directory of their own above.
 add_executable(codec_source_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/codec_source_generated_test.cpp")
-add_dependencies(codec_source_generated_test generate_forge_fixtures_cpp)
+add_dependencies(codec_source_generated_test generate_forge_fixtures_cpp generate_cbor_refusing_fixtures_cpp)
 set_target_properties(codec_source_generated_test PROPERTIES CXX_STANDARD 17)
 target_include_directories(codec_source_generated_test PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
     "${GENERATED_DIR}"
+    "${CBOR_REFUSING_GENERATED_DIR}"
 )
 target_compile_options(codec_source_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME codec_source_generated COMMAND codec_source_generated_test)
