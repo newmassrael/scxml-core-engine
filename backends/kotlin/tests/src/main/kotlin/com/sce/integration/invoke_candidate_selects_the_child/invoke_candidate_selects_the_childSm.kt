@@ -61,12 +61,6 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     override val needsParent: Boolean = false
 
-    // W3C SCXML B.1: Initialize script engine before entering initial state
-    override fun enterInitialConfiguration() {
-        ensureScriptEngine()
-        super.enterInitialConfiguration()
-    }
-
     // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
     //
     // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
@@ -173,37 +167,41 @@ class InvokeCandidateSelectsTheChildStateMachine(
 
     // --- Script Engine Helpers (W3C SCXML B.1) ---
 
-    // W3C SCXML 5.3: the declaration hook `enterAt` reaches. Every other caller
-    // arrives through a guard, an assign or a script block, all of which run
-    // `ensureScriptEngine()` on their own way in; a resume runs none of them,
-    // and a host putting saved values back needs the variables to exist first.
-    override fun declareDatamodel() {
-        ensureScriptEngine()
+    // docs/adr/0096: make this machine's script session, the first step of
+    // every start (`initialize`, `start`, `enterAt`, and the start of a child
+    // this machine is). The runtime's `makeScriptSession` takes the three steps
+    // (create the session, which loads the shared library into it, then bind
+    // the system variables), releases what a failed step made and answers the
+    // failure, which refuses the start with nothing entered; a later start
+    // asks for the session again.
+    override fun establishScriptSession(): com.sce.runtime.ScriptSessionFailure? {
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        makeScriptSession(
+            engine,
+            "invoke_candidate_selects_the_child",
+        )?.let { return it }
+        return null
     }
 
-    // W3C SCXML B.1: Lazy script engine initialization
-    private fun ensureScriptEngine() {
-        if (scriptEngineInitialized) return
+    // W3C SCXML 5.3: initialize the datamodel in the session the start
+    // established, before any state is entered: the document's <data>, its
+    // states' early-bound <data>, the invoke params the parent handed this
+    // session, then the top-level <script>s. The params are applied before the
+    // scripts, which read the datamodel the invocation started it with: the
+    // order of interpret in Appendix D, and that of every other backend.
+    override fun declareDatamodel() {
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = allocateScriptSession()
-        engine.createSession(sid)
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        engine.setupSystemVariables(
-            sid,
-            "invoke_candidate_selects_the_child",
-            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
-        )
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
 
         declareVariablesPart0(engine, sid)
 
 
-
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent
-        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
+        // <data> default just bound, and only for a name this session declares
+        // (C++ DatamodelValidationHelper). The parent hands them before this
+        // session's start (`setInvokeParams`) and this session applies them, so
+        // a child's session is made by the child.
         if (pendingInvokeParams.isNotEmpty()) {
             for ((pName, pValue) in pendingInvokeParams) {
                 if (engine.hasVariable(sid, pName)) {
@@ -212,8 +210,6 @@ class InvokeCandidateSelectsTheChildStateMachine(
             }
             pendingInvokeParams = emptyMap()
         }
-
-        scriptEngineInitialized = true
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -253,9 +249,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
     private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
-        ensureScriptEngine()
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
@@ -285,9 +281,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // a §scxml-B-2-9 name both engines carry, so the wrapper is the same eight
     // characters on either arm — what differs is what it wraps.
     private fun evaluateSendContent(source: com.sce.runtime.ScriptSource): String {
-        ensureScriptEngine()
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         val serialized = when (source.language) {
             com.sce.runtime.ScriptLanguage.ECMAScript ->
                 com.sce.runtime.ScriptSource.ecmascript("JSON.stringify((" + source.source + "))")
@@ -314,9 +310,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // Returns whether the assignment took place; on failure error.execution is
     // already raised, and the caller ends its block (W3C SCXML 4.9).
     private fun executeAssign(location: com.sce.runtime.ScriptSource, expr: com.sce.runtime.ScriptSource): Boolean {
-        ensureScriptEngine()
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.assign(sid, location, expr)
             true
@@ -330,9 +326,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
     // Returns whether the script ran; on failure error.execution is already
     // raised, and the caller ends its block (W3C SCXML 4.9).
     private fun executeScriptBlock(script: com.sce.runtime.ScriptSource): Boolean {
-        ensureScriptEngine()
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.executeScript(sid, script)
             true
@@ -344,9 +340,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
 
     // W3C SCXML 5.10: Set _event before event processing
     private fun setCurrentEventInScriptEngine(event: InvokeCandidateSelectsTheChildEvent) {
-        ensureScriptEngine()
+        assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         val meta = currentEventMetadata
         // §scxml-5.10: the name the event ARRIVED under, which is longer than its
         // member's when a name the document does not write was matched through a
@@ -495,9 +491,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
                     // this start, so the id comes from the tree alone.
                     val generatedInvokeId = "probe.${nextInvokeStart("_invoke_0")}._invoke_0"
                     deferInvoke(state, generatedInvokeId) {
-                        ensureScriptEngine()
+                        assertScriptSession()
                         val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         try {
                             // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child.
                             // The evaluation is its own try: the clause it answers is
