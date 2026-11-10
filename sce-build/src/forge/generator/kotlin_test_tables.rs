@@ -3,9 +3,12 @@
 
 //! The Kotlin units of the tables of a test (docs/SCE_TEST_PROFILE.md §11.6 to
 //! §11.8, §12.2): a test configuration's `configuration`, `machine` and
-//! `moduleParameters`, a test case's `testCase`, and a test suite's `suite`,
-//! each the data the profile's runtime and its runner read
-//! (`com.sce.runtime.test`, `runSuite`).
+//! `moduleParameters`, with the reader and the writer of each record a
+//! recorded input trace carries on its system ports and `input`, which reads
+//! one (docs/SCE_TTCN3_LANE.md §10.5); a test case's `testCase`; and a test
+//! suite's `suite`, `moduleParameter` and the runner program's `main`
+//! (docs/SCE_TTCN3_LANE.md §4), each the data the profile's runtime and its
+//! runner read (`com.sce.runtime.test`, `runSuite`, `runSuiteWithTraces`).
 //!
 //! Which rows each unit holds, and what is refused, is decided by the rows
 //! every backend shares ([`super::test_tables`]); this file spells them in
@@ -21,10 +24,16 @@
 //! `configuration`, `machine`, `testCase` and `suite` among them) can hide one
 //! of its own.
 
-use super::kotlin_test_template::{kotlin_bytes_literal, kotlin_integer_literal};
+use super::kotlin_test_template::{
+    kotlin_bytes_literal, kotlin_integer_literal, kotlin_literal as literal, kotlin_record_type,
+    KotlinCanonical, KotlinReading,
+};
 use super::test_tables::{
-    configuration_rows, execute_rows, module_parameter_defaults, selection_body,
-    test_case_configuration, EndpointRow,
+    configuration_rows, execute_rows, module_parameter_defaults, selection_body, system_port_rows,
+    test_case_configuration, trace_record_rows, EndpointRow,
+};
+use super::test_template_walk::{
+    canonical_form, canonical_value, log_type_name, CanonicalForm, CanonicalSpelling,
 };
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
@@ -32,11 +41,6 @@ use crate::generator::Language;
 
 /// The package of the profile's Kotlin runtime and runner.
 const RUNTIME: &str = "com.sce.runtime.test";
-
-/// `text` as a Kotlin string literal.
-fn literal(text: &str) -> String {
-    format!("\"{}\"", filters::escape_kotlin(text.to_string()))
-}
 
 /// The component the profile's runtime drives for `component`, generated
 /// beside its machine (`<Machine>Component`, docs/SCE_TEST_PROFILE.md §12.3),
@@ -122,9 +126,13 @@ pub(super) fn render_test_configuration_kotlin(
         .iter()
         .map(|id| literal(id))
         .collect();
+    let (system_ports, inputs, readers) = trace_inputs(m, imports)?;
 
     let l = LangCtx::new(Language::Kotlin, imports);
     let mut ctx = l.base_context(&m.name);
+    ctx.insert("system_ports".into(), serde_json::json!(system_ports));
+    ctx.insert("inputs".into(), serde_json::Value::Array(inputs));
+    ctx.insert("readers".into(), serde_json::Value::Array(readers));
     ctx.insert("configuration_name".into(), m.name.clone().into());
     ctx.insert("runtime".into(), RUNTIME.into());
     ctx.insert("mtc_type".into(), literal(&rows.mtc.machine).into());
@@ -141,6 +149,83 @@ pub(super) fn render_test_configuration_kotlin(
     l.render(env, "test_configuration", ctx)
 }
 
+/// What the unit of a configuration writes of the inputs a recorded trace may
+/// carry ([`trace_inputs`]): each system port's id as a literal, a branch of
+/// `input` per port and record, and each record's reader and writer once.
+type TraceInputs = (Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>);
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5): each system port's
+/// id; a branch of the unit's `input` per port and record its type's `in` list
+/// names, in document order; and each record's reader and writer of its
+/// canonical form, once ([`trace_record_rows`]), both over the one walk of the
+/// form ([`canonical_form`]), so the value a trace hands the run and the value
+/// the test log writes of it are the same bytes.
+///
+/// Each record is named by its type in the test log ([`log_type_name`]),
+/// which names its functions, `read_<type>` and `canonical_<type>`, as the
+/// Rust unit names them.
+fn trace_inputs(
+    m: &TestConfigurationModel,
+    imports: &[ImportContext],
+) -> Result<TraceInputs, ForgeError> {
+    let refused = |why: String| {
+        super::test_tables::refused(
+            ForgeKind::TestConfiguration,
+            &m.name,
+            m.source_location.as_ref(),
+            why,
+        )
+    };
+    let ports = system_port_rows(m, imports)?;
+    let readers = trace_record_rows(m, &ports)?
+        .into_iter()
+        .map(|row| {
+            let reading = KotlinReading {
+                what: row.type_name.clone(),
+            };
+            let read_expr = canonical_form(
+                &reading,
+                &row.input.record_type,
+                &reading.root(),
+                row.input.scope,
+            )
+            .map_err(refused)?;
+            let canonical_expr = canonical_value(
+                &KotlinCanonical,
+                &row.input.record_type,
+                &KotlinCanonical.root(),
+                row.input.scope,
+            )
+            .map_err(refused)?;
+            Ok(serde_json::json!({
+                "type": row.type_name,
+                "read": format!("read_{}", row.type_name),
+                "canonical": format!("canonical_{}", row.type_name),
+                "payload": kotlin_record_type(row.input.record),
+                "read_expr": read_expr,
+                "canonical_expr": canonical_expr,
+            }))
+        })
+        .collect::<Result<Vec<_>, ForgeError>>()?;
+    let inputs = ports
+        .iter()
+        .flat_map(|port| port.inputs.iter().map(move |input| (port.id, input)))
+        .map(|(port, input)| {
+            let type_name = log_type_name(input.record);
+            serde_json::json!({
+                "port": literal(port),
+                "type": literal(&type_name),
+                "event": kotlin_qualified(&input.record.name, "EVENT_NAME"),
+                "read": format!("read_{type_name}"),
+                "canonical": format!("canonical_{type_name}"),
+            })
+        })
+        .collect();
+    let system_ports = ports.iter().map(|port| literal(port.id)).collect();
+    Ok((system_ports, inputs, readers))
+}
+
 // ── §11.7: the test case ───────────────────────────────────────
 
 /// The unit of the test case `m`: its name, and its configuration's tables.
@@ -155,7 +240,7 @@ pub(super) fn render_test_case_kotlin(
     ctx.insert("case_name".into(), m.name.clone().into());
     ctx.insert("runtime".into(), RUNTIME.into());
     ctx.insert("name_literal".into(), literal(&m.name).into());
-    // The three declarations of the configuration's unit the entry reads.
+    // The four declarations of the configuration's unit the entry reads.
     let of_configuration = |name: &str| kotlin_qualified(&configuration.document_name, name);
     ctx.insert(
         "configuration".into(),
@@ -166,6 +251,7 @@ pub(super) fn render_test_case_kotlin(
         "module_parameters".into(),
         of_configuration("moduleParameters").into(),
     );
+    ctx.insert("input".into(), of_configuration("input").into());
     l.render(env, "test_case", ctx)
 }
 
@@ -180,13 +266,26 @@ pub(super) fn render_test_suite_kotlin(
 ) -> Result<String, ForgeError> {
     let parameters: Vec<serde_json::Value> = module_parameter_defaults(m, "Kotlin", saved_default)?
         .into_iter()
-        .map(|(id, value)| {
-            serde_json::json!({
+        .zip(&m.module_parameters)
+        .map(|((id, value), parameter)| {
+            let reader = parameter_reader(&parameter.parameter_type).ok_or_else(|| {
+                super::test_tables::refused(
+                    ForgeKind::TestSuite,
+                    &m.name,
+                    m.source_location.as_ref(),
+                    format!(
+                        "the module parameter '{id}' of type {} has no Kotlin reader of its value",
+                        parameter.parameter_type
+                    ),
+                )
+            })?;
+            Ok(serde_json::json!({
                 "id": literal(id),
                 "value": value,
-            })
+                "reader": reader,
+            }))
         })
-        .collect();
+        .collect::<Result<_, ForgeError>>()?;
     let executes: Vec<serde_json::Value> = execute_rows(m, imports)?
         .into_iter()
         .map(|execute| {
@@ -223,6 +322,34 @@ pub(super) fn render_test_suite_kotlin(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("executes".into(), serde_json::Value::Array(executes));
     l.render(env, "test_suite", ctx)
+}
+
+/// The runner's reader of a value of a module parameter of type `ty`, given
+/// on its command line as a literal of docs/SCE_TEST_PROFILE.md §11.4
+/// (docs/SCE_TTCN3_LANE.md §4): an expression of the saved value of `ty` the
+/// literal `literal` is, for the module parameter `id`, by the readers of the
+/// runtime's runner (`Runner.kt`), which throw an `OverrideRefusal` naming why
+/// where it is none. An integer is read at its type's width and saved by
+/// `SavedValues.of` of that type, as its default is ([`saved_default`]).
+/// `None` for the types [`saved_default`] has no value of, of which no suite
+/// declares a module parameter.
+fn parameter_reader(ty: &ValueType) -> Option<String> {
+    match ty {
+        TypeOf::Scalar(SceType::Bool) => Some(format!("{RUNTIME}.boolParameter(id, literal)")),
+        TypeOf::Scalar(SceType::Enum(_)) => Some(format!("{RUNTIME}.enumParameter(literal)")),
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => Some(format!(
+            "com.sce.runtime.SavedValues.of({RUNTIME}.integerParameter(id, literal, \
+             {RUNTIME}.FromCanonical.{}))",
+            scalar.as_attr().to_uppercase()
+        )),
+        TypeOf::Text { .. } => Some(format!("{RUNTIME}.textParameter(literal)")),
+        TypeOf::Bytes { .. } => Some(format!("{RUNTIME}.bytesParameter(id, literal)")),
+        TypeOf::Scalar(_)
+        | TypeOf::Optional { .. }
+        | TypeOf::Record { .. }
+        | TypeOf::Union { .. }
+        | TypeOf::List { .. } => None,
+    }
 }
 
 /// The default `value` of a module parameter of type `ty`, a literal of

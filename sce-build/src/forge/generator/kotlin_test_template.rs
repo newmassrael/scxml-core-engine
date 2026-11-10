@@ -29,14 +29,24 @@
 //! number, a `bool`, an enum, a text or a byte string is matched
 //! (`test_profile::matcher_admitted`), so no value that holds a byte string
 //! inside a record, a list or a union is compared whole.
+//!
+//! A template over a record also writes `TYPE` and `canonical`, the name and
+//! the canonical form of a message of it in the test log (§12.5), spelled by
+//! [`KotlinCanonical`]. Its inverse, [`KotlinReading`], reads a value back
+//! from that form with the readers of `com.sce.runtime.test.FromCanonical`,
+//! over the same walk ([`super::test_template_walk::canonical_form`]): the
+//! unit of a test configuration reads the values of a recorded input trace
+//! with it (docs/SCE_TTCN3_LANE.md §10.5).
 
 use super::test_template_walk::{
-    hex_octets, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held, JoinSpelling, Op,
-    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest, Held,
+    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 
 /// The function of the test profile's Kotlin runtime that counts the
@@ -112,7 +122,7 @@ pub(super) fn render_test_template_kotlin(
 const CANONICAL: &str = "com.sce.runtime.test.Canonical";
 
 /// A value the canonical writer reads, in Kotlin.
-struct CanonicalAt {
+pub(super) struct CanonicalAt {
     /// What names the value: `value`, a lambda's parameter, the record of a
     /// case the `when` bound, or a field of any of them.
     expr: String,
@@ -127,8 +137,10 @@ struct CanonicalAt {
 /// one every backend shares (`test_template_walk::canonical_value`, through
 /// `TemplateWalk::message_form`); an optional field is a
 /// `?.let` that leaves an absent one null, which the record omits, a list a
-/// `map`, and a union a `when` over the classes of its cases.
-struct KotlinCanonical;
+/// `map`, and a union a `when` over the classes of its cases. The unit of a
+/// test configuration writes its records' forms with it too, beside their
+/// readers ([`KotlinReading`]).
+pub(super) struct KotlinCanonical;
 
 impl CanonicalSpelling for KotlinCanonical {
     type At = CanonicalAt;
@@ -264,6 +276,323 @@ impl CanonicalSpelling for KotlinCanonical {
     }
 }
 
+/// The object of the profile's Kotlin runtime whose functions read a value
+/// back from its canonical form
+/// (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/test/FromCanonical.kt`).
+const FROM_CANONICAL: &str = "com.sce.runtime.test.FromCanonical";
+
+/// `text` as a Kotlin string literal.
+pub(super) fn kotlin_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_kotlin(text.to_string()))
+}
+
+/// The integer type of [`FROM_CANONICAL`] a value of `width` is read as:
+/// `FromCanonical.UINT16` for a `uint16`, named as the profile names the type.
+fn kotlin_integer_type(width: &SceType) -> String {
+    format!("{FROM_CANONICAL}.{}", width.as_attr().to_uppercase())
+}
+
+/// A value the canonical reader reads, in Kotlin: the JSON it is read from.
+pub(super) struct KotlinReadAt {
+    /// An expression of the JSON value (`Any?`) the value is read from, where
+    /// it is present.
+    json: String,
+    /// The call that reads the value where it may be absent, its read given
+    /// as the lambda after it: a field's, which is absent where its record's
+    /// object omits it, or any other value's, which is absent where it is
+    /// `null`.
+    optional: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+impl KotlinReadAt {
+    /// The value `json` names, where it stands at `what`, inside `depth`
+    /// bindings and `records` records: absent where it is `null`, as an
+    /// element of a list of `optional<T>` is.
+    fn of(json: String, what: String, depth: usize, records: usize) -> Self {
+        KotlinReadAt {
+            optional: format!("{FROM_CANONICAL}.nullable({json})"),
+            json,
+            what,
+            depth,
+            records,
+        }
+    }
+}
+
+/// The Kotlin reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from the runtime's JSON value (`Any?`) by the
+/// readers of [`FROM_CANONICAL`], which throw a `TraceRefusal` naming where it
+/// stands where it does not belong to its type. Which form each SCE type takes
+/// is the walk its writer's is ([`super::test_template_walk::canonical_form`]),
+/// so the reader reads exactly what [`KotlinCanonical`] writes.
+///
+/// Each read is one expression of the value: a record a `let` on its object
+/// that builds its data class by the fields' names, a list a `map` over its
+/// elements, a value that may be absent the runtime's `optionalField` or
+/// `nullable` with its read as the lambda, a union a `let` on its case and a
+/// `when` on the case's variant whose `else` is its last case. Every name a
+/// lambda binds is numbered by how deep it stands, so none shadows another,
+/// which Kotlin warns of and the build refuses with every warning.
+pub(super) struct KotlinReading {
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+impl CanonicalForm for KotlinReading {
+    type At = KotlinReadAt;
+
+    /// The reader's parameter `value`, an `Any?`.
+    fn root(&self) -> KotlinReadAt {
+        KotlinReadAt::of("value".to_string(), self.what.clone(), 0, 0)
+    }
+
+    /// The member `id` of the object its record bound: present where the
+    /// field's type is not optional, and absent where it is omitted otherwise.
+    fn field(&self, at: &KotlinReadAt, id: &str) -> KotlinReadAt {
+        let object = format!("record_{}", at.records);
+        let what = format!("{}.{id}", at.what);
+        KotlinReadAt {
+            json: format!(
+                "{FROM_CANONICAL}.field({object}, {}, {})",
+                kotlin_literal(id),
+                kotlin_literal(&what)
+            ),
+            optional: format!(
+                "{FROM_CANONICAL}.optionalField({object}, {})",
+                kotlin_literal(id)
+            ),
+            what,
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &KotlinReadAt, prefix: &str) -> (String, KotlinReadAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = KotlinReadAt::of(name.clone(), at.what.clone(), at.depth + 1, at.records);
+        (name, value)
+    }
+
+    /// The union's case is bound as the runtime's `UnionCase`, whose `value`
+    /// is the case's record.
+    fn case_record(&self, bound: KotlinReadAt) -> KotlinReadAt {
+        KotlinReadAt::of(
+            format!("{}.value", bound.json),
+            bound.what,
+            bound.depth,
+            bound.records,
+        )
+    }
+
+    fn list_element(&self, list: &KotlinReadAt, bound: KotlinReadAt) -> KotlinReadAt {
+        KotlinReadAt {
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    fn optional_value(&self, _field: &KotlinReadAt, bound: KotlinReadAt) -> KotlinReadAt {
+        bound
+    }
+
+    fn boolean(&self, at: &KotlinReadAt) -> String {
+        format!(
+            "{FROM_CANONICAL}.boolean({}, {})",
+            at.json,
+            kotlin_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, through the enum's
+    /// package: a closed enum's constants, or an open enum's named values and
+    /// the value its companion makes of a number no value is named for.
+    fn enumerated(&self, at: &KotlinReadAt, declared: &ScopedEnum) -> String {
+        let enum_type = kotlin_qualified(
+            &declared.name,
+            &enum_qualified_type(&declared.name, Language::Kotlin),
+        );
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "{} to {enum_type}.{}",
+                    kotlin_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ident(
+                        Language::Kotlin,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        if declared.strict {
+            format!(
+                "{FROM_CANONICAL}.enumerated({}, listOf({}), {})",
+                at.json,
+                variants.join(", "),
+                kotlin_literal(&at.what)
+            )
+        } else {
+            format!(
+                "{FROM_CANONICAL}.openEnumerated({}, listOf({}), {}, {}) \
+                 {{ raw -> {enum_type}.fromUnderlying(raw) }}",
+                at.json,
+                variants.join(", "),
+                kotlin_integer_type(&declared.underlying),
+                kotlin_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read as the integer type of its width, which bounds it.
+    fn integer(&self, at: &KotlinReadAt, width: &SceType) -> String {
+        format!(
+            "{FROM_CANONICAL}.integer({}, {}, {})",
+            at.json,
+            kotlin_integer_type(width),
+            kotlin_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &KotlinReadAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}.text({}, {}, {})",
+            at.json,
+            max.max,
+            kotlin_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &KotlinReadAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}.bytes({}, {}, {})",
+            at.json,
+            max.max,
+            kotlin_literal(&at.what)
+        )
+    }
+
+    /// The elements within the list's bounds, each read by a `map`.
+    fn list(&self, at: &KotlinReadAt, max: &Bound, binding: &str, element: String) -> String {
+        format!(
+            "{FROM_CANONICAL}.elements({}, {}, {}, {}).map {{ {binding} -> {element} }}",
+            at.json,
+            max.min,
+            max.max,
+            kotlin_literal(&at.what)
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read where the record's object names it.
+    fn optional_field(&self, field: &KotlinReadAt, binding: &str, written: String) -> String {
+        format!("{} {{ {binding} -> {written} }}", field.optional)
+    }
+
+    /// The element read where it is not `null`.
+    fn optional_element(&self, element: &KotlinReadAt, binding: &str, written: String) -> String {
+        format!("{} {{ {binding} -> {written} }}", element.optional)
+    }
+
+    /// A `let` that binds the record's object, refused where it names a field
+    /// the record does not declare, and builds the record's data class of its
+    /// fields by their names.
+    fn record(
+        &self,
+        at: &KotlinReadAt,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let ids: Vec<String> = fields.iter().map(|(id, _)| kotlin_literal(id)).collect();
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| {
+                format!(
+                    "{} = {value}",
+                    event_schema_field_ident(id, Language::Kotlin)
+                )
+            })
+            .collect();
+        let object = format!(
+            "{FROM_CANONICAL}.record({}, listOf({}), {})",
+            at.json,
+            ids.join(", "),
+            kotlin_literal(&at.what)
+        );
+        let built = format!("{}({})", kotlin_record_type(record), members.join(", "));
+        if fields.is_empty() {
+            // No field reads the object, so it is not bound.
+            format!("{object}.let {{ {built} }}")
+        } else {
+            format!("{object}.let {{ record_{} -> {built} }}", at.records)
+        }
+    }
+
+    /// A `let` that binds the case, whose variant the runtime has held to the
+    /// declared ones, and a `when` on its variant, so each case has a branch
+    /// and the last is the `else`; each branch reads the case's record or, for
+    /// a case that holds none, the empty object it is. A union of one case is
+    /// that case's read alone.
+    fn union(
+        &self,
+        at: &KotlinReadAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let case = format!("case_{}", at.depth);
+        let names: Vec<String> = cases.iter().map(|(name, _)| kotlin_literal(name)).collect();
+        let reads: Vec<(String, String)> = cases
+            .into_iter()
+            .map(|(name, held)| {
+                let class = kotlin_case_type(union, &name);
+                let read = match held {
+                    Some((_, written)) => format!("{class}({written})"),
+                    None => format!(
+                        "{FROM_CANONICAL}.noRecord({case}.value, {}, {class})",
+                        kotlin_literal(&format!("{}.{name}", at.what))
+                    ),
+                };
+                (kotlin_literal(&name), read)
+            })
+            .collect();
+        let read_case = format!(
+            "{FROM_CANONICAL}.unionCase({}, listOf({}), {})",
+            at.json,
+            names.join(", "),
+            kotlin_literal(&at.what)
+        );
+        let Some(((_, last), arms)) = reads.split_last() else {
+            return Err(format!("the union '{}' declares no case", union.name));
+        };
+        let body = if arms.is_empty() {
+            last.clone()
+        } else {
+            let arms: Vec<String> = arms
+                .iter()
+                .map(|(name, read)| format!("{name} -> {read}"))
+                .collect();
+            format!(
+                "when ({case}.variant) {{ {}; else -> {last} }}",
+                arms.join("; ")
+            )
+        };
+        Ok(format!("{read_case}.let {{ {case} -> {body} }}"))
+    }
+}
+
 /// The name the generated `matches` and `value` take the formal parameter
 /// `id` by: `param_<id>`, so that no parameter's name is one the unit declares
 /// (`Value`, `value`, `matches`), the name `matches` gives the value it is
@@ -284,7 +613,7 @@ fn kotlin_enum_type(scope: &TypeScope, alias: &str) -> Option<String> {
 }
 
 /// The payload data class of the record `record`, by its document's package.
-fn kotlin_record_type(record: &ScopedRecord) -> String {
+pub(super) fn kotlin_record_type(record: &ScopedRecord) -> String {
     kotlin_qualified(
         &record.name,
         &event_schema_payload_type(&record.name, Language::Kotlin),

@@ -17,12 +17,14 @@ const val NAME: String = {{ name_literal }}
 
 /**
  * The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it:
- * its name, its configuration and the machines of its components, and the module
- * parameters those components read.
+ * its name, its configuration and the machines of its components, the module
+ * parameters those components read, and the reader of the inputs a recorded trace of it
+ * carries (docs/SCE_TTCN3_LANE.md §10.5).
  */
 fun testCase(): {{ runtime }}.TestCase = {{ runtime }}.TestCase(
     name = NAME,
     configuration = {{ configuration }}(),
     machines = { componentType -> {{ machine }}(componentType) },
     moduleParameters = {{ module_parameters }}(),
+    inputs = { systemPort, typeName, value -> {{ input }}(systemPort, typeName, value) },
 )

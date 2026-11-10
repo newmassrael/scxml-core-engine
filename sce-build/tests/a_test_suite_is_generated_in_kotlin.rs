@@ -156,6 +156,207 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
 }
 
+/// docs/SCE_TTCN3_LANE.md §10.2, §10.5: a configuration reads the inputs of a
+/// recorded trace. Each record on the `in` list of a system port's type is read
+/// back from its canonical form and written in it, once, by the package of its
+/// event schema; an input on a port the configuration does not have, or of a
+/// type its port does not take, is refused by name, and a record only sent to
+/// the system under test is not read. The twin of the Rust case of the same
+/// name.
+#[test]
+fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
+    let asking = unit("asking_configuration", "AskingConfiguration");
+    for needle in [
+        "fun read_job_reply(value: Any?): com.sce.generated.job_reply.JobReplyPayload =",
+        "com.sce.runtime.test.FromCanonical.record(value, listOf(\"job\", \"code\"), \
+         \"job_reply\").let { record_0 -> com.sce.generated.job_reply.JobReplyPayload(job = \
+         com.sce.runtime.test.FromCanonical.integer(\
+         com.sce.runtime.test.FromCanonical.field(record_0, \"job\", \"job_reply.job\"), \
+         com.sce.runtime.test.FromCanonical.UINT32, \"job_reply.job\"), code = ",
+        "fun canonical_job_reply(value: com.sce.generated.job_reply.JobReplyPayload): Any =",
+        "com.sce.runtime.test.Canonical.integer(value.code)",
+        "fun input(systemPort: String, typeName: String, value: Any?): \
+         com.sce.runtime.test.Message = when (systemPort to typeName) {",
+        "\"sut\" to \"job_reply\" -> com.sce.runtime.test.Message.of(\
+         com.sce.generated.job_reply.EVENT_NAME, read_job_reply(value), \"job_reply\", \
+         ::canonical_job_reply)",
+        "else -> throw com.sce.runtime.test.TraceRefusal.notAnInput(systemPort, typeName, \
+         listOf(\"sut\"))",
+    ] {
+        assert!(
+            asking.contains(needle),
+            "asking_configuration holds `{needle}`:\n{asking}"
+        );
+    }
+    assert!(
+        !asking.contains("read_job_request"),
+        "a record the components only send is not read: {asking}"
+    );
+    assert_eq!(
+        asking.matches("fun read_job_reply(").count(),
+        1,
+        "a record is read by one function"
+    );
+
+    let keeping = unit("keeping_configuration", "KeepingConfiguration");
+    assert!(
+        keeping.contains(
+            "\"quiet\" to \"job_reply\" -> com.sce.runtime.test.Message.of(\
+             com.sce.generated.job_reply.EVENT_NAME, read_job_reply(value), \"job_reply\", \
+             ::canonical_job_reply)"
+        ),
+        "{keeping}"
+    );
+
+    let serving = unit("serving_configuration", "ServingConfiguration");
+    assert!(
+        serving.contains(
+            "@Suppress(\"UNUSED_PARAMETER\")\nfun input(systemPort: String, typeName: String, \
+             value: Any?): com.sce.runtime.test.Message =\n    \
+             throw com.sce.runtime.test.TraceRefusal.notAnInput(systemPort, typeName, listOf())"
+        ),
+        "a configuration with no system port refuses every input: {serving}"
+    );
+    assert!(!serving.contains("fun read_"), "{serving}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
+/// record of every form of the canonical value generates a public reader and
+/// writer of each, which
+/// `backends/kotlin/tests/src/test/kotlin/com/sce/integration/ARecordReadsBackTheFormItWritesTest.kt`
+/// compiles and round-trips: an open enum read through its companion, a list
+/// of optional elements and an optional field each by its runtime reader with
+/// the read as the lambda after it, a union by its case and the `else` of its
+/// last, a byte string by its hex.
+#[test]
+fn a_configuration_reads_a_record_of_every_form() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
+    let forms = file_at(&path, "FormsConfiguration");
+    for record in ["order_placed", "job_status", "form_extras"] {
+        for needle in [
+            format!("fun read_{record}(value: Any?): "),
+            format!("fun canonical_{record}(value: "),
+            format!("\"sut\" to \"{record}\" -> com.sce.runtime.test.Message.of("),
+        ] {
+            assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+        }
+    }
+    for needle in [
+        "com.sce.runtime.test.FromCanonical.openEnumerated(",
+        "com.sce.runtime.test.FromCanonical.UINT8, \"form_extras.shape\") \
+         { raw -> com.sce.generated.shape_kind_open.ShapeKindOpen.fromUnderlying(raw) }",
+        "com.sce.runtime.test.FromCanonical.nullable(item_0) { present_1 -> ",
+        "com.sce.runtime.test.FromCanonical.optionalField(record_0, \"note\") { present_0 -> ",
+        "com.sce.runtime.test.FromCanonical.unionCase(",
+        "when (case_0.variant) { \"card\" -> com.sce.generated.order_payment.OrderPayment.Card(",
+        "\"cash\" -> com.sce.runtime.test.FromCanonical.noRecord(case_0.value, \
+         \"order_placed.payment.cash\", com.sce.generated.order_payment.OrderPayment.Cash)",
+        "else -> com.sce.generated.order_payment.OrderPayment.Voucher(",
+        "com.sce.runtime.test.FromCanonical.bytes(",
+    ] {
+        assert!(forms.contains(needle), "`{needle}` in\n{forms}");
+    }
+    // A record of a list of records names the object of each element apart from
+    // the object of the record that holds the list.
+    let readers = between(&forms, "fun read_", "fun input(");
+    assert!(
+        readers.contains(".map { item_0 -> com.sce.runtime.test.FromCanonical.record(item_0, "),
+        "{readers}"
+    );
+    assert!(readers.contains(".let { record_1 -> "), "{readers}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports
+/// take that the export would name alike, the stems of their files, are
+/// refused by name, since one reader and one type of the test log would hold
+/// both.
+#[test]
+fn two_records_named_alike_are_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let record = |name: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}" sce:event-name="{name}.event">
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+        )
+    };
+    for (folder, name) in [("a", "twin_a"), ("b", "twin_b")] {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir(&folder).expect("a folder");
+        std::fs::write(folder.join("twin.scxml"), record(name)).expect("the record is written");
+    }
+    let documents = [
+        (
+            "twins_port.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="twins_port">
+  <sce:import kind="event-schema" src="a/twin.scxml" as="TwinA"/>
+  <sce:import kind="event-schema" src="b/twin.scxml" as="TwinB"/>
+  <sce:message type="TwinA" direction="in"/>
+  <sce:message type="TwinB" direction="in"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_listener.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="twins_listener"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:test-port id="sut" type="TwinsPort"/>
+  <state id="waiting">
+    <transition sce:receive="sut" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_configuration.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="twins_configuration">
+  <sce:import kind="test-component" src="twins_listener.scxml" as="TwinsListener"/>
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:mtc type="TwinsListener"/>
+  <sce:system-port id="sut" type="TwinsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>
+"#,
+        ),
+    ];
+    for (file, text) in documents {
+        std::fs::write(dir.path().join(file), text).expect("the document is written");
+    }
+    let Err(err) = generate(&dir.path().join("twins_configuration.scxml")) else {
+        panic!("two records named alike generated on Kotlin");
+    };
+    let ForgeError::Generate(boxed) = err.error else {
+        panic!("not a generation refusal: {err:?}");
+    };
+    let GenerateError::UnsupportedFeature { detail, .. } = *boxed else {
+        panic!("not an unsupported feature");
+    };
+    assert!(
+        detail.starts_with("test-configuration 'twins_configuration': "),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("two records its system ports take are named 'twin': "),
+        "{detail}"
+    );
+}
+
 /// §12.3, §12.6: the package a configuration names a component's class by is
 /// the one the component's statechart is generated into when no package
 /// prefix is given, and the class is the component the statechart declares.
@@ -199,6 +400,8 @@ fn a_test_case_names_its_configurations_tables() {
         "machines = { componentType -> \
          com.sce.generated.asking_configuration.machine(componentType) },",
         "moduleParameters = com.sce.generated.asking_configuration.moduleParameters(),",
+        "inputs = { systemPort, typeName, value -> \
+         com.sce.generated.asking_configuration.input(systemPort, typeName, value) },",
     ] {
         assert!(
             case.contains(needle),
@@ -206,6 +409,71 @@ fn a_test_case_names_its_configurations_tables() {
         );
     }
     assert!(!case.contains("\nimport "), "{case}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: a suite's unit is the runner program's: its
+/// `main` hands the runner the suite and the reader of each module parameter's
+/// value, a literal of its type, which an undeclared parameter is refused by.
+/// The twin of the Rust case of the same name.
+#[test]
+fn a_suite_is_the_runner_program_of_its_traces() {
+    let suite = unit("runtime_suite", "RuntimeSuite");
+    for needle in [
+        "fun moduleParameter(id: String, literal: String): \
+         com.sce.runtime.test.ModuleParameterValue = when (id) {",
+        "\"job\" -> com.sce.runtime.SavedValues.of(com.sce.runtime.test.integerParameter(id, \
+         literal, com.sce.runtime.test.FromCanonical.UINT32))",
+        "else -> throw com.sce.runtime.test.undeclaredParameter(id)",
+        "fun main(args: Array<String>) {",
+        "com.sce.runtime.test.runnerMain(suite(), ::moduleParameter, args)",
+    ] {
+        assert!(
+            suite.contains(needle),
+            "runtime_suite holds `{needle}`:\n{suite}"
+        );
+    }
+}
+
+/// §4: the reader of each type of module parameter the runner is given a
+/// literal of, by the runtime's readers, an integer at its width and saved by
+/// the overload of its type.
+#[test]
+fn a_module_parameter_is_read_by_the_reader_of_its_type() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let suite = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="typed_readers">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Paint"/>
+  <sce:import kind="test-case" src="{runtime}/answers_the_job.scxml" as="AnswersTheJob"/>
+  <sce:module-parameter id="job" type="uint32" value="7"/>
+  <sce:module-parameter id="armed" type="bool" value="true"/>
+  <sce:module-parameter id="offset" type="int8" value="-5"/>
+  <sce:module-parameter id="label" type="string[8]" value="nightly"/>
+  <sce:module-parameter id="key" type="bytes[2]" value="0aff"/>
+  <sce:module-parameter id="color" type="enum:Paint" value="green"/>
+  <sce:execute test-case="AnswersTheJob"/>
+</scxml>
+"#,
+        imports = imports_dir().display(),
+        runtime = runtime_dir().display()
+    );
+    let path = dir.path().join("typed_readers.scxml");
+    std::fs::write(&path, suite).expect("the suite is written");
+    let text = file_at(&path, "TypedReaders");
+    for needle in [
+        "\"armed\" -> com.sce.runtime.test.boolParameter(id, literal)",
+        "\"offset\" -> com.sce.runtime.SavedValues.of(com.sce.runtime.test.integerParameter(id, \
+         literal, com.sce.runtime.test.FromCanonical.INT8))",
+        "\"label\" -> com.sce.runtime.test.textParameter(literal)",
+        "\"key\" -> com.sce.runtime.test.bytesParameter(id, literal)",
+        "\"color\" -> com.sce.runtime.test.enumParameter(literal)",
+    ] {
+        assert!(
+            text.contains(needle),
+            "typed_readers holds `{needle}`:\n{text}"
+        );
+    }
 }
 
 /// The text of one `<sce:execute>` of a suite's unit: its test case, its
@@ -319,6 +587,14 @@ fn a_selection_keeps_its_inner_joins_and_an_empty_suite_its_empty_tables() {
     std::fs::write(&path, empty).expect("the suite is written");
     let text = file_at(&path, "EmptySuite");
     assert!(text.contains("executes = emptyList(),"), "{text}");
+    assert!(
+        text.contains(
+            "@Suppress(\"UNUSED_PARAMETER\")\nfun moduleParameter(id: String, literal: String): \
+             com.sce.runtime.test.ModuleParameterValue =\n    \
+             throw com.sce.runtime.test.undeclaredParameter(id)"
+        ),
+        "a suite that declares no module parameter refuses every value: {text}"
+    );
 }
 
 /// §11.8, §12.2: each module parameter's default is the saved value of its
