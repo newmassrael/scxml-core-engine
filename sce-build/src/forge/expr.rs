@@ -5503,10 +5503,7 @@ fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, parts: &ComposedParts
                 })
         }
         _ => {
-            let root = path
-                .split(|c: char| c == '.' || c == '[')
-                .next()
-                .unwrap_or(path);
+            let root = path.split(['.', '[']).next().unwrap_or(path);
             (parts.item_of_a_place)(root)
         }
     }
