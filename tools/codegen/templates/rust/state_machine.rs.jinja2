@@ -504,7 +504,12 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
 {% for field in record.fields %}
-{% if field.optional and field.bound is not none and field.saved_type == "bytes" %}
+{# docs/adr/0086, section 15.6: a list's lower count is in no Rust type, so a
+   field whose type states one is read by the read the generator spells for it,
+   held to each count as a delivery is. #}
+{% if field.reader is not none %}
+            {{ field.name }}: {{ field.reader }}?,
+{% elif field.optional and field.bound is not none and field.saved_type == "bytes" %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::optional(::sce_rust_runtime::saved_state::record_member(value, what, "{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, &format!("{what}.{{ field.id }}")))?,
 {% elif field.bound is not none and field.saved_type == "bytes" %}
             {{ field.name }}: ::sce_rust_runtime::saved_state::record_bounded_bytes(value, what, "{{ field.id }}")?,

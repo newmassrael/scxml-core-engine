@@ -261,6 +261,53 @@ pub(crate) fn rust_bytes_type(max: u32) -> String {
 /// bound taken from the place ([`rust_bounded_list`]).
 pub(crate) const RUST_EMPTY_LIST: &str = "::sce_rust_runtime::portable::BoundedList::new()";
 
+/// The runtime module a Rust machine's saved state is written and read by.
+const RUST_SAVED: &str = "::sce_rust_runtime::saved_state";
+
+/// The Rust read of the saved value `value` (an expression of `&Value`), named
+/// `what` in a refusal (an expression of `&str`), as a value of `ty`, where
+/// `ty` states a lower count the type the machine holds it in does not hold: a
+/// `BoundedList<T, N>` holds its bound and no lower count (docs/adr/0086,
+/// section 15.6), so each list that states one is read by the runtime's
+/// `bounded_within`, held to both its counts before an element is read, and
+/// each value that holds one by an element or a present value, at any depth
+/// down to a record or a union, whose own `SavedValue` reads its fields.
+/// `None` where `ty` states none above such a record or union: the type's own
+/// `SavedValue` reads it whole. `depth` names the parameters of each nested
+/// closure, so none hides its holder's.
+pub(crate) fn rust_saved_read(
+    ty: &ValueType,
+    value: &str,
+    what: &str,
+    depth: usize,
+) -> Option<String> {
+    match ty {
+        ValueType::Optional { elem } => {
+            let present = format!("sce_present{depth}");
+            rust_saved_read(elem, &present, what, depth + 1)
+                .map(|read| format!("{RUST_SAVED}::optional({value}, |{present}| {read})"))
+        }
+        ValueType::List { elem, max } => {
+            let (item, item_what) = (format!("sce_item{depth}"), format!("sce_what{depth}"));
+            let each = rust_saved_read(elem, &item, &item_what, depth + 1);
+            if max.min == 0 && each.is_none() {
+                return None;
+            }
+            // An element that states no lower count is read by its own
+            // `SavedValue`, named by the function's path.
+            let each = each.map_or_else(
+                || format!("{RUST_SAVED}::SavedValue::from_saved"),
+                |read| format!("|{item}, {item_what}| {read}"),
+            );
+            Some(format!(
+                "{RUST_SAVED}::bounded_within::<_, {}>({value}, {what}, {}, {each})",
+                max.max, max.min
+            ))
+        }
+        _ => None,
+    }
+}
+
 impl ComposedSpelling for RustComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::rust_type(ty).to_string()
@@ -306,6 +353,18 @@ impl ComposedSpelling for RustComposed<'_> {
             "/// SCE Accepted Subset §2.15: a `record:{alias}` value that holds a composed \
              value (docs/adr/0086).\n#[derive(Clone, Debug, PartialEq)]\n\
              #[allow(non_snake_case)]\npub struct {ty} {{\n{members}}}"
+        )
+    }
+    // Read out of the saved record `value` the template's `from_saved` is
+    // handed, named `what`, as `record_field` reads every other field
+    // ([`rust_saved_read`]).
+    fn saved_field_read(&self, ty: &ValueType, id: &str) -> Option<String> {
+        let key = crate::filters::escape_rust(id.to_string());
+        rust_saved_read(
+            ty,
+            &format!("{RUST_SAVED}::record_member(value, what, \"{key}\")?"),
+            &format!("&format!(\"{{what}}.{key}\")"),
+            0,
         )
     }
 
@@ -1203,5 +1262,42 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    /// A list that states a lower count is read back from a saved state held
+    /// to it as well as to its bound, which its `BoundedList` holds alone, so
+    /// a restore refuses a list a delivery would (docs/adr/0086, section
+    /// 15.6); a value that holds one by an element or a present value is read
+    /// through it; a type that states none, and a record a list holds, are
+    /// left to their own `SavedValue`.
+    #[test]
+    fn a_rust_saved_list_is_held_to_its_lower_count() {
+        let s = "::sce_rust_runtime::saved_state";
+        let read = |text: &str| rust_saved_read(&ty(text), "v", "w", 0);
+        assert_eq!(
+            read("list<record:Item>[1..3]"),
+            Some(format!(
+                "{s}::bounded_within::<_, 3>(v, w, 1, {s}::SavedValue::from_saved)"
+            ))
+        );
+        assert_eq!(
+            read("optional<list<list<uint8>[1..2]>[3]>"),
+            Some(format!(
+                "{s}::optional(v, |sce_present0| {s}::bounded_within::<_, 3>(sce_present0, w, 0, \
+                 |sce_item1, sce_what1| {s}::bounded_within::<_, 2>(sce_item1, sce_what1, 1, \
+                 {s}::SavedValue::from_saved)))"
+            ))
+        );
+        assert_eq!(read("list<list<uint8>[2]>[3]"), None);
+        assert_eq!(read("optional<list<uint8>[2]>"), None);
+        assert_eq!(read("record:Item"), None);
+        assert_eq!(
+            RUST.saved_field_read(&ty("list<record:Item>[1..3]"), "items"),
+            Some(format!(
+                "{s}::bounded_within::<_, 3>({s}::record_member(value, what, \"items\")?, \
+                 &format!(\"{{what}}.items\"), 1, {s}::SavedValue::from_saved)"
+            ))
+        );
+        assert_eq!(RUST.saved_field_read(&ty("list<uint8>[3]"), "picked"), None);
     }
 }

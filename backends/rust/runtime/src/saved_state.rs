@@ -1912,6 +1912,24 @@ pub fn bounded<T: SavedValue, const N: usize>(
     value: &Value,
     what: &str,
 ) -> Result<crate::BoundedList<T, N>, StateRefusal> {
+    bounded_within(value, what, 0, T::from_saved)
+}
+
+/// A saved list `value` of a type that states a lower count (docs/adr/0086,
+/// section 15), read back only if it holds at least `least` and no more than
+/// the `N` elements its type bounds it by, each element read by `element` at
+/// the name of its index — a machine never holds fewer or more, and a restored
+/// one must not be the first to. Both counts are judged before any element is
+/// read, the lower one in the words a delivery's reader and a send's check use
+/// ([`crate::event_payload::check_count`]), since `BoundedList<T, N>` holds the
+/// bound alone (section 15.6). `least` is 0 for a list that states none
+/// ([`bounded`]).
+pub fn bounded_within<T, const N: usize>(
+    value: &Value,
+    what: &str,
+    least: usize,
+    mut element: impl FnMut(&Value, &str) -> Result<T, StateRefusal>,
+) -> Result<crate::BoundedList<T, N>, StateRefusal> {
     let Value::Array(items) = value else {
         return Err(not_a(value, what, "an array"));
     };
@@ -1921,9 +1939,12 @@ pub fn bounded<T: SavedValue, const N: usize>(
             items.len()
         )));
     }
+    if let Err(short) = crate::event_payload::check_count(what, items.len(), least) {
+        return Err(StateRefusal::new(short));
+    }
     let mut list = crate::BoundedList::new();
     for (i, item) in items.iter().enumerate() {
-        list.push(T::from_saved(item, &format!("{what}[{i}]"))?)
+        list.push(element(item, &format!("{what}[{i}]"))?)
             .map_err(|_| StateRefusal::new(format!("'{what}' is past the {N} it is bounded by")))?;
     }
     Ok(list)
@@ -3399,6 +3420,65 @@ fn describe<P: StatePolicy>(rejection: &ConfigurationRejection<P::State>) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The saved list of the numbers `items`.
+    fn numbers(items: &[u8]) -> Value {
+        Value::Array(items.iter().map(SavedValue::to_saved).collect())
+    }
+
+    /// A list of a type that states a lower count (docs/adr/0086, section 15)
+    /// is read back held to both its counts before an element is read, so a
+    /// restore refuses a list a machine never holds, in the words a delivery's
+    /// reader uses; an element is read by the reader it is handed, so a list
+    /// inside a list is held to its own lower count, named by its index.
+    #[test]
+    fn a_saved_list_is_held_to_its_lower_count_and_its_bound() {
+        let read = |value: &Value| bounded_within::<u8, 2>(value, "items", 1, u8::from_saved);
+        assert_eq!(
+            read(&numbers(&[1, 2])).map(|list| list.as_slice().to_vec()),
+            Ok(vec![1, 2])
+        );
+        assert_eq!(
+            read(&numbers(&[])).err(),
+            Some(StateRefusal::new(
+                "'items' holds 0 elements, fewer than the 1 its type declares"
+            ))
+        );
+        assert_eq!(
+            read(&numbers(&[1, 2, 3])).err(),
+            Some(StateRefusal::new(
+                "'items' holds 3 elements, past the 2 it is bounded by"
+            ))
+        );
+        // The count is judged before the element that is no number is read.
+        assert_eq!(
+            bounded_within::<u8, 3>(
+                &Value::Array(vec![Value::Text("x".to_string())]),
+                "items",
+                2,
+                u8::from_saved
+            )
+            .err(),
+            Some(StateRefusal::new(
+                "'items' holds 1 elements, fewer than the 2 its type declares"
+            ))
+        );
+        let grid = Value::Array(vec![numbers(&[1]), numbers(&[])]);
+        assert_eq!(
+            bounded_within::<crate::BoundedList<u8, 2>, 3>(&grid, "grid", 0, |item, what| {
+                bounded_within::<u8, 2>(item, what, 1, u8::from_saved)
+            })
+            .err(),
+            Some(StateRefusal::new(
+                "'grid[1]' holds 0 elements, fewer than the 1 its type declares"
+            ))
+        );
+        // A list that states no lower count reads the empty list, as it did.
+        assert_eq!(
+            bounded::<u8, 2>(&numbers(&[]), "items").map(|list| list.as_slice().len()),
+            Ok(0)
+        );
+    }
 
     /// A union is saved as one object, its tag first and the case's fields
     /// after it (docs/adr/0092, section 6.1 item 7), an empty case as its tag

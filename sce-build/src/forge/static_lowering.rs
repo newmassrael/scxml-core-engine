@@ -460,6 +460,13 @@ pub struct StaticRecordField {
     /// The default of a field a later revision added, as saved-state JSON
     /// ([`SavedAddedField::default`]); `None` for a field of the first revision.
     pub default: Option<String>,
+    /// The read of the field out of a saved record, spelled by the target for
+    /// a field of a composed record whose type states a lower count its
+    /// machine type does not hold
+    /// ([`crate::forge::composed_lowering::ComposedSpelling::saved_field_read`]),
+    /// which the restore holds as a delivery does (docs/adr/0086, section
+    /// 15.6); `None` for a field its own type reads back whole.
+    pub reader: Option<String>,
 }
 
 /// An enum type a `sce-static` machine declares, as a saved state writes it:
@@ -7511,6 +7518,8 @@ impl<'t> TypeDeclarations<'t> {
                         default: f
                             .since
                             .and_then(|_| crate::forge::schema_revision::default_wire(f)),
+                        // A record of entries holds no list.
+                        reader: None,
                     })
                     .collect(),
             });
@@ -7801,9 +7810,9 @@ fn declare_composed(
                             "the statechart holds no record of `record:{alias}`"
                         ))
                     })?;
-                    declarations
-                        .records
-                        .push(saved_composed_record(ty, schema, target).map_err(refused)?);
+                    declarations.records.push(
+                        saved_composed_record(ty, schema, target, &*spelling).map_err(refused)?,
+                    );
                     // A backend whose record type carries its saved form (Swift) writes
                     // it beside the type.
                     if let Some(saved_form) = spelling
@@ -7864,12 +7873,15 @@ fn declare_composed(
 /// ([`StaticRecord`]), a record a union variable's case holds (docs/adr/0092,
 /// section 6.1 item 7): each field by its type, as the machine holds it, a
 /// byte string and an optional one as their Latin-1 text, as a record of
-/// entries' are. `Err` for a field that holds a byte string inside a list,
-/// which a saved state would write as an array of numbers, not as its text.
+/// entries' are, and a field whose type states a lower count by the read
+/// `spelling` spells for it ([`StaticRecordField::reader`]). `Err` for a field
+/// that holds a byte string inside a list, which a saved state would write as
+/// an array of numbers, not as its text.
 fn saved_composed_record(
     ty: String,
     schema: &crate::forge::model::EventSchemaModel,
     target: &dyn StaticTarget,
+    spelling: &dyn crate::forge::composed_lowering::ComposedSpelling,
 ) -> Result<StaticRecord, String> {
     use crate::forge::value_type::ValueType;
     fn any_bytes(ty: &ValueType) -> bool {
@@ -7904,6 +7916,7 @@ fn saved_composed_record(
             optional,
             since: None,
             default: None,
+            reader: spelling.saved_field_read(&field.sce_type, &field.id),
         });
     }
     Ok(StaticRecord { ty, fields })

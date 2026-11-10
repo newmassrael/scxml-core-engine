@@ -543,6 +543,17 @@ pub trait ComposedSpelling {
     ) -> Result<Option<String>, String> {
         Ok(None)
     }
+    /// The read of the field `id`, of `ty`, of a composed record whose saved
+    /// form the machine's template writes
+    /// ([`crate::forge::static_lowering::StaticRecord`]), for a field whose
+    /// type states what the type the machine holds it in does not: a list's
+    /// lower count (docs/adr/0086, section 15.6), which a restore holds as a
+    /// delivery does. `None` where the field's own type reads all `ty` states,
+    /// and for a backend whose record carries its saved form itself
+    /// ([`Self::saved_record_ext`]), whose reader holds each count.
+    fn saved_field_read(&self, _ty: &ValueType, _id: &str) -> Option<String> {
+        None
+    }
     /// Whether a record of this backend starts every member at its zero (a Swift
     /// record is `SceDefault`, which a checked read of an element not there
     /// answers), so a record that holds a member with no zero ([`holds_no_zero`])
