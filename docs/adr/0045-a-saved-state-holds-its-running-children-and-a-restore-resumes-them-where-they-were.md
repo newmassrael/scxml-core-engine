@@ -1020,3 +1020,17 @@ save templates are in the template hash of every language) and are regenerated i
    - **Children** keep `<parent>.<invokeid>`, derived from the tree as section 1 states.
 
 No question is open.
+
+## Amendment, 2026-11-10: a C11 root takes its id from its host
+
+Step 5 recorded as a C11 deviation that a root "has no id before it is created", that is, takes
+none from its host. That deviation is removed, on the owner's delegation, for answer 2's "or
+given by the host": a C11 root is started under the id its host gives
+(`<machine>_init_with_session_id`), judged by the rule a saved id is (an Nmtoken, held in
+`SCE_MAX_SESSION_ID_LEN` bytes, its location in `SCE_MAX_URI_LEN`) and refused with its reason
+before the machine is touched, never cut, and a C11 test component is started under its
+configuration name as the other backends' components are. Every C11 machine now holds its id in
+`SCE_MAX_SESSION_ID_LEN` bytes, whether or not it saves. What remains a C11 deviation is the
+spelling of the id a root its host gives none draws, `<name>_session_<n>` and not a UUID, since
+the runtime reads no source of randomness (docs/SCE_ACCEPTED_SUBSET.md, "What C11 does
+otherwise"). The text of step 5 above is left as it was written.

@@ -6747,7 +6747,14 @@ restore every backend moves to.
   `thumbv7em-none-eabihf`). A parent builds each child under the id the tree gives
   it. A `sce-static` root on Kotlin takes the id from the host as the last constructor
   parameter, `sessionId` (an `IllegalArgumentException` for an id that is not an
-  Nmtoken), and draws a UUID version 4 when it is given none.
+  Nmtoken), and draws a UUID version 4 when it is given none. A C11 root takes the
+  id from the host through `<machine>_init_with_session_id`, which answers a
+  `sce_start_refusal_t` (`sce/session_id.h`): an id that is empty, not an Nmtoken,
+  longer than `SCE_MAX_SESSION_ID_LEN` holds or published at a location longer than
+  `SCE_MAX_URI_LEN` holds is refused with its reason, before the machine's storage is
+  touched, and never cut. A C11 test component's machine is started under the
+  component's name. The host is responsible for the id it gives naming one session:
+  a machine cannot see the other sessions of its process to compare.
 - **The shape of a tree.** Each session carries the shape of its own document,
   computed as today, and is judged against the document its parent's `<invoke>`
   names there, with its own `revisions` (docs/adr/0044). A session of another shape
@@ -6868,8 +6875,10 @@ start it does not run.
 **What C11 does otherwise** (docs/adr/0045, step 5), the deviations a reader of its saved
 state or its API meets:
 
-- **The root's id.** A C11 root draws `<name>_session_<n>`, not the UUID of the other
-  backends, and holds no id before the machine is created. A restore binds the saved id.
+- **The id a root draws.** A C11 root takes the id its host gives, as every backend's does;
+  one its host gives none draws `<name>_session_<n>`, not the UUID of the other backends,
+  since the runtime reads no source of randomness. A host that needs the one spelling gives
+  the id. A restore binds the saved id.
 - **The size of a save.** `<machine>_save` is called twice, once with no buffer to take the
   exact size of the text and once with a buffer of that size; the generator does not state a
   bound beforehand.

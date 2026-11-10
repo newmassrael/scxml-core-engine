@@ -1560,9 +1560,12 @@ machine down. `start` gives the construction of the machine the test-port proces
 registered, sets the context on the machine the construction has cleared, and only then enters the initial
 configuration (`<machine>_init_enter`, the entry half of `_init`), so the first `<onentry>` already reaches the run;
 `deliver_snapshot` raises the snapshot event and runs the macrostep it starts (`_step`); `terminated` is the machine's
-having entered a top-level `<final>`. A C11 root draws its own session id, `<name>_session_<n>`, and takes none from
-its host (docs/SCE_ACCEPTED_SUBSET.md, "What C11 does otherwise"), so the component does not name its machine's
-session after the component, as the other backends' components do. C11 refuses by name a component that declares
+having entered a top-level `<final>`. The machine's session is named by the component, `mtc` or the id of the
+`<invoke>` that creates it, which the parse holds to an XML Name: the construction is given the name as a host gives
+a root its id (`<machine>_init_with_session_id`), so it names the session whether or not a saved state can hold the
+machine. A name the build cannot hold as a session id (`SCE_MAX_SESSION_ID_LEN`, or a location past
+`SCE_MAX_URI_LEN`) ends the run with `error`, the reason in its log, and the machine is not started
+(`sce_test_context_error`). C11 refuses by name a component that declares
 `<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of, and one that
 uses a template whose type reaches a union, which C11 does not lower (ADR 0092, section 7).
 
