@@ -33081,6 +33081,15 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 ))
             }
             SwiftImportKind::Enum { unlowered: None } => {}
+            SwiftImportKind::BoundedCollection {
+                unlowered: Some(why),
+            } => {
+                return Some(format!(
+                    "the <sce:import as=\"{}\">, a bounded collection {why}",
+                    import.alias
+                ))
+            }
+            SwiftImportKind::BoundedCollection { unlowered: None } => {}
             SwiftImportKind::Schema(fields) => {
                 if let Some(why) = swift_schema_fields_unlowered(
                     fields
@@ -33570,6 +33579,12 @@ pub(crate) enum SwiftImportKind {
     /// as, which exists only when the enum is closed and named for no reserved word,
     /// so `unlowered` says what of it is not (`None` when none).
     Enum { unlowered: Option<String> },
+    /// A bounded collection, a value over slots the unit of its document declares, which an
+    /// algorithm takes as a parameter and walks slot by slot (`<sce:foreach in>`). The unit
+    /// exists only when the collection's element is one Swift writes, so `unlowered` says
+    /// what of it is not (`None` when none, or when the document-set compile that knows is not
+    /// the route).
+    BoundedCollection { unlowered: Option<String> },
     /// Any other kind, for which the Swift backend writes no unit yet.
     Other,
 }
@@ -33597,6 +33612,9 @@ fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
                     unlowered: imp.swift_unlowered.clone(),
                 },
                 None if imp.kind == "enum" => SwiftImportKind::Enum {
+                    unlowered: imp.swift_unlowered.clone(),
+                },
+                None if imp.kind == "bounded-collection" => SwiftImportKind::BoundedCollection {
                     unlowered: imp.swift_unlowered.clone(),
                 },
                 None => SwiftImportKind::Other,
@@ -38882,7 +38900,11 @@ fn algorithm_format_bc_import_param(
         // C11: const pointer to the typedef'd struct (`<snake>_t`).
         // No namespace concept — `member_type` already carries `_t`.
         Language::C11 => format!("const {} *{}", imp.member_type, alias),
-        Language::Swift => no_swift_emitter("algorithm_format_bc_import_param"),
+        // Swift: the collection by value, a struct that is a `Sequence` of its
+        // occupied elements and copies on write, read-only in a pure body as every
+        // parameter is. Its unit is a file of the module the algorithm is in, so the
+        // bare type names it.
+        Language::Swift => format!("_ {}: {}", swift_local_spelling(alias), imp.type_name),
     }
 }
 
@@ -42075,8 +42097,9 @@ fn lower_algorithm_stmt(
                 // indent+1 (sibling statement to the None-check).
                 let body_inner_indent = match lang {
                     Language::Rust | Language::Cpp | Language::C11 => indent + 2,
-                    Language::Kotlin | Language::Go | Language::Python => indent + 1,
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    Language::Kotlin | Language::Go | Language::Python | Language::Swift => {
+                        indent + 1
+                    }
                 };
                 let inner_pad = "    ".repeat(body_inner_indent);
                 match lang {
@@ -42195,7 +42218,23 @@ fn lower_algorithm_stmt(
                         out.push_str(&format!("{pad}    if {it} is None:\n"));
                         out.push_str(&format!("{pad}        continue\n"));
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    Language::Swift => {
+                        // The unit's `capacity` is a static member (an `Int`), and
+                        // `getBySlot` takes the slot as a `UInt32`. A slot that holds
+                        // nothing is passed over by `guard … else { continue }`, which
+                        // binds the element for the body at loop scope, so the body
+                        // sits one level in as it does for Kotlin, Go and Python. The
+                        // slot index is under the generator's own prefix, as the
+                        // other backends' is.
+                        let type_name = &imp.type_name;
+                        let held = swift_local_spelling(alias);
+                        out.push_str(&format!(
+                            "{pad}for sceSlotIdx in 0..<{type_name}.capacity {{\n"
+                        ));
+                        out.push_str(&format!(
+                            "{pad}    guard let {it} = {held}.getBySlot(UInt32(sceSlotIdx)) else {{ continue }}\n"
+                        ));
+                    }
                 }
                 lower_algorithm_block(
                     body,
@@ -42207,18 +42246,17 @@ fn lower_algorithm_stmt(
                 )?;
                 // Per-backend close braces. Rust/Cpp/C11 close two
                 // blocks (the Some/has_value branch + the for-loop);
-                // Kotlin/Go close one (the for-loop only); Python
+                // Kotlin/Go/Swift close one (the for-loop only); Python
                 // closes nothing (indentation-driven scope).
                 match lang {
                     Language::Rust | Language::Cpp | Language::C11 => {
                         out.push_str(&format!("{pad}    }}\n"));
                         out.push_str(&format!("{pad}}}\n"));
                     }
-                    Language::Kotlin | Language::Go => {
+                    Language::Kotlin | Language::Go | Language::Swift => {
                         out.push_str(&format!("{pad}}}\n"));
                     }
                     Language::Python => {}
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 }
             } else {
                 // Bytes iteration — RFC §synth-5-A v1. Item is a `u8`. Source

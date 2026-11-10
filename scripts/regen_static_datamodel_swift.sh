@@ -265,6 +265,23 @@ if [ ! -e "${BOUNDED_COLLECTION_DOCUMENTS[0]}" ]; then
     echo "error: no bounded collection fixture found under $BOUNDED_COLLECTION_DIR" >&2
     exit 1
 fi
+# An algorithm that imports a bounded collection and walks its slots (RFC section synth-5-A line 311,
+# item C7): the collection, the codec it holds and the algorithm, one set, because the algorithm names the
+# collection's unit and the collection its element's. The unit the algorithm is written as takes the
+# collection as a parameter, which only a compile of the unit with the collection beside it holds to the
+# Swift compiler.
+BOUNDED_COLLECTION_ALGORITHM_DIR="tests/forge/resources"
+BOUNDED_COLLECTION_ALGORITHM_DOCUMENTS=(
+    "$BOUNDED_COLLECTION_ALGORITHM_DIR/subscription_entry.scxml"
+    "$BOUNDED_COLLECTION_ALGORITHM_DIR/local_sub_table.scxml"
+    "$BOUNDED_COLLECTION_ALGORITHM_DIR/algorithm_bc_iter_minimal.scxml"
+)
+for document in "${BOUNDED_COLLECTION_ALGORITHM_DOCUMENTS[@]}"; do
+    if [ ! -e "$document" ]; then
+        echo "error: no bounded collection algorithm fixture $document" >&2
+        exit 1
+    fi
+done
 # The queues (RFC section synth-5-P) and the codec they hold, the fixtures every backend's generated-queue
 # test is built from. A queue is generated from its document SET and never alone, because the element
 # it holds is a document of the set. The two `intrusive` fixtures are not among them: that storage is
@@ -349,6 +366,11 @@ for document in "${BOUNDED_COLLECTION_DOCUMENTS[@]}"; do
     BOUNDED_COLLECTION_ARGUMENTS+=(--forge "$document")
 done
 "$CODEGEN" orchestrate "${BOUNDED_COLLECTION_ARGUMENTS[@]}" --language swift --output-dir "$TMP/bounded_collection/" > /dev/null
+BOUNDED_COLLECTION_ALGORITHM_ARGUMENTS=()
+for document in "${BOUNDED_COLLECTION_ALGORITHM_DOCUMENTS[@]}"; do
+    BOUNDED_COLLECTION_ALGORITHM_ARGUMENTS+=(--forge "$document")
+done
+"$CODEGEN" orchestrate "${BOUNDED_COLLECTION_ALGORITHM_ARGUMENTS[@]}" --language swift --output-dir "$TMP/bounded_collection_algorithm/" > /dev/null
 QUEUE_ARGUMENTS=()
 for document in "${QUEUE_DOCUMENTS[@]}"; do
     QUEUE_ARGUMENTS+=(--forge "$document")
@@ -448,6 +470,17 @@ for generated in "$TMP/bounded_collection"/*.swift; do
     cp "$generated" "$GENERATED_DIR/"
     UNIT_FROM[$unit]="$BOUNDED_COLLECTION_DIR"
     BOUNDED_COLLECTION_UNITS+=("$unit")
+done
+BOUNDED_COLLECTION_ALGORITHM_UNITS=()
+for generated in "$TMP/bounded_collection_algorithm"/*.swift; do
+    unit="$(basename "$generated" .swift)"
+    if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+        echo "error: ${UNIT_FROM[$unit]} and the bounded collection algorithm fixtures are both written as $unit; one of them needs another name" >&2
+        exit 1
+    fi
+    cp "$generated" "$GENERATED_DIR/"
+    UNIT_FROM[$unit]="$BOUNDED_COLLECTION_ALGORITHM_DIR"
+    BOUNDED_COLLECTION_ALGORITHM_UNITS+=("$unit")
 done
 QUEUE_UNITS=()
 for generated in "$TMP/queue"/*.swift; do

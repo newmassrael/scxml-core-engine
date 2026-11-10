@@ -7640,6 +7640,21 @@ fn validate_and_enrich_imports(
                     );
                 }
             }
+            // A Swift algorithm takes an imported bounded collection as a parameter of the
+            // unit its document is written as, which exists only when the collection's
+            // element is one Swift writes: the document-set compile knows that
+            // ([`BoundedCollectionResolution::element_swift_unlowered`]), and a route that
+            // has no resolution leaves the collection's own generation to refuse it.
+            if let forge::model::ForgeDocument::BoundedCollection(bm) = &doc {
+                if *language == generator::Language::Swift {
+                    ctx.swift_unlowered = options
+                        .bounded_collection_resolutions
+                        .as_ref()
+                        .and_then(|resolutions| resolutions.get(&bm.name))
+                        .and_then(|resolution| resolution.element_swift_unlowered.as_ref())
+                        .map(|why| format!("whose element {why}"));
+                }
+            }
             // A Swift caller holds a value of an imported enum in the type its unit
             // declares, which is written only for a closed enum named for no reserved
             // word.

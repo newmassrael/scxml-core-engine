@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use tempfile::tempdir;
 
 use sce_build::compile_scxml_with_imports;
-use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::codegen_matrix::emitting_in_part;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::{GeneratedOutput, Language};
@@ -191,6 +191,31 @@ fn kotlin_foreach_bc_emits_index_loop_with_get_by_slot() {
     assert!(
         code.contains("import com.sce.generated.local_sub_table.*"),
         "Kotlin foreach-BC missing wildcard import; got:\n{code}"
+    );
+}
+
+#[test]
+fn swift_foreach_bc_emits_index_loop_with_get_by_slot() {
+    let code = compile_algo_for(Language::Swift);
+    // The collection is a parameter of the unit's one function, a `Sequence` of its
+    // occupied elements read by slot, so the loop is the index loop the other
+    // backends write, the element bound at loop scope.
+    assert!(
+        code.contains("_ subs: LocalSubTable"),
+        "Swift foreach-BC missing the collection parameter; got:\n{code}"
+    );
+    assert!(
+        code.contains("for sceSlotIdx in 0..<LocalSubTable.capacity {"),
+        "Swift foreach-BC missing index loop; got:\n{code}"
+    );
+    assert!(
+        code.contains("guard let entry = subs.getBySlot(UInt32(sceSlotIdx)) else { continue }"),
+        "Swift foreach-BC missing getBySlot dispatch; got:\n{code}"
+    );
+    // A field of the item is read as the codec's struct names it.
+    assert!(
+        code.contains("entry.callback_id"),
+        "Swift foreach-BC missing the element field read; got:\n{code}"
     );
 }
 
@@ -415,28 +440,28 @@ fn negative_foreach_source_bc_with_bytes_item_type_fires() {
 // ═══════════════════════════════════════════════════════════════
 
 #[test]
-fn c7_lowering_emits_on_all_six_backends() {
+fn c7_lowering_emits_on_every_backend_that_writes_an_algorithm() {
     // Drift guard: every backend's foreach-BC emit must surface the
     // index-loop slot variable + get_by_slot dispatch. A regression
     // that drops the dispatch on one backend would be caught here
     // before `c7_keyexpr_fixture.rs` exercises the full
-    // exemplar.
-    for lang in emitting(ForgeKind::Algorithm) {
+    // exemplar. A backend that writes an algorithm in part (Swift)
+    // is held to it too, since the bounded collection is a construct
+    // it lowers.
+    for lang in emitting_in_part(ForgeKind::Algorithm) {
         let code = compile_algo_for(lang);
         let slot_marker = match lang {
-            Language::Kotlin | Language::Go => "sceSlotIdx",
+            Language::Kotlin | Language::Go | Language::Swift => "sceSlotIdx",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "sce_slot_idx",
-            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(slot_marker),
             "{lang:?}: foreach-BC missing slot index variable; got:\n{code}"
         );
         let dispatch_marker = match lang {
-            Language::Kotlin => "getBySlot",
+            Language::Kotlin | Language::Swift => "getBySlot",
             Language::Go => "GetBySlot",
             Language::Rust | Language::Cpp | Language::Python | Language::C11 => "get_by_slot",
-            Language::Swift => unreachable!("swift emits no algorithm, so it is not iterated"),
         };
         assert!(
             code.contains(dispatch_marker),
