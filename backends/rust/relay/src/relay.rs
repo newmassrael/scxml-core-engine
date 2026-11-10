@@ -26,6 +26,7 @@ use std::net::IpAddr;
 
 use sce_rust_trust::encoding;
 use sce_rust_trust::membership::{Entry, LogError};
+use sce_rust_trust::message::MARK_EVENT;
 use sce_rust_trust::{Checkpoint, CheckpointError, Conflict, PublicKey, TakeError, Trust};
 use sha2::{Digest, Sha256};
 
@@ -751,6 +752,10 @@ impl<S: Store> Relay<S> {
             Request::Entries { .. }
             | Request::Append { .. }
             | Request::PublishKeyPackage { .. } => 0,
+            // A mark changes nothing of the list and every member signs its own, a reader
+            // included (docs/adr/0085, section 3.1): what a member was told is what a change's
+            // stability is read from. The trust judges it as it judges any operation.
+            Request::Submit { event, .. } if event == MARK_EVENT => READER,
             Request::Submit { .. }
             | Request::Checkpoint { .. }
             | Request::PublishCommit { .. }

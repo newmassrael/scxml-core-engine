@@ -1419,7 +1419,7 @@ fn a_device_restored_from_an_older_save_reads_its_chain_back_before_it_signs() {
         vec![(CHANGE.to_string(), write(3, ALICE, 1003, 1))],
         "the write her chain, read back, held"
     );
-    assert!(back.dropped().is_empty());
+    assert!(back.withdrawn().is_empty());
     assert!(!back.rebuild());
     let rows: Vec<Value> = writes(&back)
         .into_iter()
@@ -1493,7 +1493,7 @@ fn what_a_device_sends_before_it_may_sign_waits_and_reaches_everyone_in_order() 
     );
     let first = network.round(&mut bob, BOB, RoundKind::Sync);
     assert!(first.refused().is_empty(), "{:?}", first.refused());
-    assert!(first.dropped().is_empty());
+    assert!(first.withdrawn().is_empty());
     let in_order: Vec<(String, String)> = sends
         .iter()
         .map(|(event, data)| (event.to_string(), data.clone()))
@@ -1570,21 +1570,26 @@ fn what_waited_for_a_grant_that_does_not_let_the_person_write_is_refused_and_sai
         let sent = write(1, node, 1000, 1);
         assert!(matches!(device.outbound(CHANGE, &sent), Kept::Waiting(_)));
         let read = network.round(&mut device, node, RoundKind::Sync);
-        let dropped = read.dropped();
-        assert_eq!(dropped.len(), 1, "{read:?}");
+        let withdrawn = read.withdrawn();
+        assert_eq!(withdrawn.len(), 1, "{read:?}");
         assert_eq!(
-            (dropped[0].0.as_str(), dropped[0].1.as_str()),
+            (withdrawn[0].event.as_str(), withdrawn[0].data.as_str()),
             (CHANGE, sent.as_str())
         );
+        assert_eq!(
+            (withdrawn[0].wall_time, withdrawn[0].counter),
+            (1000, 0),
+            "the stamp names the change to its copy"
+        );
         assert!(
-            dropped[0].2.contains("may not write") && dropped[0].2.contains(role),
+            withdrawn[0].why.contains("may not write") && withdrawn[0].why.contains(role),
             "{}",
-            dropped[0].2
+            withdrawn[0].why
         );
         assert!(read.taken().is_empty());
         assert!(
-            read.rebuild(),
-            "the machine holds a write no other copy will"
+            !read.rebuild(),
+            "a change the copy holds and no other copy will is withdrawn in place"
         );
         assert_eq!(read.round.pushed, 0);
         assert_eq!(device.standing().waiting, 0);
@@ -1741,9 +1746,9 @@ fn sends_again_and_signs_nothing(keyed: bool, restore: Restore, before_resync: b
     );
     assert!(resync.taken().is_empty(), "{case}: {:?}", resync.taken());
     assert!(
-        resync.dropped().is_empty(),
+        resync.withdrawn().is_empty(),
         "{case}: {:?}",
-        resync.dropped()
+        resync.withdrawn()
     );
     assert_eq!(resync.round.pushed, 0, "{case}: the relay is given nothing");
     let held = if before_resync { lost } else { Vec::new() };
@@ -1884,13 +1889,22 @@ fn reads_its_chain_past_a_conflict(keyed: bool) {
         Some(3),
         "{case}: the round that found it says so"
     );
-    let dropped = back.dropped();
-    assert_eq!(dropped.len(), after.len(), "{case}: {back:?}");
-    for ((event, data, why), (sent, made)) in dropped.iter().zip(&after) {
-        assert_eq!((event.as_str(), data.as_str()), (*sent, made.as_str()));
-        assert!(why.contains("conflicts at 3"), "{case}: {why}");
+    // The first is never signed, and every one after it is withdrawn with it (docs/adr/0093,
+    // section 6.2), in place: the copy withdraws the same suffix.
+    let withdrawn = back.withdrawn();
+    assert_eq!(withdrawn.len(), after.len(), "{case}: {back:?}");
+    for (at, (one, (sent, made))) in withdrawn.iter().zip(&after).enumerate() {
+        assert_eq!(
+            (one.event.as_str(), one.data.as_str()),
+            (*sent, made.as_str())
+        );
+        let why = if at == 0 {
+            "conflicts at 3"
+        } else {
+            "withdrawn"
+        };
+        assert!(one.why.contains(why), "{case}: {}", one.why);
     }
-    assert!(back.rebuild(), "{case}");
     assert_eq!(alice.standing().waiting, 0, "{case}");
     assert!(!alice.awaits_own_chain(), "{case}");
 }
