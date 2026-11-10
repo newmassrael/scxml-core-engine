@@ -101,7 +101,10 @@ use serde_json::{json, Value};
 /// told; and a host started again gives back its journal's records
 /// ([`sce_peer_restore_records`]), recalls the history ([`sce_peer_history`]) and raises its
 /// copy's clock to the device's own stamp ([`sce_peer_own_stamp`]). The sealed state is the core's
-/// version 6, which holds the outbox.
+/// version 6, which holds the outbox. The fold of a list held before a change was one unit
+/// (docs/adr/0085, section 8.3) moves no number: [`sce_peer_fold`] is a function added alone, and
+/// [`sce_peer_restore_sealed`] opens and upgrades a state of the core's version 5, which it refused
+/// as not opened before: a state no core of this number seals, and every output keeps its shape.
 pub const SCE_PEER_ABI_VERSION: u32 = 8;
 
 pub const SCE_PEER_OK: i32 = 0;
@@ -1106,6 +1109,43 @@ pub unsafe extern "C" fn sce_peer_history(
     })
 }
 
+/// What the parts of changes signed before a change was one unit that the core holds make
+/// together, as one JSON object in `out` ([`Peer::fold`], docs/adr/0085, section 8.3): `restores`,
+/// the state as `record_list.restore` payloads, each a JSON text of at most `parts` values (the
+/// build's `shared_parts`; 1 when 0 is given), empty when no value is live; and `cut`, for each
+/// device the highest number of its chain among the parts, as `[node, seq]` pairs, each number as
+/// text. A machine built again is given the restores first, then the history
+/// ([`sce_peer_history`]). A function added alone (`docs/SCE_SHARED_LIST_PEER_ABI.md`, the
+/// paragraph on numbers): a lane of version 8 that does not call it sees nothing change.
+///
+/// # Safety
+/// `peer` is a live handle; `out` is valid for a write.
+#[no_mangle]
+pub unsafe extern "C" fn sce_peer_fold(
+    peer: *mut ScePeer,
+    parts: u32,
+    out: *mut ScePeerBuf,
+) -> i32 {
+    guard(|| {
+        required(out)?;
+        // SAFETY: the promises in the function's contract.
+        let held = unsafe {
+            put(out, ScePeerBuf::EMPTY);
+            handle(peer)?
+        };
+        let fold = held.peer.fold();
+        let parts = usize::try_from(parts).unwrap_or(usize::MAX);
+        let text = json!({
+            "restores": fold.restores(parts),
+            "cut": numbered(&fold.cut).collect::<Vec<_>>(),
+        })
+        .to_string();
+        // SAFETY: `out` is valid for a write.
+        unsafe { put(out, ScePeerBuf::of(text.into_bytes())) };
+        Ok(())
+    })
+}
+
 /// The stable cut, as one JSON array of `[node, seq]` pairs in `out`, each number as text, lowest
 /// node first ([`Peer::stable_cut`]): for each device, the highest number of its chain every member
 /// is known to have been told. The host folds its journal at it.
@@ -1599,7 +1639,9 @@ pub unsafe extern "C" fn sce_peer_save_sealed_under(
 /// operations and checkpoints the log verified. `SCE_PEER_ERR_NOT_OPENED` when the state does not
 /// open under the key for this list and node, `SCE_PEER_ERR_UNREADABLE` when the bytes are no
 /// sealed state; either way the core took nothing. The device then signs nothing new until a round
-/// has read its own chain back from the relay.
+/// has read its own chain back from the relay. A state a core of version 5 sealed, before a change
+/// was one unit, is opened and upgraded: the host builds its machine again from the fold
+/// ([`sce_peer_fold`]) and the history ([`sce_peer_history`]).
 ///
 /// # Safety
 /// `peer` is a live handle; `state` points at `len` readable bytes; `key` at 32; `kept` is null or

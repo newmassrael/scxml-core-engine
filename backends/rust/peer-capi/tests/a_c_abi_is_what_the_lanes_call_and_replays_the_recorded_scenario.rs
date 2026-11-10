@@ -366,6 +366,40 @@ fn a_login_through_the_abi_asks_for_a_challenge_and_says_what_came_of_it() {
     }
 }
 
+/// What the parts of changes signed before a change was one unit make is given as one object of
+/// restores and a cut (docs/adr/0085, section 8.3); a core that holds no part gives neither, and a
+/// null buffer or handle is refused. The fold of parts held is the peer crate's to hold
+/// (`a_device_saved_before_a_change_was_one_unit_keeps_its_list`). Red if the function is not
+/// exported, or writes its object under other names.
+#[test]
+fn the_fold_is_given_as_restores_and_a_cut() {
+    // SAFETY: each call below passes a live handle and a buffer valid for a write, or null where
+    // refused.
+    unsafe {
+        let peer = sce_peer_open(c"home".as_ptr());
+        let mut out = empty();
+        assert_eq!(
+            sce_peer_fold(peer, 64, &mut out),
+            SCE_PEER_OK,
+            "{}",
+            last_error()
+        );
+        let fold: Value = serde_json::from_str(&taken(out).unwrap()).unwrap();
+        assert_eq!(fold, json!({"restores": [], "cut": []}));
+        assert_eq!(
+            sce_peer_fold(peer, 64, std::ptr::null_mut()),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        let mut none = empty();
+        assert_eq!(
+            sce_peer_fold(std::ptr::null_mut(), 64, &mut none),
+            SCE_PEER_ERR_NULL_ARGUMENT
+        );
+        assert!(none.ptr.is_null(), "nothing is given for no core");
+        sce_peer_free(peer);
+    }
+}
+
 #[test]
 fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
     let list = c"home";
