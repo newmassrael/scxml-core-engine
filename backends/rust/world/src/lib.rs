@@ -37,6 +37,14 @@
 //! binding is the world's: it starts the layer ([`World::start_causal`]), commits each
 //! change the layer accepts, and wakes for the vector a layer with work is owed.
 //!
+//! A machine's host may also stand in front of what the machine sends ([`World::set_host`],
+//! a [`Host`]): every `<send>` the machine makes to a Mesh route is shown to it first, and a
+//! route the host serves itself is answered there and never reaches the network. That is
+//! where a host that keeps a journal is put (docs/adr/0093, section 3.1): a copy of a shared
+//! list offers each change it makes on the route `#journal`, and its host gives the change
+//! to the layer, commits it with the verdict, and gives the copy the verdict back, in the
+//! one call. A verdict that host took is not committed again by the world.
+//!
 //! An actor need not be a Rust machine. [`World::add_external`] hosts one that runs in
 //! another process, such as a generated Kotlin machine in a JVM, behind the same Mesh
 //! endpoint: the world owns time, the network and the endpoint, and the process owns the
@@ -81,7 +89,7 @@ use sce_rust_mesh::endpoint::{
     Transport, TransportFailure,
 };
 use sce_rust_mesh::router::Router;
-use sce_rust_runtime::{Engine, SceClock, StatePolicy};
+use sce_rust_runtime::{Engine, HostSendRequest, HostSendResponse, SceClock, StatePolicy};
 
 pub mod external;
 use external::{ExternalActor, ExternalMachine};
@@ -422,6 +430,71 @@ fn hash_name(name: &str) -> u64 {
 
 type ActorEndpoint = SharedEndpoint<SimTransport, SimEnvironment>;
 
+/// A machine's Mesh endpoint in a world, as a [`Host`] is handed it.
+pub type MeshEndpoint = Endpoint<SimTransport, SimEnvironment>;
+
+/// What a machine's host does with a `<send>` the machine makes to a Mesh route, before
+/// the machine's endpoint is given it ([`World::set_host`]).
+///
+/// A route the host serves itself, such as the `#journal` a copy of a shared list offers
+/// its changes on (docs/adr/0093, section 3.1), is answered here: the host may act on the
+/// machine's endpoint (send in the machine's name, take the verdicts of its causal layers,
+/// report a journal record committed) and answers with the events the machine is given
+/// back, in order, on its external queue. A send to any other route the host hands to
+/// `endpoint.send` as it came, and answers with nothing.
+pub trait Host: Send {
+    fn send(
+        &mut self,
+        request: HostSendRequest,
+        endpoint: &mut MeshEndpoint,
+    ) -> Vec<HostSendResponse>;
+}
+
+/// A host as the machine's send handler and the world share it.
+type SharedHost = Arc<Mutex<Box<dyn Host>>>;
+
+/// Serve the machine of `engine` with `endpoint`, as `endpoint::register` does: its Mesh
+/// requests, and its sends, each of which is first written down in the record's `log`
+/// when the machine keeps one, and then shown to its `host` when it has one, which serves
+/// it or hands it on, or else given to the endpoint. The record holds what the machine
+/// asked to be sent, whatever the host and the network then do with it.
+fn connect<P: StatePolicy>(
+    engine: &mut Engine<P>,
+    endpoint: &ActorEndpoint,
+    log: Option<Arc<Mutex<Vec<Sent>>>>,
+    host: Option<SharedHost>,
+) {
+    endpoint::register(engine, endpoint);
+    if log.is_none() && host.is_none() {
+        return;
+    }
+    let sender = Arc::clone(endpoint);
+    engine.register_mesh_router(move |request| {
+        if let Some(log) = &log {
+            log.lock()
+                .expect("the list of what was sent is never left mid-update")
+                .push(Sent {
+                    target: request.target.clone(),
+                    event: request.event_name.clone(),
+                    data: request.event_data.clone(),
+                });
+        }
+        let mut endpoint = sender
+            .lock()
+            .expect("a Mesh endpoint is never left mid-update");
+        match &host {
+            Some(host) => host
+                .lock()
+                .expect("a host is never left mid-update")
+                .send(request, &mut endpoint),
+            None => {
+                endpoint.send(&request);
+                Vec::new()
+            }
+        }
+    });
+}
+
 /// What a machine sent a peer: the target and the event as its document writes them,
 /// and the data as the engine serialised it for the event (JSON, or empty).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -483,6 +556,8 @@ pub struct Actor<P: StatePolicy> {
     /// What the host gave the machine that it has not taken yet, oldest first.
     given: Vec<(String, String)>,
     record: Option<Record<P>>,
+    /// The host in front of what the machine sends, once one is set ([`World::set_host`]).
+    host: Option<SharedHost>,
 }
 
 impl<P: StatePolicy> Actor<P> {
@@ -847,7 +922,9 @@ impl World {
     /// links and what it was already told — and what is lost is whatever the machine
     /// had been given and not yet taken, as a process loses what it had not read. The
     /// Mesh router and the world's clock are set on the new machine as `add` sets
-    /// them; no `<onentry>` runs and no `<data>` is evaluated, as the restore says.
+    /// them, behind the host set before ([`set_host`](Self::set_host)), which is the
+    /// host's and outlives the machine; no `<onentry>` runs and no `<data>` is
+    /// evaluated, as the restore says.
     ///
     /// # Panics
     ///
@@ -865,9 +942,31 @@ impl World {
             "{name} is recorded, and a restart is not an event a scenario can give a machine"
         );
         let mut engine = restore(&actor.engine, SceClock::Manual(now_ms));
-        endpoint::register(&mut engine, &actor.endpoint);
+        connect(&mut engine, &actor.endpoint, None, actor.host.clone());
         actor.engine = engine;
         actor.given.clear();
+    }
+
+    /// The host of the machine `name` stands in front of what it sends: every `<send>` the
+    /// machine makes to a Mesh route is shown to `host`, which serves the routes that are
+    /// the host's own and hands the others to the machine's endpoint (see [`Host`]).
+    /// Replaces the host set before, and is kept across a [`restart`](Self::restart). A
+    /// machine that keeps a record still records what it asked to be sent.
+    ///
+    /// # Panics
+    ///
+    /// When `name` is not a machine of type `P` in this process.
+    pub fn set_host<P: StatePolicy + 'static>(&mut self, name: &str, host: Box<dyn Host>) {
+        let host: SharedHost = Arc::new(Mutex::new(host));
+        let actor = self.actor::<P>(name);
+        let log = actor.record.as_ref().map(|record| Arc::clone(&record.sent));
+        connect(
+            &mut actor.engine,
+            &actor.endpoint,
+            log,
+            Some(Arc::clone(&host)),
+        );
+        actor.host = Some(host);
     }
 
     /// Add an actor whose machine runs in another process, `machine`, under `name`,
@@ -955,34 +1054,18 @@ impl World {
         engine.set_clock(SceClock::Manual(
             u64::try_from(self.clock.now_ms()).unwrap_or(0),
         ));
-        endpoint::register(&mut engine, &endpoint);
-        let record = read.map(|read| {
-            // The router the endpoint registered is replaced by one that writes the
-            // send down before handing it on: the record holds what the machine asked
-            // to be sent, whatever the network then does with it.
-            let sent = Arc::new(Mutex::new(Vec::new()));
-            let (log, sender) = (Arc::clone(&sent), Arc::clone(&endpoint));
-            engine.register_mesh_router(move |request| {
-                log.lock()
-                    .expect("the list of what was sent is never left mid-update")
-                    .push(Sent {
-                        target: request.target.clone(),
-                        event: request.event_name.clone(),
-                        data: request.event_data.clone(),
-                    });
-                sender
-                    .lock()
-                    .expect("a Mesh endpoint is never left mid-update")
-                    .send(&request);
-                Vec::new()
-            });
-            Record {
-                read,
-                sent,
-                waited_ms: 0,
-                steps: Vec::new(),
-            }
+        let record = read.map(|read| Record {
+            read,
+            sent: Arc::new(Mutex::new(Vec::new())),
+            waited_ms: 0,
+            steps: Vec::new(),
         });
+        connect(
+            &mut engine,
+            &endpoint,
+            record.as_ref().map(|record| Arc::clone(&record.sent)),
+            None,
+        );
         engine.initialize().expect("the machine starts");
         let mut actor = Actor {
             name: name.to_string(),
@@ -990,6 +1073,7 @@ impl World {
             endpoint,
             given: Vec::new(),
             record,
+            host: None,
         };
         actor.pump();
         actor.note(None);
