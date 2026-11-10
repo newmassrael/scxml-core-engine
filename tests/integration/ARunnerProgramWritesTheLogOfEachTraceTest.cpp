@@ -67,7 +67,7 @@ std::string quoted(const std::string &text) {
 
 /// What a run of the program left: its exit status, its standard output and
 /// its standard error.
-struct Run {
+struct ProgramRun {
     int status = -1;
     std::string out;
     std::string err;
@@ -90,8 +90,8 @@ std::filesystem::path scratch(const std::string &name) {
 
 /// The runner program, given the directories of the traces and of the logs,
 /// then @p args.
-Run runProgram(const std::filesystem::path &logs, const std::filesystem::path &streams,
-               const std::vector<std::string> &args) {
+ProgramRun runProgram(const std::filesystem::path &logs, const std::filesystem::path &streams,
+                      const std::vector<std::string> &args) {
     std::string command =
         quoted(SCE_RUNTIME_SUITE_RUNNER) + " --trace-dir " +
         quoted(std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/test_profile/runtime/traces") +
@@ -103,7 +103,7 @@ Run runProgram(const std::filesystem::path &logs, const std::filesystem::path &s
     const std::filesystem::path err = streams / "err";
     command += " >" + quoted(out.string()) + " 2>" + quoted(err.string());
     const int waited = std::system(command.c_str());
-    Run run;
+    ProgramRun run;
     run.status = (waited != -1 && WIFEXITED(waited)) ? WEXITSTATUS(waited) : -1;
     run.out = fileText(out);
     run.err = fileText(err);
@@ -120,13 +120,13 @@ TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
     const std::filesystem::path streams = scratch("streams");
 
     const std::filesystem::path logs = scratch("default") / "logs";
-    const Run first = runProgram(logs, streams, {});
+    const ProgramRun first = runProgram(logs, streams, {});
     ASSERT_EQ(first.status, 0) << first.err;
     EXPECT_EQ(first.out, "answers_the_job pass\n");
     EXPECT_EQ(fileText(logs / "answers_the_job.log.json"), sharedLog());
 
     const std::filesystem::path overridden = scratch("overridden") / "logs";
-    const Run second = runProgram(overridden, streams, {"--world", "", "--module-parameter", "job=9"});
+    const ProgramRun second = runProgram(overridden, streams, {"--world", "", "--module-parameter", "job=9"});
     ASSERT_EQ(second.status, 0) << second.err;
     const std::string log = fileText(overridden / "answers_the_job.log.json");
     EXPECT_NE(log.find("\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}"),
@@ -134,7 +134,7 @@ TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
         << "the request names the job of the value given: " << log;
 
     const std::filesystem::path undeclared = scratch("undeclared") / "logs";
-    const Run third = runProgram(undeclared, streams, {"--module-parameter", "limit=1"});
+    const ProgramRun third = runProgram(undeclared, streams, {"--module-parameter", "limit=1"});
     EXPECT_EQ(third.status, 2);
     EXPECT_NE(third.err.find("the suite declares no module parameter 'limit'"), std::string::npos) << third.err;
     EXPECT_FALSE(std::filesystem::exists(undeclared)) << "no case ran, so no log was written";
