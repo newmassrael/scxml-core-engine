@@ -127,7 +127,7 @@ def test_a_parallel_configuration_is_accepted() -> None:
     configuration = _at_work()
 
     assert (
-        engine.enter_at(configuration, _State.WORKING) is ConfigurationRejection.NONE
+        engine.enter_at(configuration, _State.WORKING).rejection is ConfigurationRejection.NONE
     ), "a configuration of the document was refused"
     assert engine.active_configuration() == set(configuration), (
         f"the machine came back holding {engine.active_configuration()}, not the "
@@ -148,7 +148,7 @@ def test_the_recorded_leaf_is_one_of_the_restored_leaves() -> None:
     engine, _ = _new_parallel()
 
     assert (
-        engine.enter_at(_at_work(), _State.WORKING) is ConfigurationRejection.NONE
+        engine.enter_at(_at_work(), _State.WORKING).rejection is ConfigurationRejection.NONE
     )
     assert _State.WORKING in engine.active_leaves
 
@@ -161,7 +161,7 @@ def test_a_linear_configuration_round_trips() -> None:
     engine = _linear.create_engine(host)
 
     assert (
-        engine.enter_at([_LinearState.ASSEMBLING], _LinearState.ASSEMBLING)
+        engine.enter_at([_LinearState.ASSEMBLING], _LinearState.ASSEMBLING).rejection
         is ConfigurationRejection.NONE
     ), "a single-state configuration was refused"
     assert engine.current_state == _LinearState.ASSEMBLING
@@ -176,7 +176,7 @@ def test_a_linear_configuration_round_trips() -> None:
 def test_an_empty_configuration_is_refused() -> None:
     engine, _ = _new_parallel()
     assert (
-        engine.enter_at([], _State.WORKING) is ConfigurationRejection.EMPTY
+        engine.enter_at([], _State.WORKING).rejection is ConfigurationRejection.EMPTY
     ), "a machine is never in nothing"
 
 
@@ -187,7 +187,7 @@ def test_two_siblings_of_one_region_are_refused() -> None:
     configuration = _at_work() + [_State.JUDGING]
 
     assert (
-        engine.enter_at(configuration, _State.WORKING)
+        engine.enter_at(configuration, _State.WORKING).rejection
         is ConfigurationRejection.COMPOUND_CHILD_COUNT
     ), "`running` was given two active children, which is a configuration the document has no reading for"
 
@@ -199,7 +199,7 @@ def test_a_parallel_with_a_region_missing_is_refused() -> None:
     configuration = [_State.RUN, _State.DRIVE, _State.RUNNING, _State.WORKING]
 
     assert (
-        engine.enter_at(configuration, _State.WORKING)
+        engine.enter_at(configuration, _State.WORKING).rejection
         is ConfigurationRejection.PARALLEL_REGION_MISSING
     ), "`budget` is a region of `run` and a run is always in both at once"
 
@@ -216,7 +216,7 @@ def test_a_configuration_that_skips_an_ancestor_is_refused() -> None:
     ]
 
     assert (
-        engine.enter_at(configuration, _State.WORKING)
+        engine.enter_at(configuration, _State.WORKING).rejection
         is ConfigurationRejection.ANCESTOR_MISSING
     ), "`working` is a child of `running`, which the set does not hold"
 
@@ -228,7 +228,7 @@ def test_a_repeated_state_is_refused() -> None:
     configuration = _at_work() + [_State.WORKING]
 
     assert (
-        engine.enter_at(configuration, _State.WORKING)
+        engine.enter_at(configuration, _State.WORKING).rejection
         is ConfigurationRejection.DUPLICATE
     )
 
@@ -240,7 +240,7 @@ def test_two_roots_are_refused() -> None:
     configuration = _at_work() + [_State.SETTLED]
 
     assert (
-        engine.enter_at(configuration, _State.WORKING)
+        engine.enter_at(configuration, _State.WORKING).rejection
         is ConfigurationRejection.ROOT_COUNT
     )
 
@@ -248,7 +248,7 @@ def test_two_roots_are_refused() -> None:
 def test_a_current_state_outside_the_configuration_is_refused() -> None:
     engine, _ = _new_parallel()
     assert (
-        engine.enter_at(_at_work(), _State.JUDGING)
+        engine.enter_at(_at_work(), _State.JUDGING).rejection
         is ConfigurationRejection.CURRENT_NOT_ACTIVE
     ), "the current state is the one the machine is standing in, so it is in the set by definition"
 
@@ -259,7 +259,7 @@ def test_a_current_state_outside_the_configuration_is_refused() -> None:
 def test_a_non_atomic_current_state_is_refused() -> None:
     engine, _ = _new_parallel()
     assert (
-        engine.enter_at(_at_work(), _State.RUNNING)
+        engine.enter_at(_at_work(), _State.RUNNING).rejection
         is ConfigurationRejection.CURRENT_NOT_ATOMIC
     )
 
@@ -271,7 +271,7 @@ def test_a_non_atomic_current_state_is_refused() -> None:
 def test_a_refused_entry_leaves_the_engine_untouched() -> None:
     engine, script = _new_parallel()
 
-    assert engine.enter_at([], _State.WORKING) is ConfigurationRejection.EMPTY
+    assert engine.enter_at([], _State.WORKING).rejection is ConfigurationRejection.EMPTY
 
     assert not engine.is_running, "a refused entry started the machine"
     assert engine.active_leaves == [], "a refused entry wrote an active set"
@@ -290,7 +290,7 @@ def test_an_accepted_entry_declares_the_datamodel_once() -> None:
     engine, script = _new_parallel()
 
     assert (
-        engine.enter_at(_at_work(), _State.WORKING) is ConfigurationRejection.NONE
+        engine.enter_at(_at_work(), _State.WORKING).rejection is ConfigurationRejection.NONE
     )
     assert script.declarations == 1, (
         f"an accepted entry declared the datamodel {script.declarations} times; "
@@ -355,7 +355,7 @@ def test_a_configuration_journalled_as_names_is_accepted_back() -> None:
     assert current is not None
 
     assert (
-        reader.enter_at(configuration, current) is ConfigurationRejection.NONE
+        reader.enter_at(configuration, current).rejection is ConfigurationRejection.NONE
     ), "a configuration a run actually reached was refused on the way back"
     assert reader.active_configuration() == set(configuration), (
         f"the resumed configuration is {reader.active_configuration()}, not the "

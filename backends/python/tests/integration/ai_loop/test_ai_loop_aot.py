@@ -911,7 +911,7 @@ def test_a_run_journalled_as_names_resumes_where_it_stopped() -> None:
         f"the current state's own name `{journalled_current}` did not read back"
     )
 
-    assert resumed.enter_at(configuration, current) is ConfigurationRejection.NONE, (
+    assert resumed.enter_at(configuration, current).rejection is ConfigurationRejection.NONE, (
         "a configuration this document published is one it can be put back into"
     )
 
