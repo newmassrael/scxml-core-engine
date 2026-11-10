@@ -151,20 +151,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // (§6 R8). The roles forward only an input of a body no gate decides
     // ([`FORWARD_IS_UNGATED`]), and derive a flag from a body only where the
     // body says it in every value ([`SAYS_IN_EVERY_VALUE`]).
-    for said in &plan.said {
-        let name = &said.input.name;
-        match &plan.roles.inputs[name] {
-            InputSource::Gate { .. }
-            | InputSource::Group
-            | InputSource::List { .. }
-            | InputSource::EveryArm { .. }
-            | InputSource::SomeArms { .. } => {}
-            InputSource::Forward { partly: false, .. } => {}
-            InputSource::Forward { partly: true, .. } => forms.push(format!(
-                "`{name}`, a flag input a body says in some of its values only"
-            )),
-        }
-    }
+    // A body that says it in some of its values only answers no value from the
+    // others, which a parent reads off it as the body's own function answers
+    // it; no gate of this codec reads it ([`FORWARD_READ_BY_NO_GATE`]).
     // The encode refuses before its first byte what a check holds a value to:
     // an input a held codec says, to what this codec hands it, and a gate it
     // cannot derive the presence from, to the field it gates; a number past
@@ -261,6 +250,14 @@ const NO_FIELD_UNPRESENTED: &str = "a field the roles do not derive is presented
 /// field a gate decides joins a group.
 const FORWARD_IS_UNGATED: &str = "the roles forward an input only from an embed no gate decides \
      (codec_roles::said_inputs)";
+
+/// Why the encode never reads an input a body forwards: the roles forward an
+/// input only where no gate of the codec names it and one bind alone hands it
+/// on (`codec_roles::said_inputs`), and the body that forwards it is derived
+/// from it rather than checked against it, so neither a gate nor a check
+/// reads it (`Said::read`); only a parent asks for it.
+const FORWARD_READ_BY_NO_GATE: &str = "no gate or check of the codec reads an input a body \
+     forwards (codec_roles::said_inputs), so only a parent asks for it";
 
 /// Why a flag derived from the input a body says is read off a body that says
 /// it in every value: the roles hold a body that says the input in some of its
@@ -503,10 +500,21 @@ fn said_input(
             let (set, clear) = if *when_clear { (0, 1) } else { (1, 0) };
             format!("static_cast<std::uint8_t>({present} ? {set} : {clear})")
         }
-        InputSource::Forward { embed, input, .. } => {
+        // What the body says, as its codec's own function answers it: an
+        // optional value where the body says it in some of its values only,
+        // which the input's own function then answers too.
+        InputSource::Forward {
+            embed,
+            input,
+            partly,
+            ..
+        } => {
             let e = element(embed);
             if e.optional {
                 unreachable!("{}", FORWARD_IS_UNGATED);
+            }
+            if *partly && matches!(at, Read::Encode) {
+                unreachable!("`{input}`: {}", FORWARD_READ_BY_NO_GATE);
             }
             let held = e
                 .body
@@ -4953,17 +4961,27 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
     }
 
+    /// The fixtures the Rust conformance arm and the C++ harness both run.
+    fn conformance_fixtures() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/rust/forge-conformance/fixtures")
+    }
+
     /// Every file the C++ backend generates for the resource `stem`, in one
     /// text.
     fn cpp_of(stem: &str) -> String {
-        let dir = resources();
+        cpp_in(&resources(), stem)
+    }
+
+    /// Every file the C++ backend generates for the document `stem` of `dir`,
+    /// in one text.
+    fn cpp_in(dir: &Path, stem: &str) -> String {
         let text = std::fs::read_to_string(dir.join(format!("{stem}.scxml")))
             .unwrap_or_else(|e| panic!("read {stem}.scxml: {e}"));
         compile_forge_with_imports(
             &text,
             DocumentLabel::symmetric(stem),
             Language::Cpp,
-            &dir,
+            dir,
             &ForgeCompileOptions::default(),
         )
         .unwrap_or_else(|e| panic!("{stem} generates C++: {e}"))
@@ -5054,6 +5072,21 @@ mod tests {
             "{stem}: the arm holds `state` from the enum's first value:\n{code}"
         );
         holds(stem, &code, "_e_state = static_cast<");
+    }
+
+    /// An input a body always there says in some of its values only is
+    /// answered as the body answers it, no value from the arm that does not
+    /// read it.
+    #[test]
+    fn an_input_a_body_says_in_part_is_answered_as_the_body_answers_it() {
+        let stem = "codec_some_arms_say_forward";
+        let code = cpp_in(&conformance_fixtures(), stem);
+        holds(
+            stem,
+            &code,
+            "[[nodiscard]] std::optional<std::uint8_t> input_n(const S& src)",
+        );
+        holds(stem, &code, "::input_n(source::body(src));\n");
     }
 
     /// A gate on a chain's membership that no group holds is tested on the

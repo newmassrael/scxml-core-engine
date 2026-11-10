@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (docs/adr/0065 §6 R4a, R4e): a flag input of this codec
+     handed on to a body that says it in some of its values only. The body always
+     there forwards the input: the value says it as the body does, and says nothing
+     of it where the body holds the arm that does not read it. No gate of this codec
+     reads the input, so its encode is not handed it; a parent asks for it.
+     Wire shape: one header byte, then the arm's body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_some_arms_say_forward">
+  <sce:flag-inputs>
+    <sce:flag-input name="N" width="1"/>
+  </sce:flag-inputs>
+  <sce:import src="codec_some_arms_say.scxml" kind="codec" as="codec_some_arms_say">
+    <sce:variant-dispatch flag="header.M"/>
+    <sce:flag-bind input="N" source="N"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="header" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="M" bit="6"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_some_arms_say" sce:byte="1"/>
+  </datamodel>
+</scxml>
