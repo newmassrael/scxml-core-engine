@@ -44614,6 +44614,108 @@
         {"source": {"flags": 2, "seq": null, "trailer": null}, "error": "present-if-mismatch", "note": "the trailer left out where wants_trailer is set"},
         {"source": {"flags": 1, "seq": null, "trailer": 9}, "error": "present-if-mismatch", "note": "the trailer given where the value's own has_seq bit is set and no seq derives it"}
       ]
+    },
+    "codec_length_shared": {
+      "fixture": "CodecLengthShared",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. one length shared by two byte strings that are always there: each is held within what the length can say by its type, and the encode refuses two that differ, since the wire has room for one number (docs/adr/0065 \u00a72). No value of the interface is past its length, so none is refused as out of range.",
+      "sources": [
+        {"source": {"alpha": [], "beta": []}, "encoded": [0], "note": "two empty byte strings: the length is zero"},
+        {"source": {"alpha": [1, 2], "beta": [3, 4]}, "encoded": [2, 1, 2, 3, 4], "note": "two byte strings of one length, after it"},
+        {"source": {"alpha": [165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165], "beta": [90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]}, "encoded": [255, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90], "note": "the length at the most its byte says, the bound of both byte strings"}
+      ],
+      "refused": [
+        {"source": {"alpha": [1, 2], "beta": [3]}, "error": "inconsistent-source", "note": "the second byte string one byte shorter than the first"},
+        {"source": {"alpha": [], "beta": [9]}, "error": "inconsistent-source", "note": "the first byte string empty and the second not"}
+      ]
+    },
+    "codec_length_stated": {
+      "fixture": "CodecLengthStated",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. one length shared by two byte strings each gated on a flag of its own. The length's content is under two gates, so it joins no group (docs/adr/0065 \u00a76 R4b): it is presented alone, stated by the value where neither byte string is there and derived where either is. The encode refuses two byte strings there of two lengths, and a length the value states beside content that says another.",
+      "sources": [
+        {"source": {"flags": 0, "span_len": 5, "alpha": null, "beta": null}, "encoded": [0, 5], "note": "neither byte string: the value states the length"},
+        {"source": {"flags": 0, "span_len": 0, "alpha": null, "beta": null}, "encoded": [0, 0], "note": "neither byte string, a stated length of zero"},
+        {"source": {"flags": 1, "span_len": null, "alpha": [97, 98], "beta": null}, "encoded": [1, 2, 97, 98], "note": "alpha alone says the length, and has_alpha is derived"},
+        {"source": {"flags": 2, "span_len": null, "alpha": null, "beta": [122]}, "encoded": [2, 1, 122], "note": "beta alone says the length, and has_beta is derived"},
+        {"source": {"flags": 3, "span_len": null, "alpha": [120, 121], "beta": [1, 2]}, "encoded": [3, 2, 120, 121, 1, 2], "note": "both, of one length, which both say"},
+        {"source": {"flags": 3, "span_len": null, "alpha": [], "beta": []}, "encoded": [3, 0], "note": "both there and empty: the content says zero"},
+        {"source": {"flags": 252, "span_len": 255, "alpha": null, "beta": null}, "encoded": [252, 255], "note": "the bits beside the two flags are kept, and the stated length at its largest"}
+      ],
+      "refused": [
+        {"source": {"flags": 3, "span_len": null, "alpha": [1, 2], "beta": [3]}, "error": "inconsistent-source", "note": "both byte strings there, of two lengths"},
+        {"source": {"flags": 1, "span_len": 7, "alpha": [1, 2], "beta": null}, "error": "inconsistent-source", "note": "a stated length of seven beside alpha of two bytes"},
+        {"source": {"flags": 2, "span_len": 0, "alpha": null, "beta": [4]}, "error": "inconsistent-source", "note": "a stated length of zero beside beta of one byte"}
+      ]
+    },
+    "codec_encoded_length_checked": {
+      "fixture": "CodecEncodedLengthChecked",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. the encoded length of a body whose own encode can refuse, in a 16-bit field. The body's refusal is passed on before the parent writes its first byte (docs/adr/0065 \u00a72). The language bounds no encoded length, so the encode can refuse one past the field; no value of this body reaches it, its two byte strings being of at most 255 bytes each, so no case is refused as out of range.",
+      "sources": [
+        {"source": {"inner": {"alpha": [], "beta": []}}, "encoded": [0, 1, 0], "note": "the body of two empty byte strings is one byte long"},
+        {"source": {"inner": {"alpha": [10], "beta": [11]}}, "encoded": [0, 3, 1, 10, 11], "note": "the length is the count of the bytes the body encodes to"},
+        {"source": {"inner": {"alpha": [165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165], "beta": [90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]}}, "encoded": [1, 1, 128, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90], "note": "a body of 257 bytes: the length's high byte is set"}
+      ],
+      "refused": [
+        {"source": {"inner": {"alpha": [1, 2], "beta": [3]}}, "error": "inconsistent-source", "note": "the body's two byte strings differ, which the body refuses"}
+      ]
+    },
+    "codec_group_enum": {
+      "fixture": "CodecGroupEnum",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an imported closed enum in a group of one flag (docs/adr/0065 \u00a76 R4b): the value states it by the name of its variant, and the wire holds the number the variant declares.",
+      "sources": [
+        {"source": {"flags": 0, "flags.has_session": null}, "encoded": [0], "note": "has_session clear: the carrier alone"},
+        {"source": {"flags": 1, "flags.has_session": {"arm": 0, "state": "defaultSession", "attempts": 0}}, "encoded": [1, 1, 0], "note": "the first variant, at its declared 1, and no attempt"},
+        {"source": {"flags": 1, "flags.has_session": {"arm": 0, "state": "programming", "attempts": 5}}, "encoded": [1, 2, 5], "note": "programming is written as its carrier 2"},
+        {"source": {"flags": 1, "flags.has_session": {"arm": 0, "state": "safetySystem", "attempts": 255}}, "encoded": [1, 64, 255], "note": "safetySystem is written as 64, and attempts at its largest"},
+        {"source": {"flags": 255, "flags.has_session": {"arm": 0, "state": "extendedDiagnostic", "attempts": 1}}, "encoded": [255, 3, 1], "note": "the bits beside has_session are kept"},
+        {"source": {"flags": 254, "flags.has_session": null}, "encoded": [254], "note": "the bits beside has_session are kept where the group is absent"}
+      ]
+    },
+    "codec_chain_has_input": {
+      "fixture": "CodecChainHasInput",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a field gated on a chain's kinds or a flag input the caller hands: no group holds it, since no value holds the input (docs/adr/0065 \u00a76 R6). The encode is handed urgent as its decode is, tests the gate on the entries the value presents, and refuses a priority that disagrees with it.",
+      "sources": [
+        {"source": {"entries": [{"entry_type": 7, "ctl": 0, "body": 5}], "priority": 9}, "inputs": {"urgent": 0}, "encoded": [7, 0, 5, 9], "note": "an entry of kind 7: priority is there"},
+        {"source": {"entries": [{"entry_type": 3, "ctl": 0, "body": 5}], "priority": null}, "inputs": {"urgent": 0}, "encoded": [3, 0, 5], "note": "no entry of kind 7 and urgent clear: no priority"},
+        {"source": {"entries": [{"entry_type": 3, "ctl": 0, "body": 5}], "priority": 1}, "inputs": {"urgent": 1}, "encoded": [3, 0, 5, 1], "note": "urgent alone puts priority there"},
+        {"source": {"entries": [{"entry_type": 3, "ctl": 1, "body": 1}, {"entry_type": 7, "ctl": 0, "body": 2}], "priority": 255}, "inputs": {"urgent": 1}, "encoded": [3, 1, 1, 7, 0, 2, 255], "note": "kind 7 second and urgent set: either holds"},
+        {"source": {"entries": [{"entry_type": 1, "ctl": 1, "body": 0}, {"entry_type": 7, "ctl": 1, "body": 0}, {"entry_type": 2, "ctl": 254, "body": 0}], "priority": 4}, "inputs": {"urgent": 0}, "encoded": [1, 1, 0, 7, 1, 0, 2, 254, 0, 4], "note": "three entries, the depth, kind 7 among them; the last ctl keeps its other bits"}
+      ],
+      "refused": [
+        {"source": {"entries": [{"entry_type": 3, "ctl": 0, "body": 5}], "priority": null}, "inputs": {"urgent": 1}, "error": "present-if-mismatch", "note": "no priority where urgent is set"},
+        {"source": {"entries": [{"entry_type": 7, "ctl": 0, "body": 5}], "priority": null}, "inputs": {"urgent": 0}, "error": "present-if-mismatch", "note": "no priority where an entry is of kind 7"},
+        {"source": {"entries": [{"entry_type": 3, "ctl": 0, "body": 5}], "priority": 5}, "inputs": {"urgent": 0}, "error": "present-if-mismatch", "note": "a priority where neither holds"}
+      ]
+    },
+    "codec_chain_handed_entry": {
+      "fixture": "CodecChainHandedEntry",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an entry that takes a flag input it does not say: the disjunction reads the input, so it is no group but a check (docs/adr/0065 \u00a76 R4c). wide is the value's own, the encode is handed after_marker, and it refuses a value that disagrees with the gate.",
+      "sources": [
+        {"source": {"header": 2, "value": null}, "inputs": {"after_marker": 0}, "encoded": [2], "note": "handed after_marker clear, wide clear: no value"},
+        {"source": {"header": 2, "value": 85}, "inputs": {"after_marker": 1}, "encoded": [2, 85], "note": "handed after_marker set: the value is there"},
+        {"source": {"header": 66, "value": 7}, "inputs": {"after_marker": 0}, "encoded": [66, 7], "note": "its own wide flag: the value is there"},
+        {"source": {"header": 196, "value": 0}, "inputs": {"after_marker": 1}, "encoded": [196, 0], "note": "both, and Z set, which it presents"},
+        {"source": {"header": 48, "value": null}, "inputs": {"after_marker": 0}, "encoded": [48], "note": "the bits no flag names are kept"}
+      ],
+      "refused": [
+        {"source": {"header": 2, "value": 5}, "inputs": {"after_marker": 0}, "error": "present-if-mismatch", "note": "a value where neither the input nor wide is set"},
+        {"source": {"header": 2, "value": null}, "inputs": {"after_marker": 1}, "error": "present-if-mismatch", "note": "no value where after_marker is handed set"},
+        {"source": {"header": 66, "value": null}, "inputs": {"after_marker": 0}, "error": "present-if-mismatch", "note": "no value where its own wide flag is set"}
+      ]
+    },
+    "codec_chain_handed": {
+      "fixture": "CodecChainHanded",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a chain that hands each entry whether the entry before has the identifier 4, an input the entry does not say (docs/adr/0065 \u00a76 R8b): no law holds the entries, the list is its entries alone, and the walk hands each what the entry before is as it writes it. An entry that refuses refuses the chain.",
+      "sources": [
+        {"source": {"entries": [{"header": 2, "value": null}]}, "encoded": [2], "note": "one entry, the first: handed after_marker clear, no value"},
+        {"source": {"entries": [{"header": 132, "value": null}, {"header": 2, "value": 85}]}, "encoded": [132, 2, 85], "note": "an entry after one of identifier 4 is handed after_marker set"},
+        {"source": {"entries": [{"header": 194, "value": 7}, {"header": 3, "value": null}]}, "encoded": [194, 7, 3], "note": "an entry's own wide flag, then one after identifier 2, handed it clear"},
+        {"source": {"entries": [{"header": 132, "value": null}, {"header": 132, "value": 1}, {"header": 130, "value": 2}, {"header": 1, "value": null}]}, "encoded": [132, 132, 1, 130, 2, 1], "note": "four entries, the depth: each handed what the entry before is"}
+      ],
+      "refused": [
+        {"source": {"entries": [{"header": 132, "value": null}, {"header": 2, "value": null}]}, "error": "present-if-mismatch", "note": "no value on an entry after one of identifier 4"},
+        {"source": {"entries": [{"header": 2, "value": 5}]}, "error": "present-if-mismatch", "note": "a value on the first entry, which is handed it clear"},
+        {"source": {"entries": [{"header": 130, "value": null}, {"header": 4, "value": 3}]}, "error": "present-if-mismatch", "note": "a value on an entry after identifier 2, wide clear"}
+      ]
     }
   },
   "string_lookups": {
@@ -44713,6 +44815,18 @@
         { "name": "conditionsNotCorrect", "value": 34 },
         { "name": "requestOutOfRange", "value": 49 },
         { "name": "responsePending", "value": 120 }
+      ]
+    },
+    "enum_session_state": {
+      "fixture": "EnumSessionState",
+      "signature": "enum EnumSessionState : uint8",
+      "description": "A closed vocabulary of diagnostic sessions, the enum codec_group_enum holds a value of in a group. The set starts at 1 and not at zero, and 64 is far from the rest, so a default at the carrier's zero or an ordinal for a carrier would not pass.",
+      "underlying_type": "uint8",
+      "variants": [
+        { "name": "defaultSession", "value": 1 },
+        { "name": "programming", "value": 2 },
+        { "name": "extendedDiagnostic", "value": 3 },
+        { "name": "safetySystem", "value": 64 }
       ]
     },
     "enum_task_phase": {
