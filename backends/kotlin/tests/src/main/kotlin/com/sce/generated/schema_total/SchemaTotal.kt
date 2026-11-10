@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 81a3de342b33c3189f4a5813894163bc1e16bfc77aa7ead74e709e8ba7b570b9
+// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
 // SCE-MAP: schema_total.scxml:7 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -22,6 +22,6 @@ const val DATA_MAX_LEN: ULong = 38uL
 const val SCHEMA_ID: String = "urn:sce:schema:schema_total:1"
 
 /** The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`. */
-const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:schema_total:1\",\"x-sce-source-hash\":\"81a3de342b33c3189f4a5813894163bc1e16bfc77aa7ead74e709e8ba7b570b9\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"sum\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"count\",\"sum\"],\"additionalProperties\":false}"
+const val JSON_SCHEMA: String = "{\"\$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"\$id\":\"urn:sce:schema:schema_total:1\",\"x-sce-source-hash\":\"d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"sum\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"count\",\"sum\"],\"additionalProperties\":false}"
 
 data class SchemaTotalPayload(    val count: UInt,    val sum: Int)
