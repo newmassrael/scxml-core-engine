@@ -27,7 +27,7 @@ PY
 
 mutation_case "A host tells an operation whose context its machine was not told" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "        .all(|(other, seq)| dependency_met(state, *other, *seq));",
+     "        .all(|(other, seq)| dependency_met_in(state, vector, *other, *seq));",
      "        .all(|_| true);")
 PY
 

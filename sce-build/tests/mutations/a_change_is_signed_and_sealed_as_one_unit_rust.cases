@@ -86,6 +86,6 @@ PY
 
 mutation_case "A device's changes are told apart by their content and not by their dot" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    let wid = signing.subject;",
-     "    let wid = key.clone();")
+     "        (Some(stamp), Some(signing.subject))",
+     "        (Some(stamp), key.clone())")
 PY

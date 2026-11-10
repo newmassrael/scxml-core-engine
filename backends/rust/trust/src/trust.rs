@@ -28,6 +28,19 @@
 //! ([`Trust::divergences`]) and fetches it from another host that holds it
 //! ([`Trust::operations`]).
 //!
+//! A change is **stable** once every member of the list has been told it (docs/adr/0085, sections
+//! 3 and 4): what a member has been told is read from the causal context of its latest operation,
+//! and a member that has written nothing since it was told more signs a mark of it
+//! ([`Trust::sign_mark`], `message::MARK_EVENT`), an operation of its chain no machine is told.
+//! The stable cut is the pointwise minimum of what is known of every member
+//! ([`Trust::stable_cut`]), at which a host folds its journal.
+//!
+//! A change a host keeps a journal of is signed as any other ([`Trust::keep_made`]) and held back
+//! from the relay until the host says it recorded the operation ([`Trust::recorded`]): the
+//! write-ahead rule of docs/adr/0083, section 3.1, whose records a restarted host gives back
+//! ([`Trust::restore_records`]). What a machine built again is given is the history in causal order
+//! ([`Trust::history`]).
+//!
 //! One [`Trust`] is both halves of one host: it is cloned, and a clone is put in front of the
 //! machine as its [`Admission`] and another behind it as its [`Sealer`].
 
@@ -42,9 +55,10 @@ use crate::chain::{self, Chain, Held, Why, Wire};
 use crate::checkpoint::{Checkpoint, Head, Settlement};
 use crate::encoding;
 use crate::identity::{Identity, PublicKey};
-use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, WRITER};
+use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, READER, WRITER};
 use crate::message::{
-    self, Link, CHANGE_EVENT, FLOOR_EVENT, ROLE_EVENT, SETTLEMENT_FIELD, SIGNATURE_FIELD,
+    self, Link, CHANGE_EVENT, FLOOR_EVENT, MARK_EVENT, OPERATION_EVENTS, ROLE_EVENT,
+    SETTLEMENT_FIELD, SIGNATURE_FIELD,
 };
 use crate::secrecy;
 
@@ -189,6 +203,11 @@ struct State {
     /// the epoch each is sealed under: what [`Trust::deliver`] passes over without telling, when
     /// the epoch is one before this host's first, of which a member is given no history.
     unopened: BTreeMap<u64, BTreeMap<u64, u32>>,
+    /// The numbers of this host's person's own operations that were signed for a change its host
+    /// keeps a journal of ([`Trust::keep_made`]) and that the host has not said it recorded
+    /// ([`Trust::recorded`]): the outbox (docs/adr/0083, section 3.1). No operation of the
+    /// person's chain from the lowest of them on is given to a relay ([`Trust::released_through`]).
+    unrecorded: BTreeSet<u64>,
 }
 
 impl State {
@@ -261,6 +280,7 @@ impl Trust {
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
                 delivered: BTreeMap::new(),
                 unopened: BTreeMap::new(),
+                unrecorded: BTreeSet::new(),
             })),
         }
     }
@@ -813,29 +833,178 @@ impl Trust {
     /// up to that point, since waiting for the rest would wait for good.
     pub fn deliver(&self) -> Vec<(String, String)> {
         let mut state = self.state();
-        let mut told = Vec::new();
-        loop {
-            let mut moved = false;
-            let nodes: BTreeSet<u64> = state
-                .ops
-                .keys()
-                .chain(state.unopened.keys())
-                .copied()
-                .collect();
-            for node in nodes {
-                while let Some(next) = next_deliverable(&state, node) {
-                    if let Next::Tell(event, text) = next {
-                        told.push((event.to_string(), text));
-                    }
-                    let column = state.delivered.entry(node).or_insert(0);
-                    *column += 1;
-                    moved = true;
-                }
-            }
-            if !moved {
-                return told;
+        let mut vector = state.delivered.clone();
+        let told = deliver_from(&state, &mut vector);
+        state.delivered = vector;
+        told.into_iter().map(|one| (one.event, one.data)).collect()
+    }
+
+    /// Every operation this host holds that a machine told up to `after` (a stable cut its host
+    /// folded its journal at, docs/adr/0085, section 4.3; empty for the whole history) is to be
+    /// told, in the causal order [`Self::deliver`] tells them in, each with its tag read from its
+    /// link, the device's own changes included; then what this host's person sent that waits to be
+    /// signed, in the order it was sent, with no tag: what a host recalls into a machine built
+    /// again (docs/adr/0083, section 2.2), a change that waits recalled as provisional
+    /// (docs/adr/0093, section 6.1). It reads no clock, asks nothing, and moves nothing: what a
+    /// round tells the machine is told by [`Self::deliver`] as before. A mark is passed over, as
+    /// [`Self::deliver`] passes it.
+    pub fn history(&self, after: &[(u64, u64)]) -> Vec<Told> {
+        let state = self.state();
+        let mut vector: BTreeMap<u64, u64> = after.iter().copied().collect();
+        let mut history = deliver_from(&state, &mut vector);
+        history.extend(state.waiting.iter().map(|send| Told {
+            event: send.event.to_string(),
+            data: send.data.clone(),
+            tag: None,
+        }));
+        history
+    }
+
+    /// The stable cut (docs/adr/0085, sections 3 and 3.1): for each device this host's machine was
+    /// told anything of, the highest number every member of the list has been told of it, lowest
+    /// node first, a device of which some member was told nothing left out. What a member was told
+    /// is read from its latest operation this host holds: its causal context, and its own number
+    /// for its own column (a mark when it wrote nothing since, [`Self::sign_mark`]); a member of
+    /// which this host holds no operation was told nothing, and holds every column at 0 until it
+    /// writes or marks. What this host's own machine was told bounds it too, so a host never folds
+    /// past what its own copy holds. A host folds its journal at the cut (docs/adr/0085, section
+    /// 4.3), and recalls only what comes after it ([`Self::history`]).
+    pub fn stable_cut(&self) -> Vec<(u64, u64)> {
+        let state = self.state();
+        let own = state.own.as_ref().map(|(node, _)| *node);
+        let mut vectors: Vec<BTreeMap<u64, u64>> = vec![state.delivered.clone()];
+        for (node, era) in state.log.latest() {
+            if era.role >= READER && Some(node) != own {
+                vectors.push(known_vector(&state, node));
             }
         }
+        state
+            .delivered
+            .keys()
+            .filter_map(|node| {
+                let low = vectors
+                    .iter()
+                    .map(|vector| vector.get(node).copied().unwrap_or(0))
+                    .min()
+                    .unwrap_or(0);
+                (low > 0).then_some((*node, low))
+            })
+            .collect()
+    }
+
+    /// Sign a mark of what this host's machine has been told, when it has been told a change of
+    /// another device that the latest operation of this host's person does not say it was
+    /// (docs/adr/0085, section 3.1): the number the mark takes, or `None` when none is owed or the
+    /// person may not sign one now. A mark carries no change and is told to no machine; its
+    /// context is the vector, and the stable cut moves by it ([`Self::stable_cut`]); the next round
+    /// gives it to the relay. A mark is owed for a change told and not for a mark told, so two
+    /// members that only mark do not answer each other's marks for ever. Every member may sign one,
+    /// a reader included; a device that is no member, that is frozen, or that waits for its own
+    /// chain signs none. When to ask is the host's: "a member that has not written for a while" is
+    /// time, which the trust does not read. A mark is no record of a host's journal: it carries
+    /// nothing a host keeps, and a mark lost in a crash is read back with the chain
+    /// ([`Self::await_own_chain`]).
+    pub fn sign_mark(&self) -> Option<u64> {
+        let mut state = self.state();
+        let node = state.own.as_ref().map(|(node, _)| *node)?;
+        if state.forked.is_some() || !mark_owed(&state, node) || !may_mark(&state, node) {
+            return None;
+        }
+        let travelling = json!({ "by": node.to_string() });
+        make_operation(&mut state, MARK_EVENT, travelling, node, None)
+            .ok()
+            .map(|wire| wire.link.seq)
+    }
+
+    /// The operations of this host's person's chain signed for a change its host keeps a journal of
+    /// ([`Self::keep_made`]) that the host has not said it recorded, in the order of their numbers,
+    /// each with its number, its event and the data it travels with: exactly what the relay is
+    /// given (docs/adr/0083, section 3.1). They stay until [`Self::recorded`] says so, and none of
+    /// them, nor any operation of the chain after the first of them, is given to a relay before.
+    pub fn unrecorded(&self) -> Vec<OwnRecord> {
+        let state = self.state();
+        let Some(chain) = state.own.as_ref().and_then(|(node, _)| state.ops.get(node)) else {
+            return Vec::new();
+        };
+        state
+            .unrecorded
+            .iter()
+            .filter_map(|seq| {
+                let held = chain.range(*seq, *seq).next()?;
+                Some(OwnRecord {
+                    seq: *seq,
+                    event: held.event.to_string(),
+                    data: held.wire.to_json()?,
+                })
+            })
+            .collect()
+    }
+
+    /// The host recorded every operation of its person's chain up to `through` in its journal:
+    /// they may be given to a relay ([`Self::released_through`]).
+    pub fn recorded(&self, through: u64) {
+        self.state().unrecorded.retain(|seq| *seq > through);
+    }
+
+    /// The highest number of this host's person's chain a relay may be given, when one is held
+    /// back: the number before the first operation signed for a change the host has not said it
+    /// recorded ([`Self::unrecorded`]). `None` when nothing is held back.
+    pub fn released_through(&self) -> Option<u64> {
+        self.state()
+            .unrecorded
+            .first()
+            .map(|lowest| lowest.saturating_sub(1))
+    }
+
+    /// Take back the records a host's journal holds of its person's own operations, past what the
+    /// state it restored holds (docs/adr/0083, section 3.4): each `(event, data)` as
+    /// [`Self::unrecorded`] gave it, verified as an operation from anyone is (its signature, its
+    /// place in the chain, the entry of the log it names) and held as the person's own, recorded
+    /// already, its machine counted as told it, since the machine made it. Returns how many it did
+    /// not hold. A record that is not an operation of this host's person, or that does not hold,
+    /// is refused with why, and the records before it are kept.
+    pub fn restore_records(&self, records: &[(String, String)]) -> Result<usize, String> {
+        let mut state = self.state();
+        let own = state
+            .own
+            .as_ref()
+            .map(|(node, _)| *node)
+            .ok_or_else(|| "this host has no person".to_string())?;
+        let mut kept = 0;
+        for (event, data) in records {
+            let event = signed_name(event)
+                .ok_or_else(|| format!("{event}: it is not an operation of a chain"))?;
+            let taken = take(&mut state, event, data).map_err(|error| match error {
+                TakeError::NotReached(reason)
+                | TakeError::NoKey(reason)
+                | TakeError::Refused(reason) => reason,
+            })?;
+            if taken.node != own {
+                return Err(format!(
+                    "{event}: operation {} is node {}'s, and a host's journal holds its own person's alone",
+                    taken.seq, taken.node
+                ));
+            }
+            state.unrecorded.remove(&taken.seq);
+            let told = state.delivered.entry(own).or_insert(0);
+            *told = (*told).max(taken.seq);
+            kept += usize::from(taken.new);
+        }
+        Ok(kept)
+    }
+
+    /// The highest stamp of a change of this host's person's in the chain it holds, the proof
+    /// included (docs/adr/0093, section 4.3): what a new stamp of the device's must exceed. `None`
+    /// when it holds none, or has no person.
+    pub fn own_stamp(&self) -> Option<(i64, u64)> {
+        let state = self.state();
+        let (node, _) = state.own.as_ref()?;
+        state
+            .ops
+            .get(node)?
+            .all()
+            .filter_map(|held| held.stamp)
+            .max()
     }
 
     /// The machine lost what it was told (it is built again, and every operation is to be told
@@ -1148,9 +1317,11 @@ impl Trust {
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
     /// with the checkpoints it made or took in, and every operation it holds (the changes it
     /// made, took in and relays, every number of every chain), each as the
-    /// event and the data it goes on the wire with, and what its machine sent that waits to be
-    /// signed ([`Self::keep_sent`]), in order, as the machine sent it. It holds no key: a host keeps
-    /// those where it keeps its person's secret.
+    /// event and the data it goes on the wire with, what its machine sent that waits to be
+    /// signed ([`Self::keep_sent`]), in order, as the machine sent it and with whether its host
+    /// keeps a journal of it, and the numbers of the records its host has not recorded
+    /// ([`Self::unrecorded`]). It holds no key: a host keeps those where it keeps its person's
+    /// secret.
     pub fn to_text(&self) -> String {
         let state = self.state();
         json!({
@@ -1160,11 +1331,14 @@ impl Trust {
                 .filter_map(|held| Some(json!([held.event, held.wire.to_json()?])))
                 .collect::<Vec<_>>(),
             "waiting": state.waiting.iter()
-                .map(|send| json!([send.event, send.data]))
+                .map(|send| json!([send.event, send.data, send.journalled]))
                 .collect::<Vec<_>>(),
             "delivered": state.delivered.iter()
                 .filter(|(_, seq)| **seq > 0)
                 .map(|(node, seq)| json!([node.to_string(), seq.to_string()]))
+                .collect::<Vec<_>>(),
+            "unrecorded": state.unrecorded.iter()
+                .map(u64::to_string)
                 .collect::<Vec<_>>(),
         })
         .to_string()
@@ -1196,11 +1370,7 @@ impl Trust {
             ) else {
                 continue;
             };
-            let Some(event) = message::SIGNED_EVENTS
-                .iter()
-                .copied()
-                .find(|name| *name == event)
-            else {
+            let Some(event) = signed_name(event) else {
                 continue;
             };
             let Ok(mut value) = serde_json::from_str::<Value>(text) else {
@@ -1230,11 +1400,25 @@ impl Trust {
             ) else {
                 continue;
             };
-            let Some(send) = Waiting::of(&state.calendar, event, data) else {
+            // Whether its host keeps a journal of it: a row written before the outbox holds none,
+            // and is a send of a host that keeps none.
+            let journalled = row.get(2).and_then(Value::as_bool).unwrap_or(false);
+            let Some(send) = Waiting::of(&state.calendar, event, data, journalled) else {
                 continue;
             };
             if !state.waiting.iter().any(|held| held.is_the_same(&send)) {
                 state.waiting.push(send);
+            }
+        }
+        // The operations of the person's chain signed for a change the host keeps a journal of and
+        // has not recorded: held back from the relay still. A number this host no longer holds an
+        // operation at (the chain did not verify under today's log) holds nothing back.
+        for row in rows("unrecorded") {
+            let Some(seq) = row.as_str().and_then(|text| text.parse::<u64>().ok()) else {
+                continue;
+            };
+            if own_chain_holds(&state, seq) {
+                state.unrecorded.insert(seq);
             }
         }
         // What the machine was told, as it was when the text was written: the machine the host
@@ -1254,6 +1438,15 @@ impl Trust {
         }
         kept
     }
+}
+
+/// Whether this host holds an operation of its person's own chain at `seq`.
+fn own_chain_holds(state: &State, seq: u64) -> bool {
+    state
+        .own
+        .as_ref()
+        .and_then(|(node, _)| state.ops.get(node))
+        .is_some_and(|chain| chain.range(seq, seq).next().is_some())
 }
 
 /// What `published` holds of this host's person's chain past the highest number of it the host
@@ -1504,9 +1697,124 @@ fn contiguous(state: &State, node: u64) -> u64 {
     state.ops.get(&node).map_or(0, Chain::contiguous)
 }
 
+/// What a machine told up to `vector` was told of `node`: the highest number, 0 for nothing.
+fn through_in(vector: &BTreeMap<u64, u64>, node: u64) -> u64 {
+    vector.get(&node).copied().unwrap_or(0)
+}
+
 /// What this host's machine has been told of `node`: the highest number, 0 for nothing.
 fn delivered_through(state: &State, node: u64) -> u64 {
-    state.delivered.get(&node).copied().unwrap_or(0)
+    through_in(&state.delivered, node)
+}
+
+/// What a machine told up to `vector` is to be told now, in an order that is a linear extension of
+/// the contexts, each with its tag; `vector` moves past every operation told, and past every one
+/// passed over (docs/adr/0085, section 3: the rule, the same for a round and for a history).
+fn deliver_from(state: &State, vector: &mut BTreeMap<u64, u64>) -> Vec<Told> {
+    let mut told = Vec::new();
+    loop {
+        let mut moved = false;
+        let nodes: BTreeSet<u64> = state
+            .ops
+            .keys()
+            .chain(state.unopened.keys())
+            .copied()
+            .collect();
+        for node in nodes {
+            while let Some(next) = next_deliverable(state, vector, node) {
+                let column = vector.entry(node).or_insert(0);
+                *column += 1;
+                let seq = *column;
+                if let Next::Tell {
+                    event,
+                    data,
+                    context,
+                } = next
+                {
+                    told.push(Told {
+                        event: event.to_string(),
+                        data,
+                        tag: Some(Tag {
+                            author: node,
+                            seq,
+                            context,
+                        }),
+                    });
+                }
+                moved = true;
+            }
+        }
+        if !moved {
+            return told;
+        }
+    }
+}
+
+/// What is known of what the member `node`'s machine has been told: the causal context of its
+/// latest operation this host holds, with that operation's own number as its own column; nothing
+/// when this host holds none of it.
+fn known_vector(state: &State, node: u64) -> BTreeMap<u64, u64> {
+    let Some(last) = state.ops.get(&node).and_then(Chain::last) else {
+        return BTreeMap::new();
+    };
+    let mut vector: BTreeMap<u64, u64> = last.wire.link.context.iter().copied().collect();
+    vector.insert(node, last.seq());
+    vector
+}
+
+/// The highest number of `node`'s chain up to `through` that is a change, or one passed over as
+/// sealed under an epoch this host never opens: what a mark is owed for. A mark told is not.
+fn changes_through(state: &State, node: u64, through: u64) -> u64 {
+    if through == 0 {
+        return 0;
+    }
+    let held = state
+        .ops
+        .get(&node)
+        .and_then(|chain| {
+            chain
+                .range(1, through)
+                .rev()
+                .find(|held| held.event != MARK_EVENT)
+        })
+        .map_or(0, Held::seq);
+    let passed = state
+        .unopened
+        .get(&node)
+        .and_then(|seqs| seqs.range(..=through).next_back())
+        .map_or(0, |(seq, _)| *seq);
+    held.max(passed)
+}
+
+/// Whether this host's person `own` owes a mark: its machine was told a change of another device
+/// that the context of its latest operation does not name.
+fn mark_owed(state: &State, own: u64) -> bool {
+    let said: BTreeMap<u64, u64> = state
+        .ops
+        .get(&own)
+        .and_then(Chain::last)
+        .map(|last| last.wire.link.context.iter().copied().collect())
+        .unwrap_or_default();
+    state.delivered.iter().any(|(node, through)| {
+        *node != own && changes_through(state, *node, *through) > through_in(&said, *node)
+    })
+}
+
+/// Whether this host's person `own` may sign a mark now: the log the host holds names them a
+/// member under the key the device signs with, at any role, and the device neither waits for its
+/// own chain nor is frozen ([`make_operation`] says the last two again).
+fn may_mark(state: &State, own: u64) -> bool {
+    let Some((_, identity)) = state.own.as_ref() else {
+        return false;
+    };
+    let Some((tip, _)) = state.log.tip() else {
+        return false;
+    };
+    !state.awaiting_own_chain
+        && state
+            .log
+            .era_for(own, tip)
+            .is_some_and(|era| era.role >= READER && era.key == identity.public())
 }
 
 /// The highest number of `node`'s chain any machine may ever be told, when one is known: below
@@ -1533,7 +1841,12 @@ fn told_ceiling(state: &State, node: u64) -> Option<u64> {
 /// of the device up to `seq`, or, when no machine will ever be told the device up to `seq`
 /// ([`told_ceiling`]), every operation of it any machine will be told.
 fn dependency_met(state: &State, node: u64, seq: u64) -> bool {
-    let told = delivered_through(state, node);
+    dependency_met_in(state, &state.delivered, node, seq)
+}
+
+/// [`dependency_met`] for a machine told up to `vector`.
+fn dependency_met_in(state: &State, vector: &BTreeMap<u64, u64>, node: u64, seq: u64) -> bool {
+    let told = through_in(vector, node);
     told >= seq || told_ceiling(state, node).is_some_and(|top| top < seq && told >= top)
 }
 
@@ -1556,19 +1869,25 @@ fn first_not_held(state: &State, node: u64, from: u64) -> u64 {
 
 /// What becomes of the operation of a device after the highest its machine was told.
 enum Next {
-    /// It is told: its event and the data the machine is told.
-    Tell(&'static str, String),
-    /// It is passed over and told never: it is sealed under an epoch before this host's first,
-    /// whose content this host was given no key of (`Trust::deliver`).
+    /// It is told: its event, the data the machine is told, and its causal context.
+    Tell {
+        event: &'static str,
+        data: String,
+        context: Vec<(u64, u64)>,
+    },
+    /// It is passed over and told never: a mark, which is the trust layer's and no machine's; or
+    /// an operation sealed under an epoch before this host's first, whose content this host was
+    /// given no key of (`Trust::deliver`).
     Pass,
 }
 
-/// What becomes of the operation of `node` at the number after the highest its machine was told
-/// (docs/adr/0085, section 3), when anything does: told when it is held and every operation its
-/// context names was told; passed over when it cannot be opened here and never will
-/// ([`never_opened`]); nothing, and it waits, otherwise. Never one past it.
-fn next_deliverable(state: &State, node: u64) -> Option<Next> {
-    let next = delivered_through(state, node) + 1;
+/// What becomes of the operation of `node` at the number after the highest a machine told up to
+/// `vector` was told (docs/adr/0085, section 3), when anything does: told when it is held and
+/// every operation its context names was told, and passed over then when it is a mark; passed
+/// over when it cannot be opened here and never will ([`never_opened`]); nothing, and it waits,
+/// otherwise. Never one past it.
+fn next_deliverable(state: &State, vector: &BTreeMap<u64, u64>, node: u64) -> Option<Next> {
+    let next = through_in(vector, node) + 1;
     let Some(held) = state.ops.get(&node).and_then(|chain| chain.at(next)) else {
         let epoch = state.unopened.get(&node)?.get(&next)?;
         return never_opened(state, *epoch).then_some(Next::Pass);
@@ -1578,11 +1897,18 @@ fn next_deliverable(state: &State, node: u64) -> Option<Next> {
         .link
         .context
         .iter()
-        .all(|(other, seq)| dependency_met(state, *other, *seq));
+        .all(|(other, seq)| dependency_met_in(state, vector, *other, *seq));
     if !met {
         return None;
     }
-    Some(Next::Tell(held.event, told_text(state, held)?))
+    if held.event == MARK_EVENT {
+        return Some(Next::Pass);
+    }
+    Some(Next::Tell {
+        event: held.event,
+        data: told_text(state, held)?,
+        context: held.wire.link.context.clone(),
+    })
 }
 
 /// Whether what is sealed under `epoch` is never opened by this host: an epoch before the first
@@ -1797,7 +2123,14 @@ impl Admission for Trust {
                 "{event}: it carries no signature and this host does not take it on a peer's word"
             ));
         }
-        let Some(event) = signed_name(event) else {
+        // A mark travels between a device's core and a relay, and is told to no machine: a copy
+        // on a Mesh route has its layer's own vectors (docs/adr/0085, section 3.2).
+        if event == MARK_EVENT {
+            return Err(format!(
+                "{event}: a mark is the trust layer's, and no machine is told one"
+            ));
+        }
+        let Some(event) = sent_name(event) else {
             return Ok(None);
         };
         match take(&mut state, event, data) {
@@ -1830,6 +2163,42 @@ pub struct Taken {
     pub applied: bool,
     pub told: String,
     pub conflict: Option<Conflict>,
+}
+
+/// An operation as a history gives it ([`Trust::history`]): its event and the data a machine is
+/// told, and its tag. A send of the host's person that waits to be signed has no tag: it has no
+/// number yet, and its copy holds it provisionally (docs/adr/0093, section 6.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Told {
+    pub event: String,
+    pub data: String,
+    pub tag: Option<Tag>,
+}
+
+impl Told {
+    /// Whether it is a send of the host's person that waits to be signed: recalled provisionally.
+    pub fn provisional(&self) -> bool {
+        self.tag.is_none()
+    }
+}
+
+/// What the delivery layer tagged a change with, read from its link (docs/adr/0085, section 3.1):
+/// its dot, the author's node and its number in the author's chain, and its causal context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tag {
+    pub author: u64,
+    pub seq: u64,
+    pub context: Vec<(u64, u64)>,
+}
+
+/// An operation of a host's person's chain its host keeps a journal of and has not recorded
+/// ([`Trust::unrecorded`]): its number, its event and the data it travels with, exactly what a
+/// relay is given and what a restarted host gives back ([`Trust::restore_records`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnRecord {
+    pub seq: u64,
+    pub event: String,
+    pub data: String,
 }
 
 /// How an operation taken in conflicts with the operations the host held of its device: two at one
@@ -2009,7 +2378,17 @@ fn verify_operation(
             link.log
         )
     })?;
-    if era.role < WRITER {
+    // A mark changes nothing of the list, and every member signs one, a reader included: what a
+    // member was told is what the stable cut is made of (docs/adr/0085, section 3.1).
+    let mark = event == MARK_EVENT;
+    if mark && era.role < READER {
+        return Err(format!(
+            "{event}: node {author} was no member at entry {} (role {})",
+            link.log, era.role
+        )
+        .into());
+    }
+    if !mark && era.role < WRITER {
         return Err(format!(
             "{event}: node {author} may not write (role {} at entry {})",
             era.role, link.log
@@ -2067,6 +2446,20 @@ fn verify_operation(
     // two are signed at, a chain that does not follow itself, a stamp that goes back or repeats): that
     // is what the set of them says, whatever order they were given in ([`Chain`]), and an operation
     // that conflicts is held as proof and not refused.
+
+    // A mark has no stamp, no dot and no content: it is kept by its operation's bytes.
+    if mark {
+        return Ok(Verified {
+            author,
+            link,
+            id,
+            stamp: None,
+            wid: None,
+            travelling: value.clone(),
+            visible: value,
+            key: bytes,
+        });
+    }
 
     // A change's stamp is its author's clock when it made it, and what its writes are sealed under
     // is its dot: both are the author's own claims, which the chain checks.
@@ -2220,7 +2613,7 @@ fn make_operation(
     event: &str,
     travelling: Value,
     author: u64,
-    key: Vec<u8>,
+    key: Option<Vec<u8>>,
 ) -> Result<Wire, String> {
     let (node, identity) = state
         .own
@@ -2277,8 +2670,16 @@ fn make_operation(
         .ok_or_else(|| format!("{event}: the data is not what it names"))?;
     let bytes = message::operation_bytes(&signing.message, &link);
     let signature = identity.sign(&bytes);
-    let stamp = message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?;
-    let wid = signing.subject;
+    // A change has a stamp and a dot; a mark has neither, and is kept by its operation's bytes,
+    // since one device's marks are one message and their links tell them apart.
+    let (stamp, wid) = if event == MARK_EVENT {
+        (None, None)
+    } else {
+        let stamp =
+            message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?;
+        (Some(stamp), Some(signing.subject))
+    };
+    let key = key.unwrap_or_else(|| bytes.clone());
     let wire = Wire {
         data: travelling.to_string(),
         link,
@@ -2288,8 +2689,8 @@ fn make_operation(
     let held = Held {
         id: message::operation_id(&bytes),
         prev,
-        stamp: Some(stamp),
-        wid: Some(wid),
+        stamp,
+        wid,
         key,
         event,
         wire: wire.clone(),
@@ -2321,8 +2722,14 @@ fn make_operation(
     Ok(wire)
 }
 
-/// The name of a signed event as the host keeps it, when `event` is one.
+/// The name of an operation's event as the host keeps it, when `event` is one: a change or a mark.
 fn signed_name(event: &str) -> Option<&'static str> {
+    OPERATION_EVENTS.iter().copied().find(|name| *name == event)
+}
+
+/// The name of an event a machine sends that is signed, as the host keeps it, when `event` is one:
+/// a change. A mark is the trust layer's own, and no machine sends one.
+fn sent_name(event: &str) -> Option<&'static str> {
     message::SIGNED_EVENTS
         .iter()
         .copied()
@@ -2374,6 +2781,11 @@ fn seal_in(state: &mut State, event: &str, data: &str) -> Result<Option<Sealed>,
             data,
             signed: false,
         }));
+    }
+    if event == MARK_EVENT {
+        return Err(format!(
+            "{event}: a mark is signed by the trust layer itself, and no machine sends one"
+        ));
     }
     if !message::SIGNED_EVENTS.contains(&event) {
         return Ok(None);
@@ -2461,13 +2873,16 @@ struct Waiting {
     dot: Vec<u8>,
     /// The node of the person it names as its author.
     author: u64,
+    /// Whether its host keeps a journal of it ([`Trust::keep_made`]): once it is signed, the
+    /// operation is held back from the relay until the host says it recorded it.
+    journalled: bool,
 }
 
 impl Waiting {
     /// The send `event` with `data` in the list `list`, when it is a signed event the data names
-    /// whole; `None` otherwise.
-    fn of(list: &str, event: &str, data: &str) -> Option<Self> {
-        let event = signed_name(event)?;
+    /// whole; `None` otherwise. `journalled` says whether its host keeps a journal of it.
+    fn of(list: &str, event: &str, data: &str, journalled: bool) -> Option<Self> {
+        let event = sent_name(event)?;
         let value: Value = serde_json::from_str(data).ok()?;
         let signing = message::signing(list, event, &value)?.ok()?;
         Some(Self {
@@ -2476,6 +2891,7 @@ impl Waiting {
             content: signing.message,
             dot: signing.subject,
             author: signing.author,
+            journalled,
         })
     }
 
@@ -2593,10 +3009,11 @@ pub struct Waited {
     /// before for the same change (the device's own chain, read back, held them): nothing
     /// was signed for them, and the relay is given nothing new. Each `(event, data)`.
     pub held: Vec<(String, String)>,
-    /// The sends refused for good, each `(event, data, why)`: the log the host now holds says the
-    /// person may not write (a reader, a device taken off, a key the log replaced), or the send
-    /// would conflict with what the device signed. The machine took each in as made, and no copy
-    /// but its own will hold it.
+    /// The sends withdrawn for good, each `(event, data, why)`, in the order they were sent: the
+    /// first that never will be signed (the log the host now holds says the person may not write:
+    /// a reader, a device taken off, a key the log replaced; or it would conflict with what the
+    /// device signed), and every send after it (docs/adr/0093, section 6.2). The machine took each
+    /// in, provisionally or as made, and no copy but its own will hold it: the host withdraws them.
     pub dropped: Vec<(String, String, String)>,
     /// How many sends still wait after this, 0 when none does.
     pub waiting: usize,
@@ -2632,8 +3049,22 @@ impl Trust {
     /// [`Sent::Refused`]. A device whose log grants it writing signs the send at once
     /// ([`Sent::Signed`]), as [`Self::seal_sent`] does.
     pub fn keep_sent(&self, event: &str, data: &str) -> Sent {
+        self.keep(event, data, false)
+    }
+
+    /// A change its host keeps a journal of (`record_list.made`, docs/adr/0083, section 3.1), kept
+    /// as [`Self::keep_sent`] keeps a send: the outbox. The operation signed for it, now or when it
+    /// waited and a round signs it, is a record ([`Self::unrecorded`]) that no relay is given, nor
+    /// any operation of the chain after it, until the host says it recorded it in its journal
+    /// ([`Self::recorded`]): what the person is shown as saved is in the journal before anyone
+    /// else holds it. `data` is the change (`record_list.change`'s payload).
+    pub fn keep_made(&self, data: &str) -> Sent {
+        self.keep(CHANGE_EVENT, data, true)
+    }
+
+    fn keep(&self, event: &str, data: &str, journalled: bool) -> Sent {
         let mut state = self.state();
-        let Some(send) = Waiting::of(&state.calendar, event, data) else {
+        let Some(send) = Waiting::of(&state.calendar, event, data, journalled) else {
             return Sent::of(seal_in(&mut state, event, data));
         };
         let held = state.changes.contains_key(&send.content);
@@ -2664,7 +3095,13 @@ impl Trust {
             return Sent::Waiting(why);
         }
         match readiness(&state, send.event) {
-            Readiness::Ready => Sent::of(seal_in(&mut state, event, data)),
+            Readiness::Ready => {
+                let sent = Sent::of(seal_in(&mut state, event, data));
+                if journalled && sent == Sent::Signed {
+                    note_unrecorded(&mut state);
+                }
+                sent
+            }
             Readiness::NotYet(why) => {
                 state.waiting.push(send);
                 Sent::Waiting(why)
@@ -2676,11 +3113,14 @@ impl Trust {
     /// Sign what the machine sent that waits ([`Self::keep_sent`]), in the order it was sent, as
     /// far as the person may now: what a round calls once it has read the log and the device's own
     /// chain, before it gives the relay what it lacks. A send that still may not be signed, and
-    /// every one after it, waits on. Once the log the host holds says the person never may (a
-    /// reader, a device taken off, a key the log replaced), every send that waits is refused, each
-    /// with why; a send that conflicts with what the device signed is refused alone. What it did is
-    /// returned, for the host to tell: the machine took each send in as made, so a send refused
-    /// here is one its copy holds and no other copy will.
+    /// every one after it, waits on. A send that never will be (the log the host holds says the
+    /// person may not write: a reader, a device taken off, a key the log replaced; or it conflicts
+    /// with what the device signed, a stamp that goes back along its chain among them) is
+    /// withdrawn, and so is every send after it, in order, each with why (docs/adr/0093, section
+    /// 6.2): each was made on a state that held the one before it, which no copy but the device's
+    /// own will hold, and the copy withdraws the same suffix. What it did is returned, for the host
+    /// to tell. A send of a host that keeps a journal of it ([`Self::keep_made`]) that is signed
+    /// here is a record, held back from the relay until the host recorded it.
     ///
     /// **What was signed and what was held are told apart.** A send that waited may turn out, when
     /// its turn comes, to be a change the host holds already: a device restored from an
@@ -2693,28 +3133,41 @@ impl Trust {
         let mut waited = Waited::default();
         while !state.waiting.is_empty() {
             let send = state.waiting.remove(0);
-            match readiness(&state, send.event) {
+            let never = match readiness(&state, send.event) {
                 Readiness::NotYet(why) => {
                     state.waiting.insert(0, send);
                     waited.why_waiting = Some(why);
                     break;
                 }
-                Readiness::Never(why) => {
-                    waited
-                        .dropped
-                        .push((send.event.to_string(), send.data, why));
-                }
+                Readiness::Never(why) => why,
                 Readiness::Ready => match seal_in(&mut state, send.event, &send.data) {
                     Ok(Some(sealed)) if sealed.signed => {
+                        if send.journalled {
+                            note_unrecorded(&mut state);
+                        }
                         waited.taken.push((send.event.to_string(), send.data));
+                        continue;
                     }
                     // Nothing new was signed: the change leaves as the operation the host held
                     // already.
-                    Ok(_) => waited.held.push((send.event.to_string(), send.data)),
-                    Err(why) => waited
-                        .dropped
-                        .push((send.event.to_string(), send.data, why)),
+                    Ok(_) => {
+                        waited.held.push((send.event.to_string(), send.data));
+                        continue;
+                    }
+                    Err(why) => why,
                 },
+            };
+            waited
+                .dropped
+                .push((send.event.to_string(), send.data, never));
+            for after in std::mem::take(&mut state.waiting) {
+                let why = format!(
+                    "{}: a change this device made before it was withdrawn, and a change made on a state no other copy will hold is withdrawn with it",
+                    after.event
+                );
+                waited
+                    .dropped
+                    .push((after.event.to_string(), after.data, why));
             }
         }
         waited.waiting = state.waiting.len();
@@ -2724,6 +3177,20 @@ impl Trust {
     /// How many sends of the machine wait to be signed ([`Self::keep_sent`]).
     pub fn waiting(&self) -> usize {
         self.state().waiting.len()
+    }
+}
+
+/// The operation this host's person signed last is a record its host keeps a journal of, which no
+/// relay is given before the host recorded it ([`Trust::unrecorded`]).
+fn note_unrecorded(state: &mut State) {
+    let last = state
+        .own
+        .as_ref()
+        .and_then(|(node, _)| state.ops.get(node))
+        .and_then(Chain::last)
+        .map(Held::seq);
+    if let Some(seq) = last {
+        state.unrecorded.insert(seq);
     }
 }
 
@@ -2812,7 +3279,7 @@ fn seal_change(state: &mut State, data: &str) -> Result<Sealed, String> {
             );
         }
     }
-    let operation = make_operation(state, event, wire, signing.author, held)?;
+    let operation = make_operation(state, event, wire, signing.author, Some(held))?;
     let data = operation.to_json().ok_or_else(malformed)?;
     Ok(Sealed { data, signed: true })
 }
