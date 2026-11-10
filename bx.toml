@@ -184,6 +184,126 @@ check = "{version:8}"
 install = "CARGO_HOME={scratch}/cargo cargo install --git https://github.com/newmassrael/mnemosyne --rev {version} --locked --root {prefix} mnemosyne-cli mnemosyne-mcp"
 prefix_file = "bin/mnemosyne-cli"
 
+# THE RUST TOOLCHAINS, one table for each one a gate runs (2026-11-10). Until then the gates installed
+# them themselves, in the run account: `scripts/gate` synced "stable" with `rustup toolchain install`
+# and added components to it, `rust-version` installed each declared release, `forge-rust` and
+# `mutation-rounds` the nightly, `nostd-mcu` its targets and llvm-tools. A build machine runs the
+# units of a set side by side in that one account, and rustup is not safe against that: on 2026-10-20
+# a machine's `stable` was left with rustc and rust-std and no cargo, and a landing was refused over a
+# target one unit had and another had not added yet. Declared here, each is installed once per machine
+# by provision, checked there, and a unit is placed only where the ones it needs are.
+#
+# Every table is pinned to a release or a dated nightly, never to a channel that moves. The install
+# is `scripts/install_rust.sh`, the one place the steps are written: a rustup pinned by its digest,
+# living in the install's scratch (RUSTUP_HOME and CARGO_HOME) and nowhere else, installs the one
+# toolchain with the components (`-c`) and targets (`-t`) on the line, and the toolchain's directory
+# is copied to the store entry. They are on the line so that they are part of the store's key: a
+# target added here is a new entry, never an old one taken for it. `prefix_link` makes the whole
+# toolchain the entry, because rustc finds its standard library and cargo its subcommands beside
+# themselves; `scripts/lib/rust_toolchains.sh` finds it there, and the gates put its `bin/` first on
+# PATH, so no rustup proxy is in the way. `check` is what `cargo --version` prints.
+#
+# Anywhere else the same install line puts a toolchain at the same place:
+# `scripts/install_rust.sh --declared <toolchain>` reads it from the table below and runs it. The
+# hosted lanes keep their own `dtolnay/rust-toolchain@stable`; a gate there installs a missing
+# toolchain this way (`sce_gate_require_rust` in scripts/gates/lib.sh). The registry's self-test holds
+# these tables to the pins, to the `rust-version` of every workspace package, and to the units their
+# `needed_by` names.
+#
+# THE RELEASE every gate unit runs on. The plan writes it into each unit (`bash scripts/gate --rust
+# <release> <gate>`) from `SCE_RUST_RELEASE` in scripts/lib/rust_toolchains.sh, which is where it is
+# moved. `needed_by` is that command, so every unit of the push's set asks for it and nothing else
+# does. Its components: clippy and rustfmt for the lint and format gates, llvm-tools for the size
+# reader and disassembler of `nostd-mcu` where binutils for ARM is absent. Its targets are every one a
+# gate builds for: thumbv7em-none-eabihf and thumbv6m-none-eabi (`nostd-mcu` and the codec frame
+# probe it runs), wasm32-unknown-unknown (`wasm32-scenarios`, and the visualizer's wasm-pack build) and
+# wasm32-unknown-emscripten (the ECMAScript frontend of both emscripten trees).
+[platform.linux.tools.rust]
+version_file = "scripts/lib/rust_toolchains.sh"
+version_pattern = '^SCE_RUST_RELEASE="([0-9.]+)"'
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix} -c clippy -c rustfmt -c llvm-tools -t thumbv7em-none-eabihf -t thumbv6m-none-eabi -t wasm32-unknown-unknown -t wasm32-unknown-emscripten"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["scripts/gate --rust"]
+
+# THE NIGHTLY, `SCE_RUST_NIGHTLY` in scripts/lib/rust_toolchains.sh: Miri and ThreadSanitizer over
+# the queue runtime (`forge-rust`, and the mutation casefiles that declare it, which `mutation-rounds`
+# runs), and the standard library rebuilt from rust-src with atomics for the threaded emscripten tree
+# (`w3c-wasm`, `cpp-suite-wasm`). A nightly's cargo prints its own version and the date of its commit,
+# not the date of the channel, so `check` asks only that it is a nightly; the version is held by the
+# store's key.
+[platform.linux.tools.rust-nightly]
+version_file = "scripts/lib/rust_toolchains.sh"
+version_pattern = '^SCE_RUST_NIGHTLY="(nightly-[0-9-]+)"'
+path = "~/.local/rust/{version}/bin/cargo"
+check = "nightly"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix} -c miri -c rust-src -t wasm32-unknown-emscripten"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["forge-rust", "mutation-rounds", "w3c-wasm", "cpp-suite-wasm"]
+
+# THE RELEASE EACH PACKAGE DECLARES: `rust-version` builds every workspace package with exactly the
+# release its `rust-version` names, the oldest one it admits (`1.87` is 1.87.0). The versions are
+# written here and not read: they are the `rust-version` lines of the packages' manifests, which no
+# single line states, and the registry's self-test holds this set of tables to that set of lines in
+# both directions. The gate only checks the packages (`cargo check`), so the profile is minimal and
+# no component is added.
+[platform.linux.tools.rust-msrv-1-75]
+version = "1.75.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
+[platform.linux.tools.rust-msrv-1-79]
+version = "1.79.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
+[platform.linux.tools.rust-msrv-1-85]
+version = "1.85.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
+[platform.linux.tools.rust-msrv-1-87]
+version = "1.87.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
+[platform.linux.tools.rust-msrv-1-89]
+version = "1.89.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
+[platform.linux.tools.rust-msrv-1-91]
+version = "1.91.0"
+path = "~/.local/rust/{version}/bin/cargo"
+check = "cargo {version}"
+prefix_link = "~/.local/rust/{version}"
+install = "RUSTUP_HOME={scratch}/rh CARGO_HOME={scratch}/ch bash scripts/install_rust.sh {version} {prefix}"
+install_inputs = ["scripts/install_rust.sh"]
+needed_by = ["rust-version"]
+
 # THE SWIFT TOOLCHAIN, for the Swift backend of the shared-calendar extensions E1 and E5 (the owner
 # had it installed on 2026-10-20). swift.org's release tarball, pinned by version and by the SHA-256
 # of each Ubuntu release's tarball: the two digests were taken on 2026-10-20 from tarballs whose
@@ -294,8 +414,9 @@ needed_by = ["cpp-suite", "mutation-rounds"]
 # for wasm32, writes the module's JavaScript glue with wasm-bindgen, and replays every scenario in
 # Node and in headless Chrome. An update to main is judged here with every gate it reaches, and no
 # build machine carried either tool, so the gate could not have been measured. The wasm32 standard
-# library is not a tool here: it belongs to the Rust release the plan names, so the gate adds it to
-# that release itself (`rustup target add`), as the runner adds clippy.
+# library is not a tool of its own: it is a target of the Rust release the plan names, declared with
+# that release in `[platform.linux.tools.rust]` above, so a machine that has the release has it. The
+# gate checks it and adds nothing, as no gate installs any part of a toolchain.
 #
 # wasm-bindgen at the version Cargo.lock holds: the tool refuses a module another version of the
 # crate built. `scripts/install_wasm_bindgen.sh` carries the version in one line bx can read (it is
