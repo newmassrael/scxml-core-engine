@@ -5203,8 +5203,16 @@ pub fn compile_forge_from_parsed(
     // document names: Go refuses an unused import outright, and the backends
     // must not disagree about what this document depends on. See
     // `forge::import_use`.
-    let named = forge::import_use::named_aliases(document, &parsed.cycles, &parsed.imports)
+    let mut named = forge::import_use::named_aliases(document, &parsed.cycles, &parsed.imports)
         .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+    // A union local of an algorithm names, beside its union, the record of the
+    // case it builds (docs/adr/0092, section 6.1 item 5): no expression spells
+    // that record, and a backend names its type where it builds the case, so
+    // the record is read from the union's cases, which only the enriched
+    // imports hold.
+    if let forge::model::ForgeDocument::Algorithm(m) = document {
+        named.extend(forge::algorithm_union::built_case_records(m, &import_ctx));
+    }
     import_ctx.retain(|imp| named.contains(&imp.alias));
 
     // A transform that reads a field through `previous()` is not callable as
@@ -9237,7 +9245,9 @@ fn algorithm_record_slots(
                 }
                 (None, None) => None,
             },
-            // No algorithm's slot holds a union yet (docs/adr/0092, section 7).
+            // A union slot (docs/adr/0092, Landing order step 5) is not handed
+            // over by another algorithm's call yet: the callee is called by a
+            // host alone, for the reason `host_only` names.
             AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })

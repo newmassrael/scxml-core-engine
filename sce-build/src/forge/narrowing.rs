@@ -58,7 +58,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::expr::{
-    dotted_path, judge_optional_use, parse_to_ast, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
+    dotted_path, judge_narrowed_use, parse_to_ast, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
     OPTIONAL_VALUE,
 };
 use crate::forge::expression_site::ExpressionSite;
@@ -402,7 +402,8 @@ impl Statement for AlgorithmStmt {
             }
             AlgorithmStmt::Var { name, .. }
             | AlgorithmStmt::RecordVar { name, .. }
-            | AlgorithmStmt::RecordFromCall { name, .. } => into.write(name),
+            | AlgorithmStmt::RecordFromCall { name, .. }
+            | AlgorithmStmt::UnionVar { name, .. } => into.write(name),
             AlgorithmStmt::If { .. }
             | AlgorithmStmt::While { .. }
             | AlgorithmStmt::Foreach { .. }
@@ -427,6 +428,7 @@ impl Statement for AlgorithmStmt {
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -653,8 +655,16 @@ pub fn after_algorithm_statement(before: &Facts, statement: &AlgorithmStmt) -> F
 /// [`Chain`], and a loop's [`loop_entry`], an `<sce:while>`'s condition proving
 /// its facts at the start of each turn. `imports` are the algorithm's own,
 /// enriched. Judged once, before any backend renders the body, so the verdict
-/// does not depend on the backend; a body that holds no optional value and
-/// returns none has nothing to judge here.
+/// does not depend on the backend; a body that holds no optional value, returns
+/// none and holds no union has nothing to judge here.
+///
+/// A body that holds a union is held, besides, to the rules of a union
+/// (docs/adr/0092, section 6.1 and Landing order step 5): a case's field is
+/// read where a test of the tag proves its case, a union local is built whole
+/// and not written, a union is taken whole only by a `<sce:return>` of its
+/// type, and a path that reaches the end of the body passes a point where a
+/// subject of a union has no case left, or the body is refused with
+/// `algorithm/return-missing` ([`crate::forge::algorithm_union::reaches_end`]).
 pub(crate) fn check_algorithm(
     m: &crate::forge::model::AlgorithmModel,
     imports: &[crate::forge::generator::ImportContext],
@@ -666,10 +676,11 @@ pub(crate) fn check_algorithm(
         .return_type
         .as_ref()
         .is_some_and(|ty| ty.optional_elem().is_some());
-    if !types.holds_optional() && !returns_optional {
+    if !types.holds_optional() && !returns_optional && !m.holds_union() {
         return Ok(());
     }
     let ctx = types.type_ctx(m, imports);
+    let unions = types.union_rules();
     let returns_return = m.signature.return_type.as_ref();
     let walk = AlgorithmWalk {
         ctx: &ctx,
@@ -678,10 +689,33 @@ pub(crate) fn check_algorithm(
             .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
             .map(str::to_string),
+        returns_union: returns_return
+            .and_then(crate::forge::model::AlgorithmValueType::union_alias)
+            .map(str::to_string),
         records: types.record_aliases(),
         optional_records: types.optional_record_aliases(),
+        unions: &unions,
     };
-    walk.block(&m.body, &Facts::none())
+    walk.block(&m.body, &Facts::none())?;
+    // The parser left a body that holds a union and does not end in a
+    // `<sce:return>` to be judged here, where the union's cases are known.
+    let ends_unreturned = m.signature.return_type.is_some()
+        && !matches!(m.body.last(), Some(AlgorithmStmt::Return { .. }))
+        && crate::forge::algorithm_union::reaches_end(&m.body, &Facts::none(), &|facts: &Facts| {
+            unions.exhausted(facts)
+        });
+    if ends_unreturned {
+        // Placed on the condition of the body's last test, past which the path
+        // that is not returned leaves the body.
+        let at = match m.body.last() {
+            Some(AlgorithmStmt::If { cond_spelling, .. }) => {
+                crate::forge::expression_site::WrittenAt::attribute(cond_spelling.as_ref())
+            }
+            _ => crate::forge::expression_site::WrittenAt::default(),
+        };
+        return Err(at.place(crate::forge::error::ValidationError::AlgorithmReturnMissing.into()));
+    }
+    Ok(())
 }
 
 /// The type a place declared `ty` takes a value of: a scalar's, an optional
@@ -709,9 +743,32 @@ struct AlgorithmWalk<'w, 'c> {
     /// Each optional record parameter and local by name, with the alias of the
     /// schema that types it.
     optional_records: Vec<(String, String)>,
+    /// The alias of the union the algorithm returns, when it returns one
+    /// (docs/adr/0092, Landing order step 5).
+    returns_union: Option<String>,
+    /// The unions the algorithm's parameters and locals hold.
+    unions: &'w crate::forge::algorithm_union::AlgorithmUnions<'w>,
 }
 
 impl AlgorithmWalk<'_, '_> {
+    /// The refusal of `construct`, written at `spelling` over the whole of
+    /// `text`.
+    fn refuse_whole(
+        text: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        construct: String,
+    ) -> crate::forge::error::ForgeError {
+        let text = text.trim();
+        let at = ExpressionSite::new(text, spelling).locate(Some(0..text.len()));
+        let refusal: crate::forge::error::ForgeError =
+            crate::forge::error::ExprError::UnsupportedConstruct {
+                construct,
+                observed: at.observed(),
+            }
+            .into();
+        at.place(refusal)
+    }
+
     /// The alias of the schema of the optional record the local or parameter
     /// `name` is, if it is one.
     fn optional_record_alias(&self, name: &str) -> Option<&str> {
@@ -830,6 +887,36 @@ impl AlgorithmWalk<'_, '_> {
                 init_spelling,
                 ..
             } => self.judge(init, init_spelling.as_ref(), hint, proven),
+            // A union local is built whole: the case its tag names, and each
+            // field of that case's record held to the type the record declares
+            // it with (docs/adr/0092, section 6.1 item 5).
+            AlgorithmStmt::UnionVar {
+                name,
+                name_spelling,
+                alias,
+                fields,
+                ..
+            } => {
+                let built = self
+                    .unions
+                    .built(name, name_spelling.as_ref(), alias, fields)?;
+                let record = built
+                    .record
+                    .as_deref()
+                    .and_then(|record| self.unions.scope.records.get(record));
+                for field in &built.fields {
+                    let slot = record
+                        .and_then(|record| record.fields.iter().find(|(id, _)| *id == field.name))
+                        .map_or(InferredType::Unknown, |(_, ty)| InferredType::of_value(ty));
+                    self.judge(
+                        &field.expr,
+                        field.expr_spelling.as_ref(),
+                        Expected::Slot(slot),
+                        proven,
+                    )?;
+                }
+                Ok(())
+            }
             AlgorithmStmt::Assign {
                 target,
                 target_spelling,
@@ -837,6 +924,22 @@ impl AlgorithmWalk<'_, '_> {
                 expr_spelling,
             } => {
                 let target = target.trim();
+                // A union an algorithm holds is built whole where it is
+                // declared, and a parameter is never written: neither its case
+                // nor a field of it is written yet (docs/adr/0092, section 6.1
+                // item 6).
+                let root = target.split(['.', '[']).next().unwrap_or(target).trim();
+                if self.unions.holds(root) {
+                    return Err(Self::refuse_whole(
+                        target,
+                        target_spelling.as_ref(),
+                        format!(
+                            "a write to `{target}`, a union the algorithm holds (an algorithm \
+                             builds a union whole where it declares it, and does not write it \
+                             yet)"
+                        ),
+                    ));
+                }
                 // An optional value is written whole: `null` makes it absent and
                 // a value present. Its `.value` is a read, and no place to write.
                 if let Some(holder) = crate::forge::static_enum::present_value_of(target)
@@ -929,6 +1032,25 @@ impl AlgorithmWalk<'_, '_> {
                 self.block(body, &turn.and(&proves_written(cond, true)))
             }
             AlgorithmStmt::Foreach { body, .. } => self.block(body, &loop_entry(proven, body)),
+            // A union is returned by name: a parameter or a local of the union
+            // the signature returns (docs/adr/0092, Landing order step 5).
+            AlgorithmStmt::Return {
+                expr: Some(expr),
+                expr_spelling,
+            } if self.returns_union.is_some() => {
+                let wanted = self.returns_union.as_deref().unwrap_or_default();
+                if self.unions.alias_of(expr.trim()) == Some(wanted) {
+                    return Ok(());
+                }
+                Err(Self::refuse_whole(
+                    expr,
+                    expr_spelling.as_ref(),
+                    format!(
+                        "a union:{wanted} return that is not a union:{wanted} parameter or local \
+                         (an algorithm returns a union by name)"
+                    ),
+                ))
+            }
             AlgorithmStmt::Return {
                 expr: Some(expr),
                 expr_spelling,
@@ -968,8 +1090,22 @@ impl AlgorithmWalk<'_, '_> {
         expected: Expected,
         proven: &Facts,
     ) -> Result<(), crate::forge::error::ForgeError> {
+        // A union is read through its tag and its cases' fields, and is taken
+        // whole only by a `<sce:return>` of its type (docs/adr/0092, Landing
+        // order step 5): nowhere else does a value of one stand by its name.
+        if self.unions.holds(expr.trim()) {
+            return Err(Self::refuse_whole(
+                expr,
+                spelling,
+                format!(
+                    "`{}`, a union, as a value (a union is read through its tag and the fields \
+                     of its cases, and is taken whole only by a <sce:return> of its type)",
+                    expr.trim()
+                ),
+            ));
+        }
         let ctx = self.ctx.proving(proven.clone());
-        judge_optional_use(expr, &ctx, expected)
+        judge_narrowed_use(expr, &ctx, expected)
             .map_err(|refusal| ExpressionSite::new(expr, spelling).place(refusal))
     }
 }

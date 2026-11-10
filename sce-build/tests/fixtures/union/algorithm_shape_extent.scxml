@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The longest extent of a shape: an algorithm that takes a union and reads
+     each case's fields where a test of its tag proves the case (docs/adr/0092,
+     section 6.1 and Landing order step 5). Every case is tested and returned,
+     so no case is left after the last test and the body needs no return there;
+     a case the tag's enum gains is left there, and the body is refused until it
+     returns that case too. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shape_extent" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:signature>
+    <sce:param name="shape" type="union:Shape"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="shape.kind === ShapeKind.dot">
+      <sce:return expr="0"/>
+    </sce:if>
+    <sce:if cond="shape.kind === ShapeKind.circle">
+      <sce:return expr="shape.radius"/>
+    </sce:if>
+    <sce:if cond="shape.kind === ShapeKind.rect">
+      <sce:return expr="shape.width &lt; shape.height ? shape.height : shape.width"/>
+    </sce:if>
+  </sce:body>
+</scxml>

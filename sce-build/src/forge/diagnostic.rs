@@ -16845,7 +16845,7 @@ mod tests {
             (
                 "forge/algorithm-return-missing",
                 ValidationError::AlgorithmReturnMissing.into(),
-                r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
+                r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A","message":"algorithm: signature declares return type but a path reaches the end of the body without <sce:return>"}"#,
             ),
             // ── C7-lowering: algorithm-over-BC dispatch goldens
             //    (RFC §synth-5-A line 311 + §synth-5-L lines 2611-2618 + 2642-2647).

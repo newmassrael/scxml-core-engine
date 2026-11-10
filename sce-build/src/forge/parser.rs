@@ -10041,10 +10041,14 @@ fn parse_algorithm(
 
     // RFC §synth-5-A `algorithm/return-missing`: when the signature declares
     // a non-void return type, the body's terminal statement must be
-    // `<sce:return>`. v1 only checks the trivial last-statement form;
-    // flow-sensitive path tracking is not implemented until a
-    // consumer needs it (mirrors the `AlgorithmReturnMissing` doc).
-    if signature.return_type.is_some() && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
+    // `<sce:return>`. A body that holds a union may instead end where its
+    // tag's tests have returned on every case, a point no path passes
+    // (docs/adr/0092, section 6.1 item 4); only the union's cases say which
+    // point that is, so such a body is judged where its imports resolve
+    // ([`crate::forge::narrowing::check_algorithm`]).
+    if signature.return_type.is_some()
+        && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
+        && crate::forge::model::algorithm_unions(&signature, &body).is_empty()
     {
         return Err(located(
             &body_node,
@@ -10972,6 +10976,42 @@ fn parse_algorithm_stmt(
                     fields,
                 });
             }
+            // A union local is built whole as a record local is: one
+            // `<sce:set>` names the tag with a variant of its enum and one names
+            // each field of that case's record (docs/adr/0092, section 6.1
+            // item 5). Which case the tag names, and whether the fields are
+            // that case's, need the union and are judged where the import
+            // resolves. It is not a buffer, and no value an algorithm holds is
+            // handed to it whole yet, so it takes neither `capacity` nor
+            // `init`.
+            if let Some(alias) = sce_type.union_alias() {
+                for attr in ["init", "capacity"] {
+                    if let Some(value) = node.attribute(attr) {
+                        return Err(located(
+                            node,
+                            doc_name,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("<sce:var name=\"{name}\">"),
+                                attr: attr.into(),
+                                value: value.into(),
+                                rule: format!(
+                                    "omitted — a union local of {alias} is built from one \
+                                     <sce:set> for its tag and one per field of its case"
+                                ),
+                            },
+                        ));
+                    }
+                }
+                let fields =
+                    read_record_fields(node, doc_name, format!("<sce:var name=\"{name}\">"))?;
+                return Ok(AlgorithmStmt::UnionVar {
+                    name,
+                    name_spelling: AttributeSpelling::of(node, None, "name"),
+                    alias: alias.to_string(),
+                    type_spelling: AttributeSpelling::of(node, None, "type"),
+                    fields,
+                });
+            }
             // A `bytes` or `list<T>` local is a growable buffer seeded empty
             // and filled via `<sce:append>`: it takes a `capacity`, which it
             // must declare, and no `init`. A scalar takes the required `init`
@@ -11264,6 +11304,7 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -11479,6 +11520,7 @@ fn judge_buffer_uses(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { expr: None, .. }
             | AlgorithmStmt::Call { .. }
@@ -11570,6 +11612,7 @@ fn reject_read_only_assignment(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. }
             | AlgorithmStmt::Require { .. } => {}
@@ -11623,6 +11666,7 @@ fn reject_require_without_may_fail(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::UnionVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -14634,7 +14678,10 @@ fn read_algorithm_slot_type(
             node, doc_name, element, "type", text, &refusal,
         ));
     }
-    written.slot_view().map_err(|composition| {
+    // A union is held whole (docs/adr/0092, Landing order step 5); a backend
+    // that does not lower one refuses it by name where it renders the
+    // algorithm, and no backend holds one inside another type yet.
+    written.algorithm_view().map_err(|composition| {
         composition_refusal(node, doc_name, element, "an algorithm", &composition)
     })?;
     // The bound stays in the type (docs/adr/0086, section 1.2); it is handed

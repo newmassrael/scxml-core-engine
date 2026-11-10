@@ -163,6 +163,101 @@ pub(crate) fn rust_union_member_place(
     })
 }
 
+/// The Rust read of `member` of the union value `holder`, a parameter or a
+/// local of an algorithm spelled as Rust names it, whose type is the union's
+/// own unit, `ty` (docs/adr/0092, section 7, the Rust row, and Landing order
+/// step 5), where the value may be in the cases `left`: the tag's method; the
+/// field of the one case left, through that case's proven read; or the field
+/// the cases left each declare, read by a `match` over them whose other arm the
+/// narrowing proved is never taken. A case's record is the payload type its
+/// event schema's unit declares, whose fields are named in snake case
+/// ([`crate::forge::generator::event_schema_field_ident`]). A field is copied
+/// out as it is read, so one whose value is not copied as it is read (a text,
+/// a byte string) is refused, naming it, as is a read where no case is left.
+pub(crate) fn rust_unit_union_read(
+    holder: &str,
+    ty: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    if member == union.tag {
+        return rust_union_tag_method(member)
+            .map(|method| format!("{holder}.{method}()"))
+            .ok_or_else(|| {
+                format!("the tag's key `{member}` names no Rust method its value can be read by")
+            });
+    }
+    // The type the record of `case` declares `member` with, if it declares it.
+    fn declared<'u>(
+        union: &'u ScopedUnion,
+        case: &ScopedCase,
+        member: &str,
+    ) -> Option<&'u ValueType> {
+        case.record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .and_then(|record| record.fields.iter().find(|(id, _)| id == member))
+            .map(|(_, ty)| ty)
+    }
+    let refused = |why: &str| {
+        format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, {why} \
+             (docs/adr/0092, section 6.1)",
+            union.name,
+            left.iter()
+                .map(|case| format!("`{}`", case.variant.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let mut types = left.iter().map(|case| declared(union, case, member));
+    let Some(Some(first)) = types.next() else {
+        return Err(refused("is read where no case left declares it"));
+    };
+    if !types.all(|ty| ty == Some(first)) {
+        return Err(refused("is not declared with one type by every case left"));
+    }
+    if !plain(first) {
+        return Err(refused(
+            "is a value an algorithm does not copy out of a union yet: a text or a byte string \
+             of a case is read in a statechart",
+        ));
+    }
+    let field =
+        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Rust);
+    Ok(match left {
+        [case] => format!("{holder}.{}().{field}", rust_case_read(&case.variant.name)),
+        _ => {
+            let arms: String = left
+                .iter()
+                .map(|case| {
+                    format!(
+                        "{ty}::{}(record) => record.{field}, ",
+                        rust_case_ident(&case.variant.name)
+                    )
+                })
+                .collect();
+            // Every case is an arm where every case is left; otherwise the
+            // narrowing proved the value is in none of the others.
+            let rest = if left.len() < union.cases.len() {
+                format!(
+                    "_ => unreachable!(\"a value of {} read as one of its cases {} is in another \
+                     case\"), ",
+                    union.name,
+                    left.iter()
+                        .map(|case| case.variant.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                String::new()
+            };
+            format!("(match &{holder} {{ {arms}{rest}}})")
+        }
+    })
+}
+
 /// The Rust spellings of the walks, for the machine `machine` (section 7.1,
 /// the machine column): the runtime's `PayloadValue` reads each constructor,
 /// and its writers write them into `carrier`.
@@ -848,6 +943,54 @@ mod tests {
             format!("Option<{list}<u8, 2>>")
         );
         assert!(machine_type(&ty("enum:Other"), None, &held, &enums, &RUST).is_err());
+    }
+
+    /// An algorithm's union is its unit's type (docs/adr/0092, Landing order
+    /// step 5): the tag by its method, the field of the one case left by that
+    /// case's proven read, a field several cases declare by a `match` over them
+    /// whose other arm is never taken, and no read where no case left declares
+    /// the field.
+    #[test]
+    fn an_algorithms_union_is_read_on_its_units_type() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|c| c.variant.name == name)
+                .expect("a case")
+        };
+        let read = |left: &[&ScopedCase], member: &str| {
+            rust_unit_union_read("shape", "shape::Shape", union, left, member)
+        };
+        assert_eq!(read(&[], "kind"), Ok("shape.kind()".to_string()));
+        assert_eq!(
+            read(&[case("circle")], "radius"),
+            Ok("shape.proven_circle().radius".to_string())
+        );
+        assert_eq!(
+            read(&[case("circle"), case("disc")], "radius"),
+            Ok(
+                "(match &shape { shape::Shape::Circle(record) => record.radius, \
+                shape::Shape::Disc(record) => record.radius, _ => unreachable!(\"a value of \
+                shape read as one of its cases circle, disc is in another case\"), })"
+                    .to_string()
+            )
+        );
+        // Where every case of the union is left, each is an arm and there is
+        // no other.
+        let mut both = union.clone();
+        both.cases.retain(|c| c.variant.name != "dot");
+        let every: Vec<&ScopedCase> = both.cases.iter().collect();
+        let text = rust_unit_union_read("shape", "shape::Shape", &both, &every, "radius")
+            .expect("a read of a field every case declares");
+        assert!(
+            text.ends_with("Disc(record) => record.radius, })") && !text.contains("_ =>"),
+            "{text}"
+        );
+        assert!(read(&[], "radius").is_err());
+        assert!(read(&[case("dot"), case("circle")], "radius").is_err());
     }
 
     /// A union is the machine's own sum at any depth, named by its document

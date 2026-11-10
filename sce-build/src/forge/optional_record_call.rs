@@ -94,9 +94,11 @@ impl Walk<'_> {
                 self.optional_record_named(name),
             ),
             AlgorithmStmt::Var { init: None, .. } => Ok(()),
-            AlgorithmStmt::RecordVar { fields, .. } => fields.iter().try_for_each(|field| {
-                self.expression(&field.expr, field.expr_spelling.as_ref(), None)
-            }),
+            AlgorithmStmt::RecordVar { fields, .. } | AlgorithmStmt::UnionVar { fields, .. } => {
+                fields.iter().try_for_each(|field| {
+                    self.expression(&field.expr, field.expr_spelling.as_ref(), None)
+                })
+            }
             AlgorithmStmt::RecordFromCall {
                 init,
                 init_spelling,

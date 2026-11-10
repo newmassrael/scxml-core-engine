@@ -1519,7 +1519,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
         })?;
         params.push(AlgorithmParam {
             name: undo(pname, head.number)?,
-            sce_type: AlgorithmValueType::from_attr(ptype).ok_or_else(|| ParseError {
+            sce_type: AlgorithmValueType::algorithm_from_attr(ptype).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{ptype}` is not an sce:type"),
             })?,
@@ -1532,7 +1532,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
         None => (None, false),
         Some("->") => {
             let t = tail.get(1).copied().unwrap_or("");
-            let rt = AlgorithmValueType::from_attr(t).ok_or_else(|| ParseError {
+            let rt = AlgorithmValueType::algorithm_from_attr(t).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{t}` is not an sce:type"),
             })?;
@@ -1786,10 +1786,11 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             (Some("limit"), Some(name)) if capacity.is_some() => Some(undo(name, line.number)?),
             _ => None,
         };
-        let sce_type = AlgorithmValueType::from_attr(type_word).ok_or_else(|| ParseError {
-            line: line.number,
-            why: format!("`{type_word}` is not an sce:type"),
-        })?;
+        let sce_type =
+            AlgorithmValueType::algorithm_from_attr(type_word).ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{type_word}` is not an sce:type"),
+            })?;
         // A record local is its declaration plus one nested `field = expr`
         // line per field — the shape `pseudo` writes — or, received whole
         // from a call, one line with `= <call>` and nothing under it
@@ -1826,6 +1827,37 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
                 });
             }
             return Ok(AlgorithmStmt::RecordVar {
+                name: undo(name, line.number)?,
+                name_spelling: None,
+                alias: alias.to_string(),
+                type_spelling: None,
+                fields,
+            });
+        }
+        // A union local is its declaration plus one nested `field = expr` line
+        // for its tag and each field of its case, as `pseudo` writes it
+        // (docs/adr/0092, section 6.1 item 5); it takes no `= <expr>`.
+        if let Some(alias) = sce_type.union_alias() {
+            if init.is_some() {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "a union var takes field lines under it, not `= <expr>`".to_string(),
+                });
+            }
+            let mut fields = Vec::new();
+            for kid in kids {
+                let (field, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
+                    line: kid.number,
+                    why: "a union field needs `<field> = <expr>`".to_string(),
+                })?;
+                fields.push(crate::forge::model::RecordFieldInit {
+                    name: undo(field, kid.number)?,
+                    name_spelling: None,
+                    expr: undo(expr, kid.number)?,
+                    expr_spelling: None,
+                });
+            }
+            return Ok(AlgorithmStmt::UnionVar {
                 name: undo(name, line.number)?,
                 name_spelling: None,
                 alias: alias.to_string(),

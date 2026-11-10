@@ -1190,12 +1190,13 @@ fn lower_union_reads(
 ) -> Result<(), Refusal> {
     use crate::forge::narrowing::proves;
     let mut spelled = None;
+    let mut whole = None;
     if let ExprKind::Member { object, property } = &expr.kind {
         let place = place_path(object).and_then(|path| ctx.value_of(&path));
         let union = place
             .as_ref()
             .and_then(|place| crate::forge::value_path::union_of(ctx.value_scope, place));
-        if let Some((union, _)) = union {
+        if let Some((union, alias)) = union {
             let subject = dotted_path(object);
             let left = crate::forge::value_path::cases_left(
                 ctx.value_scope,
@@ -1203,21 +1204,58 @@ fn lower_union_reads(
                 subject.as_deref(),
                 Some(facts),
             );
-            let member = match target {
-                ExprTarget::Swift => {
-                    crate::forge::composed_lowering::swift_union_member(union, &left, property)
-                }
-                _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
-            }
-            .map_err(|why| {
+            let refused = |why: String| {
                 ExprError::UnsupportedConstruct {
                     construct: why,
                     observed: None,
                 }
                 .at(expr.span.clone())
-            })?;
-            spelled = Some(member);
+            };
+            // An algorithm's parameter or local holds the union's own unit
+            // (docs/adr/0092, Landing order step 5): the whole read is spelled
+            // on that type, through the name that holds it, the only subject of
+            // a union an algorithm has.
+            if let Some(unit) = ctx.unit_unions.get(alias.as_str()) {
+                let ExprKind::Ident(holder) = &object.kind else {
+                    return Err(refused(format!(
+                        "`{property}` of `union:{alias}` read through anything but the parameter \
+                         or the local that holds it"
+                    )));
+                };
+                let read = match target {
+                    ExprTarget::Rust => crate::forge::composed_lowering::rust_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Rust,
+                        ),
+                        unit,
+                        union,
+                        &left,
+                        property,
+                    ),
+                    _ => Err(format!(
+                        "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
+                         backend that does not lower one yet (docs/adr/0092, Landing order step 5)"
+                    )),
+                };
+                whole = Some(read.map_err(refused)?);
+            } else {
+                let member = match target {
+                    ExprTarget::Swift => {
+                        crate::forge::composed_lowering::swift_union_member(union, &left, property)
+                    }
+                    _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
+                }
+                .map_err(refused)?;
+                spelled = Some(member);
+            }
         }
+    }
+    // A read spelled whole has no part left to lower: its object is the name
+    // the read was spelled through.
+    if let Some(read) = whole {
+        expr.kind = ExprKind::Raw(read);
+        return Ok(());
     }
     if let (Some(member), ExprKind::Member { property, .. }) = (spelled, &mut expr.kind) {
         *property = member;
@@ -2504,14 +2542,16 @@ pub(crate) fn judge_into(
     Ok(ast.ty)
 }
 
-/// The rules of an optional value (docs/adr/0055) alone, over `expr` read in
-/// `ctx` — whose [`TypeCtx::proven`] holds the subjects proven present where it
-/// stands — and landing where `expected` says: a `.value` read where nothing
-/// proves it present, an optional value where it has no answer
-/// ([`reject_optional_misuse`]), and an optional value or `null` where a
-/// place that is never absent is declared. For a body no backend renders while
-/// it holds an optional value, whose other refusals are the renderer's.
-pub(crate) fn judge_optional_use(
+/// The rules of the narrowing alone, over `expr` read in `ctx` — whose
+/// [`TypeCtx::proven`] holds what the tests that hold where it stands prove —
+/// and landing where `expected` says: a `.value` read where nothing proves it
+/// present, an optional value where it has no answer
+/// ([`reject_optional_misuse`], docs/adr/0055), a case's field read where no
+/// test proves its case ([`reject_unproven_union_reads`], docs/adr/0092,
+/// section 6.1), and an optional value or `null` where a place that is never
+/// absent is declared. For a body judged before any backend renders it, whose
+/// other refusals are the renderer's.
+pub(crate) fn judge_narrowed_use(
     expr: &str,
     ctx: &TypeCtx<'_>,
     expected: Expected,
@@ -2523,6 +2563,7 @@ pub(crate) fn judge_optional_use(
     let mut ast = parse_to_ast(expr)?;
     infer_types(&mut ast, ctx);
     reject_optional_misuse(&ast, &ctx.proven, expr)?;
+    reject_unproven_union_reads(&ast, ctx, &ctx.proven, expr)?;
     if let Expected::Slot(slot) = expected {
         let may_be_absent = ast.ty.is_optional() || ast.ty == InferredType::Null;
         if may_be_absent && !slot_admits(slot, ast.ty) {

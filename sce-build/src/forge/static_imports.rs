@@ -476,7 +476,9 @@ fn value_signature(
             AlgorithmValueType::Text { .. } => Ok(StaticSlot::Scalar(SceType::String)),
             AlgorithmValueType::Bytes { .. } => Ok(StaticSlot::Scalar(SceType::Bytes)),
             AlgorithmValueType::Record { alias } => Ok(StaticSlot::Record(record(alias)?)),
-            // No algorithm's slot holds a union yet (docs/adr/0092, section 7).
+            // An algorithm's slot holds a union (docs/adr/0092, Landing order
+            // step 5), and a statechart does not hand one over or take one back
+            // yet (section 6.1 item 7).
             AlgorithmValueType::Union { .. } => Err(composed(ty)),
             AlgorithmValueType::List { elem, .. } => match &**elem {
                 AlgorithmValueType::Scalar(t) => {

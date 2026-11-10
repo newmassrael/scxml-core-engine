@@ -385,7 +385,11 @@ impl Analysis<'_, '_> {
                     None => env.forget_relations(name),
                 }
             }
-            AlgorithmStmt::RecordVar { name, fields, .. } => {
+            // A union local is built as a record local is, its tag among the
+            // fields it gives, each value judged against the type its case
+            // declares the field with (docs/adr/0092, section 6.1 item 5).
+            AlgorithmStmt::RecordVar { name, fields, .. }
+            | AlgorithmStmt::UnionVar { name, fields, .. } => {
                 for field in fields {
                     let key = format!("{name}.{}", field.name);
                     let place = self.declared_type(&key);
@@ -641,9 +645,15 @@ impl Analysis<'_, '_> {
         self.declared_type(name).and_then(type_range)
     }
 
-    /// `name`'s declared type, from the scope.
+    /// `name`'s declared type, from the scope: a name it declares, or a place
+    /// it walks a value's type to, which in an algorithm is a field of a union
+    /// parameter or local, typed over every case that declares it
+    /// (docs/adr/0092, section 6.1).
     fn declared_type(&self, name: &str) -> Option<InferredType> {
-        self.ctx.vars.get(name).copied()
+        match self.ctx.lookup_var(name) {
+            InferredType::Unknown => None,
+            ty => Some(ty),
+        }
     }
 
     /// Judge `expr`, stored in a place of type `place`, recording its hazards

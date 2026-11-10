@@ -1502,6 +1502,16 @@ pub struct TypeCtx<'a> {
     /// ⚠ Empty everywhere but the body of such a loop, and emptiness is what
     /// keeps every other name's reads exactly what they were.
     pub place_items: std::collections::HashSet<&'a str>,
+    /// Each union an algorithm holds a value of (docs/adr/0092, Landing order
+    /// step 5), by the alias the algorithm imports it under, with the type the
+    /// union's own unit declares as the target spells it. A place of one of
+    /// these unions holds the unit's type, not a machine's, and a read of its
+    /// member is spelled on that type
+    /// ([`crate::forge::composed_lowering::rust_unit_union_read`]).
+    ///
+    /// ⚠ Empty everywhere but an algorithm that holds a union, and emptiness is
+    /// what keeps a statechart's union reads exactly what they were.
+    pub unit_unions: HashMap<&'a str, String>,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1568,6 +1578,7 @@ impl<'a> TypeCtx<'a> {
             values: HashMap::new(),
             value_scope: None,
             place_items: std::collections::HashSet::new(),
+            unit_unions: HashMap::new(),
         }
     }
 
