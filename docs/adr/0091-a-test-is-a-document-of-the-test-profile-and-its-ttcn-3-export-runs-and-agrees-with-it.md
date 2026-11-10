@@ -41,6 +41,15 @@
   order of work step 4). C2's stable name contract is identity: every name the export writes is the documents' own,
   and one TTCN-3 cannot take is refused (`test-profile/export-name`), never renamed. The external codec functions
   have one stated form, and the manifest is a wire surface of its own.
+
+  Amended 2026-11-10 when the design of order of work step 5 was written (`docs/SCE_TTCN3_LANE.md`), on the owner's
+  delegation of that day to the main session. Everything that touches Titan moves to a separate downstream
+  repository under EPL-2.0, `sce-ttcn3-titan`: the adapter interface, the reference adapter set and its codec
+  bindings, the Titan binding, the pinned Titan with its Main Controller patches, and the lane runner. It uses SCE
+  only as a tool, through SCE's programs and published wire surfaces. SCE keeps the export, the validator, those
+  surfaces, the native runners with trace replay, and the corpus with its traces and expected logs. Answer 1's
+  licence question is answered by that split (answer 1), §7 says which repository ships what, and step 5 is split
+  into slices.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -304,6 +313,10 @@ observer of ADR 0089 or stands alone is question 8.
   applies C3. This is a conformance law of the profile, held for each backend that emits the native test runtime, as
   other laws are held per lane.
 - The corpus covers every row of §2 and every refusal of §3.
+- Amended 2026-11-10 (answer 1): the reference adapter set, the Titan binding and the lane runner are shipped by the
+  downstream repository `sce-ttcn3-titan`, not by SCE. SCE ships the export, the validator, the wire surfaces both
+  read and write, the native runners with trace replay, and the corpus with its recorded traces and expected logs
+  (`docs/SCE_TTCN3_LANE.md` §2, §4). SCE's CI runs the downstream lane as an external tool at a pinned revision.
 
 ### 8. Where the profile stands among SCE's principles
 
@@ -332,7 +345,8 @@ observer of ADR 0089 or stands alone is question 8.
   working under ADR 0003's accounting of the escape hatch, and the existing census counts them. Moving them is
   migration work for consumers.
 - SCE's CI gains a dependency on a TTCN-3 tool: Eclipse Titan, built from a pinned release together with the
-  logical clock of answer 3 until that clock is part of a Titan release.
+  logical clock of answer 3 until that clock is part of a Titan release. Since 2026-11-10 it reaches Titan only
+  through the downstream repository of answer 1, fetched at a pinned revision and run as a tool.
 - The tree gains a second meaning of "verdict" next to the scenario judge's. The profile always calls its own a test
   verdict (Context).
 
@@ -416,6 +430,12 @@ traces are those a generator would also produce.
 5. Build the reference adapter set, its Titan binding and the conformance lane (C1, §7). Contribute the logical
    clock of answer 3 to Eclipse Titan, and build the lane's Titan from a pinned release with that change until a
    release contains it. Settle the licence question of answer 1 before the binding is written.
+   **Status (2026-11-10):** the design is written (`docs/SCE_TTCN3_LANE.md`), and the licence question is answered by
+   the repository split (answer 1). The downstream repository `sce-ttcn3-titan` is to be created. The SCE-side slices
+   come first: S1, the trace surface and native trace replay; S2, a corpus with traces and expected logs. The
+   downstream slices follow: D1, the skeleton, its licence and the adapter interface; D2, the pinned Titan build and
+   the Main Controller patch; D3, the reference adapters and codecs; D4, the binding and the logger; D5, the lane
+   and C3.
 6. Add the equivalence law over the corpus (C3), with the canonical log's schema and its `SCE_WIRE_CONTRACTS.md` row.
 7. Write migration guidance for consumers' existing test documents.
 
@@ -502,7 +522,8 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      The types module therefore declares external encoding and decoding functions, and the binding implements
      them on codec libraries that neither SCE nor Titan wrote: a CBOR library and an iCalendar library. Their
      authors share nothing with SCE's codec generator, so this is C2's first kind of independence, an
-     independent encoding engine. The choice of library is pinned with the lane.
+     independent encoding engine. The choice of library is pinned with the lane: libcbor and libical
+     (`docs/SCE_TTCN3_LANE.md` §8.4).
    - **A tool that implements TRI and TCI natively** is admitted by the same adapters through a binding that is
      the identity. Elvior TestCast states TRI and TCI mappings for C, C++, C# and Java; it was the first answer's
      tool and is not used because its licence cannot be obtained. Running the suite on a second tool remains the
@@ -520,11 +541,34 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      - Titan is used only by the conformance lane: in SCE's CI, and by a developer who runs the lane. No SCE
        product contains Titan. An exported TTCN-3 module is text SCE writes and contains no Titan code.
 
-     So the lane itself distributes nothing. One case remains: SCE publishes the binding's source, and a consumer
-     builds it with Titan and distributes the result. The binding and the reference adapter set are therefore
-     published under a licence chosen to combine with EPL-2.0. The copyright holder can do that for those files
-     alone, as `LICENSE-GENERATED.md` already sets separate terms for generated code. Which licence, and its
-     confirmation by legal review, are settled before the binding is written (order of work step 5).
+     So the lane itself distributes nothing. One case remained: SCE publishes the binding's source, and a consumer
+     builds it with Titan and distributes the result. As first accepted, this answer left open the licence of the
+     binding and the reference adapter set, to be settled before the binding is written (order of work step 5).
+
+     **Decided 2026-11-10: the lane is a separate repository, and no SCE file is relicensed.** Everything that
+     touches Titan lives in a downstream repository, `sce-ttcn3-titan`, published under EPL-2.0: the adapter
+     interface, the reference adapter set, the codec bindings, the Titan binding, the pinned Titan build with its
+     Main Controller patches, and the lane runner. It never includes, links or copies SCE code. It uses SCE only as
+     a tool: it runs `sce-codegen export-ttcn3`, the validator and the native runners as processes, and reads and
+     writes SCE's published wire surfaces (the exported modules, the types manifest, the witness, the recorded input
+     trace `sce-test-trace.v1` and the canonical log `sce-test-log.v1`). It pins the SCE revision it runs. SCE's CI
+     may run the downstream lane as an external tool fetched at a pinned revision; that is use, not combination.
+     The record, each statement with its basis (`docs/SCE_TTCN3_LANE.md` §3):
+     - **The split removes the combination question.** No SCE file is relicensed. The downstream holds no SCE code
+       and is a separate work. No executable combines SCE's AGPL-3.0 code with Titan's EPL-2.0 code, so the
+       Secondary License that Titan's notices do not name is never needed. The exported modules are the
+       generator's output, governed by `LICENSE-GENERATED.md` as all its output is.
+     - **CI-only use distributes nothing.** EPL-2.0's obligations arise on distribution, and AGPL-3.0's on
+       conveying or on network interaction with a modified version. Running Titan and the downstream in CI, or on
+       a developer's machine, is neither, and no SCE product contains them.
+     - **The upstream patch is contributed under the ECA.** A contribution to `eclipse/titan.core` is made under
+       EPL-2.0 by a signer of the Eclipse Contributor Agreement. The patches are EPL-2.0 from their first line, in
+       an EPL-2.0 repository.
+     - **The codec libraries keep their own licences.** libcbor is MIT; libical is offered under MPL-2.0 or
+       LGPL-2.1, and the downstream takes MPL-2.0. Each is pinned by version and source digest with its licence
+       text.
+     - **No legal review was made.** None is needed for the combination question, which no longer exists. The
+       statements above are standard facts of the licences named.
 2. **The profile targets one pinned set of parts:** ES 201 873-1 V4.17.1 (2025), -4 V4.6.1 (2017), -5 V4.9.1
    (2022) and -6 V4.14.1 (2023), the latest of each on ETSI's TTCN-3 download page on 2026-11-06. Part 4 is eight
    years older than part 1, and the profile takes its semantics from part 4 (§1). So the profile admits only
