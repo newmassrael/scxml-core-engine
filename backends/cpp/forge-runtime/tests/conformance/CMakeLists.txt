@@ -555,14 +555,17 @@ add_test(NAME caller_tag_variant_generated COMMAND caller_tag_variant_generated_
 # Derived numbers whose encode can refuse, printed from their plan
 # (docs/adr/0081 step 4): a length two byte strings share, one the value states
 # where its gated content is absent, and the encoded length of a body that can
-# refuse, in a field that may not hold it. The test holds them to the frames
-# and refusals the Rust encode gives the same values.
+# refuse, in a field that may not hold it; and an enum a group holds, with the
+# enum it imports. The test holds them to the frames and refusals the Rust
+# encode gives the same values.
 set(POSITIONAL_FORMS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/positional_forms_headers")
 file(MAKE_DIRECTORY "${POSITIONAL_FORMS_GENERATED_DIR}")
 set(POSITIONAL_FORMS_DOCUMENTS
     "${RESOURCE_DIR}/codec_length_shared.scxml"
     "${RESOURCE_DIR}/codec_length_stated.scxml"
     "${RESOURCE_DIR}/codec_encoded_length_checked.scxml"
+    "${RESOURCE_DIR}/enum_session_state.scxml"
+    "${RESOURCE_DIR}/codec_group_enum.scxml"
 )
 set(POSITIONAL_FORMS_GENERATED_HEADERS "")
 foreach(_positional_document IN LISTS POSITIONAL_FORMS_DOCUMENTS)

@@ -95,12 +95,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     }
     // A group (docs/adr/0065 §6 R4b, R4c) is presented as the class of the
     // members of its one side, held optionally, or as a variant of a class for
-    // each of its arms; its members are integers, byte strings, texts, bodies
-    // or lists, its gates flag inputs or one-bit flags of the codec's own. The
-    // encode keeps a body or a list as the arms that hold it present it, all
-    // as one type, and two lists of one count as one `Aligned` of the two (R5);
-    // one held to a law is not yet, nor is a group of a chain's memberships, or
-    // one that holds an enum.
+    // each of its arms; its members are integers, enums, byte strings, texts,
+    // bodies or lists, its gates flag inputs or one-bit flags of the codec's
+    // own. The encode keeps a body or a list as the arms that hold it present
+    // it, all as one type, and two lists of one count as one `Aligned` of the
+    // two (R5); one held to a law is not yet, nor is a float or a bool.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
         // of the kinds the arm says (R6b), optionally where a gate of its own
@@ -115,6 +114,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             let value = plan.value(member);
             match &value {
                 Value::Scalar(t) if t.int_bit_width().is_some() => {}
+                // Presented as the enum's type and written as its carrier, as
+                // an element of one is; the arm starts it at its first value.
+                Value::Scalar(SceType::Enum(_)) => {}
                 Value::Bytes(_) | Value::Text(_) => {}
                 Value::Body { .. } | Value::List { .. } => {
                     forms.extend(held_codec_forms(plan, imports, id, &value));
@@ -123,8 +125,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     }
                 }
                 Value::Scalar(_) => forms.push(format!(
-                    "`{id}`, a member of a group that is not an integer, a byte string, a text, \
-                     a body or a list"
+                    "`{id}`, a member of a group that is not an integer, an enum, a byte string, \
+                     a text, a body or a list"
                 )),
             }
         }
@@ -1298,6 +1300,8 @@ struct ArmPart<'p> {
     members_trait: String,
     /// Its members, in declaration order.
     members: Vec<Presented<'p>>,
+    /// For each member, the value of an enum it starts at where it is one.
+    defaults: Vec<Option<String>>,
 }
 
 impl<'p> GroupPart<'p> {
@@ -1454,6 +1458,23 @@ impl<'p> GroupPart<'p> {
                         None => presented(id),
                     })
                     .collect();
+                // A value of an enum starts at the first value its document
+                // declares, as an element of one does: a closed set does not
+                // hold its carrier's zero unless it declares it.
+                let defaults = arm
+                    .fields
+                    .iter()
+                    .filter(|id| !group.is_second_in(arm, id))
+                    .map(|id| {
+                        fields
+                            .iter()
+                            .find(|f| f.id == *id)
+                            .and_then(|f| match &f.sce_type {
+                                SceType::Enum(r) => Some(l.enum_default_expr(&r.alias)),
+                                _ => None,
+                            })
+                    })
+                    .collect();
                 if group.is_sum() {
                     let arm_name = super::rust_source::group_arm_name(group, arm);
                     ArmPart {
@@ -1464,6 +1485,7 @@ impl<'p> GroupPart<'p> {
                             filters::to_snake_case(arm_name)
                         ),
                         members,
+                        defaults,
                     }
                 } else {
                     ArmPart {
@@ -1471,6 +1493,7 @@ impl<'p> GroupPart<'p> {
                         class: class.clone(),
                         members_trait: format!("is_{name}_members"),
                         members,
+                        defaults,
                     }
                 }
             })
@@ -2441,14 +2464,16 @@ impl ArmPart<'_> {
         }
         if !self.members.is_empty() {
             out.push_str("\nprivate:\n");
-            for m in &self.members {
+            for (m, default) in self.members.iter().zip(&self.defaults) {
                 // A chain that holds an entry of some kind has no value made by
                 // default, and is made by the arm's constructor alone; a bare
-                // entry's place has one.
+                // entry's place has one. An enum starts at its first value.
                 let init = if m.chain.as_ref().is_some_and(|c| !c.has_default()) {
-                    ""
+                    String::new()
+                } else if let Some(first) = default {
+                    format!("{{{first}}}")
                 } else {
-                    "{}"
+                    "{}".to_string()
                 };
                 out.push_str(&format!("    {} {}{init};\n", m.held, member(&m.name)));
             }
@@ -5008,6 +5033,20 @@ mod tests {
             "/*span_len=*/(!alpha.has_value() && !beta.has_value()) ? \
              std::optional<uint8_t>(span_len) : std::optional<uint8_t>(),\n",
         );
+    }
+
+    /// An enum a group holds is printed, and the arm made by default starts
+    /// it at the first value its document declares.
+    #[test]
+    fn an_enum_a_group_holds_starts_at_its_first_value() {
+        let stem = "codec_group_enum";
+        let code = cpp_of(stem);
+        assert!(
+            code.lines()
+                .any(|line| line.contains(" state_{") && line.ends_with("defaultSession};")),
+            "{stem}: the arm holds `state` from the enum's first value:\n{code}"
+        );
+        holds(stem, &code, "_e_state = static_cast<");
     }
 
     /// The encoded length of a body that can refuse passes the refusal on, and

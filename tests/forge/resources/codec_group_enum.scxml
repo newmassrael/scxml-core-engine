@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: an enum-typed member of a gate group (docs/adr/0065
+  §6 R4b).
+
+  `state` and `attempts` are both gated on `flags.has_session`, so a value
+  holds both or neither, as one group of that flag. `state` is a value of the
+  imported closed enum `enum_session_state`: it is presented as the enum's
+  type and written as its carrier, and the group's arm made by default starts
+  it at the first value the enum declares (`defaultSession`, 1), not at the
+  carrier's zero, which the enum does not declare.
+
+  Wire shape: the flags, then `state` and `attempts` where `has_session` is set.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:default-endian="big" name="codec_group_enum">
+  <sce:import src="enum_session_state.scxml" kind="enum" as="session"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_session" bit="0"/>
+    </sce:flags>
+    <sce:field id="state" sce:type="enum:session" sce:byte="1" sce:bit-size="8"
+               sce:present-if="flags.has_session"/>
+    <sce:field id="attempts" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="flags.has_session"/>
+  </datamodel>
+</scxml>

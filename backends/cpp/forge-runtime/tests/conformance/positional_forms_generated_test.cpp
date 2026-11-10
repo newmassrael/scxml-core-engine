@@ -14,8 +14,13 @@
 // must say the same; where every measure may be absent the first one there
 // does; and a stated number beside content must be what the content says. A
 // refusal is made before the first byte, so the sink holds nothing.
+//
+// codec_group_enum holds an enum and an integer in one group of a flag: a frame
+// with the group, or without it, is written back byte for byte, and a frame
+// whose enum value the enum does not declare does not decode.
 
 #include "codec_encoded_length_checked.h"
+#include "codec_group_enum.h"
 #include "codec_length_shared.h"
 #include "codec_length_stated.h"
 
@@ -42,6 +47,7 @@ using Bytes = ::SCE::Forge::Bytes<255>;
 using Shared = ::SCE::Generated::CodecLengthShared::CodecLengthShared;
 using Stated = ::SCE::Generated::CodecLengthStated::CodecLengthStated;
 using Checked = ::SCE::Generated::CodecEncodedLengthChecked::CodecEncodedLengthChecked;
+using GroupEnum = ::SCE::Generated::CodecGroupEnum::CodecGroupEnum;
 
 const std::vector<std::uint8_t> kTwo{0x01, 0x02};
 const std::vector<std::uint8_t> kOther{0x03, 0x04};
@@ -163,6 +169,24 @@ void an_encoded_length_passes_the_body_s_refusal_on() {
                "a body that refuses refuses the parent");
 }
 
+// An enum a group holds is read and written as its carrier; a value the enum
+// does not declare is refused on decode.
+void an_enum_a_group_holds_is_written_back() {
+    const std::vector<std::vector<std::uint8_t>> frames{
+        {0x01, 0x02, 0x05},
+        {0x01, 0x40, 0x00},
+        {0x00},
+    };
+    for (const auto &frame : frames) {
+        CHECK(round_trip<GroupEnum>(frame) == frame, "a group-enum frame is written back byte for byte");
+    }
+    const std::vector<std::uint8_t> undeclared{0x01, 0x07, 0x05};
+    SceCursor cursor(undeclared.data(), undeclared.size());
+    CHECK(!GroupEnum::decode(cursor).has_value(), "an undeclared enum value does not decode");
+    CHECK(cursor.last_refusal() == std::optional<CodecError>(CodecError::UndeclaredEnumValue),
+          "the cursor records the undeclared enum value");
+}
+
 }  // namespace
 
 int main() {
@@ -171,6 +195,7 @@ int main() {
     a_stated_length_frame_is_written_back();
     a_stated_length_is_held_to_the_content_there();
     an_encoded_length_passes_the_body_s_refusal_on();
+    an_enum_a_group_holds_is_written_back();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
