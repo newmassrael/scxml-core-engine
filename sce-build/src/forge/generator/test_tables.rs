@@ -20,7 +20,7 @@
 //! (`crate::forge::test_profile_assembly`); what is refused here is only what
 //! a well-formed set of documents cannot reach, by name.
 
-use super::test_template_walk::Connectives;
+use super::test_template_walk::{log_type_name, Connectives};
 use super::*;
 use crate::forge::value_type::{ScopedRecord, TypeScope, ValueType};
 use crate::presence_condition::PresenceExpr;
@@ -231,6 +231,49 @@ pub(super) fn system_port_rows<'a>(
             })
         })
         .collect()
+}
+
+/// A record the unit of a configuration reads from a recorded input trace and
+/// writes in the canonical form (docs/SCE_TTCN3_LANE.md §10.5), once however
+/// many of its system ports take it: its type name in the test log, which
+/// names its reader and its writer, and the row of the first port that takes
+/// it.
+pub(super) struct TraceRecordRow<'r, 'a> {
+    /// The record's type in the test log ([`log_type_name`]).
+    pub(super) type_name: String,
+    /// The first input row that takes it.
+    pub(super) input: &'r TraceInputRow<'a>,
+}
+
+/// Each record the system ports `ports` of the test configuration `m` take,
+/// once, in the order a port first takes it.
+///
+/// Refused by name where two records are named alike, as the types module of
+/// the export would hold them under one name.
+pub(super) fn trace_record_rows<'r, 'a>(
+    m: &TestConfigurationModel,
+    ports: &'r [SystemPortRow<'a>],
+) -> Result<Vec<TraceRecordRow<'r, 'a>>, ForgeError> {
+    let mut rows: Vec<TraceRecordRow<'r, 'a>> = Vec::new();
+    for input in ports.iter().flat_map(|port| &port.inputs) {
+        let type_name = log_type_name(input.record);
+        match rows.iter().find(|row| row.type_name == type_name) {
+            Some(row) if row.input.record.identity != input.record.identity => {
+                return Err(refused(
+                    ForgeKind::TestConfiguration,
+                    &m.name,
+                    m.source_location.as_ref(),
+                    format!(
+                        "two records its system ports take are named '{type_name}': {} and {}",
+                        row.input.record.identity, input.record.identity
+                    ),
+                ));
+            }
+            Some(_) => {}
+            None => rows.push(TraceRecordRow { type_name, input }),
+        }
+    }
+    Ok(rows)
 }
 
 // ── §11.7: the test case ───────────────────────────────────────

@@ -22,7 +22,7 @@ use super::rust_test_template::{
 };
 use super::test_tables::{
     configuration_rows, execute_rows, module_parameter_defaults, selection_body, system_port_rows,
-    test_case_configuration, EndpointRow,
+    test_case_configuration, trace_record_rows, EndpointRow,
 };
 use super::test_template_walk::{
     canonical_form, canonical_value, hex_octets, integer_literal, log_type_name, CanonicalForm,
@@ -142,9 +142,9 @@ type TraceInputs = (Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>)
 /// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5): each system port's
 /// id; an arm of the unit's `input` per port and record its type's `in` list
 /// names, in document order; and each record's reader and writer of its
-/// canonical form, once, both over the one walk of the form
-/// ([`canonical_form`]), so the value a trace hands the run and the value the
-/// test log writes of it are the same bytes.
+/// canonical form, once ([`trace_record_rows`]), both over the one walk of the
+/// form ([`canonical_form`]), so the value a trace hands the run and the value
+/// the test log writes of it are the same bytes.
 ///
 /// Each record is named by its type in the test log ([`log_type_name`]), which
 /// names its functions; two records of one name are refused by name, as the
@@ -162,61 +162,53 @@ fn trace_inputs(
         )
     };
     let ports = system_port_rows(m, imports)?;
-    let mut inputs = Vec::new();
-    let mut readers = Vec::new();
-    // Each record read so far: its type name and its document.
-    let mut read: Vec<(String, String)> = Vec::new();
-    for port in &ports {
-        for input in &port.inputs {
+    let readers = trace_record_rows(m, &ports)?
+        .into_iter()
+        .map(|row| {
+            let reading = RustReading {
+                what: row.type_name.clone(),
+            };
+            let read_expr = canonical_form(
+                &reading,
+                &row.input.record_type,
+                &reading.root(),
+                row.input.scope,
+            )
+            .map_err(refused)?;
+            let canonical_expr = canonical_value(
+                &RustCanonical,
+                &row.input.record_type,
+                &RustCanonical.root(),
+                row.input.scope,
+            )
+            .map_err(refused)?;
+            Ok(serde_json::json!({
+                "type": row.type_name,
+                "read": format!("read_{}", row.type_name),
+                "canonical": format!("canonical_{}", row.type_name),
+                "payload": rust_record_type(row.input.record),
+                "read_expr": read_expr,
+                "canonical_expr": canonical_expr,
+            }))
+        })
+        .collect::<Result<Vec<_>, ForgeError>>()?;
+    let inputs = ports
+        .iter()
+        .flat_map(|port| port.inputs.iter().map(move |input| (port.id, input)))
+        .map(|(port, input)| {
             let type_name = log_type_name(input.record);
-            let reader = format!("read_{type_name}");
-            let writer = format!("canonical_{type_name}");
-            match read.iter().find(|(name, _)| *name == type_name) {
-                Some((_, identity)) if *identity != input.record.identity => {
-                    return Err(refused(format!(
-                        "two records its system ports take are named '{type_name}': {identity} \
-                         and {}",
-                        input.record.identity
-                    )));
-                }
-                Some(_) => {}
-                None => {
-                    read.push((type_name.clone(), input.record.identity.clone()));
-                    let reading = RustReading {
-                        what: type_name.clone(),
-                    };
-                    let read_expr =
-                        canonical_form(&reading, &input.record_type, &reading.root(), input.scope)
-                            .map_err(refused)?;
-                    let canonical_expr = canonical_value(
-                        &RustCanonical,
-                        &input.record_type,
-                        &RustCanonical.root(),
-                        input.scope,
-                    )
-                    .map_err(refused)?;
-                    readers.push(serde_json::json!({
-                        "type": type_name,
-                        "read": reader,
-                        "canonical": writer,
-                        "payload": rust_record_type(input.record),
-                        "read_expr": read_expr,
-                        "canonical_expr": canonical_expr,
-                    }));
-                }
-            }
-            inputs.push(serde_json::json!({
-                "port": literal(port.id),
+            serde_json::json!({
+                "port": literal(port),
                 "type": literal(&type_name),
                 "event": format!(
                     "super::{}::EVENT_NAME",
                     filters::to_snake_case(input.record.name.clone())
                 ),
-                "read": reader,
-                "canonical": writer,
-            }));
-        }
-    }
+                "read": format!("read_{type_name}"),
+                "canonical": format!("canonical_{type_name}"),
+            })
+        })
+        .collect();
     let system_ports = ports.iter().map(|port| literal(port.id)).collect();
     Ok((system_ports, inputs, readers))
 }
