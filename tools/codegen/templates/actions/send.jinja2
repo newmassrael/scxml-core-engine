@@ -113,7 +113,19 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string({
     ScriptValue paramValue = {{ param.native_value }};
 {% if param.native_fails %}
     if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
+{% if param.native_send_least %}
+{# docs/adr/0086, section 15.6 (`Param::native_send_least`): the failure is the
+   list falling short of the lower count of the field it is sent as. That is not
+   a value that could not be read: sent without the pair, the event would be
+   refused again where it is read, a second error.execution for the one short
+   list. The event is refused whole, as one of the element's own arguments is:
+   one error carrying the send id, nothing delivered, the block ended. #}
+        // docs/adr/0086, section 15.6: the list is short of its field's lower
+        // count, so the event is refused whole (W3C SCXML 6.2.3, 4.9).
+{{ send_arg_error("<send> <param name='" ~ param.name ~ "'> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent", block_end, '        ') }}
+{% else %}
 {{ param_eval_failed(param, '        ') }}
+{% endif %}
     } else {
         params["{{ param.name | escape_cpp }}"].push_back(
             ::SCE::ScriptResultUtils::valueText(paramValue));

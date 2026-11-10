@@ -6,8 +6,9 @@
 #
 # Each case takes one of those away, and the tests under study must turn red: the relation's own
 # test, the judge's accepting test over every backend that sends, the Rust machine of
-# `static_composed_send`, which must hold `held` to its count, and its Go machine, which must
-# refuse the event whole where `held` is short of it (`Param::native_send_least`).
+# `static_composed_send`, which must hold `held` to its count, and its machine on each backend that
+# writes a param as a value, which must refuse the event whole where `held` is short of it
+# (`Param::native_send_least`).
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_list_sent_short_of_its_fields_lower_count_is_held_when_it_runs.cases`.
@@ -18,6 +19,9 @@
 mutation_tests -p sce-build --features cli \
     --lib --test a_statechart_sends_a_composed_value_by_its_name
 mutation_targets sce-build/src/forge/value_type.rs sce-build/src/forge/static_lowering.rs
+mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
+mutation_targets tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/actions/send.jinja2
+mutation_targets tools/codegen/templates/swift/actions/send.swift.jinja2 tools/codegen/templates/go/actions/send.go.jinja2
 mutation_oracles sce-build/tests/a_statechart_sends_a_composed_value_by_its_name.rs
 
 # ── (a) The judge ──────────────────────────────────────────────────────────────────────────────
@@ -58,4 +62,42 @@ mutation_case "the count is read of the list the field proves, so no list is che
 edit("sce-build/src/forge/static_lowering.rs",
      "    crate::forge::value_type::count_left_to_send(held, &field.ty)\n}",
      "    crate::forge::value_type::count_left_to_send(&field.ty, &field.ty)\n}")
+PY
+
+# ── (c) Each backend's send ────────────────────────────────────────────────────────────────────
+
+mutation_case "the Rust send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
+     "{% if param.native_send_least %}",
+     "{% if false %}")
+PY
+
+mutation_case "the Kotlin send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     "{% if param.native_fails and param.native_send_least %}",
+     "{% if false %}")
+PY
+
+mutation_case "the Python send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/python/actions/send.py.jinja2",
+     "{% if param.native_value and param.native_send_least %}",
+     "{% if false %}")
+PY
+
+mutation_case "the C++ send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/actions/send.jinja2",
+     "{% if param.native_send_least %}",
+     "{% if false %}")
+PY
+
+mutation_case "the Swift send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/swift/actions/send.swift.jinja2",
+     "{% if param.native_send_least %}",
+     "{% if false %}")
+PY
+
+mutation_case "the Go send leaves a short list out as a pair and sends the rest" <<'PY'
+edit("tools/codegen/templates/go/actions/send.go.jinja2",
+     "{% if param.native_send_least %}",
+     "{% if false %}")
 PY

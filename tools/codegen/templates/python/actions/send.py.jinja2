@@ -335,7 +335,21 @@
 {{ indent }}_data = {}
 {{ indent }}_data_repeats: dict = {}
 {% for param in action.params %}
-{% if param.native_value %}
+{% if param.native_value and param.native_send_least %}
+{# docs/adr/0086, section 15.6 (`Param::native_send_least`): the failure is the
+   list falling short of the lower count of the field it is sent as. That is not
+   a value that could not be read: sent without the pair, the event would be
+   refused again where it is read, a second error.execution for the one short
+   list. The event is refused whole here, the argument error of
+   `_send_argument_error`: one error carrying the send id, nothing delivered,
+   the block ended. #}
+{{ indent }}try:
+{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())
+{{ indent }}except sce_algorithm.AlgorithmFailure:
+{{ indent }}    # docs/adr/0086, section 15.6: the list is short of its field's lower
+{{ indent }}    # count, so the event is refused whole (W3C SCXML 6.2.3, 4.9).
+{{ indent }}    self._send_argument_error(engine, _sid, {{ ("<send> <param name='" ~ param.name ~ "'> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent") | py_string_literal }})
+{% elif param.native_value %}
 {{ indent }}try:
 {{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())
 {{ indent }}except sce_algorithm.AlgorithmFailure:
