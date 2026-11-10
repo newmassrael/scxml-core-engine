@@ -335,8 +335,9 @@ fn a_device_signs_one_change_under_one_dot_and_each_register_once_in_it() {
 
 /// The events of the fixture the layer secured before the standard record list, and the events
 /// of a part of a change the list sent before a change was one message (docs/adr/0085, section
-/// 1.4), are not signed, not taken as operations, and not sealed: there is no second meaning to
-/// sign under, and no second shape of a change.
+/// 1.4), are not signed and not sealed: there is no second meaning to sign under, and no second
+/// shape of a change. A part is taken only as what it was signed as under the second domain
+/// (`sce_rust_trust::parts`), so a change's operation given under a part's name is refused.
 #[test]
 fn the_events_of_the_list_secured_before_are_not_signed_or_taken() {
     let mut alice = host(Some((1, person(1))));

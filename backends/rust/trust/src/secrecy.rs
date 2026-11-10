@@ -35,12 +35,27 @@ use crate::identity::PublicKey;
 /// that was written in the clear, which it does not take.
 pub const SEALED_PREFIX: &str = "~";
 
+/// What the nonce and the associated data of a sealed write are made under.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Domains {
+    nonce: &'static str,
+    aad: &'static str,
+}
+
 /// The second: what a nonce and the associated data are made from is a write of a change, named
 /// by its register and the change's dot (docs/adr/0085, section 1), where the first was a write
 /// sent alone. The stamp of a write of the first form and of a write of a change can be the same
 /// bytes, and one key may hold both across the cut: a domain of their own keeps their nonces apart.
-const NONCE_DOMAIN: &str = "sce-trust/nonce/2";
-const AAD_DOMAIN: &str = "sce-trust/content/2";
+const WRITE_OF_A_CHANGE: Domains = Domains {
+    nonce: "sce-trust/nonce/2",
+    aad: "sce-trust/content/2",
+};
+/// The first: a write sent alone, as a part of its change (`crate::parts`). What was sealed under
+/// it is opened ([`open_part`]), and nothing is sealed under it again.
+const WRITE_ALONE: Domains = Domains {
+    nonce: "sce-trust/nonce/1",
+    aad: "sce-trust/content/1",
+};
 const WRAP_DOMAIN: &str = "sce-trust/wrap/1";
 
 /// A key of one epoch of a list.
@@ -75,9 +90,9 @@ fn digest(parts: &[&[u8]]) -> [u8; 32] {
     hash.finalize().into()
 }
 
-fn nonce_of(calendar: &str, epoch: u32, stamp: &[u8]) -> [u8; 24] {
+fn nonce_of(domains: Domains, calendar: &str, epoch: u32, stamp: &[u8]) -> [u8; 24] {
     let digest = digest(&[
-        NONCE_DOMAIN.as_bytes(),
+        domains.nonce.as_bytes(),
         calendar.as_bytes(),
         &epoch.to_be_bytes(),
         stamp,
@@ -87,10 +102,10 @@ fn nonce_of(calendar: &str, epoch: u32, stamp: &[u8]) -> [u8; 24] {
     nonce
 }
 
-fn aad_of(calendar: &str, epoch: u32, stamp: &[u8]) -> Vec<u8> {
+fn aad_of(domains: Domains, calendar: &str, epoch: u32, stamp: &[u8]) -> Vec<u8> {
     let mut aad = Vec::new();
     for part in [
-        AAD_DOMAIN.as_bytes(),
+        domains.aad.as_bytes(),
         calendar.as_bytes(),
         &epoch.to_be_bytes(),
         stamp,
@@ -126,10 +141,10 @@ pub fn seal(
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     let sealed = cipher
         .encrypt(
-            XNonce::from_slice(&nonce_of(calendar, epoch, stamp)),
+            XNonce::from_slice(&nonce_of(WRITE_OF_A_CHANGE, calendar, epoch, stamp)),
             Payload {
                 msg: &plain,
-                aad: &aad_of(calendar, epoch, stamp),
+                aad: &aad_of(WRITE_OF_A_CHANGE, calendar, epoch, stamp),
             },
         )
         .expect("a message this short is sealed");
@@ -146,6 +161,29 @@ pub fn epoch_of(sealed: &str) -> Option<u32> {
 
 /// What [`seal`] sealed, given back by the key of its epoch.
 pub fn open(
+    calendar: &str,
+    keys: &BTreeMap<u32, EpochKey>,
+    stamp: &[u8],
+    sealed: &str,
+) -> Result<(i64, String), OpenError> {
+    open_under(WRITE_OF_A_CHANGE, calendar, keys, stamp, sealed)
+}
+
+/// What a device sealed of a write it sent alone, as a part of its change (`crate::parts`), given
+/// back by the key of its epoch: the stamp is the write's own (`crate::parts::write_stamp`), and
+/// the nonce and the associated data are the first domain's. The form of what is sealed is the
+/// one [`seal`] writes; only the domains differ, so a text sealed under one opens under no other.
+pub fn open_part(
+    calendar: &str,
+    keys: &BTreeMap<u32, EpochKey>,
+    stamp: &[u8],
+    sealed: &str,
+) -> Result<(i64, String), OpenError> {
+    open_under(WRITE_ALONE, calendar, keys, stamp, sealed)
+}
+
+fn open_under(
+    domains: Domains,
     calendar: &str,
     keys: &BTreeMap<u32, EpochKey>,
     stamp: &[u8],
@@ -168,10 +206,10 @@ pub fn open(
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     let plain = cipher
         .decrypt(
-            XNonce::from_slice(&nonce_of(calendar, epoch, stamp)),
+            XNonce::from_slice(&nonce_of(domains, calendar, epoch, stamp)),
             Payload {
                 msg: &bytes[4..],
-                aad: &aad_of(calendar, epoch, stamp),
+                aad: &aad_of(domains, calendar, epoch, stamp),
             },
         )
         .map_err(|_| OpenError::Corrupt)?;
@@ -266,6 +304,46 @@ mod tests {
         BTreeMap::from([(epoch, key)])
     }
 
+    /// A write of a change and a write sent alone as a part are sealed under two domains, so that
+    /// one stamp's bytes in both forms are two nonces: what is sealed in one form opens in no
+    /// other. Red if `open_part` reads under the second domain, or `open` under the first.
+    #[test]
+    fn a_part_and_a_write_of_a_change_open_under_their_own_domain_alone() {
+        let key = [7u8; 32];
+        let of_a_change = seal("home", 3, &key, b"stamp", -42, "buy milk");
+        assert_eq!(
+            open_part("home", &keys(3, key), b"stamp", &of_a_change),
+            Err(OpenError::Corrupt)
+        );
+        let plain = {
+            let mut plain = (-42i64).to_be_bytes().to_vec();
+            plain.extend_from_slice(&8u16.to_be_bytes());
+            plain.extend_from_slice(b"buy milk");
+            plain.resize(10 + TEXT_CLASS, 0);
+            plain
+        };
+        let sealed = XChaCha20Poly1305::new(Key::from_slice(&key))
+            .encrypt(
+                XNonce::from_slice(&nonce_of(WRITE_ALONE, "home", 3, b"stamp")),
+                Payload {
+                    msg: &plain,
+                    aad: &aad_of(WRITE_ALONE, "home", 3, b"stamp"),
+                },
+            )
+            .unwrap();
+        let mut bytes = 3u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&sealed);
+        let as_a_part = format!("{SEALED_PREFIX}{}", encoding::encode(&bytes));
+        assert_eq!(
+            open_part("home", &keys(3, key), b"stamp", &as_a_part),
+            Ok((-42, "buy milk".to_string()))
+        );
+        assert_eq!(
+            open("home", &keys(3, key), b"stamp", &as_a_part),
+            Err(OpenError::Corrupt)
+        );
+    }
+
     #[test]
     fn what_is_sealed_opens_with_its_key_and_the_stamp_it_was_sealed_for() {
         let key = [7u8; 32];
@@ -306,10 +384,10 @@ mod tests {
         let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
         let sealed = cipher
             .encrypt(
-                XNonce::from_slice(&nonce_of("home", 1, b"s")),
+                XNonce::from_slice(&nonce_of(WRITE_OF_A_CHANGE, "home", 1, b"s")),
                 Payload {
                     msg: plain,
-                    aad: &aad_of("home", 1, b"s"),
+                    aad: &aad_of(WRITE_OF_A_CHANGE, "home", 1, b"s"),
                 },
             )
             .unwrap();

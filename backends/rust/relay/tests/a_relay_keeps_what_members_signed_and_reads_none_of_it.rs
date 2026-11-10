@@ -270,8 +270,9 @@ fn an_operation_that_verifies_is_kept_once_and_one_that_does_not_is_refused() {
     assert_eq!(refused(&response), &Code::Invalid);
 
     // Not a signed event (a write of the list the layer secured before the standard record list is
-    // none, and nor is a part of a change as the list sent it before a change was one message,
-    // whatever it carries), not JSON.
+    // none), a change's operation given under the name of a part of a change as the list sent it
+    // before a change was one message (a part is taken only as it was signed, with no context),
+    // not JSON.
     for (event, data) in [
         ("record_list.edit", op.1.as_str()),
         ("todo.write", op.1.as_str()),

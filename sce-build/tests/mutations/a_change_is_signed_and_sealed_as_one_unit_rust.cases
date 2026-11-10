@@ -60,8 +60,8 @@ PY
 
 mutation_case "A write of a change is sealed under the nonce of a write sent alone" <<'PY'
 edit("backends/rust/trust/src/secrecy.rs",
-     "const NONCE_DOMAIN: &str = \"sce-trust/nonce/2\";",
-     "const NONCE_DOMAIN: &str = \"sce-trust/nonce/1\";")
+     "    nonce: \"sce-trust/nonce/2\",",
+     "    nonce: \"sce-trust/nonce/1\",")
 PY
 
 mutation_case "A host seals the first write of a change alone" <<'PY'

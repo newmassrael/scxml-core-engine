@@ -18,9 +18,13 @@
 //!
 //! The position of a conflict is the lower number of the two operations in it: from there nothing of the
 //! device is told to the machine, the operation that was told first included, so that a host that saw one
-//! of the two first and a host that saw the other first hold the same.
+//! of the two first and a host that saw the other first hold the same. One conflict is placed otherwise,
+//! by the same rule of the set: a part of the second event domain signed after an operation of the third
+//! (`crate::parts`) is the offending one of the two, and the chain is frozen from the part's number, so
+//! the changes the device signed before it stay told.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use serde_json::Value;
 
@@ -38,13 +42,21 @@ pub(crate) struct Wire {
     pub data: String,
     pub link: Link,
     pub signature: [u8; 64],
+    /// Whether it is a part of a change its author signed under the second event domain
+    /// (`crate::parts`), whose link holds no context and travels without one.
+    pub second_domain: bool,
 }
 
 impl Wire {
-    /// The data of the event as it goes on the wire: the event, its link and its signature.
+    /// The data of the event as it goes on the wire: the event, its link and its signature. A
+    /// part of the second domain goes as its author signed it, its link without a context.
     pub fn to_json(&self) -> Option<String> {
         let mut value: Value = serde_json::from_str(&self.data).ok()?;
-        self.link.write_into(&mut value)?;
+        if self.second_domain {
+            self.link.write_place_into(&mut value)?;
+        } else {
+            self.link.write_into(&mut value)?;
+        }
         value.as_object_mut()?.insert(
             SIGNATURE_FIELD.to_string(),
             Value::String(encoding::encode(&self.signature)),
@@ -82,8 +94,8 @@ impl Held {
 /// How two operations of a device conflict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Why {
-    /// Two operations at one number, or one that does not follow the one before it: the device's chain
-    /// forked.
+    /// Two operations at one number, one that does not follow the one before it, or a part of the
+    /// second event domain signed after an operation of the third: the device's chain forked.
     Forked,
     /// A write whose time is before a write earlier in the same chain.
     GoesBack,
@@ -379,6 +391,27 @@ impl Chain {
                 });
                 if let Some(other) = earlier {
                     note(seq, Why::GoesBack, other);
+                }
+            }
+        }
+        // A part of the second domain stands before every operation of the third in its device's
+        // chain: a device signs parts until it moves and never after (docs/adr/0085, section 8.3).
+        // One signed past an operation of the third is the device signing under a domain it left,
+        // held as proof as a fork is, from the part's own number, whichever of the two came first.
+        if held.wire.second_domain {
+            let moved = self.ops.range(..seq).find_map(|(at, others)| {
+                others
+                    .iter()
+                    .find(|other| !other.wire.second_domain)
+                    .map(|other| (*at, other.id))
+            });
+            if let Some(other) = moved {
+                note(seq, Why::Forked, other);
+            }
+        } else {
+            for (at, others) in self.ops.range((Bound::Excluded(seq), Bound::Unbounded)) {
+                for other in others.iter().filter(|other| other.wire.second_domain) {
+                    note(*at, Why::Forked, (*at, other.id));
                 }
             }
         }

@@ -41,6 +41,10 @@
 //!   another list; the event is the standard shared record list's change
 //!   (`sce:std/shared/record_list.scxml`, `record_list.change`), with the fields its event schemas
 //!   declare, its operations among them.
+//! * [`parts`] - the parts a change was signed as before a change was one unit (`record_list.write`
+//!   and `record_list.supersede` under the second event domain), read and never written: the bytes
+//!   each was signed as, for its signature to be checked, and the state the parts a host holds make
+//!   together, which a host gives its copy once (docs/adr/0085, section 8.3).
 //! * [`secrecy`] - keeping the content of a write from the hub: a key for each epoch of the
 //!   list, held by its members, seals the number and the text of each write of a change under its
 //!   register and the change's dot, and is given to a member sealed under what their key and the
@@ -70,12 +74,14 @@ pub mod invitation;
 pub mod login;
 pub mod membership;
 pub mod message;
+pub mod parts;
 pub mod secrecy;
 pub mod trust;
 
 pub use checkpoint::{Checkpoint, Head, Settlement};
 pub use identity::{Identity, PublicKey};
 pub use membership::{Body, Entry, Log, LogError, Profile};
+pub use parts::Fold;
 pub use trust::{
     CheckpointError, Conflict, Divergence, GrantError, OwnRecord, RotateError, Rotation, Sealed,
     Sent, Tag, TakeError, Taken, Told, Trust, Waited,

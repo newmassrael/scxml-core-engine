@@ -198,7 +198,9 @@ pub const CONTEXT_FIELD: &str = "cx";
 /// operations are a list of records, and an event is written as the deterministic CBOR of its
 /// fields by their types (docs/adr/0086, section 9). The second signed each part of a change as an
 /// event of its own (`record_list.write`, `record_list.supersede`), as length-prefixed texts, and a
-/// signature must not verify under two meanings: a part signed under the second is no change here.
+/// signature must not verify under two meanings: a part signed under the second is no change here,
+/// and only [`crate::parts`] reads one, to fold what a list held before (docs/adr/0085, section
+/// 8.3).
 const DOMAIN: &str = "sce-trust/event/3";
 /// The second: an operation is the CBOR array of this domain, the bytes of its event (which open
 /// with the event's own domain, above) as a byte string, and its link as a map, the link holding
@@ -387,17 +389,8 @@ const LINK: RecordType = RecordType {
 impl Link {
     /// Write the link into the data of an event, as the fields it travels in.
     pub fn write_into(&self, data: &mut Value) -> Option<()> {
+        self.write_place_into(data)?;
         let object = data.as_object_mut()?;
-        object.insert(SEQ_FIELD.to_string(), Value::String(self.seq.to_string()));
-        object.insert(
-            PREV_FIELD.to_string(),
-            Value::String(encoding::encode(&self.prev)),
-        );
-        object.insert(LOG_FIELD.to_string(), Value::String(self.log.to_string()));
-        object.insert(
-            LOG_HASH_FIELD.to_string(),
-            Value::String(encoding::encode(&self.log_hash)),
-        );
         object.insert(
             CONTEXT_FIELD.to_string(),
             Value::Array(
@@ -415,23 +408,32 @@ impl Link {
         Some(())
     }
 
+    /// Write where the operation stands in its chain into the data of an event (its number, the
+    /// one before it and the entry of the log), and not its context: the whole link of an
+    /// operation of the first operation domain, which signed none (`crate::parts`).
+    pub(crate) fn write_place_into(&self, data: &mut Value) -> Option<()> {
+        let object = data.as_object_mut()?;
+        object.insert(SEQ_FIELD.to_string(), Value::String(self.seq.to_string()));
+        object.insert(
+            PREV_FIELD.to_string(),
+            Value::String(encoding::encode(&self.prev)),
+        );
+        object.insert(LOG_FIELD.to_string(), Value::String(self.log.to_string()));
+        object.insert(
+            LOG_HASH_FIELD.to_string(),
+            Value::String(encoding::encode(&self.log_hash)),
+        );
+        Some(())
+    }
+
     /// Take the link out of the data of an event (leaving the event as its author made it), or
     /// say that a field of it is missing or not what it is written as.
     pub fn take_from(data: &mut Value) -> Result<Self, String> {
+        let mut link = Self::take_place(data)?;
         let object = data
             .as_object_mut()
             .ok_or_else(|| "the data is not an object".to_string())?;
-        let mut text = |name: &str| -> Result<String, String> {
-            match object.remove(name) {
-                Some(Value::String(text)) => Ok(text),
-                _ => Err(format!("it carries no `{name}`")),
-            }
-        };
-        let seq = text(SEQ_FIELD)?;
-        let prev = text(PREV_FIELD)?;
-        let log = text(LOG_FIELD)?;
-        let log_hash = text(LOG_HASH_FIELD)?;
-        let context = match object.remove(CONTEXT_FIELD) {
+        link.context = match object.remove(CONTEXT_FIELD) {
             Some(Value::Array(entries)) => entries
                 .iter()
                 .map(|entry| {
@@ -448,6 +450,27 @@ impl Link {
                 })?,
             _ => return Err(format!("it carries no `{CONTEXT_FIELD}`")),
         };
+        Ok(link)
+    }
+
+    /// Take where the operation stands in its chain out of the data of an event (its number, the
+    /// one before it and the entry of the log), with an empty context: [`Self::take_from`] without
+    /// the context, and the whole link of an operation of the first operation domain
+    /// (`crate::parts`).
+    pub(crate) fn take_place(data: &mut Value) -> Result<Self, String> {
+        let object = data
+            .as_object_mut()
+            .ok_or_else(|| "the data is not an object".to_string())?;
+        let mut text = |name: &str| -> Result<String, String> {
+            match object.remove(name) {
+                Some(Value::String(text)) => Ok(text),
+                _ => Err(format!("it carries no `{name}`")),
+            }
+        };
+        let seq = text(SEQ_FIELD)?;
+        let prev = text(PREV_FIELD)?;
+        let log = text(LOG_FIELD)?;
+        let log_hash = text(LOG_HASH_FIELD)?;
         let hash = |name: &str, value: &str| -> Result<[u8; 32], String> {
             encoding::decode(value)
                 .and_then(|bytes| bytes.try_into().ok())
@@ -462,7 +485,7 @@ impl Link {
                 .parse()
                 .map_err(|_| "its `mh` is not a number".to_string())?,
             log_hash: hash(LOG_HASH_FIELD, &log_hash)?,
-            context,
+            context: Vec::new(),
         })
     }
 
@@ -654,7 +677,7 @@ pub(crate) fn part(message: &mut Vec<u8>, text: &str) {
 
 /// How a field is read where its text is taken: a whole number of the given sign, or text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
+pub(crate) enum Kind {
     Unsigned,
     Signed,
     Text,
@@ -663,7 +686,7 @@ enum Kind {
 /// The field `name` as the text of its value: a number is written as its digits, whether the
 /// event carries it as a number or, as every 64-bit number of a payload is carried, as text. A
 /// field the event leaves out is refused.
-fn read_as(
+pub(crate) fn read_as(
     object: &Map<String, Value>,
     name: &'static str,
     kind: Kind,
