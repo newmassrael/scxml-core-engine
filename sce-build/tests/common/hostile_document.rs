@@ -154,12 +154,48 @@ pub fn generate(codegen: &str, lang: &str, dir: &Path, doc: &str) -> PathBuf {
     out
 }
 
-/// What a generated file DOES: its text with comments and literals blanked
-/// and whitespace removed. Two renderings that differ only inside comments and
-/// literals have the same structure.
+/// What a generated file DOES: its text with comments and literals blanked,
+/// every numeric literal reduced to `0`, and whitespace removed. Two renderings
+/// that differ only inside comments and literals, or in the value of a number,
+/// have the same structure.
+///
+/// ⚠ A number is compared as a number and not by its digits, because the build
+/// sizes storage by the bytes of the values a document writes (docs/adr/0086,
+/// section 8: a C11 machine's slot is as large as the data its sends carry). A
+/// hostile text and its control differ in length once encoded (`"` is two bytes
+/// of JSON, `$x` is two characters where the control has one), so a size the
+/// build derived from them differs too, and rightly. Measured on main 2d7f7d916a:
+/// `PROBE_DATA_LEN_TO_PARENT` was `16u` for the hostile rendering and `15u` for
+/// the control, and nothing else in the code differed. A value that left its
+/// literal still shows: it arrives as punctuation and identifiers, which stay
+/// compared, and no hazard text holds a digit.
 pub fn code_structure(source: &str, lang: Lang) -> String {
-    structure_mask(source, lang)
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect()
+    let masked = structure_mask(source, lang);
+    let mut out = String::with_capacity(masked.len());
+    let mut chars = masked.chars().peekable();
+    let mut previous: Option<char> = None;
+    while let Some(c) = chars.next() {
+        let starts_number =
+            c.is_ascii_digit() && !previous.is_some_and(|p| p.is_alphanumeric() || p == '_');
+        if starts_number {
+            // The whole literal: digits, a radix prefix, a fraction, an
+            // exponent's letter and a type suffix (`16u`, `0x1Fu`, `1.5e3f`).
+            let mut last = c;
+            while let Some(&n) = chars.peek() {
+                if !(n.is_ascii_alphanumeric() || n == '_' || n == '.') {
+                    break;
+                }
+                last = n;
+                chars.next();
+            }
+            out.push('0');
+            previous = Some(last);
+            continue;
+        }
+        if !c.is_whitespace() {
+            out.push(c);
+        }
+        previous = Some(c);
+    }
+    out
 }
