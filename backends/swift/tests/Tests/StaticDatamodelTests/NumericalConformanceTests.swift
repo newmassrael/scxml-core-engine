@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9f0e28d53caaa29bc10122250abf2dd34aa356f984c7dd48a910705065c74b3a
+// source-hash: 982595e044dab87d2a02655ddc0eb9f9f68babd78e0aa16f5305c5e6c8b4eb30
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -5609,6 +5609,14 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfBasic.frameLength
+}
+
+// MARK: - codec: codec_present_if_checked
+
+@Test func codecPresentIfCheckedMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecPresentIfChecked.frameLength
 }
 
 // MARK: - codec: codec_present_if_disjunction
