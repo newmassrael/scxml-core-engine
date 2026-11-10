@@ -395,6 +395,13 @@ final class Replayer {
                 let want = text()
                 check(sce_peer_stable_cut(peer, &out), "stable_cut")
                 expect(taken(out), want, "the stable cut")
+            case "fold":
+                guard let parts = UInt32(need()) else {
+                    die("the parts of a restore are a number")
+                }
+                let want = text()
+                check(sce_peer_fold(peer, parts, &out), "fold")
+                expect(taken(out), want, "the fold")
             case "mark":
                 let want = number()
                 var seq: UInt64 = .max

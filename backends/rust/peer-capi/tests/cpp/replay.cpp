@@ -424,6 +424,11 @@ int main(int argc, char **argv) {
             const std::string want = tokens.text();
             check(sce_peer_stable_cut(peer, &out), "stable_cut");
             expect_text(taken(out), want, "the stable cut");
+        } else if (op == "fold") {
+            const auto parts = static_cast<uint32_t>(tokens.number());
+            const std::string want = tokens.text();
+            check(sce_peer_fold(peer, parts, &out), "fold");
+            expect_text(taken(out), want, "the fold");
         } else if (op == "mark") {
             const uint64_t want = tokens.number();
             uint64_t seq = UINT64_MAX;

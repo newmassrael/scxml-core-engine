@@ -925,6 +925,12 @@
     },
     {
       "device": 0,
+      "op": "fold",
+      "parts": 64,
+      "text": "{\"cut\":[],\"restores\":[]}"
+    },
+    {
+      "device": 0,
       "op": "history",
       "text": "{\"changes\":[{\"author\":\"2\",\"context\":[],\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"10\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"1000\\\"}\",\"event\":\"record_list.change\",\"provisional\":false,\"seq\":\"1\"},{\"author\":\"2\",\"context\":[],\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":1,\\\"nodeId\\\":\\\"2\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"0\\\",\\\"wallTime\\\":\\\"1000\\\"},{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":1,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"20\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"2000\\\"}\",\"event\":\"record_list.change\",\"provisional\":false,\"seq\":\"2\"},{\"author\":\"2\",\"context\":[],\"data\":\"{\\\"by\\\":\\\"2\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":2,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"30\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"3000\\\"}\",\"event\":\"record_list.change\",\"provisional\":false,\"seq\":\"3\"},{\"author\":\"1\",\"context\":[[\"2\",\"3\"]],\"data\":\"{\\\"by\\\":\\\"1\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":4,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"50\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"5000\\\"}\",\"event\":\"record_list.change\",\"provisional\":false,\"seq\":\"1\"},{\"data\":\"{\\\"by\\\":\\\"1\\\",\\\"counter\\\":0,\\\"ops\\\":[{\\\"counter\\\":0,\\\"field\\\":3,\\\"id\\\":5,\\\"kind\\\":0,\\\"nodeId\\\":\\\"0\\\",\\\"text\\\":\\\"\\\",\\\"value\\\":\\\"60\\\",\\\"wallTime\\\":\\\"0\\\"}],\\\"wallTime\\\":\\\"6000\\\"}\",\"event\":\"record_list.change\",\"provisional\":true}],\"roster\":[[\"record_list.role\",\"{\\\"node\\\":\\\"1\\\",\\\"role\\\":3}\"],[\"record_list.role\",\"{\\\"node\\\":\\\"2\\\",\\\"role\\\":2}\"]]}"
     },

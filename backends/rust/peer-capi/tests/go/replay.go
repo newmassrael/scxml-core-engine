@@ -64,6 +64,8 @@ type step struct {
 	WallTime int64  `json:"wall_time"`
 	Counter  uint32 `json:"counter"`
 	ReadBack int32  `json:"read_back"`
+	// The fold's step: how many values a restore holds at most.
+	Parts uint32 `json:"parts"`
 }
 
 // given gives the core of d its person, and the administrator's key when it holds one.
@@ -402,6 +404,10 @@ func main() {
 			check(C.sce_peer_stable_cut(peer, &out), "stable_cut")
 			cut, _ := taken(out)
 			expect(cut, s.Text, "the stable cut")
+		case "fold":
+			check(C.sce_peer_fold(peer, C.uint32_t(s.Parts), &out), "fold")
+			fold, _ := taken(out)
+			expect(fold, s.Text, "the fold")
 		case "mark":
 			var seq C.uint64_t
 			check(C.sce_peer_mark(peer, &seq), "mark")

@@ -297,6 +297,17 @@ fun main(args: Array<String>) {
                 check(lib.sce_peer_stable_cut(peer, out), "stable_cut")
                 expect(taken(out), text("text"), "the stable cut")
             }
+            "fold" -> {
+                val parts = step.getValue("parts").jsonPrimitive.int
+                check(lib.sce_peer_fold(peer, parts, out), "fold")
+                expect(taken(out), text("text"), "the fold")
+                // The binding's own call, on a core of the list that holds no part: the fold the
+                // ABI gives for none, no restore and no cut.
+                val none = PeerCore.open(lib, list).use { core -> Json.parseToJsonElement(core.fold(parts)).jsonObject }
+                if (none.getValue("restores").jsonArray.isNotEmpty() || none.getValue("cut").jsonArray.isNotEmpty()) {
+                    die("the binding's fold of a core that holds no part is not empty: $none")
+                }
+            }
             "mark" -> {
                 val seq = LongByReference(-1)
                 check(lib.sce_peer_mark(peer, seq), "mark")

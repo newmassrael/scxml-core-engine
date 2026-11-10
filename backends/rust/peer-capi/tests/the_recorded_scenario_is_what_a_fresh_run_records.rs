@@ -25,8 +25,9 @@
 // with the one after it; a copy that keeps a journal has the change it offers signed in the call,
 // refused when it is in another's name, and held back from the relay as a record until its host
 // recorded it, and a device started again from its state and its journal signs nothing again, is
-// handed its history in causal order with a change that waits as provisional, and has that change
-// signed and held back as a record by the round that reads its chain back (docs/adr/0083 and 0093);
+// handed the fold of its parts, which holds none, and then its history in causal order with a
+// change that waits as provisional, and has that change signed and held back as a record by the
+// round that reads its chain back (docs/adr/0083 and 0093);
 // a device that wrote nothing since it was told more marks it, and the stable cut moves by the mark
 // (docs/adr/0085); a round that loses its
 // transport ends, and the next goes on; and a device taken off is
@@ -431,6 +432,15 @@ impl Core {
             "stable_cut",
         );
         taken(out).expect("a cut is a text")
+    }
+
+    /// The fold of the parts the core holds, in restores of at most `parts` values, as the ABI's
+    /// JSON text.
+    fn fold(&mut self, parts: u32) -> String {
+        let mut out = empty();
+        // SAFETY: a live handle, and a place valid for a write.
+        check(unsafe { sce_peer_fold(self.0, parts, &mut out) }, "fold");
+        taken(out).expect("a fold is a text")
     }
 
     /// The number of the mark the core signed, 0 when none was owed.
@@ -842,6 +852,13 @@ impl Recording {
         serde_json::from_str(&cut).expect("a cut is JSON")
     }
 
+    fn fold(&mut self, device: usize, parts: u32) -> Value {
+        let fold = self.core(device).fold(parts);
+        self.steps
+            .push(json!({"device": device, "op": "fold", "parts": parts, "text": fold}));
+        serde_json::from_str(&fold).expect("a fold is JSON")
+    }
+
     fn mark(&mut self, device: usize) -> u64 {
         let seq = self.core(device).mark();
         self.steps
@@ -1206,6 +1223,10 @@ fn record() -> Value {
     assert_eq!(run.restore(AT_ALICE, &key, &older_alice), 3, "bob's three");
     assert_eq!(run.restore_records(AT_ALICE, &journal), 1);
     assert_eq!(run.made(AT_ALICE, &made(5, ALICE, 6000, 60, 3)), "waiting");
+    // Her machine is built again from the fold and then the history (docs/adr/0085, section 8.3);
+    // her core holds no part of a change signed before a change was one unit, so the fold gives no
+    // restore and no cut.
+    assert_eq!(run.fold(AT_ALICE, 64), json!({"restores": [], "cut": []}));
     let history = run.history(AT_ALICE);
     let changes = history["changes"].as_array().expect("a history's changes");
     assert_eq!(changes.len(), 5, "{history}");
@@ -1379,6 +1400,11 @@ fn replay(scenario: &Value) -> usize {
             ),
             "history" => assert_eq!(core.history(), field("text"), "step {at}"),
             "stable_cut" => assert_eq!(core.stable_cut(), field("text"), "step {at}"),
+            "fold" => assert_eq!(
+                core.fold(u32::try_from(number("parts")).unwrap()),
+                field("text"),
+                "step {at}"
+            ),
             "mark" => assert_eq!(core.mark(), number("seq"), "step {at}"),
             "own_stamp" => assert_eq!(
                 core.own_stamp(),

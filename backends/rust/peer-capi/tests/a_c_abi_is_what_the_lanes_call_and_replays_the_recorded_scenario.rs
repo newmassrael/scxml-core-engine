@@ -1306,6 +1306,7 @@ fn script_of(scenario: &Value) -> String {
                 step["count"]
             ),
             "mark" => format!("mark {device} {}", step["seq"]),
+            "fold" => format!("fold {device} {} {}", step["parts"], text("text")),
             "own_stamp" => format!(
                 "own_stamp {device} {} {} {}",
                 step["wall_time"], step["counter"], step["read_back"]

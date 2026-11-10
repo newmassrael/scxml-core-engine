@@ -79,6 +79,7 @@ def load(path):
         ),
         "sce_peer_history": (ctypes.c_int32, [vp, cp, bufp]),
         "sce_peer_stable_cut": (ctypes.c_int32, [vp, bufp]),
+        "sce_peer_fold": (ctypes.c_int32, [vp, ctypes.c_uint32, bufp]),
         "sce_peer_mark": (ctypes.c_int32, [vp, ctypes.POINTER(ctypes.c_uint64)]),
         "sce_peer_own_stamp": (
             ctypes.c_int32,
@@ -322,6 +323,9 @@ def main():
         elif op == "stable_cut":
             check(lib.sce_peer_stable_cut(peer, ctypes.byref(out)), "stable_cut")
             expect(taken(out), step["text"], "the stable cut")
+        elif op == "fold":
+            check(lib.sce_peer_fold(peer, step["parts"], ctypes.byref(out)), "fold")
+            expect(taken(out), step["text"], "the fold")
         elif op == "mark":
             seq = ctypes.c_uint64(2**64 - 1)
             check(lib.sce_peer_mark(peer, ctypes.byref(seq)), "mark")

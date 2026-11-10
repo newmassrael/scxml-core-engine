@@ -41,6 +41,8 @@
  *   restore_records <d> <records> <count>  a journal's records given back, and how many were new
  *   history <d> <text>      the whole history
  *   stable_cut <d> <text>   the stable cut
+ *   fold <d> <parts> <text> what the parts of changes signed before a change was one unit make,
+ *                           as payloads of at most parts values
  *   mark <d> <seq>          the number of the mark signed, 0 when none was owed
  *   own_stamp <d> <wall_time> <counter> <read_back>
  *                           the highest stamp of the device's own changes, and whether its chain
@@ -485,6 +487,11 @@ int main(int argc, char **argv) {
             char *want = text_of(need());
             check(sce_peer_stable_cut(peer, &out), "stable_cut");
             expect_text(taken(out), want, "the stable cut");
+        } else if (strcmp(op, "fold") == 0) {
+            uint32_t parts = (uint32_t)strtoul(need(), NULL, 10);
+            char *want = text_of(need());
+            check(sce_peer_fold(peer, parts, &out), "fold");
+            expect_text(taken(out), want, "the fold");
         } else if (strcmp(op, "mark") == 0) {
             uint64_t want = strtoull(need(), NULL, 10);
             uint64_t seq = UINT64_MAX;
