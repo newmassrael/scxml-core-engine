@@ -80,8 +80,8 @@ PY
 
 mutation_case "a send param that failed is carried with its zero" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {\n{{ param_eval_failed(param, '        ') }}",
-     "    if (SCE_EXPECT_FALSE(false)) {\n{{ param_eval_failed(param, '        ') }}")
+     "    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {\n{% if param.native_send_least %}",
+     "    if (SCE_EXPECT_FALSE(false)) {\n{% if param.native_send_least %}")
 PY
 
 # ── A child is handed what its invoke names ────────────────────────

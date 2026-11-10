@@ -27,6 +27,12 @@ edit("sce-build/src/forge/static_lowering.rs",
      "            (counted, false)")
 PY
 
+mutation_case "a short list is left out as a pair and the rest of the event sent, refused twice" <<'PY'
+edit("sce-build/src/forge/static_lowering.rs",
+     "                param.native_send_least = value.send_least;",
+     "                param.native_send_least = None;")
+PY
+
 mutation_case "the runtime passes a list short of its field's lower count" <<'PY'
 edit("backends/rust/forge-runtime/src/algorithm.rs",
      "    if (held as u64) < u64::from(least) {",

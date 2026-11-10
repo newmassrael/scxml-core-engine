@@ -52,6 +52,6 @@ PY
 
 mutation_case "a field's pair goes through the literal arm and carries nothing" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{% if param.native_value %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,",
-     "{% if false %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,")
+     "{% elif param.native_value %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,",
+     "{% elif false %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats,")
 PY

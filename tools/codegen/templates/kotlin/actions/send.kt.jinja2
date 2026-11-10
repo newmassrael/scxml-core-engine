@@ -37,9 +37,29 @@
    can fail — a checked operation — is the evaluation that failed: reported, its
    pair left out, the message still sent (W3C SCXML 5.7.1), as `param_expr_arm`
    does for one an engine could not read. `raises` is whether the document
-   declares `error.execution`, which a macro body cannot ask of the context. #}
-{% macro native_param_arm(param, map, machine_name, indent, raises) %}
-{% if param.native_fails %}
+   declares `error.execution`, which a macro body cannot ask of the context.
+
+   A list short of the lower count of the field it is sent as
+   (`Param::native_send_least`, docs/adr/0086, section 15.6) is not such a
+   value: sent without the pair, the event would be refused again where it is
+   read, a second error.execution for the one short list. The event is refused
+   whole there instead, one error carrying `send_id_kt` and nothing delivered,
+   and the lambda answers that the block ends, as the arguments' own refusals
+   do. #}
+{% macro native_param_arm(param, map, machine_name, indent, raises, send_id_kt) %}
+{% if param.native_fails and param.native_send_least %}
+{{ indent }}try {
+{{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ param.native_value }})
+{{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+{{ indent }}    // docs/adr/0086, section 15.6: the list is short of its field's lower
+{{ indent }}    // count, so the event is refused whole: one error, nothing delivered,
+{{ indent }}    // and the error ends the block (W3C SCXML 6.2.3, 4.9).
+{% if raises %}
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> holds fewer elements than the {{ param.native_send_least }} its field's type declares, so the event is not sent", {{ send_id_kt }})
+{% endif %}
+{{ indent }}    return@send true
+{{ indent }}}
+{% elif param.native_fails %}
 {{ indent }}try {
 {{ indent }}    putParam({{ map }}, "{{ param.name | escape_kotlin }}", {{ param.native_value }})
 {{ indent }}} catch (_: com.sce.forge.runtime.AlgorithmFailure) {
@@ -149,7 +169,9 @@
 {% if not param.is_static_literal and not param.native_value %}
 {% set param_ns.can_fail = true %}
 {% set param_ns.engine = true %}
-{% elif param.native_fails %}
+{% elif param.native_fails and not param.native_send_least %}
+{# A list short of its count ends the send where it fails (`native_param_arm`),
+   so it never sets `paramFailed`. #}
 {% set param_ns.can_fail = true %}
 {% endif %}
 {% endfor %}
@@ -424,7 +446,7 @@
 {% if param.is_static_literal %}
             putParam(sendPayload, "{{ param.name | escape_kotlin }}", "{{ param.static_value | escape_kotlin }}")
 {% elif param.native_value %}
-{{ native_param_arm(param, 'sendPayload', machine_name, '            ', 'error.execution' in model.events) }}
+{{ native_param_arm(param, 'sendPayload', machine_name, '            ', 'error.execution' in model.events, send_id_kt) }}
 {% elif model.needs_script_engine %}
 {{ param_expr_arm(param, 'sendPayload', 'payloadEngine', 'payloadSid', machine_name, '            ') }}
 {% endif %}

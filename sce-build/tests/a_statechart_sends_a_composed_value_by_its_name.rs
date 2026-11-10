@@ -464,6 +464,132 @@ fn a_list_sent_short_of_its_fields_count_refuses_the_go_send_whole() {
     }
 }
 
+/// How one backend's `<send>` spells the refusal of a list short of its
+/// field's lower count (`Param::native_send_least`).
+struct ShortListRefusal {
+    language: sce_build::generator::Language,
+    /// The param as the backend's sentence names it.
+    named: &'static str,
+    /// What the line that raises the error holds beside the sentence.
+    raises: &'static str,
+    /// What carries the send id, within the refusal.
+    send_id: &'static str,
+    /// The start of the line, trimmed, that ends the block.
+    ends: &'static str,
+}
+
+/// Every file of the machine of `static_composed_send` for `language`, one
+/// after the other.
+fn every_file_of_the_sender(language: sce_build::generator::Language) -> String {
+    let path = fixtures().join("static_composed_send.scxml");
+    compile_scxml_lang_typed(
+        path.to_str().expect("a utf-8 path"),
+        &find_template_dir_for(language),
+        language,
+    )
+    .unwrap_or_else(|e| panic!("{language:?} sends a composed value: {e:?}"))
+    .files
+    .into_iter()
+    .map(|(_, code)| code)
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Pinned by `Param::native_send_least` (`sce-build/src/model.rs`) and the
+/// `<send>` template of each backend that writes a param as a value (Rust,
+/// Kotlin, Python, C++, Swift and Go): `static_composed_send` sends `held`,
+/// short of the one element `counted.sent` asks, and the send raises one
+/// `error.execution` carrying the send id and ends the block where the list
+/// fails, so nothing of the event is delivered. Left out as a pair that could
+/// not be read, the rest of the event was sent and refused again where it was
+/// read, two errors for the one short list (docs/adr/0086, section 15.6).
+#[test]
+fn a_list_sent_short_of_its_fields_count_refuses_the_send_whole_on_every_backend() {
+    use sce_build::generator::Language;
+    let lanes = [
+        ShortListRefusal {
+            language: Language::Rust,
+            named: "'kept'",
+            raises: "platform_error(",
+            send_id: "metadata.send_id",
+            ends: "break 'action_block;",
+        },
+        ShortListRefusal {
+            language: Language::Kotlin,
+            named: "'kept'",
+            raises: "raisePlatformError(",
+            send_id: "is not sent\", \"",
+            ends: "return@send true",
+        },
+        ShortListRefusal {
+            language: Language::Python,
+            named: "'kept'",
+            raises: "self._send_argument_error(engine, _sid, ",
+            send_id: "_sid",
+            ends: "self._send_argument_error(",
+        },
+        ShortListRefusal {
+            language: Language::Cpp,
+            named: "'kept'",
+            raises: "engine.raise(",
+            send_id: "sendId",
+            ends: "return;",
+        },
+        ShortListRefusal {
+            language: Language::Swift,
+            named: "kept",
+            raises: "platformError(",
+            send_id: "metadata.sendID",
+            ends: "break sceBlock",
+        },
+        ShortListRefusal {
+            language: Language::Go,
+            named: "'kept'",
+            raises: "NewPlatformError(",
+            send_id: "Metadata.SendID",
+            ends: "return",
+        },
+    ];
+    for lane in lanes {
+        let code = every_file_of_the_sender(lane.language);
+        let sentence = format!(
+            "<param name={}> holds fewer elements than the 1 its field's type declares, so the \
+             event is not sent",
+            lane.named
+        );
+        let lines: Vec<&str> = code.lines().collect();
+        let raised: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(&sentence) && line.contains(lane.raises))
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(
+            raised.len(),
+            2,
+            "{:?}: the two sends of `held` refuse the event whole where it is short:\n{code}",
+            lane.language
+        );
+        for at in raised {
+            let refusal = &lines[at..(at + 4).min(lines.len())];
+            assert!(
+                refusal.iter().any(|line| line.contains(lane.send_id)),
+                "{:?}: the error carries the send id:\n{}",
+                lane.language,
+                refusal.join("\n")
+            );
+            assert!(
+                refusal
+                    .iter()
+                    .any(|line| line.trim_start().starts_with(lane.ends)),
+                "{:?}: the refusal ends the block before the event is delivered:\n{}",
+                lane.language,
+                refusal.join("\n")
+            );
+        }
+    }
+}
+
 /// Pinned by the place `Judge::composed_param` asks the value for
 /// (`sce-build/src/forge/static_datamodel.rs`).
 #[test]

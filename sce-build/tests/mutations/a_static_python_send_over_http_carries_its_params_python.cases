@@ -25,8 +25,8 @@ mutation_oracles backends/python/tests/integration/static_datamodel/test_a_stati
 
 mutation_case "a pair's value is computed and not carried" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())",
-     "{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, (({{ param.native_value }}).to_python(), \"\")[1])")
+     "{% elif param.native_value %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, ({{ param.native_value }}).to_python())",
+     "{% elif param.native_value %}\n{{ indent }}try:\n{{ indent }}    self._put_param(_data, _data_repeats, {{ param.name | py_string_literal }}, (({{ param.native_value }}).to_python(), \"\")[1])")
 PY
 
 mutation_case "a BasicHTTP request is handed no pairs" <<'PY'

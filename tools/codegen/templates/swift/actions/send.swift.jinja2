@@ -409,10 +409,28 @@
                             sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
                         } else {
+{% if param.native_send_least %}
+{# docs/adr/0086, section 15.6 (`Param::native_send_least`): the failure is the
+   list falling short of the lower count of the field it is sent as. That is not
+   a value that could not be read, whose pair §scxml-5.7.1 leaves out while the
+   message still goes: sent without the pair, the event would be refused again
+   where it is read, a second error.execution for the one short list. The event
+   is refused whole here, one error carrying the send id and nothing delivered.
+   Every action list of a Swift machine is the labelled `sceBlock`
+   (`in_action_block`), so the break ends it, as the arguments' own refusals
+   above do. #}
+                            // docs/adr/0086, section 15.6: the list is short of its field's
+                            // lower count, so the event is refused whole: one error, nothing
+                            // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+{% set short_list_message = '"<send> <param name=' ~ (param.name | escape_swift) ~ "> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent" ~ '"' %}
+{{ send_error('error.execution', short_list_message, send_id_swift) }}
+                            break sceBlock
+{% else %}
 {% if 'error.execution' in model.events %}
                             engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
 {% endif %}
                             paramFailed = true
+{% endif %}
                         }
 {% else %}
 {% if is_http or host_form %}
