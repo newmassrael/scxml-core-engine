@@ -1278,11 +1278,11 @@ static int sce_scenario_expect(sce_scenario_cursor_t *c, const sce_scenario_driv
 
 // One step: the event it sends, if any, and then what it expects of the
 // machine. The members come in the file's order, so `expect` is remembered and
-// read once the event has been sent.
-static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
+// read once the event has been sent. The event's data is held in `*data`, which
+// the caller frees once the step is done.
+static int sce_scenario_step_holding(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step, char **data) {
     char key[64];
     char event[64] = "";
-    char data[256];
     bool has_event = false;
     bool has_data = false;
     // The time the step moves the machine's clock on by, once its event is sent.
@@ -1337,8 +1337,18 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             } else if (strcmp(key, "data") == 0) {
                 sce_scenario_space(c);
                 const char *from = c->at;
-                if (!sce_scenario_skip_value(c) || !sce_scenario_compact(from, c->at, data, sizeof(data))) {
-                    return sce_scenario_fail(d, step, "`data` is not well formed, or is longer than the buffer");
+                if (!sce_scenario_skip_value(c)) {
+                    return sce_scenario_fail(d, step, "`data` is not well formed");
+                }
+                // The data is held at the size the scenario wrote it at, which its
+                // compact text never passes, so no data is refused for its length:
+                // how long a machine's data may be is the machine's to say, when
+                // the step raises it.
+                const size_t cap = (size_t)(c->at - from) + 1u;
+                free(*data);
+                *data = (char *)malloc(cap);
+                if (*data == NULL || !sce_scenario_compact(from, c->at, *data, cap)) {
+                    return sce_scenario_fail(d, step, "`data` could not be held");
                 }
                 has_data = true;
             } else if (strcmp(key, "expect") == 0) {
@@ -1382,12 +1392,12 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
         if (d->deliver == NULL) {
             return sce_scenario_fail(d, step, "this driver gives children no routers, so it cannot send to one");
         }
-        if (!d->deliver(d->sm, invoke, event, has_data ? data : NULL)) {
+        if (!d->deliver(d->sm, invoke, event, has_data ? *data : NULL)) {
             char message[256];
             (void)snprintf(message, sizeof(message), "no child of `%s` is running to be sent `%s`", invoke, event);
             return sce_scenario_fail(d, step, message);
         }
-    } else if (has_event && d->raise(d->sm, event, has_data ? data : NULL) == dropped) {
+    } else if (has_event && d->raise(d->sm, event, has_data ? *data : NULL) == dropped) {
         char message[128];
         (void)snprintf(message, sizeof(message), "the machine's events %s `%s`", dropped ? "match" : "do not match",
                        event);
@@ -1425,6 +1435,15 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
         }
     }
     return expect.at == NULL ? 0 : sce_scenario_expect(&expect, d, step, asked, children, sent);
+}
+
+// One step (`sce_scenario_step_holding`), and the data it held freed, whichever
+// way the step ended.
+static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step) {
+    char *data = NULL;
+    const int bad = sce_scenario_step_holding(c, d, step, &data);
+    free(data);
+    return bad;
 }
 
 // Replay the scenario at `path` against `d`: the number of steps that failed,
