@@ -86,6 +86,9 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_string_sm::{
 use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
     StaticInvokeTreePersist, StaticInvokeTreePolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_lift_list_sm::{
+    StaticLiftListPersist, StaticLiftListPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_lift_sm::{
     StaticLiftPersist, StaticLiftPolicy,
 };
@@ -613,6 +616,20 @@ fn static_lift_reads_a_text_into_a_record_or_keeps_its_refusal() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_lift.json"
+        ),
+    );
+}
+
+// A text read into a record that holds a list of records, or its refusal kept, at
+// every depth of the record: the list's counts, a field of an item, and a container
+// opened past the deepest the record holds (docs/adr/0087, "Landing order" item 8).
+#[test]
+fn static_lift_list_reads_a_text_into_a_record_that_holds_a_list() {
+    replay(
+        Engine::new(StaticLiftListPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_lift_list.json"
         ),
     );
 }

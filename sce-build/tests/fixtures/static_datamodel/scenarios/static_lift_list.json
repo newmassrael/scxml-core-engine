@@ -1,0 +1,68 @@
+{
+  "machine": "static_lift_list",
+  "about": "A text read into a record that holds a list of records, lift_answer_list.scxml, or its refusal kept as a record of sce:std/lift/refusal.scxml (docs/adr/0087, section 9.1, items 1 and 2, and Landing order item 8). Each well-formed text replaces `answer` whole, its items in their order, and leaves `why` absent; each ill-formed one leaves `answer` as it was and keeps the code, the strict RFC 6901 pointer and the bound of the first place refused, at depth 1 (a field of the answer), 2 (an element of its list) and 3 (a field of an item). The list's counts are held before any element is read, so a list past its bound is refused as `tooMany` and an empty one as `tooFew` whatever its elements hold. The deepest container a value of the schema holds is an item (depth 3), so a container opened inside an item, by a field it declares or by an element of an element, is refused as `tooDeep` with the bound 3 before the text is read as JSON. The statement raises nothing, so `lifts` counts every lift and `errors` stays 0. Expected values are derived from the document and the refusal table, not observed from a backend.",
+  "steps": [
+    { "note": "nothing is lifted yet: no answer and no refusal",
+      "expect": {"state": "lifting", "variables": {"answer": null, "why": null, "lifts": 0, "errors": 0}} },
+
+    { "note": "the canonical text of a record of two items: the record replaces the answer, its items in their order",
+      "event": "text.given", "data": {"text": "{\"title\":\"Week\",\"items\":[{\"title\":\"Plan\",\"at\":9},{\"title\":\"Ship\",\"at\":17}],\"priority\":1}"}, "expect": {"variables": {"answer": {"title": "Week", "items": [{"title": "Plan", "at": 9}, {"title": "Ship", "at": 17}], "priority": 1}, "why": null, "lifts": 1, "errors": 0}} },
+
+    { "note": "keys in another order at each depth, a key the schema does not declare at each depth, whitespace, and a text of the first revision, which reads the later field at its default; the containers under the unknown key stand within the depth",
+      "event": "text.given", "data": {"text": "{ \"items\" : [ {\"at\": 0, \"extra\": \"x\", \"title\": \"One\"} ],\n  \"note\": {\"a\": []}, \"title\": \"Day\" }"}, "expect": {"variables": {"answer": {"title": "Day", "items": [{"title": "One", "at": 0}], "priority": 3}, "why": null, "lifts": 2}} },
+
+    { "note": "a list at its bound of three",
+      "event": "text.given", "data": {"text": "{\"title\":\"Full\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": null, "lifts": 3}} },
+
+    { "note": "a list of four, past its bound: refused at the list, before any element is read",
+      "event": "text.given", "data": {"text": "{\"title\":\"Over\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":2},{\"title\":\"c\",\"at\":3},{\"title\":\"d\",\"at\":4}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooMany", "path": "/items", "bound": 3}, "lifts": 4, "errors": 0}} },
+
+    { "note": "a list past its bound whose elements are no records: the count is held first",
+      "event": "text.given", "data": {"text": "{\"title\":\"Over\",\"items\":[1,2,3,4],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooMany", "path": "/items", "bound": 3}, "lifts": 5, "errors": 0}} },
+
+    { "note": "an empty list, short of its lower count of one",
+      "event": "text.given", "data": {"text": "{\"title\":\"None\",\"items\":[],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooFew", "path": "/items", "bound": 1}, "lifts": 6, "errors": 0}} },
+
+    { "note": "depth 1: the title the text lacks, with no default",
+      "event": "text.given", "data": {"text": "{\"items\":[{\"title\":\"a\",\"at\":1}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "missing", "path": "/title", "bound": null}, "lifts": 7, "errors": 0}} },
+
+    { "note": "depth 1: a record where the list is",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":{\"title\":\"a\",\"at\":1},\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "wrongKind", "path": "/items", "bound": null}, "lifts": 8, "errors": 0}} },
+
+    { "note": "depth 1: null where the list is, which is not optional",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":null,\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "nullNotOptional", "path": "/items", "bound": null}, "lifts": 9, "errors": 0}} },
+
+    { "note": "depth 2: a number where an item is",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[1],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "wrongKind", "path": "/items/0", "bound": null}, "lifts": 10, "errors": 0}} },
+
+    { "note": "depth 2: null where the second item is",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"a\",\"at\":1},null],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "nullNotOptional", "path": "/items/1", "bound": null}, "lifts": 11, "errors": 0}} },
+
+    { "note": "depth 3: an item that lacks its hour",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"a\"}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "missing", "path": "/items/0/at", "bound": null}, "lifts": 12, "errors": 0}} },
+
+    { "note": "depth 3: an item's title of 17 bytes, past its bound of 16",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"abcdefghijklmnopq\",\"at\":1}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooLong", "path": "/items/0/title", "bound": 16}, "lifts": 13, "errors": 0}} },
+
+    { "note": "depth 3: the second item's hour one past its width",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"a\",\"at\":1},{\"title\":\"b\",\"at\":256}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "outOfRange", "path": "/items/1/at", "bound": null}, "lifts": 14, "errors": 0}} },
+
+    { "note": "depth 3: a fraction for an item's unsigned hour",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"a\",\"at\":1.5}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "badNumber", "path": "/items/0/at", "bound": null}, "lifts": 15, "errors": 0}} },
+
+    { "note": "depth 3: a text where an item's hour is",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"a\",\"at\":\"1\"}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "wrongKind", "path": "/items/0/at", "bound": null}, "lifts": 16, "errors": 0}} },
+
+    { "note": "a container opened inside an item, under a field the item declares: too deep, its pointer the field",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":[\"x\"],\"at\":1}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooDeep", "path": "/items/0/title", "bound": 3}, "lifts": 17, "errors": 0}} },
+
+    { "note": "a list inside a list inside the list: too deep, its pointer the index of each element it stands in",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[[[1]]],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "tooDeep", "path": "/items/0/0", "bound": 3}, "lifts": 18, "errors": 0}} },
+
+    { "note": "a name an item repeats, at depth 3: no JSON text",
+      "event": "text.given", "data": {"text": "{\"title\":\"a\",\"items\":[{\"title\":\"x\",\"title\":\"y\",\"at\":1}],\"priority\":2}"}, "expect": {"variables": {"answer": {"title": "Full", "items": [{"title": "a", "at": 1}, {"title": "b", "at": 2}, {"title": "c", "at": 3}], "priority": 2}, "why": {"code": "notJson", "path": "", "bound": null}, "lifts": 19, "errors": 0}} },
+
+    { "note": "a well-formed text after the refusals: the record replaces the answer and no refusal remains",
+      "event": "text.given", "data": {"text": "{\"title\":\"Again\",\"items\":[{\"title\":\"z\",\"at\":23}],\"priority\":0}"}, "expect": {"variables": {"answer": {"title": "Again", "items": [{"title": "z", "at": 23}], "priority": 0}, "why": null, "lifts": 20, "errors": 0}} }
+  ]
+}

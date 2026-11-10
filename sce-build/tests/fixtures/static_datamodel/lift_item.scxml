@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One item of the answer `static_lift_list.scxml` reads a text as (docs/adr/0087,
+  section 9.1, item 1): a title and the hour it is at. An event schema used as a
+  record type, held by `lift_answer_list.scxml`'s `items`: no machine sends
+  `lift.item`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lift_item"
+       sce:event-name="lift.item">
+  <datamodel>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="at" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

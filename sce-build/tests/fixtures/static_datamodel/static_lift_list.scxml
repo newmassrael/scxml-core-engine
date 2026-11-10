@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A text read as a record";
+  docs/adr/0087, section 2 and "Landing order" item 8): a text read into a record that
+  holds a list of records, or the refusal of it kept as a record. `text.given` lifts the
+  text its payload carries, in place, into `answer`, an optional record of
+  `lift_answer_list.scxml`, which starts absent and is written whole by the lift.
+
+  After a text that is a record of `lift_answer_list.scxml`, `answer` holds it, its
+  items in their order, and `why` is absent; after any other, `why` holds the code, the
+  strict RFC 6901 pointer and the bound of the first place refused, at any depth of the
+  record, and `answer` is what it was. The statement raises nothing, so the assignment
+  after it runs either way: `lifts` counts every lift, and `errors` stays 0.
+
+  The item schema is imported beside the answer: the machine holds an item as its own
+  record, which the answer's list holds. Expected values are derived from the document
+  and the refusal table of docs/adr/0087, section 2.3, not observed from a backend.
+  scenarios/static_lift_list.json replays it on every engine that holds a variable of a
+  record that holds a list; every other engine refuses that variable by name.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="lifting" datamodel="sce-static" name="static_lift_list">
+  <sce:import kind="event-schema" src="lift_given.scxml" as="Given"/>
+  <sce:import kind="event-schema" src="lift_answer_list.scxml" as="Plan"/>
+  <sce:import kind="event-schema" src="lift_item.scxml" as="Item"/>
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
+  <datamodel>
+    <data id="answer" sce:type="optional&lt;record:Plan&gt;" expr="null" sce:direction="out"/>
+    <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
+    <data id="lifts" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="lifting">
+    <transition event="text.given" type="internal">
+      <sce:lift text="_event.data.text" schema="Plan" location="answer" refusal="why"/>
+      <assign location="lifts" expr="lifts + 1"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

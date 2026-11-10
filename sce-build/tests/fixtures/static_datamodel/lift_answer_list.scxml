@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The answer `static_lift_list.scxml` reads a text as (docs/adr/0087, section 9.1,
+  item 1, and "Landing order" item 8): a record that holds a list of records, one to
+  three items of `lift_item.scxml`, beside a title, and a field a later revision
+  added, which a text written against the first revision reads at its default. An
+  event schema used as a record type: no machine sends `lift.list`.
+
+  The deepest container a value of it holds is an item, inside the list, inside the
+  record (depth 3), so a container a text opens inside an item is refused as too deep
+  before the text is read as JSON. Its longest pointer is `/items/2/title`, fourteen
+  bytes, within the 256 of the refusal record's path. The list states its lower count,
+  so a text with no item is refused as `tooFew`, and one with four as `tooMany`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="lift_answer_list"
+       sce:event-name="lift.list"
+       sce:revision="2">
+  <sce:import kind="event-schema" src="lift_item.scxml" as="Item"/>
+  <datamodel>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="items" sce:type="list&lt;record:Item&gt;[1..3]" sce:direction="in"/>
+    <data id="priority" sce:type="uint8" sce:direction="in" sce:since="2" sce:default="3"/>
+  </datamodel>
+</scxml>
