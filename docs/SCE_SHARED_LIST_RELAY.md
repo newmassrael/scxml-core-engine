@@ -23,11 +23,14 @@ writes, a device that was taken off past its last number, a change to what a mem
 plaintext in a list that is sealed. It cannot tell a useful write from a useless one by a member, and
 it does not try; it bounds how much any one device asks.
 
-The relay is specific to the events whose rules `sce-rust-trust` knows: the writes and notes of the
-standard shared record list, `sce:std/shared/record_list.scxml` (`record_list.write`,
-`record_list.supersede`, docs/adr/0042), which is the one document it carries; anything else
-submitted as an operation is `invalid`. It is generic over where it keeps records (`Store`) and how
-it is reached (a `Transport`, section 9).
+The relay is specific to the events whose rules `sce-rust-trust` knows: the changes of the
+standard shared record list, `sce:std/shared/record_list.scxml` (`record_list.change`,
+docs/adr/0085), which is the one document it carries, and the trust layer's marks; and, read as
+they were signed, the parts of changes a list held before a change was one unit
+(`record_list.write`, `record_list.supersede`, `docs/SCE_SHARED_LIST_TRUST.md` section 3), each
+taken while it stands before every change of its author's chain and held as proof past it.
+Anything else submitted as an operation is `invalid`. It is generic over where it keeps records
+(`Store`) and how it is reached (a `Transport`, section 9).
 
 ## 2. Sessions: login-bound tokens
 
@@ -241,7 +244,10 @@ list of them: `MemoryStore`, and `FileStore`, a file for each list named by the 
 list's name (no name a device sends makes a path), a line for each record, flushed to the disk before
 the relay answers. A relay that starts reads the records back **through the checks that took them
 in**, so a store that was tampered with does not make the relay hold what members did not sign: the
-relay does not start, and says which record failed. A line cut off by a crash was never acknowledged
+relay does not start, and says which record failed. A store written before a change was one unit
+holds parts of changes, which are read back as they were signed (docs/adr/0085, section 8.3), so
+such a relay starts and serves its list's history to the devices that fold it; a forged part in it
+is a record that fails like any other. A line cut off by a crash was never acknowledged
 and is dropped, and is cut from the end of its file before the next record is appended, so that it
 never becomes the front of a whole line; a whole line that is not a record, or a record of another
 list than its file's, is corruption and is not read past. A list's file is written into its directory
