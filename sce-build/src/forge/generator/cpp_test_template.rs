@@ -24,15 +24,20 @@
 //! the canonical form of a message of it in the test log (§12.5), whose walk
 //! over the record's types every backend shares
 //! ([`super::test_template_walk::canonical_value`]); [`CppCanonical`] spells
-//! it with the writers of `test/Canonical.h`.
+//! it with the writers of `test/Canonical.h`. Its inverse, [`CppReading`],
+//! reads a value back from that form with the readers of
+//! `test/FromCanonical.h`, over the same walk
+//! ([`super::test_template_walk::canonical_form`]): the unit of a test
+//! configuration reads the values of a recorded input trace with it
+//! (docs/SCE_TTCN3_LANE.md §10.5).
 
 use super::test_template_walk::{
-    integer_literal, CanonicalSpelling, Held, Position, TemplateFunction, TemplateSpelling,
-    TemplateWalk, Use,
+    integer_literal, CanonicalCase, CanonicalForm, CanonicalSpelling, Held, Position,
+    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations};
-use crate::forge::value_type::{ScopedRecord, TypeOf, ValueType};
+use crate::forge::value_type::{Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
 
 /// The header of the test profile's runtime that declares the length of a
@@ -141,7 +146,7 @@ fn cpp_parameter(id: &str) -> String {
 }
 
 /// A value the canonical writer reads, in C++.
-struct CppCanonicalAt {
+pub(super) struct CppCanonicalAt {
     /// What names the value: `value`, a lambda's parameter, or a field of
     /// either; each is a `const` reference, so a field is read by `.`.
     base: String,
@@ -157,8 +162,10 @@ struct CppCanonicalAt {
 /// declared name and number are read by the free functions its unit declares
 /// beside it (`declared_name`, `to_underlying`), found by argument-dependent
 /// lookup through the enum's own namespace, whatever document declares it.
-/// C++ lowers no union, so the walk's refusal of one stands.
-struct CppCanonical;
+/// C++ lowers no union, so the walk's refusal of one stands. The unit of a
+/// test configuration writes its records' forms with it too, beside their
+/// readers ([`CppReading`]).
+pub(super) struct CppCanonical;
 
 impl CanonicalSpelling for CppCanonical {
     type At = CppCanonicalAt;
@@ -252,6 +259,335 @@ impl CanonicalSpelling for CppCanonical {
             .map(|(id, value)| format!("{{\"{}\", {value}}}", filters::escape_cpp(id)))
             .collect();
         format!("{CANONICAL}::record({{{}}})", fields.join(", "))
+    }
+}
+
+/// The readers of the canonical form of a value, in the profile's C++ runtime
+/// (`sce/include/test/FromCanonical.h`).
+const FROM_CANONICAL: &str = "::SCE::Test::FromCanonical";
+
+/// The type of the JSON value a C++ reader reads, as the generated code names
+/// it.
+const JSON_VALUE: &str = "::SCE::Saved::JsonValue";
+
+/// `text` as a C++ string literal.
+pub(super) fn cpp_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_cpp(text.to_string()))
+}
+
+/// A value the canonical reader reads, in C++: the JSON it is read from and
+/// the type it is read into.
+#[derive(Clone)]
+pub(super) struct CppReadingAt {
+    /// An expression of the `const ::SCE::Saved::JsonValue &` the value is
+    /// read from, where it is present.
+    json: String,
+    /// An expression of the `const ::SCE::Saved::JsonValue *` the value is
+    /// where it may be absent, null where it is: a field's member of its
+    /// record's object, null where it is omitted, or any other value, null
+    /// where it is JSON `null`, as an element of a list of `optional<T>` is.
+    optional: String,
+    /// The C++ type the value is read into, as the schema unit declares the
+    /// place it stands in: the record's payload, `decltype` of a field of a
+    /// record, and the `value_type` of an optional value or of a list.
+    cpp: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+impl CppReadingAt {
+    /// The value `json` names, read into `cpp`, where it stands at `what`,
+    /// inside `depth` bindings and `records` records: absent where it is
+    /// `null`, as an element of a list of `optional<T>` is.
+    fn of(json: String, cpp: String, what: String, depth: usize, records: usize) -> Self {
+        CppReadingAt {
+            optional: format!("{FROM_CANONICAL}::nullable({json})"),
+            json,
+            cpp,
+            what,
+            depth,
+            records,
+        }
+    }
+}
+
+/// The C++ reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from a `const ::SCE::Saved::JsonValue &` by
+/// the readers of [`FROM_CANONICAL`], which throw `SCE::Test::TraceRefusal`,
+/// naming where the value stands, where it does not belong to its type. Which
+/// form each SCE type takes is the walk its writer's is
+/// ([`super::test_template_walk::canonical_form`]), so the reader reads
+/// exactly what [`CppCanonical`] writes.
+///
+/// Each read is an expression of the value: a record a lambda, called where it
+/// stands, that binds its object and builds its struct by position, in the
+/// order the schema declares its fields, which is the order a braced
+/// initializer reads them in; a list a lambda that reads each element into a
+/// `std::vector` and makes the bounded list of it; a value that may be absent
+/// a lambda that answers `std::nullopt` where it is and its read otherwise. An
+/// integer, a text, a byte string and a list are read into the type the place
+/// they stand in holds, which the reader names as the schema unit declares it
+/// (`decltype` of the field, `value_type` of an optional or a list), since a
+/// C++ function infers no type from where its result goes. C++ lowers no
+/// union, so the walk's refusal of one stands.
+pub(super) struct CppReading {
+    /// The payload type of the record read.
+    pub(super) payload: String,
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+/// The read of a value that may be absent, of the type `cpp`: `optional`, an
+/// expression of the pointer to the JSON it is, null where it is absent, bound
+/// as `binding` where it is not and read as `written`.
+fn cpp_read_present(optional: &str, cpp: &str, binding: &str, written: String) -> String {
+    format!(
+        "[&]() -> {cpp} {{ const {JSON_VALUE} *{binding}_held = {optional}; if ({binding}_held == \
+         nullptr) {{ return ::std::nullopt; }} const {JSON_VALUE} &{binding} = *{binding}_held; \
+         return {written}; }}()"
+    )
+}
+
+impl CanonicalForm for CppReading {
+    type At = CppReadingAt;
+
+    /// The reader's parameter `value`, a `const ::SCE::Saved::JsonValue &`,
+    /// read into the record's payload.
+    fn root(&self) -> CppReadingAt {
+        CppReadingAt::of(
+            "value".to_string(),
+            self.payload.clone(),
+            self.what.clone(),
+            0,
+            0,
+        )
+    }
+
+    /// The member `id` of the object its record bound: present where the
+    /// field's type is not optional, and absent where it is omitted otherwise.
+    fn field(&self, at: &CppReadingAt, id: &str) -> CppReadingAt {
+        let object = format!("record_{}", at.records);
+        let what = format!("{}.{id}", at.what);
+        CppReadingAt {
+            json: format!(
+                "{FROM_CANONICAL}::field({object}, {}, {})",
+                cpp_literal(id),
+                cpp_literal(&what)
+            ),
+            optional: format!(
+                "{FROM_CANONICAL}::optionalField({object}, {})",
+                cpp_literal(id)
+            ),
+            cpp: format!(
+                "decltype({}::{})",
+                at.cpp,
+                event_schema_field_ident(id, Language::Cpp)
+            ),
+            what,
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &CppReadingAt, prefix: &str) -> (String, CppReadingAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = CppReadingAt::of(
+            name.clone(),
+            at.cpp.clone(),
+            at.what.clone(),
+            at.depth + 1,
+            at.records,
+        );
+        (name, value)
+    }
+
+    fn case_record(&self, bound: CppReadingAt) -> CppReadingAt {
+        bound
+    }
+
+    /// The element the loop over the list binds, read into the list's
+    /// `value_type`.
+    fn list_element(&self, list: &CppReadingAt, bound: CppReadingAt) -> CppReadingAt {
+        CppReadingAt {
+            cpp: format!("{}::value_type", list.cpp),
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    /// The value an optional holds, read into its `value_type`.
+    fn optional_value(&self, field: &CppReadingAt, bound: CppReadingAt) -> CppReadingAt {
+        CppReadingAt {
+            cpp: format!("{}::value_type", field.cpp),
+            ..bound
+        }
+    }
+
+    fn boolean(&self, at: &CppReadingAt) -> String {
+        format!(
+            "{FROM_CANONICAL}::boolean({}, {})",
+            at.json,
+            cpp_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, through the enum's own
+    /// unit: a closed enum's variants, or an open enum's and the number no
+    /// variant declares, which the unit's `from_underlying` makes a value of.
+    fn enumerated(&self, at: &CppReadingAt, declared: &ScopedEnum) -> String {
+        let identity = forge_import_identity(
+            &declared.name,
+            &Language::Cpp,
+            false,
+            &crate::ForgeCompileOptions::default(),
+        );
+        let enum_type = format!("::{}::{}", identity.namespace, identity.type_name);
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "{{{}, {enum_type}::{}}}",
+                    cpp_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ident(
+                        Language::Cpp,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        if declared.strict {
+            format!(
+                "{FROM_CANONICAL}::enumerated<{enum_type}>({}, {{{}}}, {})",
+                at.json,
+                variants.join(", "),
+                cpp_literal(&at.what)
+            )
+        } else {
+            format!(
+                "{FROM_CANONICAL}::openEnumerated<{enum_type}>({}, {{{}}}, &::{}::from_underlying, \
+                 {})",
+                at.json,
+                variants.join(", "),
+                identity.namespace,
+                cpp_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read into the integer type the place holds, which bounds it.
+    fn integer(&self, at: &CppReadingAt, _width: &SceType) -> String {
+        format!(
+            "{FROM_CANONICAL}::integer<{}>({}, {})",
+            at.cpp,
+            at.json,
+            cpp_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &CppReadingAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}::text<{}>({}, {}u, {})",
+            at.cpp,
+            at.json,
+            max.max,
+            cpp_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &CppReadingAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}::bytes<{}>({}, {}u, {})",
+            at.cpp,
+            at.json,
+            max.max,
+            cpp_literal(&at.what)
+        )
+    }
+
+    /// A lambda that reads each element within the list's bounds into a
+    /// `std::vector`, which becomes the bounded list the place holds.
+    fn list(&self, at: &CppReadingAt, max: &Bound, binding: &str, element: String) -> String {
+        let items = format!("items_{}", at.depth);
+        let what = cpp_literal(&at.what);
+        format!(
+            "[&] {{ ::std::vector<{cpp}::value_type> {items}; for (const auto &{binding} : \
+             {FROM_CANONICAL}::elements({json}, {min}u, {most}u, {what})) {{ \
+             {items}.push_back({element}); }} return {FROM_CANONICAL}::list<{cpp}>(::std::move({items}), \
+             {what}); }}()",
+            cpp = at.cpp,
+            json = at.json,
+            min = max.min,
+            most = max.max,
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read where the record's object names it
+    /// ([`cpp_read_present`]).
+    fn optional_field(&self, field: &CppReadingAt, binding: &str, written: String) -> String {
+        cpp_read_present(&field.optional, &field.cpp, binding, written)
+    }
+
+    /// The element read where it is not `null` ([`cpp_read_present`]).
+    fn optional_element(&self, element: &CppReadingAt, binding: &str, written: String) -> String {
+        cpp_read_present(&element.optional, &element.cpp, binding, written)
+    }
+
+    /// A lambda that binds the record's object, refused where it names a field
+    /// the record does not declare, and builds the record's struct of its
+    /// fields by position.
+    fn record(
+        &self,
+        at: &CppReadingAt,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let ids: Vec<String> = fields.iter().map(|(id, _)| cpp_literal(id)).collect();
+        let object = format!(
+            "{FROM_CANONICAL}::record({}, {{{}}}, {})",
+            at.json,
+            ids.join(", "),
+            cpp_literal(&at.what)
+        );
+        let members: Vec<(String, String)> = fields
+            .into_iter()
+            .map(|(id, value)| (event_schema_field_ident(&id, Language::Cpp), value))
+            .collect();
+        let built = format!(
+            "::{}{{{}}}",
+            event_schema_payload_type(&record.name, Language::Cpp),
+            cpp_positional_init(&members)
+        );
+        if members.is_empty() {
+            // No field reads the object, so it is not bound.
+            format!("[&] {{ static_cast<void>({object}); return {built}; }}()")
+        } else {
+            format!(
+                "[&] {{ const {JSON_VALUE} &record_{} = {object}; return {built}; }}()",
+                at.records
+            )
+        }
+    }
+
+    fn union(
+        &self,
+        _at: &CppReadingAt,
+        union: &ScopedUnion,
+        _cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        Err(crate::forge::value_type::union_unlowered(&union.name))
     }
 }
 

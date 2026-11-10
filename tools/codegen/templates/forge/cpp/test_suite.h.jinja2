@@ -19,7 +19,10 @@
 {% for header in std_includes %}#include <{{ header }}>
 {% endfor %}
 
+#include "saved/SavedJson.h"
 #include "saved/SavedValues.h"
+#include "test/ModuleParameters.h"
+#include "test/Runner.h"
 #include "test/Suite.h"
 {% for inc in case_includes %}
 {{ inc }}
@@ -41,6 +44,34 @@ inline ::SCE::Test::Suite suite() {
     suite.executes.push_back(::SCE::Test::Execute{ {{- execute.test_case }}, {{ execute.guard }}, {{ execute.selection -}} });
 {% endfor %}
     return suite;
+}
+
+/// The value the runner is given for the module parameter `id` (docs/SCE_TTCN3_LANE.md §4,
+/// `--module-parameter id=value`), a literal of its declared type as the `value` of a
+/// `<sce:module-parameter>` writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the saved value
+/// of that type; `std::invalid_argument`, naming why, where the suite declares no such
+/// parameter or the literal is no value of its type.
+{% if parameters %}
+inline ::SCE::Test::ModuleParameterValue moduleParameter(const ::std::string &id, const ::std::string &literal) {
+{% for parameter in parameters %}
+    if (id == {{ parameter.id }}) {
+        return {{ parameter.reader }};
+    }
+{% endfor %}
+    throw ::SCE::Test::Runner::undeclaredParameter(id);
+}
+{% else %}
+inline ::SCE::Test::ModuleParameterValue moduleParameter(const ::std::string &id, const ::std::string &) {
+    throw ::SCE::Test::Runner::undeclaredParameter(id);
+}
+{% endif %}
+
+/// The runner program of the suite `{{ suite_name }}` (docs/SCE_TTCN3_LANE.md §4): every test
+/// case the world of `--world` selects, run against its recorded input trace from
+/// `--trace-dir`, its canonical test log written to `--log-dir` (`SCE::Test::Runner::main`). A
+/// build makes it a program with a `main` that calls it.
+inline int main(int argc, char **argv) {
+    return ::SCE::Test::Runner::main(suite(), &moduleParameter, argc, argv);
 }
 
 }  // namespace SCE::Generated::{{ namespace }}

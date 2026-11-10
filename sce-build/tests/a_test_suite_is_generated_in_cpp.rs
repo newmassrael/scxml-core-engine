@@ -120,6 +120,129 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
 }
 
+/// The text of `haystack` from the first `from` to the first `to` after it.
+fn between<'h>(haystack: &'h str, from: &str, to: &str) -> &'h str {
+    let start = at(haystack, from);
+    let end = start
+        + haystack[start..]
+            .find(to)
+            .unwrap_or_else(|| panic!("`{to}` after `{from}`:\n{haystack}"));
+    &haystack[start..end]
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.2, §10.5: a configuration's header reads each
+/// record its system ports take from its canonical form and writes it back,
+/// over the one walk of the form, and its `input` reads an input of a system
+/// port by the record its type's `in` list names, refusing any other by name.
+/// A configuration with no system port refuses every input.
+#[test]
+fn a_configuration_reads_the_inputs_of_its_system_ports() {
+    let asking = header("asking_configuration");
+    for needle in [
+        "#include \"test/Trace.h\"",
+        "#include \"test/FromCanonical.h\"",
+        "#include \"test/Canonical.h\"",
+        "#include \"job_reply.h\"",
+        "inline ::SCE::Generated::JobReply::JobReplyPayload readJobReply(const ::SCE::Saved::JsonValue \
+         &value) {",
+        "inline ::SCE::Saved::JsonValue canonicalJobReply(const \
+         ::SCE::Generated::JobReply::JobReplyPayload &value) {",
+        "::SCE::Test::FromCanonical::record(value, {\"job\", \"code\"}, \"job_reply\")",
+        "::SCE::Test::FromCanonical::integer<decltype(::SCE::Generated::JobReply::JobReplyPayload::job)>(\
+         ::SCE::Test::FromCanonical::field(record_0, \"job\", \"job_reply.job\"), \"job_reply.job\")",
+        "if (systemPort == \"sut\" && typeName == \"job_reply\") {",
+        "return ::SCE::Test::Message{::SCE::Generated::JobReply::EVENT_NAME, \
+         ::SCE::Test::messageValue(readJobReply(value), \"job_reply\", &canonicalJobReply)};",
+        "throw ::SCE::Test::TraceRefusal::notAnInput(systemPort, typeName, {\"sut\"});",
+    ] {
+        assert!(asking.contains(needle), "`{needle}` in\n{asking}");
+    }
+    assert_eq!(
+        asking.matches("readJobReply(const").count(),
+        1,
+        "a record is read by one function"
+    );
+    assert!(
+        !asking.contains("job_request.h"),
+        "a record the system port only sends is read by no one: {asking}"
+    );
+
+    let keeping = header("keeping_configuration");
+    assert!(
+        keeping.contains("if (systemPort == \"quiet\" && typeName == \"job_reply\") {"),
+        "{keeping}"
+    );
+
+    let serving = header("serving_configuration");
+    assert!(
+        serving.contains(
+            "inline ::SCE::Test::Message input(const ::std::string &systemPort, const ::std::string \
+             &typeName,\n                                  const ::SCE::Saved::JsonValue &) {\n    \
+             throw ::SCE::Test::TraceRefusal::notAnInput(systemPort, typeName, {});\n}"
+        ),
+        "a configuration with no system port refuses every input: {serving}"
+    );
+    assert!(!serving.contains("readJob"), "{serving}");
+    assert!(!serving.contains("FromCanonical.h"), "{serving}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
+/// record of every form C++ holds generates a reader and a writer of each,
+/// which `tests/integration/ARecordReadsBackTheFormItWritesTest.cpp` compiles
+/// and round-trips; the one whose record holds a union, which C++ does not
+/// lower, is refused by name.
+#[test]
+fn a_configuration_reads_a_record_of_every_form_it_holds() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/unionless_forms_configuration.scxml");
+    let files =
+        generate(&path).unwrap_or_else(|e| panic!("the configuration generates on C++: {e:?}"));
+    assert_eq!(files[0].0, "unionless_forms_configuration.h");
+    let forms = &files[0].1;
+    for (record, function) in [
+        ("order_taken", "OrderTaken"),
+        ("job_status", "JobStatus"),
+        ("form_extras", "FormExtras"),
+    ] {
+        for needle in [
+            format!("#include \"{record}.h\""),
+            format!("read{function}(const ::SCE::Saved::JsonValue &value) {{"),
+            format!("::SCE::Saved::JsonValue canonical{function}(const "),
+            format!("if (systemPort == \"sut\" && typeName == \"{record}\") {{"),
+        ] {
+            assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+        }
+    }
+    for needle in [
+        "::SCE::Test::FromCanonical::openEnumerated<::SCE::Generated::ShapeKindOpen::ShapeKindOpen>(",
+        "&::SCE::Generated::ShapeKindOpen::from_underlying, \"form_extras.shape\")",
+        "::SCE::Test::FromCanonical::enumerated<::SCE::Generated::PaintColor::PaintColor>(",
+        "{\"green\", ::SCE::Generated::PaintColor::PaintColor::Green}",
+        "::SCE::Test::FromCanonical::nullable(item_0)",
+        "::SCE::Test::FromCanonical::optionalField(record_0, \"note\")",
+        "::SCE::Test::FromCanonical::bytes<decltype(::SCE::Generated::OrderTaken::OrderTakenPayload::\
+         voucher_code)>(",
+        "::SCE::Test::FromCanonical::elements(::SCE::Test::FromCanonical::field(record_0, \"flags\", \
+         \"form_extras.flags\"), 1u, 2u, \"form_extras.flags\")",
+        "decltype(::SCE::Generated::FormExtras::FormExtrasPayload::grid)::value_type::value_type",
+        "return ::std::nullopt;",
+    ] {
+        assert!(forms.contains(needle), "`{needle}` in\n{forms}");
+    }
+    let readers = between(forms, "readOrderTaken(", "input(const");
+    assert!(
+        !readers.contains("union"),
+        "no record a C++ configuration reads holds a union:\n{readers}"
+    );
+
+    let union = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
+    let Err(err) = generate(&union) else {
+        panic!("a configuration whose record holds a union generated on C++");
+    };
+    assert!(format!("{err:?}").contains("union"), "{err:?}");
+}
+
 /// §11.7: a test case is its name and its configuration's tables, reached
 /// through the configuration's unit.
 #[test]
@@ -133,8 +256,29 @@ fn a_test_case_names_its_configurations_tables() {
         "::SCE::Generated::AskingConfiguration::configuration()",
         "&::SCE::Generated::AskingConfiguration::machine",
         "::SCE::Generated::AskingConfiguration::moduleParameters()",
+        "&::SCE::Generated::AskingConfiguration::input};",
     ] {
         assert!(case.contains(needle), "answers_the_job holds `{needle}`");
+    }
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: a suite's header reads the value its runner's
+/// command line gives each module parameter by the reader of its type, refuses
+/// one the suite does not declare, and declares the runner program's `main`.
+#[test]
+fn a_suite_declares_its_runner_program() {
+    let suite = header("runtime_suite");
+    for needle in [
+        "#include \"test/Runner.h\"",
+        "inline ::SCE::Test::ModuleParameterValue moduleParameter(const ::std::string &id, const \
+         ::std::string &literal) {",
+        "if (id == \"job\") {",
+        "return ::SCE::Test::Runner::integerParameter(id, literal, &::SCE::Saved::savedWriteUint32);",
+        "throw ::SCE::Test::Runner::undeclaredParameter(id);",
+        "inline int main(int argc, char **argv) {",
+        "return ::SCE::Test::Runner::main(suite(), &moduleParameter, argc, argv);",
+    ] {
+        assert!(suite.contains(needle), "`{needle}` in\n{suite}");
     }
 }
 
@@ -226,6 +370,12 @@ fn a_module_parameter_default_is_the_saved_value_of_its_type() {
         "suite.moduleParameters.set(\"color\", ::SCE::Saved::JsonValue(\"green\"));",
         "::SCE::Test::Execute{::SCE::Generated::AnswersTheJob::testCase(), ::std::nullopt, \
          nullptr}",
+        "return ::SCE::Test::Runner::boolParameter(id, literal);",
+        "return ::SCE::Test::Runner::integerParameter(id, literal, &::SCE::Saved::savedWriteInt8);",
+        "return ::SCE::Test::Runner::integerParameter(id, literal, &::SCE::Saved::savedWriteUint64);",
+        "return ::SCE::Test::Runner::textParameter(literal);",
+        "return ::SCE::Test::Runner::bytesParameter(id, literal);",
+        "return ::SCE::Test::Runner::enumParameter(literal);",
     ] {
         assert!(
             text.contains(needle),

@@ -13,14 +13,28 @@
 #define {{ guard }}
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 {% for header in std_includes %}#include <{{ header }}>
 {% endfor %}
 
+#include "saved/SavedJson.h"
+{% if readers %}
+#include "test/Canonical.h"
+#include "test/FromCanonical.h"
+{% endif %}
+#include "test/Port.h"
 #include "test/TestCaseRun.h"
+#include "test/Trace.h"
 {% for header in machine_headers %}
 #include "{{ header }}"
+{% endfor %}
+{# Each record a system port takes, whose unit includes the enums and the records it
+   holds. #}
+{% for reader in readers %}
+{{ reader.include }}
 {% endfor %}
 
 namespace SCE::Generated::{{ namespace }} {
@@ -69,6 +83,49 @@ inline ::std::unique_ptr<::SCE::Test::ComponentMachine> machine(const ::std::str
 inline ::std::vector<::std::string> moduleParameters() {
     return { {{- module_parameters | join(", ") -}} };
 }
+{# Each record a system port takes is read back from the canonical form and written in it
+   by the one walk of the form both directions share, so the value a recorded trace hands the
+   run and the value the test log writes of it are the same bytes. The readers are part of
+   the unit's interface, so a host reads and writes a record's form with them as the runner
+   does. #}
+{% for reader in readers %}
+
+/// The record `{{ reader.type }}` read from the canonical form of the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), as a recorded input trace holds it (docs/SCE_TTCN3_LANE.md
+/// §10.3); `::SCE::Test::TraceRefusal`, naming where its value does not belong to its type,
+/// otherwise. The inverse of `{{ reader.canonical }}`.
+inline {{ reader.payload }} {{ reader.read }}(const ::SCE::Saved::JsonValue &value) {
+    return {{ reader.read_expr }};
+}
+
+/// The record `{{ reader.type }}` in the canonical form of the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
+inline ::SCE::Saved::JsonValue {{ reader.canonical }}(const {{ reader.payload }} &value) {
+    return {{ reader.canonical_expr }};
+}
+{% endfor %}
+
+/// The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
+/// `::SCE::Test::InputReader`): the message an input of the record type `typeName` on the
+/// system port `systemPort` carries, its value read from the canonical form.
+/// `::SCE::Test::TraceRefusal`, naming why, where the configuration has no such system port,
+/// the `in` list of its type does not name the type, or the value does not belong to it.
+{% if inputs %}
+inline ::SCE::Test::Message input(const ::std::string &systemPort, const ::std::string &typeName,
+                                  const ::SCE::Saved::JsonValue &value) {
+{% for input in inputs %}
+    if (systemPort == {{ input.port }} && typeName == {{ input.type }}) {
+        return ::SCE::Test::Message{ {{- input.event }}, ::SCE::Test::messageValue({{ input.read }}(value), {{ input.type }}, &{{ input.canonical }})};
+    }
+{% endfor %}
+    throw ::SCE::Test::TraceRefusal::notAnInput(systemPort, typeName, { {{- system_ports | join(", ") -}} });
+}
+{% else %}
+inline ::SCE::Test::Message input(const ::std::string &systemPort, const ::std::string &typeName,
+                                  const ::SCE::Saved::JsonValue &) {
+    throw ::SCE::Test::TraceRefusal::notAnInput(systemPort, typeName, { {{- system_ports | join(", ") -}} });
+}
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

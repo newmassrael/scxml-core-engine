@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: a test component that takes three messages
+     of any record on its port, one a round, and passes after the third: the
+     twin of forms_listener over the port that takes no union. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="unionless_forms_listener"
+       datamodel="sce-static" initial="first">
+  <sce:import kind="test-port-type" src="unionless_forms_port.scxml" as="FormsPort"/>
+  <sce:test-port id="sut" type="FormsPort"/>
+  <state id="first">
+    <transition sce:receive="sut" target="second"/>
+  </state>
+  <state id="second">
+    <transition sce:receive="sut" target="third"/>
+  </state>
+  <state id="third">
+    <transition sce:receive="sut" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

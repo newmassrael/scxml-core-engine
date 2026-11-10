@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "answers_the_job.h"
 #include "asking_configuration.h"
 #include "job_reply.h"
 #include "job_request.h"
@@ -29,8 +31,10 @@
 #include "runtime_suite.h"
 #include "saved/SavedValues.h"
 #include "serving_configuration.h"
+#include "test/Runner.h"
 #include "test/Suite.h"
 #include "test/TestCaseRun.h"
+#include "test/Trace.h"
 
 #ifndef SCE_PROJECT_ROOT
 #define SCE_PROJECT_ROOT "."
@@ -45,6 +49,7 @@ using SCE::Test::Instant;
 using SCE::Test::LogKind;
 using SCE::Test::Message;
 using SCE::Test::SystemAdapter;
+using SCE::Test::Trace;
 using SCE::Test::Verdict;
 
 using Request = SCE::Generated::JobRequest::JobRequestPayload;
@@ -192,6 +197,115 @@ TEST(ATestSuite, AGeneratedTestCaseWritesItsTestLog) {
     const auto results = SCE::Test::runSuite(SCE::Generated::RuntimeSuite::suite(), {}, responders(0, requested));
     ASSERT_EQ(names(results), (std::vector<std::string>{"answers_the_job"}));
     EXPECT_EQ(results[0].canonicalLog("runtime_suite"), sharedLog("answers_the_job"));
+}
+
+/// The directory of the suite's committed traces (docs/SCE_TTCN3_LANE.md
+/// §10.2), `<test case>.json` each.
+std::string tracesDir() {
+    return std::string(SCE_PROJECT_ROOT) + "/sce-build/tests/fixtures/test_profile/runtime/traces";
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
+/// committed trace of `answers_the_job` writes the test log every runtime
+/// writes of it, byte for byte: the configuration's header reads the reply
+/// from its canonical form and writes it back the same, and the clock
+/// advances to the trace's instant as it did to the Responder's. The twin of
+/// the Rust `a_recorded_trace_replays_to_the_test_log_every_runtime_writes`.
+TEST(ATestSuite, ARecordedTraceReplaysToTheTestLogEveryRuntimeWrites) {
+    const auto results =
+        SCE::Test::runSuiteWithTraces(SCE::Generated::RuntimeSuite::suite(), {}, [](const std::string &testCase) {
+            return SCE::Test::Runner::readTrace(tracesDir(), testCase);
+        });
+    ASSERT_EQ(names(results), (std::vector<std::string>{"answers_the_job"}));
+    EXPECT_EQ(results[0].result.verdict, Verdict::Pass);
+    EXPECT_EQ(results[0].canonicalLog("runtime_suite"), sharedLog("answers_the_job"));
+}
+
+/// §10.2, P13: a trace of another test case, or one the configuration does not
+/// take, ends the test case in error before any component is created, naming
+/// why; the test case reads its trace through its configuration's `input`.
+TEST(ATestSuite, EndsInErrorWhenItsTraceDoesNotFit) {
+    EXPECT_TRUE(SCE::Generated::AnswersTheJob::testCase().inputs == &SCE::Generated::AskingConfiguration::input);
+    const std::string reply = "{\"inputs\":[{\"at\":\"500\",\"port\":\"oracle\",\"type\":\"job_reply\","
+                              "\"value\":{\"code\":\"0\",\"job\":\"7\"}}],\"schema\":\"sce-test-trace.v1\","
+                              "\"suite\":\"runtime_suite\",\"test_case\":\"answers_the_job\"}";
+    const auto unmapped = SCE::Test::runSuiteWithTraces(SCE::Generated::RuntimeSuite::suite(), {},
+                                                        [&reply](const std::string &) { return Trace::parse(reply); });
+    ASSERT_EQ(unmapped.size(), 1u);
+    EXPECT_EQ(unmapped[0].result.verdict, Verdict::Error);
+    ASSERT_FALSE(unmapped[0].result.log.empty());
+    EXPECT_EQ(unmapped[0].result.log[0].detail,
+              "the trace is refused: input 0, at 500: 'oracle' is not a system port of the test case's configuration");
+    const auto other =
+        SCE::Test::runSuiteWithTraces(SCE::Generated::RuntimeSuite::suite(), {}, [](const std::string &) {
+            Trace trace;
+            trace.suite = "runtime_suite";
+            trace.testCase = "serves_a_ptc";
+            return trace;
+        });
+    ASSERT_EQ(other.size(), 1u);
+    EXPECT_EQ(other[0].result.verdict, Verdict::Error);
+    EXPECT_EQ(other[0].result.log[0].detail,
+              "the trace is of the test case 'serves_a_ptc' of the suite 'runtime_suite'");
+}
+
+/// A directory for the runner's logs, made empty, which @p name keeps apart
+/// from every other test's.
+std::filesystem::path logDir(const std::string &name) {
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / ("sce-cpp-runtime-suite-runner-" + name);
+    std::filesystem::remove_all(dir);
+    return dir;
+}
+
+/// The text of the file at @p path.
+std::string fileText(const std::filesystem::path &path) {
+    std::ifstream in(path, std::ios::binary);
+    EXPECT_TRUE(in.is_open()) << "not readable: " << path.string();
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: the suite's runner, given the directories of the
+/// traces and of the logs, runs each test case its world selects against its
+/// trace, writes `<case>.log.json`, the canonical log with nothing after it,
+/// and prints each case's verdict; a module parameter's value on its command
+/// line replaces its default, and one the suite does not declare is refused
+/// with exit status 2 before any case runs.
+TEST(ATestSuite, TheSuitesRunnerWritesTheLogOfEachTrace) {
+    const auto runner = [](const std::filesystem::path &logs, std::vector<std::string> more, std::string &out,
+                           std::string &err) {
+        std::vector<std::string> args{"--trace-dir", tracesDir(), "--log-dir", logs.string()};
+        args.insert(args.end(), more.begin(), more.end());
+        std::ostringstream printed;
+        std::ostringstream refused;
+        const int status =
+            SCE::Test::Runner::main(SCE::Generated::RuntimeSuite::suite(),
+                                    &SCE::Generated::RuntimeSuite::moduleParameter, args, printed, refused);
+        out = printed.str();
+        err = refused.str();
+        return status;
+    };
+    std::string out;
+    std::string err;
+    const std::filesystem::path logs = logDir("default");
+    ASSERT_EQ(runner(logs, {}, out, err), 0) << err;
+    EXPECT_EQ(out, "answers_the_job pass\n");
+    EXPECT_EQ(fileText(logs / "answers_the_job.log.json"), sharedLog("answers_the_job"));
+    std::filesystem::remove_all(logs);
+
+    const std::filesystem::path overridden = logDir("overridden");
+    ASSERT_EQ(runner(overridden, {"--world", "", "--module-parameter", "job=9"}, out, err), 0) << err;
+    const std::string log = fileText(overridden / "answers_the_job.log.json");
+    EXPECT_NE(log.find("\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}"),
+              std::string::npos)
+        << "the request names the job of the value given: " << log;
+    std::filesystem::remove_all(overridden);
+
+    const std::filesystem::path undeclared = logDir("undeclared");
+    EXPECT_EQ(runner(undeclared, {"--module-parameter", "limit=1"}, out, err), 2);
+    EXPECT_NE(err.find("the suite declares no module parameter 'limit'"), std::string::npos) << err;
+    EXPECT_FALSE(std::filesystem::exists(undeclared)) << "no case ran, so no log was written";
 }
 
 /// §11.8: a world runs the test cases whose selection it satisfies, in the

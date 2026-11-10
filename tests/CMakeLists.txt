@@ -599,6 +599,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ATestTemplateMatchesItsValuesTest.cpp
     integration/ATestComponentRunsThroughItsDoorsTest.cpp
     integration/ATestSuiteRunsEndToEndTest.cpp
+    integration/ARecordReadsBackTheFormItWritesTest.cpp
     integration/AComposedPayloadIsReadAtAnyDepthTest.cpp
     integration/AComposedValueIsSentByItsNameTest.cpp
 )
@@ -853,6 +854,37 @@ foreach(_TEST_PROFILE_DOCUMENT asking_configuration serving_configuration keepin
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_PROFILE_DOCUMENT}.scxml
     )
 endforeach()
+# ARecordReadsBackTheFormItWritesTest's (docs/SCE_TTCN3_LANE.md §10.3, §10.5): the
+# configuration whose system port takes a record of every form of the canonical value
+# C++ holds, so its header's reader and writer of each form are compiled, beside the
+# records it takes (order_taken, job_status above, form_extras), the record and the
+# enums they hold, its listener's machine and its test case. The port type writes no
+# file. The Rust twin's configuration takes order_placed, whose union C++ does not
+# lower, in order_taken's place.
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/imports/order_customer.scxml
+)
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/union/shape_kind_open.scxml
+)
+foreach(_TRACE_FORMS_DOCUMENT order_taken form_extras)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/${_TRACE_FORMS_DOCUMENT}.scxml
+    )
+endforeach()
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/unionless_forms_listener.scxml
+)
+foreach(_TRACE_FORMS_DOCUMENT unionless_forms_configuration replays_every_unionless_form)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/trace_forms/${_TRACE_FORMS_DOCUMENT}.scxml
+    )
+endforeach()
 
 # A host action's argument that overflows. The fixture sits beside the test
 # that reads it, as test_thermostat.scxml does: the host recorder is the C++
@@ -921,6 +953,51 @@ foreach(_STATIC_CPP_CANDIDATE static_hybrid_first static_hybrid_second static_hy
 endforeach()
 
 add_test(NAME static_datamodel_generated_cpp COMMAND static_datamodel_generated_cpp_test)
+
+# The runner program of the generated runtime_suite (docs/SCE_TTCN3_LANE.md §4, §10.5):
+# the suite's header declares its `main`, and this one-line program calls it, as a
+# build that holds a generated suite does. Its headers are the ones generated for
+# static_datamodel_generated_cpp_test above, so it is built after that target, from
+# the same directory.
+add_executable(runtime_suite_runner integration/runtime_suite_runner.cpp)
+target_include_directories(runtime_suite_runner
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+)
+target_link_libraries(runtime_suite_runner
+    PRIVATE
+        sce_runtime
+        pthread
+)
+add_dependencies(runtime_suite_runner static_datamodel_generated_cpp_test)
+apply_sce_test_policies(runtime_suite_runner)
+
+# The runner program run as a process, against the committed traces of the suite
+# (ARunnerProgramWritesTheLogOfEachTraceTest.cpp, the twin of the Rust
+# `the_suites_runner_program_writes_the_log_of_each_trace`). A process is started
+# natively only: the Emscripten tree's programs run under Node, where none is.
+if(NOT EMSCRIPTEN)
+    add_executable(runtime_suite_runner_test integration/ARunnerProgramWritesTheLogOfEachTraceTest.cpp)
+    target_include_directories(runtime_suite_runner_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+    target_link_libraries(runtime_suite_runner_test
+        PRIVATE
+            GTest::gtest_main
+            pthread
+    )
+    target_compile_definitions(runtime_suite_runner_test
+        PRIVATE
+            SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+            SCE_RUNTIME_SUITE_RUNNER="$<TARGET_FILE:runtime_suite_runner>"
+    )
+    add_dependencies(runtime_suite_runner_test runtime_suite_runner)
+    apply_sce_test_policies(runtime_suite_runner_test)
+    add_test(NAME runtime_suite_runner COMMAND runtime_suite_runner_test)
+endif()
 
 # ============================================================================
 # The standard host features (docs/SCE_HOST_FEATURES.md): the scenarios of

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.6, docs/SCE_TTCN3_LANE.md §10.5: the listener
+     as the MTC, its port mapped to a system port that takes a record of every
+     form of the canonical value a backend that lowers no union holds, so the
+     unit of this configuration reads and writes each form on C++. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="unionless_forms_configuration">
+  <sce:import kind="test-component" src="unionless_forms_listener.scxml" as="FormsListener"/>
+  <sce:import kind="test-port-type" src="unionless_forms_port.scxml" as="FormsPort"/>
+  <sce:mtc type="FormsListener"/>
+  <sce:system-port id="sut" type="FormsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

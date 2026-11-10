@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TTCN3_LANE.md §10.3, docs/SCE_TEST_PROFILE.md §12.5: an order as it
+     is taken, which holds every form order_placed holds but its union (a list of
+     records with a closed enum, an optional text and integer, a record with a
+     truth value) and, in the union's place, a byte string, so a backend that
+     lowers no union reads and writes each of those forms too. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="order_taken"
+       sce:event-name="order.taken">
+  <sce:import kind="event-schema" src="../imports/order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="../imports/order_customer.scxml" as="Customer"/>
+  <datamodel>
+    <data id="order_id" sce:type="uint32" sce:direction="in"/>
+    <data id="lines" sce:type="list&lt;record:Line&gt;[4]" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[32]&gt;" sce:direction="in"/>
+    <data id="priority" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+    <data id="customer" sce:type="record:Customer" sce:direction="in"/>
+    <data id="voucher_code" sce:type="bytes[4]" sce:direction="in"/>
+  </datamodel>
+</scxml>
