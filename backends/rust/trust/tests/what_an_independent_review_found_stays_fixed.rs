@@ -227,6 +227,7 @@ fn a_conflict_of_a_device_is_kept_as_evidence_that_travels_is_stored_and_is_audi
     let witness = host(&log, false);
     let peer = host(&log, false);
     take(&witness, &a).unwrap();
+    assert_eq!(witness.deliver().len(), 1, "the machine is told the first");
     take(&peer, &a).unwrap();
     let second = take(&witness, &b);
     assert!(
@@ -327,16 +328,29 @@ fn a_conflict_goes_when_the_log_puts_what_made_it_past_a_cutoff_and_what_it_held
 
     // One host takes both operations, and is then given the entry that takes the device off after the
     // first: the second is past the last accepted, the conflict goes with it, and the first is told
-    // again to the machine, which had been told to forget it.
+    // to the machine by the next delivery. The machine was told neither while the chain was frozen,
+    // so it is to be built again neither without nor with anything (docs/adr/0085, landing 5: a
+    // notice to the machine is of what it was told).
     let first = host(&log, false);
     take(&first, &late).unwrap();
     take(&first, &early).unwrap();
     assert_eq!(first.equivocating(), vec![(1, 1)]);
     assert!(held(&first).is_empty());
-    first.take_evicted();
+    assert!(
+        first.deliver().is_empty(),
+        "nothing of a frozen chain is told"
+    );
+    assert!(
+        first.take_evicted().is_empty(),
+        "the machine was told nothing"
+    );
     first.append(&removal).unwrap();
     assert!(first.equivocating().is_empty(), "the conflict went");
-    assert_eq!(first.take_restored(), vec![(1, 1)]);
+    assert!(
+        first.take_restored().is_empty(),
+        "the machine was told nothing"
+    );
+    assert_eq!(first.deliver().len(), 1, "the first is told now");
     assert_eq!(held(&first).len(), 1);
 
     // Another that was given the entry before the operations holds the same.
@@ -374,6 +388,7 @@ fn what_a_cutoff_takes_off_a_device_the_machine_is_told_to_forget() {
     let one = host(&log, false);
     take(&one, &first_op).unwrap();
     take(&one, &second_op).unwrap();
+    assert_eq!(one.deliver().len(), 2, "the machine is told both");
     assert!(one.equivocating().is_empty(), "two operations in order");
     assert!(
         one.take_evicted().is_empty(),

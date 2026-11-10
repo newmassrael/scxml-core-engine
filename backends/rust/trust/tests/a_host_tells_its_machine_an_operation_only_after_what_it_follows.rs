@@ -292,3 +292,63 @@ fn a_context_names_only_devices_the_log_granted_other_than_its_author() {
         }
     }
 }
+
+/// What a host lacks is read from what it holds, not from what its machine was told so far: a host
+/// that holds a device's first and third operations, and has told its machine nothing yet (a round
+/// tells it when it ends, after it asked for what it lacks), lacks the second at once, so a gap is
+/// asked for in the round that first sees it. Red if `lacking` reads the delivered vector, which
+/// would say the first is next and lacks nothing.
+#[test]
+fn a_gap_is_lacking_as_soon_as_the_operation_past_it_is_held() {
+    let alice = host(ALICE);
+    let carol = host(CAROL);
+    let a1 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
+    signed(&alice, CHANGE_EVENT, &write(ALICE, 1001, 2));
+    let a3 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1002, 3));
+    take(&carol, CHANGE_EVENT, &a1);
+    take(&carol, CHANGE_EVENT, &a3);
+    assert!(carol.delivered().is_empty(), "nothing was told yet");
+    assert_eq!(carol.lacking(), vec![(ALICE, 2, 2)]);
+    assert_eq!(told(&carol), vec![event(CHANGE_EVENT, "1000/1")]);
+    assert_eq!(
+        carol.lacking(),
+        vec![(ALICE, 2, 2)],
+        "told or not, 2 is lacking"
+    );
+}
+
+/// An eviction is a notice to the machine of what it was told and is to be without: a device's
+/// operation a host held and never told its machine, frozen by a second operation at its number,
+/// is no eviction, and the same operation told before the second came is one. Red if what is
+/// evicted is read from what the host held rather than from what its machine was told.
+#[test]
+fn an_operation_never_told_is_never_evicted() {
+    let alice = host(ALICE);
+    let again = host(ALICE);
+    let first = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
+    let second = signed(&again, CHANGE_EVENT, &write(ALICE, 2000, 2));
+
+    let untold = host(CAROL);
+    take(&untold, CHANGE_EVENT, &first);
+    take(&untold, CHANGE_EVENT, &second);
+    assert_eq!(untold.equivocating(), vec![(ALICE, 1)]);
+    assert!(
+        untold.take_evicted().is_empty(),
+        "its machine was told nothing of alice's"
+    );
+    assert!(
+        told(&untold).is_empty(),
+        "nothing of a frozen chain is told"
+    );
+
+    let told_first = host(BOB);
+    take(&told_first, CHANGE_EVENT, &first);
+    assert_eq!(told(&told_first), vec![event(CHANGE_EVENT, "1000/1")]);
+    take(&told_first, CHANGE_EVENT, &second);
+    assert_eq!(told_first.equivocating(), vec![(ALICE, 1)]);
+    assert_eq!(
+        told_first.take_evicted(),
+        vec![(ALICE, 1)],
+        "its machine was told the first, and is to be without it"
+    );
+}

@@ -1212,8 +1212,9 @@ fn the_proof_that_a_device_signed_conflicting_operations_goes_through_a_relay_to
     );
     assert_eq!(
         round.evicted,
-        vec![(1, 1)],
-        "his host held the first in its device's chain, and holds it there no more"
+        Vec::<(u64, u64)>::new(),
+        "an eviction is of what the machine was told (docs/adr/0085, landing 5): his machine was \
+         told neither, both coming in this round, and is to be built again without nothing"
     );
     // The machine is told nothing of the device from the first conflict on: a round tells its
     // machine when it ends, by the delivered vector, and what lies at or past where a chain is

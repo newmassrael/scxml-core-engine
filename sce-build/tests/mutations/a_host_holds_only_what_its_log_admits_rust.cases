@@ -142,13 +142,13 @@ PY
 mutation_case "A host that froze a device does not tell its machine to forget what it was told" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
      """    if !left.is_empty() {
-        state
-            .evicted
-            .extend(left.into_iter().map(|seq| (node, seq)));""",
+        state.evicted.extend(
+            left.iter()
+                .filter(|seq| **seq <= told_through)""",
      """    if !left.is_empty() {
-        state
-            .evicted
-            .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));""")
+        state.evicted.extend(
+            left.iter()
+                .filter(|_| false)""")
 PY
 
 # The cutoff's own notice. `tell_what_changed` is reached only when the log
@@ -157,12 +157,12 @@ PY
 # observed what it told: the case above SURVIVED here at 0/109.
 mutation_case "A cutoff takes off what the machine was told and does not tell it to forget" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     """    state
-        .evicted
-        .extend(left.into_iter().map(|seq| (node, seq)));""",
-     """    state
-        .evicted
-        .extend(std::iter::empty::<(u64, u64)>().chain(left.into_iter().map(|_| (0, 0))).take(0));""")
+     """    state.evicted.extend(
+        left.into_iter()
+            .filter(|seq| *seq <= told)""",
+     """    state.evicted.extend(
+        left.into_iter()
+            .filter(|_| false)""")
 PY
 
 mutation_case "A device whose chain conflicts goes on signing" <<'PY'

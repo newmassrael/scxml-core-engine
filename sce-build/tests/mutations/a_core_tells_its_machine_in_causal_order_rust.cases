@@ -43,6 +43,18 @@ edit("backends/rust/trust/src/trust.rs",
      "                        let _ = (other, from, to);")
 PY
 
+mutation_case "A host reads what it lacks from what its machine was told, a round late" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        let mut vector = state.delivered.clone();\n        deliver_from(&state, &mut vector);\n        let mut wanted",
+     "        let vector = state.delivered.clone();\n        let mut wanted")
+PY
+
+mutation_case "A host evicts an operation its machine was never told" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                .filter(|seq| **seq <= told_through)",
+     "                .filter(|_| true)")
+PY
+
 mutation_case "A machine is told again what its own person signed" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
      "    *told = (*told).max(seq);\n    Ok(wire)",
