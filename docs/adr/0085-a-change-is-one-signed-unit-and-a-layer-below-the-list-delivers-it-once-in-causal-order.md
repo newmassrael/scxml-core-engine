@@ -960,3 +960,64 @@ Decided while landing 4d, the journal per change, recall, restore and the verdic
   `record_world` and `record_group_world`, the devices of `common/devices.rs`, the restarted copy of the relay
   test, and the standard list's replay of the to-do afternoon. A world host that gives its layer each offered change
   and its copy the verdict is landing 4e's on the Mesh route and landing 5's on the core.
+
+Decided while landing 5, the core at change units with ADR 0083's landing 3 and ADR 0093's step 3 folded in
+(2026-11-10), under the same rule and open to the owner's review:
+
+- **A mark is an operation of a signed event of the trust layer's own, `sce_trust.mark`.** Its event holds its
+  author, `by`, alone; what it says is its link's context and number, so the vector is signed once, in the link,
+  and not a second time in the event. It is signed under the event domain of 4c, `sce-trust/event/3`, whose
+  bytes name the event, so no signature of a change verifies as a mark and no new domain is needed. It is kept by
+  its operation's bytes, since one device's marks are one message. It is no event of the list: the list's table of
+  signed events (`message::SIGNED`, held to the schemas by the world test) is unchanged, no machine sends one, no
+  machine is told one, and a copy on a Mesh route is told none.
+- **Every member marks, a reader included, and the relay takes a reader's mark.** A change is stable once every
+  member was told it (section 3), and a reader that could not say what it was told would hold the cut at 0 for
+  good. A mark is verified with its author a member of any role under the entry it names, and a relay's `submit`
+  of a mark needs a reader's session where a change needs a writer's.
+- **A mark is owed for a change told, never for a mark told.** Owed for any vector that grew, two members that
+  only mark would answer each other's marks for ever.
+- **A mark is signed when the host asks (`Peer::mark`), not by every round.** "A device that has not written for
+  a while" (section 3.1) is time, and the core reads none; a host marks on its own period, or before it folds.
+  Signed by every round, a mark would also be a new operation in every round that read a change, which every
+  host and the relay would hold.
+- **A mark is no record of the outbox.** It carries nothing a host's journal keeps, and one lost in a crash is
+  read back with the device's chain (the wait for its own chain stays on every restore). It goes to the relay
+  with the chain, so it waits behind a record not recorded before it.
+- **The cut is over the current members' vectors and the host's own.** The members are every node whose latest
+  grant gives a role; a member of which the core holds no operation gives a vector of zeros, so the whole cut
+  is 0 until it writes or marks (section 9.2's "a member not heard from at 0"). What the host's own machine was
+  told bounds the cut as well, so a host never folds past what its own copy holds.
+- **The core keeps its chains whole; what is compacted at the cut is what it hands over.** Section 4.2 drops
+  the layer's log at the cut. The core's store is also the signed log every host verifies link by link (`prev`
+  and the cutoffs of grants), the proof a relay keeps by its own rules, and what a device gives back to a relay
+  whose list lapsed (ADR 0080 section 3): dropping links below the cut needs a signed base for a chain, which no
+  landing has. So `Peer::history` takes the cut and gives only what lies past it, and the host's journal is
+  folded there; the store itself is not pruned.
+- **The outbox holds back what a host journals, and only that.** `Peer::made` signs and holds back until
+  `Peer::recorded`; `Peer::outbound`, the path of a copy that keeps no journal, releases at once, since its host
+  records nothing. A change that waited and is signed by a round is a record too: the round's `taken` tells the
+  host, which records it, confirms it to the copy, and the next round gives it the relay. ADR 0083 section 3.1's
+  `sce_peer_set_journal`, a function the library's run would call to record in the middle of a round, is not
+  added: the write-ahead rule holds without it, and its cost is one round of latency for a change that waited.
+- **The history takes the cut.** `sce_peer_history(peer, after, out)`, where ADR 0083 section 2.5 named no cut:
+  the journal is folded at the stable cut (section 4.3), so a history from the beginning would recall what the
+  snapshot holds already.
+- **No wait on `set_identity`.** ADR 0083 section 3.4 made the wait for the device's own chain the rule of every
+  start that sets an identity. ADR 0093 section 4.1 settles the same case at its root: an incarnation that holds
+  neither a journal nor a sealed state joins as a new node, so no node is used by two incarnations, and the core
+  cannot tell a first start from a seed-only one. The wait stays on every restore of a sealed state.
+- **A withdrawal is in place, and named by its stamp.** `Outcome::withdrawn` gives each change withdrawn with its
+  stamp, as offered, and why, earliest first; `Outcome::rebuild` is raised for an eviction or a restoration alone.
+  The trust's `Waited::dropped` keeps its name and now holds the suffix (docs/adr/0093, section 6.2).
+- **The own stamp's rise is the round's, measured on the chain.** `Outcome::raised` is the highest stamp of the
+  device's own changes when it is above the one the round began at: a chain read back past what the core held,
+  or a waiting change the round signed. A raise to a stamp the copy holds already moves nothing.
+- **The floor leaves the core, the checkpoints stay.** `Peer::floor_event` and `sce_peer_floor_event` go: the list
+  reads no floor, and the stable cut and the mark are the core's word of stability. The checkpoints and the
+  relay's protocol for them stay, as what shows an operation withheld (`Trust::divergences`), which an audit reads.
+- **The ABI is version 8**, the sealed state the core's version 6 (it holds the outbox), and the recorded scenario
+  version 6, with steps a lane replays for each new function.
+- **The fold of the second domain is not in this step.** Folding a relay's history of `sce-trust/event/2` (section
+  8.3) needs that domain's encoder and its link's bytes, which 4c removed, back in the trust layer as a reader
+  of what is held, verified as any operation is; it lands as a step of its own, 5b, with section 9.5's test.

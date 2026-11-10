@@ -58,8 +58,19 @@ reviewer learns one set of rules:
   one event and one signed operation, `record_list.change`, so what `sce_peer_outbound` takes and the
   events an outcome holds are of another shape than the parts `record_list.write` and
   `record_list.supersede` of version 6, which the core no longer signs (section 4), a changed shape
-  of a text that the policy above makes a new number. What ADR 0083 counted among "version 7", the
-  core's outbox, takes the number after it, in ADR 0085's landing 5;
+  of a text that the policy above makes a new number. The version is 8 (2026-11-10, docs/adr/0085
+  landing 5, which is ADR 0083's landing 3 at change units with ADR 0093's core folded in, what ADR
+  0083 counted among "version 7"): the change a copy that keeps a journal offers is signed in the
+  call that takes it (`sce_peer_made`) and is a record the host journals (`sce_peer_take_records`),
+  and a round gives the relay no operation of the device's own past the first the host has not said
+  it recorded (`sce_peer_recorded`), which a lane of version 7 never says, a changed meaning of a
+  round; the outcome holds `withdrawn` in place of `dropped`, a send that never will be signed
+  withdrawn with every send after it and the machine built again for none of them, and `raised`
+  (section 5); `sce_peer_floor_event` is gone, since the list reads no floor, and the stable cut and
+  a device's mark say what every member was told (`sce_peer_stable_cut`, `sce_peer_mark`); a host
+  started again gives back its journal's records (`sce_peer_restore_records`), recalls the history
+  (`sce_peer_history`) and raises its copy's clock to the device's own stamp (`sce_peer_own_stamp`)
+  (section 4). The sealed state is the core's version 6, which holds the outbox (section 6);
 - a handle (`ScePeer`, `ScePeerLink`, `ScePeerCancel`) is made and freed by the library and used by
   one thread at a time, but for the two calls section 11 lets any thread make at any time (raising a
   run's cancellation, telling a link the network changed);
@@ -149,7 +160,15 @@ log is written (section 7).
 | `sce_peer_standing(peer, out)` | `Peer::standing` | what the device stands at in its list, as one JSON text (section 8) |
 | `sce_peer_for_a_hub(peer)` | `Peer::for_a_hub` | before the first exchange: the machine is a hub's |
 | `sce_peer_with_group(peer, node, seed)` | `Peer::with_group` | once, before the first exchange of a device with no sealed state yet: the core holds a new device of `node` in the list's MLS group, which the sealed state keeps from then on |
-| `sce_peer_outbound(peer, event, data, kept, reason)` | `Peer::outbound` | what the machine sent, and what the core did with it (section 4) |
+| `sce_peer_outbound(peer, event, data, kept, reason)` | `Peer::outbound` | what the machine of a copy that keeps no journal sent, and what the core did with it (section 4) |
+| `sce_peer_made(peer, data, kept, reason)` | `Peer::made` | the change a copy that keeps a journal offered (`record_list.made`'s payload), signed in the call; `kept` is the verdict the host gives the copy (section 4) |
+| `sce_peer_take_records(peer, out)` | `Peer::take_records` | the records the host has not said it recorded, as a JSON array of `{"seq", "event", "data"}`, the number as text (section 4) |
+| `sce_peer_recorded(peer, through)` | `Peer::recorded` | the host recorded every record up to `through`: the next round gives the relay what it lacks of them |
+| `sce_peer_restore_records(peer, records, count)` | `Peer::restore_records` | a journal's records past the sealed state restored, in the form `sce_peer_take_records` gives, taken back as the device's own; `count` (may be null) is how many the core did not hold; `SCE_PEER_ERR_BAD_ARGUMENT` for a text that is not that array, `SCE_PEER_ERR_UNREADABLE` for a record that is not the device's or does not hold |
+| `sce_peer_history(peer, after, out)` | `Peer::history` | what a machine built again is given, as one JSON object (section 4), from the cut `after` (a JSON array of `[node, seq]` pairs as texts) on, or the whole of it when `after` is null |
+| `sce_peer_stable_cut(peer, out)` | `Peer::stable_cut` | the stable cut, as a JSON array of `[node, seq]` pairs as texts: for each device, the highest number every member is known to have been told |
+| `sce_peer_mark(peer, seq)` | `Peer::mark` | signs a mark of what the machine was told when one is owed; `seq` (may be null) is its number, 0 when none was |
+| `sce_peer_own_stamp(peer, wall_time, counter, read_back)` | `Peer::own_stamp` | the highest stamp of the device's own changes the core holds (0 and 0 for none), and 1 once it has read its own chain back; each out may be null |
 | `sce_peer_start(peer, kind)` | `Peer::start` | begins a round: `SCE_PEER_ROUND_SYNC`, `_RESYNC` or `_REREAD` |
 | `sce_peer_publish_checkpoint(peer, before, digest)` | `Peer::publish` of a checkpoint | begins the exchange that gives the relay the person's checkpoint up to `before` |
 | `sce_peer_publish_key_package(peer)` | `Peer::publish_key_package` | begins the exchange that leaves a key package of the group's device with the relay |
@@ -164,7 +183,6 @@ log is written (section 7).
 | `sce_peer_respond(peer, response)` | `Peer::respond` | the relay's response text to that request |
 | `sce_peer_fail(peer, reason)` | `Peer::fail` | the transport did not carry the request or its answer |
 | `sce_peer_take_outcome(peer, out)` | `Peer::take_outcome` | what the exchange came to, once; empty when none ended |
-| `sce_peer_floor_event(peer, before, digest, out)` | `Peer::floor_event` | the event that says an instant is settled; empty when it is not |
 | `sce_peer_save_sealed(peer, state, key)` | `Peer::save_sealed` | what the device keeps, its secrets with the rest, sealed under a data key drawn for this save; `key` is set to that key (32 bytes) for the host to wrap (section 6) |
 | `sce_peer_save_sealed_under(peer, key, state)` | `Peer::save_sealed_under` | the same, under a 32-byte data key the host gives: one it drew itself, or a recording's fixed key |
 | `sce_peer_restore_sealed(peer, node, state, len, key, count)` | `Peer::restore_sealed` | takes a sealed state back for the device of `node`, under the unwrapped data key, into a core just made for the list and given nothing else |
@@ -205,12 +223,47 @@ what waits, in that order, as far as the device may, once the logs are level and
 device's own chain is read back, before the relay is given what it lacks: the round that reads what a
 send waited for gives it the relay, and its outcome names it in `taken` (section 5). The same send
 made again while it waits waits once (`SCE_PEER_KEPT_WAITING` again), and one of another content under
-the dot of a change that waits is refused at once. When a round's log says the person never may (a
-reader, a device taken off before it read the list), every send that waited is refused then, each with
-why, in the outcome's `dropped`, and `rebuild` is true: the machine took the write in as made and no
-other copy will hold it, so the host builds its machine again and makes a resync, as for an evicted
-operation, and a host that keeps its own log of commands takes the dropped send out of that log (and
-may tell its person). What waits counts in the standing (`waiting`, section 8).
+the dot of a change that waits is refused at once. When a send that waited never will be signed (the
+round's log says the person never may: a reader, a device taken off before it read the list; or it
+would conflict with what the device signed, a stamp that goes back along its chain among them), it is
+withdrawn, and so is every send after it, in order, each with why, in the outcome's `withdrawn`
+(docs/adr/0093, section 6.2): each was made on a state that held the one before it. The copy took
+each in provisionally, and the host withdraws them in place (below); no machine is built again for
+it. What waits counts in the standing (`waiting`, section 8).
+
+**A change a copy that keeps a journal offers** (docs/adr/0083 section 3, docs/adr/0093 section 3)
+is given to `sce_peer_made` as `record_list.made`'s JSON payload: the change (`by`, `wallTime`,
+`counter`, `ops`) and the `command` that closed it, which is the host's and is not signed. The core
+signs it in the call, as one operation, and `*kept` is the verdict the host gives the copy
+(`record_list.verdict`): `SCE_PEER_KEPT_TAKEN` is `accepted`, `_HELD` `held`, `_WAITING` `waiting`
+and `_REFUSED` `refused`, with `*reason` for the last two. What is signed is a **record**: its number,
+its event and the text the relay is given (`sce_peer_take_records`). The host appends it to its
+journal in the transaction that holds the change and its verdict, says so (`sce_peer_recorded`), and
+only then gives the copy the verdict; no round gives the relay an operation of the device from the
+first record not recorded on, so nothing the person is shown as saved is held by anyone before the
+journal holds it. A change that waited and is signed by a round is a record too, held back the same
+way, and the round's `taken` names it: the host records it and gives the copy `record_list.confirm`;
+the next round gives it the relay. The records are in the sealed state until the host says it
+recorded them. A host that keeps no journal gives the core what its copy sends to `#people`
+(`sce_peer_outbound`), which is released at once.
+
+**A start.** A host started again restores the sealed state (section 6), gives back the records its
+journal holds past it (`sce_peer_restore_records`), which are verified and taken as the device's own,
+recorded already, before it signs anything, and gives the changes its journal holds that the core
+does not (each `held` or kept again, never prepared again). It recalls the history into a fresh
+machine (`sce_peer_history`): `{"roster", "changes"}`, `roster` the pairs `[name, payload text]` a
+round tells the roster in, `changes` every change the core holds that a round would tell, the
+device's own included, whole and in causal order, each `{"event", "data", "provisional": false,
+"author", "seq", "context"}` with its tag read from its link (numbers as text, `context` pairs
+`[node, seq]`), from the stable cut the host folded its journal at; then the device's own changes that
+wait to be signed, each `{"event", "data", "provisional": true}`, which the copy recalls
+provisionally. It gives the copy `record_list.raise` with the device's own stamp
+(`sce_peer_own_stamp`), and again whenever a round's outcome holds `raised`. **The stable cut**
+(`sce_peer_stable_cut`) is, for each device, the highest number every member is known to have been
+told, read from each member's latest operation; a member that has written nothing for a while says
+what it was told by a mark (`sce_peer_mark`), an operation of its chain no machine is told, which the
+next round gives the relay. When "a while" is up is the host's to judge on its own clock. The host
+folds its journal at the cut (docs/adr/0085, section 4.3).
 
 ## 5. A round
 
@@ -238,9 +291,10 @@ The outcome is a JSON object, read by its members' names:
 | `refused` | ended | each record the core or the relay refused, and why; the rest of the round went on |
 | `pushed` | ended | how many entries, operations and checkpoints the relay was given that it lacked |
 | `evicted`, `restored` | ended | the operations, each `[node, number]` as texts, the machine was told and is to be without, or was not told and is to be with |
-| `taken` | ended | the sends that waited (section 4) and were signed and given the relay, a new operation each, in the order they were made, each `[name, payload text]` as the machine sent it; a send that waited and that the device held already when the round came to it (a device restored from an older state, whose chain the round read back) is in neither `taken` nor `dropped`, since nothing was signed for it and the host has nothing to do (the Rust outcome names it in `held`) |
-| `dropped` | ended | the sends that waited and never will be signed, each `[name, payload text, reason]` (section 4) |
-| `rebuild` | ended | whether the host is to build its machine again and make a resync (an operation was evicted or restored, or a send was dropped) |
+| `taken` | ended | the sends that waited (section 4) and were signed, a new operation each, in the order they were made, each `[name, payload text]` as the machine sent it or the copy offered it: one of a host that keeps no journal was given the relay, and one a copy offered is a record the next round gives it once the host recorded it; a send that waited and that the device held already when the round came to it (a device restored from an older state, whose chain the round read back) is in neither `taken` nor `withdrawn`, since nothing was signed for it and the host has nothing to do (the Rust outcome names it in `held`) |
+| `withdrawn` | ended | the sends that waited and never will be signed, the first and every one after it, earliest first, each `{"event", "data", "wallTime", "counter", "why"}`, the wall time as text (section 4): the host journals the withdrawal and gives the copy one `record_list.withdraw` naming the earliest |
+| `rebuild` | ended | whether the host is to build its machine again and make a resync: an operation was evicted or restored. A withdrawal is not one |
+| `raised` | a round that raised the device's own stamp | `{"wallTime", "counter"}`, the wall time as text: the highest stamp of the device's own changes, which rose in the round (it read the device's own chain back past what the core held, or signed what waited); the host gives the copy `record_list.raise` with it. The member is not written for any other exchange |
 | `stalled` | ended | whether the round stopped before the end of what the relay holds; a later round goes on from there |
 | `conflicted` | an exchange that froze the device's own chain | the number, as text, the device's own chain is frozen from: the relay answered `conflict` to an operation of the device's own (the round ended there), or a round read one that conflicts with it (`docs/SCE_SHARED_LIST_RELAY.md` sections 3 and 6). The device signs nothing more, every host that holds both freezes it at the same number, and the host tells its person that an administrator has to take the device off and grant a new one; the member is not written for any other exchange |
 | `reread` | ended | whether the group's device needed a second read from the start, whose events are in `events` after the round's |
@@ -254,8 +308,6 @@ The outcome is a JSON object, read by its members' names:
 A 64-bit number is written as text, as the relay protocol writes it. The MLS records a round read are
 taken in by the group's device inside the core and are not in the outcome; what the device did with
 them is in `steps`.
-
-The floor event is the pair `[name, payload text]` the machine is told.
 
 **A login** (`sce_peer_login(peer, audience)`, ADR 0080) is an exchange driven the same way: a
 `challenge` for the device's node, and a `login` signed with the device's person's key for
@@ -406,9 +458,11 @@ device's own operations back from the relay (`docs/SCE_SHARED_LIST_RELAY.md` sec
 the relay's heads and the core agree to where the relay holds nothing more, past a conflict or a gap
 its heads stop at; that round signs what waited at the numbers after the device's last, and a send
 that waited and that the chain read back holds already is the operation it holds, signed once (in
-neither `taken` nor `dropped`). A device whose chain the relay holds past a conflict finds it there,
-and signs nothing more. A host that rebuilds its machine from
-its own log after a restore gives the core the machine's sends when it likes, and makes a resync.
+neither `taken` nor `withdrawn`). A device whose chain the relay holds past a conflict finds it there,
+and signs nothing more. A host whose copy keeps a journal gives back the records its journal holds
+past the state (`sce_peer_restore_records`) and recalls the history (section 4); the sealed state is
+the core's version 6, which holds the records not recorded yet and which waiting changes a copy
+offered.
 Whether it still waits is in what it stands at (`awaits_own_chain`, section 8).
 
 ## 7. An administrator's acts
@@ -495,8 +549,18 @@ round, his change that writes his first write over and the field anew, one opera
 each request and the relay's answer, the outcomes, bob's
 sealed state and his core made again given nothing but the list and the genesis and restored from it
 with no key given again, a change of his that comes back held and a new one kept waiting until his
-chain is read back, which the round that reads it signs and which then comes back held, a resync, a
-round of alice's whose transport fails, and bob taken off: a change his core signs before it read the
+chain is read back, which the round that reads it signs and which then comes back held, a resync;
+bob's core started again from the same older state, whose copy now keeps a journal and offers two
+changes (`made`) that wait, the first stamped before the change of his the state lacks: the round
+that reads his chain back says his stamp rose (`raised`) and withdraws both, earliest first
+(`withdrawn`); a round of alice's whose transport fails; alice's copy keeping a journal: a change she
+offers signed in the call and held back from the relay as a record (`records`) until her host
+recorded it (`recorded`), a change offered in bob's name refused, her core started again from the
+state saved before the change and given back the record (`restore_records`), a change offered before
+her chain is read back waiting, the history her rebuilt machine is given (`history`, the waiting
+change provisional), her own stamp (`own_stamp`) before and after the round that reads her chain
+back, signs what waited as a record and says the stamp rose; bob marking what he was told (`mark`)
+and the stable cut it moves (`stable_cut`); and bob taken off: a change his core signs before it read the
 removal reaches no one, since the relay refuses a device the log took off. Bob's device is handed no
 token: it logs in (a `login` step, which names the audience, and its requests, answers and outcome)
 before its first round, and the relay's answers to its rounds are made with the token that login

@@ -150,7 +150,7 @@ in process, a host's own through the peer core's C ABI, or the deployment transp
 |---|---|
 | `entries from` | the log's entries from a position, and how long the relay's log is |
 | `append entry` | an entry, taken when it verifies |
-| `submit event data` | an operation, taken when it verifies; `new: false` when the relay held it already; `conflict` when it conflicts with what the relay holds of its author, which the relay keeps (below) |
+| `submit event data` | an operation, taken when it verifies; `new: false` when the relay held it already; `conflict` when it conflicts with what the relay holds of its author, which the relay keeps (below). A change needs a writer's session; a mark (`sce_trust.mark`, `docs/SCE_SHARED_LIST_TRUST.md` section 3), which changes nothing of the list and which every member signs, a reader's |
 | `checkpoint` | a checkpoint, as above |
 | `feed cursor limit` | the records after the first `cursor`, in arrival order, bounded by the relay |
 | `operations node from to` | a range of one device's chain |
@@ -270,7 +270,11 @@ things:
 1. brings the two logs level: the relay's entries come in and are checked, the entries the relay lacks
    go out;
 2. gives the relay what it lacks, by comparing heads and sending the missing ranges and the
-   checkpoints the host holds, so that nothing needs a queue that could be lost in a crash. Before
+   checkpoints the host holds, so that nothing needs a queue that could be lost in a crash. Of the
+   host's own person's chain it gives nothing from the first operation its host keeps a journal of
+   and has not said it recorded (`Trust::released_through`, docs/adr/0083 section 3.1): the round
+   after the host recorded it gives it, so that no relay holds what the host's journal does not.
+   Before
    it gives anything, when the relay's heads name more of the host's own person's chain than the host
    holds, it asks for those operations (`operations`, the device's node) and takes them in, so that a
    device whose state came back from an older store numbers its next operation past every one it
@@ -318,9 +322,11 @@ own person's device takes it in (`Trust::receive_grant`) and tries the operation
 of it again in the same round.
 
 The peer core (`sce-rust-peer`, ADR 0079) composes a device's `Trust`, the round machine and the
-device of the list's MLS group, and speaks to its host in texts. The machine's outbound
-`record_list.write` and `record_list.supersede` are signed and remembered (`Peer::outbound`, through
-the same `keep` that `Keep` uses); a round is request texts out and response texts in
+device of the list's MLS group, and speaks to its host in texts. The change a copy that keeps a
+journal offers is signed in the call and held back as a record until the host recorded it
+(`Peer::made`, through `keep_made`), and the machine's outbound `record_list.change` of a copy that
+keeps none is signed and remembered (`Peer::outbound`, through the same `keep` that `Keep` uses); a
+round is request texts out and response texts in
 (`Peer::poll_request`, `Peer::respond`, `Peer::fail`), and its outcome is the events for the machine in
 order, the refusals, whether the machine is to be built again, whether it stalled, and what the group's
 device did with what was read; the device's state is saved and restored as one text. It reads no clock
