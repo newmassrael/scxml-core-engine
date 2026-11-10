@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: one length shared by two byte strings that a gate each
+  decides, which the value states where neither is there (docs/adr/0058 §1,
+  "a length or count of gated content").
+
+  `span_len` is the length of `alpha`, of `beta`, or of both where both are
+  there, and they must then say the same. Where neither is there the wire
+  still holds `span_len`, and the value states it: the accessor answers it
+  then, and answers no value while some content says it. A value that states
+  a length beside content that says another has no frame either. Each refusal
+  is `InconsistentSource`, before the first byte.
+
+  Wire shape: the flags, `span_len`, then `alpha` where `has_alpha` is set,
+  then `beta` where `has_beta` is set, each `span_len` bytes long.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_length_stated">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_alpha" bit="0"/>
+      <sce:flag name="has_beta" bit="1"/>
+    </sce:flags>
+    <sce:field id="span_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="alpha" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="span_len" sce:present-if="flags.has_alpha"/>
+    <sce:field id="beta" sce:type="bytes" sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="span_len" sce:present-if="flags.has_beta"/>
+  </datamodel>
+</scxml>

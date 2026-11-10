@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: the encoded length of a body whose own encode can
+  refuse, held in a field that may not hold it (docs/adr/0058 §1,
+  docs/adr/0065 §5).
+
+  `inner_size` is how many bytes `inner` encodes to. The language bounds no
+  encoded length, so a 16-bit field may not hold one, and a length past 65535
+  is refused with `LengthOutOfRange`. The body is `codec_length_shared`, whose
+  encode refuses two byte strings of different lengths; counting it passes
+  that refusal on, before the parent writes its first byte.
+
+  Wire shape: `inner_size` (16 bits, big-endian), then the body.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_encoded_length_checked">
+  <sce:import src="codec_length_shared.scxml" kind="codec" as="codec_length_shared"/>
+  <datamodel>
+    <sce:field id="inner_size" sce:type="uint16" sce:byte="0" sce:bit-size="16"/>
+    <sce:embed id="inner" type="codec_length_shared" sce:byte="2"
+               sce:length-from="inner_size"/>
+  </datamodel>
+</scxml>

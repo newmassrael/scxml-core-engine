@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: one length shared by two byte strings that are always
+  there (docs/adr/0058 §1, docs/adr/0065 §2).
+
+  `span_len` is the length of `alpha` and of `beta` alike. The wire has room
+  for one number, so a value whose two byte strings differ in length has no
+  frame: the encode refuses it with `InconsistentSource` before its first
+  byte. The first byte string says the number, and the second is held to it.
+
+  Wire shape: `span_len`, then `span_len` bytes of `alpha`, then `span_len`
+  bytes of `beta`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_length_shared">
+  <datamodel>
+    <sce:field id="span_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="alpha" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="span_len"/>
+    <sce:field id="beta" sce:type="bytes" sce:byte="2" sce:bit-size="length-ref"
+               sce:length-field="span_len"/>
+  </datamodel>
+</scxml>
