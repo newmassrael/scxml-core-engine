@@ -1420,8 +1420,15 @@ impl RoundMachine {
                 // A send that waited for the device's own chain is signed at the number after the
                 // last of it, before the heads the relay is given from are read. A publication reads
                 // nothing of the chain back, so it does not end the wait.
+                //
+                // What the chain brought back is told to the machine first: the device's own
+                // column of the delivered vector says how far the machine holds its own chain, and
+                // signing a new operation counts the machine as holding everything below it, so an
+                // operation read back and told only when the round ends would be counted told and
+                // never told.
                 if reading {
                     self.trust.confirm_own_chain(&heads);
+                    self.round.events.extend(self.trust.deliver());
                     self.sign_waiting();
                 }
                 let theirs = heads.iter().map(|head| (head.node, head.seq)).collect();
