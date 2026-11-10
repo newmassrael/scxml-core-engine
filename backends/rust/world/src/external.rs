@@ -81,6 +81,8 @@
 //! |---|---|---|
 //! | `peer_make` | `library` (the core's shared library), `list`, `node` (a number), `seed` (hex), `genesis` (hex or null: the hash a device is invited with), `administrator` (hex or null), `group` (bool) | `ok` |
 //! | `peer_outbound` | `event`, `data` | `ok`, `kept` (`taken`, `held`, `not_signed`, `refused`), `reason` (text or null) |
+//! | `peer_made` | `data` (`record_list.made`'s payload) | `ok`, `kept` (`taken`, `held`, `waiting`, `refused`: the verdict), `reason` (text or null) |
+//! | `peer_record` | | `ok`, `records` (the ABI's text of the records the core gave, every one of which the host then said it recorded) |
 //! | `peer_round` | `begin` (`sync`, `resync`, `reread`, `key_package`) | an exchange, or the end of the run |
 //! | `peer_carried` | `response` (text), or `failed` (`link`, `deadline`, `cancelled`) and `reason` | an exchange, a wait, or the end of the run |
 //! | `peer_paused` | | an exchange, a wait, or the end of the run |
