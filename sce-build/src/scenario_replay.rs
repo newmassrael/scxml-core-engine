@@ -820,11 +820,19 @@ impl Holds {
         scope: &crate::forge::value_type::TypeScope,
     ) -> Self {
         use crate::forge::model::AlgorithmValueType;
-        // A record of an alias the document does not import has no field to
-        // admit `null` in; the parser refuses such a document before this.
+        // A record of entries by its schema; one that holds a list or a record,
+        // which an optional variable holds (docs/adr/0087, Landing order item
+        // 8), by walking its type in the statechart's scope. A record of an
+        // alias the document does not import has no field to admit `null` in;
+        // the parser refuses such a document before this.
         let record = |alias: &str| match records.get(alias) {
             Some(schema) => Self::of_schema(schema),
-            None => Self::Record(BTreeMap::new()),
+            None => Self::of_type(
+                &crate::forge::value_type::ValueType::Record {
+                    alias: alias.to_string(),
+                },
+                scope,
+            ),
         };
         let union = |alias: &str| {
             Self::of_type(
@@ -992,8 +1000,8 @@ pub struct MachineFacts {
 impl MachineFacts {
     /// The facts of `model`, a statechart read from a document whose stem is `name`.
     pub fn of(model: &crate::model::SCXMLModel, name: &str) -> Self {
-        // A variable that names a record holding a composition is refused where
-        // the document is parsed, so every record a variable names is here.
+        // The records of entries a variable names; one that holds a composition
+        // is read from the statechart's scope ([`Holds::of_variable`]).
         let records = model.entry_records();
         let scope = crate::forge::value_path::statechart_scope(model);
         let variables: BTreeMap<String, Holds> = model
@@ -1930,6 +1938,57 @@ mod tests {
             "{}",
             unread.detail
         );
+    }
+
+    /// A variable of a record that holds a list of records (docs/adr/0087,
+    /// Landing order item 8), which no record of entries describes, is read by
+    /// walking its type in the statechart's scope: `null` stands where the
+    /// variable is absent and under an item's optional field, and nowhere else.
+    #[test]
+    fn a_variable_of_a_record_that_holds_a_list_is_read_by_its_type() {
+        use crate::forge::model::AlgorithmValueType;
+        use crate::forge::value_type::{ScopedRecord, TypeScope, ValueType, WrittenType};
+        let ty = |text: &str| -> ValueType { WrittenType::read(text).unwrap().bounded().unwrap() };
+        // A record names the records it holds in the scope of its own document.
+        let record = |fields: &[(&str, &str)], scope: TypeScope| ScopedRecord {
+            identity: String::new(),
+            name: String::new(),
+            fields: fields
+                .iter()
+                .map(|(id, written)| (id.to_string(), ty(written)))
+                .collect(),
+            scope,
+        };
+        let mut within_plan = TypeScope::default();
+        within_plan.records.insert(
+            "Item".into(),
+            record(
+                &[("title", "string[8]"), ("note", "optional<string[4]>")],
+                TypeScope::default(),
+            ),
+        );
+        let mut scope = TypeScope::default();
+        scope.records.insert(
+            "Plan".into(),
+            record(
+                &[("title", "string[8]"), ("items", "list<record:Item>[3]")],
+                within_plan,
+            ),
+        );
+        let declared: AlgorithmValueType = WrittenType::read("optional<record:Plan>").unwrap();
+        let plan = Holds::of_variable(Some(&declared), &BTreeMap::new(), &scope);
+        assert!(plan.admits_null(), "the variable starts absent");
+        let item = plan
+            .field("items")
+            .and_then(Holds::element)
+            .expect("the plan's items are a list of records");
+        assert!(item.field("note").is_some_and(Holds::admits_null));
+        assert!(item
+            .field("title")
+            .is_some_and(|title| !title.admits_null()));
+        assert!(plan
+            .field("title")
+            .is_some_and(|title| !title.admits_null()));
     }
 
     /// A union is read by its type (docs/adr/0092, section 6.1 item 7): its
