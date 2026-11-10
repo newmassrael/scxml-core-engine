@@ -431,11 +431,30 @@ fn a_basic_http_send_writes_each_composed_value_alone_into_its_row() {
             "_host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[1]);",
         ],
     );
+    // The BasicHTTP send's own block: from the pairs it declares to the request
+    // it fills. The schema's payload writer elsewhere in the machine writes the
+    // pair `items` into an object of its own, which is not this send's.
+    let start = code
+        .find("sce_host_send_param_t _host_params[7];")
+        .unwrap_or_else(|| panic!("the BasicHTTP send's pairs in:\n{code}"));
+    let end = start
+        + code[start..]
+            .find(
+                "_host_req.processor_type = \
+                 \"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor\";",
+            )
+            .unwrap_or_else(|| panic!("the BasicHTTP send's request in:\n{code}"));
+    let send = &code[start..end];
     assert!(
-        !code.contains("sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\")"),
-        "no pair of the composed value is written into an object:\n{code}"
+        send.contains("sce_forge_wire_begin_value(&sce_wire_value_, SCE_SCRATCH_BUF(pairs[1]),"),
+        "the block is the send that writes `items` alone:\n{send}"
     );
-    assert!(!code.contains("sce_forge_wire_copy_since("), "{code}");
+    assert!(
+        !send.contains("sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\")")
+            && !send.contains("sce_forge_wire_begin(&sce_wire_"),
+        "no pair of the composed value is written into an object:\n{send}"
+    );
+    assert!(!send.contains("sce_forge_wire_copy_since("), "{send}");
 }
 
 /// `sce-codegen <args> <file>` over `document` written as `name` in a
