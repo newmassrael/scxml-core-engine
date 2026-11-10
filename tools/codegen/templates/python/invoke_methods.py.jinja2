@@ -434,7 +434,21 @@
                     saved_document={% if inv.candidates %}__sce_selected_{{ inv.field_suffix | to_python_const }}{% else %}{{ inv.child_name | py_string_literal }}{% endif %},
                     save_session=getattr(_child_module_{{ inv.field_suffix | to_python_const }}, "save_at", None),
                 )
-                _invoke.start(engine)
+                # docs/adr/0096: the child's start establishes its own script
+                # session, and a child whose session cannot be established is
+                # a failed invoke: it is not kept, this machine raises
+                # error.execution naming the invoke and the step, and no
+                # done.invoke is raised for it. The id named is the one
+                # `_event.invokeid` would have carried.
+                try:
+                    _invoke.start(engine)
+                except _ScriptSessionUnavailable as _refused:
+                    engine.refuse_child_start(
+                        _child_engine,
+                        {% if inv.idlocation %}entry.invoke_id{% else %}{{ inv.invoke_id | py_string_literal }}{% endif %},
+                        _refused.failure,
+                    )
+                    continue
                 # W3C SCXML 6.4: key `_active_invokes` by the static
                 # element id so `<send target="#_<id>">` (explicit id
                 # path, test228) resolves regardless of which spawn

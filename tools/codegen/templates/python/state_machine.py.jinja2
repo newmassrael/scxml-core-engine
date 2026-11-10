@@ -50,6 +50,7 @@ from sce_runtime import (
     HistoryTarget,
 {% endif %}
     PendingInvoke,
+    ScriptSessionUnavailable as _ScriptSessionUnavailable,
     ScxmlInvoke,
     StatePolicy,
     StateTarget,
@@ -432,7 +433,8 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     that engine's per-session global table — there is no Python-side
     namespace dict in this backend. The owning `Engine` allocates the
     session id at construction and binds it back into this policy via
-    `self._session_id`.
+    `self._session_id`; the session itself is made by the engine's start
+    (docs/adr/0096), before `initialize_datamodel` runs.
     """
 
 {% if accepts_simulated_host %}
@@ -1012,6 +1014,10 @@ class {{ machine_name }}Component:
                 context.kill(event.cancel.invoke_id)
 
         engine.register_invoker({{ test_component_invoke_type | py_string_literal }}, invoke)
+        # A machine whose script session cannot be established is not started
+        # (docs/adr/0096): `initialize` raises `ScriptSessionUnavailable` out of
+        # this `start`, as the construction of its session used to, and the
+        # component stays one that has not started.
         engine.initialize()
         self._engine = engine
 

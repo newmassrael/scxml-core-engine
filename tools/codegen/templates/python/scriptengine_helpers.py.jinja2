@@ -12,6 +12,13 @@
     process-wide LuaScriptEngine and unwraps the result into a Python value.
     `self._session_id` is bound by the engine at construction so helpers can
     address the right session without an extra parameter on every call site.
+
+    docs/adr/0096: the session that id names is made by the engine's start
+    (`Engine._establish_script_session`), the one place a session is made,
+    before `initialize_datamodel` runs; nothing here makes one. A helper that
+    reaches a session that is not there gets the engine's
+    `SessionNotFoundError`, which is not a `ScriptError` and so propagates
+    rather than being taken as `error.execution`.
 #}
 
     # ── Script helpers ─────────────────────────────────────────────
@@ -918,10 +925,32 @@
 {% endfor %}
 {% endif %}
 {% endif %}
+        # W3C SCXML 6.4.1 — invoke `<param>` / `namelist` overlay. The
+        # parent's `execute_pending_invokes` stages name→ScriptValue
+        # entries on `_pre_init_vars` between Engine construction and
+        # `_invoke.start()`, and the child's own start applies them here,
+        # in the session that start established (docs/adr/0096). After
+        # the `<data>`, so a staged value overrides the `<data>` default
+        # for the same id, and before the top-level `<script>`, which
+        # reads what the parent handed it: the order Appendix D's
+        # `interpret` gives, and the one the Rust, C++, Go and Kotlin
+        # children apply.
+        if self._pre_init_vars:
+            for _name, _val in self._pre_init_vars.items():
+                # The parent names the variable; a name the child's
+                # engine refuses (a system variable, §scxml-5.10) is
+                # `error.execution` in the child, not an exception.
+                try:
+                    engine._script_engine.set_variable(self._session_id, _name, _val)
+                except _ScriptError:
+                    self._raise_error_execution(
+                        engine, f"invoke <param name='{_name}'> could not be stored"
+                    )
 {% if model.global_scripts %}
         # W3C SCXML 5.8 — top-level `<script>` blocks run once at
         # engine startup, after the document's static datamodel is
-        # declared but before any onentry fires. The script body is
+        # declared and the invoke params applied, but before any onentry
+        # fires. The script body is
         # already Lua text (rewritten at codegen time); failures here
         # raise `error.execution` on the internal queue but do NOT
         # abort initialisation (the engine still enters the initial
@@ -939,23 +968,6 @@
             )
 {% endfor %}
 {% endif %}
-        # W3C SCXML 6.4.1 — invoke `<param>` / `namelist` overlay. The
-        # parent's `execute_pending_invokes` stages name→ScriptValue
-        # entries on `_pre_init_vars` between Engine construction and
-        # `_invoke.start()`; applying it last lets the staged values
-        # override any `<data>` default for the same id. Mirrors the
-        # Rust child policy's `set_param_in_script_engine` ordering.
-        if self._pre_init_vars:
-            for _name, _val in self._pre_init_vars.items():
-                # The parent names the variable; a name the child's
-                # engine refuses (a system variable, §scxml-5.10) is
-                # `error.execution` in the child, not an exception.
-                try:
-                    engine._script_engine.set_variable(self._session_id, _name, _val)
-                except _ScriptError:
-                    self._raise_error_execution(
-                        engine, f"invoke <param name='{_name}'> could not be stored"
-                    )
 
     def init_state_datamodel(self, state, engine) -> None:
 {# W3C SCXML 5.3.3: under `binding="late"` a state's `<data>` is given its
