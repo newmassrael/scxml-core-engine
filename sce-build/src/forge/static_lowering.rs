@@ -3215,12 +3215,12 @@ impl StaticTarget for KotlinTarget {
     // The runtime's `EventPayload.liftRecord` reads the text and hands the fields
     // to a lambda that reads each through the reader a delivery's value of its
     // type is read by (`Value.uint32`, `Value.string(bound)`, ...); its
-    // `liftValue` hands the whole object to the composed reader of a record that
-    // holds a list or a record, which reads it as a delivery's field of that
-    // type is read (`KotlinComposed`). A refusal is the record of the standard
-    // refusal document, its code matched constant by constant onto the machine's
-    // enum of it: an exhaustive `when` the compiler holds to the runtime's codes,
-    // both spelled as the enum document names them.
+    // `liftValue` hands the whole object to the composed reader of a union, or
+    // of a record that holds a list or a record, which reads it as a delivery's
+    // field of that type is read (`KotlinComposed`). A refusal is the record of
+    // the standard refusal document, its code matched constant by constant onto
+    // the machine's enum of it: an exhaustive `when` the compiler holds to the
+    // runtime's codes, both spelled as the enum document names them.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
         const PAYLOAD: &str = "com.sce.runtime.EventPayload";
         let enum_reader = |alias: &str, v: &str| -> Option<String> {
@@ -18737,9 +18737,11 @@ fn lower_action(
                 return Ok(reads_payload);
             }
             // ... and a field of a union is written where its case is proven
-            // (section 6.1 item 6), through the place the cases left give it; a
-            // text or a byte string held to the field's bound, as a record's is.
-            if let Some((place, field)) =
+            // (section 6.1 item 6), through the place the cases left give it, or
+            // by assigning the holder the next value whole where the target's
+            // union is an immutable value; a text or a byte string held to the
+            // field's bound, as a record's is.
+            if let Some((written, field)) =
                 union_field_place(&action.location, ctx, renames, rewrites)?
             {
                 let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
@@ -18762,10 +18764,18 @@ fn lower_action(
                     _ => lower(&action.expr, slot)?,
                 };
                 rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+                let write = |v: &str| match &written {
+                    crate::forge::composed_lowering::UnionMemberWrite::Place(place) => {
+                        target.assign(place, v)
+                    }
+                    crate::forge::composed_lowering::UnionMemberWrite::Holder { holder, next } => {
+                        target.assign(holder, &next(v))
+                    }
+                };
                 (action.native_code, action.native_fails) = statement(
                     &value,
                     slot,
-                    &|v| target.assign(&place, v),
+                    &write,
                     format!("<assign location='{}'>", action.location.trim()),
                 );
                 return Ok(reads_payload);
@@ -20094,18 +20104,28 @@ fn whole_union_copy(
         .map_err(refused)
 }
 
-/// The place an `<assign>` to `location` writes where `location` names a field
-/// of a union value (docs/adr/0092, section 6.1 item 6), as the cases the
-/// facts of `ctx` leave the union in give it, with the place of the field
-/// (whose type a text or a byte string is held to). `None` for a location that
-/// is no field of a union. The judge proved the cases left each declare the
-/// field; a write the target has no place for is refused by name.
+/// How an `<assign>` to `location` writes where `location` names a field of a
+/// union value (docs/adr/0092, section 6.1 item 6), as the cases the facts of
+/// `ctx` leave the union in give it ([`ComposedSpelling::union_member_write`]):
+/// through the place of the field, or by assigning the holder the next value
+/// whole; with the place of the field (whose type a text or a byte string is
+/// held to). `None` for a location that is no field of a union. The judge
+/// proved the cases left each declare the field; a write the target has no
+/// spelling of is refused by name.
+///
+/// [`ComposedSpelling::union_member_write`]: crate::forge::composed_lowering::ComposedSpelling::union_member_write
 fn union_field_place(
     location: &str,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<Option<(String, crate::forge::value_path::Place)>, GenerateError> {
+) -> Result<
+    Option<(
+        crate::forge::composed_lowering::UnionMemberWrite,
+        crate::forge::value_path::Place,
+    )>,
+    GenerateError,
+> {
     let location = location.trim();
     let Some((holder, member)) = location.rsplit_once('.') else {
         return Ok(None);
@@ -20136,7 +20156,7 @@ fn union_field_place(
     );
     let holder_text = place_text(holder, ctx, renames, target, &*spelling).map_err(refused)?;
     let written = spelling
-        .union_member_place(&holder_text, union, &left, member.trim())
+        .union_member_write(&holder_text, union, &left, member.trim())
         .map_err(refused)?;
     Ok(Some((written, field)))
 }

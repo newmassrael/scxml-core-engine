@@ -307,9 +307,11 @@ class {{ machine_name }}StateMachine(
    `kind` and the type `type`, held to its `bound`, `what` naming it in a
    refusal: what a restore reads each variable by (below), and what a test
    component reads each module parameter by from the run's values
-   (docs/SCE_TEST_PROFILE.md §11.8), whether or not the machine saves. #}
+   (docs/SCE_TEST_PROFILE.md §11.8), whether or not the machine saves. A
+   union reads itself back by its tag as a record does (docs/adr/0092,
+   section 6.1 item 7). #}
 {% macro saved_read(kind, type, value, what, bound, elem) -%}
-{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
+{%- if kind == "optional" and elem in ["enum", "record", "union"] -%}
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> {{ type }}.fromSaved(e, w) }
 {%- elif kind == "optional" and type == "bytes" -%}
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, {{ bound if bound is not none else "Int.MAX_VALUE" }}) }
@@ -317,7 +319,7 @@ SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, 
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.string(e, w, {{ bound }}) }
 {%- elif kind == "optional" -%}
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.{{ type }}(e, w) }
-{%- elif kind == "record" or kind == "enum" -%}
+{%- elif kind in ["record", "enum", "union"] -%}
 {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif kind == "list" -%}
 SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
@@ -505,11 +507,11 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 {% macro saved_write(kind, type, name, elem) -%}
-{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
+{%- if kind == "optional" and elem in ["enum", "record", "union"] -%}
 SavedValues.optional({{ name }}) { it.toSaved() }
 {%- elif kind == "optional" -%}
 SavedValues.optional({{ name }}) { SavedValues.of(it) }
-{%- elif kind == "record" or kind == "enum" -%}
+{%- elif kind in ["record", "enum", "union"] -%}
 {{ name }}.toSaved()
 {%- elif kind == "list" -%}
 SavedValues.list({{ name }}) { SavedValues.of(it) }
@@ -521,7 +523,7 @@ SavedValues.of({{ name }})
 {%- endmacro %}
 {# `saved_read`, the reads of each restored variable, is declared above the
    variables, since a test component's module parameter is read by it too. A
-   record's or an enum's saved form is its own type's (`toSaved` /
+   record's, a union's or an enum's saved form is its own type's (`toSaved` /
    `fromSaved`, emitted with the type by the static lowering). A per-type function here, named by
    prefixing the record's type, would reserve every variable name that prefix
    could match (`crate::reader_names` reads a template name as a pattern), and

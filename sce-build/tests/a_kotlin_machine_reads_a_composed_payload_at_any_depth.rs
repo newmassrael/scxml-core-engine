@@ -21,8 +21,9 @@
 //! * The reads: `<foreach>` over a list the payload holds and over a list an
 //!   enclosing loop's item holds, an index into a list of lists, a field of an
 //!   element read through its index.
-//! * A payload that holds a union stays refused by name on Kotlin, which holds
-//!   no union yet (docs/adr/0092, section 7).
+//! * A payload that holds a union is read by its tag on Kotlin, which holds a
+//!   union (docs/adr/0092, section 7), and refused by name on each backend
+//!   that holds none.
 
 mod common;
 
@@ -431,14 +432,16 @@ const SHAPES: [&str; 5] = [
     "event_shapes_minimal.scxml",
 ];
 
-/// Pinned by the union arm of the gate's read (`first_unlowered_composed_use`,
-/// `sce-build/src/forge/event_schema_check.rs`) and by `union_reached`
-/// (`sce-build/src/forge/composed_lowering.rs`): Kotlin reads a composed
-/// payload, holds no union, and so refuses a read of a payload that holds one
-/// by its own name, naming the field and the union; each backend whose row
-/// holds a union, asked of the table, reads it.
+/// Pinned by the Kotlin row of `ComposedLowering::of` (`unions`,
+/// `sce-build/src/forge/event_schema_check.rs`), by the union arm of the gate's
+/// read (`first_unlowered_composed_use`) and by `union_reached`
+/// (`sce-build/src/forge/composed_lowering.rs`): Kotlin holds a union, so it
+/// reads a payload that holds one by its tag (docs/adr/0092, section 7), as
+/// each backend whose row holds a union does; each backend whose row holds
+/// none, asked of the table, refuses the read by its own name, naming the
+/// field and the union.
 #[test]
-fn a_payload_that_holds_a_union_stays_refused_by_name_on_kotlin() {
+fn a_payload_that_holds_a_union_is_read_on_kotlin_and_refused_by_name_elsewhere() {
     let unions = repo_root().join("sce-build/tests/fixtures/union");
     let (ok, out) = run(
         &["check", "-l", "kotlin"],
@@ -447,14 +450,7 @@ fn a_payload_that_holds_a_union_stays_refused_by_name_on_kotlin() {
         "shapes_reader.scxml",
         SHAPES_READER,
     );
-    assert!(!ok, "Kotlin holds no union yet:\n{out}");
-    for part in [
-        "generate/unsupported-feature",
-        "the field `one` holds `union:Shape`",
-        "a statechart's read of `_event.data` has no kotlin lowering of its union",
-    ] {
-        assert!(out.contains(part), "expected `{part}` in:\n{out}");
-    }
+    assert!(ok, "Kotlin reads a payload that holds a union:\n{out}");
     for language in lowering(|row| row.unions) {
         let (ok, out) = run(
             &["check", "-l", language],
@@ -464,5 +460,27 @@ fn a_payload_that_holds_a_union_stays_refused_by_name_on_kotlin() {
             SHAPES_READER,
         );
         assert!(ok, "{language} reads a payload that holds a union:\n{out}");
+    }
+    for language in refusing_or_skip(
+        |row| row.unions,
+        "a_payload_that_holds_a_union_is_read_on_kotlin_and_refused_by_name_elsewhere",
+    ) {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            &unions,
+            &SHAPES,
+            "shapes_reader.scxml",
+            SHAPES_READER,
+        );
+        assert!(!ok, "{language} holds no union yet:\n{out}");
+        let named =
+            format!("a statechart's read of `_event.data` has no {language} lowering of its union");
+        for part in [
+            "generate/unsupported-feature",
+            "the field `one` holds `union:Shape`",
+            named.as_str(),
+        ] {
+            assert!(out.contains(part), "expected `{part}` in:\n{out}");
+        }
     }
 }

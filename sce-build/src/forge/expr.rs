@@ -859,7 +859,10 @@ fn resolve_then_rename(
     // docs/adr/0092, section 6.1: a read of a union's member, judged above
     // where its case is proven, spelled by the cases the facts leave, on the
     // backend whose machine holds a union.
-    if matches!(target, ExprTarget::Rust | ExprTarget::Swift) {
+    if matches!(
+        target,
+        ExprTarget::Rust | ExprTarget::Swift | ExprTarget::Kotlin
+    ) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
     }
     if matches!(target, ExprTarget::Swift) {
@@ -1169,12 +1172,13 @@ fn reject_unproven_union_reads(
 }
 
 /// Spell each read of a union's member as the machine of `target` reads it
-/// (docs/adr/0092, section 6.1 and section 7, the Rust and Swift rows): the
-/// member a read names after the union's value becomes its tag's read, the
-/// field of the one case the facts leave read through that case's proven read,
-/// or the accessor of a field the cases left share
+/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift and Kotlin
+/// rows): the member a read names after the union's value becomes its tag's
+/// read, the field of the one case the facts leave read through that case's
+/// proven read, or the accessor of a field the cases left share
 /// ([`crate::forge::composed_lowering::rust_union_member`],
-/// [`crate::forge::composed_lowering::swift_union_member`]). Each is a read
+/// [`crate::forge::composed_lowering::swift_union_member`],
+/// [`crate::forge::composed_lowering::kotlin_union_member`]). Each is a read
 /// that cannot fail at run time: [`reject_unproven_union_reads`] admitted it
 /// only where the facts prove its cases, and the facts grow here by the same
 /// rule. A node is spelled before the nodes below it, so its object is still
@@ -1206,6 +1210,9 @@ fn lower_union_reads(
             let member = match target {
                 ExprTarget::Swift => {
                     crate::forge::composed_lowering::swift_union_member(union, &left, property)
+                }
+                ExprTarget::Kotlin => {
+                    crate::forge::composed_lowering::kotlin_union_member(union, &left, property)
                 }
                 _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
             }

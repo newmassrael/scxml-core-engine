@@ -73,7 +73,7 @@ pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
 };
 pub(crate) use go::go_raise_checks;
-pub(crate) use kotlin::kotlin_init_block;
+pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member};
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};
 pub(crate) use rust::{
     rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
@@ -602,7 +602,42 @@ pub trait ComposedSpelling {
         left: &[&ScopedCase],
         member: &str,
     ) -> Result<String, String>;
+    /// How a value is written into the field `member` of `holder`, a value of
+    /// `union`, where it may be in the cases `left` (docs/adr/0092, section
+    /// 6.1 item 6): through the place of the field
+    /// ([`Self::union_member_place`]) on a backend whose union is written in
+    /// place, which is the default; a backend whose records are immutable
+    /// values assigns the holder whole the next value of the union, the field
+    /// replaced. `Err` as [`Self::union_member_place`]'s.
+    fn union_member_write(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<UnionMemberWrite, String> {
+        self.union_member_place(holder, union, left, member)
+            .map(UnionMemberWrite::Place)
+    }
 }
+
+/// How a field of a union value is written where its case is proven
+/// (docs/adr/0092, section 6.1 item 6;
+/// [`ComposedSpelling::union_member_write`]): the statement the target's
+/// assignment makes of it.
+pub enum UnionMemberWrite {
+    /// The place of the field itself, which the value is assigned to.
+    Place(String),
+    /// The holder of the union, assigned whole the value `next` builds of the
+    /// value written: the union in the case it is in, its record with that
+    /// field replaced, as a backend whose records are immutable values writes
+    /// a record's field.
+    Holder { holder: String, next: UnionNext },
+}
+
+/// What builds the next value of a union from the value written into one of
+/// its fields ([`UnionMemberWrite::Holder`]).
+pub type UnionNext = Box<dyn Fn(&str) -> String>;
 
 /// What a read of the member `member` of a value of `union` reads where the
 /// value may be in the cases `left` (docs/adr/0092, section 6.1 item 2;
@@ -1375,6 +1410,33 @@ mod tests {
             vec!["Item".to_string(), "Batch".to_string()]
         );
         assert_eq!(reached.enums.into_iter().collect::<Vec<_>>(), vec!["Level"]);
+    }
+
+    /// A backend whose union is written in place writes a field through the
+    /// place its spelling gives the field ([`ComposedSpelling::union_member_write`],
+    /// by default).
+    #[test]
+    fn a_union_written_in_place_is_written_through_the_place_of_its_field() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let disc: Vec<&ScopedCase> = union
+            .cases
+            .iter()
+            .filter(|case| case.variant.name == "disc")
+            .collect();
+        let rust = RustComposed {
+            machine: "M",
+            carrier: RustCarrier::Json,
+        };
+        match rust.union_member_write("self.s", union, &disc, "radius") {
+            Ok(UnionMemberWrite::Place(place)) => {
+                assert_eq!(place, "self.s.proven_disc_mut().radius")
+            }
+            Ok(UnionMemberWrite::Holder { holder, .. }) => {
+                panic!("a Rust union is written in place, not through {holder}")
+            }
+            Err(why) => panic!("{why}"),
+        }
     }
 
     /// The first union a type holds at any depth, through a list, an optional

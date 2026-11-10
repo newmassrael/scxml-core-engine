@@ -4,15 +4,68 @@
 //! The Kotlin spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the Kotlin row).
 //!
-//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
-//! |---|---|---|---|
-//! | `List<T>` | `String` / `ByteArray` | `T?` | the machine's data class |
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record | `union:U` |
+//! |---|---|---|---|---|
+//! | `List<T>` | `String` / `ByteArray` | `T?` | the machine's data class | the machine's sealed interface |
 //!
 //! No Kotlin type carries a bound (section 7.4, last paragraph), so two places
 //! whose types differ only in their bounds are one type, and a value that fits
 //! is copied as it is.
+//!
+//! A union (docs/adr/0092, section 7, the Kotlin row) is a sealed interface
+//! of one nested class per case, named as the machine's enum names the
+//! variant: a `data class` holding the case's record as `value`, or a `data
+//! object` for an empty case. Its values are immutable, as a record's are, so
+//! a field of a case is written by assigning the holder the next value whole.
 
 use super::*;
+
+/// The property of a union's Kotlin sealed interface that answers the value of
+/// the tag's enum its case is for, whatever key the tag is written under
+/// (docs/adr/0092, section 7, the Kotlin row; the unit's interface names it so
+/// too).
+const KOTLIN_UNION_KIND: &str = "kind";
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// machine's union: a function of the interface, as the unit's is
+/// (`forge/kotlin/union.kt.jinja2`).
+fn kotlin_case_read(variant: &str) -> String {
+    format!(
+        "proven{}",
+        crate::filters::to_pascal_case(variant.to_string())
+    )
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+fn kotlin_shared_read(field: &str) -> String {
+    format!(
+        "provenField{}",
+        crate::filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The Kotlin spelling of what follows a union's value to read `member` where
+/// it may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's property; the field of the one case
+/// left, through that case's proven read; or the accessor of a field several
+/// cases share. `Err` as [`union_member_of`]'s.
+pub(crate) fn kotlin_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    Ok(match union_member_of(union, left, member)? {
+        UnionMember::Tag => KOTLIN_UNION_KIND.to_string(),
+        UnionMember::Case(case) => format!("{}().{member}", kotlin_case_read(&case.variant.name)),
+        UnionMember::Shared => format!("{}()", kotlin_shared_read(member)),
+    })
+}
+
+/// A Kotlin string literal of `text`.
+fn kotlin_literal(text: &str) -> String {
+    format!("\"{}\"", crate::filters::escape_kotlin(text.to_string()))
+}
 
 /// The Kotlin spellings of the walks, for the machine `machine` (section 7.1,
 /// the Kotlin row): the runtime's `EventPayload.Value` reads each constructor,
@@ -121,16 +174,18 @@ pub(crate) fn kotlin_init_block(checks: &[String]) -> String {
 
 /// The Kotlin expression that writes the value of `ty` held at `value` as a
 /// saved state does (`com.sce.runtime.SavedValues`): a number, a truth value,
-/// a text and a byte string by `of`, an enum and a record by their own
+/// a text and a byte string by `of`, an enum, a record and a union by their own
 /// `toSaved`, a value that may be absent as `null` or as its present value,
 /// and a list element by element. `depth` names the parameter of each nested
 /// lambda, so none hides its holder's. `Err` for a byte string inside a list,
 /// which a saved state would write as an array where it writes a byte string
-/// as its text, and for a union, which a Kotlin machine does not hold.
+/// as its text.
 fn kotlin_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<String, String> {
     let element = format!("sceSaved{depth}");
     Ok(match ty {
-        ValueType::Scalar(SceType::Enum(_)) | ValueType::Record { .. } => {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
             format!("{value}.toSaved()")
         }
         ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
@@ -151,7 +206,6 @@ fn kotlin_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<Strin
                 kotlin_saved_write(elem, &element, depth + 1)?
             )
         }
-        ValueType::Union { .. } => return Err(KOTLIN_HOLDS_NO_UNION.to_string()),
     })
 }
 
@@ -171,8 +225,8 @@ impl KotlinSavedReader<'_, '_> {
     /// expression), named `what` in a refusal (an expression of a `String`),
     /// as a value of `ty`, as [`kotlin_saved_write`] writes it: a text and a
     /// byte string held to the bound the machine keeps them to, a list to its
-    /// bound and to the lower count its type states, an enum and a record by
-    /// their own `fromSaved`. Each refusal is the runtime's `StateRefusal`,
+    /// bound and to the lower count its type states, an enum, a record and a
+    /// union by their own `fromSaved`. Each refusal is the runtime's `StateRefusal`,
     /// before the record's own `init` could meet a value past a bound. `depth`
     /// names the parameters of each nested lambda, so none hides its holder's.
     fn read(
@@ -220,17 +274,16 @@ impl KotlinSavedReader<'_, '_> {
                     self.spelling.record_type(held.alias)
                 )
             }
-            ValueType::Union { .. } => return Err(KOTLIN_HOLDS_NO_UNION.to_string()),
+            ValueType::Union { alias } => {
+                let held = self.records.union(self.within, alias)?;
+                format!(
+                    "{}.fromSaved({saved}, {what})",
+                    self.spelling.union_type(&held.union.name)
+                )
+            }
         })
     }
 }
-
-/// Why a Kotlin walk meets no union: the one decision of what is lowered
-/// refuses a union on Kotlin before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const KOTLIN_HOLDS_NO_UNION: &str =
-    "a Kotlin machine holds no union yet (docs/adr/0092, section 7): \
-     the one decision of what is lowered refuses a union on Kotlin before any walk reaches one";
 
 impl ComposedSpelling for KotlinComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
@@ -333,6 +386,53 @@ impl ComposedSpelling for KotlinComposed<'_> {
              {ty}({})",
             writes.join(", "),
             reads.join(", "),
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its
+    // case (docs/adr/0092, section 6.1 item 7): written by `SavedValues.union`
+    // over the record's own `toSaved`, and read by its tag first, which names
+    // the record the rest of the object is read as, a name no case has refused
+    // by the union's. Extensions, as a composed record's saved form is
+    // ([`Self::saved_record_ext`]), the read on the companion the interface
+    // declares ([`Self::union_def`]).
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = kotlin_literal(&records.union_of_key(key)?.union.tag);
+        let name = crate::filters::escape_kotlin(def.name.clone());
+        let ty = &def.ty;
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let (ident, variant) = (&case.ident, kotlin_literal(&case.variant));
+            match &case.record {
+                Some(record) => {
+                    writes.push_str(&format!(
+                        "    is {ty}.{ident} -> SavedValues.union({tag}, {variant}, \
+                         this.value.toSaved())\n"
+                    ));
+                    reads.push_str(&format!(
+                        "        {variant} -> {ty}.{ident}({record}.fromSaved(value, what))\n"
+                    ));
+                }
+                None => {
+                    writes.push_str(&format!(
+                        "    {ty}.{ident} -> SavedValues.union({tag}, {variant}, null)\n"
+                    ));
+                    reads.push_str(&format!("        {variant} -> {ty}.{ident}\n"));
+                }
+            }
+        }
+        Ok(Some(format!(
+            "/** This value as a saved state writes it: its tag beside the fields of its case. \
+             */\nfun {ty}.toSaved(): Any = when (this) {{\n{writes}}}\n\n/** The value a saved \
+             state holds, read by its tag first, refused unless it is one of the cases of \
+             `{name}`. */\nfun {ty}.Companion.fromSaved(value: Any?, what: String): {ty} =\n    \
+             when (val sceTag = SavedValues.unionTag(value, what, {tag})) {{\n{reads}        else \
+             -> throw StateRefusal(\"'$what' ($sceTag) is not a case of {name}\")\n    }}"
         )))
     }
     // One check of the runtime's `ValueBounds` per constructor that holds a
@@ -562,9 +662,9 @@ impl ComposedSpelling for KotlinComposed<'_> {
         format!("({}).map {{ {elem} }}", held.text)
     }
 
-    // A Kotlin machine holds no union yet: the gate refuses one by name
-    // before a walk reaches it, so each spelling below either names what it
-    // would be or says why there is none.
+    // The machine's own sum, beside its records (docs/adr/0092, section 7, the
+    // Kotlin row): named by the union's document, so one union is one type of
+    // the machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}{}Union",
@@ -572,55 +672,286 @@ impl ComposedSpelling for KotlinComposed<'_> {
             crate::filters::to_pascal_case(name.to_string())
         )
     }
+    // The variant as the machine's enum class names its constant (section 7
+    // item 1), so a case is spelled by no name the enum's spelling has not
+    // already proven safe, and none is the companion's.
     fn union_case_ident(&self, variant: &str) -> String {
         crate::forge::enum_naming::variant_ident(crate::generator::Language::Kotlin, "", variant)
     }
+    // The tag is read by the one property every union of a Kotlin unit and of
+    // a Kotlin machine answers it by, whatever key it is written under.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(KOTLIN_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "proven{}",
-            crate::filters::to_pascal_case(variant.to_string())
-        )
+        kotlin_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        kotlin_shared_read(field)
+    }
+    // A sealed interface of the machine, its values compared whole as a record
+    // that holds a composed value is. Every read the narrowing proves is a
+    // function of it, whose other cases throw (the one place they are written,
+    // as a proven optional is read through the runtime's one `proven`,
+    // docs/adr/0055, section 5); a field several cases share has beside its
+    // read the function that answers this value with that field replaced,
+    // which a write assigns the holder ([`Self::union_member_write`]). Its
+    // companion is what the saved form written beside the type extends with
+    // `fromSaved` ([`Self::saved_union_ext`]), declared on every union as a
+    // record's is.
+    fn union_def(&self, def: &UnionDef) -> String {
+        let name = crate::filters::escape_kotlin(def.name.clone());
+        let ty = &def.ty;
+        let thrown = |read: &str| {
+            format!(
+                "throw IllegalStateException(\"a value of {name} read as {} is in another case\")",
+                crate::filters::escape_kotlin(read.to_string())
+            )
+        };
+        let mut cases = String::new();
+        let mut proven = String::new();
+        for case in &def.cases {
+            let ident = &case.ident;
+            let kind = format!(
+                "        override val {tag}: {tag_ty}\n            get() = {tag_ty}.{}\n",
+                case.tag_ident,
+                tag = def.tag_method,
+                tag_ty = def.tag_ty,
+            );
+            match &case.record {
+                Some(record) => {
+                    cases.push_str(&format!(
+                        "\n    /** The case `{variant}`, holding its record. */\n    data class \
+                         {ident}(val value: {record}) : {ty} {{\n{kind}    }}\n",
+                        variant = crate::filters::escape_kotlin(case.variant.clone()),
+                    ));
+                    proven.push_str(&format!(
+                        "\n    /** The record of the case `{variant}`, read where a test of the \
+                         tag proved the value is in it. */\n    fun {read}(): {record} =\n        \
+                         (this as? {ident})?.value ?: {thrown}\n",
+                        variant = crate::filters::escape_kotlin(case.variant.clone()),
+                        read = case.proven,
+                        thrown = thrown(&case.variant),
+                    ));
+                }
+                None => cases.push_str(&format!(
+                    "\n    /** The case `{variant}`, its tag alone. */\n    data object {ident} : \
+                     {ty} {{\n{kind}    }}\n",
+                    variant = crate::filters::escape_kotlin(case.variant.clone()),
+                )),
+            }
+        }
+        // A `when` over every case is exhaustive, and an `else` beside it is one
+        // Kotlin warns is redundant.
+        let otherwise = |covered: usize, field: &str| {
+            if covered < def.cases.len() {
+                format!("        else -> {}\n", thrown(field))
+            } else {
+                String::new()
+            }
+        };
+        let shared: String = def
+            .shared
+            .iter()
+            .map(|field| {
+                let reads: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| format!("        is {ident} -> this.value.{}\n", field.field))
+                    .collect();
+                let writes: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!(
+                            "        is {ident} -> {ident}(this.value.copy({} = sceValue))\n",
+                            field.field
+                        )
+                    })
+                    .collect();
+                format!(
+                    "\n    /** The field `{id}` the cases that declare it share, read where a \
+                     test of the tag proved the value is in one of them. */\n    fun {read}(): \
+                     {fty} = when (this) {{\n{reads}{else_read}    }}\n\n    /** This value with \
+                     the field `{id}` of its case replaced by [sceValue], where a test of the tag \
+                     proved the value is in a case that declares it. */\n    fun {place}(sceValue: \
+                     {fty}): {ty} = when (this) {{\n{writes}{else_write}    }}\n",
+                    id = crate::filters::escape_kotlin(field.field.clone()),
+                    read = field.accessor,
+                    place = self.union_place_of(&field.accessor),
+                    fty = field.ty,
+                    else_read = otherwise(field.cases.len(), &field.field),
+                    else_write = otherwise(field.cases.len(), &field.field),
+                )
+            })
+            .collect();
         format!(
-            "provenField{}",
-            crate::filters::to_pascal_case(field.to_string())
+            "/** SCE Accepted Subset §2.15: a `union:{name}` value (docs/adr/0092). */\nsealed \
+             interface {ty} {{\n    /** The case this value is in, as its tag names it. */\n    \
+             val {tag}: {tag_ty}\n{cases}{proven}{shared}\n    /** What a value is read back \
+             from a saved state through (`fromSaved`). */\n    companion object\n}}",
+            tag = def.tag_method,
+            tag_ty = def.tag_ty,
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{KOTLIN_HOLDS_NO_UNION}")
+    // The case's constructor, holding the record or nothing.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        match record {
+            Some(record) => format!("{ty}.{case}({record})"),
+            None => format!("{ty}.{case}"),
+        }
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{KOTLIN_HOLDS_NO_UNION}")
+    // The tag first, by the enum's reader, in the runtime's `Value.union`,
+    // which refuses a value that is no object before it; then the record of
+    // the case the tag names, read from the same value, each case an arm of a
+    // `when` the compiler holds to every variant of the tag's enum
+    // (docs/adr/0092, section 4). The case is handed back out of the runtime's
+    // call rather than read inside it, so the only named parameter is in a
+    // lambda that holds no other: a union inside a case's record declares no
+    // name that hides its holder's.
+    fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String {
+        let arms: Vec<String> = read
+            .arms
+            .iter()
+            .map(|arm| {
+                let case = format!("{}.{}", read.ty, arm.case_ident);
+                let built = match &arm.record {
+                    Some(record) => format!("{case}({value}.let {{ {record} }})"),
+                    None => case,
+                };
+                format!("{}.{} -> {built}", read.tag_ty, arm.tag_ident)
+            })
+            .collect();
+        format!(
+            "when ({value}.union({}, {{ {} }}) {{ sceCase, _ -> sceCase }}) {{ {} }}",
+            kotlin_literal(read.tag),
+            read.tag_reader,
+            arms.join("; ")
+        )
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{KOTLIN_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{KOTLIN_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case (docs/adr/0092,
+    // section 2.1): the runtime's `unionJson`, which orders the keys as
+    // `recordJson` does, or the `Map` a `<send>` holds a record in with the tag
+    // beside its fields, which the engine orders. The case's record is bound to
+    // `it` in its arm, as a record's writer reads it.
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let tag = kotlin_literal(tag);
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|arm| {
+                let variant = kotlin_literal(&arm.variant);
+                let case = format!("{ty}.{}", arm.case_ident);
+                match &arm.fields {
+                    Some(fields) => {
+                        let members: Vec<String> = fields
+                            .iter()
+                            .map(|(id, json)| format!("\"{id}\" to {json}"))
+                            .collect();
+                        let written = match self.carrier {
+                            KotlinCarrier::Json => format!(
+                                "{KOTLIN_PAYLOAD}.unionJson({tag}, {variant}, mapOf<String, \
+                                 Any?>({}))",
+                                members.join(", ")
+                            ),
+                            KotlinCarrier::Wire => format!(
+                                "mapOf<String, Any?>({tag} to {variant}, {})",
+                                members.join(", ")
+                            ),
+                        };
+                        format!("is {case} -> it.value.let {{ {written} }}")
+                    }
+                    None => {
+                        let written = match self.carrier {
+                            KotlinCarrier::Json => {
+                                format!("{KOTLIN_PAYLOAD}.unionJson({tag}, {variant}, emptyMap())")
+                            }
+                            KotlinCarrier::Wire => {
+                                format!("mapOf<String, Any?>({tag} to {variant})")
+                            }
+                        };
+                        format!("{case} -> {written}")
+                    }
+                }
+            })
+            .collect();
+        format!(
+            "({}).let {{ when (it) {{ {} }} }}",
+            held.text,
+            arms.join("; ")
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(KOTLIN_HOLDS_NO_UNION.to_string())
+        kotlin_union_member(union, left, member)
     }
+    // A field several cases share is written through the function that answers
+    // the union with that field replaced ([`Self::union_def`]); a case's record
+    // is rebuilt by the case's own constructor, so its name is kept free only.
     fn union_place_of(&self, read: &str) -> String {
-        format!("{read}Place")
+        format!("{read}With")
     }
+    // A Kotlin union is an immutable value, so no field of it is a place a
+    // value can be assigned to: a write assigns the holder the next value
+    // whole ([`Self::union_member_write`]).
     fn union_member_place(
         &self,
         _holder: &str,
-        _union: &ScopedUnion,
+        union: &ScopedUnion,
         _left: &[&ScopedCase],
-        _member: &str,
+        member: &str,
     ) -> Result<String, String> {
-        Err(KOTLIN_HOLDS_NO_UNION.to_string())
+        Err(format!(
+            "`{member}` of `union:{}` is a field of an immutable Kotlin value, which has no place \
+             of its own: its holder is assigned the next value whole",
+            union.name
+        ))
+    }
+    // The holder is assigned the union in the case it is in, its record with
+    // the field replaced, as a record's field is written (`copy`), and as an
+    // optional record's present field is (`StaticTarget::assign_present_field`);
+    // a field several cases share through the function that replaces it in
+    // whichever of them the value is in.
+    fn union_member_write(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<UnionMemberWrite, String> {
+        let next: UnionNext = match union_member_of(union, left, member)? {
+            UnionMember::Tag => {
+                return Err(format!(
+                    "the tag `{member}` of `union:{}` is never written alone: the case changes by \
+                     a whole assignment (docs/adr/0092, section 6.1 item 6)",
+                    union.name
+                ))
+            }
+            UnionMember::Case(case) => {
+                let built = format!(
+                    "{}.{}",
+                    self.union_type(&union.name),
+                    self.union_case_ident(&case.variant.name)
+                );
+                let record = format!("{holder}.{}()", kotlin_case_read(&case.variant.name));
+                let field = member.to_string();
+                Box::new(move |value: &str| format!("{built}({record}.copy({field} = {value}))"))
+            }
+            UnionMember::Shared => {
+                let replace = format!(
+                    "{holder}.{}",
+                    self.union_place_of(&kotlin_shared_read(member))
+                );
+                Box::new(move |value: &str| format!("{replace}({value})"))
+            }
+        };
+        Ok(UnionMemberWrite::Holder {
+            holder: holder.to_string(),
+            next,
+        })
     }
 }
 
@@ -638,10 +969,10 @@ mod tests {
     /// composed value: a payload read at any depth, a list taken whole and a
     /// composed value sent (docs/adr/0086, sections 5 and 6), a variable of a
     /// record that holds a composition, which a lift writes whole and a saved
-    /// state keeps by its type (docs/adr/0087, "Landing order" item 8), and no
-    /// union held yet (docs/adr/0092, section 7).
+    /// state keeps by its type (docs/adr/0087, "Landing order" item 8), and a
+    /// union held, read by its tag, lifted and saved (docs/adr/0092, section 7).
     #[test]
-    fn the_kotlin_row_lowers_every_composed_position_but_a_union() {
+    fn the_kotlin_row_lowers_every_composed_position() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Kotlin),
@@ -649,7 +980,7 @@ mod tests {
                 name: "kotlin",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: true,
                 sends: true,
             }
@@ -964,18 +1295,335 @@ mod tests {
         );
     }
 
-    /// A Kotlin walk names no union: the one decision of what is lowered
-    /// refuses one on Kotlin first, and the walk that would declare one says
-    /// why there is none.
+    /// The tag's enum as a Kotlin machine declares it: an enum class whose
+    /// constant is the variant in upper snake case, unqualified
+    /// (`StaticTarget::enum_variant`).
+    fn kotlin_kinds() -> BTreeMap<String, MachineEnum> {
+        [(
+            "Kind".to_string(),
+            MachineEnum {
+                alias: "Kind".to_string(),
+                ty: "MKindEnum".to_string(),
+                variants: vec![
+                    ("dot".to_string(), "DOT".to_string()),
+                    ("circle".to_string(), "CIRCLE".to_string()),
+                    ("disc".to_string(), "DISC".to_string()),
+                ],
+            },
+        )]
+        .into()
+    }
+
+    /// The case of the shape union named `name`.
+    fn case<'s>(shapes: &'s Shapes, name: &str) -> &'s ScopedCase {
+        shapes
+            .union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == name)
+            .expect("a case")
+    }
+
+    /// A union is the machine's own sealed interface at any depth, named by its
+    /// document (docs/adr/0092, section 7, the Kotlin row), and reaches its
+    /// tag's enum, then the record each case holds once, then itself.
     #[test]
-    fn a_kotlin_walk_reads_no_union() {
+    fn a_kotlin_machine_holds_a_union_in_its_own_sealed_interface() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &KOTLIN).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
+        let kinds = kotlin_kinds();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &KOTLIN),
+            Ok("MShapeUnion".to_string())
+        );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &KOTLIN
+            ),
+            Ok("List<MShapeUnion?>".to_string())
+        );
+        let mut reached = Reached::default();
+        held_records(&ty("list<union:Shape>[2]"), None, &shapes, &mut reached).expect("reached");
+        held_records(&ty("union:Shape"), None, &shapes, &mut reached).expect("reached");
+        assert_eq!(reached.records, vec!["Radius".to_string()]);
+        assert_eq!(reached.unions, vec![SHAPE_KEY.to_string()]);
+        assert_eq!(KOTLIN.union_tag_read("type"), Some("kind".to_string()));
+    }
+
+    /// The declaration: one nested class per variant of the tag, named as the
+    /// machine's enum names the constant, the tag a property each case answers
+    /// with the machine's enum, a proven read per case that holds a record
+    /// whose other cases throw, one accessor for `radius`, which `circle` and
+    /// `disc` share, beside the function that replaces it, and the companion
+    /// the saved form extends.
+    #[test]
+    fn a_kotlin_union_is_declared_with_its_tag_its_proven_reads_and_its_shared_fields() {
+        let def =
+            union_definition(SHAPE_KEY, &shapes(), &kotlin_kinds(), &KOTLIN).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "provenFieldRadius".to_string(),
+                ty: "UShort".to_string(),
+                cases: vec!["CIRCLE".to_string(), "DISC".to_string()],
+            }]
+        );
+        let text = KOTLIN.union_def(&def);
+        let thrown = |read: &str| {
+            format!(
+                "throw IllegalStateException(\"a value of shape read as {read} is in another case\")"
+            )
+        };
+        for fragment in [
+            "sealed interface MShapeUnion {\n    /** The case this value is in, as its tag names \
+             it. */\n    val kind: MKindEnum\n"
+                .to_string(),
+            "    data object DOT : MShapeUnion {\n        override val kind: MKindEnum\n            \
+             get() = MKindEnum.DOT\n    }\n"
+                .to_string(),
+            "    data class CIRCLE(val value: MRadiusRecord) : MShapeUnion {\n        override val \
+             kind: MKindEnum\n            get() = MKindEnum.CIRCLE\n    }\n"
+                .to_string(),
+            format!(
+                "    fun provenCircle(): MRadiusRecord =\n        (this as? CIRCLE)?.value ?: {}\n",
+                thrown("circle")
+            ),
+            format!(
+                "    fun provenFieldRadius(): UShort = when (this) {{\n        is CIRCLE -> \
+                 this.value.radius\n        is DISC -> this.value.radius\n        else -> {}\n    \
+                 }}\n",
+                thrown("radius")
+            ),
+            // ... and the function a write of it assigns the holder (section 6.1 item 6).
+            format!(
+                "    fun provenFieldRadiusWith(sceValue: UShort): MShapeUnion = when (this) {{\n        \
+                 is CIRCLE -> CIRCLE(this.value.copy(radius = sceValue))\n        is DISC -> \
+                 DISC(this.value.copy(radius = sceValue))\n        else -> {}\n    }}\n",
+                thrown("radius")
+            ),
+        ] {
+            assert!(text.contains(&fragment), "expected `{fragment}` in:\n{text}");
+        }
+        assert!(text.ends_with("    companion object\n}"), "{text}");
+        assert!(!text.contains("provenDot"), "{text}");
+        assert_eq!(
+            text.matches("throw IllegalStateException(").count(),
+            4,
+            "{text}"
+        );
+    }
+
+    /// A union whose every case holds the shared field leaves no case for an
+    /// `else`, which Kotlin warns is redundant, and a machine is compiled with
+    /// every warning an error.
+    #[test]
+    fn a_kotlin_accessor_over_every_case_has_no_else() {
+        let def = UnionDef {
+            ty: "MPairUnion".to_string(),
+            name: "pair".to_string(),
+            tag_method: "kind".to_string(),
+            tag_ty: "MKindEnum".to_string(),
+            cases: ["LEFT", "RIGHT"]
+                .iter()
+                .map(|ident| UnionCaseDef {
+                    ident: ident.to_string(),
+                    variant: ident.to_lowercase(),
+                    tag_ident: ident.to_string(),
+                    record: Some("MRadiusRecord".to_string()),
+                    proven: kotlin_case_read(&ident.to_lowercase()),
+                })
+                .collect(),
+            shared: vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "provenFieldRadius".to_string(),
+                ty: "UShort".to_string(),
+                cases: vec!["LEFT".to_string(), "RIGHT".to_string()],
+            }],
+        };
+        let text = KOTLIN.union_def(&def);
+        assert!(text.contains("provenFieldRadiusWith"), "{text}");
+        assert!(!text.contains("else ->"), "{text}");
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// property, a field of the one case left through that case's proven
+    /// read, and a field two cases share through its accessor.
+    #[test]
+    fn a_kotlin_proven_read_is_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        assert_eq!(kotlin_union_member(union, &all, "kind"), Ok("kind".into()));
+        assert_eq!(
+            kotlin_union_member(union, &[case(&shapes, "disc")], "radius"),
+            Ok("provenDisc().radius".into())
+        );
+        assert_eq!(
+            KOTLIN.union_member(
+                union,
+                &[case(&shapes, "circle"), case(&shapes, "disc")],
+                "radius"
+            ),
+            Ok("provenFieldRadius()".into())
+        );
+        assert!(kotlin_union_member(union, &[case(&shapes, "dot")], "radius").is_err());
+    }
+
+    /// A write of a union's field (docs/adr/0092, section 6.1 item 6) assigns
+    /// the holder the next value whole, a Kotlin union being immutable: the one
+    /// case left rebuilt with its record copied, the field replaced, or a field
+    /// two cases share replaced by its function; the tag is never written
+    /// alone, and no field is a place of its own.
+    #[test]
+    fn a_kotlin_proven_write_assigns_the_holder_the_next_value() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let written = |left: &[&ScopedCase]| match KOTLIN
+            .union_member_write("vS", union, left, "radius")
+        {
+            Ok(UnionMemberWrite::Holder { holder, next }) => (holder, next("7")),
+            Ok(UnionMemberWrite::Place(place)) => panic!("a Kotlin union has no place: {place}"),
+            Err(why) => panic!("{why}"),
+        };
+        assert_eq!(
+            written(&[case(&shapes, "disc")]),
+            (
+                "vS".to_string(),
+                "MShapeUnion.DISC(vS.provenDisc().copy(radius = 7))".to_string()
+            )
+        );
+        assert_eq!(
+            written(&[case(&shapes, "circle"), case(&shapes, "disc")]),
+            ("vS".to_string(), "vS.provenFieldRadiusWith(7)".to_string())
+        );
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let Err(tag) = KOTLIN.union_member_write("vS", union, &all, "kind") else {
+            panic!("the tag is never written alone");
+        };
+        assert!(tag.contains("never written alone"), "{tag}");
         assert!(KOTLIN
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
+            .union_member_write("vS", union, &[case(&shapes, "dot")], "radius")
+            .is_err());
+        assert!(KOTLIN
+            .union_member_place("vS", union, &[case(&shapes, "disc")], "radius")
+            .is_err());
+    }
+
+    /// The reader reads the tag by the enum's reader inside the runtime's
+    /// `Value.union`, which answers it back, and then the record of the case it
+    /// names from the same value, each case an arm of a `when` over the tag's
+    /// enum; the writer writes the tag among the case's fields, as the JSON
+    /// text and as the `Map` a `<send>` holds.
+    #[test]
+    fn a_kotlin_union_is_read_tag_first_and_written_by_its_case() {
+        let shapes = shapes();
+        let kinds = kotlin_kinds();
+        let radius = "v.let { it.record(null) { MRadiusRecord(radius = it.field(\"radius\").let { \
+                      it.uint16() }) } }";
+        assert_eq!(
+            reader(&ty("union:Shape"), None, &shapes, &kinds, &KOTLIN, "v"),
+            Ok(format!(
+                "when (v.union(\"kind\", {{ when (val sceName = it.name()) {{ \"dot\" -> \
+                 MKindEnum.DOT; \"circle\" -> MKindEnum.CIRCLE; \"disc\" -> MKindEnum.DISC; else \
+                 -> throw it.unknownVariant(sceName, \"Kind\") }} }}) {{ sceCase, _ -> sceCase }}) \
+                 {{ MKindEnum.DOT -> MShapeUnion.DOT; MKindEnum.CIRCLE -> MShapeUnion.CIRCLE({radius}); \
+                 MKindEnum.DISC -> MShapeUnion.DISC({radius}) }}"
+            ))
+        );
+        let p = "com.sce.runtime.EventPayload";
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &KOTLIN,
+                &Held::place("x.one")
+            ),
+            Ok(format!(
+                "(x.one).let {{ when (it) {{ MShapeUnion.DOT -> {p}.unionJson(\"kind\", \"dot\", \
+                 emptyMap()); is MShapeUnion.CIRCLE -> it.value.let {{ {p}.unionJson(\"kind\", \
+                 \"circle\", mapOf<String, Any?>(\"radius\" to {p}.valueJson(it.radius))) }}; is \
+                 MShapeUnion.DISC -> it.value.let {{ {p}.unionJson(\"kind\", \"disc\", \
+                 mapOf<String, Any?>(\"radius\" to {p}.valueJson(it.radius))) }} }} }}"
+            ))
+        );
+        let wire = KotlinComposed {
+            machine: "M",
+            carrier: KotlinCarrier::Wire,
+        };
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &wire,
+                &Held::place("x.one")
+            ),
+            Ok(
+                "(x.one).let { when (it) { MShapeUnion.DOT -> mapOf<String, Any?>(\"kind\" to \
+                 \"dot\"); is MShapeUnion.CIRCLE -> it.value.let { mapOf<String, Any?>(\"kind\" to \
+                 \"circle\", \"radius\" to (it.radius).toLong()) }; is MShapeUnion.DISC -> \
+                 it.value.let { mapOf<String, Any?>(\"kind\" to \"disc\", \"radius\" to \
+                 (it.radius).toLong()) } } }"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            KOTLIN.union_value("MShapeUnion", "CIRCLE", Some("r")),
+            "MShapeUnion.CIRCLE(r)"
+        );
+        assert_eq!(
+            KOTLIN.union_value("MShapeUnion", "DOT", None),
+            "MShapeUnion.DOT"
+        );
+    }
+
+    /// A union is saved as one object, its tag beside the fields of its case
+    /// (docs/adr/0092, section 6.1 item 7), and read back by its tag first, the
+    /// record of the case by its own `fromSaved`, a name no case has refused;
+    /// a union a record or a variable holds is written and read by its own.
+    #[test]
+    fn a_kotlin_union_is_saved_as_its_tag_beside_its_case() {
+        let shapes = shapes();
+        let def = union_definition(SHAPE_KEY, &shapes, &kotlin_kinds(), &KOTLIN).expect("declared");
+        let ext = KOTLIN
+            .saved_union_ext(&def, SHAPE_KEY, &shapes)
+            .expect("Shape has a saved form")
+            .expect("a Kotlin union carries its saved form");
+        for fragment in [
+            "fun MShapeUnion.toSaved(): Any = when (this) {\n    MShapeUnion.DOT -> \
+             SavedValues.union(\"kind\", \"dot\", null)\n    is MShapeUnion.CIRCLE -> \
+             SavedValues.union(\"kind\", \"circle\", this.value.toSaved())\n",
+            "fun MShapeUnion.Companion.fromSaved(value: Any?, what: String): MShapeUnion =\n    \
+             when (val sceTag = SavedValues.unionTag(value, what, \"kind\")) {\n        \"dot\" -> \
+             MShapeUnion.DOT\n        \"circle\" -> MShapeUnion.CIRCLE(MRadiusRecord.fromSaved(value, \
+             what))\n",
+            "        else -> throw StateRefusal(\"'$what' ($sceTag) is not a case of shape\")\n    }",
+        ] {
+            assert!(ext.contains(fragment), "expected `{fragment}` in:\n{ext}");
+        }
+        let reader = KotlinSavedReader {
+            spelling: &KOTLIN,
+            within: None,
+            records: &shapes,
+            enums: &BTreeMap::new(),
+        };
+        assert_eq!(
+            reader.read(&ty("optional<union:Shape>"), "s", "w", 0),
+            Ok("SavedValues.optional(s, w) { sceSaved0, sceWhat0 -> \
+                 MShapeUnion.fromSaved(sceSaved0, sceWhat0) }"
+                .to_string())
+        );
+        assert_eq!(
+            kotlin_saved_write(&ty("list<union:Shape>[2]"), "x", 0),
+            Ok("SavedValues.list(x) { sceSaved0 -> sceSaved0.toSaved() }".to_string())
+        );
     }
 
     /// A list sent where its field asks a lower count it does not prove is

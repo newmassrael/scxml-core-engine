@@ -99,6 +99,7 @@ import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachi
 import com.sce.integration.static_string_literal.StaticStringLiteralStateMachine
 import com.sce.integration.static_text_record.StaticTextRecordStateMachine
 import com.sce.integration.static_timers.StaticTimersStateMachine
+import com.sce.integration.static_union.StaticUnionStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
@@ -796,6 +797,35 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0092, sections 4 and 6.1: a payload that holds a union, read by testing
+    // its tag, at the top, in a list and where it may be absent; a union variable built
+    // where it is declared and written where its case is proven, one that may be absent
+    // taking a union whole, and a text lifted into a union or its refusal kept. The step
+    // that restores saves the machine, discards it and restores it, every union read
+    // back from the saved state by its tag (section 6.1 item 7).
+    @Test
+    fun staticUnionReadsAPayloadByItsTagAndRestoresEveryUnion() {
+        var sm = StaticUnionStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_union"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                restore = { saved ->
+                    val next = StaticUnionStateMachine()
+                    next.restore(com.sce.runtime.SavedState.fromJson(saved.toJson()))
+                    sm.cleanup()
+                    sm = next
+                },
             )
         } finally {
             sm.cleanup()

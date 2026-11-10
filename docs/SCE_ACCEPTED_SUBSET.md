@@ -4776,9 +4776,9 @@ is true, the cases either side leaves. Anywhere else the read is
 declare the field and the test that proves one; a field no case declares is
 `expression/unknown-member`, naming the tag and every case's field. An element
 read at an index is no subject, so only its tag is read there: a `<foreach>`
-item is one. No backend lowers a statechart that holds a union yet (each refuses
-it by name, `generate/unsupported-feature`), so the rule is judged where the
-document is read. `sce-build/tests/a_union_field_is_read_only_where_its_case_is_proven.rs`
+item is one. The rule is judged where the document is read, whichever backend
+lowers it; a backend whose row of "Which backend lowers a composed value" holds no
+union refuses the statechart by name (`generate/unsupported-feature`). `sce-build/tests/a_union_field_is_read_only_where_its_case_is_proven.rs`
 holds this.
 
 **A union variable** (docs/adr/0092, section 6.1 item 5 and its amendment of
@@ -4813,10 +4813,15 @@ or a `<donedata>` that carries one is `scxml/static-datamodel-rule`, since a uni
 crosses only as a field of an event schema's union, which no backend lowers yet; a
 parent's `<param>` seeds no child's union variable (`scxml/static-datamodel-rule`); and
 a host action takes no union argument (`validation/native-action-argument`). The Rust machine holds
-either in its own sum (or `Option` of it), lent to a host by reference; a saved state
-holds the value as one object, its tag beside its case's fields, and the saved shape
-names the union's document and each case's record. Every other backend refuses the
-variable by its own name (`generate/unsupported-feature`).
+either in its own sum (or `Option` of it), lent to a host by reference. The Kotlin
+machine holds either in its own sealed interface (or `T?` of it), immutable as its
+records are: a field of a case is written by assigning the variable the next value
+whole, the case's record copied with the field replaced, or, for a field several
+cases share, the interface's `provenField<Field>With`. A saved state holds the value as
+one object, its tag beside its case's fields, read back by its tag first, and the
+saved shape names the union's document and each case's record. A backend whose row
+of "Which backend lowers a composed value" holds no union refuses the variable by
+its own name (`generate/unsupported-feature`).
 `sce-build/tests/a_union_variable_is_built_where_it_is_declared_or_starts_absent.rs`
 holds this.
 
@@ -5380,8 +5385,11 @@ path (docs/adr/0086, section 5.4); and `len`, an index, a field of a record
 element and a `<foreach>` over a list the payload or an enclosing loop's item holds
 lower at any depth. A list a place holds is taken whole into a list variable whose
 type it fits as it is: no Kotlin type carries a bound, so the two places are one
-type. A payload that holds a union, at any depth, is refused by name on Kotlin,
-which holds no union yet (docs/adr/0092, section 7).
+type. A payload that holds a union, at any depth, is held in the machine's own
+sealed interface and read by its tag (docs/adr/0092, section 7, the Kotlin row):
+the lift reads the tag first through the runtime's `Value.union` and then the
+record of the case it names, and the inject seam writes the tag among the case's
+fields by `EventPayload.unionJson`.
 
 The Go backend reads a composed payload as the Rust and Kotlin backends do
 (docs/adr/0086, section 7.1, the Go row): its payload struct holds each field in
@@ -5536,7 +5544,7 @@ not lower.
 
 - `cpp` lowers reads, copies, sends; refuses unions, records
 
-- `kotlin` lowers reads, copies, records, sends; refuses unions
+- `kotlin` lowers reads, copies, unions, records, sends; refuses none
 
 - `go` lowers reads, copies, sends; refuses unions, records
 

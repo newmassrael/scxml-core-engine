@@ -6120,12 +6120,11 @@ const INTERPRETER: &str = "interpreter";
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
 /// Emptied once by step 5 of docs/adr/0055 and again by its step 9; the scenario of
-/// a union (docs/adr/0092, step 4) is replayed on Rust and Swift until each other
-/// engine's step lowers a statechart that holds one, and the scenario of a lift into
-/// a record that holds a list (docs/adr/0087, Landing order item 8) on Rust and
+/// a union (docs/adr/0092, step 4) is replayed on Rust, Swift and Kotlin until each
+/// other engine's step lowers a statechart that holds one, and the scenario of a lift
+/// into a record that holds a list (docs/adr/0087, Landing order item 8) on Rust and
 /// Kotlin until each other engine's slice holds a variable of such a record.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("static_union", "kotlin", UNION_NOT_LOWERED),
     ("static_union", "cpp", UNION_NOT_LOWERED),
     ("static_union", "go", UNION_NOT_LOWERED),
     ("static_union", "python", UNION_NOT_LOWERED),

@@ -326,6 +326,7 @@ impl ComposedLowering {
             },
 
             Language::Kotlin => Self {
+                unions: true,
                 records: true,
                 ..walks
             },
