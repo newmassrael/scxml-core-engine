@@ -520,7 +520,12 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticLiftListPlanRecord {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         Ok(Self {
             title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
-            items: ::sce_rust_runtime::saved_state::record_field(value, what, "items")?,
+            items: ::sce_rust_runtime::saved_state::bounded_within::<_, 3>(
+                ::sce_rust_runtime::saved_state::record_member(value, what, "items")?,
+                &format!("{what}.items"),
+                1,
+                ::sce_rust_runtime::saved_state::SavedValue::from_saved,
+            )?,
             priority: ::sce_rust_runtime::saved_state::record_field(value, what, "priority")?,
         })
     }
