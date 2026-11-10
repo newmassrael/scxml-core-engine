@@ -81,10 +81,9 @@ class ParamAskerComponent : com.sce.runtime.test.ComponentMachine {
         // (`ComponentContext.create`, which creates nothing under a name its
         // configuration has no PTC of), and every `<invoke id>` is refused
         // where its document is parsed unless it is an XML Name, which is an
-        // Nmtoken (docs/adr/0045). A component's machine always has a saved
-        // shape, and so takes its session id: what would leave it none, a
-        // delayed send or an invoke a restore cannot start, the profile
-        // refuses.
+        // Nmtoken (docs/adr/0045). Every `sce-static` root takes the session id
+        // its host gives, whether or not it saves (docs/adr/0045, answer 2), so
+        // the component's machine is named by the component.
         val machine = ParamAskerStateMachine(sceTestContext = context, sessionId = context.name)
         // §11.5, §11.8: the module parameters take the suite's values before the
         // machine starts. Without one, or with one not of its type, the run ends
