@@ -7573,6 +7573,14 @@ fn declare_composed(
                     declarations
                         .records
                         .push(saved_composed_record(ty, schema, target).map_err(refused)?);
+                    // A backend whose record type carries its saved form (Swift) writes
+                    // it beside the type.
+                    if let Some(saved_form) = spelling
+                        .saved_record_ext(alias, &records, &enums)
+                        .map_err(refused)?
+                    {
+                        declarations.type_defs.push(saved_form);
+                    }
                 }
             }
         }
@@ -7582,7 +7590,8 @@ fn declare_composed(
     // the machine's enum and every read the narrowing proves a method of it.
     for key in &reached.unions {
         let def = composed::union_definition(key, &records, &enums, &*spelling).map_err(refused)?;
-        if saved && declarations.saved_composed.insert(def.ty.clone()) {
+        let newly_saved = saved && declarations.saved_composed.insert(def.ty.clone());
+        if newly_saved {
             let tag = composed::RecordEnv::union_of_key(&records, key)
                 .map_err(refused)?
                 .union
@@ -7605,6 +7614,16 @@ fn declare_composed(
         }
         if declarations.declared.insert(def.ty.clone()) {
             declarations.type_defs.push(spelling.union_def(&def));
+        }
+        // A backend whose union type carries its saved form (Swift) writes it beside
+        // the type.
+        if newly_saved {
+            if let Some(saved_form) = spelling
+                .saved_union_ext(&def, key, &records)
+                .map_err(refused)?
+            {
+                declarations.type_defs.push(saved_form);
+            }
         }
     }
     Ok(enums)

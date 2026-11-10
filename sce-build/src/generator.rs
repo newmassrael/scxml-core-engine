@@ -5247,9 +5247,13 @@ fn swift_saves_field(field: &crate::forge::static_lowering::StaticField) -> bool
         // type writes and reads itself (`StaticTarget::record_def`).
         ("list", _) => scalar,
         ("record" | "record_list", _) => true,
-        // A value that may be absent is saved as `null` or as its present value: a scalar, an enum or a record.
+        // A union writes and reads itself as its tag beside the fields of its case, as a record does
+        // (docs/adr/0092, section 6.1 item 7).
+        ("union", _) => true,
+        // A value that may be absent is saved as `null` or as its present value: a scalar, an enum, a record
+        // or a union.
         ("optional", Some("scalar")) => scalar,
-        ("optional", Some("enum" | "record")) => true,
+        ("optional", Some("enum" | "record" | "union")) => true,
         _ => false,
     }
 }

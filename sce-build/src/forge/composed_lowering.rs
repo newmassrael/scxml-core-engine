@@ -475,6 +475,31 @@ pub trait ComposedSpelling {
     /// holds in `elem_ty`.
     fn copy_list(&self, held: &Held, elem: &str, elem_ty: &str) -> String;
 
+    /// The declaration that writes the composed record `alias` as a saved state
+    /// does and reads it back (docs/adr/0092, section 6.1 item 7), for a backend
+    /// whose record type carries that form itself (a Swift record has
+    /// `toSaved` and `fromSaved`); `None` for a backend that writes it
+    /// elsewhere. Asked only for a record a variable holds.
+    fn saved_record_ext(
+        &self,
+        _alias: &str,
+        _records: &dyn RecordEnv,
+        _enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
+    }
+    /// The declaration that writes the union `def` as a saved state does
+    /// (its tag beside the fields of its case) and reads it back by its tag,
+    /// the case's record read by [`Self::saved_record_ext`]'s; `None` for a
+    /// backend that writes it elsewhere. Asked only for a union a variable holds.
+    fn saved_union_ext(
+        &self,
+        _def: &UnionDef,
+        _key: &str,
+        _records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
+    }
     /// Whether a record of this backend starts every member at its zero (a Swift
     /// record is `SceDefault`, which a checked read of an element not there
     /// answers), so a record that holds a member with no zero ([`holds_no_zero`])

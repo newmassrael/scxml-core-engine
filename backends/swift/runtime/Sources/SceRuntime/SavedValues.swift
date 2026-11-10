@@ -264,4 +264,23 @@ extension SavedValues {
 
     /// A record, its fields keyed by their ids in the schema's order.
     public static func record(_ fields: [(key: String, value: JSONValue)]) -> JSONValue { .object(fields) }
+
+    /// A union (docs/adr/0092, section 6.1 item 7): one object, the tag under the key `tag` as the declared
+    /// name `variant`, before the members of `record`, the record of the case as it writes itself, or nothing
+    /// for an empty case (`nil`). What a generated union writes each case with.
+    public static func union(tag: String, variant: String, _ record: JSONValue?) -> JSONValue {
+        var members: [(key: String, value: JSONValue)] = [(key: tag, value: .text(variant))]
+        if case .object(let fields)? = record {
+            members.append(contentsOf: fields)
+        }
+        return .object(members)
+    }
+
+    /// The declared name of the case a saved union `value` is in: the text under its tag's key `tag`, read
+    /// before any field of the case, since the tag says which fields follow (docs/adr/0092, section 4). A
+    /// value that is no object, that has no tag, or whose tag is not a text is refused naming `what`; a name
+    /// the union has no case for is the generated reader's to refuse.
+    public static func unionTag(_ value: JSONValue, _ what: String, tag: String) throws -> String {
+        try string(field(value, what, tag), "\(what).\(tag)")
+    }
 }

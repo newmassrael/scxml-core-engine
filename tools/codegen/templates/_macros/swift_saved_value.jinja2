@@ -11,11 +11,12 @@
 
 {#- A present value read as its type says: an enum by its own type, a record by its own `fromSaved`, a byte
    string and a text held to the bound the machine keeps them to, anything else by the function its
-   `sce:type` names. `shape` is `enum`, `record` or `scalar`. #}
+   `sce:type` names. `shape` is `enum`, `record`, `union` or `scalar`; a union reads itself as a record does
+   (docs/adr/0092, section 6.1 item 7). #}
 {%- macro saved_present(type, shape, value, what, bound) -%}
 {%- if shape == 'enum' -%}
 try SavedValues.enumeration({{ value }}, {{ what }}, as: {{ type }}.self)
-{%- elif shape == 'record' -%}
+{%- elif shape == 'record' or shape == 'union' -%}
 try {{ type }}.fromSaved({{ value }}, {{ what }})
 {%- elif type == 'bytes' -%}
 try SavedValues.bytes({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})

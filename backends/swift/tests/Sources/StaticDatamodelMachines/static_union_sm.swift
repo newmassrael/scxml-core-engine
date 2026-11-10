@@ -235,6 +235,22 @@ public struct StaticUnionPathRecord: Equatable, Sendable, SceDefault {
     }
 }
 
+extension StaticUnionPathRecord {
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "points", value: SavedValues.list(self.points) { sceSaved0 in SavedValues.of(sceSaved0) }),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticUnionPathRecord {
+        StaticUnionPathRecord(
+            points: try SavedValues.list(try SavedValues.field(value, what, "points"), "\(what).points", capacity: 3) { sceSaved0, sceWhat0 in try SavedValues.uint8(sceSaved0, sceWhat0) }
+        )
+    }
+}
+
 /// SCE Accepted Subset §2.15: a `union:union_shape` value (docs/adr/0092).
 public enum StaticUnionUnionShapeUnion: Equatable, Sendable {
     case dot
@@ -345,6 +361,34 @@ public enum StaticUnionUnionShapeUnion: Equatable, Sendable {
             default:
                 preconditionFailure("a value of union_shape read as radius is in another case")
             }
+        }
+    }
+}
+
+extension StaticUnionUnionShapeUnion {
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        switch self {
+        case .dot: return SavedValues.union(tag: "kind", variant: "dot", nil)
+        case .circle(let sceRecord): return SavedValues.union(tag: "kind", variant: "circle", sceRecord.toSaved())
+        case .disc(let sceRecord): return SavedValues.union(tag: "kind", variant: "disc", sceRecord.toSaved())
+        case .rect(let sceRecord): return SavedValues.union(tag: "kind", variant: "rect", sceRecord.toSaved())
+        case .label(let sceRecord): return SavedValues.union(tag: "kind", variant: "label", sceRecord.toSaved())
+        case .path(let sceRecord): return SavedValues.union(tag: "kind", variant: "path", sceRecord.toSaved())
+        }
+    }
+
+    /// The value a saved state holds, refused unless it is one of the cases of `union_shape`.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> StaticUnionUnionShapeUnion {
+        let sceTag = try SavedValues.unionTag(value, what, tag: "kind")
+        switch sceTag {
+        case "dot": return .dot
+        case "circle": return .circle(try StaticUnionRadiusRecord.fromSaved(value, what))
+        case "disc": return .disc(try StaticUnionRadiusRecord.fromSaved(value, what))
+        case "rect": return .rect(try StaticUnionRectRecord.fromSaved(value, what))
+        case "label": return .label(try StaticUnionLabelRecord.fromSaved(value, what))
+        case "path": return .path(try StaticUnionPathRecord.fromSaved(value, what))
+        default: throw StateRefusal("'\(what)' (\(sceTag)) is not a case of union_shape")
         }
     }
 }
@@ -1177,3 +1221,114 @@ extension Engine where Policy == StaticUnionPolicy {
     }
 }
 
+
+
+// ======================================================================
+// Saved state (docs/adr/0045)
+// ======================================================================
+
+extension StaticUnionPolicy: SavedPolicy {
+    /// What a saved state of this document is bound to: a digest the generator computes of every
+    /// state with its kind and parent and every variable with its type, not of the document's text,
+    /// so a later build whose guards, actions or comments changed restores it and one that renamed,
+    /// re-typed or moved something a saved state names refuses it.
+    public static var savedShape: SavedShape {
+        SavedShape(
+            first: "c8aae7160c566c907be2b8a15519d2845a3fcb1f4beee776eb7dc057f573b9d0",
+            revised: "50df1ca63466918d7d1c99c7d3975685a6cc8ffbf52ad6d968bf883193868735",
+            format2First: "393e1fdb3bf8c00b6afe66f251168a999d043b2f4599b3e4b80a02f0ec36959c",
+            format2Revised: "53f8ecdef3f99a3dcfa54ea7ae234a87745f1c979b3cc297ad413c2d9a953b2d",
+            records: [
+                SavedRecordLineage(
+                    event: "lift.refusal", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "lift_why", list: false),
+                    ]),
+            ],
+            enums: [
+                SavedEnumLineage(
+                    key: "enum:enum_shape_kind.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "last_kind", field: nil, list: false),
+                    ]),
+                SavedEnumLineage(
+                    key: "enum:sce:std/lift/refusal_code.scxml", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    holders: [
+                        SavedEnumHolder(variable: "lift_why", field: "code", list: false),
+                    ]),
+            ])
+    }
+
+    /// Every variable, by document id, in declaration order, each as a saved state holds it: the
+    /// machine's own included, and not only the ones it publishes.
+    public func savedVariables() -> [SavedEntry<JSONValue>] {
+        [
+            SavedEntry("built", vBuilt.toSaved()),
+            SavedEntry("kept", SavedValues.optional(vKept) { $0.toSaved() }),
+            SavedEntry("last_kind", SavedValues.of(vLastKind)),
+            SavedEntry("radius", SavedValues.of(vRadius)),
+            SavedEntry("width", SavedValues.of(vWidth)),
+            SavedEntry("height", SavedValues.of(vHeight)),
+            SavedEntry("labels", SavedValues.of(vLabels)),
+            SavedEntry("points", SavedValues.of(vPoints)),
+            SavedEntry("dots", SavedValues.of(vDots)),
+            SavedEntry("many_radius", SavedValues.of(vManyRadius)),
+            SavedEntry("many_width", SavedValues.of(vManyWidth)),
+            SavedEntry("many_shapes", SavedValues.of(vManyShapes)),
+            SavedEntry("maybe_width", SavedValues.of(vMaybeWidth)),
+            SavedEntry("refusals", SavedValues.of(vRefusals)),
+            SavedEntry("lifted", SavedValues.optional(vLifted) { $0.toSaved() }),
+            SavedEntry("lift_why", SavedValues.optional(vLiftWhy) { $0.toSaved() }),
+        ]
+    }
+
+    /// Reads and judges every variable `saved` holds, the type each is held to and the bound of a
+    /// text, and changes none: what it returns writes them, and cannot fail.
+    public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
+        let value0 = try StaticUnionUnionShapeUnion.fromSaved(try saved.variable("built"), "built")
+        let value1 = try SavedValues.optional(try saved.variable("kept"), "kept") { e, w in try StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        let value2 = try SavedValues.enumeration(try saved.variable("last_kind"), "last_kind", as: StaticUnionKindEnum.self)
+        let value3 = try SavedValues.uint16(try saved.variable("radius"), "radius")
+        let value4 = try SavedValues.uint16(try saved.variable("width"), "width")
+        let value5 = try SavedValues.uint16(try saved.variable("height"), "height")
+        let value6 = try SavedValues.uint32(try saved.variable("labels"), "labels")
+        let value7 = try SavedValues.uint32(try saved.variable("points"), "points")
+        let value8 = try SavedValues.uint32(try saved.variable("dots"), "dots")
+        let value9 = try SavedValues.uint16(try saved.variable("many_radius"), "many_radius")
+        let value10 = try SavedValues.uint16(try saved.variable("many_width"), "many_width")
+        let value11 = try SavedValues.uint32(try saved.variable("many_shapes"), "many_shapes")
+        let value12 = try SavedValues.uint16(try saved.variable("maybe_width"), "maybe_width")
+        let value13 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value14 = try SavedValues.optional(try saved.variable("lifted"), "lifted") { e, w in try StaticUnionUnionShapeUnion.fromSaved(e, w) }
+        let value15 = try SavedValues.optional(try saved.variable("lift_why"), "lift_why") { e, w in try StaticUnionLiftRefusalRecord.fromSaved(e, w) }
+        return { [self] in
+            self.vBuilt = value0
+            self.vKept = value1
+            self.vLastKind = value2
+            self.vRadius = value3
+            self.vWidth = value4
+            self.vHeight = value5
+            self.vLabels = value6
+            self.vPoints = value7
+            self.vDots = value8
+            self.vManyRadius = value9
+            self.vManyWidth = value10
+            self.vManyShapes = value11
+            self.vMaybeWidth = value12
+            self.vRefusals = value13
+            self.vLifted = value14
+            self.vLiftWhy = value15
+        }
+    }
+}
