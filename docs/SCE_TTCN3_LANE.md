@@ -2,7 +2,8 @@
 
 - Status: design of ADR 0091 order of work step 5, written 2026-11-10. Of what SCE gives the lane, the canonical log
   the lane compares is in place (order of work step 6, TP §12.5): all seven native runtimes write it, and each is held
-  to one expected log. The trace surface and native trace replay (S1) and the corpus (S2) are not built yet. The
+  to one expected log. Of the trace surface and native trace replay (S1), the surface, the shared walk and the Rust
+  backend are in place (§10.4, §10.5); the other six backends and the corpus (S2) are not built yet. The
   lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`, which exists and is private for
   now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The SCE-side slices S1 and S2 come
   first, then the downstream slices D1 to D5 (§13).
@@ -142,7 +143,7 @@ which states its stability and how a change is announced.
 | the exported modules `S.ttcn` and `S_Types.ttcn`, under the name contract of TP §9.5 | the TTCN-3 the export writes (TP §9.5) | as the export's manifest and witness | the manifest's and the witness's rows describe them |
 | the types manifest `S_Types.manifest.json` | `schemas/sce-ttcn3-types-manifest.v1.schema.json` | `pre-release` | yes |
 | the correspondence witness `S.witness.json` | `schemas/sce-ttcn3-witness.v1.schema.json` | `pre-release` | yes |
-| the recorded input trace `sce-test-trace.v1` | `schemas/sce-test-trace.v1.schema.json` (S1) | `pre-release` | planned (§10.4) |
+| the recorded input trace `sce-test-trace.v1` | `schemas/sce-test-trace.v1.schema.json` | `pre-release` | yes (§10.4) |
 | the canonical log `sce-test-log.v1`, under TP §12.5 | `schemas/sce-test-log.v1.schema.json` | `pre-release` | yes |
 | the authoring grammar, of which the codec bindings read codec documents | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `pre-release` | yes |
 
@@ -153,8 +154,29 @@ in each program's usage. Design choice: a change to one is announced as a change
 |---|---|
 | `sce-codegen export-ttcn3` | writes the two modules, the manifest and the witness of one suite, all or nothing (TP §9.5) |
 | `sce-ttcn3-validate <suite.scxml> <export directory>` | exit 0 with no violation, 1 with one or more, 2 when an input is not read (TP §9.4) |
-| `sce-codegen check-trace <suite> <trace>` (S1, design choice) | refuses a trace that does not fit the suite (§10.2) |
-| each backend's runner (S1) | runs one test case of a generated suite against one trace and writes its result with its canonical log, which every native runtime writes already (TP §12.5, §10.5) |
+| `sce-codegen check-trace <suite> <trace>` (S1, design choice, not yet in place) | refuses a trace that does not fit the suite (§10.2) |
+| each backend's runner of a generated suite (S1; in place on Rust) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
+
+Every backend's runner takes one command line, so the downstream's lane calls the seven alike (design choice):
+
+```text
+<runner> --trace-dir <dir> --log-dir <dir> [--world <feature>,...] [--module-parameter <id>=<value>]...
+```
+
+| Option | Meaning |
+|---|---|
+| `--trace-dir <dir>` | the directory of the traces, `<test case>.json` each (§10.2) |
+| `--log-dir <dir>` | the directory the logs are written to, made where it is missing: `<test case>.log.json` each, the canonical log's text with nothing after it (TP §12.5) |
+| `--world <feature>,...` | the features the world enables, by name, separated by commas; none where it is not given (ADR 0057 §2) |
+| `--module-parameter <id>=<value>` | a module parameter's value in place of its default, a literal of its type as the `value` of a `<sce:module-parameter>` writes one (TP §11.4, §11.8); repeated, one per parameter |
+
+The runner runs the test cases the world selects, in the suite's order, and prints `<test case> <verdict>` on a line
+for each. A test case whose trace is missing or refused (§10.2) ends with `error` (P13) and its log is written, the
+reason on the standard error. The exit status is 0 when every selected test case ran and its log was written, whatever
+its verdict, since the verdict is the log's; it is 2 when the command line is not this one, a module parameter's value
+is refused (a parameter the suite does not declare, or a literal that is no value of its type), or a log cannot be
+written. The runner is generated per suite as the `main` of the suite's unit, which a crate makes a program with a
+binary target of one line (Rust: `<suite>::main`, over `sce_rust_runtime::test::runner`).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -211,11 +233,13 @@ instant is a 64-bit integer.
 ### 10.2 The file
 
 A trace file holds one test case's inputs as one JCS text, so that a trace has exactly one spelling and two traces
-are equal exactly when their bytes are. Design choice: the envelope is
-`{"v": 1, "suite": <suite>, "test_case": <test case>, "inputs": [<record>, …]}`. The inputs are in non-decreasing
-`at`, and the inputs of one port at one instant are in the order they are enqueued (TP §3.2 step 2). A test case may
-have several traces. Design choice: they live beside the suite's document, as
-`traces/<test case>/<name>.trace.json`, with the expected log of each beside it (§12).
+are equal exactly when their bytes are; the file may end in one line feed after it, as a text file does. Design
+choice: the envelope is `{"schema": "sce-test-trace.v1", "suite": <suite>, "test_case": <test case>, "inputs":
+[<record>, …]}`, named as the test log names its shape. The inputs are in non-decreasing `at`, and the inputs of one
+instant are in the order they are enqueued (TP §3.2 step 2). Design choice: a trace is named by its test case,
+`<test case>.json`, in a directory of the traces of one suite, which is what a runner reads (§4); the runtime suite's
+live beside its expected logs, `sce-build/tests/fixtures/test_profile/runtime/traces/`. A test case with several
+traces has them in several such directories, each with the expected log of each trace (§12).
 
 A trace is refused before the run, on both sides, when:
 
@@ -237,22 +261,28 @@ writes are the same bytes, and a backend's trace player reads the form its log w
 A value is read against its type, which the record's `type` names in the manifest, so a text, a byte string and a
 variant's name are never mistaken for one another.
 
-### 10.4 The surface, planned for slice S1
+### 10.4 The surface
 
-This design writes no schema. Slice S1 lands the surface as `SCE_WIRE_CONTRACTS.md` requires every surface to land:
+Slice S1 landed the surface as `SCE_WIRE_CONTRACTS.md` requires every surface to land:
 
 - `schemas/sce-test-trace.v1.schema.json`, with `x-sce-schema-status: pre-release`;
-- the const `TEST_TRACE_SCHEMA_STATUS` in `sce-build/src/test_trace.rs`. That module holds SCE's reader of a trace
-  and its check of a trace against a suite, the refusals of §10.2, offered as a command of `sce-codegen` (design
-  choice: `sce-codegen check-trace <suite> <trace>`);
+- the consts `TEST_TRACE_SCHEMA` and `TEST_TRACE_SCHEMA_STATUS` in `backends/rust/runtime/src/test/trace.rs`, the
+  module of the Rust runtime that reads a trace (`Trace::parse`) and plays it (§10.5); a trace's reader is a part of
+  each runtime, as the log's writer is, and the Rust runtime's is the authoritative one;
 - a row of `SCE_WIRE_CONTRACTS.md`:
   - Format owner: SCE;
-  - Status source: `TEST_TRACE_SCHEMA_STATUS` (`sce-build/src/test_trace.rs`) and `x-sce-schema-status`;
+  - Status source: `TEST_TRACE_SCHEMA_STATUS` (`backends/rust/runtime/src/test/trace.rs`) and
+    `x-sce-schema-status`;
   - Status: `pre-release`;
-  - Shape governance: this document §10, and `sce-build/src/test_trace.rs`, the reader the native runners' checks
-    share;
+  - Shape governance: this document §10, and `backends/rust/runtime/src/test/trace.rs`, held by
+    `sce-build/tests/a_test_trace_is_held_to_its_wire_schema.rs`;
   - Producers: the corpus's traces, written by hand, and the downstream's recorder (DD §8.1);
   - Readers: the native trace players (§10.5) and the downstream's trace player.
+
+The reader refuses a text that is not JSON, not of the shape, out of the order of §10.2, or not the trace's one
+canonical spelling; whether each input fits the test case, the other refusals of §10.2, is read by the test case's
+configuration as the trace is played (§10.5). SCE's check of a trace against a suite without running it, offered as a
+command of `sce-codegen` (design choice: `sce-codegen check-trace <suite> <trace>`, §4), is still to come.
 
 ### 10.5 Native trace replay
 
@@ -263,9 +293,47 @@ from the canonical value to the backend's record. The conversion in the other di
 every template over a record declares its record's type name and the writer of its value's form, over the walk of a
 record's types that every backend's generator shares (`forge::generator::test_template_walk::canonical_value`, TP
 §12.5). S1 generates each reader from the same walk, so that one walk decides a type's form in both directions on
-every backend. Slice S1 also adds, per backend, a runner program that runs one test case of a generated suite against
-one trace and writes the result with its canonical log, which every native runtime writes already (TP §12.5). The
-downstream's lane calls the runners as processes.
+every backend. Slice S1 also adds, per backend, a runner program that runs the test cases of a generated suite against
+their traces and writes each one's canonical log, which every native runtime writes already (TP §12.5), on the
+command line of §4. The downstream's lane calls the runners as processes.
+
+What is in place, on Rust:
+
+- The walk. `canonical_form` of `forge::generator::test_template_walk` is the one walk of the form, generic over a
+  direction of it, `CanonicalForm`, which is told what a reader holds a value to and a writer does not read: an
+  integer's width, a text's, a byte string's and a list's bounds, and the record a set of fields builds. A backend's
+  writer, `CanonicalSpelling`, is one direction through the adapter `Writing`, and `canonical_value` is that walk, so
+  the writers of the seven backends are unchanged. A backend's reader is the other direction: a sibling of its writer
+  over the same walk (Rust: `RustReading`, beside `RustCanonical`).
+- The readers. A record is an `event-schema` unit, which names no runtime (TP §12.2) and is compiled where the test
+  profile's runtime is not, so the reader is not in it. A template over the record is no home either: a record may
+  have several templates, or none, and the trace player needs one reader per record a system port takes. The unit of
+  the test configuration is that home: it is on the SCE runtime, it declares the system ports, and the `in` list of
+  each port's type names the records a trace may carry on it, which the configuration reads through its import of
+  the port type (a port type writes no unit). So the configuration's unit declares, per record a system port takes,
+  `read_<record>`, which reads the record from its canonical form or refuses it by name, and `canonical_<record>`,
+  its writer, both over the walk, and `input(system_port, type_name, value)`, which refuses a port that is no system
+  port of the configuration and a type the port's `in` list does not name, and otherwise reads the value into the
+  message the run delivers. The test case's unit hands `input` to the runner (`TestCase::inputs`). The readers of each
+  form are `sce_rust_runtime::test::from_canonical`, the inverse of `sce_rust_runtime::test::canonical`, each of
+  which accepts the one spelling its writer gives.
+- The player. `TraceAdapter` (`backends/rust/runtime/src/test/trace.rs`) is a system adapter: it reads every input of
+  a trace through the configuration's `input` before the run, refusing the whole trace where one does not fit; at each
+  instant it delivers the inputs due then, in the trace's order (TP §3.2 step 2); it announces the instant of its next
+  input, which the runner's clock advances to when it is the earliest of that instant, the next timer expiry and the
+  guard (TP §3.3, §12.4); and it records what the components send to the system ports.
+- The runner. `run_suite_with_traces(suite, world, traces, overrides)` runs the test cases a world selects, each
+  against the trace `traces` gives for its name, and returns each one's result and canonical log; a test case whose
+  trace is not given, is of another test case, or does not fit ends with `error` (P13) before it starts, naming why.
+  The program of §4 is the suite unit's `main`, over `sce_rust_runtime::test::runner`.
+- The tests. The trace of `answers_the_job`, `sce-build/tests/fixtures/test_profile/runtime/traces/answers_the_job.json`,
+  is the input the Rust suite runner's test adapter gives that test case, as a file; the generated `runtime_suite`
+  replayed from it writes `expected_logs/answers_the_job.json` byte for byte, through `run_suite_with_traces` and
+  through the program (`backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs`).
+
+The other six backends follow the same design: the reader of each form in the runtime beside its writers, the reader
+of each record and `input` in the unit of a configuration over the same walk, a player behind the system adapter, the
+runner function and the program of §4.
 
 ## 11. The lane
 
@@ -366,9 +434,12 @@ listed in DD §13.2.
 - The trace player and the generated value conversions of every backend, and each backend's runner (§10.5).
 - Tests: per backend, a trace of `runtime_suite` replays to the verdicts its test cases expect, and `check-trace`
   refuses each case of §10.2.
-- Files: `schemas/`, `sce-build/src/test_trace.rs`, the command in `sce-build/src/bin/sce_codegen.rs`,
-  `SCE_WIRE_CONTRACTS.md`, `docs/SCE_TEST_PROFILE.md`, the seven test runtimes and their generators, and the
-  generated test trees those generators write.
+- Files: `schemas/`, the command in `sce-build/src/bin/sce_codegen.rs`, `SCE_WIRE_CONTRACTS.md`,
+  `docs/SCE_TEST_PROFILE.md`, the seven test runtimes and their generators, and the generated test trees those
+  generators write.
+- In place: the surface (§10.4), the shared walk of both directions and the Rust backend (§10.5): its readers, its
+  player, its runner and its program, held by the trace of `answers_the_job` to the expected log. To come: the other
+  six backends, after the Rust one, and `sce-codegen check-trace`.
 
 **S2: a corpus with traces and expected logs.**
 

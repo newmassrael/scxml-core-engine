@@ -1972,6 +1972,18 @@ value for a parameter the suite does not declare is the caller's mistake and is 
 A test case whose components read a module parameter the run has no value for, or for which no adapter is given,
 ends with `error` (P13) before any of its components is created.
 
+A suite is also run against recorded input traces (docs/SCE_TTCN3_LANE.md §10), the wire surface
+`schemas/sce-test-trace.v1.schema.json`: each test case the world selects against the trace of its inputs, each input
+at its instant (Rust: `sce_rust_runtime::test::run_suite_with_traces`). The adapter of each test case is then a trace
+player (Rust: `TraceAdapter`), which reads every input before the run through the reader of the test case's
+configuration, whose unit generates it (`input`, with the reader of each record a system port takes, over the walk of
+the canonical form its writer shares), delivers the inputs due at each instant in the trace's order in step 1, and
+announces the instant of its next one, which step 4 advances to when it is the least. A trace that does not fit the
+test case, an input on a port that is no system port of it, of a type its port does not take, or with a value that
+does not belong to its type, ends the test case with `error` (P13) before it starts. Each generated suite is also a
+program that runs so and writes each test case's test log (docs/SCE_TTCN3_LANE.md §4; Rust: the suite unit's `main`,
+over `sce_rust_runtime::test::runner`). The other six runtimes follow the Rust one.
+
 ### 12.5 Verdicts, the result and the test log
 
 The runtime keeps `E-VERDICT` for each component and computes `TC-VERDICT` over the MTC and every PTC, removed or not
