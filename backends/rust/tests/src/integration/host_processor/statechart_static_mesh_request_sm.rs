@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 18e4a7debafaa176d5203a9a5bd608a95459520c89a30345c8fb77bc0f20178b
+// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine"]
-// SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+#![doc = "SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine"]
+// SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -1055,8 +1055,8 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine"]
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine"]
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1065,7 +1065,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     ) {
         match state {
             StatechartStaticMeshRequestState::Asking => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:68 :: asking :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:69 :: asking :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1096,8 +1096,8 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine"]
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine"]
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1137,8 +1137,8 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine"]
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine"]
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1195,8 +1195,8 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine"]
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    #[doc = "SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine"]
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1205,7 +1205,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
         match transition.0 {
             // asking, transition 0
             3 => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:76 :: asking :: _transition_0
+                // SCE-MAP: statechart_static_mesh_request.scxml:77 :: asking :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1229,7 +1229,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
             }
             // asking, transition 1
             4 => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:79 :: asking :: _transition_1
+                // SCE-MAP: statechart_static_mesh_request.scxml:80 :: asking :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1252,7 +1252,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
             }
             // asking, transition 2
             5 => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:82 :: asking :: _transition_2
+                // SCE-MAP: statechart_static_mesh_request.scxml:83 :: asking :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1276,7 +1276,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
             }
             // idle, transition 0
             0 => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_mesh_request.scxml:59 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1316,7 +1316,7 @@ impl StatePolicy for StatechartStaticMeshRequestPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: statechart_static_mesh_request.scxml:62 :: idle :: _transition_1
+                // SCE-MAP: statechart_static_mesh_request.scxml:63 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {

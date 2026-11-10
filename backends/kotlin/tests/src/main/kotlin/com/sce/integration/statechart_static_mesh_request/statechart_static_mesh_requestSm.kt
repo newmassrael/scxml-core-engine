@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 18e4a7debafaa176d5203a9a5bd608a95459520c89a30345c8fb77bc0f20178b
+// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+// SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
 
 package com.sce.integration.statechart_static_mesh_request
 
@@ -463,7 +463,7 @@ class StatechartStaticMeshRequestStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     override fun onEntry(state: StatechartStaticMeshRequestState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartStaticMeshRequestState.Asking -> onEntryOfAsking()
@@ -474,7 +474,7 @@ class StatechartStaticMeshRequestStateMachine(
 
 
     private fun onEntryOfAsking() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:68 :: asking :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:69 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -535,17 +535,17 @@ class StatechartStaticMeshRequestStateMachine(
     }
 
     private fun onEntryOfDone() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:87 :: done :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:88 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:57 :: idle :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     override fun onExit(state: StatechartStaticMeshRequestState) {
         when (state) {
             is StatechartStaticMeshRequestState.Asking -> onExitOfAsking()
@@ -556,7 +556,7 @@ class StatechartStaticMeshRequestStateMachine(
 
 
     private fun onExitOfAsking() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:68 :: asking :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:69 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StatechartStaticMeshRequestState.Asking)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -567,17 +567,17 @@ class StatechartStaticMeshRequestStateMachine(
     }
 
     private fun onExitOfDone() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:87 :: done :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:88 :: done :: _state_body
     }
 
     private fun onExitOfIdle() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:57 :: idle :: _state_body
+                // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_static_mesh_request.scxml:45 :: _machine
+    // SCE-MAP: statechart_static_mesh_request.scxml:46 :: _machine
     override fun executeTransitionContent(source: StatechartStaticMeshRequestState, transitionIndex: Int) {
         when (source) {
             is StatechartStaticMeshRequestState.Asking -> transitionContentOfAsking(transitionIndex)
@@ -603,7 +603,7 @@ class StatechartStaticMeshRequestStateMachine(
 
 
     private fun transitionContentOfAskingAt0() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:76 :: asking :: _transition_0
+                // SCE-MAP: statechart_static_mesh_request.scxml:77 :: asking :: _transition_0
 
             if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -611,7 +611,7 @@ class StatechartStaticMeshRequestStateMachine(
     }
 
     private fun transitionContentOfAskingAt1() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:79 :: asking :: _transition_1
+                // SCE-MAP: statechart_static_mesh_request.scxml:80 :: asking :: _transition_1
 
             if (try { vFailed = com.sce.forge.runtime.SceChecked.add(vFailed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -619,7 +619,7 @@ class StatechartStaticMeshRequestStateMachine(
     }
 
     private fun transitionContentOfAskingAt2() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:82 :: asking :: _transition_2
+                // SCE-MAP: statechart_static_mesh_request.scxml:83 :: asking :: _transition_2
 
             if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -641,7 +641,7 @@ class StatechartStaticMeshRequestStateMachine(
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:58 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_mesh_request.scxml:59 :: idle :: _transition_0
 
             if (try { vLoad = com.sce.forge.runtime.SceChecked.add(vLoad, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -653,7 +653,7 @@ class StatechartStaticMeshRequestStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: statechart_static_mesh_request.scxml:62 :: idle :: _transition_1
+                // SCE-MAP: statechart_static_mesh_request.scxml:63 :: idle :: _transition_1
 
             if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
                 return

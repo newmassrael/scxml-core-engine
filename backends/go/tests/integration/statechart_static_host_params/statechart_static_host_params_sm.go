@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 18e4a7debafaa176d5203a9a5bd608a95459520c89a30345c8fb77bc0f20178b
+// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:79 :: _machine
 
 package statechart_static_host_params
 
@@ -1068,11 +1068,11 @@ func (p *StatechartStaticHostParamsPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartStaticHostParamsStateWorking:
-//line statechart_static_host_params.scxml:109
+//line statechart_static_host_params.scxml:108
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -1427,7 +1427,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1435,7 +1435,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteHistoryDefaultContent(history 
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartStaticHostParamsState, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent], configurationBeforeExit []StatechartStaticHostParamsState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1463,7 +1463,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteExitActions(state StatechartSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1473,7 +1473,7 @@ func (p *StatechartStaticHostParamsPolicy) BindCurrentEvent(event StatechartStat
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state StatechartStaticHostParamsState, event StatechartStaticHostParamsEvent, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) (sce.EnabledTransition[StatechartStaticHostParamsState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartStaticHostParamsStateIdle:
@@ -1546,13 +1546,13 @@ func (p *StatechartStaticHostParamsPolicy) FirstEnabledTransition(state Statecha
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_static_host_params.scxml:80
+//line statechart_static_host_params.scxml:79
 func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source StatechartStaticHostParamsState, transitionIndex int, engine *sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]) {
 	switch source {
 	case StatechartStaticHostParamsStateIdle:
 		switch transitionIndex {
 		case 0:
-//line statechart_static_host_params.scxml:95
+//line statechart_static_host_params.scxml:94
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1573,7 +1573,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 			}()
 		case 1:
-//line statechart_static_host_params.scxml:100
+//line statechart_static_host_params.scxml:99
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1582,7 +1582,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 			}()
 		case 2:
-//line statechart_static_host_params.scxml:103
+//line statechart_static_host_params.scxml:102
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1594,7 +1594,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 	case StatechartStaticHostParamsStateWorking:
 		switch transitionIndex {
 		case 0:
-//line statechart_static_host_params.scxml:146
+//line statechart_static_host_params.scxml:145
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

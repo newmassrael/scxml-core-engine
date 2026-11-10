@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 18e4a7debafaa176d5203a9a5bd608a95459520c89a30345c8fb77bc0f20178b
+// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
+// SCE-MAP: statechart_static_host_params.scxml:79 :: _machine
 
 package com.sce.integration.statechart_static_host_params
 
@@ -479,7 +479,7 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:79 :: _machine
     override fun onEntry(state: StatechartStaticHostParamsState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> onEntryOfDone()
@@ -490,17 +490,17 @@ class StatechartStaticHostParamsStateMachine(
 
 
     private fun onEntryOfDone() {
-                // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:151 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:93 :: idle :: _state_body
     }
 
     private fun onEntryOfWorking() {
-                // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:108 :: working :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/3
                 run {
 
@@ -880,7 +880,7 @@ class StatechartStaticHostParamsStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:79 :: _machine
     override fun onExit(state: StatechartStaticHostParamsState) {
         when (state) {
             is StatechartStaticHostParamsState.Done -> onExitOfDone()
@@ -891,15 +891,15 @@ class StatechartStaticHostParamsStateMachine(
 
 
     private fun onExitOfDone() {
-                // SCE-MAP: statechart_static_host_params.scxml:152 :: done :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:151 :: done :: _state_body
     }
 
     private fun onExitOfIdle() {
-                // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:93 :: idle :: _state_body
     }
 
     private fun onExitOfWorking() {
-                // SCE-MAP: statechart_static_host_params.scxml:109 :: working :: _state_body
+                // SCE-MAP: statechart_static_host_params.scxml:108 :: working :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StatechartStaticHostParamsState.Working)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -912,7 +912,7 @@ class StatechartStaticHostParamsStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_static_host_params.scxml:80 :: _machine
+    // SCE-MAP: statechart_static_host_params.scxml:79 :: _machine
     override fun executeTransitionContent(source: StatechartStaticHostParamsState, transitionIndex: Int) {
         when (source) {
             is StatechartStaticHostParamsState.Idle -> transitionContentOfIdle(transitionIndex)
@@ -938,7 +938,7 @@ class StatechartStaticHostParamsStateMachine(
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: statechart_static_host_params.scxml:95 :: idle :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _transition_0
 
             if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -952,13 +952,13 @@ class StatechartStaticHostParamsStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: statechart_static_host_params.scxml:100 :: idle :: _transition_1
+                // SCE-MAP: statechart_static_host_params.scxml:99 :: idle :: _transition_1
 
             vCount = 3000000000.toUInt()
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: statechart_static_host_params.scxml:103 :: idle :: _transition_2
+                // SCE-MAP: statechart_static_host_params.scxml:102 :: idle :: _transition_2
 
             vHuge = 3000000000.toUInt()
     }
@@ -977,7 +977,7 @@ class StatechartStaticHostParamsStateMachine(
 
 
     private fun transitionContentOfWorkingAt0() {
-                // SCE-MAP: statechart_static_host_params.scxml:146 :: working :: _transition_0
+                // SCE-MAP: statechart_static_host_params.scxml:145 :: working :: _transition_0
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
