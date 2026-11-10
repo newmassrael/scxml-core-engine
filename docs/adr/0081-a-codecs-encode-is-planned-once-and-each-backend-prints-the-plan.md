@@ -670,6 +670,16 @@ old encode, the old encode and its templates are removed in the same landing.
    the type keeps rather than one the encode writes. The C++ printer prints a record with a text field, and the
    CBOR record list is printed; a record's byte-string field is not printed yet. No codec of the repository is
    kept: the template's C++ encode prints none, and it can be removed.
+
+   *The thirty-sixth C++ landing, 2026-11-10:* a CBOR map whose encode refuses, and a record with a byte-string
+   field. The printed encode writes each refusal the totality analysis names, as the Rust printer writes it:
+   `CborOutOfRange` for a negative value of an enum whose carrier is signed, for a list of fewer records than
+   its lower count, and for a record whose byte string, which the schema's unit holds in a `std::vector` with
+   no bound, is past its bound. The checks run before the map head, so a refusal leaves the sink untouched, and
+   the value's `encode_to_vec` answers an optional. A list is viewed within the most records it holds and not
+   its lower count, as Rust's `BoundedList` holds it, so the two languages refuse the same values. Every CBOR
+   plan is printed. A C++ test holds three CBOR fixtures, one for each refusal, to the bytes and the refusals
+   of the Rust encode.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
