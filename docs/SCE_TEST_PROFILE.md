@@ -1391,7 +1391,9 @@ backend):
   test-component invoker.
 
 Beside the machine the header declares `<name>Component`, which implements `SCE::Test::ComponentMachine`: `start`
-binds the context, registers the test-port processor and the test-component invoker on it and starts the machine;
+names the machine's session after the component (`bindSessionId`, `mtc` or the PTC's id, which the parse holds to an
+XML Name), binds the context, registers the test-port processor and the test-component invoker on it and starts the
+machine;
 `deliverSnapshot` delivers the snapshot event; `terminated` is the machine's having entered a top-level `<final>`.
 A component that uses a template whose type reaches a union is refused on C++ as the template is.
 

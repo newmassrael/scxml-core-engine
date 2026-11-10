@@ -164,9 +164,10 @@ public:
     {# the remote-invoke onentry block compile. Mirrors the paired field      #}
     {# declaration in `state_machine.jinja2` (`or model.invokes | scxml_remote`). #}
     {# docs/adr/0045: also a machine that holds a session id for a request to a host invoker
-       or a saved state to name its session by; the condition `holds_session_id` is in
+       or a saved state to name its session by, and every `sce-static` root, which binds one
+       whether or not it saves; the condition `holds_session_id` is in
        `state_machine.jinja2`. #}
-    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types %}
+    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types or model.datamodel == "sce-static" %}
     {% include 'scriptengine_helpers.jinja2' %}
     {% endif %}
 {% if static_saved_shape %}

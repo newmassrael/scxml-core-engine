@@ -6747,7 +6747,10 @@ restore every backend moves to.
   `thumbv7em-none-eabihf`). A parent builds each child under the id the tree gives
   it. A `sce-static` root on Kotlin takes the id from the host as the last constructor
   parameter, `sessionId` (an `IllegalArgumentException` for an id that is not an
-  Nmtoken), and draws a UUID version 4 when it is given none. A C11 root takes the
+  Nmtoken), and draws a UUID version 4 when it is given none. A `sce-static` root on
+  C++ takes it through `bindSessionId` before it starts (`std::invalid_argument` for
+  an id that is not an Nmtoken), whether or not it saves, and draws a UUID version 4
+  when it is given none. A C11 root takes the
   id from the host through `<machine>_init_with_session_id`, which answers a
   `sce_start_refusal_t` (`sce/session_id.h`): an id that is empty, not an Nmtoken,
   longer than `SCE_MAX_SESSION_ID_LEN` holds or published at a location longer than

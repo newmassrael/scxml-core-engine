@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -23,10 +24,13 @@
 #include "asking_configuration.h"
 #include "job_reply.h"
 #include "job_request.h"
+#include "keeping_configuration.h"
 #include "reply_ok.h"
 #include "runtime_suite.h"
 #include "saved/SavedValues.h"
+#include "serving_configuration.h"
 #include "test/Suite.h"
+#include "test/TestCaseRun.h"
 
 #ifndef SCE_PROJECT_ROOT
 #define SCE_PROJECT_ROOT "."
@@ -225,6 +229,84 @@ TEST(ATestSuite, EndsInErrorWhenAModuleParameterIsNotOfItsType) {
     ASSERT_EQ(results.size(), 1u);
     EXPECT_EQ(results[0].result.verdict, Verdict::Error);
     EXPECT_TRUE(requested.empty()) << "the component did not start, so it sent nothing";
+}
+
+/// The session id `machine` runs as, when it is a component of the type `Component`.
+template <typename Component> std::optional<std::string> sessionOf(const SCE::Test::ComponentMachine &machine) {
+    if (const auto *typed = dynamic_cast<const Component *>(&machine)) {
+        return typed->sessionId();
+    }
+    return std::nullopt;
+}
+
+/// A component the configuration makes, run as it is, which records the session
+/// id its machine started under by the name of the component.
+class Recorded : public SCE::Test::ComponentMachine {
+public:
+    Recorded(std::unique_ptr<SCE::Test::ComponentMachine> inner, std::map<std::string, std::string> &sessions)
+        : inner_(std::move(inner)), sessions_(sessions) {}
+
+    void start(SCE::Test::ComponentContext &context) override {
+        inner_->start(context);
+        std::optional<std::string> session = sessionOf<SCE::Generated::coordinator::coordinatorComponent>(*inner_);
+        if (!session) {
+            session = sessionOf<SCE::Generated::answerer::answererComponent>(*inner_);
+        }
+        if (!session) {
+            session = sessionOf<SCE::Generated::ptc_keeper::ptc_keeperComponent>(*inner_);
+        }
+        if (!session) {
+            session = sessionOf<SCE::Generated::idler::idlerComponent>(*inner_);
+        }
+        sessions_[context.name()] = session.value_or("(a component of no type this test reads)");
+    }
+
+    void deliverSnapshot() override {
+        inner_->deliverSnapshot();
+    }
+
+    bool terminated() const override {
+        return inner_->terminated();
+    }
+
+private:
+    std::unique_ptr<SCE::Test::ComponentMachine> inner_;
+    std::map<std::string, std::string> &sessions_;
+};
+
+/// The session each component of a run of `configuration` started under, by the
+/// component's name, its machines made by `machine`.
+std::map<std::string, std::string>
+sessionsOfARun(SCE::Test::Configuration configuration,
+               std::unique_ptr<SCE::Test::ComponentMachine> (*machine)(const std::string &)) {
+    std::map<std::string, std::string> sessions;
+    std::vector<std::uint32_t> requested;
+    Responder responder(0, requested);
+    SCE::Test::TestCaseRun run(
+        std::move(configuration),
+        [machine, &sessions](const std::string &componentType) -> std::unique_ptr<SCE::Test::ComponentMachine> {
+            auto made = machine(componentType);
+            if (!made) {
+                return nullptr;
+            }
+            return std::make_unique<Recorded>(std::move(made), sessions);
+        },
+        responder, std::nullopt);
+    (void)run.run();
+    return sessions;
+}
+
+/// docs/adr/0045: each component's session is named by the component, as on
+/// every other backend: the MTC's is `mtc` and a PTC's the name its
+/// configuration gives it, not an id the machine drew. The twin of the C11
+/// suite test's `each_component_runs_under_its_configuration_name`.
+TEST(ATestSuite, EachComponentRunsUnderItsConfigurationName) {
+    EXPECT_EQ(sessionsOfARun(SCE::Generated::ServingConfiguration::configuration(),
+                             &SCE::Generated::ServingConfiguration::machine),
+              (std::map<std::string, std::string>{{"answerer", "answerer"}, {"mtc", "mtc"}}));
+    EXPECT_EQ(sessionsOfARun(SCE::Generated::KeepingConfiguration::configuration(),
+                             &SCE::Generated::KeepingConfiguration::machine),
+              (std::map<std::string, std::string>{{"idler", "idler"}, {"mtc", "mtc"}}));
 }
 
 /// §11.6: the configuration's tables name the module parameters its

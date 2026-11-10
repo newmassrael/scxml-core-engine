@@ -329,6 +329,34 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
     );
 }
 
+/// docs/adr/0045: a component's session is named by the component, `mtc` or
+/// the PTC's id, as on every other backend: the machine is given the context's
+/// name as the id a host gives a root, before the context is bound and the
+/// machine started, and every component's machine takes one, whether or not a
+/// saved state can hold it. What the names are when the suite runs is held by
+/// `tests/integration/ATestSuiteRunsEndToEndTest.cpp`
+/// (`EachComponentRunsUnderItsConfigurationName`).
+#[test]
+fn a_component_names_its_session_after_itself() {
+    for name in COMPONENTS {
+        let header = file_of(name, "_sm.h");
+        let named = at(&header, "machine_.bindSessionId(context.name());");
+        let bound = at(&header, "machine_.bindTestContext(context);");
+        let started = at(&header, "static_cast<void>(machine_.initialize());");
+        assert!(
+            named < bound && bound < started,
+            "{name}: the session is named before the context is bound and the machine starts"
+        );
+        for needle in [
+            "    void bindSessionId(std::string id) {\n",
+            "    std::string sessionId() const {\n        return machine_.sessionId();\n    }\n",
+            "#include \"saved/SessionId.h\"",
+        ] {
+            assert!(header.contains(needle), "{name} holds `{needle}`");
+        }
+    }
+}
+
 /// docs/adr/0092, section 7: a component whose template reaches a union is
 /// refused on C++, which generates no unit of that template, by the union's
 /// own refusal.

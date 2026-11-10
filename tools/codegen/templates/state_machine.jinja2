@@ -30,9 +30,12 @@
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
 {# docs/adr/0045: whether this machine holds the id of its session (`_sessionid`): the
    script engine, a child session, a request to a host invoker and a saved state each name
-   the session by it. Spelled again where the session's helpers are included
-   (`state_machine_inl.jinja2`). #}
-{% set holds_session_id = model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types %}
+   the session by it, and every `sce-static` root binds one when it is created, given by its
+   host or drawn, whether or not a saved state can hold it ("Questions the owner answered"
+   2): whether it saves is `static_saved_shape`'s question, not this one. Spelled again where
+   the session's helpers are included (`state_machine_inl.jinja2`). #}
+{% set takes_session_id = model.datamodel == "sce-static" %}
+{% set holds_session_id = model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types or takes_session_id %}
 #pragma once
 #include <cstdint>
 #include <string>
@@ -1540,9 +1543,9 @@ private:
         parallel_region_done_callback_;
 public:
 {% endif %}
-{% if static_saved_shape %}
+{% if takes_session_id %}
 
-    // ── SCE Accepted Subset §2.15: saving this machine, restoring it (docs/adr/0045) ──
+    // ── docs/adr/0045, "Questions the owner answered" 2: the id of the root session ──
 
     /// The id of this session (`_sessionid`), which a saved state names it by and every child
     /// session's id and a peer's address are made from.
@@ -1552,10 +1555,16 @@ public:
 
     /// Give the root session the id it runs under, before it starts or is restored: an XML
     /// Nmtoken, and `std::invalid_argument` otherwise, rather than an id replaced by another.
-    /// A session a host does not give one draws a UUID version 4 (docs/adr/0045).
+    /// A session a host does not give one draws a UUID version 4 (docs/adr/0045). Every
+    /// `sce-static` root takes one, whether or not a saved state can hold it. The host is
+    /// responsible for the id it gives naming one session.
     void bindSessionId(std::string id) {
         this->policy_.bindSessionId(std::move(id));
     }
+{% endif %}
+{% if static_saved_shape %}
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it (docs/adr/0045) ──
 
     /// This machine's whole state at the macrostep boundary it stands at: every variable, the
     /// machine's own included, and where it stands, as the `sce-saved-state` document every
@@ -1689,6 +1698,14 @@ static_assert({{ model.name }}Policy::getStateFromName({{ model.name }}Policy::g
 class {{ model.name }}Component final : public ::SCE::Test::ComponentMachine {
 public:
     void start(::SCE::Test::ComponentContext& context) override {
+        // docs/adr/0045: the session is named by the component, and named rather than
+        // drawn, as on every backend. The name is `mtc` or the id of the `<invoke>` that
+        // creates the PTC (`ComponentContext::create`, which creates nothing under a name
+        // its configuration has no PTC of), and every `<invoke id>` is refused where its
+        // document is parsed unless it is an XML Name, which is an Nmtoken, so the
+        // `std::invalid_argument` a refused id throws is unreachable for a component a
+        // generated one creates. Bound before `initialize()`, as a host binds a root's id.
+        machine_.bindSessionId(context.name());
         machine_.bindTestContext(context);
 {% if model.test_component.module_parameters %}
         // §11.5, §11.8: the module parameters take the suite's values before the
@@ -1746,6 +1763,12 @@ public:
     // P10: the machine entered a top-level `<final>`.
     bool terminated() const override {
         return machine_.isInFinalState();
+    }
+
+    // docs/adr/0045: the id of the session the machine runs as, the component's name
+    // once it has started.
+    std::string sessionId() const {
+        return machine_.sessionId();
     }
 
 private:
