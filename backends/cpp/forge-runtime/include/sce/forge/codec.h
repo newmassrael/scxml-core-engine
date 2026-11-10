@@ -130,6 +130,14 @@ enum class CodecError : std::uint8_t {
     /// `SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6` of C and the typed
     /// `CodecError::UndeclaredEnumValue` of Rust.
     UndeclaredEnumValue = 16,
+    /// Encode-side (docs/adr/0058): two things a source says of one number the
+    /// codec derives disagree: two fields that share one length or one count,
+    /// or a length the value states beside content that says another. The wire
+    /// has room for one number, so no frame says both. Refused before the first
+    /// byte is written, so the sink is untouched. Mirrors the typed
+    /// `CodecError::InconsistentSource` of Rust. Its value follows the last
+    /// one given, as every enumerator's here does, so no value moves.
+    InconsistentSource = 17,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use
