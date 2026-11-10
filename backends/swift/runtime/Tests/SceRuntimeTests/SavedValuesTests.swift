@@ -164,7 +164,7 @@ private enum Shade: UInt8, SavedEnumeration {
 
 // A list of a type that states a lower count (docs/adr/0086, section 15) is held to both its counts before an
 // element is read, so a restore refuses a list a machine never holds, in the words a delivery's reader uses.
-@Test func aListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead() throws {
+@Test func aSavedListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead() throws {
     #expect(
         try SavedValues.list(.array([.number("1"), .number("2")]), "items", least: 1, capacity: 2) {
             try SavedValues.uint8($0, $1)
