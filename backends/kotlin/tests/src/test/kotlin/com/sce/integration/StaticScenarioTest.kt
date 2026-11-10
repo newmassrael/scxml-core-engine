@@ -57,6 +57,7 @@ import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
 import com.sce.integration.static_lift.StaticLiftStateMachine
+import com.sce.integration.static_lift_list.StaticLiftListStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
 import com.sce.integration.static_list_index.StaticListIndexStateMachine
@@ -791,6 +792,28 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_lift"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0087, "Landing order" item 8: a text read into a record that holds a
+    // list of records, or its refusal kept, at every depth of the record: the list's
+    // counts, a field of an item, and a container opened past the deepest the record
+    // holds. Each step's variables are read from the saved state, so the record is
+    // written and read back by its type too.
+    @Test
+    fun staticLiftListReadsATextIntoARecordThatHoldsAList() {
+        val sm = StaticLiftListStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_lift_list"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },
