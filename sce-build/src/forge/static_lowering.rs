@@ -8016,8 +8016,9 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // Each record schema a variable is of, by the event it declares: ordered, so
     // the same document names them in the same order on every backend.
     let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
-    // The records a variable may name, one entry per field: a variable that
-    // names one holding a composition is refused where the document is parsed.
+    // The records of entries a variable may name, one entry per field; a record
+    // that holds a composition, which only an optional variable names, is named
+    // by its type below.
     let entry_records = model.entry_records();
     // The unions a variable may name, each with its cases' records.
     let type_scope = crate::forge::value_path::statechart_scope(model);

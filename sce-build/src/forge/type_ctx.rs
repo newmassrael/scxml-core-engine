@@ -1141,8 +1141,10 @@ impl StaticScope {
             .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
             .cloned()
             .collect();
-        // A variable that names a record holding a composition is refused where
-        // the document is parsed, so every record a variable names is here.
+        // The records of entries a variable names. The one variable that may
+        // name a record holding a composition, `optional<record:R>` where a
+        // lowering holds one (docs/adr/0087, Landing order item 8), is typed by
+        // walking its type in `type_scope`, as a union variable is.
         let records = model.entry_records();
         let record_paths = static_record_paths(variables.iter(), &records);
         let record_string_bounds = static_record_string_bounds(variables.iter(), &records);
