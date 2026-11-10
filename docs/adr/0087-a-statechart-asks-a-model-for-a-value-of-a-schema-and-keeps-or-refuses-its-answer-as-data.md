@@ -23,7 +23,11 @@
     56e8ebec54 (the seven lanes' replays and exhaustive runs with measured coverage, the Interpreter's refusal),
     ab09967403 (`examples/model_harness/`), baca2a702d (the mutation cases), 2cacf88151 (the trees).
 
-  Step 8 waits on ADR 0086 step 3; what it still needs is recorded under "Landing order", item 8.
+  Step 8 lands in slices, a lane at a time, now that ADR 0086 step 3 has landed. Slice 1 has landed: 9c71e1020a
+  (the one table's `records` position, the judge's refusal of a composed schema gone, the Rust lane), 3594ac5289
+  (`lift_answer_list.scxml`, `static_lift_list.scxml` and its scenario on Rust), e54b07b57e (a composed answer
+  schema's grammars in the machine's table). What it still needs is recorded under "Landing order", item 8, and
+  what was decided while landing it under "Decided while landing item 8".
 - Date: 2026-11-04
 - Amends:
   - ADR 0086 section 4.2: a refused delivery keeps its sentence, whose path that section calls a JSON Pointer; it is
@@ -824,7 +828,10 @@ since the build writes its `answer_schema` and the table it names; it gains no h
 and a template or harness over it generated, once ADR 0086 step 3 lands (the composed lowering); until then such a
 schema is refused there by name (`generate/unsupported-feature`), and the scalar-only answer schemas of the fixtures
 land first. A model's answer is often a list (`{"items":[...]}`), so step 3 is a dependency of the harness's general
-use, not of this ADR's first landing.
+use, not of this ADR's first landing. As landed (item 8, slice 1): the judge takes such a schema, and the lift writes
+it whole into a variable of `optional<record:R>` on each lane whose row of the one table of what is lowered holds
+such a variable (`ComposedLowering::records`, `sce-build/src/forge/event_schema_check.rs`), Rust first; every other
+lane refuses that variable by its own name (`generate/unsupported-feature`), and the lift with it, until its slice.
 
 #### 7.2 Reason
 
@@ -1053,6 +1060,56 @@ A feature that asks a model is tested in two layers, which answer two different 
      section 7.1), with the GBNF and JSON Schema of the composed record in the machine's answer-schema table;
    - the composed lowering of the lift, the templates and the harness on every lane that refuses a composed schema
      by name until then (section 7.1).
+
+   Landed in slice 1 (see "Status"): the shared model and checks in `sce-build` (the judge's by-name refusal of a
+   composed schema goes; the one table gains `records`; the lift of a composed record is read whole by the composed
+   walk, `Lifted::Whole`, as a union's is; the saved shape names such a record); the Rust lane (the variable held,
+   saved and restored, and the lift into it through `event_payload::lift_value`); `lift_item.scxml`,
+   `lift_answer_list.scxml`, `static_lift_list.scxml` and `scenarios/static_lift_list.json` replayed on Rust, with
+   every other engine listed as not lowering it (`NOT_YET_LOWERED` in
+   `a_static_datamodel_holds_every_variable_to_a_type.rs` and in `tests/CMakeLists.txt`); and a composed answer
+   schema's JSON Schema and GBNF in the machine's answer-schema table, which the folds of step 3 already wrote and a
+   test now holds on every backend. What is left, a slice each:
+   - Kotlin, C++, C11, Go, Python and Swift: each lane's row of `records`, its saved form of a record that holds a
+     composition, its lift of a value read whole (`Lifted::Whole`) where its lift reads records field by field
+     only, the replay of `static_lift_list.json` in its driver and its line off `NOT_YET_LOWERED`;
+   - the Interpreter's lowering (`ComposedLowering::ECMASCRIPT`), whose refusal by name stands until then;
+   - once every lane holds `records`: the answer schema of `static_host_model` and of the harness gains a list,
+     `harness_offer.scxml` holds `list<uint32>[8]`, the outcome class table gains `tooMany`, `tooFew` and `tooDeep`
+     at depths 2 and 3 in place of its `deferred` entries, and the exhaustive runs require them reached;
+   - the templates over a composed schema (section 7.1) and reads of a composed record variable's fields in a
+     guard or an assignment, each held by a test on the lanes that hold the variable.
+
+### Decided while landing item 8
+
+Each decided by this ADR's rule (the most long-term correct structure, textbook in its foundations), and stated here
+because the sections above do not settle it:
+
+1. **A variable of a record that holds a composition is `optional<record:R>` and starts absent.** Such a record may
+   hold a list with a lower count, which has no empty value, and no `<sce:set>` builds a list; so, as ADR 0092's
+   amendment of 2026-11-07 gives a union with no case to start at, the variable is optional, starts absent and is
+   written whole by a lift. `record:R` of such a record, and a list of them, stay refused by name on every lane until
+   a statechart can build one where it is declared.
+2. **What each lane holds is one more position of the one table**, `ComposedLowering::records`, beside `unions`,
+   rather than a check of its own: the gate every route asks reads it, each backend's row states it, and the rows
+   the accepted-subset document renders carry it, so a lane's slice flips one line.
+3. **The lift of a composed record is read whole by the composed walk of its type** (`Lifted::Whole`), the path a
+   union's lift already took, and not field by field: the record's reader reads its revision defaults itself, so
+   the walk is one for a delivery's field and for a lift, and the runtime's `lift_value` serves both.
+4. **The composed cases are a scenario of their own**, `scenarios/static_lift_list.json` over `static_lift_list`,
+   and not steps of `static_lift.json`: a lane replays them in the slice that holds the variable, and every lane
+   keeps replaying `static_lift.json` meanwhile. One machine per answer shape keeps each scenario's variables one
+   type on every lane after the last slice too.
+5. **`lift_answer_list.scxml`'s list states a lower count**, `list<record:Item>[1..3]` where section 9.1 item 1 wrote
+   `[3]`, so the one scenario reaches `tooFew` (ADR 0086 section 15.11) as well as `tooMany`; a field a later revision
+   added (`priority`) holds the record's defaults to the composed reader.
+6. **The outcome class table keeps `tooMany` and `tooFew` deferred until the last lane's slice.** There is one table,
+   every lane's exhaustive run reads it against one machine and one answer schema (section 9.4, item 1), so its
+   classes move when that answer schema holds a list, which every lane must lift first; a second table or a
+   per-lane class would be the second table section 9.1 item 8 rules out. The `deferred` entries say so.
+7. **A saved state names a composed record variable by its document and each field's type**, as it names a union's
+   case, so a revision of the record moves the shape and refuses a restore; the lineage that grows an earlier
+   revision of a record of entries by its defaults does not reach a record that holds a composition yet.
 
 ## Consequences
 
