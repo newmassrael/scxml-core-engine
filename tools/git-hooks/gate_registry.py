@@ -2272,7 +2272,12 @@ GATES: dict[str, dict] = {
                   "resources/150/test150.scxml",
                   # The test log every runtime writes of the generated suite,
                   # which `ATestSuiteRunsThroughItsRunnerTest` reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
+                  # The suite's committed traces, which the same test replays,
+                  # and the trace's wire schema, whose status `TraceTest` holds
+                  # the runtime's to, both read at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
+                  "schemas/sce-test-trace.v1.schema.json"],
         "deps": ["codegen-build"],
         # 69s was measured on a push whose Kotlin tree was already current.
         # 152s, pace-normalised, is what it cost on 2026-08-24 when a

@@ -247,6 +247,17 @@ tasks.test {
         .withPropertyName("sharedExpectedTestLogs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // Same reason, same failure mode. The same test replays the suite from its
+    // committed traces, which every backend's trace player reads
+    // (docs/SCE_TTCN3_LANE.md §10.5), and `TraceTest` holds the runtime's trace
+    // status to the schema file's, both read at RUN time.
+    inputs.dir(File(rootDir, "sce-build/tests/fixtures/test_profile/runtime/traces"))
+        .withPropertyName("sharedTestTraces")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(File(rootDir, "schemas/sce-test-trace.v1.schema.json"))
+        .withPropertyName("testTraceSchema")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Same reason, same failure mode. `JvmLongTextTest` reads the two documents
     // its machines were generated from, at RUN time, as the texts each machine must
     // hand back; a document edited with its machine left stale must turn it red.
@@ -330,6 +341,22 @@ tasks.test {
         showStandardStreams = false
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+}
+
+// The runner program of the generated suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4):
+// the class of the suite's unit, whose `main` sce-codegen writes, run on this module's
+// classpath. Its command line is every backend's runner's, given after `--args`:
+//
+//   ./gradlew :sce-kotlin-tests:runRuntimeSuite --args="--trace-dir <dir> --log-dir <dir>"
+//
+// A relative directory is read from the repository root.
+// `ATestSuiteRunsThroughItsRunnerTest` runs the same class as a process of its own.
+tasks.register<JavaExec>("runRuntimeSuite") {
+    group = "verification"
+    description = "Run the runner program of the generated suite runtime_suite over its traces"
+    mainClass.set("com.sce.generated.runtime_suite.RuntimeSuiteKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = File(rootDir)
 }
 
 kotlin {

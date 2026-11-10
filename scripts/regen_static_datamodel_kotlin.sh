@@ -292,6 +292,8 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
 UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
+# ... and the enum of an open set form_extras holds a value of (below).
+UNIONS+=(shape_kind_open)
 for document in "${TEST_PROFILE[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l kotlin -o "$TMP/profile_$document/"
     install_generated "$TMP/profile_$document"
@@ -338,6 +340,27 @@ TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc 
 for document in "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l kotlin -o "$TMP/table_$document/"
     install_generated "$TMP/table_$document"
+done
+# The configuration whose system port takes a record of every form of the canonical value
+# (docs/SCE_TTCN3_LANE.md §10.3, §10.5), so its unit's reader and writer of each form are
+# compiled; ARecordReadsBackTheFormItWritesTest.kt round-trips a value of each and replays a
+# trace of them. Its records beside form_extras (order_placed, job_status) and the enums and
+# union they hold are generated above; its listener is a component, of which only the
+# machine's file is kept, as of the components above. The port type writes no file. The Rust
+# tree generates the same documents (scripts/regen_static_datamodel_rust.sh).
+TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
+TRACE_FORMS_RECORDS=(form_extras)
+TRACE_FORMS_COMPONENTS=(forms_listener)
+TRACE_FORMS_TABLES=(forms_configuration replays_every_form)
+for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l kotlin -o "$TMP/forms_$document/"
+    install_generated "$TMP/forms_$document"
+done
+for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/"
+    mkdir -p "$TMP/machine_$component"
+    cp "$TMP/component_$component"/*Sm.kt "$TMP/machine_$component/"
+    install_generated "$TMP/machine_$component"
 done
 
 echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${PACKAGES[*]:-none} under $ALGORITHM_ROOT/ from $INPUT_ROOT"

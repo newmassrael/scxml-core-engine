@@ -9,7 +9,10 @@
 // `src/main/kotlin/com/sce/generated/` (regen:
 // `scripts/regen_static_datamodel_kotlin.sh`), and the components are the
 // machines it writes from the components there. Only the system adapter, which
-// plays the system under test, is written here.
+// plays the system under test, is written here; the same suite is also replayed
+// from the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5),
+// through `com.sce.runtime.test.runSuiteWithTraces` and through the suite's
+// runner program (§4).
 //
 // Each case is the twin of the Rust case of the same name in
 // backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs
@@ -27,26 +30,40 @@ import com.sce.runtime.test.CaseResult
 import com.sce.runtime.test.Duration
 import com.sce.runtime.test.Features
 import com.sce.runtime.test.Instant
+import com.sce.runtime.test.JvmRunnerFiles
 import com.sce.runtime.test.LogKind
 import com.sce.runtime.test.Message
 import com.sce.runtime.test.ModuleParameters
+import com.sce.runtime.test.RUNNER_USAGE
 import com.sce.runtime.test.SystemAdapter
+import com.sce.runtime.test.Trace
+import com.sce.runtime.test.TraceRefusal
 import com.sce.runtime.test.Verdict
+import com.sce.runtime.test.runRunner
 import com.sce.runtime.test.runSuite
+import com.sce.runtime.test.runSuiteWithTraces
 import java.io.File
+import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import com.sce.generated.answers_the_job.NAME as ANSWERS_THE_JOB
 import com.sce.generated.answers_the_job.testCase as answersTheJob
+import com.sce.generated.asking_configuration.canonical_job_reply as canonicalJobReply
 import com.sce.generated.asking_configuration.configuration as askingConfiguration
+import com.sce.generated.asking_configuration.input as askingInput
 import com.sce.generated.asking_configuration.machine as askingMachine
 import com.sce.generated.asking_configuration.moduleParameters as askingModuleParameters
+import com.sce.generated.asking_configuration.read_job_reply as readJobReply
 import com.sce.generated.job_reply.EVENT_NAME as JOB_REPLY
 import com.sce.generated.reply_ok.TYPE as REPLY_OK_TYPE
 import com.sce.generated.reply_ok.canonical as replyOkCanonical
+import com.sce.generated.runtime_suite.moduleParameter as runtimeModuleParameter
 import com.sce.generated.runtime_suite.suite as runtimeSuite
 
 class ATestSuiteRunsThroughItsRunnerTest {
@@ -190,6 +207,206 @@ class ATestSuiteRunsThroughItsRunnerTest {
         val results = run(emptySet(), 0u, mutableListOf())
         assertEquals(listOf("answers_the_job"), names(results))
         assertEquals(answersTheJobLog(), results[0].canonicalLog("runtime_suite"))
+    }
+
+    /** The directory of the suite's committed traces (docs/SCE_TTCN3_LANE.md §10.2). */
+    private fun tracesDir(): File =
+        File(repoRoot(), "sce-build/tests/fixtures/test_profile/runtime/traces")
+
+    /**
+     * docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
+     * committed trace of `answers_the_job` writes the test log every runtime
+     * writes of it, byte for byte: the configuration's unit reads the reply from
+     * its canonical form and writes it back the same, and the clock advances to
+     * the trace's instant as it did to the Responder's. The twin of
+     * `a_recorded_trace_replays_to_the_test_log_every_runtime_writes` (Rust).
+     */
+    @Test
+    fun aRecordedTraceReplaysToTheTestLogEveryRuntimeWrites() {
+        val text = File(tracesDir(), "answers_the_job.json").readText()
+        val results = runSuiteWithTraces(runtimeSuite(), emptySet(), { _ -> Trace.parse(text) }, ModuleParameters())
+        assertEquals(listOf("answers_the_job"), names(results))
+        assertEquals(Verdict.PASS, results[0].result.verdict, "${results[0].result.log}")
+        assertEquals(answersTheJobLog(), results[0].canonicalLog("runtime_suite"))
+    }
+
+    /**
+     * §10.2, §10.5: the configuration's unit reads the reply from its canonical
+     * form into the record its components take, and writes it back the same;
+     * an input on a port it does not have, of a type the port does not take,
+     * or of a value that does not belong to the type is refused by name.
+     */
+    @Test
+    fun theConfigurationReadsTheInputsOfARecordedTrace() {
+        val reply = readJobReply(com.sce.runtime.Json.parse("{\"code\":\"0\",\"job\":\"7\"}"))
+        assertEquals(JobReplyPayload(job = 7u, code = 0u), reply)
+        assertEquals("{\"code\":\"0\",\"job\":\"7\"}", com.sce.runtime.Json.writeJcs(canonicalJobReply(reply)))
+        val message = askingInput("sut", "job_reply", canonicalJobReply(reply))
+        assertEquals(JOB_REPLY, message.event)
+        assertEquals("job_reply", message.typeName)
+        assertEquals(reply, message.valueAs<JobReplyPayload>())
+        assertEquals(
+            "'job_request' is not on the `in` list of the type of the system port 'sut'",
+            assertFailsWith<TraceRefusal> { askingInput("sut", "job_request", null) }.reason,
+        )
+        assertEquals(
+            "'oracle' is not a system port of the test case's configuration",
+            assertFailsWith<TraceRefusal> { askingInput("oracle", "job_reply", null) }.reason,
+        )
+        assertEquals(
+            "job_reply.job: '07' is not the text of an integer's decimal digits",
+            assertFailsWith<TraceRefusal> {
+                askingInput("sut", "job_reply", com.sce.runtime.Json.parse("{\"code\":\"0\",\"job\":\"07\"}"))
+            }.reason,
+        )
+    }
+
+    /** What one run of the runner program printed and the status it exited with. */
+    private class ProgramRun(val status: Int, val out: List<String>, val err: List<String>)
+
+    /** A fresh directory, apart from every other test's, that the runner makes its logs in. */
+    private fun logDir(): File = File(Files.createTempDirectory("sce-runtime-suite-runner").toFile(), "logs")
+
+    /**
+     * The suite's runner program run in place ([runRunner], over the
+     * platform's files), given [args] after the directories of the traces and
+     * of the logs.
+     */
+    private fun runInPlace(logs: File, vararg args: String): ProgramRun {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        val status = runRunner(
+            suite = runtimeSuite(),
+            parameter = ::runtimeModuleParameter,
+            args = listOf("--trace-dir", tracesDir().path, "--log-dir", logs.path) + args,
+            files = JvmRunnerFiles,
+            out = { out.add(it) },
+            err = { err.add(it) },
+        )
+        return ProgramRun(status, out, err)
+    }
+
+    /**
+     * docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
+     * its world selects against its trace and writes `<case>.log.json`, the
+     * canonical log with nothing after it, and prints each case's verdict; a
+     * module parameter's value on its command line replaces its default, and
+     * one the suite does not declare, or that is no value of its type, is
+     * refused with exit status 2 before any case runs. The twin of
+     * `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
+     */
+    @Test
+    fun theSuitesRunnerProgramWritesTheLogOfEachTrace() {
+        val logs = logDir()
+        val run = runInPlace(logs)
+        assertEquals(0, run.status, "${run.err}")
+        assertEquals(listOf("answers_the_job pass"), run.out)
+        assertEquals(answersTheJobLog(), File(logs, "answers_the_job.log.json").readText())
+        logs.parentFile.deleteRecursively()
+
+        val overridden = logDir()
+        val given = runInPlace(overridden, "--world", "", "--module-parameter", "job=9")
+        assertEquals(0, given.status, "${given.err}")
+        val log = File(overridden, "answers_the_job.log.json").readText()
+        assertTrue(
+            log.contains(
+                "\"kind\":\"message-sent\",\"port\":\"sut\",\"type\":\"job_request\",\"value\":{\"job\":\"9\"}",
+            ),
+            "the request names the job of the value given: $log",
+        )
+        overridden.parentFile.deleteRecursively()
+
+        for ((literal, why) in listOf(
+            "limit=1" to "the suite declares no module parameter 'limit'",
+            "job=seven" to "--module-parameter job=seven: job: 'seven' is not the text of an integer's decimal digits",
+        )) {
+            val refused = logDir()
+            val attempt = runInPlace(refused, "--module-parameter", literal)
+            assertEquals(2, attempt.status, literal)
+            assertTrue(attempt.err.any { it.contains(why) }, "${attempt.err}")
+            assertEquals(RUNNER_USAGE, attempt.err.last())
+            assertFalse(refused.exists(), "no case ran, so no log was written")
+            refused.parentFile.deleteRecursively()
+        }
+    }
+
+    /**
+     * P13, §4: a test case whose trace is missing ends with `error` and its log
+     * is written, the reason on the standard error, and the program exits 0,
+     * since the verdict is the log's; a command line that is not the runner's,
+     * and a log directory that cannot be made, exit 2.
+     */
+    @Test
+    fun aTestCaseWhoseTraceIsMissingEndsInErrorAndItsLogIsWritten() {
+        val logs = logDir()
+        val run = runInPlace(logs, "--world", "ptcs")
+        assertEquals(0, run.status, "${run.err}")
+        assertEquals(listOf("answers_the_job pass", "serves_a_ptc error"), run.out)
+        assertEquals(
+            "{\"records\":[{\"at\":\"0\",\"kind\":\"test-case-started\"},{\"at\":\"0\",\"kind\":\"test-case-ended\"," +
+                "\"verdict\":\"error\"}],\"schema\":\"sce-test-log.v1\",\"suite\":\"runtime_suite\"," +
+                "\"test_case\":\"serves_a_ptc\",\"verdict\":\"error\"}",
+            File(logs, "serves_a_ptc.log.json").readText(),
+        )
+        assertTrue(
+            run.err.any { it.startsWith("serves_a_ptc: mtc: the trace is refused: ") && it.contains("is not read") },
+            "${run.err}",
+        )
+        logs.parentFile.deleteRecursively()
+
+        val usage = runRunner(
+            suite = runtimeSuite(),
+            parameter = ::runtimeModuleParameter,
+            args = listOf("--log-dir", "logs"),
+            files = JvmRunnerFiles,
+            out = { error("a refused command line runs nothing: $it") },
+            err = { },
+        )
+        assertEquals(2, usage)
+
+        val blocked = Files.createTempFile("sce-runtime-suite-runner", ".log").toFile()
+        val unmade = runInPlace(blocked)
+        assertEquals(2, unmade.status)
+        assertTrue(unmade.err.any { it.contains("is not made") }, "${unmade.err}")
+        blocked.delete()
+    }
+
+    /**
+     * §4: the suite's runner is a program: the class of the suite's unit, whose
+     * `main` the generated code declares, run as its own JVM on the classpath of
+     * this suite, prints the verdict of each case, writes its log and exits
+     * with the status the command line asks for.
+     */
+    @Test
+    fun theSuitesUnitIsTheRunnerProgram() {
+        val scratch = Files.createTempDirectory("sce-runtime-suite-program").toFile()
+        val program = { name: String, args: List<String> ->
+            val out = File(scratch, "$name.out")
+            val err = File(scratch, "$name.err")
+            val process = ProcessBuilder(
+                listOf(
+                    File(System.getProperty("java.home"), "bin/java").path,
+                    "-cp",
+                    System.getProperty("java.class.path"),
+                    "com.sce.generated.runtime_suite.RuntimeSuiteKt",
+                    "--trace-dir",
+                    tracesDir().path,
+                    "--log-dir",
+                    File(scratch, "$name-logs").path,
+                ) + args,
+            ).redirectOutput(out).redirectError(err).start()
+            assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the runner program ends")
+            ProgramRun(process.exitValue(), out.readLines(), err.readLines())
+        }
+        val run = program("default", emptyList())
+        assertEquals(0, run.status, "${run.err}")
+        assertEquals(listOf("answers_the_job pass"), run.out)
+        assertEquals(answersTheJobLog(), File(scratch, "default-logs/answers_the_job.log.json").readText())
+        val refused = program("undeclared", listOf("--module-parameter", "limit=1"))
+        assertEquals(2, refused.status)
+        assertTrue(refused.err.any { it.contains("the suite declares no module parameter 'limit'") }, "${refused.err}")
+        assertFalse(File(scratch, "undeclared-logs").exists(), "no case ran, so no log was written")
+        scratch.deleteRecursively()
     }
 
     /**
