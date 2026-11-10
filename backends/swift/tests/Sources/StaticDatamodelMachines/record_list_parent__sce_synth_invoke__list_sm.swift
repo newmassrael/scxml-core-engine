@@ -3038,8 +3038,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
-
-                            break sceBlock
+break sceBlock
                         }
                     }
                     do {
@@ -4209,8 +4208,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_22"
                         engine.raise(sendError)
-
-                            break sceBlock
+break sceBlock
                         }
                     }
                     let sendEventData = payloadJSON(sendParts)

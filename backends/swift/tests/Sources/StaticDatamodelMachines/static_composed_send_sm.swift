@@ -802,8 +802,7 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                         var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
-
-                            break sceBlock
+break sceBlock
                         }
                     }
                     do {
@@ -924,8 +923,7 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                         var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
-
-                            break sceBlock
+break sceBlock
                         }
                     }
                     do {
