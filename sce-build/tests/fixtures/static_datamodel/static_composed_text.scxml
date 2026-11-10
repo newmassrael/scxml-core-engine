@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A statechart that reads, as values, the texts and the byte strings a composed
+  payload holds, at depths 1 to 3, as it reads a variable of the same type
+  (docs/adr/0086, section 6): a guard compares the payload's text, and the
+  transition it guards measures that text, compares a text field of an element
+  read through its index, and walks the items, comparing each item's label, the
+  first of its tags read through its index and each of its tags as the item of
+  a loop, taking each label into a text variable, and measuring and comparing
+  each item's byte string. A delivery whose text the guard does not take is
+  measured and read no further. Every out variable is what a host reads back of
+  the delivery.
+
+  It reads the schemas beside it: event_batch.scxml (batch.sent, whose note is a
+  string[4]), event_batch_item.scxml (the record each element of items is, whose
+  label is a string[8], blob a bytes[4] and tags a list of string[8]) and
+  enum_signal_level.scxml.
+
+  It names no backend. Which backends lower it, and the harness that compiles
+  and runs its machine on each, are listed once, in docs/SCE_ACCEPTED_SUBSET.md
+  section 2.15 ("Which backend lowers a composed value"), whose rows a test
+  renders from the one table of what each backend lowers
+  (ComposedLowering::of, sce-build/src/forge/event_schema_check.rs). A backend
+  whose row does not read a composed payload refuses the read by its own name
+  (section 7.3). A backend's step that comes to lower it adds its row and its
+  harness line there, and leaves this file as it is, so the source hash of every
+  tree generated from it does not move with the step: this comment says what the
+  document holds and reads, never which backend lowers it (ARCHITECTURE.md,
+  "Composed Values: One Walk, One Module per Backend").
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="sce-static"
+       name="static_composed_text">
+  <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
+  <datamodel>
+    <data id="note_is_ab" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="note_len" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="first_label_is_ab" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="labels_ab" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="first_tags_ab" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="words_ab" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="last_label" sce:type="string[8]" expr="''" sce:direction="out"/>
+    <data id="blob_bytes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="blobs_ab" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="batch.sent" cond="_event.data.note === 'ab'" type="internal">
+      <assign location="note_is_ab" expr="true"/>
+      <assign location="note_len" expr="len(_event.data.note)"/>
+      <if cond="len(_event.data.items) &gt; 0">
+        <assign location="first_label_is_ab" expr="_event.data.items[0].label === 'ab'"/>
+      </if>
+      <foreach array="_event.data.items" item="row">
+        <if cond="row.label === 'ab'">
+          <assign location="labels_ab" expr="labels_ab + 1"/>
+        </if>
+        <if cond="len(row.tags) &gt; 0 &amp;&amp; row.tags[0] === 'ab'">
+          <assign location="first_tags_ab" expr="first_tags_ab + 1"/>
+        </if>
+        <foreach array="row.tags" item="word">
+          <if cond="word === 'ab'">
+            <assign location="words_ab" expr="words_ab + 1"/>
+          </if>
+        </foreach>
+        <assign location="last_label" expr="row.label"/>
+        <assign location="blob_bytes" expr="blob_bytes + len(row.blob)"/>
+        <if cond="row.blob === 'ab'">
+          <assign location="blobs_ab" expr="blobs_ab + 1"/>
+        </if>
+      </foreach>
+    </transition>
+    <transition event="batch.sent" type="internal">
+      <assign location="note_len" expr="len(_event.data.note)"/>
+    </transition>
+    <!-- A delivery outside its type is refused whole: none of the content above
+         runs, and error.execution says so once. -->
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

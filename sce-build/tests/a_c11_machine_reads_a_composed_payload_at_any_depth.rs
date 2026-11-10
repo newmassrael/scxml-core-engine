@@ -489,7 +489,8 @@ fn run(
 }
 
 /// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
-/// C11 takes the read, the whole copy and the send of both fixtures.
+/// C11 takes the read, the whole copy and the send of the fixtures, and the
+/// reads of a text and a byte string a payload holds as values.
 #[test]
 fn c11_takes_the_read_the_copy_and_the_send() {
     for (name, document) in [
@@ -497,6 +498,11 @@ fn c11_takes_the_read_the_copy_and_the_send() {
         (
             "static_composed_payload.scxml",
             std::fs::read_to_string(fixtures().join("static_composed_payload.scxml"))
+                .expect("fixture"),
+        ),
+        (
+            "static_composed_text.scxml",
+            std::fs::read_to_string(fixtures().join("static_composed_text.scxml"))
                 .expect("fixture"),
         ),
         (
