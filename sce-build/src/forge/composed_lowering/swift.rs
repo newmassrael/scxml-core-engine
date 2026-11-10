@@ -225,44 +225,21 @@ pub(crate) fn swift_shared_read(field: &str) -> String {
 }
 
 /// The Swift spelling of what follows a union's value to read `member` where it
-/// may be in the cases `left` ([`ComposedSpelling::union_member`]): the tag's
-/// property; the field of the one case left, read through that case's proven
-/// read, a place as a record's field is; or the accessor of a field several
-/// cases share ([`shared_plain_field`]). `Err` for a field the cases left share
-/// whose value is not copied as it is read, which no accessor answers yet.
+/// may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's property; the field of the one case
+/// left, read through that case's proven read, a place as a record's field is;
+/// or the accessor of a field several cases share. `Err` as
+/// [`union_member_of`]'s.
 pub(crate) fn swift_union_member(
     union: &ScopedUnion,
     left: &[&ScopedCase],
     member: &str,
 ) -> Result<String, String> {
-    if member == union.tag {
-        return Ok(SWIFT_UNION_KIND.to_string());
-    }
-    let declares = |case: &ScopedCase| -> bool {
-        case.record
-            .as_deref()
-            .and_then(|record| union.scope.records.get(record))
-            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
-    };
-    match left {
-        [case] if declares(case) => Ok(format!("{}.{member}", swift_case_read(&case.variant.name))),
-        _ if !left.is_empty()
-            && left.iter().all(|case| declares(case))
-            && shared_plain_field(union, member).is_some() =>
-        {
-            Ok(swift_shared_read(member))
-        }
-        _ => Err(format!(
-            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field those \
-             cases share whose value is not copied as it is read, and a machine reads such a \
-             field only where a test proves one case (docs/adr/0092, section 6.1)",
-            union.name,
-            left.iter()
-                .map(|case| format!("`{}`", case.variant.name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    }
+    Ok(match union_member_of(union, left, member)? {
+        UnionMember::Tag => SWIFT_UNION_KIND.to_string(),
+        UnionMember::Case(case) => format!("{}.{member}", swift_case_read(&case.variant.name)),
+        UnionMember::Shared => swift_shared_read(member),
+    })
 }
 
 /// The head of a Swift reader that answers a value of `ty`: a closure of the

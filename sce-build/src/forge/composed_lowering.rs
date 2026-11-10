@@ -604,6 +604,62 @@ pub trait ComposedSpelling {
     ) -> Result<String, String>;
 }
 
+/// What a read of the member `member` of a value of `union` reads where the
+/// value may be in the cases `left` (docs/adr/0092, section 6.1 item 2;
+/// [`union_member_of`]), which each backend spells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnionMember<'u> {
+    /// The tag, always readable.
+    Tag,
+    /// A field of the one case left, which declares it, read through that
+    /// case's proven read.
+    Case(&'u ScopedCase),
+    /// A field every case left declares with one type, copied as it is read
+    /// ([`shared_plain_field`]), read through its one accessor over the cases.
+    Shared,
+}
+
+/// What a read of `member` of a value of `union` that may be in the cases
+/// `left` reads ([`UnionMember`]): its tag; the field of the one case left; or
+/// a field the cases left share. `Err` for a field the cases left share whose
+/// value is not copied as it is read, which no accessor answers yet, and for
+/// one no case left declares, which the judge refused before
+/// (`expression/union-read-unproven`).
+pub fn union_member_of<'u>(
+    union: &ScopedUnion,
+    left: &[&'u ScopedCase],
+    member: &str,
+) -> Result<UnionMember<'u>, String> {
+    if member == union.tag {
+        return Ok(UnionMember::Tag);
+    }
+    let declares = |case: &ScopedCase| -> bool {
+        case.record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
+    };
+    match left {
+        [case] if declares(case) => Ok(UnionMember::Case(*case)),
+        _ if !left.is_empty()
+            && left.iter().all(|case| declares(case))
+            && shared_plain_field(union, member).is_some() =>
+        {
+            Ok(UnionMember::Shared)
+        }
+        _ => Err(format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field those \
+             cases share whose value is not copied as it is read, and a machine reads such a \
+             field only where a test proves one case (docs/adr/0092, section 6.1)",
+            union.name,
+            left.iter()
+                .map(|case| format!("`{}`", case.variant.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
 /// One case of a union's declaration ([`UnionDef`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnionCaseDef {

@@ -74,50 +74,24 @@ pub(crate) fn rust_union_tag_method(tag: &str) -> Option<String> {
 }
 
 /// The Rust spelling of what follows a union's value to read `member` where
-/// it may be in the cases `left` ([`ComposedSpelling::union_member`]): the
-/// tag's method; the field of the one case left, read through that case's
-/// proven read, a place as a record's field is; or the accessor of a field
-/// several cases share ([`shared_plain_field`]). `Err` for a field the cases
-/// left share whose value is not copied as it is read, which no accessor
-/// answers yet.
+/// it may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's method; the field of the one case
+/// left, read through that case's proven read, a place as a record's field
+/// is; or the accessor of a field several cases share. `Err` as
+/// [`union_member_of`]'s, and for a tag's key no Rust method is named by.
 pub(crate) fn rust_union_member(
     union: &ScopedUnion,
     left: &[&ScopedCase],
     member: &str,
 ) -> Result<String, String> {
-    if member == union.tag {
-        return rust_union_tag_method(member)
+    match union_member_of(union, left, member)? {
+        UnionMember::Tag => rust_union_tag_method(member)
             .map(|method| format!("{method}()"))
             .ok_or_else(|| {
                 format!("the tag's key `{member}` names no Rust method its value can be read by")
-            });
-    }
-    let declares = |case: &ScopedCase| -> bool {
-        case.record
-            .as_deref()
-            .and_then(|record| union.scope.records.get(record))
-            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
-    };
-    match left {
-        [case] if declares(case) => {
-            Ok(format!("{}().{member}", rust_case_read(&case.variant.name)))
-        }
-        _ if !left.is_empty()
-            && left.iter().all(|case| declares(case))
-            && shared_plain_field(union, member).is_some() =>
-        {
-            Ok(format!("{}()", rust_shared_read(member)))
-        }
-        _ => Err(format!(
-            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field those \
-             cases share whose value is not copied as it is read, and a machine reads such a \
-             field only where a test proves one case (docs/adr/0092, section 6.1)",
-            union.name,
-            left.iter()
-                .map(|case| format!("`{}`", case.variant.name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+            }),
+        UnionMember::Case(case) => Ok(format!("{}().{member}", rust_case_read(&case.variant.name))),
+        UnionMember::Shared => Ok(format!("{}()", rust_shared_read(member))),
     }
 }
 
