@@ -3058,9 +3058,10 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # row of the one table of what is lowered reads a composed payload compiles and
     # runs (docs/SCE_ACCEPTED_SUBSET.md, "Which backend lowers a composed value"). The
     # first reads a payload of lists, records and optional values at depths 1 to 3,
-    # the second forwards one to itself by the names of its parts; each reads the
+    # the second forwards one to itself by the names of its parts, the third reads
+    # the texts and the byte strings a payload holds as values; each reads the
     # schemas beside it.
-    foreach(_STATIC_COMPOSED_MACHINE static_composed_payload static_composed_send)
+    foreach(_STATIC_COMPOSED_MACHINE static_composed_payload static_composed_send static_composed_text)
         sce_generate_static_integration_c_test(${_STATIC_COMPOSED_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_COMPOSED_MACHINE}.scxml"
@@ -3068,7 +3069,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         )
     endforeach()
     foreach(_STATIC_COMPOSED_CASE a_composed_payload_is_read_at_any_depth:static_composed_payload
-                                  a_composed_value_is_sent_by_its_name:static_composed_send)
+                                  a_composed_value_is_sent_by_its_name:static_composed_send
+                                  a_composed_text_is_read_as_a_value:static_composed_text)
         string(REPLACE ":" ";" _STATIC_COMPOSED_PARTS "${_STATIC_COMPOSED_CASE}")
         list(GET _STATIC_COMPOSED_PARTS 0 _STATIC_COMPOSED_TEST)
         list(GET _STATIC_COMPOSED_PARTS 1 _STATIC_COMPOSED_FIXTURE)

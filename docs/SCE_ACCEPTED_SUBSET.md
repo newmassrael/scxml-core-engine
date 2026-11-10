@@ -5569,8 +5569,9 @@ this list):
   `backends/python/tests/integration/static_datamodel/` drive them.
 
 - `c11`: `backends/c/tests/CMakeLists.txt` generates the machines into the
-  integration directory, and `test_a_composed_payload_is_read_at_any_depth.c`
-  and `test_a_composed_value_is_sent_by_its_name.c` under
+  integration directory, and `test_a_composed_payload_is_read_at_any_depth.c`,
+  `test_a_composed_value_is_sent_by_its_name.c` and
+  `test_a_composed_text_is_read_as_a_value.c` under
   `backends/c/tests/integration/` drive them.
 
 - `swift`: `scripts/regen_static_datamodel_swift.sh` commits the generated
