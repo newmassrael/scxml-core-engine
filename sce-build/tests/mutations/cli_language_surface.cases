@@ -52,10 +52,12 @@ PY
 # Re-aimed 2026-11-01: Swift is served by `generate-integration` now (one sweep, so it
 # has an arm of its own and no suffix), and the refusing arm is cpp and c11; Python
 # still moves into it.
+# Re-aimed 2026-11-10: the refusing arm names rust too (ADR 0097); Python still moves
+# into it.
 mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     '        Language::Python => "_python",\n        // Swift is one sweep over every stem, not a script each: see\n        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.\n        Language::Swift => "",\n        Language::Cpp | Language::C11 => error_format.emit_and_exit(',
-     '        Language::Swift => "",\n        Language::Cpp | Language::C11 | Language::Python => error_format.emit_and_exit(')
+     '        Language::Python => "_python",\n        // Swift is one sweep over every stem, not a script each: see\n        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.\n        Language::Swift => "",\n        Language::Rust | Language::Cpp | Language::C11 => error_format.emit_and_exit(',
+     '        Language::Swift => "",\n        Language::Rust | Language::Cpp | Language::C11 | Language::Python => error_format.emit_and_exit(')
 PY
 
 mutation_case "the refusal offers every backend instead of the route's own" <<'PY'
