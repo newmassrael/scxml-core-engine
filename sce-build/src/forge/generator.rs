@@ -752,6 +752,39 @@ pub struct ImportContext {
     /// §12.2). `None` for every other import.
     #[serde(skip)]
     pub test_component: Option<TestComponentImport>,
+    /// For an imported `sce:kind="test-port-type"`: the records its `in` list
+    /// names, which a configuration's system port of it takes from a recorded
+    /// input trace (docs/SCE_TTCN3_LANE.md §10.2). `None` for every other
+    /// import.
+    #[serde(skip)]
+    pub test_port_type: Option<TestPortTypeImport>,
+}
+
+/// A test port type a configuration declares a system port of, as the
+/// configuration's unit reads it (docs/SCE_TEST_PROFILE.md §11.3,
+/// docs/SCE_TTCN3_LANE.md §10.2): the records on its `in` list, by the aliases
+/// its own imports give them, and the scope those imports name them in. A port
+/// type writes no unit, so what a configuration needs of it rides here.
+#[derive(Debug, Clone)]
+pub struct TestPortTypeImport {
+    /// The aliases of the event schemas on its `in` list, in document order.
+    pub inputs: Vec<String>,
+    /// The scope the port type's own imports name its records in.
+    pub scope: crate::forge::value_type::TypeScope,
+}
+
+impl TestPortTypeImport {
+    /// What a configuration reads of `port_type`, whose imports name its
+    /// records in `scope`.
+    pub fn of(
+        port_type: &crate::forge::model::TestPortTypeModel,
+        scope: crate::forge::value_type::TypeScope,
+    ) -> Self {
+        Self {
+            inputs: port_type.in_list().map(str::to_string).collect(),
+            scope,
+        }
+    }
 }
 
 /// A test component a configuration runs, as the configuration's tables read
@@ -1479,6 +1512,7 @@ fn resolve_single_import(
         enum_slots: None,
         test_template: None,
         test_component: None,
+        test_port_type: None,
     }
 }
 
@@ -47656,6 +47690,7 @@ mod tests {
             enum_slots: None,
             test_template: None,
             test_component: None,
+            test_port_type: None,
         }
     }
 
@@ -48581,6 +48616,7 @@ mod tests {
                 enum_slots: None,
                 test_template: None,
                 test_component: None,
+                test_port_type: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -48649,6 +48685,7 @@ mod tests {
                 enum_slots: None,
                 test_template: None,
                 test_component: None,
+                test_port_type: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

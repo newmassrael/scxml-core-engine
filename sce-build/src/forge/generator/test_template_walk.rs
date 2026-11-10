@@ -26,7 +26,7 @@
 use super::*;
 use crate::forge::expr::{wide_literal_spelling, WideLiteral};
 use crate::forge::value_type::{
-    ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
 };
 use crate::generator::Language;
 
@@ -1352,14 +1352,176 @@ pub(super) trait CanonicalSpelling {
 
 /// The expression that writes the value `at`, of the type `ty` read in
 /// `scope`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
-/// §12.5), spelled by `spelling`. The form is the SCE type's, never the
-/// language's. Each record and union is read in the scope of its own document,
-/// as the walk of its matcher reads it. An optional value has a form where it
-/// stands in a record, which omits it where it is absent, and in a list, which
-/// writes `null` in its place ([`CanonicalSpelling::optional_element`]).
-/// Refused, naming why: a number that is no integer, and an optional value
-/// anywhere else.
+/// §12.5), spelled by `spelling`: [`canonical_form`], the one walk of the
+/// form, in the direction of the writer ([`Writing`]). An optional value has a
+/// form where it stands in a record, which omits it where it is absent, and in
+/// a list, which writes `null` in its place
+/// ([`CanonicalSpelling::optional_element`]). Refused, naming why: a number
+/// that is no integer, and an optional value anywhere else.
 pub(super) fn canonical_value<S: CanonicalSpelling>(
+    spelling: &S,
+    ty: &ValueType,
+    at: &S::At,
+    scope: &TypeScope,
+) -> Result<String, String> {
+    canonical_form(&Writing(spelling), ty, at, scope)
+}
+
+/// How a backend spells one direction of the canonical form of a value
+/// (docs/SCE_TEST_PROFILE.md §12.5): the writer of a value's form, which every
+/// template over a record's unit declares ([`CanonicalSpelling`], through
+/// [`Writing`]), or its reader, which reads a recorded input trace's values
+/// back (docs/SCE_TTCN3_LANE.md §10.3, §10.5). One expression of the backend's
+/// language per value, of the form the SCE type takes rather than the
+/// language's type.
+///
+/// The walk over the type, which form each type takes and which scope each
+/// record and union is read in, is [`canonical_form`], written once for both
+/// directions, so a reader cannot read a form its writer does not write. Each
+/// method is told what a reader needs and a writer does not read: an integer's
+/// width, a text's, a byte string's and a list's bounds, and the record a set
+/// of fields builds, since a value that does not belong to its type is refused
+/// where it is read.
+pub(super) trait CanonicalForm {
+    /// The backend's spelling of the value the walk stands at.
+    type At;
+
+    /// The value the unit's function takes: the template's own value, or the
+    /// value read.
+    fn root(&self) -> Self::At;
+    /// The field `id` of the record at `at`.
+    fn field(&self, at: &Self::At, id: &str) -> Self::At;
+    /// The name a function or a pattern binds a value inside the one at `at`
+    /// to, numbered by how many bindings `at` stands inside after `prefix`,
+    /// and the value it binds.
+    fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
+    /// The place that holds a union case's record, once the walk has bound the
+    /// case as `bound` ([`Self::bound`] with the prefix `case`).
+    fn case_record(&self, bound: Self::At) -> Self::At;
+    /// The place that holds an element of the list at `list`, once the walk
+    /// has bound it as `bound` ([`Self::bound`] with the prefix `item`).
+    fn list_element(&self, list: &Self::At, bound: Self::At) -> Self::At;
+    /// The place that holds the value of the optional field or list element at
+    /// `field`, where it holds one, once the walk has bound it as `bound`
+    /// ([`Self::bound`] with the prefix `present`).
+    fn optional_value(&self, field: &Self::At, bound: Self::At) -> Self::At;
+
+    /// A `bool`.
+    fn boolean(&self, at: &Self::At) -> String;
+    /// A value of the enum `declared`.
+    fn enumerated(&self, at: &Self::At, declared: &ScopedEnum) -> String;
+    /// An integer of the width `width`.
+    fn integer(&self, at: &Self::At, width: &SceType) -> String;
+    /// A text of at most `max` bytes.
+    fn text(&self, at: &Self::At, max: &Bound) -> String;
+    /// A byte string of at most `max` octets.
+    fn bytes(&self, at: &Self::At, max: &Bound) -> String;
+    /// The list at `at`, of `max`'s count of elements, each element bound to
+    /// `binding` and spelled as `element`.
+    fn list(&self, at: &Self::At, max: &Bound, binding: &str, element: String) -> String;
+
+    /// A field the record always holds, spelled as `written`.
+    fn held_field(&self, written: String) -> String;
+    /// A field that may be absent, at `field`: the value it holds bound to
+    /// `binding` and spelled as `written`, and nothing where it holds none.
+    fn optional_field(&self, field: &Self::At, binding: &str, written: String) -> String;
+    /// An element of a list that may be absent, at `element`: the value it
+    /// holds bound to `binding` and spelled as `written`, and JSON `null`
+    /// where it holds none.
+    fn optional_element(&self, element: &Self::At, binding: &str, written: String) -> String;
+    /// The record `record` at `at`, of `fields`, each its declared id and its
+    /// field as [`Self::held_field`] or [`Self::optional_field`] spelled it, in
+    /// the order the schema declares them.
+    fn record(&self, at: &Self::At, record: &ScopedRecord, fields: Vec<(String, String)>)
+        -> String;
+    /// The value of the union `union` at `at`, one of `cases`, each its
+    /// variant and, where the case holds a record, the name the record is
+    /// bound to and its spelled form.
+    fn union(
+        &self,
+        at: &Self::At,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String>;
+}
+
+/// The writer of a value's canonical form, a backend's [`CanonicalSpelling`],
+/// as the direction [`canonical_form`] walks: it reads no width and no bound,
+/// since a value it writes is one of its type already.
+pub(super) struct Writing<'s, S>(pub(super) &'s S);
+
+impl<S: CanonicalSpelling> CanonicalForm for Writing<'_, S> {
+    type At = S::At;
+
+    fn root(&self) -> S::At {
+        self.0.root()
+    }
+    fn field(&self, at: &S::At, id: &str) -> S::At {
+        self.0.field(at, id)
+    }
+    fn bound(&self, at: &S::At, prefix: &str) -> (String, S::At) {
+        self.0.bound(at, prefix)
+    }
+    fn case_record(&self, bound: S::At) -> S::At {
+        self.0.case_record(bound)
+    }
+    fn list_element(&self, list: &S::At, bound: S::At) -> S::At {
+        self.0.list_element(list, bound)
+    }
+    fn optional_value(&self, field: &S::At, bound: S::At) -> S::At {
+        self.0.optional_value(field, bound)
+    }
+    fn boolean(&self, at: &S::At) -> String {
+        self.0.boolean(at)
+    }
+    fn enumerated(&self, at: &S::At, declared: &ScopedEnum) -> String {
+        self.0.enumerated_of(at, declared)
+    }
+    fn integer(&self, at: &S::At, _width: &SceType) -> String {
+        self.0.integer(at)
+    }
+    fn text(&self, at: &S::At, _max: &Bound) -> String {
+        self.0.text(at)
+    }
+    fn bytes(&self, at: &S::At, _max: &Bound) -> String {
+        self.0.bytes(at)
+    }
+    fn list(&self, at: &S::At, _max: &Bound, binding: &str, element: String) -> String {
+        self.0.list(at, binding, element)
+    }
+    fn held_field(&self, written: String) -> String {
+        self.0.held_field(written)
+    }
+    fn optional_field(&self, field: &S::At, binding: &str, written: String) -> String {
+        self.0.optional_field(field, binding, written)
+    }
+    fn optional_element(&self, element: &S::At, binding: &str, written: String) -> String {
+        self.0.optional_element(element, binding, written)
+    }
+    fn record(&self, _at: &S::At, _record: &ScopedRecord, fields: Vec<(String, String)>) -> String {
+        self.0.record(fields)
+    }
+    fn union(
+        &self,
+        at: &S::At,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        self.0.union(at, union, cases)
+    }
+}
+
+/// The expression of the value `at`, of the type `ty` read in `scope`, in the
+/// canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5), spelled by
+/// `spelling` in its direction: the one walk of the form, which both the
+/// writer of a value's form ([`canonical_value`]) and its reader take. The
+/// form is the SCE type's, never the language's. Each record and union is read
+/// in the scope of its own document, as the walk of its matcher reads it. An
+/// optional value has a form where it stands in a record, which omits it where
+/// it is absent, and in a list, which writes `null` in its place
+/// ([`CanonicalForm::optional_element`]). Refused, naming why: a number that
+/// is no integer, and an optional value anywhere else.
+pub(super) fn canonical_form<S: CanonicalForm>(
     spelling: &S,
     ty: &ValueType,
     at: &S::At,
@@ -1374,12 +1536,14 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                     reference.alias
                 )
             })?;
-            spelling.enumerated_of(at, declared)
+            spelling.enumerated(at, declared)
         }
-        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => spelling.integer(at),
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
+            spelling.integer(at, scalar)
+        }
         TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
-        TypeOf::Text { .. } => spelling.text(at),
-        TypeOf::Bytes { .. } => spelling.bytes(at),
+        TypeOf::Text { max } => spelling.text(at, max),
+        TypeOf::Bytes { max } => spelling.bytes(at, max),
         TypeOf::Optional { .. } => {
             return Err(format!(
                 "a value of {ty} has a form in the test log only as a field of a record, \
@@ -1387,19 +1551,19 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                  null where it is absent"
             ))
         }
-        TypeOf::List { elem, .. } => {
+        TypeOf::List { elem, max } => {
             let (binding, bound) = spelling.bound(at, "item");
             let element = spelling.list_element(at, bound);
             let written = match elem.as_ref() {
                 TypeOf::Optional { elem: held } => {
                     let (present_binding, present_bound) = spelling.bound(&element, "present");
                     let present = spelling.optional_value(&element, present_bound);
-                    let value = canonical_value(spelling, held, &present, scope)?;
+                    let value = canonical_form(spelling, held, &present, scope)?;
                     spelling.optional_element(&element, &present_binding, value)
                 }
-                other => canonical_value(spelling, other, &element, scope)?,
+                other => canonical_form(spelling, other, &element, scope)?,
             };
-            spelling.list(at, &binding, written)
+            spelling.list(at, max, &binding, written)
         }
         TypeOf::Record { alias } => {
             let record = scope
@@ -1415,10 +1579,10 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                         TypeOf::Optional { elem } => {
                             let (binding, bound) = spelling.bound(&field, "present");
                             let present = spelling.optional_value(&field, bound);
-                            let written = canonical_value(spelling, elem, &present, &record.scope)?;
+                            let written = canonical_form(spelling, elem, &present, &record.scope)?;
                             spelling.optional_field(&field, &binding, written)
                         }
-                        other => spelling.held_field(canonical_value(
+                        other => spelling.held_field(canonical_form(
                             spelling,
                             other,
                             &field,
@@ -1428,7 +1592,7 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                     Ok((id.clone(), value))
                 })
                 .collect::<Result<Vec<(String, String)>, String>>()?;
-            spelling.record(fields)
+            spelling.record(at, record, fields)
         }
         TypeOf::Union { alias } => {
             let union = scope
@@ -1443,7 +1607,7 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                         Some(record) => {
                             let (binding, bound) = spelling.bound(at, "case");
                             let held = spelling.case_record(bound);
-                            let written = canonical_value(
+                            let written = canonical_form(
                                 spelling,
                                 &TypeOf::Record {
                                     alias: record.clone(),
@@ -1727,6 +1891,165 @@ mod tests {
             refused.contains("only as a field of a record")
                 && refused.contains("as an element of a list"),
             "{refused}"
+        );
+    }
+
+    /// A direction of the form that spells what the walk tells it beside the
+    /// place: each width, bound and record, which a reader holds a value to.
+    struct Typed;
+
+    impl CanonicalForm for Typed {
+        type At = String;
+
+        fn root(&self) -> String {
+            "value".to_string()
+        }
+        fn field(&self, at: &String, id: &str) -> String {
+            format!("{at}.{id}")
+        }
+        fn bound(&self, at: &String, prefix: &str) -> (String, String) {
+            let name = format!("{prefix}_of_{at}");
+            (name.clone(), name)
+        }
+        fn case_record(&self, bound: String) -> String {
+            bound
+        }
+        fn list_element(&self, _list: &String, bound: String) -> String {
+            bound
+        }
+        fn optional_value(&self, _field: &String, bound: String) -> String {
+            bound
+        }
+        fn boolean(&self, at: &String) -> String {
+            format!("bool({at})")
+        }
+        fn enumerated(&self, at: &String, declared: &ScopedEnum) -> String {
+            format!("{}({at})", declared.name)
+        }
+        fn integer(&self, at: &String, width: &SceType) -> String {
+            format!("{}({at})", width.as_attr())
+        }
+        fn text(&self, at: &String, max: &Bound) -> String {
+            format!("text<={}({at})", max.max)
+        }
+        fn bytes(&self, at: &String, max: &Bound) -> String {
+            format!("bytes<={}({at})", max.max)
+        }
+        fn list(&self, at: &String, max: &Bound, binding: &str, element: String) -> String {
+            format!("list{}..{}({at}, {binding}: {element})", max.min, max.max)
+        }
+        fn held_field(&self, written: String) -> String {
+            written
+        }
+        fn optional_field(&self, field: &String, binding: &str, written: String) -> String {
+            format!("{field}?[{binding}: {written}]")
+        }
+        fn optional_element(&self, element: &String, binding: &str, written: String) -> String {
+            format!("{element}?null[{binding}: {written}]")
+        }
+        fn record(
+            &self,
+            at: &String,
+            record: &ScopedRecord,
+            fields: Vec<(String, String)>,
+        ) -> String {
+            let fields: Vec<String> = fields
+                .into_iter()
+                .map(|(id, value)| format!("{id}={value}"))
+                .collect();
+            format!("{}@{at}{{{}}}", record.name, fields.join(","))
+        }
+        fn union(
+            &self,
+            at: &String,
+            union: &ScopedUnion,
+            cases: Vec<CanonicalCase>,
+        ) -> Result<String, String> {
+            let cases: Vec<String> = cases
+                .into_iter()
+                .map(|(variant, held)| match held {
+                    Some((binding, written)) => format!("{variant}({binding}: {written})"),
+                    None => variant,
+                })
+                .collect();
+            Ok(format!("{}@{at}[{}]", union.name, cases.join("|")))
+        }
+    }
+
+    /// The one walk hands a direction of the form each integer's width, each
+    /// text's, byte string's and list's bounds, and the record a set of fields
+    /// builds, through every depth: what a reader refuses a value that does not
+    /// belong to its type by, and what the writer's spelling is not asked.
+    #[test]
+    fn the_walk_tells_a_direction_each_width_bound_and_record() {
+        let mut inner = TypeScope::default();
+        inner.enums.insert(
+            "Paint".to_string(),
+            ScopedEnum {
+                name: "paint_color".to_string(),
+                variants: vec![ScopedVariant {
+                    name: "red".to_string(),
+                    value: 0,
+                }],
+                underlying: SceType::Uint8,
+                strict: true,
+            },
+        );
+        let line = ScopedRecord {
+            identity: "order_line.scxml".to_string(),
+            name: "order_line".to_string(),
+            fields: vec![
+                (
+                    "color".to_string(),
+                    TypeOf::Scalar(SceType::Enum(EnumRef {
+                        alias: "Paint".to_string(),
+                    })),
+                ),
+                ("quantity".to_string(), TypeOf::Scalar(SceType::Uint16)),
+            ],
+            scope: inner,
+        };
+        let mut scope = TypeScope::default();
+        scope.records.insert("Line".to_string(), line);
+        let order = ScopedRecord {
+            identity: "order.scxml".to_string(),
+            name: "order".to_string(),
+            fields: vec![
+                ("note".to_string(), TypeOf::Text { max: Bound::of(8) }),
+                ("key".to_string(), TypeOf::Bytes { max: Bound::of(4) }),
+                (
+                    "rush".to_string(),
+                    TypeOf::Optional {
+                        elem: Box::new(TypeOf::Scalar(SceType::Bool)),
+                    },
+                ),
+                (
+                    "lines".to_string(),
+                    TypeOf::List {
+                        elem: Box::new(TypeOf::Record {
+                            alias: "Line".to_string(),
+                        }),
+                        max: Bound::of(3).at_least(1),
+                    },
+                ),
+            ],
+            scope,
+        };
+        let mut outer = TypeScope::default();
+        outer.records.insert("Order".to_string(), order);
+        let ty: ValueType = TypeOf::Record {
+            alias: "Order".to_string(),
+        };
+        assert_eq!(
+            canonical_form(&Typed, &ty, &Typed.root(), &outer),
+            Ok(concat!(
+                "order@value{note=text<=8(value.note),key=bytes<=4(value.key),",
+                "rush=value.rush?[present_of_value.rush: bool(present_of_value.rush)],",
+                "lines=list1..3(value.lines, item_of_value.lines: order_line@item_of_value.lines{",
+                "color=paint_color(item_of_value.lines.color),",
+                "quantity=uint16(item_of_value.lines.quantity)})}"
+            )
+            .to_string())
         );
     }
 }

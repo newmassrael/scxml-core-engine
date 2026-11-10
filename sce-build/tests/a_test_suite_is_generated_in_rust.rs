@@ -160,6 +160,73 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
 }
 
+/// docs/SCE_TTCN3_LANE.md §10.2, §10.5: a configuration reads the inputs of a
+/// recorded trace. Each record on the `in` list of a system port's type is read
+/// back from its canonical form and written in it, once, through the sibling
+/// module of its event schema; an input on a port the configuration does not
+/// have, or of a type its port does not take, is refused by name, and a
+/// record only sent to the system under test is not read.
+#[test]
+fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
+    let asking = unit("asking_configuration");
+    for needle in [
+        "fn read_job_reply(value: &::sce_rust_runtime::json::Value) -> \
+         Result<super::job_reply::JobReplyPayload, ::sce_rust_runtime::test::TraceRefusal> {",
+        "let record_0 = ::sce_rust_runtime::test::from_canonical::record(value, \
+         &[\"job\", \"code\"], \"job_reply\")?;",
+        "super::job_reply::JobReplyPayload { job: \
+         ::sce_rust_runtime::test::from_canonical::integer(\
+         ::sce_rust_runtime::test::from_canonical::field(record_0, \"job\", \"job_reply.job\")?, \
+         \"job_reply.job\")?, code: ",
+        "fn canonical_job_reply(value: &super::job_reply::JobReplyPayload) -> \
+         ::sce_rust_runtime::json::Value {",
+        "::sce_rust_runtime::test::canonical::integer(value.code)",
+        "pub fn input(system_port: &str, type_name: &str, value: &::sce_rust_runtime::json::Value) \
+         -> Result<::sce_rust_runtime::test::Message, ::sce_rust_runtime::test::TraceRefusal> {",
+        "(\"sut\", \"job_reply\") => Ok(::sce_rust_runtime::test::Message::new(\
+         super::job_reply::EVENT_NAME, read_job_reply(value)?, \"job_reply\", canonical_job_reply)),",
+        "_ => Err(::sce_rust_runtime::test::TraceRefusal::not_an_input(system_port, type_name, \
+         &[\"sut\"])),",
+    ] {
+        assert!(
+            asking.contains(needle),
+            "asking_configuration holds `{needle}`:\n{asking}"
+        );
+    }
+    assert!(
+        !asking.contains("read_job_request"),
+        "a record the components only send is not read: {asking}"
+    );
+    assert_eq!(
+        asking.matches("fn read_job_reply(").count(),
+        1,
+        "a record is read by one function"
+    );
+
+    let keeping = unit("keeping_configuration");
+    assert!(
+        keeping.contains(
+            "(\"quiet\", \"job_reply\") => Ok(::sce_rust_runtime::test::Message::new(\
+             super::job_reply::EVENT_NAME, read_job_reply(value)?, \"job_reply\", \
+             canonical_job_reply)),"
+        ),
+        "{keeping}"
+    );
+
+    let serving = unit("serving_configuration");
+    assert!(
+        serving.contains(
+            "pub fn input(system_port: &str, type_name: &str, _value: \
+             &::sce_rust_runtime::json::Value) -> Result<::sce_rust_runtime::test::Message, \
+             ::sce_rust_runtime::test::TraceRefusal> {\n    \
+             Err(::sce_rust_runtime::test::TraceRefusal::not_an_input(system_port, type_name, \
+             &[]))\n}"
+        ),
+        "a configuration with no system port refuses every input: {serving}"
+    );
+    assert!(!serving.contains("fn read_"), "{serving}");
+}
+
 /// §11.7: a test case is its name and its configuration's tables, reached
 /// through the configuration's unit.
 #[test]
@@ -172,6 +239,7 @@ fn a_test_case_names_its_configurations_tables() {
         "configuration: super::asking_configuration::configuration(),",
         "machines: ::std::sync::Arc::new(super::asking_configuration::machine),",
         "module_parameters: super::asking_configuration::module_parameters(),",
+        "inputs: super::asking_configuration::input,",
     ] {
         assert!(case.contains(needle), "answers_the_job holds `{needle}`");
     }
@@ -235,6 +303,29 @@ fn a_suite_holds_its_cases_in_order_with_guards_and_selections() {
     }
 }
 
+/// docs/SCE_TTCN3_LANE.md §4: a suite's unit is the runner program's: its
+/// `main` hands the runner the suite and the reader of each module parameter's
+/// value, a literal of its type, which an undeclared parameter is refused by.
+#[test]
+fn a_suite_is_the_runner_program_of_its_traces() {
+    let suite = unit("runtime_suite");
+    for needle in [
+        "pub fn module_parameter(id: &str, literal: &str) -> \
+         Result<::sce_rust_runtime::test::ModuleParameterValue, \
+         ::sce_rust_runtime::test::OverrideRefusal> {",
+        "\"job\" => ::sce_rust_runtime::test::runner::integer_parameter::<u32>(id, literal),",
+        "_ => Err(::sce_rust_runtime::test::runner::undeclared_parameter(id)),",
+        "pub fn main() -> ::std::process::ExitCode {",
+        "::sce_rust_runtime::test::runner::main(&suite(), module_parameter, \
+         ::std::env::args().skip(1))",
+    ] {
+        assert!(
+            suite.contains(needle),
+            "runtime_suite holds `{needle}`:\n{suite}"
+        );
+    }
+}
+
 /// A suite whose selection joins a join keeps the inner one in parentheses,
 /// and one that declares no module parameter and runs no test case holds the
 /// empty tables.
@@ -280,6 +371,15 @@ fn a_selection_keeps_its_inner_joins_and_an_empty_suite_its_empty_tables() {
     std::fs::write(&path, empty).expect("the suite is written");
     let text = file_at(&path, "empty_suite");
     assert!(text.contains("executes: Vec::new(),"), "{text}");
+    assert!(
+        text.contains(
+            "pub fn module_parameter(id: &str, _literal: &str) -> \
+             Result<::sce_rust_runtime::test::ModuleParameterValue, \
+             ::sce_rust_runtime::test::OverrideRefusal> {\n    \
+             Err(::sce_rust_runtime::test::runner::undeclared_parameter(id))\n}"
+        ),
+        "a suite that declares no module parameter refuses every value: {text}"
+    );
 }
 
 /// §11.8, §12.2: each module parameter's default is the saved value of its
@@ -324,6 +424,13 @@ fn a_module_parameter_default_is_the_saved_value_of_its_type() {
         "module_parameters.set(\"color\", \
          ::sce_rust_runtime::json::Value::Text(\"green\".to_string()));",
         &execute("answers_the_job", "None", "None"),
+        // The runner reads each value given on its command line by its type.
+        "\"armed\" => ::sce_rust_runtime::test::runner::bool_parameter(id, literal),",
+        "\"offset\" => ::sce_rust_runtime::test::runner::integer_parameter::<i8>(id, literal),",
+        "\"widest\" => ::sce_rust_runtime::test::runner::integer_parameter::<u64>(id, literal),",
+        "\"label\" => Ok(::sce_rust_runtime::test::runner::text_parameter(literal)),",
+        "\"key\" => ::sce_rust_runtime::test::runner::bytes_parameter(id, literal),",
+        "\"color\" => Ok(::sce_rust_runtime::test::runner::enum_parameter(literal)),",
     ] {
         assert!(
             text.contains(needle),

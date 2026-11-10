@@ -17,19 +17,20 @@
 //! statechart is generated as (`super::<name>_sm`), as every generated Rust
 //! file reaches its siblings, so no unit has an import line to leave unread.
 
+use super::rust_test_template::{
+    rust_literal as literal, rust_record_type, RustCanonical, RustReading,
+};
 use super::test_tables::{
-    configuration_rows, execute_rows, module_parameter_defaults, selection_body,
+    configuration_rows, execute_rows, module_parameter_defaults, selection_body, system_port_rows,
     test_case_configuration, EndpointRow,
 };
-use super::test_template_walk::{hex_octets, integer_literal};
+use super::test_template_walk::{
+    canonical_form, canonical_value, hex_octets, integer_literal, log_type_name, CanonicalForm,
+    CanonicalSpelling,
+};
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
 use crate::generator::Language;
-
-/// `text` as a Rust string literal.
-fn literal(text: &str) -> String {
-    format!("\"{}\"", filters::escape_rust(text.to_string()))
-}
 
 /// `text` as an owned Rust `String`.
 fn owned(text: &str) -> String {
@@ -110,9 +111,13 @@ pub(super) fn render_test_configuration_rust(
         .collect();
     let module_parameters: Vec<String> =
         rows.module_parameters.iter().map(|id| owned(id)).collect();
+    let (system_ports, inputs, readers) = trace_inputs(m, imports)?;
 
     let l = LangCtx::new(Language::Rust, imports);
     let mut ctx = l.base_context(&m.name);
+    ctx.insert("system_ports".into(), serde_json::json!(system_ports));
+    ctx.insert("inputs".into(), serde_json::Value::Array(inputs));
+    ctx.insert("readers".into(), serde_json::Value::Array(readers));
     ctx.insert("configuration_name".into(), m.name.clone().into());
     ctx.insert("mtc_type".into(), owned(&rows.mtc.machine).into());
     ctx.insert("ptc_types".into(), serde_json::json!(ptcs));
@@ -126,6 +131,94 @@ pub(super) fn render_test_configuration_rust(
         serde_json::json!(module_parameters),
     );
     l.render(env, "test_configuration", ctx)
+}
+
+/// What the unit of a configuration writes of the inputs a recorded trace may
+/// carry ([`trace_inputs`]): each system port's id as a literal, an arm of
+/// `input` per port and record, and each record's reader and writer once.
+type TraceInputs = (Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>);
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5): each system port's
+/// id; an arm of the unit's `input` per port and record its type's `in` list
+/// names, in document order; and each record's reader and writer of its
+/// canonical form, once, both over the one walk of the form
+/// ([`canonical_form`]), so the value a trace hands the run and the value the
+/// test log writes of it are the same bytes.
+///
+/// Each record is named by its type in the test log ([`log_type_name`]), which
+/// names its functions; two records of one name are refused by name, as the
+/// types module of the export would hold them under one name.
+fn trace_inputs(
+    m: &TestConfigurationModel,
+    imports: &[ImportContext],
+) -> Result<TraceInputs, ForgeError> {
+    let refused = |why: String| {
+        super::test_tables::refused(
+            ForgeKind::TestConfiguration,
+            &m.name,
+            m.source_location.as_ref(),
+            why,
+        )
+    };
+    let ports = system_port_rows(m, imports)?;
+    let mut inputs = Vec::new();
+    let mut readers = Vec::new();
+    // Each record read so far: its type name and its document.
+    let mut read: Vec<(String, String)> = Vec::new();
+    for port in &ports {
+        for input in &port.inputs {
+            let type_name = log_type_name(input.record);
+            let reader = format!("read_{type_name}");
+            let writer = format!("canonical_{type_name}");
+            match read.iter().find(|(name, _)| *name == type_name) {
+                Some((_, identity)) if *identity != input.record.identity => {
+                    return Err(refused(format!(
+                        "two records its system ports take are named '{type_name}': {identity} \
+                         and {}",
+                        input.record.identity
+                    )));
+                }
+                Some(_) => {}
+                None => {
+                    read.push((type_name.clone(), input.record.identity.clone()));
+                    let reading = RustReading {
+                        what: type_name.clone(),
+                    };
+                    let read_expr =
+                        canonical_form(&reading, &input.record_type, &reading.root(), input.scope)
+                            .map_err(refused)?;
+                    let canonical_expr = canonical_value(
+                        &RustCanonical,
+                        &input.record_type,
+                        &RustCanonical.root(),
+                        input.scope,
+                    )
+                    .map_err(refused)?;
+                    readers.push(serde_json::json!({
+                        "type": type_name,
+                        "read": reader,
+                        "canonical": writer,
+                        "payload": rust_record_type(input.record),
+                        "read_expr": read_expr,
+                        "canonical_expr": canonical_expr,
+                    }));
+                }
+            }
+            inputs.push(serde_json::json!({
+                "port": literal(port.id),
+                "type": literal(&type_name),
+                "event": format!(
+                    "super::{}::EVENT_NAME",
+                    filters::to_snake_case(input.record.name.clone())
+                ),
+                "read": reader,
+                "canonical": writer,
+            }));
+        }
+    }
+    let system_ports = ports.iter().map(|port| literal(port.id)).collect();
+    Ok((system_ports, inputs, readers))
 }
 
 // ── §11.7: the test case ───────────────────────────────────────
@@ -159,13 +252,26 @@ pub(super) fn render_test_suite_rust(
 ) -> Result<String, ForgeError> {
     let parameters: Vec<serde_json::Value> = module_parameter_defaults(m, "Rust", saved_default)?
         .into_iter()
-        .map(|(id, value)| {
-            serde_json::json!({
+        .zip(&m.module_parameters)
+        .map(|((id, value), parameter)| {
+            let reader = parameter_reader(&parameter.parameter_type).ok_or_else(|| {
+                super::test_tables::refused(
+                    ForgeKind::TestSuite,
+                    &m.name,
+                    m.source_location.as_ref(),
+                    format!(
+                        "the module parameter '{id}' of type {} has no Rust reader of its value",
+                        parameter.parameter_type
+                    ),
+                )
+            })?;
+            Ok(serde_json::json!({
                 "id": literal(id),
                 "value": value,
-            })
+                "reader": reader,
+            }))
         })
-        .collect();
+        .collect::<Result<_, ForgeError>>()?;
     let executes: Vec<serde_json::Value> = execute_rows(m, imports)?
         .into_iter()
         .map(|execute| {
@@ -197,6 +303,32 @@ pub(super) fn render_test_suite_rust(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("executes".into(), serde_json::Value::Array(executes));
     l.render(env, "test_suite", ctx)
+}
+
+/// The runner's reader of a value of a module parameter of type `ty`, given
+/// on its command line as a literal of docs/SCE_TEST_PROFILE.md §11.4
+/// (docs/SCE_TTCN3_LANE.md §4): an expression of the saved value of `ty` the
+/// literal `literal` is, or of why it is none, for the module parameter `id`,
+/// by the readers of `sce_rust_runtime::test::runner`. `None` for the types
+/// [`saved_default`] has no value of, of which no suite declares a module
+/// parameter.
+fn parameter_reader(ty: &ValueType) -> Option<String> {
+    const RUNNER: &str = "::sce_rust_runtime::test::runner";
+    match ty {
+        TypeOf::Scalar(SceType::Bool) => Some(format!("{RUNNER}::bool_parameter(id, literal)")),
+        TypeOf::Scalar(SceType::Enum(_)) => Some(format!("Ok({RUNNER}::enum_parameter(literal))")),
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => Some(format!(
+            "{RUNNER}::integer_parameter::<{}>(id, literal)",
+            rust_type(scalar)
+        )),
+        TypeOf::Text { .. } => Some(format!("Ok({RUNNER}::text_parameter(literal))")),
+        TypeOf::Bytes { .. } => Some(format!("{RUNNER}::bytes_parameter(id, literal)")),
+        TypeOf::Scalar(_)
+        | TypeOf::Optional { .. }
+        | TypeOf::Record { .. }
+        | TypeOf::Union { .. }
+        | TypeOf::List { .. } => None,
+    }
 }
 
 /// The default `value` of a module parameter of type `ty`, a literal of

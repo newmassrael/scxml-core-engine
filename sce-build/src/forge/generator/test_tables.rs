@@ -22,7 +22,7 @@
 
 use super::test_template_walk::Connectives;
 use super::*;
-use crate::forge::value_type::ValueType;
+use crate::forge::value_type::{ScopedRecord, TypeScope, ValueType};
 use crate::presence_condition::PresenceExpr;
 
 /// The refusal of the document `kind` `name`, at `at`, for `why`.
@@ -149,6 +149,88 @@ pub(super) fn configuration_rows<'a>(
         connections,
         mappings,
     })
+}
+
+/// A record a recorded input trace may carry on a system port
+/// (docs/SCE_TTCN3_LANE.md §10.2): its type, `record:<alias>` read in the
+/// scope of the port type that names it, and the record.
+pub(super) struct TraceInputRow<'a> {
+    /// The type of the record, as the port type's scope reads it.
+    pub(super) record_type: ValueType,
+    /// The scope the port type's imports name the record in.
+    pub(super) scope: &'a TypeScope,
+    /// The record.
+    pub(super) record: &'a ScopedRecord,
+}
+
+/// A system port of a configuration (docs/SCE_TEST_PROFILE.md §11.6): its id
+/// and the records on the `in` list of its type, which a trace may carry on it,
+/// in document order.
+pub(super) struct SystemPortRow<'a> {
+    pub(super) id: &'a str,
+    pub(super) inputs: Vec<TraceInputRow<'a>>,
+}
+
+/// Each system port of the test configuration `m`, whose imports are
+/// `imports`, with the records a trace may carry on it, in document order.
+///
+/// Refused by name where a system port's type names no test port type the
+/// configuration imports, and where its `in` list names a record the port
+/// type's own imports do not.
+pub(super) fn system_port_rows<'a>(
+    m: &'a TestConfigurationModel,
+    imports: &'a [ImportContext],
+) -> Result<Vec<SystemPortRow<'a>>, ForgeError> {
+    let kind = ForgeKind::TestConfiguration;
+    let at = m.source_location.as_ref();
+    m.system_ports
+        .iter()
+        .map(|port| {
+            let port_type = import_of(imports, &port.port_type, ForgeKind::TestPortType.as_attr())
+                .and_then(|i| i.test_port_type.as_ref())
+                .ok_or_else(|| {
+                    refused(
+                        kind,
+                        &m.name,
+                        at,
+                        format!(
+                            "the system port '{}' is of '{}', which names no test port type the \
+                             configuration imports",
+                            port.id, port.port_type
+                        ),
+                    )
+                })?;
+            let inputs = port_type
+                .inputs
+                .iter()
+                .map(|alias| {
+                    let record = port_type.scope.records.get(alias).ok_or_else(|| {
+                        refused(
+                            kind,
+                            &m.name,
+                            at,
+                            format!(
+                                "the type '{}' of the system port '{}' takes '{alias}', which \
+                                 names no event schema the port type imports",
+                                port.port_type, port.id
+                            ),
+                        )
+                    })?;
+                    Ok(TraceInputRow {
+                        record_type: ValueType::Record {
+                            alias: alias.clone(),
+                        },
+                        scope: &port_type.scope,
+                        record,
+                    })
+                })
+                .collect::<Result<Vec<_>, ForgeError>>()?;
+            Ok(SystemPortRow {
+                id: port.id.as_str(),
+                inputs,
+            })
+        })
+        .collect()
 }
 
 // ── §11.7: the test case ───────────────────────────────────────

@@ -30,15 +30,23 @@
 //! the canonical form of a message of it in the test log (§12.5), whose walk
 //! over the record's types every backend shares
 //! ([`super::test_template_walk::canonical_value`]); [`RustCanonical`] spells
-//! it with the writers of `sce_rust_runtime::test::canonical`.
+//! it with the writers of `sce_rust_runtime::test::canonical`. Its inverse,
+//! [`RustReading`], reads a value back from that form with the readers of
+//! `sce_rust_runtime::test::from_canonical`, over the same walk
+//! ([`super::test_template_walk::canonical_form`]): the unit of a test
+//! configuration reads the values of a recorded input trace with it
+//! (docs/SCE_TTCN3_LANE.md §10.5).
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
-    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
+    Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk,
+    Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 
 /// The crate whose bounded text, byte string and list a Rust unit holds a
@@ -113,7 +121,7 @@ pub(super) fn render_test_template_rust(
 const CANONICAL: &str = "::sce_rust_runtime::test::canonical";
 
 /// A value the canonical writer reads, in Rust.
-struct Canonical {
+pub(super) struct Canonical {
     /// What names the value: `value`, a binding, or a field of either.
     base: String,
     /// Whether `base` is a reference to the value rather than the value.
@@ -145,8 +153,10 @@ impl Canonical {
 /// The Rust spelling of the canonical form of a value in the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5): a `::sce_rust_runtime::json::Value`, by
 /// the writers of [`CANONICAL`]. Which form each SCE type takes is the walk's
-/// ([`super::test_template_walk::canonical_value`]).
-struct RustCanonical;
+/// ([`super::test_template_walk::canonical_value`]). The unit of a test
+/// configuration writes its records' forms with it too, beside their readers
+/// ([`RustReading`]).
+pub(super) struct RustCanonical;
 
 impl CanonicalSpelling for RustCanonical {
     type At = Canonical;
@@ -273,6 +283,293 @@ impl CanonicalSpelling for RustCanonical {
     }
 }
 
+/// The readers of the canonical form of a value, in the profile's Rust runtime
+/// (`backends/rust/runtime/src/test/from_canonical.rs`).
+const FROM_CANONICAL: &str = "::sce_rust_runtime::test::from_canonical";
+
+/// `text` as a Rust string literal.
+pub(super) fn rust_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_rust(text.to_string()))
+}
+
+/// A value the canonical reader reads, in Rust: the JSON it is read from.
+#[derive(Clone)]
+pub(super) struct Reading {
+    /// An expression of the `&::sce_rust_runtime::json::Value` the value is
+    /// read from, where it is present.
+    json: String,
+    /// An expression of the `Option<&::sce_rust_runtime::json::Value>` the
+    /// value is where it may be absent: a field's member of its record's
+    /// object, which is absent where it is omitted, or any other value, which
+    /// is absent where it is `null`.
+    optional: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+impl Reading {
+    /// The value `json` names, where it stands at `what`, inside `depth`
+    /// bindings and `records` records: absent where it is `null`, as an element
+    /// of a list of `optional<T>` is.
+    fn of(json: String, what: String, depth: usize, records: usize) -> Self {
+        Reading {
+            optional: format!("{FROM_CANONICAL}::nullable({json})"),
+            json,
+            what,
+            depth,
+            records,
+        }
+    }
+}
+
+/// The Rust reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from a `&::sce_rust_runtime::json::Value` by
+/// the readers of [`FROM_CANONICAL`] and refused, naming where it stands, where
+/// it does not belong to its type. Which form each SCE type takes is the walk
+/// its writer's is ([`super::test_template_walk::canonical_form`]), so the
+/// reader reads exactly what [`RustCanonical`] writes.
+///
+/// Each read is an expression of the value, whose refusal returns from the
+/// reader with `?`: a record is a block that binds its object and builds its
+/// struct, a list a loop that reads each element into a `Vec` and makes the
+/// bounded list of it, an absent field or element a `match` on its presence,
+/// a union a `match` on its case. No read is a closure, so every `?` returns
+/// from the reader itself. An integer, a text, a byte string and a list are
+/// read into the type the place they stand in holds, which Rust infers.
+pub(super) struct RustReading {
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+impl CanonicalForm for RustReading {
+    type At = Reading;
+
+    /// The reader's parameter `value`, a `&::sce_rust_runtime::json::Value`.
+    fn root(&self) -> Reading {
+        Reading::of("value".to_string(), self.what.clone(), 0, 0)
+    }
+
+    /// The member `id` of the object its record bound: present where the
+    /// field's type is not optional, and absent where it is omitted otherwise.
+    fn field(&self, at: &Reading, id: &str) -> Reading {
+        let object = format!("record_{}", at.records);
+        let what = format!("{}.{id}", at.what);
+        Reading {
+            json: format!(
+                "{FROM_CANONICAL}::field({object}, {}, {})?",
+                rust_literal(id),
+                rust_literal(&what)
+            ),
+            optional: format!(
+                "{FROM_CANONICAL}::optional_field({object}, {})",
+                rust_literal(id)
+            ),
+            what,
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &Reading, prefix: &str) -> (String, Reading) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = Reading::of(name.clone(), at.what.clone(), at.depth + 1, at.records);
+        (name, value)
+    }
+
+    fn case_record(&self, bound: Reading) -> Reading {
+        bound
+    }
+
+    fn list_element(&self, list: &Reading, bound: Reading) -> Reading {
+        Reading {
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    fn optional_value(&self, _field: &Reading, bound: Reading) -> Reading {
+        bound
+    }
+
+    fn boolean(&self, at: &Reading) -> String {
+        format!(
+            "{FROM_CANONICAL}::boolean({}, {})?",
+            at.json,
+            rust_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, through the enum's
+    /// sibling module: a closed enum's variants, or an open enum's constants
+    /// and the number no constant declares.
+    fn enumerated(&self, at: &Reading, declared: &ScopedEnum) -> String {
+        let enum_type = format!(
+            "super::{}",
+            enum_qualified_type(&declared.name, Language::Rust)
+        );
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "({}, {enum_type}::{})",
+                    rust_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ident(
+                        Language::Rust,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        if declared.strict {
+            format!(
+                "{FROM_CANONICAL}::enumerated({}, &[{}], {})?",
+                at.json,
+                variants.join(", "),
+                rust_literal(&at.what)
+            )
+        } else {
+            format!(
+                "{FROM_CANONICAL}::open_enumerated({}, &[{}], {enum_type}::from_underlying, {})?",
+                at.json,
+                variants.join(", "),
+                rust_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read into the integer type the place holds, which bounds it.
+    fn integer(&self, at: &Reading, _width: &SceType) -> String {
+        format!(
+            "{FROM_CANONICAL}::integer({}, {})?",
+            at.json,
+            rust_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &Reading, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}::text({}, {}, {})?",
+            at.json,
+            max.max,
+            rust_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &Reading, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}::bytes({}, {}, {})?",
+            at.json,
+            max.max,
+            rust_literal(&at.what)
+        )
+    }
+
+    /// A loop over the elements within the list's bounds, each read into a
+    /// `Vec`, which becomes the bounded list the place holds.
+    fn list(&self, at: &Reading, max: &Bound, binding: &str, element: String) -> String {
+        let items = format!("items_{}", at.depth);
+        let what = rust_literal(&at.what);
+        format!(
+            "{{ let mut {items} = ::std::vec::Vec::new(); \
+             for {binding} in {FROM_CANONICAL}::elements({}, {}, {}, {what})? {{ \
+             {items}.push({element}); }} \
+             {FROM_CANONICAL}::list({items}, {what})? }}",
+            at.json, max.min, max.max
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// A `match` on whether the record's object names the field.
+    fn optional_field(&self, field: &Reading, binding: &str, written: String) -> String {
+        format!(
+            "match {} {{ Some({binding}) => Some({written}), None => None }}",
+            field.optional
+        )
+    }
+
+    /// A `match` on whether the element is `null`.
+    fn optional_element(&self, element: &Reading, binding: &str, written: String) -> String {
+        format!(
+            "match {} {{ Some({binding}) => Some({written}), None => None }}",
+            element.optional
+        )
+    }
+
+    /// A block that binds the record's object, refused where it names a field
+    /// the record does not declare, and builds the record's struct of its
+    /// fields.
+    fn record(&self, at: &Reading, record: &ScopedRecord, fields: Vec<(String, String)>) -> String {
+        let ids: Vec<String> = fields.iter().map(|(id, _)| rust_literal(id)).collect();
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{}: {value}", event_schema_field_ident(id, Language::Rust)))
+            .collect();
+        let object = format!(
+            "{FROM_CANONICAL}::record({}, &[{}], {})?",
+            at.json,
+            ids.join(", "),
+            rust_literal(&at.what)
+        );
+        let built = format!("{} {{ {} }}", rust_record_type(record), members.join(", "));
+        if fields.is_empty() {
+            // No field reads the object, so it is not bound.
+            format!("{{ {object}; {built} }}")
+        } else {
+            format!("{{ let record_{} = {object}; {built} }}", at.records)
+        }
+    }
+
+    /// A `match` on the variant of the case, each arm the case's record read
+    /// or, for a case that holds none, the empty object it is.
+    fn union(
+        &self,
+        at: &Reading,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let union_type = rust_union_type(union);
+        let variant = format!("variant_{}", at.depth);
+        let case = format!("case_{}", at.depth);
+        let what = rust_literal(&at.what);
+        let arms: Vec<String> = cases
+            .into_iter()
+            .map(|(name, held)| {
+                let built = format!(
+                    "{union_type}::{}",
+                    crate::forge::composed_lowering::rust_case_ident(&name)
+                );
+                match held {
+                    Some((_, written)) => format!("{} => {built}({written})", rust_literal(&name)),
+                    None => format!(
+                        "{} => {{ {FROM_CANONICAL}::no_record({case}, {})?; {built} }}",
+                        rust_literal(&name),
+                        rust_literal(&format!("{}.{name}", at.what))
+                    ),
+                }
+            })
+            .collect();
+        Ok(format!(
+            "{{ let ({variant}, {case}) = {FROM_CANONICAL}::union_case({}, {what})?; \
+             match {variant} {{ {}, _ => return Err({FROM_CANONICAL}::unknown_variant({variant}, \
+             {what})) }} }}",
+            at.json,
+            arms.join(", ")
+        ))
+    }
+}
+
 /// The name the generated `matches` and `value` take the formal parameter
 /// `id` by: `param_<id>` in snake case, so that no parameter's name is one the
 /// unit declares (`Value`, `value`, `matches`) or a keyword of the language,
@@ -309,7 +606,7 @@ fn rust_enum_type(scope: &TypeScope, alias: &str) -> Option<String> {
 
 /// The payload struct of the record `record`, through its document's sibling
 /// module.
-fn rust_record_type(record: &ScopedRecord) -> String {
+pub(super) fn rust_record_type(record: &ScopedRecord) -> String {
     format!(
         "super::{}",
         event_schema_payload_type(&record.name, Language::Rust)
@@ -695,5 +992,207 @@ impl TemplateSpelling for RustSpelling {
             Some(record) => format!("{case}({record})"),
             None => case,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_template_walk::canonical_form;
+    use super::*;
+    use crate::forge::value_type::{ScopedCase, ScopedVariant};
+
+    /// The readers of the runtime, as the generated code names them.
+    fn read(function: &str) -> String {
+        format!("{FROM_CANONICAL}::{function}")
+    }
+
+    fn variant(name: &str, value: i128) -> ScopedVariant {
+        ScopedVariant {
+            name: name.to_string(),
+            value,
+        }
+    }
+
+    /// The record `order` of every form a field takes, and its scope: a text,
+    /// a byte string, an optional `bool`, a list of optional integers, a value
+    /// of a closed and of an open enum, and a union of a case that holds a
+    /// record and one that holds none.
+    fn order() -> (ValueType, TypeScope) {
+        let paint = |strict: bool| ScopedEnum {
+            name: if strict { "paint_color" } else { "paint_code" }.to_string(),
+            variants: vec![variant("red", 0)],
+            underlying: SceType::Uint8,
+            strict,
+        };
+        let card = ScopedRecord {
+            identity: "card.scxml".to_string(),
+            name: "card".to_string(),
+            fields: vec![("amount".to_string(), TypeOf::Scalar(SceType::Uint32))],
+            scope: TypeScope::default(),
+        };
+        let mut union_scope = TypeScope::default();
+        union_scope.records.insert("Card".to_string(), card);
+        let payment = ScopedUnion {
+            identity: "payment.scxml".to_string(),
+            name: "payment".to_string(),
+            tag: "kind".to_string(),
+            tag_enum: "Kind".to_string(),
+            cases: vec![
+                ScopedCase {
+                    variant: variant("card", 0),
+                    record: Some("Card".to_string()),
+                },
+                ScopedCase {
+                    variant: variant("cash", 1),
+                    record: None,
+                },
+            ],
+            scope: union_scope,
+        };
+        let mut scope = TypeScope::default();
+        scope.enums.insert("Paint".to_string(), paint(true));
+        scope.enums.insert("Code".to_string(), paint(false));
+        scope.unions.insert("Payment".to_string(), payment);
+        let enum_of = |alias: &str| {
+            TypeOf::Scalar(SceType::Enum(EnumRef {
+                alias: alias.to_string(),
+            }))
+        };
+        let order = ScopedRecord {
+            identity: "order.scxml".to_string(),
+            name: "order".to_string(),
+            fields: vec![
+                ("note".to_string(), TypeOf::Text { max: Bound::of(8) }),
+                ("key".to_string(), TypeOf::Bytes { max: Bound::of(4) }),
+                (
+                    "rush".to_string(),
+                    TypeOf::Optional {
+                        elem: Box::new(TypeOf::Scalar(SceType::Bool)),
+                    },
+                ),
+                (
+                    "tags".to_string(),
+                    TypeOf::List {
+                        elem: Box::new(TypeOf::Optional {
+                            elem: Box::new(TypeOf::Scalar(SceType::Uint8)),
+                        }),
+                        max: Bound::of(2),
+                    },
+                ),
+                ("color".to_string(), enum_of("Paint")),
+                ("code".to_string(), enum_of("Code")),
+                (
+                    "payment".to_string(),
+                    TypeOf::Union {
+                        alias: "Payment".to_string(),
+                    },
+                ),
+            ],
+            scope,
+        };
+        let mut outer = TypeScope::default();
+        outer.records.insert("Order".to_string(), order);
+        (
+            TypeOf::Record {
+                alias: "Order".to_string(),
+            },
+            outer,
+        )
+    }
+
+    /// The reader of a record reads each form through the runtime's reader of
+    /// it, every place named in a refusal, every `?` returning from the
+    /// reader itself: the record's object bound once, an optional field and an
+    /// optional element by a `match` on their presence, a list by a loop into
+    /// the bounded list its place holds, a union by a `match` on its case.
+    #[test]
+    fn a_record_is_read_through_the_reader_of_each_form() {
+        let (ty, scope) = order();
+        let reading = RustReading {
+            what: "order".to_string(),
+        };
+        let written = canonical_form(&reading, &ty, &reading.root(), &scope)
+            .expect("every form has a reader");
+        let field = |id: &str| format!("{}(record_0, \"{id}\", \"order.{id}\")?", read("field"));
+        let paint = format!(
+            "super::{}",
+            enum_qualified_type("paint_color", Language::Rust)
+        );
+        let code = format!(
+            "super::{}",
+            enum_qualified_type("paint_code", Language::Rust)
+        );
+        let red = crate::forge::enum_naming::variant_ident(Language::Rust, "paint_color", "red");
+        let payment = rust_union_type(&scope.records["Order"].scope.unions["Payment"]);
+        let case = |name: &str| crate::forge::composed_lowering::rust_case_ident(name);
+        for needle in [
+            format!(
+                "{{ let record_0 = {}(value, &[\"note\", \"key\", \"rush\", \"tags\", \"color\", \
+                 \"code\", \"payment\"], \"order\")?; super::order::OrderPayload {{ ",
+                read("record")
+            ),
+            format!(
+                "note: {}({}, 8, \"order.note\")?",
+                read("text"),
+                field("note")
+            ),
+            format!(
+                "key: {}({}, 4, \"order.key\")?",
+                read("bytes"),
+                field("key")
+            ),
+            format!(
+                "rush: match {}(record_0, \"rush\") {{ Some(present_0) => Some({}(present_0, \
+                 \"order.rush\")?), None => None }}",
+                read("optional_field"),
+                read("boolean")
+            ),
+            format!(
+                "tags: {{ let mut items_0 = ::std::vec::Vec::new(); for item_0 in {}({}, 0, 2, \
+                 \"order.tags\")? {{ items_0.push(match {}(item_0) {{ Some(present_1) => \
+                 Some({}(present_1, \"order.tags[]\")?), None => None }}); }} {}(items_0, \
+                 \"order.tags\")? }}",
+                read("elements"),
+                field("tags"),
+                read("nullable"),
+                read("integer"),
+                read("list")
+            ),
+            format!(
+                "color: {}({}, &[(\"red\", {paint}::{red})], \"order.color\")?",
+                read("enumerated"),
+                field("color")
+            ),
+            format!(
+                "code: {}({}, &[(\"red\", {code}::{red})], {code}::from_underlying, \
+                 \"order.code\")?",
+                read("open_enumerated"),
+                field("code")
+            ),
+            format!(
+                "payment: {{ let (variant_0, case_0) = {}({}, \"order.payment\")?; match \
+                 variant_0 {{ \"card\" => {payment}::{}({{ let record_1 = {}(case_0, \
+                 &[\"amount\"], \"order.payment\")?; super::card::CardPayload {{ amount: \
+                 {}({}(record_1, \"amount\", \"order.payment.amount\")?, \
+                 \"order.payment.amount\")? }} }}), \"cash\" => {{ {}(case_0, \
+                 \"order.payment.cash\")?; {payment}::{} }}, _ => return Err({}(variant_0, \
+                 \"order.payment\")) }} }}",
+                read("union_case"),
+                field("payment"),
+                case("card"),
+                read("record"),
+                read("integer"),
+                read("field"),
+                read("no_record"),
+                case("cash"),
+                read("unknown_variant")
+            ),
+        ] {
+            assert!(written.contains(&needle), "`{needle}` in\n{written}");
+        }
+        assert!(
+            !written.contains('|'),
+            "no read is a closure, so each `?` returns from the reader: {written}"
+        );
     }
 }

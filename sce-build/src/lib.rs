@@ -7519,6 +7519,20 @@ fn validate_and_enrich_imports(
                     ),
                 });
             }
+            // A test port type writes no unit: the records on its `in` list,
+            // which a configuration's system port of it takes from a recorded
+            // input trace, are read here with the scope its own imports,
+            // written relative to it, name them in (docs/SCE_TTCN3_LANE.md
+            // §10.2).
+            if let forge::model::ForgeDocument::TestPortType(pm) = &doc {
+                ctx.test_port_type = Some(forge::generator::TestPortTypeImport::of(
+                    pm,
+                    forge::import_source::type_scope(
+                        &parsed.imports,
+                        source.path.parent().unwrap_or(base_dir),
+                    ),
+                ));
+            }
             // An imported event-schema is the record type an algorithm's
             // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name
             // and its fields are captured here, where the schema is in hand,
