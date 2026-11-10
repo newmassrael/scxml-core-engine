@@ -1135,9 +1135,14 @@ because the sections above do not settle it:
 9. **A list read back from a saved state is held to its lower count as well as to its bound** (Kotlin's
    `SavedValues.listWithin`), refused as the restore's `StateRefusal` before the record that holds it is built. A
    restored machine must not be the first to hold a value its type forbids, and a Kotlin record checks its bounds in
-   its `init`, which would otherwise throw out of a restore that promises a `StateRefusal`. Rust and Swift read a
-   saved list to its bound alone, so a saved state written by hand short of a lower count is restored there; each
-   owes the same rule in its own lane, which this records.
+   its `init`, which would otherwise throw out of a restore that promises a `StateRefusal`. Every lane whose saved
+   state holds a record that holds a composition holds the rule, in the sentence a delivery's reader refuses with
+   (ADR 0086 section 15.5): Rust reads such a list by `saved_state::bounded_within`, which judges the lower count by
+   the delivery's own `event_payload::check_count`, since `BoundedList<T, N>` holds the bound alone (section 15.6),
+   and the generator spells that read for each field whose type states a count (`saved_field_read`); Swift's
+   `SavedValues.list` takes the count as `least:`, judged by the delivery's `countShort`. Go, Python, C++ and C11
+   lower no variable of such a record and no union (`ComposedLowering`), and a variable states no lower count (ADR
+   0086 section 15.7), so the lists their restores read state none; the Interpreter saves no state.
 
 ## Consequences
 
