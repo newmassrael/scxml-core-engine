@@ -26,7 +26,8 @@
   Step 8 lands in slices, a lane at a time, now that ADR 0086 step 3 has landed. Slice 1 has landed: 9c71e1020a
   (the one table's `records` position, the judge's refusal of a composed schema gone, the Rust lane), 3594ac5289
   (`lift_answer_list.scxml`, `static_lift_list.scxml` and its scenario on Rust), e54b07b57e (a composed answer
-  schema's grammars in the machine's table). What it still needs is recorded under "Landing order", item 8, and
+  schema's grammars in the machine's table), 4a11f5085b (a scenario's reading of such a variable by its type).
+  What it still needs is recorded under "Landing order", item 8, and
   what was decided while landing it under "Decided while landing item 8".
 - Date: 2026-11-04
 - Amends:
