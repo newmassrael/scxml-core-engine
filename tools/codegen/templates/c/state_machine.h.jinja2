@@ -1788,7 +1788,7 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    `_sessionid` from the first `<onentry>` on, and the session publishes its
    location in `_ioprocessors` and names it as the origin of every event it
    sends. A root started through any other entry draws its own id,
-   `{{ model.name | escape_c }}_session_<n>`, which is what it is known by when its
+   `{{ model.name }}_session_<n>`, which is what it is known by when its
    host gives it none.
 
    The id is judged before anything is touched (`sce_session_id_judge`): it is
