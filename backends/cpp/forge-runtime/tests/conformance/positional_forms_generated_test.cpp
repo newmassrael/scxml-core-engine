@@ -18,7 +18,12 @@
 // codec_group_enum holds an enum and an integer in one group of a flag: a frame
 // with the group, or without it, is written back byte for byte, and a frame
 // whose enum value the enum does not declare does not decode.
+//
+// codec_chain_has_input gates a field on a chain's membership or on a flag
+// input the caller hands, which no group holds: the encode tests the entries
+// of the chain the value presents, and refuses a value the gate contradicts.
 
+#include "codec_chain_has_input.h"
 #include "codec_encoded_length_checked.h"
 #include "codec_group_enum.h"
 #include "codec_length_shared.h"
@@ -187,6 +192,41 @@ void an_enum_a_group_holds_is_written_back() {
           "the cursor records the undeclared enum value");
 }
 
+// A field gated on a chain's membership or on an input the caller hands is
+// written where either holds; a value that holds it where neither does, or
+// lacks it where one does, is refused before the first byte.
+void a_membership_no_group_holds_is_tested_on_the_entries() {
+    namespace Has = ::SCE::Generated::CodecChainHasInput;
+    // One entry of kind 7 (its `more` flag clear), then `priority`.
+    const std::vector<std::uint8_t> kind7{0x07, 0x00, 0x05, 0x09};
+    SceCursor cursor(kind7.data(), kind7.size());
+    const std::optional<Has::CodecChainHasInput> decoded = Has::CodecChainHasInput::decode(cursor, 0);
+    CHECK(decoded.has_value() && cursor.remaining() == 0, "a frame whose chain holds kind 7 decodes");
+    if (decoded.has_value()) {
+        std::vector<std::uint8_t> bytes;
+        ::SCE::Forge::VectorSink sink(bytes);
+        CHECK(!Has::Wire::encode_source(*decoded, sink, 0).has_value(), "the value is written");
+        CHECK(bytes == kind7, "the frame is written back byte for byte");
+    }
+    // One entry of kind 3, and no `priority`.
+    const std::vector<std::uint8_t> kind3{0x03, 0x00, 0x05};
+    SceCursor plain_cursor(kind3.data(), kind3.size());
+    const std::optional<Has::CodecChainHasInput> plain = Has::CodecChainHasInput::decode(plain_cursor, 0);
+    CHECK(plain.has_value() && plain_cursor.remaining() == 0, "a frame without the gate's kind decodes");
+    if (plain.has_value()) {
+        std::vector<std::uint8_t> bytes;
+        ::SCE::Forge::VectorSink sink(bytes);
+        CHECK(!Has::Wire::encode_source(*plain, sink, 0).has_value(), "the value is written where urgent is clear");
+        CHECK(bytes == kind3, "the frame is written back byte for byte");
+        std::vector<std::uint8_t> refused;
+        ::SCE::Forge::VectorSink refused_sink(refused);
+        CHECK(Has::Wire::encode_source(*plain, refused_sink, 1) ==
+                  std::optional<CodecError>(CodecError::PresentIfMismatch),
+              "a value without priority is refused where urgent is set");
+        CHECK(refused.empty(), "a refusal leaves the sink untouched");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -196,6 +236,7 @@ int main() {
     a_stated_length_is_held_to_the_content_there();
     an_encoded_length_passes_the_body_s_refusal_on();
     an_enum_a_group_holds_is_written_back();
+    a_membership_no_group_holds_is_tested_on_the_entries();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
