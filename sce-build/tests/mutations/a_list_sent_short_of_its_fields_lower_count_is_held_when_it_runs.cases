@@ -22,6 +22,7 @@ mutation_targets sce-build/src/forge/value_type.rs sce-build/src/forge/static_lo
 mutation_targets tools/codegen/templates/rust/actions/send.rs.jinja2 tools/codegen/templates/kotlin/actions/send.kt.jinja2
 mutation_targets tools/codegen/templates/python/actions/send.py.jinja2 tools/codegen/templates/actions/send.jinja2
 mutation_targets tools/codegen/templates/swift/actions/send.swift.jinja2 tools/codegen/templates/go/actions/send.go.jinja2
+mutation_targets sce-build/src/forge/static_js.rs
 mutation_oracles sce-build/tests/a_statechart_sends_a_composed_value_by_its_name.rs
 
 # ── (a) The judge ──────────────────────────────────────────────────────────────────────────────
@@ -100,4 +101,10 @@ mutation_case "the Go send leaves a short list out as a pair and sends the rest"
 edit("tools/codegen/templates/go/actions/send.go.jinja2",
      "{% if param.native_send_least %}",
      "{% if false %}")
+PY
+
+mutation_case "the Interpreter's send keeps its event and reads the count in a param alone" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "    edits.extend(counted_sends);",
+     "    let _ = counted_sends;")
 PY

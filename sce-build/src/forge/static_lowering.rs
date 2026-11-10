@@ -20425,6 +20425,10 @@ struct WireValue {
     /// does not prove, which the send holds it to when it runs
     /// ([`crate::model::Param::native_send_least`]); `None` where there is none.
     send_least: Option<u32>,
+    /// The place that holds the list [`Self::send_least`] is held to, as the
+    /// target reads it ([`crate::model::Param::native_send_held`]); `None`
+    /// wherever that is.
+    send_held: Option<String>,
 }
 
 /// The most bytes of the JSON the data of a `<send>` or of a `<donedata>` is
@@ -20663,6 +20667,7 @@ fn lower_wire_value(
                 .unwrap_or_else(|| unbounded_value(written, "names no place a type bounds")),
             writes: rewrites.target.composed_param_writes(),
             send_least: composed.least,
+            send_held: composed.held,
         }));
     }
     // Typed as it is lowered ([`Rewrites::as_lowered`]).
@@ -20754,6 +20759,7 @@ fn lower_wire_value(
             }),
             writes: false,
             send_least: None,
+            send_held: None,
         }));
     }
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
@@ -20772,6 +20778,7 @@ fn lower_wire_value(
             json: place_measure.unwrap_or_else(|| enum_json(&alias, ctx, written)),
             writes: false,
             send_least: None,
+            send_held: None,
         }));
     }
     let slot = ty
@@ -20815,6 +20822,7 @@ fn lower_wire_value(
             .unwrap_or_else(|| scalar_json(slot, &lowered, ctx, &rewrites.type_scope)),
         writes: false,
         send_least: None,
+        send_held: None,
     }))
 }
 
@@ -20926,6 +20934,7 @@ fn composed_wire_value(
         text: wired,
         fails,
         least,
+        held: least.map(|_| held),
     }))
 }
 
@@ -20942,6 +20951,10 @@ struct ComposedWire {
     /// refuses the event whole (docs/adr/0086, section 15.6). `None` where the
     /// value proves its count or no field states one.
     least: Option<u32>,
+    /// The place that holds the list, as the target reads it, where
+    /// [`Self::least`] is held: what a target that holds the count as one of
+    /// the send's own arguments reads it from (the Interpreter's).
+    held: Option<String>,
 }
 
 /// The lower count of the field `name` of the schema the document imports for
@@ -20993,6 +21006,7 @@ fn lower_wire_param(
                 param.native_fails = value.fails;
                 param.native_writes = value.writes;
                 param.native_send_least = value.send_least;
+                param.native_send_held = value.send_held;
                 value.json
             }
             None => literal_json(param.is_static_literal, &param.static_value),

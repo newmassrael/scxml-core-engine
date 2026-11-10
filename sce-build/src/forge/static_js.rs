@@ -1553,6 +1553,99 @@ fn element_edits(text: &str, elements: &[LoweredElement]) -> Result<Vec<Edit>, G
     Ok(edits)
 }
 
+/// The edit that makes each `<send>` of `lowered` that sends a list held to the
+/// lower count of the field it is sent as (`Param::native_send_least`,
+/// docs/adr/0086, section 15.6) name its event through `eventexpr`, the
+/// library's `sentWhole` over the event and each such list.
+///
+/// A list short of its count refuses the event whole on every generated
+/// backend, one `error.execution` carrying the send id and nothing delivered.
+/// The Interpreter reads a `<param>` that cannot be read as the standard has
+/// it, the pair left out and the rest of the message sent, which the event's
+/// door then refuses a second time. The event's name is one of the send's own
+/// arguments, which the Interpreter evaluates before any `<param>`: a name that
+/// evaluates to nothing raises `error.execution` with the send id and discards
+/// the message (`ActionExecutorImpl::executeSendAction`, the empty `eventexpr`),
+/// so the count is held there and the refusal is the one the other backends
+/// make. The `<param>` keeps its own check, which a list that held its count
+/// passes.
+///
+/// `text` is the document the walk lowered; the attribute `event` the author
+/// wrote is replaced, name and value, by the `eventexpr`.
+fn counted_send_edits(text: &str, lowered: &SCXMLModel) -> Result<Vec<Edit>, GenerateError> {
+    let mut sends: Vec<(Option<Range<usize>>, String)> = Vec::new();
+    crate::host_processor_analyzer::walk_model_actions(lowered, &mut |_, action: &Action| {
+        if action.action_type != "send" {
+            return;
+        }
+        let counted: Vec<String> = action
+            .params
+            .iter()
+            .filter_map(|param| {
+                let least = param.native_send_least?;
+                let held = param.native_send_held.as_deref()?;
+                Some(format!("[{held}, {least}]"))
+            })
+            .collect();
+        if counted.is_empty() {
+            return;
+        }
+        let place = action
+            .spellings
+            .get("event")
+            .and_then(|spelling| spelling.value())
+            .map(|written| written.range());
+        // A send the model reaches twice is one element of the document.
+        if place.is_some() && sends.iter().any(|(held, _)| *held == place) {
+            return;
+        }
+        sends.push((
+            place,
+            format!(
+                "{RUNTIME_GLOBAL}.sentWhole({}, [{}])",
+                crate::filters::ecmascript_string_literal(&action.event),
+                counted.join(", ")
+            ),
+        ));
+    });
+    if sends.is_empty() {
+        return Ok(Vec::new());
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let mut edits = Vec::with_capacity(sends.len());
+    for (place, expression) in sends {
+        let attribute = place.and_then(|range| {
+            document
+                .descendants()
+                .filter(|node| is_scxml_element(node, "send"))
+                .flat_map(|node| node.attributes())
+                .find(|attribute| {
+                    attribute.name() == "event"
+                        && attribute.namespace().is_none()
+                        && attribute.range_value().start <= range.start
+                        && range.end <= attribute.range_value().end
+                })
+        });
+        let Some(attribute) = attribute else {
+            return Err(GenerateError::unsupported(
+                "a <send> that holds a list to its field's lower count names its event where \
+                 the document does not spell it, so its `event` cannot be rewritten as the \
+                 `eventexpr` that holds the count"
+                    .to_string(),
+            ));
+        };
+        edits.push(Edit {
+            range: attribute.range(),
+            text: format!("eventexpr=\"{}\"", xml_attribute_value(&expression)),
+        });
+    }
+    Ok(edits)
+}
+
 const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 
 fn is_scxml_element(node: &roxmltree::Node<'_, '_>, name: &str) -> bool {
@@ -1797,6 +1890,7 @@ fn lower_parsed(
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
+    let counted_sends = counted_send_edits(text, &lowered).map_err(refuse)?;
     // The door of every event whose payload the machine reads: a schema of
     // entries' and a composed one's alike (docs/adr/0086, section 4.2).
     let mut read = lowering.payload_events.clone();
@@ -1809,7 +1903,9 @@ fn lower_parsed(
             .iter()
             .map(|site| site.text.as_str())
             .chain(lowering.elements.iter().map(|e| e.text.as_str()))
+            .chain(counted_sends.iter().map(|e| e.text.as_str()))
             .any(|text| text.contains(&library_call));
+    edits.extend(counted_sends);
     edits.extend(document_edits(text, needs_library, &installed, &doors).map_err(refuse)?);
     edits.extend(child_edits(model, label, base_dir)?);
     edits.extend(src_edits(model).map_err(refuse)?);
@@ -3066,6 +3162,58 @@ mod tests {
             "SceStatic.taken('batch.sent', _event.data)"
         );
         assert_eq!(target.payload_accessor("tick"), PAYLOAD_ACCESSOR);
+    }
+
+    /// A `<send>` that sends a list held to the lower count of its field
+    /// (docs/adr/0086, section 15.6) names its event through the library's
+    /// `sentWhole` ([`counted_send_edits`]), an argument the Interpreter
+    /// evaluates before any `<param>` and whose empty answer discards the
+    /// message with one error carrying the send id; a send whose lists prove
+    /// their counts keeps the `event` the author wrote. `static_composed_send`
+    /// sends `held` (a `list<uint8>[2]` filled by appends) to `counted.sent`,
+    /// whose `kept` asks at least one element, twice, and forwards a delivery's
+    /// `kept`, which holds its count, once.
+    #[test]
+    fn a_send_of_a_list_held_to_a_count_names_its_event_through_sent_whole() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/static_datamodel/static_composed_send.scxml"
+        );
+        let out = lower_file(path, Vec::new()).unwrap_or_else(|e| panic!("does not lower: {e:?}"));
+        let document = roxmltree::Document::parse(&out).expect("well-formed");
+        let sends: Vec<roxmltree::Node<'_, '_>> = document
+            .descendants()
+            .filter(|n| is_scxml_element(n, "send"))
+            .collect();
+        let counted: Vec<&str> = sends
+            .iter()
+            .filter_map(|n| n.attribute("eventexpr"))
+            .collect();
+        assert_eq!(
+            counted,
+            [
+                "SceStatic.sentWhole('counted.sent', [[held, 1]])",
+                "SceStatic.sentWhole('counted.sent', [[held, 1]])"
+            ],
+            "{out}"
+        );
+        for send in sends.iter().filter(|n| n.attribute("eventexpr").is_some()) {
+            assert_eq!(
+                send.attribute("event"),
+                None,
+                "the `event` is replaced, not kept beside it: {out}"
+            );
+        }
+        let named: Vec<&str> = sends.iter().filter_map(|n| n.attribute("event")).collect();
+        assert_eq!(
+            named,
+            ["batch.sent", "counted.sent"],
+            "the sends whose lists prove their counts keep the event as written: {out}"
+        );
+        assert!(
+            out.contains("sentWhole: function (name, counted)"),
+            "the library that answers the name is installed: {out}"
+        );
     }
 
     /// The door of an event whose schema holds a composed value is installed

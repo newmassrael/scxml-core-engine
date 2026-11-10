@@ -1076,6 +1076,28 @@
       }
       return list;
     },
+    /* The name of the event a <send> delivers, read as the send's `eventexpr`,
+       where every list it sends into a field that states a lower count holds
+       it (docs/adr/0086, section 15.6), and '' where one is short. `counted` is
+       the [list, least] pair of each. An event name that evaluates to '' is an
+       argument of the send the processor cannot evaluate: it raises
+       error.execution with the send id and discards the message before any
+       <param> is read, the one refusal every generated backend makes of the
+       same send. A short list read as a <param> instead would leave its pair
+       out and send the rest, as a <param> that cannot be read does, which the
+       event's door refuses a second time. */
+    sentWhole: function (name, counted) {
+      for (var i = 0; i < counted.length; i++) {
+        var list = counted[i][0];
+        if (!Array.isArray(list)) {
+          fail('expected a list, read ' + String(list));
+        }
+        if (list.length < counted[i][1]) {
+          return '';
+        }
+      }
+      return name;
+    },
     within: function (list, capacity) {
       if (!Array.isArray(list)) {
         fail('expected a list, read ' + String(list));
