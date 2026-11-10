@@ -715,7 +715,12 @@ read is the proven read of the one case the tests leave, or, where they leave
 several cases that share a field whose value is copied as it is read (a number, a
 `bool`, an enum or an optional one), its one accessor. A shared field of any other
 type is read only where a test proves one case on Rust. A `<foreach>` over a list
-a proven case holds walks it there.
+a proven case holds walks it there. An algorithm's parameter, return and local of
+`union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
+its local built whole as the case its tag names, and its body judged for the point
+where every case returned before any backend is asked; Rust lowers it on the union's
+own enum, and every other backend refuses it by name (SCE_FORGE.md section 4.12,
+"Unions").
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`

@@ -691,6 +691,64 @@ Each test fails when the rule it pins is removed; the landing checks each once a
 7. **The deterministic CBOR encoder**: the union mapping and its vectors in `sce-rust-trust`.
 8. **The census** of section 12 item 7, last, once every lane holds the constructor.
 
+## Decided while landing step 5 (2026-11-11)
+
+Step 5 lands its shared part in `sce-build` and its lowering on Rust. Each question below is one sections 6, 7 and
+the landing order leave open, decided by a rule this record or ADR 0086 already states; none changes a document, a
+wire or a diagnostic code.
+
+1. **Which lanes lower it.** The judge of a body that holds a union (the narrowing of section 6.1, a union local's
+   build, a union taken whole, the point of item 4) runs once, before any backend, so every backend refuses the same
+   documents. Rust lowers the algorithm; every other backend, and the Interpreter's lowering, refuses it by name
+   (`generate/unsupported-feature`) where it renders it, by the last paragraph of section 7. The list is
+   `ALGORITHM_UNION_BACKENDS` in `sce-build/src/forge/codegen_matrix.rs`; a backend joins it only once it is in
+   `UNION_BACKENDS`, since an algorithm's union is the type the union's own unit declares.
+2. **A union is held whole, and nowhere inside another type.** An algorithm's parameter, return and local may be
+   `union:U` (section 1.1 item 3). `optional<union:U>` and `list<union:U>` in an algorithm are compositions no
+   algorithm's slot holds yet, refused by name as `optional<list<T>>` is (ADR 0086 section 7.3); they come with ADR
+   0086 step 6 on each lane. Every case's record holds entries only, as a record an algorithm holds does (ADR 0086
+   section 7.3); a union one of whose cases holds a list, a record or a union is refused by name.
+3. **A union local is built, and not written.** Section 6.1 item 5 builds it from `<sce:set>` children, the tag a
+   variant literal (`expression/unsupported-construct` otherwise, as that item says for an algorithm). The algorithm
+   imports the record of the case it builds, as a statechart does (step 4), since a backend names that record's type
+   where it builds the case; the import is kept for the renderer though no expression names it. The local takes no
+   `init` (no value an algorithm holds is handed to it whole yet) and is not written afterwards: neither a field
+   (item 6) nor a whole assignment, each refused by name, until a lane spells a write of the unit's type.
+4. **Where a union stands whole.** Only in a `<sce:return>` of its own union, by the name of a parameter or a local,
+   as a record is returned (SCE_FORGE.md section 4.12). It is no operand, no argument and no value of another place.
+   An algorithm whose slot holds a union is called by a host alone for now: another algorithm's call of it is
+   refused by the callee's `host_only` reason, and a statechart's call by name in `forge::static_imports`, which is
+   how a union crosses between a statechart and an algorithm (section 6.1 item 7) once a lane spells the crossing.
+5. **The point no path reaches** (section 6.1 item 4) is judged as a path through the body
+   (`forge::algorithm_union::reaches_end`) over the one sequencing rule of an algorithm's body
+   (`forge::narrowing::after_algorithm_statement`): a path ends at a `<sce:return>`, at an `<sce:if>` whose two
+   blocks each end every path, and at a point where a subject of a union has no case left. A body that holds no
+   union still ends in a `<sce:return>`, judged where it is read; one that holds a union is judged where its
+   imports resolve, and `algorithm/return-missing` is placed at the condition of the body's last test. Its message
+   now says the fact for both ("a path reaches the end of the body without `<sce:return>`"). The judgement is
+   conservative: an `<sce:if>` with no `<sce:else>` whose block ends at such a point, but not in a return, proves
+   nothing after it, so a body that relies on that is refused where a finer analysis would admit it.
+6. **The end a backend's compiler cannot see is unreached.** The body is closed there with the target's statement
+   that says so, Rust's `unreachable!`, written only where the body's last statement does not return on every path
+   the compiler itself sees.
+7. **Rust reads an algorithm's union on its unit's type** (section 7, the Rust row), not on a machine's own sum: the
+   tag by its method, a field of the one case left through `proven_<case>()` and the payload's snake-case field, and
+   a field several cases leave by a `match` over them whose other arm the narrowing proved is never taken, so the
+   unit gains no accessor. A field is copied out as it is read, so a text or a byte string of a case is not read in
+   an algorithm yet and is refused by name. The unit's spelling is chosen through `TypeCtx::unit_unions`, the type
+   each union of an algorithm is spelled as, and one function per lane in `forge::composed_lowering`
+   (`rust_unit_union_read`), the seam a lane fills to join: Kotlin with the unit's `provenAbsolute()` reads, its
+   build of a case and its unreached end, beside the classification of a member read the Kotlin lane of step 4
+   keeps in `composed_lowering` for the machine.
+
+Step 6 makes `resolve_date` take a union, and the numerical conformance harness and
+`every_standard_algorithm_generates_on_every_algorithm_backend` hold every standard algorithm on every backend that
+generates algorithms, so step 6 needs step 5 on Rust, Kotlin, C++, Go, Python, C11 and Swift, and the harness's
+argument of a union on each. The one committed tree that holds `date_expression` and `resolve_date` is Swift's
+`static_datamodel` (`DateExpression.swift`, `ResolveDate.swift`, and the harness `NumericalConformanceTests.swift`).
+A statechart that hands `resolve_date` a lifted `date_expression` needs, besides, the crossing of item 4 on its
+lane.
+
 ## Amendment (2026-11-07): a union variable has no default value
 
 Section 6.1 item 5 says how a union is built and is silent on a variable that builds none. A record has a value
