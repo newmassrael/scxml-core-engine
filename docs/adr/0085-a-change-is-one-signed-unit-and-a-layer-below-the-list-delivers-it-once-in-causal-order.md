@@ -1087,6 +1087,11 @@ review:
   output of before changes shape. A host that upgrades builds its machine from the fold and then the history.
 - **No fixture is recorded.** The tests build a relay's history of parts and a sealed state of version 5 with the
   reader's bytes and the members' keys, and the reader's bytes are held to the old encoder's pinned vectors.
+  Corrected after the landing: a host's upgrade needs bytes that do not move, so one such state is
+  recorded once, with its data key and the relay's log and parts
+  (`backends/rust/peer-capi/tests/fixtures/a_device_saved_at_version_5.json`, docs/SCE_SHARED_LIST_PEER_ABI.md
+  section 6), and opened through the ABI by `a_device_saved_at_version_5_opens_from_its_recorded_state`.
+  Its parts are signed over the same reader's bytes, since no encoder of the second domain is left.
 
 Decided while landing 4e, the cross product in the world over the causal route (2026-11-10), under the same rule and
 open to the owner's review:

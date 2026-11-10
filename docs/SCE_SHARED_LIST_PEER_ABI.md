@@ -499,6 +499,20 @@ a part. The host builds its machine again from the fold and the history (section
 save is of version 6. A state of version 5 opened so is the device's: nothing of it is asked of the
 host again.
 
+A host tests its upgrade on a recorded state of version 5,
+`backends/rust/peer-capi/tests/fixtures/a_device_saved_at_version_5.json`: the sealed state in hex
+(`state`) of a device that holds the administrator's key and a list three devices wrote in parts, the
+data key it was sealed under (`key`), the list, the genesis and the node to restore it for, the
+relay's log (`log`, the entries as JSON texts) and its history of parts (`parts`, `[event, data]`
+pairs), and the fold a core gave once it opened the state (`fold`, restores of at most 64 values).
+The parts are signed over the bytes the reader of the second domain gives, held to the vectors that
+domain's own encoder pinned. `a_device_saved_at_version_5_opens_from_its_recorded_state` opens it
+through this ABI, finds the rows the list held in the fold, and has the device read its chain back
+from a relay holding the log and the parts; the recording is a device's old save and is written once,
+with `SCE_PEER_STATE_5=write cargo test -p sce-rust-peer-capi --test
+a_device_saved_at_version_5_opens_from_its_recorded_state -- a_state_of_version_5_is_recorded`. A
+Kotlin host calls the fold as `PeerCore.fold(parts)`, which gives the same JSON text.
+
 ## 7. An administrator's acts
 
 A device that holds an administrator's key (`sce_peer_set_administrator`) runs the list. Each act is
@@ -591,8 +605,8 @@ that reads his chain back says his stamp rose (`raised`) and withdraws both, ear
 offers signed in the call and held back from the relay as a record (`records`) until her host
 recorded it (`recorded`), a change offered in bob's name refused, her core started again from the
 state saved before the change and given back the record (`restore_records`), a change offered before
-her chain is read back waiting, the history her rebuilt machine is given (`history`, the waiting
-change provisional), her own stamp (`own_stamp`) before and after the round that reads her chain
+her chain is read back waiting, the fold and then the history her rebuilt machine is given (`fold`,
+empty since her core holds no part; `history`, the waiting change provisional), her own stamp (`own_stamp`) before and after the round that reads her chain
 back, signs what waited as a record and says the stamp rose; bob marking what he was told (`mark`)
 and the stable cut it moves (`stable_cut`); and bob taken off: a change his core signs before it read the
 removal reaches no one, since the relay refuses a device the log took off. Bob's device is handed no
