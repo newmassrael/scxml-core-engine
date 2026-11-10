@@ -85,7 +85,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             // decides is presented as an optional value and written where it
             // is present.
             Value::Body { .. } | Value::List { .. } => {
-                forms.extend(held_codec_forms(plan, imports, id, &element.value));
+                forms.extend(held_codec_forms(imports, id, &element.value));
             }
         }
         // A gated element is presented as an optional value, and so is a
@@ -119,7 +119,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 Value::Scalar(SceType::Enum(_)) => {}
                 Value::Bytes(_) | Value::Text(_) => {}
                 Value::Body { .. } | Value::List { .. } => {
-                    forms.extend(held_codec_forms(plan, imports, id, &value));
+                    forms.extend(held_codec_forms(imports, id, &value));
                     if matches!(&value, Value::List { law, .. } if !law.is_none()) {
                         forms.push(format!("`{id}`, a list a group holds held to a law"));
                     }
@@ -187,41 +187,14 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // ([`PRESENT_IS_HELD`], [`NO_LIST_DERIVED`]), which the printer tests on
     // the carriers as the encode writes them, on the inputs it is handed, on
     // the arm the value holds of a group whose gate is a chain's membership,
-    // and on the entries of a chain for any other membership.
-    for write in &plan.program {
-        match write {
-            // A list is walked entry by entry, each entry written whole, a chain
-            // setting on each entry but the last the flag its entries end on,
-            // and one a gate decides is walked where the value holds it. An
-            // entry says the input a chain supplies from the entry before, which
-            // the list's law holds it to (docs/adr/0065 §6 R8b); one handed such
-            // an input it does not say is not yet. A bare entry's chain is
-            // walked as slots, the named entry where the value holds its place
-            // (R6a).
-            Write::Streamed {
-                field,
-                list: Some(list),
-                ..
-            } => {
-                let law = list_law(&plan.roles, &field.id);
-                let unsaid = list
-                    .previous
-                    .iter()
-                    .any(|(input, _)| !law.inputs.iter().any(|held| held.input == *input));
-                if unsaid {
-                    forms.push(format!(
-                        "`{}`, a chain whose entries say an input the entry before supplies",
-                        field.id
-                    ));
-                }
-            }
-            Write::Streamed { .. }
-            | Write::Whole(_)
-            | Write::Byte { .. }
-            | Write::Tail { .. }
-            | Write::Variant => {}
-        }
-    }
+    // and on the entries of a chain for any other membership. A list is
+    // walked entry by entry, each entry written whole, a chain setting on each
+    // entry but the last the flag its entries end on, and one a gate decides
+    // is walked where the value holds it. An entry says the input a chain
+    // supplies from the entry before, which the list's law holds it to
+    // (docs/adr/0065 §6 R8b), or is handed it, set where the entry before is
+    // of the kind the bind waits for. A bare entry's chain is walked as slots,
+    // the named entry where the value holds its place (R6a).
     forms
 }
 
@@ -326,18 +299,8 @@ fn held_printed(imports: &[ImportContext], alias: &str) -> bool {
 /// as. One whose entries say the inputs it hands them is held to its law
 /// (docs/adr/0065 §6 R8), an entry that says an input in some of its values
 /// only agreeing with any state of it from the others (R8b).
-fn held_codec_forms(
-    plan: &EncodePlan<'_>,
-    imports: &[ImportContext],
-    id: &str,
-    value: &Value<'_>,
-) -> Vec<String> {
+fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<String> {
     let mut forms = Vec::new();
-    let unbound = |codec: &str| {
-        plan.handed
-            .get(codec)
-            .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-    };
     match value {
         Value::Body { codec } => {
             // Every input it is handed is bound on its import
@@ -349,14 +312,12 @@ fn held_codec_forms(
             }
         }
         Value::List { codec, .. } => {
+            // An input its entries are handed that the import binds nothing to
+            // is one the chain supplies from the entry before
+            // ([`UNBOUND_ARM_OR_BODY`]), which the walk hands each entry.
             if !held_printed(imports, codec) {
                 forms.push(format!(
                     "`{id}`, a list of entries of a codec the printer does not print"
-                ));
-            }
-            if unbound(codec) {
-                forms.push(format!(
-                    "`{id}`, a list whose entries are handed an input nothing binds"
                 ));
             }
         }
@@ -3799,20 +3760,29 @@ pub(super) fn render(
             .join(" || ")
     };
     // What a held codec is handed for each input it takes (docs/adr/0065 §6
-    // R4a), in the order it declares them: bits of a carrier as the encode
-    // writes it, or an input of this codec's own, passed on.
-    let handed = |alias: &str| -> String {
+    // R4a), in the order it declares them: what a chain supplies its entry
+    // from the entry before (`supplied`, the input and the local that holds
+    // it), bits of a carrier as the encode writes it, or an input of this
+    // codec's own, passed on.
+    let handed_supplying = |alias: &str, supplied: &[(String, String)]| -> String {
         plan.handed
             .get(alias)
             .map(|inputs| {
                 inputs
                     .iter()
-                    .map(|handed| match &handed.from {
-                        Some(HandedFrom::Carrier {
-                            carrier,
-                            bit,
-                            width,
-                        }) => {
+                    .map(|handed| match (
+                        supplied.iter().find(|(input, _)| *input == handed.input),
+                        &handed.from,
+                    ) {
+                        (Some((_, local)), _) => format!(", {local}"),
+                        (
+                            None,
+                            Some(HandedFrom::Carrier {
+                                carrier,
+                                bit,
+                                width,
+                            }),
+                        ) => {
                             let mask = if *width >= 64 {
                                 u64::MAX
                             } else {
@@ -3823,13 +3793,18 @@ pub(super) fn render(
                                 read(carrier)
                             )
                         }
-                        Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
-                        None => unreachable!("{}", UNBOUND_ARM_OR_BODY),
+                        (None, Some(HandedFrom::Input { name })) => {
+                            format!(", {}", input_name(name))
+                        }
+                        (None, None) => {
+                            unreachable!("`{}`: {}", handed.input, UNBOUND_ARM_OR_BODY)
+                        }
                     })
                     .collect()
             })
             .unwrap_or_default()
     };
+    let handed = |alias: &str| handed_supplying(alias, &[]);
 
     // What a value is held to before the first byte is written (docs/adr/0065
     // §2), so a refusal leaves the sink untouched: each input a held codec says,
@@ -4138,12 +4113,60 @@ pub(super) fn render(
                         let name = l.codec_field_id(&field.id);
                         let entries = walked.entries();
                         let ends = list.as_ref().and_then(|list| list.ends.as_ref());
+                        // The inputs the chain supplies each entry from the
+                        // entry before (`<sce:entry-flag-bind>`), which the
+                        // entry does not say: set where the entry just written
+                        // is of the kind the bind waits for, clear for the
+                        // first, as the Rust walk's `_prev_` locals are.
+                        let previous: Vec<(String, String, u64)> = list
+                            .as_ref()
+                            .map(|list| {
+                                list.previous
+                                    .iter()
+                                    .map(|(input, id)| {
+                                        (input.clone(), format!("_prev_{}", input_name(input)), *id)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let supplied: Vec<(String, String)> = previous
+                            .iter()
+                            .map(|(input, local, _)| (input.clone(), local.clone()))
+                            .collect();
+                        let handed_args = handed_supplying(&held.alias, &supplied);
+                        let declare = |indent: &str| -> String {
+                            previous
+                                .iter()
+                                .map(|(_, local, _)| format!("{indent}std::uint8_t {local} = 0;\n"))
+                                .collect()
+                        };
+                        // After an entry is written, whether it is of each kind
+                        // a bind waits for, its identifier being `identifier`.
+                        let update = |indent: &str, identifier: &str| -> String {
+                            previous
+                                .iter()
+                                .map(|(_, local, id)| {
+                                    format!(
+                                        "{indent}{local} = static_cast<std::uint8_t>({identifier} == 0x{id:X}u);\n"
+                                    )
+                                })
+                                .collect()
+                        };
+                        // The identifier of the entry `entry` of the chain;
+                        // asked only of a chain whose binds wait for a kind.
+                        let identifier = |entry: &str| {
+                            if previous.is_empty() {
+                                String::new()
+                            } else {
+                                entry_identifier(plan, l, &held.namespace, &field.id, entry)
+                            }
+                        };
                         // A bare entry's chain is walked as slots: the others in
                         // order, the named entry where the value holds its place
                         // (docs/adr/0065 §6 R6a).
                         let slots = list.as_ref().and_then(|list| list.slots);
-                        if let Some(key) = slots {
-                            let key = super::rust_source::key_type(struct_name, &field.id, key);
+                        if let Some(kind) = slots {
+                            let key = super::rust_source::key_type(struct_name, &field.id, kind);
                             let (overrides, arg) = match ends {
                                 Some((carrier, flag)) => (
                                     format!(
@@ -4158,20 +4181,28 @@ pub(super) fn render(
                             };
                             format!(
                                 "        {{\n\
+                                 {declare}\
                                  \x20           const std::size_t _k_{name} = {entries}.size() + (_p_{name} ? 1u : 0u);\n\
                                  \x20           auto _n_{name} = {entries}.begin();\n\
                                  \x20           for (std::size_t _i = 0; _i < _k_{name}; ++_i) {{\n\
                                  {overrides}\
                                  \x20               if (_p_{name} && *_p_{name} == _i) {{\n\
                                  \x20                   if (auto _e = {ns}::Wire::encode_source({key}::named(), w{handed}{arg}); _e) return _e;\n\
+                                 {named_update}\
                                  \x20               }} else {{\n\
                                  \x20                   if (auto _e = {ns}::Wire::encode_source(*_n_{name}, w{handed}{arg}); _e) return _e;\n\
+                                 {entry_update}\
                                  \x20                   ++_n_{name};\n\
                                  \x20               }}\n\
                                  \x20           }}\n\
                                  \x20       }}\n",
                                 ns = held.namespace,
-                                handed = handed(&held.alias)
+                                handed = handed_args,
+                                declare = declare("            "),
+                                // The named entry's identifier is its kind.
+                                named_update = update("                    ", &format!("0x{kind:X}u")),
+                                entry_update =
+                                    update("                    ", &identifier(&format!("(*_n_{name})")))
                             )
                         } else {
                         match ends {
@@ -4180,24 +4211,41 @@ pub(super) fn render(
                             // presents.
                             Some((carrier, flag)) => format!(
                                 "        {{\n\
+                                 {declare}\
                                  \x20           std::size_t _left_{name} = {entries}.size();\n\
                                  \x20           for (const auto& _x : {entries}) {{\n\
                                  \x20               --_left_{name};\n\
                                  \x20               {ns}::Overrides _o_{name}{{}};\n\
                                  \x20               _o_{name}.{member} = _left_{name} != 0;\n\
                                  \x20               if (auto _e = {ns}::Wire::encode_source(_x, w{handed}, _o_{name}); _e) return _e;\n\
+                                 {update}\
                                  \x20           }}\n\
                                  \x20       }}\n",
                                 ns = held.namespace,
                                 member = override_member(l, carrier, flag),
-                                handed = handed(&held.alias)
+                                handed = handed_args,
+                                declare = declare("            "),
+                                update = update("                ", &identifier("_x"))
                             ),
-                            None => format!(
+                            None if previous.is_empty() => format!(
                                 "        for (const auto& _x : {entries}) {{\n\
                                  \x20           if (auto _e = {}::Wire::encode_source(_x, w{}); _e) return _e;\n\
                                  \x20       }}\n",
                                 held.namespace,
-                                handed(&held.alias)
+                                handed_args
+                            ),
+                            None => format!(
+                                "        {{\n\
+                                 {declare}\
+                                 \x20           for (const auto& _x : {entries}) {{\n\
+                                 \x20               if (auto _e = {ns}::Wire::encode_source(_x, w{handed}); _e) return _e;\n\
+                                 {update}\
+                                 \x20           }}\n\
+                                 \x20       }}\n",
+                                ns = held.namespace,
+                                handed = handed_args,
+                                declare = declare("            "),
+                                update = update("                ", &identifier("_x"))
                             ),
                         }
                         }
@@ -5087,6 +5135,26 @@ mod tests {
             "[[nodiscard]] std::optional<std::uint8_t> input_n(const S& src)",
         );
         holds(stem, &code, "::input_n(source::body(src));\n");
+    }
+
+    /// A chain hands each entry an input the entry does not say, from the
+    /// entry before, as it walks the entries.
+    #[test]
+    fn a_chain_hands_each_entry_what_the_entry_before_was() {
+        let stem = "codec_chain_handed";
+        let code = cpp_of(stem);
+        holds(
+            stem,
+            &code,
+            "        {\n            std::uint8_t _prev_after_marker = 0;\n",
+        );
+        holds(
+            stem,
+            &code,
+            "::Wire::encode_source(_x, w, _prev_after_marker, _o_entries); _e) return _e;\n\
+             \x20               _prev_after_marker = static_cast<std::uint8_t>(",
+        );
+        holds(stem, &code, " == 0x4u);\n            }\n        }\n");
     }
 
     /// A gate on a chain's membership that no group holds is tested on the

@@ -26,7 +26,11 @@
 // codec_some_arms_say_forward (backends/rust/forge-conformance/fixtures) hands
 // its flag input on to a body that says it in some of its values only, and
 // answers the input as the body does.
+//
+// codec_chain_handed hands each entry of its chain an input from the entry
+// before, which the entry does not say.
 
+#include "codec_chain_handed.h"
 #include "codec_chain_has_input.h"
 #include "codec_encoded_length_checked.h"
 #include "codec_group_enum.h"
@@ -261,6 +265,24 @@ void an_input_a_body_says_in_part_is_forwarded() {
     }
 }
 
+// A chain hands each entry whether the entry before has the identifier 0x4,
+// clear for the first: an entry handed it set carries its value. A frame is
+// written back byte for byte, each entry handed what it was read with.
+void a_chain_hands_each_entry_what_the_entry_before_was() {
+    using Handed = ::SCE::Generated::CodecChainHanded::CodecChainHanded;
+    const std::vector<std::vector<std::uint8_t>> frames{
+        // Entry 0x4 (more follow), then entry 0x2 after it, which holds its value.
+        {0x84, 0x02, 0x55},
+        // One entry 0x2, first, without its value.
+        {0x02},
+        // Entry 0x2 with its own `wide` flag and value, then entry 0x3.
+        {0xC2, 0x07, 0x03},
+    };
+    for (const auto &frame : frames) {
+        CHECK(round_trip<Handed>(frame) == frame, "a handed-chain frame is written back byte for byte");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -272,6 +294,7 @@ int main() {
     an_enum_a_group_holds_is_written_back();
     a_membership_no_group_holds_is_tested_on_the_entries();
     an_input_a_body_says_in_part_is_forwarded();
+    a_chain_hands_each_entry_what_the_entry_before_was();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a chain that hands each entry an input from the entry
+  before, which the entry does not say (`<sce:entry-flag-bind>`,
+  docs/adr/0065 §6 R8b).
+
+  Each entry of `entries` is handed `after_marker` set where the entry before
+  it has the identifier 0x4, and clear for the first. The entry does not say
+  the input, so the chain is held to no law of it: the walk hands each entry
+  what the entry before was as it writes it. An entry can refuse a value,
+  and then so does the chain.
+
+  Wire shape: the entries, each ending the chain where its `Z` flag is clear.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big" name="codec_chain_handed">
+  <sce:import src="codec_chain_handed_entry.scxml" kind="codec" as="codec_chain_handed_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="entries" type="codec_chain_handed_entry" sce:byte="0"
+                   max-depth="4" terminate-on="entry-flag" entry-flag-name="Z"
+                   entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+  </datamodel>
+</scxml>
