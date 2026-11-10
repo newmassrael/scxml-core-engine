@@ -225,7 +225,8 @@ fn a_specific_templates_value_is_its_record_in_declared_order() {
     let report_of = header_of(&profile_dir(), "job_report_of");
     for part in [
         "inline Value value([[maybe_unused]] const uint32_t &param_elapsed, \
-         [[maybe_unused]] const std::string &param_note, [[maybe_unused]] const uint8_t &param_code)",
+         [[maybe_unused]] const ::SCE::Forge::OwnedText<32> &param_note, \
+         [[maybe_unused]] const uint8_t &param_code)",
         "(value.elapsed_ms == param_elapsed)",
         "(value.note.has_value() && ((*value.note) == param_note))",
         "(value.codes[0] == param_code)",
@@ -233,7 +234,7 @@ fn a_specific_templates_value_is_its_record_in_declared_order() {
         "(value.retry.has_value() && ((*value.retry) == 2))",
         "(value.count == 4294967295)",
         "/*note=*/param_note",
-        "decltype(SCE::Generated::JobStatus::JobStatusPayload::codes){param_code, 255}",
+        "decltype(SCE::Generated::JobStatus::JobStatusPayload::codes)::literal({param_code, 255})",
         "/*retry=*/2",
         "/*count=*/4294967295",
     ] {
