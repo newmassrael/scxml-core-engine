@@ -50,3 +50,20 @@ pub fn machine(
 pub fn module_parameters() -> Vec<String> {
     Vec::new()
 }
+
+/// The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
+/// `sce_rust_runtime::test::InputReader`): the message an input of the record type `type_name`
+/// on the system port `system_port` carries, its value read from the canonical form. Refused,
+/// naming why, where the configuration has no such system port, the `in` list of its type does
+/// not name the type, or the value does not belong to it.
+pub fn input(
+    system_port: &str,
+    type_name: &str,
+    _value: &::sce_rust_runtime::json::Value,
+) -> Result<::sce_rust_runtime::test::Message, ::sce_rust_runtime::test::TraceRefusal> {
+    Err(::sce_rust_runtime::test::TraceRefusal::not_an_input(
+        system_port,
+        type_name,
+        &[],
+    ))
+}

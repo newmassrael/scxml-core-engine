@@ -11,13 +11,15 @@
 pub const NAME: &str = "answers_before_the_guard";
 
 /// The test case `answers_before_the_guard` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it:
-/// its name, its configuration and the machines of its components, and the module
-/// parameters those components read.
+/// its name, its configuration and the machines of its components, the module
+/// parameters those components read, and the reader of the inputs a recorded trace of it
+/// carries (docs/SCE_TTCN3_LANE.md §10.5).
 pub fn test_case() -> ::sce_rust_runtime::test::TestCase {
     ::sce_rust_runtime::test::TestCase {
         name: NAME.to_string(),
         configuration: super::asking_configuration::configuration(),
         machines: ::std::sync::Arc::new(super::asking_configuration::machine),
         module_parameters: super::asking_configuration::module_parameters(),
+        inputs: super::asking_configuration::input,
     }
 }

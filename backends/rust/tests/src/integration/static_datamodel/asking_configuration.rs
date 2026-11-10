@@ -49,3 +49,71 @@ pub fn machine(
 pub fn module_parameters() -> Vec<String> {
     vec!["job".to_string()]
 }
+
+/// The record `job_reply` read from the canonical form of the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), as a recorded input trace holds it (docs/SCE_TTCN3_LANE.md
+/// §10.3), or refused, naming where its value does not belong to its type.
+fn read_job_reply(
+    value: &::sce_rust_runtime::json::Value,
+) -> Result<super::job_reply::JobReplyPayload, ::sce_rust_runtime::test::TraceRefusal> {
+    Ok({
+        let record_0 =
+            ::sce_rust_runtime::test::from_canonical::record(value, &["job", "code"], "job_reply")?;
+        super::job_reply::JobReplyPayload {
+            job: ::sce_rust_runtime::test::from_canonical::integer(
+                ::sce_rust_runtime::test::from_canonical::field(record_0, "job", "job_reply.job")?,
+                "job_reply.job",
+            )?,
+            code: ::sce_rust_runtime::test::from_canonical::integer(
+                ::sce_rust_runtime::test::from_canonical::field(
+                    record_0,
+                    "code",
+                    "job_reply.code",
+                )?,
+                "job_reply.code",
+            )?,
+        }
+    })
+}
+
+/// The record `job_reply` in the canonical form of the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries.
+fn canonical_job_reply(
+    value: &super::job_reply::JobReplyPayload,
+) -> ::sce_rust_runtime::json::Value {
+    ::sce_rust_runtime::test::canonical::record([
+        (
+            "job",
+            Some(::sce_rust_runtime::test::canonical::integer(value.job)),
+        ),
+        (
+            "code",
+            Some(::sce_rust_runtime::test::canonical::integer(value.code)),
+        ),
+    ])
+}
+
+/// The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
+/// `sce_rust_runtime::test::InputReader`): the message an input of the record type `type_name`
+/// on the system port `system_port` carries, its value read from the canonical form. Refused,
+/// naming why, where the configuration has no such system port, the `in` list of its type does
+/// not name the type, or the value does not belong to it.
+pub fn input(
+    system_port: &str,
+    type_name: &str,
+    value: &::sce_rust_runtime::json::Value,
+) -> Result<::sce_rust_runtime::test::Message, ::sce_rust_runtime::test::TraceRefusal> {
+    match (system_port, type_name) {
+        ("sut", "job_reply") => Ok(::sce_rust_runtime::test::Message::new(
+            super::job_reply::EVENT_NAME,
+            read_job_reply(value)?,
+            "job_reply",
+            canonical_job_reply,
+        )),
+        _ => Err(::sce_rust_runtime::test::TraceRefusal::not_an_input(
+            system_port,
+            type_name,
+            &["sut"],
+        )),
+    }
+}

@@ -52,3 +52,27 @@ pub fn suite() -> ::sce_rust_runtime::test::Suite {
         ],
     }
 }
+
+/// The value the runner is given for the module parameter `id` (docs/SCE_TTCN3_LANE.md §4,
+/// `--module-parameter id=value`), a literal of its declared type as the `value` of a
+/// `<sce:module-parameter>` writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the saved value
+/// of that type; refused, naming why, where the suite declares no such parameter or the literal
+/// is no value of its type.
+pub fn module_parameter(
+    id: &str,
+    literal: &str,
+) -> Result<::sce_rust_runtime::test::ModuleParameterValue, ::sce_rust_runtime::test::OverrideRefusal>
+{
+    match id {
+        "job" => ::sce_rust_runtime::test::runner::integer_parameter::<u32>(id, literal),
+        _ => Err(::sce_rust_runtime::test::runner::undeclared_parameter(id)),
+    }
+}
+
+/// The runner program of the suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4): every test
+/// case the world of `--world` selects, run against its recorded input trace from
+/// `--trace-dir`, its canonical test log written to `--log-dir` (`sce_rust_runtime::test::runner`).
+/// A crate makes it a program with a binary target whose `main` calls it.
+pub fn main() -> ::std::process::ExitCode {
+    ::sce_rust_runtime::test::runner::main(&suite(), module_parameter, ::std::env::args().skip(1))
+}
