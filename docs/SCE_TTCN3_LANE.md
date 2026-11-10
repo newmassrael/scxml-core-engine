@@ -155,7 +155,7 @@ in each program's usage. Design choice: a change to one is announced as a change
 | `sce-codegen export-ttcn3` | writes the two modules, the manifest and the witness of one suite, all or nothing (TP §9.5) |
 | `sce-ttcn3-validate <suite.scxml> <export directory>` | exit 0 with no violation, 1 with one or more, 2 when an input is not read (TP §9.4) |
 | `sce-codegen check-trace <suite> <trace>` (S1, design choice, not yet in place) | refuses a trace that does not fit the suite (§10.2) |
-| each backend's runner of a generated suite (S1; in place on Rust) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
+| each backend's runner of a generated suite (S1; in place on Rust, Kotlin and C++) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
 
 Every backend's runner takes one command line, so the downstream's lane calls the seven alike (design choice):
 
@@ -179,6 +179,8 @@ written. The runner is generated per suite as the `main` of the suite's unit, wh
 binary target of one line (Rust: `<suite>::main`, over `sce_rust_runtime::test::runner`).
 On Kotlin the program is the class of the suite's unit, `<package>.<Suite>Kt`, whose `main` calls
 `com.sce.runtime.test.runnerMain` (the tests module runs `runtime_suite`'s as `:sce-kotlin-tests:runRuntimeSuite`).
+On C++ it is `SCE::Generated::<Suite>::main(argc, argv)`, over `sce/include/test/Runner.h`, which a one-line `main`
+calls (`tests/integration/runtime_suite_runner.cpp`).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -346,9 +348,18 @@ twins of the Rust tests (`ATestSuiteRunsThroughItsRunnerTest.kt`, `ARecordReadsB
 `TraceTest.kt`), which replay the same trace to the same log byte for byte; a reader throws a `TraceRefusal` in the
 words of the Rust one.
 
-The backends not named above follow the same design: the reader of each form in the runtime beside its writers, the
-reader of each record and `input` in the unit of a configuration over the same walk, a player behind the system
-adapter, the runner function and the program of §4.
+On C++ the same is in place: `sce/include/test/` (`Trace.h`, `FromCanonical.h`, `runSuiteWithTraces` of `Suite.h`,
+`Runner.h`) in the runtime, `CppReading` beside `CppCanonical`, and the C++ twins of the Rust tests
+(`tests/test_runtime/TraceTest.cpp`, `RunnerTest.cpp`, and `ATestSuiteRunsEndToEndTest.cpp`,
+`ARecordReadsBackTheFormItWritesTest.cpp` and `ARunnerProgramWritesTheLogOfEachTraceTest.cpp` under
+`tests/integration/`), in the words of the Rust reader. Its configuration of every form,
+`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place, since C++ lowers no
+union.
+
+The trace replay and the runner program are in place on Rust, Kotlin and C++. Go, Python, C11 and Swift follow the
+same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
+unit of a configuration over the same walk, a player behind the system adapter, the runner function and the program
+of §4.
 
 ## 11. The lane
 
