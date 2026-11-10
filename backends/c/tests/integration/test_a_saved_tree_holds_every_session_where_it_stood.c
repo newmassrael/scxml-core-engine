@@ -18,11 +18,9 @@
 //   - The parent holds a delayed `nudge` to the child (`arm`) and the child's `answer` in its
 //     queue; the child holds the parent's `swap` in its own.
 //
-// The root is named by the id the process drew, where the shared text names it `fixture-root`: a
-// C11 machine is given no id at creation (it draws `<name>_session_<n>`), and the id carries on
-// through a restore. So the text a run saves is held to the shared one once its drawn id is
-// replaced by the shared one, in the root's id and in every child's, which are the root's with a
-// suffix.
+// The root is started under the id the shared text names it by, `fixture-root`, which its host
+// gives it, and the id carries on through a restore. So the text a run saves is held to the shared
+// one as it is, the root's id and every child's, which are the root's with a suffix.
 
 // `strstr` and `snprintf` are C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
@@ -130,12 +128,16 @@ static void tick(tree_t *sm) {
     static_invoke_tree_tick(sm);
 }
 
-// The tree, started: the host serves the clock and never answers.
+// The tree, started under the id the shared text names its root by, which its host gives it
+// (docs/adr/0045, "Questions the owner answered" 2): the host serves the clock and never answers.
 static void started(tree_t *sm, clock_host_t *host) {
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     CHECK(sce_host_invoker_register(&wiring, CLOCK_TYPE, clock_invoker, host), "the invoker registers");
-    static_invoke_tree_init_with_clock_and_host_invokers(sm, sce_clock_manual(0u), &wiring);
+    const sce_start_refusal_t refused =
+        static_invoke_tree_init_with_session_id(sm, SHARED_ROOT, sce_clock_manual(0u), &wiring);
+    CHECK(refused == SCE_START_REFUSAL_NONE, "the tree takes the id `" SHARED_ROOT "`: %s",
+          sce_start_refusal_text(refused));
 }
 
 // The run the shared text is the save of.
@@ -169,16 +171,14 @@ static void tree_working(tree_t *sm, clock_host_t *host) {
     tick(sm);
 }
 
-// The tree saved, once the id it drew is the shared one.
+// The tree saved, under the id its host gave its root, which is the shared one.
 static bool saved_as_shared(const tree_t *sm, char *out, size_t cap) {
-    static char text[TEXT_CAP];
     size_t len = 0u;
     sce_saved_error_t err;
-    if (!static_invoke_tree_save(sm, SAVED_AT_MS, text, sizeof(text), &len, &err)) {
+    if (!static_invoke_tree_save(sm, SAVED_AT_MS, out, cap, &len, &err)) {
         CHECK(false, "the tree saves: %s", err.message);
         return false;
     }
-    replace_all(text, static_invoke_tree_session_id(sm), SHARED_ROOT, out, cap);
     return true;
 }
 

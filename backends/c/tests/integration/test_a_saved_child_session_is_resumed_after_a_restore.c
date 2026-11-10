@@ -17,8 +17,8 @@
 // started, its root given the id the fixtures name it by. A format-1 text holds the child's id
 // alone, and the build that wrote it promised to start the child again from its beginning:
 // `saved/format1/static_invoke_working.json` is the one case in which a restore does (docs/adr/0045,
-// section 3). A C11 root draws its own id, so a text a run saves is held to the shared one once the
-// id it drew is replaced by the shared one, in the root's id and in the child's, which is the
+// section 3). The root is started under the id the shared instance names it by, which its host
+// gives it, so a text a run saves is held to the shared one as it is, the child's id being the
 // root's with a suffix.
 //
 // The Rust, Kotlin, Go and Python halves are `a_saved_child_session_is_resumed_after_a_restore.rs`,
@@ -82,26 +82,6 @@ static void shared_text(bool format1, char *out, size_t cap) {
     out[n] = '\0';
 }
 
-// `text` with every `from` made `to`.
-static void replace_all(const char *text, const char *from, const char *to, char *out, size_t cap) {
-    const size_t from_len = strlen(from);
-    const size_t to_len = strlen(to);
-    size_t at = 0u;
-    while (*text != '\0' && at + 1u < cap) {
-        if (strncmp(text, from, from_len) == 0) {
-            if (at + to_len + 1u >= cap) {
-                break;
-            }
-            memcpy(out + at, to, to_len);
-            at += to_len;
-            text += from_len;
-        } else {
-            out[at++] = *text++;
-        }
-    }
-    out[at] = '\0';
-}
-
 // `shared` with its first `from` made `to`; false when it holds no `from`.
 static bool changed(const char *shared, const char *from, const char *to, char *out, size_t cap) {
     const char *at = strstr(shared, from);
@@ -130,9 +110,12 @@ static uint32_t completed(const machine_t *sm) {
     return static_invoke_get_completed(sm);
 }
 
-// The machine just started.
+// The machine just started, its root given the id the shared instance names it by, as its host
+// gives it (docs/adr/0045, "Questions the owner answered" 2).
 static void started(machine_t *sm) {
-    static_invoke_init(sm);
+    const sce_start_refusal_t refused = static_invoke_init_with_session_id(sm, SHARED_ROOT);
+    CHECK(refused == SCE_START_REFUSAL_NONE, "the machine takes the id `" SHARED_ROOT "`: %s",
+          sce_start_refusal_text(refused));
 }
 
 static bool saved(const machine_t *sm, char *out, size_t cap) {
@@ -142,16 +125,6 @@ static bool saved(const machine_t *sm, char *out, size_t cap) {
         CHECK(false, "the machine saves: %s", err.message);
         return false;
     }
-    return true;
-}
-
-// The machine saved, once the id it drew is the shared one.
-static bool saved_as_shared(const machine_t *sm, char *out, size_t cap) {
-    static char text[TEXT_CAP];
-    if (!saved(sm, text, sizeof(text))) {
-        return false;
-    }
-    replace_all(text, static_invoke_session_id(sm), SHARED_ROOT, out, cap);
     return true;
 }
 
@@ -171,7 +144,7 @@ static void a_machine_is_saved_with_the_whole_state_of_the_child_it_is_running(v
     static char text[TEXT_CAP];
     static char want[TEXT_CAP];
     started(&sm);
-    if (!saved_as_shared(&sm, text, sizeof(text))) {
+    if (!saved(&sm, text, sizeof(text))) {
         return;
     }
     // Its id is this session's and the id it was started under: the tree's alone.

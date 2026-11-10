@@ -151,25 +151,9 @@ OBSERVER(alone_)
 #define OTHER_BUILD_NAMED "[session-unicast]"
 #endif
 
-/* `text` with every `from` in it read as `to`, into `out` of `cap` bytes. */
-static void replace_all(const char *text, const char *from, const char *to, char *out, size_t cap) {
-    const size_t n = strlen(from);
-    size_t used = 0;
-    out[0] = '\0';
-    while (*text != '\0' && used + 1 < cap) {
-        if (n > 0 && strncmp(text, from, n) == 0) {
-            snprintf(out + used, cap - used, "%s", to);
-            used += strlen(out + used);
-            text += n;
-        } else {
-            out[used++] = *text++;
-            out[used] = '\0';
-        }
-    }
-}
-
-/* The state of the machine of prefix P as `_init` leaves it, saved into `out`, its session id
-   read as `fixture-root`, since each machine draws an id of its own. */
+/* The state of the machine of prefix P as its start leaves it, saved into `out`, under the session
+   id `fixture-root`, which its host gives it (docs/adr/0045, "Questions the owner answered" 2), so
+   the two machines save one text. */
 #define SAVER(P)                                                                                                       \
     static void P##saved(char *out, size_t cap) {                                                                      \
         struct observation seen;                                                                                       \
@@ -181,19 +165,18 @@ static void replace_all(const char *text, const char *from, const char *to, char
         SERVE_ACCEPT(host)                                                                                             \
         host.user_data = &seen;                                                                                        \
         P##session_t sm;                                                                                               \
-        if (!P##session_init_with_actions(&sm, &host)) {                                                               \
-            fprintf(stderr, "feature_conformance: FAIL - `" #P "session` refused a host "                              \
-                            "that serves every action of this build\n");                                               \
+        const sce_start_refusal_t refused = P##session_init_with_session_id(&sm, "fixture-root", &host);               \
+        if (refused != SCE_START_REFUSAL_NONE) {                                                                       \
+            fprintf(stderr, "feature_conformance: FAIL - `" #P "session` refused to start: %s\n",                      \
+                    sce_start_refusal_text(refused));                                                                  \
             exit(1);                                                                                                   \
         }                                                                                                              \
-        char text[SAVED_CAP];                                                                                          \
         size_t len = 0;                                                                                                \
         sce_saved_error_t err;                                                                                         \
-        if (!P##session_save(&sm, SAVED_AT_MS, text, sizeof text, &len, &err)) {                                       \
+        if (!P##session_save(&sm, SAVED_AT_MS, out, cap, &len, &err)) {                                                \
             fprintf(stderr, "feature_conformance: FAIL - `" #P "session` does not save: %s\n", err.message);           \
             exit(1);                                                                                                   \
         }                                                                                                              \
-        replace_all(text, P##session_session_id(&sm), "fixture-root", out, cap);                                       \
         P##session_destroy(&sm);                                                                                       \
     }
 
