@@ -84,8 +84,12 @@ private class Machines {
 /** One input of a trace, or one send the adapter was handed. */
 private data class Input(val at: Instant, val systemPort: String, val event: String)
 
-/** A system adapter that replays a trace and records what was sent to it. */
-private class TraceAdapter(private val trace: List<Input> = emptyList()) : SystemAdapter {
+/**
+ * A system adapter that replays a scripted list of inputs and records what was
+ * sent to it: the run's own double, apart from the runtime's [TraceAdapter],
+ * which plays a recorded trace file read by a configuration.
+ */
+private class ScriptedAdapter(private val trace: List<Input> = emptyList()) : SystemAdapter {
     private var next = 0
     val sent = mutableListOf<Input>()
 
@@ -301,7 +305,7 @@ class TestCaseRunTest {
                 }
             },
         )
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.PASS, result.verdict)
         assertEquals(0L, result.endedAt)
         assertTrue(logged(result, "echo", LogKind.KILL), "the MTC's end removes the PTC (P10)")
@@ -311,7 +315,7 @@ class TestCaseRunTest {
     @Test
     fun `an unanswered request fails when its timer expires`() {
         val machines = Machines().with("Tester", tester()).with("Echo", Pair(idle(), idle()))
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.FAIL, result.verdict)
         assertEquals(SECOND, result.endedAt)
     }
@@ -323,7 +327,7 @@ class TestCaseRunTest {
     @Test
     fun `a test case that can never end is an error`() {
         val machines = Machines().with("Waiter", Pair(idle(), idle()))
-        val result = runCase(mapped("Waiter"), machines, TraceAdapter(), null)
+        val result = runCase(mapped("Waiter"), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.ERROR, result.verdict)
         assertTrue(logged(result, "mtc", LogKind.ERROR))
     }
@@ -335,7 +339,7 @@ class TestCaseRunTest {
             "Waiter",
             Pair({ context, _ -> context.setverdict(Verdict.PASS, "") }, idle()),
         )
-        val result = runCase(mapped("Waiter"), machines, TraceAdapter(), 5 * SECOND)
+        val result = runCase(mapped("Waiter"), machines, ScriptedAdapter(), 5 * SECOND)
         assertEquals(Verdict.ERROR, result.verdict)
         assertEquals(5 * SECOND, result.endedAt)
     }
@@ -357,7 +361,7 @@ class TestCaseRunTest {
                 repliesInTime(),
             ),
         )
-        val adapter = TraceAdapter(listOf(Input(500, "sut", "pong")))
+        val adapter = ScriptedAdapter(listOf(Input(500, "sut", "pong")))
         val result = runCase(configuration, machines, adapter, null)
         assertEquals(Verdict.PASS, result.verdict)
         assertEquals(500L, result.endedAt)
@@ -388,7 +392,7 @@ class TestCaseRunTest {
                 ),
             )
             .with("Echo", Pair({ context, _ -> context.setverdict(Verdict.FAIL, "") }, idle()))
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.FAIL, result.verdict)
     }
 
@@ -430,7 +434,7 @@ class TestCaseRunTest {
                     },
                 ),
             )
-        val result = runCase(configuration, machines, TraceAdapter(), null)
+        val result = runCase(configuration, machines, ScriptedAdapter(), null)
         assertEquals(Verdict.PASS, result.verdict)
         assertFalse(logged(result, "echo", LogKind.TIMEOUT))
     }
@@ -465,7 +469,7 @@ class TestCaseRunTest {
                     idle(),
                 ),
             )
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.PASS, result.verdict)
         assertTrue(logged(result, "echo", LogKind.DONE))
     }
@@ -515,7 +519,7 @@ class TestCaseRunTest {
         val machines = Machines().with("Reader", readsJob(job))
         val parameters = ModuleParameters()
         parameters.set("job", saved(7u))
-        val result = runCaseWith(lone("Reader"), machines, TraceAdapter(), null, parameters)
+        val result = runCaseWith(lone("Reader"), machines, ScriptedAdapter(), null, parameters)
         assertEquals(7u, job.value)
         assertEquals(Verdict.PASS, result.verdict)
     }
@@ -528,7 +532,7 @@ class TestCaseRunTest {
     fun `a module parameter the run is not given is an error`() {
         val job = Slot()
         val machines = Machines().with("Reader", readsJob(job))
-        val result = runCase(lone("Reader"), machines, TraceAdapter(), null)
+        val result = runCase(lone("Reader"), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.ERROR, result.verdict)
         assertNull(job.value)
         val last = assertNotNull(result.log.lastOrNull(), "the run logged its error")
@@ -546,7 +550,7 @@ class TestCaseRunTest {
         val machines = Machines().with("Reader", readsJob(job))
         val parameters = ModuleParameters()
         parameters.set("job", SavedValues.of("seven"))
-        val result = runCaseWith(lone("Reader"), machines, TraceAdapter(), null, parameters)
+        val result = runCaseWith(lone("Reader"), machines, ScriptedAdapter(), null, parameters)
         assertEquals(Verdict.ERROR, result.verdict)
         assertNull(job.value)
         assertTrue(logged(result, "mtc", LogKind.ERROR))
@@ -559,7 +563,7 @@ class TestCaseRunTest {
     @Test
     fun `a component type with no machine is an error`() {
         val none: MachineFactory = { _ -> null }
-        val result = TestCaseRun(lone("Ghost"), none, TraceAdapter(), null, ModuleParameters()).run()
+        val result = TestCaseRun(lone("Ghost"), none, ScriptedAdapter(), null, ModuleParameters()).run()
         assertEquals(Verdict.ERROR, result.verdict)
         assertTrue(logged(result, "mtc", LogKind.ERROR))
         assertFalse(logged(result, "mtc", LogKind.START), "no component of the type was created")
@@ -572,7 +576,7 @@ class TestCaseRunTest {
             "Tester",
             Pair({ context, _ -> context.send("p", message("ping")) }, idle()),
         )
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.ERROR, result.verdict)
         assertEquals(0L, result.endedAt)
     }
@@ -595,13 +599,14 @@ private fun endsWith(name: String, componentType: String, verdict: Verdict): Tes
         configuration = lone(componentType),
         machines = machines.factory(),
         moduleParameters = emptyList(),
+        inputs = ::noInputs,
     )
 }
 
-/** The adapters of a suite's run, each a fresh TraceAdapter, recording the test case each was built for. */
+/** The adapters of a suite's run, each a fresh ScriptedAdapter, recording the test case each was built for. */
 private fun tracing(built: MutableList<String>): (String) -> SystemAdapter? = { testCase ->
     built.add(testCase)
-    TraceAdapter()
+    ScriptedAdapter()
 }
 
 private val selectsX: Selection = { world -> enabled(world, "x") }
@@ -648,6 +653,7 @@ class TestSuiteRunTest {
             configuration = lone("Waiter"),
             machines = waiting.factory(),
             moduleParameters = emptyList(),
+            inputs = ::noInputs,
         )
         val suite = Suite(
             name = "guarded",
@@ -686,6 +692,7 @@ class TestSuiteRunTest {
                         configuration = lone("Reader"),
                         machines = machines.factory(),
                         moduleParameters = listOf("job"),
+                        inputs = ::noInputs,
                     ),
                     null,
                 ),
@@ -760,7 +767,7 @@ class TheSharedHandleTest {
             Pair({ context, _ -> context.withSnapshot("p") { context.log("inside the reader") } }, idle()),
         )
         val failure = assertFailsWith<IllegalStateException> {
-            runCase(mapped("Reader"), machines, TraceAdapter(), null)
+            runCase(mapped("Reader"), machines, ScriptedAdapter(), null)
         }
         assertEquals("re-entrant access to the test run from mtc", failure.message)
     }
@@ -784,7 +791,7 @@ class TheSharedHandleTest {
                 ),
             )
             .with("Echo", Pair({ context, _ -> context.kill("mtc") }, idle()))
-        val result = runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+        val result = runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         assertEquals(Verdict.ERROR, result.verdict)
         assertTrue(logged(result, "echo", LogKind.ERROR))
         assertFalse(logged(result, "mtc", LogKind.KILL), "the MTC was not removed")
@@ -814,7 +821,7 @@ class TheSharedHandleTest {
             )
             .with("Echo", Pair({ context, _ -> kept = context }, idle()))
         val failure = assertFailsWith<IllegalStateException> {
-            runCase(mtcAndEcho(), machines, TraceAdapter(), null)
+            runCase(mtcAndEcho(), machines, ScriptedAdapter(), null)
         }
         assertEquals("the component echo was removed, and its context outlived it", failure.message)
     }
@@ -838,7 +845,7 @@ class TheRunIsRunOnceTest {
                 idle(),
             ),
         )
-        val run = TestCaseRun(lone("Tester"), machines.factory(), TraceAdapter(), null, ModuleParameters())
+        val run = TestCaseRun(lone("Tester"), machines.factory(), ScriptedAdapter(), null, ModuleParameters())
         assertEquals(Verdict.PASS, run.run().verdict)
         val failure = assertFailsWith<IllegalStateException> { run.run() }
         assertEquals("a test case run is run once; build another to run the test case again", failure.message)
@@ -969,7 +976,7 @@ class TheDoorsTest {
                 else -> null
             }
         }
-        val result = TestCaseRun(mtcAndEcho(), factory, TraceAdapter(), null, ModuleParameters()).run()
+        val result = TestCaseRun(mtcAndEcho(), factory, ScriptedAdapter(), null, ModuleParameters()).run()
         assertEquals(Verdict.PASS, result.verdict, result.log.toString())
         val created = position(result, "echo", LogKind.CREATE)
         val sent = position(result, "mtc", LogKind.SEND)
@@ -1074,9 +1081,10 @@ class TheTestLogTest {
                 configuration = pinging(),
                 machines = pingingMachines().factory(),
                 moduleParameters = emptyList(),
+                inputs = ::noInputs,
             ),
         )
-        val results = runSuite(suite, emptySet(), { _ -> TraceAdapter() }, ModuleParameters())
+        val results = runSuite(suite, emptySet(), { _ -> ScriptedAdapter() }, ModuleParameters())
         assertEquals(1, results.size)
         assertEquals(
             listOf(
@@ -1115,7 +1123,7 @@ class TheTestLogTest {
     @Test
     fun `an error the runtime sets is logged without its cause`() {
         val machines = Machines().with("Waiter", Pair(idle(), idle()))
-        val result = runCase(lone("Waiter"), machines, TraceAdapter(), 7L)
+        val result = runCase(lone("Waiter"), machines, ScriptedAdapter(), 7L)
         assertEquals(Verdict.ERROR, result.verdict)
         assertEquals(
             listOf(
@@ -1143,6 +1151,7 @@ class TheTestLogTest {
                 configuration = pinging(),
                 machines = pingingMachines().factory(),
                 moduleParameters = emptyList(),
+                inputs = ::noInputs,
             ),
         )
         val results = runSuite(suite, emptySet(), { _ -> null }, ModuleParameters())
