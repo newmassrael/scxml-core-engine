@@ -1302,6 +1302,19 @@ impl RoundMachine {
         }
     }
 
+    /// How far the chain of `node`, held up to `head`, may be given to the relay: all of it, but
+    /// for this host's person's own chain while its host has not recorded an operation of it in
+    /// its journal, which stops before the first such (docs/adr/0083, section 3.1;
+    /// [`Trust::released_through`]). What the relay is not given now is given by the round after
+    /// the host recorded it.
+    fn released(&self, node: u64, head: u64) -> u64 {
+        let own = self.trust.person().map(|(own, _)| own);
+        match self.trust.released_through() {
+            Some(released) if own == Some(node) => head.min(released),
+            _ => head,
+        }
+    }
+
     fn drive_devices(&mut self, devices: Devices, then: AfterPush) -> Phase {
         let Devices {
             theirs,
@@ -1316,12 +1329,13 @@ impl RoundMachine {
                     return self.evidence(then);
                 };
                 let held = theirs.get(&head.node).copied().unwrap_or(0);
-                if head.seq <= held {
+                let top = self.released(head.node, head.seq);
+                if top <= held {
                     device += 1;
                     continue;
                 }
                 break Ops {
-                    list: self.trust.operations(head.node, held + 1, head.seq),
+                    list: self.trust.operations(head.node, held + 1, top),
                     next: 0,
                 };
             },
@@ -2220,15 +2234,31 @@ pub enum Kept {
 /// machine's sends again, as many times as the machine makes them; one the host may not sign yet is
 /// kept until it may ([`Kept::Waiting`]).
 pub fn keep(trust: &Trust, event: &str, data: &str) -> Kept {
-    let kept = match trust.keep_sent(event, data) {
+    let kept = kept_of(trust.keep_sent(event, data));
+    note_kept(trust, event, &kept);
+    kept
+}
+
+/// Sign and remember a change its host keeps a journal of (`record_list.made`, docs/adr/0083,
+/// section 3.1), as [`keep`] does a send: `change` is the change (`record_list.change`'s payload).
+/// What is signed for it is a record the host writes to its journal ([`Trust::unrecorded`]) and
+/// that a round gives no relay before the host says it recorded it ([`Trust::recorded`]); what
+/// waits becomes a record when a round signs it.
+pub fn keep_made(trust: &Trust, change: &str) -> Kept {
+    let kept = kept_of(trust.keep_made(change));
+    note_kept(trust, message::CHANGE_EVENT, &kept);
+    kept
+}
+
+/// What became of a send, as a host is told it.
+fn kept_of(sent: Sent) -> Kept {
+    match sent {
         Sent::Signed => Kept::Taken,
         Sent::Held => Kept::Held,
         Sent::NotSigned => Kept::NotSigned,
         Sent::Waiting(reason) => Kept::Waiting(reason),
         Sent::Refused(reason) => Kept::Refused(reason),
-    };
-    note_kept(trust, event, &kept);
-    kept
+    }
 }
 
 /// The word a record names what became of a send by.

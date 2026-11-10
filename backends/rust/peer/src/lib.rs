@@ -10,12 +10,21 @@
 //! reached through whatever carries the relay protocol's texts. Every input and output is a text in
 //! the form the Mesh and the relay protocol already use:
 //!
-//! - the machine's outbound `record_list.change`, as the event's name and its JSON payload, is
-//!   signed whole, one change as one operation, and remembered ([`Peer::outbound`]); the core says
-//!   whether it took one, held it already (a machine built again from its host's log sends its
-//!   changes again, and a change is signed once), found it is no event that is signed, keeps it
-//!   until the device may sign it (an invited device that has not read the log that lets it write,
-//!   a restored one that has not read its own chain back), or refused it and why;
+//! - the change a copy that keeps a journal offers its host (`record_list.made`) is signed whole,
+//!   one change as one operation, in the call that takes it ([`Peer::made`]); the core says whether
+//!   it took one, held it already, keeps it until the device may sign it (an invited device that
+//!   has not read the log that lets it write, a restored one that has not read its own chain back),
+//!   or refused it and why, which is the verdict the host gives the copy (docs/adr/0093, section
+//!   3). What it signs is a record the host writes to its journal ([`Peer::take_records`]), and a
+//!   round gives the relay no operation of the device's own past the first the host has not said
+//!   it recorded ([`Peer::recorded`]): the outbox (docs/adr/0083, section 3). A host that keeps no
+//!   journal gives the core what its copy sends to `#people` ([`Peer::outbound`]), released at once;
+//! - a machine built again is given the history ([`Peer::history`]): every change the core holds
+//!   that a round would tell, the device's own included, whole and in causal order with its tag,
+//!   from the stable cut the host folded its journal at, then the device's own changes that wait to
+//!   be signed, which the copy holds provisionally; the cut is the core's word that every member
+//!   was told a change ([`Peer::stable_cut`]), and a device that has written nothing for a while
+//!   says what it was told by a mark ([`Peer::mark`]);
 //! - a round with the relay ([`Peer::start`]) is a sequence of request texts the core gives
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
@@ -78,11 +87,14 @@ pub use sce_rust_relay::{
 };
 pub use sce_rust_relay::{CourierError, Kept, Publication, Round, RoundKind, Token};
 pub use sce_rust_trust::membership::{Hash, LogError, Profile, OWNER, READER, WRITER};
+// What a history gives and what a record is: an operation with its tag, and an operation of the
+// device's own its host has not recorded.
+pub use sce_rust_trust::{OwnRecord, Tag, Told};
 
 use std::collections::BTreeMap;
 
 use sce_rust_mls::host::Issued;
-use sce_rust_relay::client::{floor_event, keep};
+use sce_rust_relay::client::{keep, keep_made};
 use sce_rust_relay::logs::list_digest;
 use sce_rust_relay::{
     Code, CourierState, JoinMachine, JoinStep, LinkError, LoginMachine, LoginStep, Record, Request,
@@ -93,6 +105,7 @@ use sce_rust_trust::creation;
 use sce_rust_trust::encoding;
 use sce_rust_trust::invitation::{self, Invitation, Ticket};
 use sce_rust_trust::membership::{Body, Entry};
+use sce_rust_trust::message::{self, CHANGE_EVENT};
 use sce_rust_trust::{Identity, PublicKey, Trust};
 use serde_json::{json, Value};
 
@@ -104,9 +117,12 @@ use serde_json::{json, Value};
 /// and what became of the sends that waited that a round did not hand over; the version is bound
 /// into the sealed state, so a core of version 3, which would open it and lose them, does not open
 /// it. Version 5 holds the invitations an administrator's device made and the joins under them it
-/// read ([`Peer::invite`], [`Peer::joined`]), which a core of version 4 would lose. States of
-/// versions 3 and 4 were written by this repository's tests alone, and are not read.
-pub const SAVE_VERSION: u64 = 5;
+/// read ([`Peer::invite`], [`Peer::joined`]), which a core of version 4 would lose. Version 6
+/// holds the outbox: which operations of the device's own its host has not recorded, and which
+/// waiting sends are of a host that keeps a journal ([`Peer::made`]), which a core of version 5
+/// would lose and give the relay before the host's journal held them. States of versions 3 to 5
+/// were written by this repository's tests alone, and are not read.
+pub const SAVE_VERSION: u64 = 6;
 
 /// The names under which the sealed state keeps what the core holds beside the person's key and the
 /// keys of the epochs ([`Trust::secrets`]).
@@ -142,6 +158,40 @@ pub struct Outcome {
     /// The token a login earned ([`Peer::login`]), and when it expires by the relay's clock; `None`
     /// for every other exchange.
     pub token: Option<Token>,
+    /// The highest stamp of the device's own changes in the chain the core holds, when the round
+    /// raised it ([`Peer::own_stamp`]): it read the device's own chain back past what the core
+    /// held, or signed what waited. The host gives its copy `record_list.raise` with it
+    /// (docs/adr/0093, section 4.3), so that the copy's next stamp exceeds it. `None` when it did
+    /// not rise, and for every exchange but a round.
+    pub raised: Option<(i64, u64)>,
+}
+
+/// A change of the device's own that waited to be signed and never will be, as a round withdrew it
+/// ([`Outcome::withdrawn`]): the change as the copy offered it, its stamp, which names it to the
+/// copy, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Withdrawn {
+    pub event: String,
+    pub data: String,
+    pub wall_time: i64,
+    pub counter: u64,
+    pub why: String,
+}
+
+impl Withdrawn {
+    fn of(event: &str, data: &str, why: &str) -> Self {
+        let (wall_time, counter) = serde_json::from_str::<Value>(data)
+            .ok()
+            .and_then(|value| message::stamp_of(&value).ok())
+            .unwrap_or((0, 0));
+        Self {
+            event: event.to_string(),
+            data: data.to_string(),
+            wall_time,
+            counter,
+            why: why.to_string(),
+        }
+    }
 }
 
 impl Outcome {
@@ -154,6 +204,7 @@ impl Outcome {
             steps: Vec::new(),
             owed,
             token,
+            raised: None,
         }
     }
 
@@ -172,8 +223,11 @@ impl Outcome {
     }
 
     /// What the machine sent that waited to be signed ([`Kept::Waiting`]) and was signed now, a new
-    /// operation of the device's chain each, in the order it was sent, each as the machine sent it:
-    /// the relay was given it.
+    /// operation of the device's chain each, in the order it was sent, each as the machine sent it.
+    /// One its host keeps no journal of was given the relay. One offered by a copy that keeps a
+    /// journal ([`Peer::made`]) is a record: the host journals it ([`Peer::take_records`]), says
+    /// so ([`Peer::recorded`]) and gives the copy `record_list.confirm`, and the next round gives
+    /// it the relay (docs/adr/0093, section 3.3).
     pub fn taken(&self) -> Vec<(String, String)> {
         self.rounds()
             .flat_map(|round| round.taken.iter().cloned())
@@ -190,24 +244,27 @@ impl Outcome {
             .collect()
     }
 
-    /// What the machine sent that waited to be signed and never will be, each with why: the log
-    /// the round read says the device's person may not write. The machine took each in as made and
-    /// no other copy will hold it, so the machine is built again ([`Self::rebuild`]); a host that
-    /// keeps its own log of commands takes each out of that log, and may tell its person.
-    pub fn dropped(&self) -> Vec<(String, String, String)> {
+    /// The changes of the device's own that waited to be signed and never will be, earliest first,
+    /// each with its stamp and why (docs/adr/0093, section 6.2): the first the log the round read
+    /// says the person may not sign (a reader, a device taken off), or that would conflict with
+    /// what the device signed, and every one after it, which was made on a state that held it. The
+    /// copy took each in provisionally: the host journals the withdrawal and gives the copy one
+    /// `record_list.withdraw` naming the earliest, and the copy withdraws it and every provisional
+    /// change after it. No machine is built again for it.
+    pub fn withdrawn(&self) -> Vec<Withdrawn> {
         self.rounds()
-            .flat_map(|round| round.dropped.iter().cloned())
+            .flat_map(|round| round.dropped.iter())
+            .map(|(event, data, why)| Withdrawn::of(event, data, why))
             .collect()
     }
 
     /// Whether the host is to build its machine again and make a [`RoundKind::Resync`]: the core
     /// found operations the machine was told and is to be without, or was not told and is to be
-    /// with ([`Round::evicted`], [`Round::restored`]), or a send of the machine's own that it took
-    /// in will never be signed ([`Self::dropped`]).
+    /// with ([`Round::evicted`], [`Round::restored`]). A change withdrawn is withdrawn in place
+    /// ([`Self::withdrawn`]).
     pub fn rebuild(&self) -> bool {
-        self.rounds().any(|round| {
-            !round.evicted.is_empty() || !round.restored.is_empty() || !round.dropped.is_empty()
-        })
+        self.rounds()
+            .any(|round| !round.evicted.is_empty() || !round.restored.is_empty())
     }
 
     /// Whether the round stopped before the end of what the relay holds; a later round goes on
@@ -533,6 +590,31 @@ pub struct Standing {
     pub waiting: usize,
 }
 
+/// The history a machine built again is given ([`Peer::history`]): the roster, as a round tells
+/// it, then every change in causal order with its tag, and last the device's own changes that wait
+/// to be signed, with no tag ([`Told::provisional`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct History {
+    pub roster: Vec<(String, String)>,
+    pub changes: Vec<Told>,
+}
+
+/// The highest stamp of the device's own changes the core holds, and whether it has read its own
+/// chain back ([`Peer::own_stamp`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnStamp {
+    pub stamp: Option<(i64, u64)>,
+    pub read_back: bool,
+}
+
+/// What a copy offered (`record_list.made`'s payload) as the change it is, its `command` left
+/// out: the host's, which is no part of a change; `None` when it is no JSON object.
+fn change_of_made(data: &str) -> Option<String> {
+    let mut value: Value = serde_json::from_str(data).ok()?;
+    value.as_object_mut()?.remove("command");
+    Some(value.to_string())
+}
+
 /// What the list's content is sealed under, which decides how a member is admitted and taken off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Keying {
@@ -571,6 +653,9 @@ pub struct Peer {
     invitations: BTreeMap<u64, Vec<Invited>>,
     /// The joins a round read under them whose proof holds, by node ([`Self::joined`]).
     joins: BTreeMap<u64, Vec<JoinHeld>>,
+    /// The highest stamp of the device's own changes when the round under way began: what its
+    /// outcome says it raised ([`Outcome::raised`]).
+    stamp_at_start: Option<(i64, u64)>,
 }
 
 /// An exchange with the relay under way.
@@ -671,6 +756,7 @@ impl Peer {
             asking: None,
             invitations: BTreeMap::new(),
             joins: BTreeMap::new(),
+            stamp_at_start: None,
         }
     }
 
@@ -1225,7 +1311,8 @@ impl Peer {
     /// a device restored from a sealed state before a round has read its own chain back
     /// (see [`Self::restore_sealed`]). The round that reads what it waits for signs it and gives it
     /// the relay ([`Outcome::taken`]); a round whose log says the person never may (a reader, a
-    /// device taken off) refuses it then, and says so ([`Outcome::dropped`], [`Outcome::rebuild`]).
+    /// device taken off) withdraws it then with every send after it, and says so
+    /// ([`Outcome::withdrawn`]).
     /// What waits is in the sealed state. A send of another content under the dot of a change that
     /// waits is refused at once, as one under a dot the device signed is.
     ///
@@ -1240,12 +1327,123 @@ impl Peer {
         keep(&self.trust, event, data)
     }
 
+    /// The change a copy that keeps a journal offered its host (`record_list.made`'s payload: the
+    /// change's `by`, `wallTime`, `counter` and `ops`, and the `command` that closed it,
+    /// docs/adr/0085, section 7.1), taken as one change and signed as one operation in this call
+    /// (docs/adr/0083, section 3.1): `command` is the host's and is not signed. What it answers is
+    /// the verdict the host gives the copy (docs/adr/0093, section 6.4): [`Kept::Taken`] is
+    /// `accepted`, [`Kept::Held`] `held`, [`Kept::Waiting`] `waiting` (the round that may sign it
+    /// signs it, [`Outcome::taken`], or withdraws it, [`Outcome::withdrawn`]), and
+    /// [`Kept::Refused`] `refused`; [`Kept::NotSigned`] is never answered.
+    ///
+    /// **Written ahead.** What is signed is a record ([`Self::take_records`]): the host writes it
+    /// to its journal in the transaction that holds the change and its verdict, then says so
+    /// ([`Self::recorded`]), and no round gives the relay an operation of the device's chain from
+    /// the first the host has not recorded on. A crash before the commit loses an operation no
+    /// relay and no other device holds, so the number it took names no change anyone has seen
+    /// when the device uses it again (docs/adr/0085, section 3).
+    pub fn made(&mut self, data: &str) -> Kept {
+        match change_of_made(data) {
+            Some(change) => keep_made(&self.trust, &change),
+            None => Kept::Refused(format!(
+                "{CHANGE_EVENT}: what the copy offered is not a change with the command that closed it"
+            )),
+        }
+    }
+
+    /// The records of the device's own operations signed for a change a copy offered
+    /// ([`Self::made`]) that the host has not said it recorded, in the order of their numbers: the
+    /// number, the event and the text the relay is given, which the host appends to its journal.
+    /// They stay here until [`Self::recorded`] says so, and are in the sealed state.
+    pub fn take_records(&self) -> Vec<OwnRecord> {
+        self.trust.unrecorded()
+    }
+
+    /// The host recorded every operation of the device's chain up to `through` in its journal: the
+    /// next round gives the relay what it lacks of them.
+    pub fn recorded(&mut self, through: u64) {
+        self.trust.recorded(through);
+    }
+
+    /// Take back what the host's journal holds of the device's own operations past the sealed
+    /// state it restored (docs/adr/0083, section 3.4), each `(event, data)` as
+    /// [`Self::take_records`] gave it: each is verified (its signature, its place in the chain,
+    /// the entry of the log it names) and held as the device's own, recorded already, before the
+    /// device signs anything, so that it never numbers a new operation where one of its journal
+    /// stands. Returns how many the core did not hold. A record that is not one of the device's
+    /// own, or that does not hold, is [`PeerError::Unreadable`], and the records before it are
+    /// kept. The wait for the device's own chain a restore begins stays: a journal can be older
+    /// than what the device published too.
+    pub fn restore_records(&mut self, records: &[(String, String)]) -> Result<usize, PeerError> {
+        self.trust
+            .restore_records(records)
+            .map_err(PeerError::Unreadable)
+    }
+
+    /// The history of the list for a machine built again (docs/adr/0083, section 2.2;
+    /// docs/adr/0085, sections 3.1 and 7.3): the roster the log gives, as a round tells it, and
+    /// every change the core holds that a round would tell, the device's own included, whole and
+    /// in causal order, each with its tag read from its link, from `after` on (the stable cut the
+    /// host folded its journal at, [`Self::stable_cut`]; empty for the whole history); then the
+    /// device's own changes that wait to be signed, with no tag, which the copy recalls as
+    /// provisional (docs/adr/0093, section 6.1). It reads no clock, asks the relay nothing and
+    /// moves nothing: a host recalls it into a fresh machine and the next round is a sync.
+    pub fn history(&self, after: &[(u64, u64)]) -> History {
+        let roster = if self.is_for_a_hub() {
+            self.trust.hub_role_events()
+        } else {
+            self.trust.role_events()
+        };
+        History {
+            roster,
+            changes: self.trust.history(after),
+        }
+    }
+
+    /// The stable cut (docs/adr/0085, sections 3 and 4): for each device, the highest number of its
+    /// chain every member of the list is known to have been told, lowest node first. The host
+    /// folds its journal at it: a snapshot of its copy's state with the cut, after which a rebuild
+    /// recalls only the history after the cut ([`Self::history`]).
+    pub fn stable_cut(&self) -> Vec<(u64, u64)> {
+        self.trust.stable_cut()
+    }
+
+    /// Sign a mark of what the machine was told, when it was told a change of another device that
+    /// the device's latest operation does not say it was (docs/adr/0085, section 3.1): the number
+    /// the mark takes, or `None` when none is owed. A device that has not written for a while says
+    /// so by its mark, which moves the stable cut; when "a while" is up is the host's to judge on
+    /// its own clock, since the core reads none. The next round gives the relay the mark, which no
+    /// machine is told.
+    pub fn mark(&mut self) -> Option<u64> {
+        self.trust.sign_mark()
+    }
+
+    /// The highest stamp of the device's own changes in the chain the core holds, and whether the
+    /// core has read its own chain back ([`Self::awaits_own_chain`]) (docs/adr/0093, section 6.3):
+    /// a copy's next stamp exceeds the first, which a host gives it as `record_list.raise`.
+    pub fn own_stamp(&self) -> OwnStamp {
+        OwnStamp {
+            stamp: self.trust.own_stamp(),
+            read_back: !self.trust.awaits_own_chain(),
+        }
+    }
+
+    /// Whether the machine is a hub's ([`Self::for_a_hub`]), which is told who ever wrote.
+    fn is_for_a_hub(&self) -> bool {
+        match &self.running {
+            Some(running) => running.saved_state().is_for_a_hub(),
+            None => self.state.is_for_a_hub(),
+        }
+    }
+
     /// Begin a round of `kind`. Its requests are taken by [`Self::poll_request`]. A round that ends
     /// goes on to give the relay what the administrator's acts owe it, before its outcome is given.
     pub fn start(&mut self, kind: RoundKind) -> Result<(), PeerError> {
         self.begin(Purpose::Round, |state, trust| {
             RoundMachine::start(kind, state, trust)
-        })
+        })?;
+        self.stamp_at_start = self.trust.own_stamp();
+        Ok(())
     }
 
     /// Begin the exchange that logs the device in at the relay named `audience` (ADR 0080 section
@@ -1333,12 +1531,6 @@ impl Peer {
     /// The outcome of the exchange that ended, once.
     pub fn take_outcome(&mut self) -> Option<Result<Outcome, CourierError>> {
         self.outcome.take()
-    }
-
-    /// The word the machine is told that an instant is settled, when the checkpoints the device
-    /// holds make a settlement of it.
-    pub fn floor_event(&self, before: i64, digest: u32) -> Option<(String, String)> {
-        floor_event(&self.trust, before, digest)
     }
 
     /// What the device keeps, sealed under a data key drawn for this save alone from the operating
@@ -1531,6 +1723,14 @@ impl Peer {
         Ok(member)
     }
 
+    /// The highest stamp of the device's own changes now, when it is above the one the round under
+    /// way began at ([`Outcome::raised`]).
+    fn raised(&self) -> Option<(i64, u64)> {
+        self.trust
+            .own_stamp()
+            .filter(|stamp| Some(*stamp) > self.stamp_at_start)
+    }
+
     fn ready(&self) -> Result<(), PeerError> {
         if self.outcome.is_some() {
             Err(PeerError::OutcomeNotTaken)
@@ -1646,6 +1846,7 @@ impl Peer {
                     steps,
                     owed: 0,
                     token: None,
+                    raised: self.raised(),
                 }
             }
             (Purpose::Follow { first, mut steps }, Ok(mut again)) => {
@@ -1659,6 +1860,7 @@ impl Peer {
                     steps,
                     owed: 0,
                     token: None,
+                    raised: self.raised(),
                 }
             }
             // A failure of the second read is left to the next round, as the group's device leaves
@@ -1672,6 +1874,7 @@ impl Peer {
                     steps,
                     owed: 0,
                     token: None,
+                    raised: self.raised(),
                 }
             }
             (Purpose::Deliver { outcome }, Ok(_)) => {
@@ -1709,6 +1912,7 @@ impl Peer {
                     steps: Vec::new(),
                     owed: self.owed.len(),
                     token: None,
+                    raised: None,
                 };
                 note_ended(&self.list, "publication", &outcome);
                 self.outcome = Some(Ok(outcome));
@@ -1818,7 +2022,7 @@ fn note_failure(list: &str, exchange: &'static str, error: &CourierError) {
 
 /// Log the end of the `exchange` of the core of `list` that came to `outcome`, in counts: the
 /// events for the machine, what the relay was given, what of the sends that waited was signed,
-/// found held or refused for good, the refusals, whether it stalled or the machine is to be built
+/// found held or withdrawn, the refusals, whether it stalled or the machine is to be built
 /// again, what the relay is still owed, and whether a token came (never which).
 fn note_ended(list: &str, exchange: &'static str, outcome: &Outcome) {
     log::info!(
@@ -1828,7 +2032,7 @@ fn note_ended(list: &str, exchange: &'static str, outcome: &Outcome) {
         pushed = outcome.round.pushed,
         taken = outcome.taken().len(),
         held = outcome.held().len(),
-        dropped = outcome.dropped().len(),
+        withdrawn = outcome.withdrawn().len(),
         refused = outcome.refused().len(),
         stalled = outcome.stalled(),
         rebuild = outcome.rebuild(),

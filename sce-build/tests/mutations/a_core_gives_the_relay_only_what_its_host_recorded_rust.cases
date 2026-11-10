@@ -1,0 +1,28 @@
+# Mutation cases for the peer core of a device whose copy keeps a journal (docs/adr/0085, landing 5;
+# docs/adr/0083, section 3.1; docs/adr/0093, section 6.3): a round gives the relay no operation of
+# the device's own from the first record its host has not recorded on, and a round that raised the
+# device's own stamp says so.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_core_gives_the_relay_only_what_its_host_recorded_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-peer --test a_core_gives_the_relay_only_what_its_host_recorded_and_hands_its_history_over
+mutation_targets backends/rust/relay/src/client.rs backends/rust/peer/src/lib.rs
+mutation_oracles backends/rust/peer/tests/a_core_gives_the_relay_only_what_its_host_recorded_and_hands_its_history_over.rs
+
+mutation_case "A round gives the relay a record its host has not recorded" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            Some(released) if own == Some(node) => head.min(released),",
+     "            Some(released) if false && own == Some(node) => head.min(released),")
+PY
+
+mutation_case "A round that raised the device's own stamp does not say so" <<'PY'
+edit("backends/rust/peer/src/lib.rs",
+     "            .filter(|stamp| Some(*stamp) > self.stamp_at_start)",
+     "            .filter(|_| false)")
+PY
