@@ -675,7 +675,7 @@ pub fn union_member_of<'u>(
             .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
     };
     match left {
-        [case] if declares(case) => Ok(UnionMember::Case(*case)),
+        [case] if declares(case) => Ok(UnionMember::Case(case)),
         _ if !left.is_empty()
             && left.iter().all(|case| declares(case))
             && shared_plain_field(union, member).is_some() =>
