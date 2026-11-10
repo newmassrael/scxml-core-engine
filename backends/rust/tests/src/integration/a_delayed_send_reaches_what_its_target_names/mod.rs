@@ -1,8 +1,8 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_a_delayed_send_reaches_what_its_target_names.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
-mod a_delayed_send_reaches_what_its_target_names_sm;
-pub use a_delayed_send_reaches_what_its_target_names_sm::*;
 mod a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone_sm;
 pub use a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone_sm::*;
 mod a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid_sm;
 pub use a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid_sm::*;
+mod a_delayed_send_reaches_what_its_target_names_sm;
+pub use a_delayed_send_reaches_what_its_target_names_sm::*;

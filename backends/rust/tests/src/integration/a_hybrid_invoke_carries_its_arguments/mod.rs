@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_a_hybrid_invoke_carries_its_arguments.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
 mod a_hybrid_invoke_carries_its_arguments_sm;
 pub use a_hybrid_invoke_carries_its_arguments_sm::*;

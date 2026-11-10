@@ -1,8 +1,8 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_invoke_candidate_selects_the_child.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
-mod invoke_candidate_selects_the_child_sm;
-pub use invoke_candidate_selects_the_child_sm::*;
 mod chosen_sm;
 pub use chosen_sm::*;
+mod invoke_candidate_selects_the_child_sm;
+pub use invoke_candidate_selects_the_child_sm::*;
 mod other_sm;
 pub use other_sm::*;

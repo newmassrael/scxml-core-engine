@@ -1,20 +1,20 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_host_processor.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
 mod inbox_probe_sm;
-mod statechart_delayed_host_send_sm;
-mod statechart_host_invoker_optional_sm;
-mod statechart_host_invoker_sm;
-mod statechart_host_processor_sm;
-mod statechart_static_delayed_host_send_sm;
-mod statechart_static_host_invoke_sm;
-mod statechart_static_host_params_sm;
-mod statechart_static_mesh_request_sm;
 pub use inbox_probe_sm::*;
+mod statechart_delayed_host_send_sm;
 pub use statechart_delayed_host_send_sm::*;
+mod statechart_host_invoker_optional_sm;
 pub use statechart_host_invoker_optional_sm::*;
+mod statechart_host_invoker_sm;
 pub use statechart_host_invoker_sm::*;
+mod statechart_host_processor_sm;
 pub use statechart_host_processor_sm::*;
+mod statechart_static_delayed_host_send_sm;
 pub use statechart_static_delayed_host_send_sm::*;
+mod statechart_static_host_invoke_sm;
 pub use statechart_static_host_invoke_sm::*;
+mod statechart_static_host_params_sm;
 pub use statechart_static_host_params_sm::*;
+mod statechart_static_mesh_request_sm;
 pub use statechart_static_mesh_request_sm::*;

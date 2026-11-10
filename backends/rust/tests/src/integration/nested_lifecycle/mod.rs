@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_nested_lifecycle.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
 mod nested_lifecycle_sm;
 pub use nested_lifecycle_sm::*;

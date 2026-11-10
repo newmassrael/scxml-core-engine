@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_targetless_transition_completes_macrostep.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
 mod targetless_transition_completes_macrostep_sm;
 pub use targetless_transition_completes_macrostep_sm::*;

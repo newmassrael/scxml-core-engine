@@ -1,6 +1,6 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_invoke_param_error_starts_the_child.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
-mod invoke_param_error_starts_the_child_sm;
-pub use invoke_param_error_starts_the_child_sm::*;
 mod invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe_sm;
 pub use invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe_sm::*;
+mod invoke_param_error_starts_the_child_sm;
+pub use invoke_param_error_starts_the_child_sm::*;

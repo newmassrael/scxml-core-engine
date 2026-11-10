@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_native_action.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
 mod statechart_native_action_sm;
 pub use statechart_native_action_sm::*;

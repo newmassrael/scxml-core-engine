@@ -1,8 +1,8 @@
-// GENERATED -- DO NOT EDIT (scripts/regen_inline_content_is_read_by_its_data_model.sh)
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
 
-mod inline_content_is_read_by_its_data_model_sm;
-pub use inline_content_is_read_by_its_data_model_sm::*;
 mod inline_content_is_read_by_its_data_model__sce_synth_invoke__emitter_sm;
 pub use inline_content_is_read_by_its_data_model__sce_synth_invoke__emitter_sm::*;
 mod inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter_sm;
 pub use inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter_sm::*;
+mod inline_content_is_read_by_its_data_model_sm;
+pub use inline_content_is_read_by_its_data_model_sm::*;
