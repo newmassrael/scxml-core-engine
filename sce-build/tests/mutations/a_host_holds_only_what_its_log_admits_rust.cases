@@ -29,7 +29,7 @@ PY
 
 mutation_case "A host takes an operation of a device that was a reader under the entry it names" <<'PY'
 edit("backends/rust/trust/src/trust.rs",
-     "    if era.role < WRITER {\n        return Err(format!(\n            \"{event}: node {author} may not write",
+     "    if !mark && era.role < WRITER {\n        return Err(format!(\n            \"{event}: node {author} may not write",
      "    if false {\n        return Err(format!(\n            \"{event}: node {author} may not write")
 PY
 

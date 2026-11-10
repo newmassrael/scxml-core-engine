@@ -146,12 +146,41 @@ pub const CHANGE: SignedEvent = SignedEvent {
     names: &DOT,
 };
 
-/// Every event a signature is carried by.
+/// Every event of the list a signature is carried by: what a machine sends and is told.
 pub static SIGNED: [SignedEvent; 1] = [CHANGE];
 
-/// The event `event` names, when a signature is carried by it.
+/// A device's mark: what its machine has been told of every other device, signed as an operation
+/// of its chain that carries no change, when it has written nothing since it was told more
+/// (docs/adr/0085, section 3.1). The vector is the operation's own causal context and number
+/// ([`Link`]); the event holds its author and nothing else. It is the trust layer's and not the
+/// list's: no machine sends one, and none is told one. Every member signs it, a reader included,
+/// since a change is stable only once every member has been told it, and a member that writes
+/// nothing says so by its marks alone.
+pub const MARK_EVENT: &str = "sce_trust.mark";
+
+/// What a mark holds besides its link: its author.
+pub const MARK_TYPE: RecordType = RecordType {
+    fields: &[field("by", integer(Integer::Uint64))],
+};
+
+/// `sce_trust.mark`: signed by its author, `by`. A mark names no change, and what keeps two marks
+/// of one device apart is their place in its chain.
+pub const MARK: SignedEvent = SignedEvent {
+    name: MARK_EVENT,
+    author: "by",
+    payload: &MARK_TYPE,
+    names: &MARK_TYPE,
+};
+
+/// Every event an operation of a device's chain is: the list's change and the trust layer's mark.
+pub static OPERATIONS: [SignedEvent; 2] = [CHANGE, MARK];
+
+/// The names of [`OPERATIONS`].
+pub const OPERATION_EVENTS: [&str; 2] = [CHANGE.name, MARK.name];
+
+/// The event `event` names, when a signature is carried by it: a change, or a mark.
 pub fn signed_event(event: &str) -> Option<&'static SignedEvent> {
-    SIGNED.iter().find(|signed| signed.name == event)
+    OPERATIONS.iter().find(|signed| signed.name == event)
 }
 
 /// The key of the data under which the signature travels between hosts.
@@ -700,6 +729,27 @@ mod tests {
         later["counter"] = json!(1);
         assert_ne!(signed(CHANGE_EVENT, &later).subject, signing.subject);
         assert!(super::signing("home", "record_list.edit", &change()).is_none());
+    }
+
+    /// A mark is signed as its author and the mark's name in the list, and nothing of a change:
+    /// its vector is its link's, so two marks of one device are one message, and their links tell
+    /// them apart. Red if a mark's message is not under its own event's name.
+    #[test]
+    fn a_mark_is_signed_as_its_author_under_its_own_name() {
+        let mark = signed(MARK_EVENT, &json!({"by": "3"}));
+        assert_eq!(mark.author, 3);
+        let of_a_change = signed(CHANGE_EVENT, &change());
+        assert_ne!(mark.message, of_a_change.message);
+        assert_eq!(
+            signed(MARK_EVENT, &json!({"by": 3})).message,
+            mark.message,
+            "a mark of one author is one message"
+        );
+        assert_eq!(OPERATION_EVENTS, ["record_list.change", "sce_trust.mark"]);
+        assert!(
+            !SIGNED_EVENTS.contains(&MARK_EVENT),
+            "no machine sends a mark"
+        );
     }
 
     /// The one-operation events of the list's parts are no longer signed, admitted or relayed:

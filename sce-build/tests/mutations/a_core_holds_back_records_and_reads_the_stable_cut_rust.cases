@@ -1,0 +1,91 @@
+# Mutation cases for the trust layer of a core whose copy keeps a journal (docs/adr/0085, landing 5;
+# docs/adr/0083, landing 3; docs/adr/0093, section 6): a change its host journals is a record held
+# back until the host says it recorded it, a change that waited is a record once it is signed, a
+# record of another device is refused, a send that never will be signed is withdrawn with every send
+# after it, the history is given from its cut and ends with what waits, the stable cut is the least
+# any member was told, a member not heard from holds it at 0, a mark is owed for a change and not for
+# a mark, every member marks, a reader included, and no machine is told a mark.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_core_holds_back_records_and_reads_the_stable_cut_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --test a_host_gives_the_relay_its_change_only_once_it_recorded_it --test a_change_is_stable_once_every_member_was_told_it --test a_history_is_every_change_in_causal_order_with_its_tag
+mutation_targets backends/rust/trust/src/trust.rs
+mutation_oracles backends/rust/trust/tests/a_host_gives_the_relay_its_change_only_once_it_recorded_it.rs backends/rust/trust/tests/a_change_is_stable_once_every_member_was_told_it.rs backends/rust/trust/tests/a_history_is_every_change_in_causal_order_with_its_tag.rs
+
+# ── The outbox ─────────────────────────────────────────────────────────────────────────────────
+
+mutation_case "A host saying it recorded a record frees nothing" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        self.state().unrecorded.retain(|seq| *seq > through);",
+     "        let _ = (self.state(), through);")
+PY
+
+mutation_case "A change that waited forgets that its host keeps a journal of it" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                        if send.journalled {\n                            note_unrecorded(&mut state);",
+     "                        if false {\n                            note_unrecorded(&mut state);")
+PY
+
+mutation_case "A record of another device is taken back as the host's own" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            if taken.node != own {",
+     "            if false && taken.node != own {")
+PY
+
+mutation_case "A send that never will be signed is withdrawn alone" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            for after in std::mem::take(&mut state.waiting) {",
+     "            for after in Vec::<Waiting>::new() {")
+PY
+
+# ── The history ────────────────────────────────────────────────────────────────────────────────
+
+mutation_case "A history begins where the machine was told, not at its cut" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        let mut vector: BTreeMap<u64, u64> = after.iter().copied().collect();",
+     "        let mut vector: BTreeMap<u64, u64> = { let _ = after; state.delivered.clone() };")
+PY
+
+mutation_case "A history leaves out what waits to be signed" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        history.extend(state.waiting.iter().map(|send| Told {",
+     "        history.extend(state.waiting.iter().take(0).map(|send| Told {")
+PY
+
+# ── The stable cut and the mark ────────────────────────────────────────────────────────────────
+
+mutation_case "The cut is the most any member was told" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                    .min()\n                    .unwrap_or(0);\n                (low > 0).then_some((*node, low))",
+     "                    .max()\n                    .unwrap_or(0);\n                (low > 0).then_some((*node, low))")
+PY
+
+mutation_case "A member not heard from is left out of the cut" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            if era.role >= READER && Some(node) != own {",
+     "            if era.role >= READER && Some(node) != own && state.ops.contains_key(&node) {")
+PY
+
+mutation_case "A mark is owed for a mark told" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                .find(|held| held.event != MARK_EVENT)",
+     "                .find(|_| true)")
+PY
+
+mutation_case "A reader's mark is refused" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if mark && era.role < READER {",
+     "    if mark && era.role < WRITER {")
+PY
+
+mutation_case "A machine is told a mark" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    if held.event == MARK_EVENT {\n        return Some(Next::Pass);",
+     "    if false {\n        return Some(Next::Pass);")
+PY
