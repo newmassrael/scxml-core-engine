@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-test-trace.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE recorded input trace (wire schema v1)",
+  "description": "The recorded input trace of one test case of the test profile (docs/SCE_TTCN3_LANE.md section 10; docs/SCE_TEST_PROFILE.md sections 3.2, 3.3 and 12.4): the inputs of one run from the system under test, each at its logical instant, which a native runtime's trace player and the TTCN-3 side's system adapter both replay, so the two runs see the same inputs at the same instants and their test logs (schemas/sce-test-log.v1.schema.json) can be compared byte for byte. The text is the JSON Canonicalization Scheme (RFC 8785) of the trace, so a trace has one spelling and two traces are equal exactly when their bytes are; a file may end in one line feed after it. The trace holds no number: an instant and every integer of a value are the text of their decimal digits. The inputs stand in order of their instants, and the inputs of one instant in the order they are appended to their ports' queues (docs/SCE_TEST_PROFILE.md section 3.2 step 2). Each input's `type` and `value` are as a message record of the test log writes them: the name of the record's type as the types module of the suite's TTCN-3 export names it, and the value in the canonical form of the profile's types (docs/SCE_TEST_PROFILE.md section 12.5). Whether an input fits the suite, its port a system port of the test case's configuration, its type on the `in` list of that port's type and its value of that type, is checked against the suite by the reader, which refuses the whole trace before the run. Authoritative reader is backends/rust/runtime/src/test/trace.rs, which reads each value with the reader of its record that the unit of the test case's configuration generates. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "type": "object",
+  "required": ["schema", "suite", "test_case", "inputs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "The name of this shape. Changed only on a breaking shape change.",
+      "const": "sce-test-trace.v1"
+    },
+    "suite": {
+      "description": "The name of the test suite the test case is run in.",
+      "type": "string",
+      "minLength": 1
+    },
+    "test_case": {
+      "description": "The name of the test case the trace is replayed for.",
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "description": "The inputs, in order of `at`; those of one instant in the order they are appended to their ports' queues.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/input" }
+    }
+  },
+  "definitions": {
+    "input": {
+      "description": "One input from the system under test.",
+      "type": "object",
+      "required": ["at", "port", "type", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "description": "NOW when the input is due: microseconds since the test case started, as the text of its decimal digits with no leading zero.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "port": {
+          "description": "The system port the input arrives on: the `id` of an `<sce:system-port>` of the test case's configuration.",
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "description": "The name of the input's record type, as the types module of the suite's TTCN-3 export names it (docs/SCE_TEST_PROFILE.md section 9.5) and as a message record of the test log carries it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "description": "The input's value, a record in the canonical form of the profile's types (docs/SCE_TEST_PROFILE.md section 12.5): an object of its fields by their declared ids, an absent field omitted.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "value": {
+      "description": "A value in the canonical form of the profile's types: a text, a truth value, an array of elements, or an object of values. Never a number, and never null: an absent field of a record is omitted, and null stands only as an element of an array.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/definitions/element" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/value" }
+        }
+      ]
+    },
+    "element": {
+      "description": "An element of a list in the canonical form: its value, or null for an absent element of a list of optional<T>, which keeps its place since the array names it by its position.",
+      "oneOf": [
+        { "$ref": "#/definitions/value" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

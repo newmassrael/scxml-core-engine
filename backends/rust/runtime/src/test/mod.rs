@@ -21,17 +21,27 @@
 //! reaches it in the canonical form [`canonical`] spells, which the generated
 //! unit of a template over a record writes (`<template>::canonical`).
 //!
+//! A run's inputs may be a recorded trace (docs/SCE_TTCN3_LANE.md §10), the
+//! wire surface `schemas/sce-test-trace.v1.schema.json`: a [`Trace`], played
+//! by a [`TraceAdapter`], each value read back from its canonical form by
+//! [`from_canonical`] through the reader of the test case's configuration
+//! ([`TestCase::inputs`]). [`run_suite_with_traces`] runs a suite so, and
+//! [`runner`] is the program of a generated suite that does.
+//!
 //! ⚠ `std` only: a run holds its components' values, queues and log on the heap.
 
 #![cfg(feature = "std")]
 
 pub mod canonical;
+pub mod from_canonical;
 mod module_parameters;
 mod port;
 mod run;
+pub mod runner;
 mod suite;
 mod test_log;
 mod timer;
+mod trace;
 mod verdict;
 
 pub use module_parameters::{ModuleParameterValue, ModuleParameters};
@@ -41,8 +51,13 @@ pub use run::{
     MachineFactory, SystemAdapter, TestCaseResult, TestCaseRun, MTC_NAME,
 };
 pub use suite::{
-    enabled, run_suite, CaseResult, Execute, Features, OverrideRefusal, Selection, Suite, TestCase,
+    enabled, run_suite, run_suite_with_traces, CaseResult, Execute, Features, OverrideRefusal,
+    Selection, Suite, TestCase,
 };
 pub use test_log::{TestLogEvent, TestLogRecord, TEST_LOG_SCHEMA, TEST_LOG_SCHEMA_STATUS};
 pub use timer::{Timer, TimerStatus};
+pub use trace::{
+    no_inputs, InputReader, SystemOutput, SystemOutputs, Trace, TraceAdapter, TraceInput,
+    TraceRefusal, TEST_TRACE_SCHEMA, TEST_TRACE_SCHEMA_STATUS,
+};
 pub use verdict::{worse, Verdict};

@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use sce_rust_runtime::json::Value;
 use sce_rust_runtime::saved_state::SavedValue;
 use sce_rust_runtime::test::{
-    canonical, enabled, receives, run_suite, worse, ComponentContext, ComponentMachine,
+    canonical, enabled, no_inputs, receives, run_suite, worse, ComponentContext, ComponentMachine,
     Configuration, Duration, Endpoint, Execute, Features, Instant, LogKind, MachineFactory,
     Message, ModuleParameters, Port, Suite, SystemAdapter, TestCase, TestCaseResult, TestCaseRun,
     Timer, TimerStatus, Verdict,
@@ -781,6 +781,7 @@ mod test_suite_run {
             configuration: lone(component_type),
             machines: machines.factory(),
             module_parameters: Vec::new(),
+            inputs: no_inputs,
         }
     }
 
@@ -862,6 +863,7 @@ mod test_suite_run {
             configuration: lone("Waiter"),
             machines: waiting.factory(),
             module_parameters: Vec::new(),
+            inputs: no_inputs,
         };
         let suite = Suite {
             name: "guarded".to_string(),
@@ -911,6 +913,7 @@ mod test_suite_run {
                 configuration: lone("Reader"),
                 machines: machines.factory(),
                 module_parameters: ids(&["job"]),
+                inputs: no_inputs,
             },
             None,
         ));
@@ -1342,6 +1345,7 @@ mod the_test_log {
             configuration: pinging(),
             machines: pinging_machines().factory(),
             module_parameters: Vec::new(),
+            inputs: no_inputs,
         });
         let results = run_suite(
             &suite,
@@ -1411,6 +1415,7 @@ mod the_test_log {
             configuration: pinging(),
             machines: pinging_machines().factory(),
             module_parameters: Vec::new(),
+            inputs: no_inputs,
         });
         let results = run_suite(
             &suite,

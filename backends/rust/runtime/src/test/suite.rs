@@ -12,7 +12,9 @@
 //! case does is its components' machines, which the run drives
 //! ([`super::TestCaseRun`]). The runner is a library function, with no `main`:
 //! a generated or hand-written test calls it with the system adapters that play
-//! the SUT.
+//! the SUT ([`run_suite`]), or with the recorded input trace of each test case
+//! ([`run_suite_with_traces`]), which the program of a generated suite does
+//! ([`super::runner`]).
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -25,6 +27,7 @@ use super::run::{
     MTC_NAME,
 };
 use super::test_log::{TestLogEvent, TestLogRecord};
+use super::trace::{InputReader, Trace, TraceAdapter, TraceRefusal};
 use super::verdict::Verdict;
 
 /// The features a world of a suite's feature model enables (ADR 0057 §2): a
@@ -51,6 +54,10 @@ pub struct TestCase {
     pub machines: MachineFactory,
     /// The ids of the module parameters its components read.
     pub module_parameters: Vec<String>,
+    /// The reader of its configuration's inputs, which a trace replayed for it
+    /// is read with ([`run_suite_with_traces`]): which records each system port
+    /// takes, and each record's value from its canonical form.
+    pub inputs: InputReader,
 }
 
 /// A selection (§11.8): whether a world of the suite's features runs a test
@@ -95,6 +102,12 @@ pub struct CaseResult {
 pub struct OverrideRefusal(String);
 
 impl OverrideRefusal {
+    /// Refuse, saying why: a value given a module parameter that the suite does
+    /// not declare, or that is no value of its declared type.
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self(reason.into())
+    }
+
     /// Why.
     pub fn reason(&self) -> &str {
         &self.0
@@ -160,6 +173,53 @@ pub fn run_suite(
     mut adapters: impl FnMut(&str) -> Option<Box<dyn SystemAdapter>>,
     overrides: &ModuleParameters,
 ) -> Result<Vec<CaseResult>, OverrideRefusal> {
+    run_selected(suite, world, overrides, |test_case| {
+        adapters(&test_case.name)
+            .ok_or_else(|| "no system adapter is given for the test case".to_string())
+    })
+}
+
+/// Runs the test cases of `suite` that `world` selects, each against its
+/// recorded input trace (docs/SCE_TTCN3_LANE.md §10.5): [`run_suite`], with
+/// the adapter of each test case a [`TraceAdapter`] that plays the trace
+/// `traces` gives for its name, read by the test case's configuration
+/// ([`TestCase::inputs`]).
+///
+/// A test case whose trace is not given, is of another suite or test case, or
+/// does not fit its configuration (a port that is no system port of it, a type
+/// its port does not take, a value that does not belong to its type) ends with
+/// `error` (P13) before any component is created, its log line naming why.
+/// So does one whose components read a module parameter the run has no value
+/// for, as under [`run_suite`], before its trace is asked for.
+pub fn run_suite_with_traces(
+    suite: &Suite,
+    world: &Features,
+    mut traces: impl FnMut(&str) -> Result<Trace, TraceRefusal>,
+    overrides: &ModuleParameters,
+) -> Result<Vec<CaseResult>, OverrideRefusal> {
+    run_selected(suite, world, overrides, |test_case| {
+        let refused = |refusal: TraceRefusal| format!("the trace is refused: {refusal}");
+        let trace = traces(&test_case.name).map_err(refused)?;
+        if trace.suite != suite.name || trace.test_case != test_case.name {
+            return Err(format!(
+                "the trace is of the test case '{}' of the suite '{}'",
+                trace.test_case, trace.suite
+            ));
+        }
+        let adapter = TraceAdapter::replaying(&trace, test_case.inputs).map_err(refused)?;
+        Ok(Box::new(adapter) as Box<dyn SystemAdapter>)
+    })
+}
+
+/// The runner of [`run_suite`] and [`run_suite_with_traces`]: the test cases
+/// `world` selects, each against the adapter `adapter_of` builds for it, or
+/// ended with `error` for the reason it gives where it builds none.
+fn run_selected(
+    suite: &Suite,
+    world: &Features,
+    overrides: &ModuleParameters,
+    mut adapter_of: impl FnMut(&TestCase) -> Result<Box<dyn SystemAdapter>, String>,
+) -> Result<Vec<CaseResult>, OverrideRefusal> {
     let mut parameters = suite.module_parameters.clone();
     for (id, value) in overrides.values() {
         if !parameters.has(id) {
@@ -189,12 +249,12 @@ pub fn run_suite(
             ));
             continue;
         }
-        let Some(adapter) = adapters(&test_case.name) else {
-            results.push(refused(
-                &test_case.name,
-                "no system adapter is given for the test case".to_string(),
-            ));
-            continue;
+        let adapter = match adapter_of(test_case) {
+            Ok(adapter) => adapter,
+            Err(why) => {
+                results.push(refused(&test_case.name, why));
+                continue;
+            }
         };
         let run = TestCaseRun::new(
             test_case.configuration.clone(),

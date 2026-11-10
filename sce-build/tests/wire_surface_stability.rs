@@ -57,6 +57,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-ttcn3-types-manifest.v1.schema.json",
     "schemas/sce-ttcn3-witness.v1.schema.json",
     "schemas/sce-test-log.v1.schema.json",
+    "schemas/sce-test-trace.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -288,6 +289,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_log_the_runtime_writes_validates_against_the_wire_schema",
         "sce-build/tests/a_test_log_is_held_to_its_wire_schema.rs",
     ),
+    (
+        "schemas/sce-test-trace.v1.schema.json",
+        "every_trace_the_reader_reads_validates_against_the_wire_schema",
+        "sce-build/tests/a_test_trace_is_held_to_its_wire_schema.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -397,6 +403,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-test-log.v1.schema.json",
         "the_test_log_schema_rejects_what_the_runtime_does_not_write",
         "sce-build/tests/a_test_log_is_held_to_its_wire_schema.rs",
+    ),
+    (
+        "schemas/sce-test-trace.v1.schema.json",
+        "the_trace_schema_rejects_what_the_reader_does_not_accept",
+        "sce-build/tests/a_test_trace_is_held_to_its_wire_schema.rs",
     ),
 ];
 
@@ -534,6 +545,14 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          differs between the two sides, so two runs that agree would write \
          two logs that differ. It states the run and nothing of who ran it.",
         "test log deliberately does",
+    ),
+    (
+        "schemas/sce-test-trace.v1.schema.json",
+        "written by hand for the corpus or by the downstream lane's \
+         recorder, never by a run of SCE, so there is no SCE run to stamp; \
+         and both sides of a comparison replay the one file, so a stamp of \
+         either side would name a producer the other is not.",
+        "recorded input trace deliberately does",
     ),
 ];
 
