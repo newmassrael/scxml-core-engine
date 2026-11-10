@@ -112,6 +112,11 @@
    is the deployment's, made at build time, and not the document's. */
 #include "sce/inbox.h"
 
+/* docs/adr/0045: `sce_start_refusal_t`, what `_init_with_session_id` answers,
+   and the rule an id a host gives is judged by. Included on every machine:
+   every root takes its id from its host when the host gives one. */
+#include "sce/session_id.h"
+
 {% if model.test_component %}
 /* docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
    component, whose context this machine keeps and whose doors its component
@@ -1239,36 +1244,29 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {{ csym_prefix }}{{ model.name }}_event_t last_truncated_event;
     bool has_truncated_event;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
-    /* W3C SCXML 5.10 / C.1.1: the id the processor generates for THIS
-       session, and the address that reaches it. Issued in `_init` rather
-       than baked at codegen time, because the requirement names the id of
-       the current SESSION and a document-derived value names the document:
-       two instances of one machine are two sessions, and giving them one
-       id makes their published `_ioprocessors` locations equal, so a
-       `<send>` addressed to one is a send addressed to either. Fixed
-       buffers — the profile allocates nothing.
+    /* W3C SCXML 5.10 / C.1.1: the id of THIS session, and the address that
+       reaches it. Bound when the session starts rather than baked at codegen
+       time, because the requirement names the id of the current SESSION and
+       a document-derived value names the document: two instances of one
+       machine are two sessions, and giving them one id makes their published
+       `_ioprocessors` locations equal, so a `<send>` addressed to one is a
+       send addressed to either. Fixed buffers — the profile allocates
+       nothing.
 
-       The id buffer is sized from the machine name it is built out of,
-       not from `SCE_MAX_ID_LEN`: names of synthesised invoke children
-       (`<doc>__sce_synth_invoke__<invokeid>`) already run past 64
-       characters, and a shared cap would silently truncate the tail —
-       which is where the ordinal that distinguishes two sessions lives.
-       20 digits is `unsigned long`'s widest decimal form, and the
-       `sizeof` of the literal carries the terminator. */
-{% if static_saved_shape %}
-    /* SCE Accepted Subset §2.15: a saved state of a session carries on under
-       the id it was saved with, which another backend drew (a UUID is 36
-       bytes) or a parent derived from its own (`parent.state.N.invoke`), so a
-       machine that restores holds an id of `SCE_MAX_SESSION_ID_LEN` bytes. */
+       The id is the one the host gave (`_init_with_session_id`), the one the
+       machine drew when it was given none (`<name>_session_<n>`), a child's
+       derived from its parent's (`parent.state.N.invoke`), or, for a restored
+       session, the one it was saved with, which another backend may have
+       drawn (a UUID is 36 bytes). Every one is held in the bytes a saved
+       state holds a session id in (`SCE_MAX_SESSION_ID_LEN`, SCE Accepted
+       Subset §2.15), so a machine holds whatever id it may be given or
+       restored under, and one that does not fit is refused, never cut. */
     char session_id[SCE_MAX_SESSION_ID_LEN];
     /* §scxml-C-1: the location is a URI, held in the bytes this runtime holds
        one in, since it is also the address every event this session sends
-       carries; a restore refuses an id whose location does not fit. */
+       carries; a start or a restore refuses an id whose location does not
+       fit. */
     char scxml_location[SCE_MAX_URI_LEN];
-{% else %}
-    char session_id[sizeof("{{ model.name | escape_c }}_session_") + 20u];
-    char scxml_location[sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u];
-{% endif %}
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
     {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
@@ -1454,7 +1452,8 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 
 /* ── Public API ───────────────────────────────────────────────────── */
 
-/* W3C SCXML 5.10: the id this session was issued at `_init`, the value its
+/* W3C SCXML 5.10: the id this session was started under — the one its host
+   gave (`_init_with_session_id`) or the one it drew — the value its
    datamodel reads as `_sessionid`. Valid from `_init` until the storage
    goes away; NULL for a NULL machine. Public because a session id that
    only the datamodel can see is one a host cannot correlate its own
@@ -1782,6 +1781,62 @@ bool {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefi
    Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
 void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
+
+/* docs/adr/0045 ("Questions the owner answered" 2): start this machine under the
+   session id its host gives, as every other backend's machine can be built
+   with one (a Mesh device's identity, a test component's name). The id is
+   `_sessionid` from the first `<onentry>` on, and the session publishes its
+   location in `_ioprocessors` and names it as the origin of every event it
+   sends. A root started through any other entry draws its own id,
+   `{{ model.name | escape_c }}_session_<n>`, which is what it is known by when its
+   host gives it none.
+
+   The id is judged before anything is touched (`sce_session_id_judge`): it is
+   refused unless it is an XML Nmtoken that fits `SCE_MAX_SESSION_ID_LEN` bytes
+   with its terminator and whose location fits `SCE_MAX_URI_LEN`. A refused
+   start answers why (`sce_start_refusal_text`), never cuts the id or draws
+   another in its place, and leaves the caller's storage exactly as it was, so
+   the machine is not started. NULL is no id and is refused as the empty one.
+   The id is copied, so the caller's text need not outlive the call.
+
+   The id names one session: the host gives each machine it starts an id no
+   other session of its process holds, since a machine cannot see the others
+   to compare, and two sessions under one id publish one address.
+
+{% if model.needs_event_scheduler or model.needs_script_engine or model.host_processor_types or model.host_invoker_types or has_native_actions %}
+   Takes every seam the other entries split between them, since this one call
+   is both construction and entry, each installed before the first `<onentry>`
+   runs:
+{% if model.needs_event_scheduler %}
+     clock                  the clock (`sce_clock_monotonic()` is what `_init` installs);
+{% endif %}
+{% if model.needs_script_engine %}
+     basic_http_access_uri  the inbound BasicHTTP endpoint, NULL for none;
+{% endif %}
+{% if model.host_processor_types %}
+     host_processors        the host processors, NULL for none;
+{% endif %}
+{% if model.host_invoker_types %}
+     host_invokers          the host invokers, NULL for none;
+{% endif %}
+{% if has_native_actions %}
+     actions                the table of acts, refused as `_init_with_actions` refuses
+                            one (`SCE_START_REFUSAL_HOST_ACTIONS`).
+{% endif %}
+
+{% endif %}
+{% if static_saved_shape %}
+   A restore (`_restore`) keeps the id the state was saved with, as every
+   backend's restore does.
+{% endif %}
+*/
+sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const char *session_id{% if model.needs_event_scheduler %},
+                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
+                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
+                                       const {{ native_actions_interface }} *actions{% endif %});
 {% if model.needs_script_engine %}
 
 /* W3C SCXML C.2.3: initialize with the deployment's inbound BasicHTTP

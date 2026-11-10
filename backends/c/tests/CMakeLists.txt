@@ -3324,6 +3324,32 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             ${INTEGRATION_C_TEST_static_timers_SOURCES}
     )
 
+    # A root takes its session id from its host (docs/adr/0045, "Questions the owner
+    # answered" 2): an id given is the session's, one the machine cannot hold is refused
+    # and touches nothing, a restore keeps the id it was saved with, and a machine given
+    # none draws its own. The machine is generated above.
+    add_executable(sce_c_integration_static_session_id
+        integration/test_a_root_takes_the_session_id_its_host_gives.c
+        ${INTEGRATION_C_TEST_static_enum_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_static_session_id EXCLUDES lua dom)
+    target_include_directories(sce_c_integration_static_session_id PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_static_session_id PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_session_id
+        COMMAND sce_c_integration_static_session_id
+    )
+    set_tests_properties(c11_integration_static_session_id PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # A host action whose arguments are typed expressions of the machine's own
     # variables, from the two documents the C++ suite drives. The second sits
     # beside that suite, for the reason `test_thermostat.scxml` sits beside its

@@ -446,10 +446,12 @@ fn a_machine_with_a_history_is_generated_with_the_save_api() {
 /// gives the id to, the Kotlin constructor's call that binds the given id or
 /// draws one, the Go policy's drawn id and the setter a host gives one by, and
 /// the Python factory's `session_id`, handed to the engine, which draws one
-/// where it is `None`. Go's and Python's save APIs are held to the other
-/// backends' by nothing else in this file, so their markers stand here and not
-/// in [`SAVE_API`].
-const ROOT_SESSION_ID: [(&str, &str, &[&str]); 4] = [
+/// where it is `None`, and the C11 entry a host gives the id through, with the
+/// buffer that holds any id a session may be given and the construction that
+/// takes the given id or draws one where it is NULL. Go's, Python's and C11's
+/// save APIs are held to the other backends' by nothing else in this file, so
+/// their markers stand here and not in [`SAVE_API`].
+const ROOT_SESSION_ID: [(&str, &str, &[&str]); 5] = [
     ("rust", SAVE_API[0].1, &["pub fn new_with_session_id("]),
     ("kotlin", SAVE_API[1].1, &["bindRootSessionId(sessionId)"]),
     (
@@ -466,6 +468,15 @@ const ROOT_SESSION_ID: [(&str, &str, &[&str]); 4] = [
         &[
             "session_id: Optional[str] = None) -> Engine[",
             "return Engine(policy, script_engine=script_engine, session_id=session_id)",
+        ],
+    ),
+    (
+        "c11",
+        "bool machine_save(const machine_t *sm, int64_t wall_now_ms, char *buf,",
+        &[
+            "sce_start_refusal_t machine_init_with_session_id(machine_t *sm,",
+            "char session_id[SCE_MAX_SESSION_ID_LEN];",
+            "machine_issue_session_identity(sm, session_id);",
         ],
     ),
 ];

@@ -6014,7 +6014,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.n
 /* W3C SCXML 5.10 / C.1.1: issue this session's id and the address that
    reaches it.
 
-   A session begins in two places on this backend — `_init_impl` for a
+   A session begins in two places on this backend — `_init_construct` for a
    machine a host starts, `_init_with_parent` for one a parent invokes —
    and both zero the struct and then open the datamodel. Issuing from one
    function called by both is what keeps a child from being the case that
@@ -6024,24 +6024,36 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.n
    invoked children carried an empty location and the origin they stamped
    matched nothing they published.
 
-   The counter is file-scope and per machine type, which is what makes the
-   id unique across the process without a registry to consult: two sessions
-   of this machine differ in the ordinal, and two machines differ in the
-   name the ordinal is appended to. A clock would collide inside its own
-   resolution and would not be reproducible; an address would be unique
+   `given` is the id the host gave the root (docs/adr/0045, "Questions the
+   owner answered" 2), already judged by `sce_session_id_judge` before the
+   struct was cleared, so it fits the id's bytes and its location fits the
+   URI's whole. NULL when the host gave none, and the machine draws its own.
+
+   The counter is file-scope and per machine type, which is what makes a
+   drawn id unique across the process without a registry to consult: two
+   sessions of this machine differ in the ordinal, and two machines differ
+   in the name the ordinal is appended to. A clock would collide inside its
+   own resolution and would not be reproducible; an address would be unique
    only by accident. The ordinal keeps the value an NMTOKEN, as
-   §scxml-5.10 requires of `_sessionid`. */
-SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({{ csym_prefix }}{{ model.name }}_t *sm) {
-    static unsigned long _sce_session_seq;
-    ++_sce_session_seq;
-    (void)snprintf(sm->session_id, sizeof(sm->session_id),
-                   "{{ model.name | escape_c }}_session_%lu", _sce_session_seq);
+   §scxml-5.10 requires of `_sessionid`. A given id takes no ordinal, and
+   its uniqueness is the host's. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                    const char *given) {
+    if (given != NULL) {
+        sce_copy_bounded_n(sm->session_id, given, sizeof(sm->session_id));
+    } else {
+        static unsigned long _sce_session_seq;
+        ++_sce_session_seq;
+        (void)snprintf(sm->session_id, sizeof(sm->session_id),
+                       "{{ model.name | escape_c }}_session_%lu", _sce_session_seq);
+    }
     /* W3C SCXML C.1.1: the published address is the id, spelled as the
        SCXML event processor's URI by the one encoder every origin a session's
        send carries is spelled by (`sce_scxml_location`). Derived here, once,
        so the address and the id cannot disagree — C.1 requires them to name
-       one session. The id is the machine's name and digits, so the location
-       always fits (asserted beside `SCE_MAX_URI_LEN` in the header). */
+       one session. A drawn id is the machine's name and digits, so its
+       location always fits (asserted beside `SCE_MAX_URI_LEN` in the header);
+       a given one was refused unless its location fits. */
     (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
 }
 
@@ -6082,15 +6094,20 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
    sets the one a host recorded. Splitting them is what lets the resume door
    exist at all on a backend where construction and entry are one call.
 
-   Returns false only when the host's act table is incomplete; that check stays
-   FIRST, before the memset, so a refused call leaves the caller's storage
-   exactly as it was — the same rule the configuration door follows.
+   Refuses only a host's act table that is incomplete and a session id the host
+   gave that the machine cannot take; both checks stay FIRST, before the memset,
+   so a refused call leaves the caller's storage exactly as it was — the same
+   rule the configuration door follows.
 
    `keep_tree_inboxes` is true for a child session its parent begins
    (`_invoked_begin`): the slot it stands in keeps the part of it from `inbox`
    on, which its parent built with the tree, because another context may be
-   posting to it (docs/adr/0084, D2 as amended at step 10). #}
-SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm, bool keep_tree_inboxes{% if model.needs_event_scheduler %},
+   posting to it (docs/adr/0084, D2 as amended at step 10).
+
+   `session_id` is the id the host gives a root (docs/adr/0045), NULL for none,
+   in which case the machine draws its own. #}
+SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm, bool keep_tree_inboxes,
+                                                       const char *session_id{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
                                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
@@ -6105,7 +6122,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
        (an unimplemented interface method does not compile); C has no such
        check, so it moves to the one call a C host has to make. */
     if (actions == NULL{% for op in native_action_ops %} || actions->{{ op }} == NULL{% endfor %}) {
-        return false;
+        return SCE_START_REFUSAL_HOST_ACTIONS;
     }
 {% endif %}
 {% if has_native_duties %}
@@ -6116,9 +6133,20 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
        is an enum and not a function pointer, so it is read by the shared rule and
        is not one of the members the NULL check above walks. */
     if (!sce_action_realization_accepted(actions->realization, accept_simulated)) {
-        return false;
+        return SCE_START_REFUSAL_HOST_ACTIONS;
     }
 {% endif %}
+    /* docs/adr/0045: an id the host gave is judged here, before anything is
+       touched, for the reason the act table is: a refused start leaves the
+       caller's storage as it was, and an id is never cut to fit nor replaced
+       by a drawn one, since a peer that was told the given id would address
+       nobody. */
+    if (session_id != NULL) {
+        const sce_start_refusal_t refused = sce_session_id_judge(session_id);
+        if (refused != SCE_START_REFUSAL_NONE) {
+            return refused;
+        }
+    }
 #if SCE_MAX_INBOX > 0
     if (keep_tree_inboxes) {
         memset(sm, 0, offsetof({{ csym_prefix }}{{ model.name }}_t, inbox));
@@ -6195,7 +6223,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
     sm->policy.{{ field.name }} = {{ field.init }};
 {% endif %}
 {% endfor %}
-    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
+    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm, session_id);
 {% if model.needs_script_engine %}
     /* W3C SCXML C.2.3: stamp the deployment's inbound BasicHTTP endpoint
        before the Lua state opens. `_ioprocessors` is seeded once at that
@@ -6227,7 +6255,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
        that were never declared. */
 {{ se.lua_init_engine() }}
     {% endif %}
-    return true;
+    return SCE_START_REFUSAL_NONE;
 }
 
 /* The entry half of `_init`, once `_init_construct` has built the session: the
@@ -6272,7 +6300,8 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
                                                        const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
                                                        bool accept_simulated{% endif %}) {
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %})) {
+    /* No id is given here, so the machine draws its own (docs/adr/0045). */
+    if ({{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %}) != SCE_START_REFUSAL_NONE) {
 {% if has_native_actions %}
         return false;
 {% else %}
@@ -6283,6 +6312,29 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
 {% if has_native_actions %}
     return true;
 {% endif %}
+}
+
+/* docs/adr/0045: the start under the id the host gives. See the header. The
+   construction judges the id before it touches the machine, so a refused one
+   leaves the storage as it was and the initial configuration is not entered. */
+SCE_SM_FN sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       const char *session_id{% if model.needs_event_scheduler %},
+                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
+                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
+                                       const {{ native_actions_interface }} *actions{% endif %}) {
+    /* NULL tells the construction to draw an id; given to this entry it is
+       no id at all, which is refused as the empty one. */
+    if (session_id == NULL) {
+        return SCE_START_REFUSAL_SESSION_ID_EMPTY;
+    }
+    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, session_id{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{{ simulated_refused }});
+    if (refused != SCE_START_REFUSAL_NONE) {
+        return refused;
+    }
+    {{ csym_prefix }}{{ model.name }}_init_enter(sm);
+    return SCE_START_REFUSAL_NONE;
 }
 
 /* W3C SCXML 3.2: stand a constructed machine in a configuration already judged
@@ -6347,13 +6399,14 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     }
 
 {% if has_native_actions %}
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }})) {
+    if ({{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }}) != SCE_START_REFUSAL_NONE) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE;
     }
 {% else %}
-    /* Cannot fail for this document: the act table is the only thing
-       construction refuses, and this document declares no acts. */
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    /* Cannot fail for this document: given no session id, the act table is
+       the only thing construction refuses, and this document declares no
+       acts. */
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 
     {{ csym_prefix }}{{ model.name }}_stand_in(sm, configuration, count);
@@ -7381,7 +7434,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
 {% else %}
     (void)clock;
 {% endif %}
-    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm);
+    {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm, NULL);
     /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so
        `<onentry><send target="#_parent">` (test191/338) routes through
        the parent's dispatcher rather than dropping under the NULL
@@ -7460,11 +7513,11 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
        copied in by the construction before the entry walk. A NULL or incomplete
        one is refused FIRST, so the child's storage is as the parent left it and
        the parent can report the start as failed. */
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, true{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %})) {
+    if ({{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %}) != SCE_START_REFUSAL_NONE) {
         return false;
     }
 {% else %}
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 {% if model.may_address_parent %}
     /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
@@ -8369,7 +8422,7 @@ SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self
     memset(&invokers, 0, sizeof(invokers));
     (void)sce_host_invoker_register(&invokers, "{{ test_component_invoke_type | escape_c }}", {{ P }}_component_invoke, sm);
 {% endif %}
-    (void){{ P }}_init_construct(sm, false{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+    (void){{ P }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
     sm->test_context = *context;
 {% if model.test_component.module_parameters %}
     /* §11.5, §11.8: the module parameters take the suite's values before the initial configuration is

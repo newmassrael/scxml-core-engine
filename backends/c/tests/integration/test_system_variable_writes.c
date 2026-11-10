@@ -320,7 +320,35 @@ static int check_case(const char *object, int index) {
     return failed;
 }
 
+// docs/adr/0045: a machine its host starts under an id binds `_sessionid` to that
+// id, read-only like the drawn one: the id reaches the Lua state before it opens,
+// so the first script already reads it. A drawn id would read here as
+// `system_variable_writes_session_<n>`.
+static int check_given_session_id(void) {
+    static const char GIVEN[] = "host-given.root";
+    sm_t sm;
+    const sce_start_refusal_t refused = system_variable_writes_init_with_session_id(&sm, GIVEN, NULL);
+    if (refused != SCE_START_REFUSAL_NONE) {
+        (void)fprintf(stderr, "FAIL: the machine refused the id `%s`: %s\n", GIVEN, sce_start_refusal_text(refused));
+        return 1;
+    }
+    int failed = 0;
+    if (sm.L == NULL || !bound_by_the_binder(sm.L, "_sessionid")) {
+        (void)fprintf(stderr, "FAIL: a machine started under a given id bound no read-only `_sessionid`\n");
+        failed = 1;
+    } else if (strcmp(sm.session_id, GIVEN) != 0 || !bound_its_own_session_id(sm.L, &sm)) {
+        (void)fprintf(stderr, "FAIL: `_sessionid` is not the id the host gave (`%s`, the machine holds `%s`)\n", GIVEN,
+                      sm.session_id);
+        failed = 1;
+    }
+    system_variable_writes_destroy(&sm);
+    return failed;
+}
+
 int main(void) {
+    if (check_given_session_id() != 0) {
+        return 1;
+    }
     char *table = read_table(SCE_SYSTEM_VARIABLE_WRITES_TABLE);
     if (table == NULL) {
         (void)fprintf(stderr, "FAIL: cannot read %s\n", SCE_SYSTEM_VARIABLE_WRITES_TABLE);
