@@ -209,9 +209,9 @@
 {% endif %}
 {% if send_prologue %}
 {% if model.needs_script_engine %}
-            ensureScriptEngine()
+            assertScriptSession()
             val argEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-            val argSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val argSid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
 {% endif %}
 {% if action.idlocation and not action.native_idlocation %}
             // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
@@ -414,9 +414,9 @@
    A `<param>` that cannot be read drops its pair (`param_expr_arm`). #}
 {% if action.params or has_namelist %}
 {% if param_ns.engine and model.needs_script_engine %}
-            ensureScriptEngine()
+            assertScriptSession()
             val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-            val payloadSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+            val payloadSid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
 {% endif %}
             val sendPayload = mutableMapOf<String, Any?>()
 {% for param in action.params %}
@@ -479,10 +479,10 @@
             // empty string as the value of the <content> element": the message
             // still goes, carrying "", and — like a failing <param> — the error
             // ends the block once it has (§scxml-4.9).
-            ensureScriptEngine()
+            assertScriptSession()
             val sendData = try {
                 val sendContentValue = (scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)"))
-                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)"), {{ action.contentexpr | to_script_source_expr }})
+                    .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), {{ action.contentexpr | to_script_source_expr }})
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> contentexpr failed to evaluate", {{ send_id_kt }})

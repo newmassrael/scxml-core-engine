@@ -805,14 +805,6 @@ SavedValues.of({{ name }})
 
     // The generate manifest's `needs_parent`: what a root-start policy reads.
     override val needsParent: Boolean = {{ 'true' if model.needs_parent else 'false' }}
-{% if model.needs_script_engine %}
-
-    // W3C SCXML B.1: Initialize script engine before entering initial state
-    override fun enterInitialConfiguration() {
-        ensureScriptEngine()
-        super.enterInitialConfiguration()
-    }
-{% endif %}
 
     // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
     //
