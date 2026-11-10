@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
+// source-hash: 81a3de342b33c3189f4a5813894163bc1e16bfc77aa7ead74e709e8ba7b570b9
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -309,7 +309,7 @@ impl StaticModelHarnessTransition {
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
     pub const SOURCE_HASH: &'static str =
-        "50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359";
+        "81a3de342b33c3189f4a5813894163bc1e16bfc77aa7ead74e709e8ba7b570b9";
 
     /// Every transition of the machine.
     pub const ALL: [StaticModelHarnessTransition; 15] = [
