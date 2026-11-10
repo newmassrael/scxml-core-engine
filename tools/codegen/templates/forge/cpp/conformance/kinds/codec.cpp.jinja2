@@ -194,6 +194,29 @@
     }
 {% endfor %}
 
+{# Refused cases (docs/adr/0081 §5), the same cases the Rust fragment runs:
+   each `source` is a value of the codec's interface its encode refuses
+   (docs/adr/0065 §2), made as a `sources` value is, and `symbol` the refusal
+   the encode answers it with. The encode returns exactly that refusal, and it
+   refuses before its first byte, so the sink is left empty. Independent of
+   `oracle_eligible`, as the sources are. #}
+{% for r in f.refused %}
+    {
+{% for b in r.bindings %}
+        {{ b }}
+{% endfor %}
+        const SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} value = {{ r.literal }};
+        std::vector<std::uint8_t> encoded;
+        ::SCE::Forge::VectorSink sink(encoded);
+        const auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::Wire::encode_source(value, sink);
+        CHECK(refused.has_value() && *refused == {{ r.symbol }},
+              "{{ f.name }} refused {{ loop.index0 }}: the encode did not answer {{ r.error }}: %s", "{{ r.note }}");
+        CHECK(encoded.empty(),
+              "{{ f.name }} refused {{ loop.index0 }}: the encode wrote %zu bytes before it refused",
+              encoded.size());
+    }
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — see the Rust fragment for the
    shape. C++ returns one sentinel for every failure, so `r.symbol` is absent
    here and the first assertion is that the decode refused. A refusal for a

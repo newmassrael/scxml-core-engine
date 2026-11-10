@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::forge::codec_failure::CodecFailure;
+use crate::forge::encode_failure::EncodeFailure;
 use crate::forge::model::RuntimeDep;
 use crate::generator::Language;
 
@@ -3435,41 +3436,239 @@ fn fold_source_cases(
         return Ok(false);
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
+    let (rows, cpp_printed) = codec_case_rows(fixture, sources, "sources", &where_)?;
+    let Some(printer) = CasePrinter::of(cpp_printed, language, "sources", &where_)? else {
+        return Ok(false);
+    };
+    let folded = fold_case_rows(
+        fixture,
+        printer,
+        rows,
+        "sources",
+        &where_,
+        resource_dir,
+        |_, at, row, case| {
+            let encoded = row
+                .get("encoded")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| format!("{at} must carry an 'encoded' byte array"))?;
+            if encoded.iter().any(|b| b.as_u64().is_none_or(|b| b > 0xFF)) {
+                return Err(format!("{at}: 'encoded' holds a value that is not a byte"));
+            }
+            let checks: Vec<serde_json::Value> = case
+                .checks
+                .into_iter()
+                .map(|(element, holds)| serde_json::json!({ "element": element, "holds": holds }))
+                .collect();
+            Ok(serde_json::json!({
+                "bindings": case.bindings,
+                "literal": case.literal,
+                "checks": checks,
+                "inputs": case.inputs,
+                "encoded": encoded,
+                "note": case.note,
+            }))
+        },
+    )?;
+    value
+        .as_object_mut()
+        .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
+        .insert("sources".into(), serde_json::Value::Array(folded));
+    Ok(true)
+}
+
+/// Fold a codec fixture's refused cases (docs/adr/0081 §5) into the value the
+/// fragment renders from, for a backend whose encode prints the codec's plan:
+/// each `source` is a value of the codec's interface its encode refuses, made
+/// as [`fold_source_cases`] makes a source, and its `error` the refusal the
+/// encode answers it with (docs/adr/0065 §2), spelled as the backend's runtime
+/// names it. The harness encodes the value and holds the encode to answering
+/// exactly that refusal and to leaving the sink empty. The stated refusal must
+/// be one the codec's encode can answer, and one the backend's runtime names:
+/// a case a backend cannot state is refused by name, never left out.
+///
+/// Answers whether anything was folded, as [`fold_reject_vectors`] does.
+fn fold_refused_cases(
+    value: &mut serde_json::Value,
+    reference: &serde_json::Value,
+    fixture: &Fixture,
+    language: Language,
+    resource_dir: &Path,
+    reference_path: &Path,
+) -> Result<bool, String> {
+    let Some(refused) = reference
+        .get(&fixture.ref_section)
+        .and_then(|s| s.get(&fixture.name))
+        .and_then(|e| e.get("refused"))
+    else {
+        return Ok(false);
+    };
+    let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
+    let (rows, cpp_printed) = codec_case_rows(fixture, refused, "refused", &where_)?;
+    let Some(printer) = CasePrinter::of(cpp_printed, language, "refused", &where_)? else {
+        return Ok(false);
+    };
+    let folded = fold_case_rows(
+        fixture,
+        printer,
+        rows,
+        "refused",
+        &where_,
+        resource_dir,
+        |plan, at, row, case| {
+            let error = row
+                .get("error")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| format!("{at} must name the refusal it expects in 'error'"))?;
+            let failure = EncodeFailure::parse(error).map_err(|e| format!("{at}: {e}"))?;
+            // The encode answers its own refusals, and a held codec's, which
+            // may be of any kind.
+            let answers = plan.totality.refusals().iter().any(|r| {
+                r.kind == failure.refusal_kind()
+                    || r.kind == crate::forge::codec_totality::RefusalKind::Child
+            });
+            if !answers {
+                return Err(format!(
+                    "{at}: the encode of {} never answers '{error}' (docs/adr/0065 §2): no \
+                     value of it is refused with that",
+                    fixture.name
+                ));
+            }
+            let symbol = failure.symbol(printer.language()).ok_or_else(|| {
+                format!(
+                    "{at}: the {:?} runtime names no '{error}', so its harness cannot state \
+                     this case",
+                    printer.language()
+                )
+            })?;
+            Ok(serde_json::json!({
+                "bindings": case.bindings,
+                "literal": case.literal,
+                "error": failure.wire_name(),
+                "symbol": symbol,
+                "note": case.note,
+            }))
+        },
+    )?;
+    value
+        .as_object_mut()
+        .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
+        .insert("refused".into(), serde_json::Value::Array(folded));
+    Ok(true)
+}
+
+/// The rows of a codec fixture's byte cases stated under `key` (`sources`,
+/// `refused`), and whether the C++ backend prints the codec from its plan.
+/// Cases of a fixture that is not a codec, and a key with no case, are
+/// authoring mistakes.
+fn codec_case_rows<'r>(
+    fixture: &Fixture,
+    cases: &'r serde_json::Value,
+    key: &str,
+    where_: &str,
+) -> Result<(&'r [serde_json::Value], bool), String> {
     let FixtureSpec::Codec { cpp_printed, .. } = &fixture.spec else {
         return Err(format!(
-            "{where_}: 'sources' are a codec's byte cases; this fixture is not a codec"
+            "{where_}: '{key}' are a codec's byte cases; this fixture is not a codec"
         ));
     };
-    let rows = sources
+    let rows = cases
         .as_array()
         .filter(|rows| !rows.is_empty())
-        .ok_or_else(|| format!("{where_}: 'sources' must be a non-empty array"))?;
-    // Whether the C++ printer writes the cases; otherwise the Rust printer does.
-    let cpp = match language {
-        Language::Rust => false,
-        Language::Cpp if *cpp_printed => true,
-        // A printer runs every case of every shape it prints (docs/adr/0081
-        // §5): a codec the C++ backend keeps on the template's encode has no
-        // value a constructor makes from the case, so its cases cannot run.
-        Language::Cpp => {
-            return Err(format!(
-                "{where_}: the C++ backend keeps this codec on the template's encode \
-                 (docs/adr/0081 §6), whose value no case is made into; a codec with \
-                 'sources' is one it prints from its plan"
-            ))
+        .ok_or_else(|| format!("{where_}: '{key}' must be a non-empty array"))?;
+    Ok((rows.as_slice(), *cpp_printed))
+}
+
+/// The printer that writes a codec's byte cases into a harness: the Rust one,
+/// whose value is `{Codec}Parts` (docs/adr/0058 §4), or the C++ one, whose
+/// value its constructor makes (docs/adr/0081 step 4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CasePrinter {
+    Rust,
+    Cpp,
+}
+
+impl CasePrinter {
+    /// The printer of `language`'s harness, or `None` for a backend whose
+    /// encode does not print the plan, which runs its `cases` as before. A
+    /// codec the C++ backend does not print (`cpp_printed`) is refused by
+    /// name: a printer runs every case of every shape it prints
+    /// (docs/adr/0081 §5), and a codec it keeps on the template's encode has
+    /// no value a constructor makes from the case.
+    fn of(
+        cpp_printed: bool,
+        language: Language,
+        key: &str,
+        where_: &str,
+    ) -> Result<Option<Self>, String> {
+        Ok(match language {
+            Language::Rust => Some(CasePrinter::Rust),
+            Language::Cpp if cpp_printed => Some(CasePrinter::Cpp),
+            Language::Cpp => {
+                return Err(format!(
+                    "{where_}: the C++ backend keeps this codec on the template's encode \
+                     (docs/adr/0081 §6), whose value no case is made into; a codec with \
+                     '{key}' is one it prints from its plan"
+                ))
+            }
+            _ => None,
+        })
+    }
+
+    /// The backend whose harness this printer writes.
+    fn language(self) -> Language {
+        match self {
+            CasePrinter::Rust => Language::Rust,
+            CasePrinter::Cpp => Language::Cpp,
         }
-        _ => return Ok(false),
-    };
+    }
+}
+
+/// One byte case of a codec as a printer spells it for its harness.
+struct PrintedCase {
+    /// The declarations the literal reads, in order.
+    bindings: Vec<String>,
+    /// The value the case states.
+    literal: String,
+    /// Each element, group or input by its label, with an expression that holds
+    /// when a decode of the bytes presents what the value does.
+    checks: Vec<(String, String)>,
+    /// The flag inputs a decode is handed, as its arguments.
+    inputs: Vec<String>,
+    /// The case's note, as the harness inlines it into a string literal.
+    note: String,
+}
+
+/// Each row of a codec fixture's byte cases under `key`, its `source` made into
+/// the value `printer` spells (after the bindings it reads, with its checks and
+/// inputs), read from the codec's plan, and handed with its row and its place
+/// (`at`) to `fold_row`, which answers what the fragment renders from. The one
+/// reading of a case's value, note and inputs that every kind of byte case
+/// shares.
+fn fold_case_rows(
+    fixture: &Fixture,
+    printer: CasePrinter,
+    rows: &[serde_json::Value],
+    key: &str,
+    where_: &str,
+    resource_dir: &Path,
+    mut fold_row: impl FnMut(
+        &crate::forge::encode_plan::EncodePlan<'_>,
+        &str,
+        &serde_json::Value,
+        PrintedCase,
+    ) -> Result<serde_json::Value, String>,
+) -> Result<Vec<serde_json::Value>, String> {
     let document = fixture.document_path(resource_dir);
     let include = [resource_dir.to_path_buf()];
-    let folded = crate::encode_plan_file_with_imports(
+    crate::encode_plan_file_with_imports(
         &document,
         &include,
         &crate::ForgeCompileOptions::default(),
         |plan, imported| -> Result<Vec<serde_json::Value>, String> {
             let crate::forge::encode_plan::CodecPlan::Positional(plan) = plan else {
                 return Err(format!(
-                    "{where_}: 'sources' are written for a positional codec"
+                    "{where_}: '{key}' are written for a positional codec"
                 ));
             };
             let type_name = crate::filters::to_pascal_case(fixture.name.clone());
@@ -3481,17 +3680,10 @@ fn fold_source_cases(
             rows.iter()
                 .enumerate()
                 .map(|(i, row)| {
-                    let at = format!("{where_}: sources[{i}]");
+                    let at = format!("{where_}: {key}[{i}]");
                     let source = row
                         .get("source")
                         .ok_or_else(|| format!("{at} must carry 'source'"))?;
-                    let encoded = row
-                        .get("encoded")
-                        .and_then(|v| v.as_array())
-                        .ok_or_else(|| format!("{at} must carry an 'encoded' byte array"))?;
-                    if encoded.iter().any(|b| b.as_u64().is_none_or(|b| b > 0xFF)) {
-                        return Err(format!("{at}: 'encoded' holds a value that is not a byte"));
-                    }
                     let note = row.get("note").and_then(|v| v.as_str()).unwrap_or_default();
                     // The note is inlined into a string literal of the harness.
                     if note.chars().any(|c| "\"\\{}".contains(c) || c.is_control()) {
@@ -3504,58 +3696,49 @@ fn fold_source_cases(
                         include: &include,
                     };
                     let inputs = row.get("inputs").unwrap_or(&serde_json::Value::Null);
-                    let (bindings, literal, checks, inputs, note) = if cpp {
-                        let case = crate::forge::generator::cpp_source_case(
-                            plan, &cpp_path, source, inputs, &mut held,
-                        )
-                        .map_err(|e| format!("{at}: {e}"))?;
-                        // The C++ fragment hands the note and each label to a
-                        // `printf` as a string literal's text.
-                        let checks: Vec<(String, String)> = case
-                            .checks
-                            .into_iter()
-                            .map(|(element, holds)| (crate::filters::escape_cpp(element), holds))
-                            .collect();
-                        let note = crate::filters::escape_cpp(note.to_string());
-                        (case.bindings, case.literal, checks, case.inputs, note)
-                    } else {
-                        let case = crate::forge::generator::rust_source_case(
-                            plan, &rust_path, source, inputs, &mut held,
-                        )
-                        .map_err(|e| format!("{at}: {e}"))?;
-                        (
-                            case.bindings,
-                            case.literal,
-                            case.checks,
-                            case.inputs,
-                            note.to_string(),
-                        )
+                    let case = match printer {
+                        CasePrinter::Cpp => {
+                            let case = crate::forge::generator::cpp_source_case(
+                                plan, &cpp_path, source, inputs, &mut held,
+                            )
+                            .map_err(|e| format!("{at}: {e}"))?;
+                            // The C++ fragment hands the note and each label to
+                            // a `printf` as a string literal's text.
+                            PrintedCase {
+                                bindings: case.bindings,
+                                literal: case.literal,
+                                checks: case
+                                    .checks
+                                    .into_iter()
+                                    .map(|(element, holds)| {
+                                        (crate::filters::escape_cpp(element), holds)
+                                    })
+                                    .collect(),
+                                inputs: case.inputs,
+                                note: crate::filters::escape_cpp(note.to_string()),
+                            }
+                        }
+                        CasePrinter::Rust => {
+                            let case = crate::forge::generator::rust_source_case(
+                                plan, &rust_path, source, inputs, &mut held,
+                            )
+                            .map_err(|e| format!("{at}: {e}"))?;
+                            PrintedCase {
+                                bindings: case.bindings,
+                                literal: case.literal,
+                                checks: case.checks,
+                                inputs: case.inputs,
+                                note: note.to_string(),
+                            }
+                        }
                     };
-                    let checks: Vec<serde_json::Value> = checks
-                        .into_iter()
-                        .map(|(element, holds)| {
-                            serde_json::json!({ "element": element, "holds": holds })
-                        })
-                        .collect();
-                    Ok(serde_json::json!({
-                        "bindings": bindings,
-                        "literal": literal,
-                        "checks": checks,
-                        "inputs": inputs,
-                        "encoded": encoded,
-                        "note": note,
-                    }))
+                    fold_row(plan, &at, row, case)
                 })
                 .collect()
         },
     )
     .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
-    .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))??;
-    value
-        .as_object_mut()
-        .ok_or_else(|| format!("{where_} did not serialize to a JSON object"))?
-        .insert("sources".into(), serde_json::Value::Array(folded));
-    Ok(true)
+    .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))?
 }
 
 /// Put on each variant of an enum fixture the identifier this language's
@@ -4185,6 +4368,14 @@ pub fn render_harness(
                 resource_dir,
                 &reference_path,
             )?;
+            baked_from_reference |= fold_refused_cases(
+                &mut v,
+                &reference,
+                f,
+                language,
+                resource_dir,
+                &reference_path,
+            )?;
             fold_enum_identifiers(&mut v, f, language)?;
             fold_event_schema_enum_fields(&mut v, f, language, resource_dir)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
@@ -4693,6 +4884,144 @@ mod tests {
         assert!(
             refused.contains("keeps this codec on the template's encode"),
             "{refused}"
+        );
+    }
+
+    /// A refused case (docs/adr/0081 §5) reaches the Rust and the C++ harness
+    /// as the value its printer spells for a source, encoded and held to the
+    /// refusal its encode answers, by the symbol each runtime names it with.
+    #[test]
+    fn a_refused_case_reaches_the_rust_and_cpp_harnesses_as_the_refusal_its_encode_answers() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let rust = render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
+            .expect("the Rust harness renders")
+            .source;
+        for line in [
+            // A trailer given where neither flag is set, and one left out where
+            // seq sets has_seq.
+            "CodecPresentIfCheckedParts { flags: 0, seq: None, trailer: Some(5) }",
+            "CodecPresentIfCheckedParts { flags: 0, seq: Some(258), trailer: None }",
+            "let refused = fixtures::codec_present_if_checked::CodecPresentIfCheckedWire::\
+             encode_source(",
+            "Err(::sce_forge_runtime::codec::CodecError::PresentIfMismatch),",
+            "codec_present_if_checked refused 3: the encode wrote bytes before it refused",
+        ] {
+            assert!(rust.contains(line), "the Rust harness lacks `{line}`");
+        }
+        let cpp = render_harness(&manifest, Language::Cpp, &template_base, &resource_dir)
+            .expect("the C++ harness renders")
+            .source;
+        for line in [
+            "::SCE::Generated::CodecPresentIfChecked::CodecPresentIfChecked{0u, std::nullopt, 5u}",
+            "::SCE::Generated::CodecPresentIfChecked::CodecPresentIfChecked{0u, 258u, std::nullopt}",
+            "refused.has_value() && *refused == ::SCE::Forge::CodecError::PresentIfMismatch",
+            "codec_present_if_checked refused 3: the encode wrote %zu bytes before it refused",
+        ] {
+            assert!(cpp.contains(line), "the C++ harness lacks `{line}`");
+        }
+    }
+
+    /// A refused case names a refusal the codec's encode can answer, and one
+    /// the backend's runtime names; a backend whose encode does not print the
+    /// plan is handed none. Each is read from a reference written here, so the
+    /// rule is held apart from the catalog's own cases.
+    #[test]
+    fn a_refused_case_names_a_refusal_its_encode_answers() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new("numerical_reference.json");
+        let fixture_of = |name: &str| {
+            manifest
+                .fixtures
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap_or_else(|| panic!("the catalog holds {name}"))
+                .clone()
+        };
+        let reference_of = |name: &str, error: &str| {
+            serde_json::json!({ "codecs": { name: { "refused": [{
+                "source": { "flags": 0, "seq": null, "trailer": 5 },
+                "error": error,
+                "note": "the trailer given where neither flag is set",
+            }] } } })
+        };
+        let fold = |fixture: &Fixture, reference: &serde_json::Value, language: Language| {
+            let mut value = serde_json::to_value(fixture).expect("a fixture serializes");
+            fold_refused_cases(
+                &mut value,
+                reference,
+                fixture,
+                language,
+                &resource_dir,
+                reference_path,
+            )
+            .map(|folded| (folded, value))
+        };
+        let checked = fixture_of("codec_present_if_checked");
+        let mismatch = reference_of("codec_present_if_checked", "present-if-mismatch");
+
+        let (folded, value) = fold(&checked, &mismatch, Language::Rust).expect("Rust states it");
+        assert!(folded);
+        assert_eq!(
+            value["refused"][0]["symbol"],
+            "::sce_forge_runtime::codec::CodecError::PresentIfMismatch"
+        );
+        assert_eq!(value["refused"][0]["error"], "present-if-mismatch");
+
+        // As the render derives it: the C++ backend prints this codec.
+        let mut printed = checked.clone();
+        if let FixtureSpec::Codec { cpp_printed, .. } = &mut printed.spec {
+            *cpp_printed = true;
+        }
+        let (folded, value) = fold(&printed, &mismatch, Language::Cpp).expect("C++ states it");
+        assert!(folded);
+        assert_eq!(
+            value["refused"][0]["symbol"],
+            "::SCE::Forge::CodecError::PresentIfMismatch"
+        );
+
+        let (folded, value) = fold(&checked, &mismatch, Language::Kotlin).expect("Kotlin: none");
+        assert!(!folded && value.get("refused").is_none());
+
+        // A refusal this codec's encode never answers, a name no refusal has,
+        // and a codec whose encode refuses nothing.
+        let never = fold(
+            &checked,
+            &reference_of("codec_present_if_checked", "inconsistent-source"),
+            Language::Rust,
+        )
+        .expect_err("the encode answers no inconsistent source");
+        assert!(
+            never.contains("never answers 'inconsistent-source'"),
+            "{never}"
+        );
+        let unknown = fold(
+            &checked,
+            &reference_of("codec_present_if_checked", "need-more-bytes"),
+            Language::Rust,
+        )
+        .expect_err("a decode failure is no refusal");
+        assert!(unknown.contains("unknown encode refusal"), "{unknown}");
+        let total = fold(
+            &fixture_of("codec_present_if_disjunction"),
+            &serde_json::json!({ "codecs": { "codec_present_if_disjunction": { "refused": [{
+                "source": { "flags": 0, "flags.wants_a || flags.wants_b": null },
+                "error": "present-if-mismatch",
+                "note": "a total encode refuses nothing",
+            }] } } }),
+            Language::Rust,
+        )
+        .expect_err("a total encode refuses nothing");
+        assert!(
+            total.contains("never answers 'present-if-mismatch'"),
+            "{total}"
         );
     }
 

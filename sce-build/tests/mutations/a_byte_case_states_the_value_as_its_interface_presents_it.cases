@@ -9,7 +9,10 @@
 # source, `{Codec}Parts`, and into the C++ harness as the printed value its
 # constructor makes; each harness encodes it and compares the bytes an
 # independent model wrote. The unit tests render each harness and find the
-# literals there, and find none in a backend that does not print the plan.
+# literals there, and find none in a backend that does not print the plan. A
+# refused case is folded the same way and held to the refusal its encode
+# answers, by the name each runtime gives it; a refusal the encode never
+# answers is refused by name.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -20,8 +23,20 @@ mutation_oracles sce-build/src/conformance.rs
 
 mutation_case "the byte cases reach the wrong backend" <<'PY'
 edit("sce-build/src/conformance.rs",
-     r'''        Language::Rust => false,''',
-     r'''        Language::Rust => true,''')
+     r'''            Language::Rust => Some(CasePrinter::Rust),''',
+     r'''            Language::Rust => Some(CasePrinter::Cpp),''')
+PY
+
+mutation_case "a refused case states a refusal its encode never answers" <<'PY'
+edit("sce-build/src/conformance.rs",
+     r'''                r.kind == failure.refusal_kind()''',
+     r'''                r.kind == failure.refusal_kind() || r.kind != failure.refusal_kind()''')
+PY
+
+mutation_case "a refused case is held to another runtime's name of its refusal" <<'PY'
+edit("sce-build/src/conformance.rs",
+     r'''            let symbol = failure.symbol(printer.language()).ok_or_else(|| {''',
+     r'''            let symbol = failure.symbol(Language::Rust).ok_or_else(|| {''')
 PY
 
 mutation_case "an integer of a source is spelled as another" <<'PY'

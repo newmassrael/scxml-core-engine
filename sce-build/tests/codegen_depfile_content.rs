@@ -1206,12 +1206,13 @@ fn source_set_members_are_declared_prerequisites() {
 /// vectors and so every backend legitimately declares the file. That leaves
 /// the other half of the rule — a route that reads nothing from the oracle
 /// must not name it — resting on a catalog shape the probe never produces.
-/// This constructs that shape twice. With the `rejects` arrays stripped, a
-/// route that prints a codec's plan still bakes its byte cases stated as the
-/// interface presents the value, its `sources` (docs/adr/0081 §5: Rust and
-/// C++), and C11 still bakes the tolerance and the per-fixture cases; the
-/// others have nothing left to bake. With the `sources` stripped as well, only
-/// C11 has.
+/// This constructs that shape three times. With the `rejects` arrays stripped,
+/// a route that prints a codec's plan still bakes its byte cases stated as the
+/// interface presents the value, its `sources` and its `refused` (docs/adr/0081
+/// §5: Rust and C++), and C11 still bakes the tolerance and the per-fixture
+/// cases; the others have nothing left to bake. With the `sources` stripped as
+/// well, the `refused` cases alone keep Rust and C++ reading it; with those
+/// stripped too, only C11 has.
 #[test]
 fn the_oracle_is_declared_only_where_it_is_read() {
     /// What a catalog shape strips, and the languages that still read the
@@ -1227,6 +1228,10 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         },
         Shape {
             strips: &["rejects", "sources"],
+            readers: &[Language::C11, Language::Rust, Language::Cpp],
+        },
+        Shape {
+            strips: &["rejects", "sources", "refused"],
             readers: &[Language::C11],
         },
     ];

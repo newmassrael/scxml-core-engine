@@ -216,6 +216,34 @@
     }
 {% endfor %}
 
+{# Refused cases (docs/adr/0081 §5): each `source` is a value of the codec's
+   interface its encode refuses (docs/adr/0065 §2), spelled as a `sources`
+   literal is, and `symbol` the refusal the encode answers it with. The encode
+   returns exactly that refusal, and it refuses before its first byte, so the
+   sink is left empty. Independent of `oracle_eligible`, as the sources are. #}
+{% for r in f.refused %}
+    {
+{% for b in r.bindings %}
+        {{ b }}
+{% endfor %}
+        let parts = {{ r.literal }};
+        let mut encoded: Vec<u8> = Vec::new();
+        let refused = fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Wire::encode_source(
+            &parts,
+            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded),
+        );
+        assert_eq!(
+            refused,
+            Err({{ r.symbol }}),
+            "{{ f.name }} refused {{ loop.index0 }}: {{ r.note }}"
+        );
+        assert!(
+            encoded.is_empty(),
+            "{{ f.name }} refused {{ loop.index0 }}: the encode wrote bytes before it refused"
+        );
+    }
+{% endfor %}
+
 {# RFC synth-5-B decode-rejection vectors — wire this codec MUST refuse,
    paired with the failure it must refuse with. Independent of
    `oracle_eligible`: a reject vector carries no field values, so a codec
