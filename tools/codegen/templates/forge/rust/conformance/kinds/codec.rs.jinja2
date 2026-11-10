@@ -185,9 +185,11 @@
 {% endfor %}
         let parts = {{ s.literal }};
         let mut encoded: Vec<u8> = Vec::new();
+        {# The flag inputs the value does not say, which the encode is handed as
+           its decode is (docs/adr/0065 §6 R4a), in declaration order. #}
         fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Wire::encode_source(
             &parts,
-            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded),
+            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded){% for v in s.encode_inputs %}, {{ v }}{% endfor %},
         )
         .unwrap_or_else(|e| panic!("{{ f.name }} source {{ loop.index0 }}: encode refused with {e:?}"));
         {# Typed: an empty frame names no element to infer `u8` from. #}
@@ -230,7 +232,7 @@
         let mut encoded: Vec<u8> = Vec::new();
         let refused = fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Wire::encode_source(
             &parts,
-            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded),
+            &mut ::sce_forge_runtime::codec::VecSink::new(&mut encoded){% for v in r.encode_inputs %}, {{ v }}{% endfor %},
         );
         assert_eq!(
             refused,

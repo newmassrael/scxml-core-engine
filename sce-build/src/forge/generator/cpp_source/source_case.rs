@@ -20,15 +20,16 @@
 //! the Rust case refuses it.
 
 use super::super::rust_source::{
-    aligned_name, all_of, byte_values, case_inputs, chain_optional_in, entry_rows, gates_label,
-    group_accessor, group_arm_name, group_choice, group_type, holds_chain, integer_value,
-    law_start_bits, lawful_parts, placed_parts, source_members, spelled, variant_choice,
-    ChainInArm, ChosenGroupArm, CodecPath as RustCodecPath, HeldCodecs, VARIANT_MEMBER,
+    aligned_name, all_of, byte_values, case_inputs, chain_optional_in, entry_rows, enum_variant,
+    gates_label, group_accessor, group_arm_name, group_choice, group_type, holds_chain,
+    integer_value, law_start_bits, lawful_parts, placed_parts, source_members, spelled,
+    variant_choice, ChainInArm, ChosenGroupArm, CodecPath as RustCodecPath, HeldCodecs,
+    VARIANT_MEMBER,
 };
 use super::super::*;
 use super::{declared_parts, Part};
 use crate::forge::codec_roles::GateGroup;
-use crate::forge::encode_plan::{Automaton, Element, EncodePlan, Law, Presence, Value};
+use crate::forge::encode_plan::{Automaton, Element, EncodePlan, Law, Value};
 
 /// Where a codec's C++ types are: the namespace the generator writes it in and
 /// the class of its value, both named after the document's name in Pascal case
@@ -84,6 +85,10 @@ pub(crate) struct SourceCase {
     /// The flag inputs the decode is handed, in the order the codec declares
     /// them, as arguments of its `decode`.
     pub inputs: Vec<String>,
+    /// The flag inputs the encode is handed, those the value does not say
+    /// (docs/adr/0065 §6 R4a), in the order the codec declares them, as
+    /// arguments of `Wire::encode_source` after the sink.
+    pub encode_inputs: Vec<String>,
 }
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, its parent
@@ -100,7 +105,7 @@ pub(crate) fn source_case(
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = value_literal(plan, path, source, held, &mut bindings)?;
-    let Handed { args, said } = handed_inputs(plan, path, inputs)?;
+    let Handed { args, given, said } = handed_inputs(plan, path, inputs)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -128,6 +133,7 @@ pub(crate) fn source_case(
         literal,
         checks,
         inputs: args,
+        encode_inputs: given,
     })
 }
 
@@ -135,24 +141,33 @@ pub(crate) fn source_case(
 struct Handed {
     /// `decode`'s arguments, in the order the codec declares the inputs.
     args: Vec<String>,
+    /// `encode_source`'s arguments: each input the value does not say, in the
+    /// order the codec declares them.
+    given: Vec<String>,
     /// For each input the value says, its label and an expression that holds
     /// when `value` says the one the case hands.
     said: Vec<(String, String)>,
 }
 
 /// The flag inputs a case hands the codec at `path`, as [`case_inputs`] reads
-/// them: each is handed to the decode, and the value is held to saying it
-/// through the input's own function (`input_<name>`, docs/adr/0065 §6 R4a),
-/// which answers no value where the value says nothing of it.
+/// them: each is handed to the decode, one the value does not say to the
+/// encode too, and the value is held to saying each other one through the
+/// input's own function (`input_<name>`, docs/adr/0065 §6 R4a), which answers
+/// no value where the value says nothing of it.
 fn handed_inputs(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
     inputs: &serde_json::Value,
 ) -> Result<Handed, String> {
     let mut args = Vec::new();
+    let mut given = Vec::new();
     let mut said = Vec::new();
-    for (input, value) in case_inputs(plan, inputs)? {
+    for (input, value, to_encode) in case_inputs(plan, inputs)? {
         args.push(value.to_string());
+        if to_encode {
+            given.push(value.to_string());
+            continue;
+        }
         let says = format!(
             "{}::input_{}({VALUE})",
             path.namespace(),
@@ -167,7 +182,7 @@ fn handed_inputs(
         };
         said.push((format!("flag input {}", input.name), holds));
     }
-    Ok(Handed { args, said })
+    Ok(Handed { args, given, said })
 }
 
 /// The name the printed value reads the element `id` by: its accessor, as the
@@ -195,21 +210,6 @@ fn made(ty: &str, args: &str) -> String {
     format!("{ty}::make({args}).value()")
 }
 
-/// Whether the value presents `element` as a `std::optional`: a gate decides
-/// it. A number the value states only while its content is absent is no
-/// element of a printed value (the printer's `unlowered`), so it is refused.
-fn presented_optionally(element: &Element<'_>) -> Result<bool, String> {
-    match element.presence {
-        Presence::Always => Ok(false),
-        Presence::Gated => Ok(true),
-        Presence::Stated => Err(format!(
-            "`{}` is a number the value states where its content is absent, which a printed \
-             C++ value does not present",
-            element.field.id
-        )),
-    }
-}
-
 /// The value of the codec `plan` at `path` that `source` states, made by its
 /// class's constructor: each element and group in the order their fields are
 /// declared, then the arm of its variant.
@@ -231,7 +231,10 @@ fn value_literal(
                 let value = object
                     .get(id)
                     .ok_or_else(|| format!("the source states no `{id}`"))?;
-                let optional = presented_optionally(element)?;
+                // A gate decides it, or it is a number the value states while
+                // its content is absent and says nothing of while some is
+                // there (docs/adr/0058 §1): either is a `std::optional`.
+                let optional = element.presence.optional();
                 if value.is_null() {
                     if !optional {
                         return Err(format!(
@@ -331,7 +334,22 @@ fn member_literal(
                 ),
             ))
         }
-        Value::Scalar(_) => Err("an enum or a float is not spelled as a literal yet".to_string()),
+        // The variant the value holds, by the type the C++ tree declares the
+        // enum as.
+        Value::Scalar(SceType::Enum(enum_ref)) => {
+            let (held_enum, variant) = enum_variant(held, &enum_ref.alias, json)?;
+            let ty = crate::forge::generator::enum_qualified_type(
+                &held_enum.name,
+                crate::generator::Language::Cpp,
+            );
+            Ok(crate::forge::enum_naming::variant_ref(
+                crate::generator::Language::Cpp,
+                &format!("::{ty}"),
+                &held_enum.name,
+                variant,
+            ))
+        }
+        Value::Scalar(_) => Err("a float is not spelled as a literal yet".to_string()),
     }
 }
 

@@ -158,11 +158,53 @@ pub(crate) type ReadHeld<'r> =
     dyn FnMut(&EncodePlan<'_>, &CodecPath, &mut dyn HeldCodecs) -> Result<String, String> + 'r;
 
 /// What a byte case needs of the codecs a codec holds: each read as its holder
-/// was, with the names the harness gives it.
+/// was, with the names the harness gives it; and of the enums its fields are
+/// values of.
 pub(crate) trait HeldCodecs {
     /// Answers `read` of the plan of the codec imported as `alias`, its path,
     /// and the codecs it holds in turn.
     fn read(&mut self, alias: &str, read: &mut ReadHeld<'_>) -> Result<String, String>;
+
+    /// The enum the codec imports as `alias`, which a field of it is a value
+    /// of, with the path the Rust harness reaches its type by.
+    fn held_enum(&self, alias: &str) -> Result<HeldEnum, String>;
+}
+
+/// An enum a codec imports, as a byte case names a value of it (docs/adr/0081
+/// §5): by the variant it holds.
+pub(crate) struct HeldEnum {
+    /// The name its document gives it, unconverted: what each language names
+    /// its type and its variants after.
+    pub name: String,
+    /// The path the Rust harness reaches its type by.
+    pub rust_type: String,
+    /// The variants it declares, in order, each as its document spells it.
+    pub variants: Vec<String>,
+}
+
+/// The variant of the enum imported as `alias` that a source states a value of
+/// it by (docs/adr/0081 §5): the name its document declares, so a case states
+/// a value of the enum and not a number a language's type may not hold. Every
+/// printer's case reads an enum here.
+pub(super) fn enum_variant<'s>(
+    held: &dyn HeldCodecs,
+    alias: &str,
+    json: &'s serde_json::Value,
+) -> Result<(HeldEnum, &'s str), String> {
+    let held_enum = held.held_enum(alias)?;
+    let variant = json.as_str().ok_or_else(|| {
+        format!(
+            "a value of the enum `{}` is the name of a variant it declares",
+            held_enum.name
+        )
+    })?;
+    if !held_enum.variants.iter().any(|v| v == variant) {
+        return Err(format!(
+            "`{variant}` is no variant of the enum `{}`",
+            held_enum.name
+        ));
+    }
+    Ok((held_enum, variant))
 }
 
 /// A byte case of a Rust harness (docs/adr/0081 §5): the value a case states as
@@ -183,6 +225,10 @@ pub(crate) struct SourceCase {
     /// The flag inputs the decode is handed, in the order the codec declares
     /// them, as arguments of its `decode`.
     pub inputs: Vec<String>,
+    /// The flag inputs the encode is handed, those the value does not say
+    /// (docs/adr/0065 §6 R4a), in the order the codec declares them, as
+    /// arguments of its `encode_source`.
+    pub encode_inputs: Vec<String>,
 }
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, its parent
@@ -199,7 +245,11 @@ pub(crate) fn source_case(
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = parts_literal(plan, path, source, held, &mut bindings)?;
-    let HandedInputs { args: inputs, said } = handed_inputs(plan, path, inputs)?;
+    let HandedInputs {
+        args: inputs,
+        given: encode_inputs,
+        said,
+    } = handed_inputs(plan, path, inputs)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -227,6 +277,7 @@ pub(crate) fn source_case(
         literal,
         checks,
         inputs,
+        encode_inputs,
     })
 }
 
@@ -234,28 +285,24 @@ pub(crate) fn source_case(
 struct HandedInputs {
     /// `decode`'s arguments, in the order the codec declares the inputs.
     args: Vec<String>,
+    /// `encode_source`'s arguments: each input the value does not say, in the
+    /// order the codec declares them.
+    given: Vec<String>,
     /// For each input the value says, its label and an expression that holds
     /// when `parts` says the one the case hands.
     said: Vec<(String, String)>,
 }
 
 /// The flag inputs a case hands the codec `plan` (`{"name": 0 | 1}`, or `null`
-/// for a codec that takes none), each with the value the case hands it, in the
-/// order the codec declares them: each one the value says (docs/adr/0065 §6
-/// R4a). An input the value does not say is one the encode takes as an
-/// argument, which a case does not spell yet. Every printer's case reads its
-/// inputs here.
+/// for a codec that takes none), each with the value the case hands it and
+/// whether its encode is handed it too, in the order the codec declares them:
+/// the decode is handed each, and the encode each one the value does not say
+/// (docs/adr/0065 §6 R4a), which it takes as an argument as the decode does.
+/// Every printer's case reads its inputs here.
 pub(super) fn case_inputs<'p>(
     plan: &EncodePlan<'p>,
     inputs: &serde_json::Value,
-) -> Result<Vec<(&'p FlagInput, u64)>, String> {
-    if let Some(input) = plan.given.first() {
-        return Err(format!(
-            "the value does not say the flag input `{}`, which its encode takes, and a case \
-             does not spell that yet",
-            input.name
-        ));
-    }
+) -> Result<Vec<(&'p FlagInput, u64, bool)>, String> {
     let model: &'p CodecModel = plan.model;
     let declared = &model.flag_inputs;
     let object = match inputs {
@@ -272,11 +319,12 @@ pub(super) fn case_inputs<'p>(
     declared
         .iter()
         .map(|input| {
+            let given = plan.given.iter().any(|g| g.name == input.name);
             object
                 .get(&input.name)
                 .and_then(serde_json::Value::as_u64)
                 .filter(|v| *v <= 1)
-                .map(|value| (input, value))
+                .map(|value| (input, value, given))
                 .ok_or_else(|| format!("the case hands `{}` as 0 or 1", input.name))
         })
         .collect()
@@ -290,9 +338,16 @@ fn handed_inputs(
     inputs: &serde_json::Value,
 ) -> Result<HandedInputs, String> {
     let mut args = Vec::new();
+    let mut given = Vec::new();
     let mut said = Vec::new();
-    for (input, value) in case_inputs(plan, inputs)? {
+    for (input, value, to_encode) in case_inputs(plan, inputs)? {
         args.push(value.to_string());
+        // An input the value does not say is the encode's argument, and the
+        // value has nothing to be held to.
+        if to_encode {
+            given.push(value.to_string());
+            continue;
+        }
         let says = format!(
             "{}::{}Wire::input_{}(&parts)",
             path.module,
@@ -309,7 +364,7 @@ fn handed_inputs(
         };
         said.push((format!("flag input {}", input.name), holds));
     }
-    Ok(HandedInputs { args, said })
+    Ok(HandedInputs { args, given, said })
 }
 
 /// Refuse what a literal does not spell yet: the shapes every printer's case
@@ -888,7 +943,18 @@ fn literal_value(
             .as_str()
             .map(|s| bounded(format!("{s:?}")))
             .ok_or_else(|| "text is a JSON string".to_string()),
-        Value::Scalar(_) => Err("an enum or a float is not spelled as a literal yet".to_string()),
+        // The variant the value holds, by the path the harness reaches the
+        // enum's type by.
+        Value::Scalar(SceType::Enum(enum_ref)) => {
+            let (held_enum, variant) = enum_variant(held, &enum_ref.alias, json)?;
+            Ok(crate::forge::enum_naming::variant_ref(
+                crate::generator::Language::Rust,
+                &held_enum.rust_type,
+                &held_enum.name,
+                variant,
+            ))
+        }
+        Value::Scalar(_) => Err("a float is not spelled as a literal yet".to_string()),
     }
 }
 
