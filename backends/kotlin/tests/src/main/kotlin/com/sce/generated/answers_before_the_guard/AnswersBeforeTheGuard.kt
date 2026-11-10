@@ -13,12 +13,14 @@ const val NAME: String = "answers_before_the_guard"
 
 /**
  * The test case `answers_before_the_guard` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it:
- * its name, its configuration and the machines of its components, and the module
- * parameters those components read.
+ * its name, its configuration and the machines of its components, the module
+ * parameters those components read, and the reader of the inputs a recorded trace of it
+ * carries (docs/SCE_TTCN3_LANE.md §10.5).
  */
 fun testCase(): com.sce.runtime.test.TestCase = com.sce.runtime.test.TestCase(
     name = NAME,
     configuration = com.sce.generated.asking_configuration.configuration(),
     machines = { componentType -> com.sce.generated.asking_configuration.machine(componentType) },
     moduleParameters = com.sce.generated.asking_configuration.moduleParameters(),
+    inputs = { systemPort, typeName, value -> com.sce.generated.asking_configuration.input(systemPort, typeName, value) },
 )

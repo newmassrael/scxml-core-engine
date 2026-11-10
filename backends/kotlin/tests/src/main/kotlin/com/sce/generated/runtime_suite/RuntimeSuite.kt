@@ -44,3 +44,27 @@ fun suite(): com.sce.runtime.test.Suite {
         ),
     )
 }
+
+/**
+ * The value the runner is given for the module parameter [id] (docs/SCE_TTCN3_LANE.md §4,
+ * `--module-parameter id=value`), a literal of its declared type as the `value` of a
+ * `<sce:module-parameter>` writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the saved value
+ * of that type.
+ *
+ * @throws com.sce.runtime.test.OverrideRefusal naming why, where the suite declares no such parameter
+ *   or the literal is no value of its type.
+ */
+fun moduleParameter(id: String, literal: String): com.sce.runtime.test.ModuleParameterValue = when (id) {
+    "job" -> com.sce.runtime.SavedValues.of(com.sce.runtime.test.integerParameter(id, literal, com.sce.runtime.test.FromCanonical.UINT32))
+    else -> throw com.sce.runtime.test.undeclaredParameter(id)
+}
+
+/**
+ * The runner program of the suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4): every test
+ * case the world of `--world` selects, run against its recorded input trace from
+ * `--trace-dir`, its canonical test log written to `--log-dir` (`com.sce.runtime.test.runnerMain`).
+ * The class of this unit is the program.
+ */
+fun main(args: Array<String>) {
+    com.sce.runtime.test.runnerMain(suite(), ::moduleParameter, args)
+}

@@ -46,3 +46,15 @@ fun machine(componentType: String): com.sce.runtime.test.ComponentMachine? = whe
  * (docs/SCE_TEST_PROFILE.md §11.5), each of which a suite that runs it gives a value.
  */
 fun moduleParameters(): List<String> = emptyList()
+
+/**
+ * The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
+ * `com.sce.runtime.test.InputReader`): the message an input of the record type [typeName] on the
+ * system port [systemPort] carries, its value read from the canonical form.
+ *
+ * @throws com.sce.runtime.test.TraceRefusal naming why, where the configuration has no such system
+ *   port, the `in` list of its type does not name the type, or the value does not belong to it.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun input(systemPort: String, typeName: String, value: Any?): com.sce.runtime.test.Message =
+    throw com.sce.runtime.test.TraceRefusal.notAnInput(systemPort, typeName, listOf())
