@@ -719,6 +719,39 @@ old encode, the old encode and its templates are removed in the same landing.
    leaving the sink empty. The inconsistent source and the length out of range enter the catalog with the
    landing that prints them in C++, since a codec that refuses them is one the C++ backend does not print
    yet, and a harness runs every case of every shape it prints.
+
+   *The thirty-ninth C++ landing, 2026-11-11:* the shapes the C++ printer gained since enter the catalog
+   with their cases (§5), and the C++ test that held them to hand-derived frames keeps only what no case can
+   state. The seven codecs are a length two byte strings share (`codec_length_shared`), a length the value
+   states where the two gated byte strings it measures are absent (`codec_length_stated`), the encoded length
+   of a body that refuses, in a 16-bit field (`codec_encoded_length_checked`), a closed enum in a group
+   (`codec_group_enum`, with its `enum_session_state`), a gate on a chain's kinds joined with a flag input
+   (`codec_chain_has_input`), and a chain that hands each entry an input the entry does not say
+   (`codec_chain_handed`, with its entry `codec_chain_handed_entry`). `binary_model.py` reads each as the
+   page does: a field of an enum is written as its carrier and stated by its variant's name, and the decode
+   of a number a closed enum does not declare fails; a gate that reads a flag input, or a chain's kinds
+   joined with one, is no group but a check the value is held to (ADR 0065 §6 R4c, R6); the entries of a
+   list handed an input they do not say follow no law and are each handed it as the walk writes them (R8);
+   and a codec handed an input its value does not say takes it at its encode as at its decode, which a case
+   states in its `inputs`. A stated length joins a side of a group only where all of its content is on one
+   side of one gate (R4b). The length of `codec_length_stated` measures byte strings under two gates, so it
+   joins no group and is presented alone, as `codec_roles` and the printer held it: the model had joined it
+   to both gates and is corrected, and SCE_FORGE.md §4.6, which said less than R4b, now says it. The
+   catalog gains 33 sources and 15 refused cases, the inconsistent source among them; no value of these
+   codecs reaches a length out of range, since each byte string is held within its one-byte length by its
+   type and a body of two of them is at most 511 bytes, so the refusal the analysis names for the 16-bit
+   field is one no case can state. The case printers spell what the cases hold: a value of an enum as the
+   variant of the type each harness names it by, read from the codec's import (`HeldCodecs::held_enum`); an
+   input the value does not say, handed to `encode_source` as to the decode; and in C++ a number the value
+   states while its content is absent, as a `std::optional`. The C++ runtime now names the inconsistent
+   source (`CodecError::InconsistentSource`), so `EncodeFailure` names every refusal for both harnesses.
+   `positional_forms_generated_test` keeps a length the value states beside content that agrees and none
+   with no content, each written as the Rust encode writes it and decoded to another value, so no source
+   states it; a value a closed enum does not declare, which no decode refusal of the catalog names; and the
+   input `codec_some_arms_say_forward` hands on to a body that says it in some of its values. That fixture
+   stays out of the catalog: its body is a variant whose caller hands its tag, one of the Rust arm's
+   caller-tag fixtures (`forge_source_round_trip`) that neither the model nor a case reads, and the family
+   enters the catalog together with that reading.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
