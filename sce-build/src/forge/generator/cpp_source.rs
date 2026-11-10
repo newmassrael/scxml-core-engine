@@ -54,22 +54,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // which derives it from the arm the value holds and hands it to the decode
     // (`tag()`).
     // An arm a build feature decides (docs/adr/0072) is an alternative, a case
-    // and a test of the build that has it ([`Alternatives`]).
+    // and a test of the build that has it ([`Alternatives`]). Every input an
+    // arm's codec is handed is bound on its import ([`UNBOUND_ARM_OR_BODY`]).
     if m.variant.is_some() {
         for arm in &plan.arms {
             if !held_printed(imports, arm.codec) {
                 forms.push(format!(
                     "`{}`, an arm of a codec the printer does not print",
-                    arm.codec
-                ));
-            }
-            if plan
-                .handed
-                .get(arm.codec)
-                .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-            {
-                forms.push(format!(
-                    "`{}`, an arm handed an input nothing binds",
                     arm.codec
                 ));
             }
@@ -97,13 +88,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 forms.extend(held_codec_forms(plan, imports, id, &element.value));
             }
         }
-        // A gated element is presented as an optional value; a number the
-        // value states only while its content is absent is not yet.
-        if element.presence == Presence::Stated {
-            forms.push(format!(
-                "`{id}`, a number the value states where its content is absent"
-            ));
-        }
+        // A gated element is presented as an optional value, and so is a
+        // number the value states only while its content is absent, which the
+        // encode derives while there is content and refuses where the value
+        // states another beside it.
     }
     // A group (docs/adr/0065 §6 R4b, R4c) is presented as the class of the
     // members of its one side, held optionally, or as a variant of a class for
@@ -141,33 +129,21 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             }
         }
     }
+    // Every derivation is printed ([`derivation_unlowered`]).
     forms.extend(plan.derivations.iter().filter_map(derivation_unlowered));
     // Each field is an element the value presents, a member of a group it
-    // presents, or a number the encode derives whole (docs/adr/0081 §3).
-    let grouped = |id: &str| plan.groups().iter().any(|g| g.fields().contains(&id));
-    forms.extend(
-        m.fields
-            .iter()
-            .filter(|f| {
-                !plan.elements.iter().any(|e| e.field.id == f.id)
-                    && !grouped(&f.id)
-                    && !derived_number(plan, &f.id)
-            })
-            .map(|field| format!("`{}`, which no element presents", field.id)),
-    );
+    // presents, or a number the encode derives whole (docs/adr/0081 §3): the
+    // roles derive a field only by a length, a count, an encoded length or a
+    // variant's tag, each a number or a tag the plan derives whole
+    // ([`NO_FIELD_UNPRESENTED`]).
     // An input the caller hands the encode is a parameter of it. One the value
     // says (docs/adr/0065 §6 R4a) is read off it: off the field gated on it
     // alone, off the group gated on it, off the body always there that says it
-    // in every value, off the arm of the variant the value holds (§6 R4d, R4e),
-    // or off the start of the list held to it (§6 R8). A body a gate leaves out,
-    // or one that says it in some of its values only, is not yet.
-    let gated = |id: &str| {
-        grouped(id)
-            || plan
-                .elements
-                .iter()
-                .any(|e| e.field.id == id && e.presence == Presence::Gated)
-    };
+    // in every value or in some of its values only, off the arm of the variant
+    // the value holds (§6 R4d, R4e), or off the start of the list held to it
+    // (§6 R8). The roles forward only an input of a body no gate decides
+    // ([`FORWARD_IS_UNGATED`]), and derive a flag from a body only where the
+    // body says it in every value ([`SAYS_IN_EVERY_VALUE`]).
     for said in &plan.said {
         let name = &said.input.name;
         match &plan.roles.inputs[name] {
@@ -176,33 +152,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             | InputSource::List { .. }
             | InputSource::EveryArm { .. }
             | InputSource::SomeArms { .. } => {}
-            // A body a gate leaves out says nothing of the input it forwards.
-            InputSource::Forward { embed, .. } if gated(embed) => {
-                forms.push(format!("`{name}`, a flag input a body a gate decides says"))
-            }
             InputSource::Forward { partly: false, .. } => {}
             InputSource::Forward { partly: true, .. } => forms.push(format!(
                 "`{name}`, a flag input a body says in some of its values only"
             )),
-        }
-    }
-    // A body's said input is read through the body's codec, which says it in
-    // every value; one it says in some values only answers nothing at times.
-    for derived in &plan.derivations {
-        if let Derive::Number(number) = &derived.by {
-            for measure in &number.measures {
-                if let Measured::Says { codec, input, .. } = &measure.of {
-                    let partly = imports.iter().any(|import| {
-                        import.alias == *codec && import.codec_partly_says_inputs.contains(input)
-                    });
-                    if partly {
-                        forms.push(format!(
-                            "`{}`, an input a body says in some of its values only",
-                            derived.element
-                        ));
-                    }
-                }
-            }
         }
     }
     // The encode refuses before its first byte what a check holds a value to:
@@ -232,60 +185,40 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             .filter(|r| !matches!(r.kind, RefusalKind::PresentIfMismatch | RefusalKind::Child))
             .map(|r| format!("`{}`, an encode that refuses it ({})", r.element, r.kind)),
     );
-    let gated_element = |f: &CodecField| gated(&f.id);
+    // A fixed layout has no field a gate decides ([`FIXED_LAYOUT_UNGATED`]),
+    // and a field is written in its declared bits (the pieces of its word in
+    // each byte, or its whole bytes, docs/adr/0095 §2), as the bytes it holds,
+    // as a VLE of a width the sink writes, or as the body of the codec it
+    // embeds ([`EVERY_WIDTH_WRITTEN`]). A streamed field is written always,
+    // where the value holds it (an element it presents as an optional value,
+    // or a member of a group it holds), or where its gate holds
+    // ([`PRESENT_IS_HELD`], [`NO_LIST_DERIVED`]).
     for write in &plan.program {
         match write {
-            // A fixed layout has no field a gate decides; were one there, its
-            // offset would not be fixed.
-            Write::Byte { pieces, .. } => forms.extend(
-                pieces
-                    .iter()
-                    .filter(|(f, _)| gated_element(f))
-                    .map(|(f, _)| format!("`{}`, a gated field of a fixed layout", f.id)),
-            ),
-            Write::Whole(field) | Write::Tail { field, .. } if gated_element(field) => {
-                forms.push(format!("`{}`, a gated field of a fixed layout", field.id))
-            }
-            Write::Whole(_) | Write::Tail { .. } => {}
+            // Written where its gate holds, which the printer tests on the
+            // carriers as the encode writes them, on the inputs it is handed,
+            // and on the arm the value holds of a group whose gate is a chain's
+            // membership.
             Write::Streamed {
                 field,
-                guard,
+                guard: Guard::Gate,
                 list: None,
             } => {
-                // A streamed fixed field is whole (the parser refuses one that
-                // is not, docs/adr/0095 §3), and `fixed_write` writes any whole
-                // width.
-                match guard {
-                    Guard::Always => {}
-                    // Written where the value holds it: an element it presents
-                    // as an optional value, or a member of a group it holds.
-                    Guard::Present if gated_element(field) => {}
-                    Guard::Present => forms.push(format!(
-                        "`{}`, a field written where a group holds it",
-                        field.id
-                    )),
-                    // Written where its gate holds, which the printer tests on
-                    // the carriers as the encode writes them, on the inputs it
-                    // is handed, and on the arm the value holds of a group whose
-                    // gate is a chain's membership.
-                    Guard::Gate => {
-                        let testable = field.present_if.as_ref().is_some_and(|gate| {
-                            plan.clauses(gate).iter().all(|c| {
-                                matches!(
-                                    c,
-                                    Clause::Flag { .. }
-                                        | Clause::Input { .. }
-                                        | Clause::Member {
-                                            held: Some((_, Some(_))),
-                                            ..
-                                        }
-                                )
-                            })
-                        });
-                        if !testable {
-                            forms.push(format!("`{}`, gated on a chain's membership", field.id));
-                        }
-                    }
+                let testable = field.present_if.as_ref().is_some_and(|gate| {
+                    plan.clauses(gate).iter().all(|c| {
+                        matches!(
+                            c,
+                            Clause::Flag { .. }
+                                | Clause::Input { .. }
+                                | Clause::Member {
+                                    held: Some((_, Some(_))),
+                                    ..
+                                }
+                        )
+                    })
+                });
+                if !testable {
+                    forms.push(format!("`{}`, gated on a chain's membership", field.id));
                 }
             }
             // A list is walked entry by entry, each entry written whole, a chain
@@ -298,11 +231,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             // (R6a).
             Write::Streamed {
                 field,
-                guard,
                 list: Some(list),
-            } if matches!(guard, Guard::Always)
-                || (matches!(guard, Guard::Present) && gated_element(field)) =>
-            {
+                ..
+            } => {
                 let law = list_law(&plan.roles, &field.id);
                 let unsaid = list
                     .previous
@@ -315,39 +246,78 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     ));
                 }
             }
-            Write::Streamed { field, .. } => forms.push(format!(
-                "`{}`, a list written where it is present",
-                field.id
-            )),
-            // The variant is named once, by the model.
-            Write::Variant if m.variant.is_some() => {}
-            Write::Variant => forms.push("a variant".to_string()),
+            Write::Streamed { .. }
+            | Write::Whole(_)
+            | Write::Byte { .. }
+            | Write::Tail { .. }
+            | Write::Variant => {}
         }
     }
-    // A field is written in its declared bits (the pieces of its word in each
-    // byte, or its whole bytes, docs/adr/0095 §2), as the bytes it holds, as a
-    // VLE of a width the sink writes, or as the body of the codec it embeds.
-    forms.extend(
-        m.fields
-            .iter()
-            .filter(|f| {
-                !matches!(
-                    f.bit_size,
-                    BitSize::Fixed { .. }
-                        | BitSize::Tail
-                        | BitSize::LengthRef
-                        | BitSize::Embed
-                        | BitSize::Repeat { .. }
-                        | BitSize::TlvChain { .. }
-                        | BitSize::Vle {
-                            width_bits: 16 | 32 | 64
-                        }
-                )
-            })
-            .map(|field| format!("`{}`, of no width the sink writes whole", field.id)),
-    );
     forms
 }
+
+/// Why no arm, body or list the printer writes is handed an input nothing
+/// binds, but the entries of a chain that supplies the input from the entry
+/// before: the generator refuses any other such document before it prints any
+/// backend (`validate_cross_codec_flag_bind`, Check 1b), which asks every input
+/// a held codec takes to be bound on its import, unless every field that holds
+/// the codec is a chain that supplies the input, and no arm holds it.
+const UNBOUND_ARM_OR_BODY: &str = "every input a held codec takes is bound on its import, but one \
+     a chain supplies from the entry before (validate_cross_codec_flag_bind, Check 1b)";
+
+/// Why every field of a positional codec the printer writes is an element the
+/// value presents, a member of a group it holds, or a number it derives whole:
+/// the roles derive a field only as the length, the count or the encoded
+/// length of something (`ElementId::of_reference` of a `length-field`, a
+/// `count` or a `length-from`, whose targets the parser holds to integer
+/// fields), or as a variant's tag; every other derivation names a flag
+/// (`codec_roles::classify`). A field no derivation names is presented.
+const NO_FIELD_UNPRESENTED: &str = "a field the roles do not derive is presented, and they derive \
+     a field only as a number or a variant's tag the plan derives whole (codec_roles::classify)";
+
+/// Why an input a body forwards is read off a body the value always holds: the
+/// roles forward an input only from an embed whose field has no gate
+/// (`codec_roles::said_inputs`), and only an ungated list, a stated length or a
+/// field a gate decides joins a group.
+const FORWARD_IS_UNGATED: &str = "the roles forward an input only from an embed no gate decides \
+     (codec_roles::said_inputs)";
+
+/// Why a flag derived from the input a body says is read off a body that says
+/// it in every value: the roles hold a body that says the input in some of its
+/// values only to the flag by a check, and derive the flag only from one that
+/// says it in every value (`codec_roles::classify`, the bind of an embed or an
+/// arm is derived only where it is not said in part).
+const SAYS_IN_EVERY_VALUE: &str = "the roles derive a flag from a body only where it says the \
+     input in every value, and check the others (codec_roles::classify)";
+
+/// Why no field of a fixed layout is gated: the plan lays out by byte only
+/// codecs whose fields have no `sce:present-if` (`fields_lay_out_by_byte`),
+/// and a group holds only fields a gate decides, a length stated beside them,
+/// or a list that shares a count with one, none of which such a codec has.
+const FIXED_LAYOUT_UNGATED: &str =
+    "a fixed layout has no gated field and no group (model::fields_lay_out_by_byte)";
+
+/// Why every field has a width the printer writes: the bit sizes are fixed,
+/// tail, length-ref, embed, repeat, chain or VLE, and the parser makes a VLE
+/// only of `uint16`, `uint32` or `uint64`, which the sink writes whole.
+const EVERY_WIDTH_WRITTEN: &str =
+    "the parser makes a VLE only of uint16, uint32 or uint64, which the sink writes whole";
+
+/// Why a field written where the value holds it is an element the value
+/// presents as an optional value or a member of a group: the plan guards a
+/// write so only where the field is presented and gated, a chain of a group's
+/// memberships, or a list another shares its count with, and the last two are
+/// members of their group (`encode_plan::guard`).
+const PRESENT_IS_HELD: &str = "a field written where the value holds it is gated and presented, \
+     or a member of its group (encode_plan::guard)";
+
+/// Why no list is written where its gate holds: only a field derived whole is,
+/// and the roles derive no list, since the targets of a `length-field`, a
+/// `count` and a `length-from` are integer fields (the parser's
+/// `validate_codec_length_field_refs`, `validate_codec_repeat_count_refs` and
+/// `validate_codec_embed_length_from`).
+const NO_LIST_DERIVED: &str = "no list is derived whole: lengths, counts and encoded lengths \
+     name integer fields (the parser's length, count and length-from checks)";
 
 /// The member of a codec's `Overrides` that sets `flag` of its carrier
 /// `carrier`: the codec's own name for it, which a chain holding the codec
@@ -393,13 +363,12 @@ fn held_codec_forms(
     };
     match value {
         Value::Body { codec } => {
+            // Every input it is handed is bound on its import
+            // ([`UNBOUND_ARM_OR_BODY`]).
             if !held_printed(imports, codec) {
                 forms.push(format!(
                     "`{id}`, a body of a codec the printer does not print"
                 ));
-            }
-            if unbound(codec) {
-                forms.push(format!("`{id}`, a body handed an input nothing binds"));
             }
         }
         Value::List { codec, .. } => {
@@ -451,26 +420,22 @@ fn held_codec<'i>(imports: &'i [ImportContext], alias: &str) -> (&'i str, &'i st
 ///   value holds says where it holds one that says it, into a field or a flag
 ///   likewise.
 fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Option<String> {
-    let element = &derived.element;
-    match (element, &derived.by) {
-        (ElementId::Flag { .. }, Derive::Presence(presence)) => (presence.of.len() > 1
-            && !presence.together)
-            .then(|| format!("`{element}`, a flag of fields that may disagree on it")),
-        (_, Derive::Number(number)) => number_unlowered(element, number),
-        // The tag of the arm the value holds, into the field or the flag that
-        // holds it.
-        (ElementId::Field(_) | ElementId::Flag { .. }, Derive::VariantTag) => None,
-        // The flag a chain's entry is closed by, which the walk of the chain
-        // sets on each entry as it writes it.
-        (ElementId::Flag { .. }, Derive::ChainContinuation) => None,
-        // A flag of a disjunction that decides a group: what the arm the
-        // value holds gives it (docs/adr/0065 §6 R4c).
-        (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => None,
-        // The tag of the arm each embedded body's variant holds, masked to the
-        // flag's bits, an arm a build feature decides in the build that has it.
-        (ElementId::Flag { .. }, Derive::ParentTag(_)) => None,
-        (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
-        _ => Some(format!("`{element}`, a flag the encode derives")),
+    match &derived.by {
+        Derive::Number(number) => number_unlowered(&derived.element, number),
+        // A flag set exactly when the fields it gates are there, which cannot
+        // disagree ([`PRESENCE_TOGETHER`]); the tag of the arm the value holds,
+        // into the field or the flag that holds it; the flag a chain's entry is
+        // closed by, which the walk of the chain sets on each entry as it
+        // writes it; a flag of a disjunction that decides a group, what the arm
+        // the value holds gives it (docs/adr/0065 §6 R4c); and the tag of the
+        // arm each embedded body's variant holds, masked to the flag's bits, an
+        // arm a build feature decides in the build that has it. The roles
+        // derive no other element by these ([`DERIVED_AS_ROLES_SAY`]).
+        Derive::Presence(_)
+        | Derive::VariantTag
+        | Derive::ChainContinuation
+        | Derive::ArmFlag { .. }
+        | Derive::ParentTag(_) => None,
     }
 }
 
@@ -493,13 +458,10 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
         }
         Measured::Bytes { .. } => {}
         // How many bytes a body encodes to, counted by its encode over a sink
-        // that keeps none: a body whose encode can refuse passes the refusal
-        // on, which the printer does not yet.
-        Measured::Encoded { refuses: false, .. }
-            if matches!(number.into, NumberInto::Field { .. }) => {}
-        Measured::Encoded { refuses: false, .. } => {
-            return Some(format!("`{element}`, an encoded length held in a flag"))
-        }
+        // that keeps none, into a field ([`ENCODED_INTO_FIELD`]): a body whose
+        // encode can refuse passes the refusal on, which the printer does not
+        // yet.
+        Measured::Encoded { refuses: false, .. } => {}
         Measured::Encoded { refuses: true, .. } => {
             return Some(format!(
                 "`{element}`, the encoded length of a body that can refuse"
@@ -517,32 +479,62 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
         // (docs/adr/0065 §6 R8), where the value holds the list.
         Measured::Start { .. } => {}
     }
-    match (element, &number.into) {
-        (
-            ElementId::Field(_),
-            NumberInto::Field {
-                narrow: Narrow::Cast | Narrow::Widened,
-                absent,
-                ..
-            },
-        ) => match (measure.gated, absent) {
-            // Where a gate leaves the content out, the field holds zero, or
-            // what the group that holds it holds on that side.
-            (false, Absent::Never) | (true, Absent::Zero | Absent::Group) => None,
-            _ => Some(format!(
-                "`{element}`, a number of content a gate decides that the value states where \
-                 it is absent"
-            )),
-        },
-        (ElementId::Field(_), NumberInto::Field { .. }) => {
-            Some(format!("`{element}`, a length that may not fit its field"))
-        }
-        (ElementId::Flag { .. }, NumberInto::Flag) => None,
-        _ => Some(format!(
-            "`{element}`, a number derived into what holds no number"
+    // A field holds the number, or a flag of a carrier ([`NUMBER_INTO_ITS_KIND`]).
+    match &number.into {
+        // Where a gate leaves the content out, the field holds zero, or what
+        // the group that holds it holds on that side. The plan's number is
+        // free exactly when no measure is always there (`Number::free`), and
+        // only a free number's field holds something where nothing is
+        // measured, so one measure always there is never absent.
+        NumberInto::Field {
+            narrow: Narrow::Cast | Narrow::Widened,
+            absent: Absent::Stated,
+            ..
+        } => Some(format!(
+            "`{element}`, a number of content a gate decides that the value states where it is \
+             absent"
         )),
+        NumberInto::Field {
+            narrow: Narrow::Cast | Narrow::Widened,
+            ..
+        } => None,
+        NumberInto::Field {
+            narrow: Narrow::Checked,
+            ..
+        } => Some(format!("`{element}`, a length that may not fit its field")),
+        NumberInto::Flag => None,
     }
 }
+
+/// Why the fields a presence flag says are there together: the roles derive a
+/// flag's presence from every field gated on that one-bit flag alone, and such
+/// fields, two or more, are the two sides of one group of that flag
+/// (`codec_roles::gate_groups`), since a flag the roles derive is no atom of a
+/// group of a chain's memberships, and a field on it joins no other group. The
+/// analysis names no refusal for them either.
+const PRESENCE_TOGETHER: &str = "two or more fields gated on one flag alone are the sides of one \
+     group of it, so they are there together (codec_roles::gate_groups)";
+
+/// Why the roles derive only what the printer derives: a presence, a parent's
+/// tag, a disjunction's flag, a chain's end flag and an input a held codec
+/// says are derived into a flag of a carrier, a length, a count and an encoded
+/// length into the field or the flag their declaration names, and a variant's
+/// tag into its field or flag; nothing is derived into the variant
+/// (`codec_roles::classify`).
+const DERIVED_AS_ROLES_SAY: &str = "the roles derive flags, numbers and tags into a field or a \
+     flag, and nothing into the variant (codec_roles::classify)";
+
+/// Why an encoded length is held in a field: `length-from` names a sibling
+/// field by its id, and the parser refuses one that names no field declared
+/// before the embed (`validate_codec_embed_length_from`), so it names no flag.
+const ENCODED_INTO_FIELD: &str = "length-from names a field declared before the embed, never a \
+     flag (validate_codec_embed_length_from)";
+
+/// Why a number goes into an element of its own kind: the plan derives into a
+/// field what the roles derive into a field, and into a flag what they derive
+/// into a flag (`encode_plan::number`).
+const NUMBER_INTO_ITS_KIND: &str =
+    "a number derived into a field goes into the field, and into a flag into the flag";
 
 /// Whether the plan derives the field `id` whole, as a number or as the tag of
 /// the arm the value holds, which the value does not present: the encode
@@ -627,6 +619,9 @@ fn said_input(
         }
         InputSource::Forward { embed, input, .. } => {
             let e = element(embed);
+            if e.optional {
+                unreachable!("{}", FORWARD_IS_UNGATED);
+            }
             let held = e
                 .body
                 .as_ref()
@@ -3345,6 +3340,9 @@ pub(super) fn render(
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
+                if presence.of.len() > 1 && !presence.together {
+                    unreachable!("`{}`: {}", derived.element, PRESENCE_TOGETHER);
+                }
                 let (gated, when_clear) =
                     presence.of.first().expect("a presence flag gates a field");
                 let local = element(gated)
@@ -3389,7 +3387,13 @@ pub(super) fn render(
                     // the value presents it by (docs/adr/0065 §6 R4a).
                     // Where a gate leaves the body out, it says nothing: a
                     // field beside it holds zero and a flag keeps its bits.
-                    Measured::Says { body, input, .. } => {
+                    Measured::Says { body, codec, input } => {
+                        if imports.iter().any(|import| {
+                            import.alias == *codec
+                                && import.codec_partly_says_inputs.contains(input)
+                        }) {
+                            unreachable!("{}", SAYS_IN_EVERY_VALUE);
+                        }
                         let e = element(body)
                             .filter(|e| e.body.is_some())
                             .expect("a body that says an input is a body the value presents");
@@ -3544,7 +3548,7 @@ pub(super) fn render(
                             present,
                         });
                     }
-                    _ => unreachable!("`unlowered` refuses a number into what holds none"),
+                    _ => unreachable!("{}", NUMBER_INTO_ITS_KIND),
                 }
             }
             // The tag of the arm the value holds: the value the document gives
@@ -3701,7 +3705,7 @@ pub(super) fn render(
                     present: None,
                 });
             }
-            _ => unreachable!("`unlowered` refuses a derivation the printer does not lower"),
+            _ => unreachable!("`{}`: {}", derived.element, DERIVED_AS_ROLES_SAY),
         }
     }
     // A flag a parent sets in place of the one the value presents (the flag a
@@ -3771,8 +3775,10 @@ pub(super) fn render(
             format!("_c_{name}")
         } else if optional(f) {
             format!("(*_e_{name})")
-        } else {
+        } else if element(f).is_some() {
             format!("source::{name}(src)")
+        } else {
+            unreachable!("`{}`: {}", f.id, NO_FIELD_UNPRESENTED)
         };
         l.codec_carrier_expr(&f.sce_type, &value)
     };
@@ -3855,7 +3861,7 @@ pub(super) fn render(
                             )
                         }
                         Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
-                        None => unreachable!("`unlowered` refuses a body handed an input nothing binds"),
+                        None => unreachable!("{}", UNBOUND_ARM_OR_BODY),
                     })
                     .collect()
             })
@@ -4051,7 +4057,7 @@ pub(super) fn render(
                     l.codec_field_id(&field.id)
                 ));
             }
-            _ => unreachable!("`unlowered` refuses an encoded length into what holds none"),
+            _ => unreachable!("{}", ENCODED_INTO_FIELD),
         }
     }
     // The statements of a guarded write, inside the test that guards it.
@@ -4063,6 +4069,12 @@ pub(super) fn render(
         out.push_str("        }\n");
         out
     };
+    // A field of a fixed layout, which no gate decides.
+    let fixed = |f: &CodecField| {
+        if optional(f) {
+            unreachable!("`{}`: {}", f.id, FIXED_LAYOUT_UNGATED);
+        }
+    };
     for write in &plan.program {
         match write {
             // One byte: the or of each field's piece in it (docs/adr/0095 §2),
@@ -4071,6 +4083,7 @@ pub(super) fn render(
                 let parts: Vec<String> = pieces
                     .iter()
                     .map(|(f, piece)| {
+                        fixed(f);
                         let wide = l.codec_carrier_bits(&f.sce_type).is_some_and(|b| b > 32);
                         let held = format!(
                             "static_cast<std::uint{}_t>({})",
@@ -4094,8 +4107,12 @@ pub(super) fn render(
                     "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({byte})); _e) return _e;\n"
                 ));
             }
-            Write::Whole(f) => before.push_str(&fixed_write(plan, f, &read(f))),
+            Write::Whole(f) => {
+                fixed(f);
+                before.push_str(&fixed_write(plan, f, &read(f)));
+            }
             Write::Tail { field, pad } => {
+                fixed(field);
                 // A field the layout aligns follows zeros up to its offset.
                 if *pad {
                     before.push_str(&format!(
@@ -4138,6 +4155,9 @@ pub(super) fn render(
                     // over the source the list holds it as; one a gate decides,
                     // over the list it holds where it is present.
                     BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                        if *guard == Guard::Gate {
+                            unreachable!("`{}`: {}", field.id, NO_LIST_DERIVED);
+                        }
                         let walked = element(field)
                             .filter(|e| e.list.is_some())
                             .expect("a list field is a list the value presents");
@@ -4214,17 +4234,20 @@ pub(super) fn render(
                     }
                     BitSize::Fixed { .. } => fixed_write(plan, field, &read(field)),
                     BitSize::Tail | BitSize::LengthRef => bytes_write(field),
-                    BitSize::Vle { width_bits } => format!(
+                    BitSize::Vle {
+                        width_bits: width_bits @ (16 | 32 | 64),
+                    } => format!(
                         "        if (auto _e = w.write_vle_u{width_bits}(static_cast<std::uint{width_bits}_t>({})); _e) return _e;\n",
                         read(field)
                     ),
+                    BitSize::Vle { .. } => unreachable!("`{}`: {}", field.id, EVERY_WIDTH_WRITTEN),
                 };
                 before.push_str(&match guard {
                     Guard::Always => body,
                     // Where the value holds it.
                     Guard::Present => guarded(
                         element(field)
-                            .expect("a field written where the value holds it is an element")
+                            .unwrap_or_else(|| unreachable!("`{}`: {}", field.id, PRESENT_IS_HELD))
                             .local(),
                         body,
                     ),
