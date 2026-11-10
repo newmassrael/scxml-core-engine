@@ -123,92 +123,85 @@ fn swift_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<String
     })
 }
 
-/// The Swift expression that reads the saved value `saved` (an expression), named
-/// `what` in a refusal (an expression of a `String`), as a value of `ty`: as
-/// [`swift_saved_write`] writes it, a text and a byte string held to the bound the
-/// machine keeps them to, an enum by its own type, a record and a union by their own
-/// `fromSaved`.
-fn swift_saved_read(
-    spelling: &SwiftComposed<'_>,
-    ty: &ValueType,
-    within: Option<&str>,
-    records: &dyn RecordEnv,
-    enums: &BTreeMap<String, MachineEnum>,
-    saved: &str,
-    what: &str,
-    depth: usize,
-) -> Result<String, String> {
-    let (inner_saved, inner_what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
-    Ok(match ty {
-        ValueType::Scalar(SceType::Enum(reference)) => {
-            let held = enums.get(&reference.alias).ok_or_else(|| {
+/// What a read of a saved value holds still down the whole walk of one type: the
+/// spelling that names the machine's types, the scope the type is written in
+/// (`within`, the record whose field it is, or `None` for the statechart's own), the
+/// records a statechart holds and the enums it declares.
+struct SavedReader<'a, 'm> {
+    spelling: &'a SwiftComposed<'m>,
+    within: Option<&'a str>,
+    records: &'a dyn RecordEnv,
+    enums: &'a BTreeMap<String, MachineEnum>,
+}
+
+impl SavedReader<'_, '_> {
+    /// The Swift expression that reads the saved value `saved` (an expression), named
+    /// `what` in a refusal (an expression of a `String`), as a value of `ty`: as
+    /// [`swift_saved_write`] writes it, a text and a byte string held to the bound the
+    /// machine keeps them to, an enum by its own type, a record and a union by their
+    /// own `fromSaved`. `depth` names the parameters of each nested closure, so none
+    /// hides its holder's.
+    fn read(
+        &self,
+        ty: &ValueType,
+        saved: &str,
+        what: &str,
+        depth: usize,
+    ) -> Result<String, String> {
+        let (inner_saved, inner_what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
+        Ok(match ty {
+            ValueType::Scalar(SceType::Enum(reference)) => {
+                let held = self.enums.get(&reference.alias).ok_or_else(|| {
+                    format!(
+                        "the enum `{}` a saved value holds is no enum the machine holds",
+                        reference.alias
+                    )
+                })?;
                 format!(
-                    "the enum `{}` a saved value holds is no enum the machine holds",
-                    reference.alias
+                    "try SavedValues.enumeration({saved}, {what}, as: {}.self)",
+                    held.ty
                 )
-            })?;
-            format!(
-                "try SavedValues.enumeration({saved}, {what}, as: {}.self)",
-                held.ty
-            )
-        }
-        ValueType::Scalar(scalar) => {
-            format!("try SavedValues.{}({saved}, {what})", scalar.as_attr())
-        }
-        ValueType::Text { max } => {
-            format!(
-                "try SavedValues.string({saved}, {what}, capacity: {})",
-                max.max
-            )
-        }
-        ValueType::Bytes { max } => {
-            format!(
-                "try SavedValues.bytes({saved}, {what}, capacity: {})",
-                max.max
-            )
-        }
-        ValueType::Optional { elem } => format!(
-            "try SavedValues.optional({saved}, {what}) {{ {inner_saved}, {inner_what} in {} }}",
-            swift_saved_read(
-                spelling,
-                elem,
-                within,
-                records,
-                enums,
-                &inner_saved,
-                &inner_what,
-                depth + 1
-            )?
-        ),
-        ValueType::List { elem, max } => format!(
-            "try SavedValues.list({saved}, {what}, capacity: {}) {{ {inner_saved}, {inner_what} in {} }}",
-            max.max,
-            swift_saved_read(
-                spelling,
-                elem,
-                within,
-                records,
-                enums,
-                &inner_saved,
-                &inner_what,
-                depth + 1
-            )?
-        ),
-        ValueType::Record { alias } => {
-            let held = records.record(within, alias)?;
-            format!(
-                "try {}.fromSaved({saved}, {what})",
-                spelling.record_type(held.alias)
-            )
-        }
-        ValueType::Union { alias } => {
-            let held = records.union(within, alias)?;
-            format!(
-                "try {}.fromSaved({saved}, {what})",
-                spelling.union_type(&held.union.name)
-            )
-        }
-    })
+            }
+            ValueType::Scalar(scalar) => {
+                format!("try SavedValues.{}({saved}, {what})", scalar.as_attr())
+            }
+            ValueType::Text { max } => {
+                format!(
+                    "try SavedValues.string({saved}, {what}, capacity: {})",
+                    max.max
+                )
+            }
+            ValueType::Bytes { max } => {
+                format!(
+                    "try SavedValues.bytes({saved}, {what}, capacity: {})",
+                    max.max
+                )
+            }
+            ValueType::Optional { elem } => format!(
+                "try SavedValues.optional({saved}, {what}) {{ {inner_saved}, {inner_what} in {} }}",
+                self.read(elem, &inner_saved, &inner_what, depth + 1)?
+            ),
+            ValueType::List { elem, max } => format!(
+                "try SavedValues.list({saved}, {what}, capacity: {}) {{ {inner_saved}, {inner_what} in {} }}",
+                max.max,
+                self.read(elem, &inner_saved, &inner_what, depth + 1)?
+            ),
+            ValueType::Record { alias } => {
+                let held = self.records.record(self.within, alias)?;
+                format!(
+                    "try {}.fromSaved({saved}, {what})",
+                    self.spelling.record_type(held.alias)
+                )
+            }
+            ValueType::Union { alias } => {
+                let held = self.records.union(self.within, alias)?;
+                format!(
+                    "try {}.fromSaved({saved}, {what})",
+                    self.spelling.union_type(&held.union.name)
+                )
+            }
+        })
+    }
 }
 
 /// The name a Swift union reader binds the case the tag named to.
@@ -791,6 +784,13 @@ impl ComposedSpelling for SwiftComposed<'_> {
     ) -> Result<Option<String>, String> {
         let held = records.record(None, alias)?;
         let ty = self.record_type(alias);
+        // The fields of the record name its types in its own document's scope.
+        let reader = SavedReader {
+            spelling: self,
+            within: Some(held.alias),
+            records,
+            enums,
+        };
         let mut writes = String::new();
         let mut reads = Vec::new();
         for field in &held.schema.fields {
@@ -800,12 +800,8 @@ impl ComposedSpelling for SwiftComposed<'_> {
                     format!("the field `{}` of `{}`: {why}", field.id, held.schema.name)
                 })?;
             writes.push_str(&format!("            (key: {id}, value: {written}),\n"));
-            let read = swift_saved_read(
-                self,
+            let read = reader.read(
                 &field.sce_type,
-                Some(held.alias),
-                records,
-                enums,
                 &format!("try SavedValues.field(value, what, {id})"),
                 &format!(
                     "\"\\(what).{}\"",
