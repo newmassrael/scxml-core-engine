@@ -2013,8 +2013,14 @@ public final class TodoPeerPolicy: InvocablePolicy {
                             appendFormParam(&sendForm, "ops", sceValue)
                             sendParts.append(PayloadPair("ops", sceValue))
                         } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=ops> failed to evaluate"))
-                            paramFailed = true
+                            // docs/adr/0086, section 15.6: the list is short of its field's
+                            // lower count, so the event is refused whole: one error, nothing
+                            // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
+                        var sendError = EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        sendError.metadata.sendID = "__send_3"
+                        engine.raise(sendError)
+
+                            break sceBlock
                         }
                     }
                     let sendEventData = payloadJSON(sendParts)
