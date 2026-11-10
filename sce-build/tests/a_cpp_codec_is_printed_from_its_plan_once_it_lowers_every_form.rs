@@ -60,6 +60,7 @@ const PRINTED: &[&str] = &[
     "codec_ext_timestamp",
     "codec_fixed_after_lengthref",
     "codec_flags_basic",
+    "codec_group_enum",
     "codec_init_cookie_body",
     "codec_init_syn_body",
     "codec_init_syn_envelope",
