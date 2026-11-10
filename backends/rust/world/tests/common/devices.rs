@@ -50,7 +50,8 @@ use serde_json::{json, Value};
 
 use super::kotlin::step_server_for;
 use super::{
-    record_copy, record_edit_at, record_variables_of, records_of, Field, RecordList, DUE, TITLE,
+    peer, record_copy, record_edit_at, record_variables_of, records_of, Field, RecordList, DUE,
+    TITLE,
 };
 
 /// The list every device holds.
@@ -74,6 +75,20 @@ const CHANGE: &str = "record_list.change";
 /// What a device's host answers its machine's send with: the send is the core's from then on,
 /// and no peer of the Mesh is sent anything.
 const GIVEN: &str = "given to the core of the device";
+
+/// The route a copy that keeps a journal offers its changes and reports its outcomes on, and what
+/// it sends there (docs/adr/0083, section 1.2; docs/adr/0093, section 3.1).
+const JOURNAL: &str = "journal";
+const OFFERED: &str = "record_list.made";
+const CLOSED: &str = "record_list.closed";
+
+/// What the host gives its copy of the device's own changes: the verdict on one it offered, a
+/// confirmation of one that waited and is signed, the withdrawal of one that never will be, and
+/// the stamp its next must exceed (docs/adr/0093, sections 3 and 4.3).
+const VERDICT: &str = "record_list.verdict";
+const CONFIRM: &str = "record_list.confirm";
+const WITHDRAW: &str = "record_list.withdraw";
+const RAISE: &str = "record_list.raise";
 
 /// The status `sce_peer_run` stops with when its cancellation was raised
 /// (`SCE_PEER_ERR_CANCELLED`, `include/sce_peer.h`).
@@ -275,6 +290,12 @@ pub struct Ran {
     pub steps: Vec<String>,
     /// Whether the run stopped because its cancellation was raised.
     pub cancelled: bool,
+    /// The device's own changes that waited and the round signed, as they were offered.
+    pub taken: Vec<(String, String)>,
+    /// The stamps of the device's own changes the round withdrew, earliest first.
+    pub withdrawn: Vec<(i64, u64)>,
+    /// The device's own stamp, when the round raised it.
+    pub raised: Option<(i64, u64)>,
 }
 
 impl Ran {
@@ -288,6 +309,13 @@ impl Ran {
                 stalled: outcome.stalled(),
                 rebuild: outcome.rebuild(),
                 steps: outcome.steps.iter().map(step_word).collect(),
+                taken: outcome.taken(),
+                withdrawn: outcome
+                    .withdrawn()
+                    .iter()
+                    .map(|one| (one.wall_time, one.counter))
+                    .collect(),
+                raised: outcome.raised,
                 ..Ran::default()
             },
             // The words a transport's failure is given to the core in, which `sce_peer_run`
@@ -361,6 +389,22 @@ impl Ran {
                             .collect()
                     })
                     .unwrap_or_default(),
+                taken: value["taken"]
+                    .as_array()
+                    .map(|pairs| {
+                        pairs
+                            .iter()
+                            .filter_map(|pair| {
+                                Some((pair[0].as_str()?.to_string(), pair[1].as_str()?.to_string()))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                withdrawn: value["withdrawn"]
+                    .as_array()
+                    .map(|withdrawn| withdrawn.iter().filter_map(stamp_in).collect())
+                    .unwrap_or_default(),
+                raised: stamp_in(&value["raised"]),
                 ..Ran::default()
             },
             Some("failed") => Ran {
@@ -381,6 +425,47 @@ impl Ran {
     /// machine something, or stopped before the end of what the relay holds.
     fn moved(&self) -> bool {
         self.failed.is_some() || self.pushed > 0 || !self.events.is_empty() || self.stalled
+    }
+}
+
+/// The stamp a text of the ABI or a change names: its `wallTime`, a 64-bit number as text, and its
+/// `counter`; `None` when it names none.
+fn stamp_in(value: &Value) -> Option<(i64, u64)> {
+    let wall_time = value["wallTime"].as_str()?.parse().ok()?;
+    Some((wall_time, value["counter"].as_u64()?))
+}
+
+/// What the host gives its copy to name a change of the device's own by its stamp: a confirmation,
+/// a withdrawal or a raise. The world's host keeps no commands, so it names none.
+fn stamp_text((wall_time, counter): (i64, u64)) -> String {
+    json!({"wallTime": wall_time.to_string(), "counter": counter, "command": "0"}).to_string()
+}
+
+/// The verdict a host gives a copy on the change it offered (`offered`), from what the core did
+/// with it (docs/adr/0093, section 6.4).
+fn verdict_of(offered: &str, kept: &Kept) -> String {
+    let change: Value = serde_json::from_str(offered).expect("an offer is JSON");
+    let outcome = match kept {
+        Kept::Taken => "accepted",
+        Kept::Held => "held",
+        Kept::Waiting(_) => "waiting",
+        Kept::Refused(_) | Kept::NotSigned => "refused",
+    };
+    json!({"wallTime": change["wallTime"], "counter": change["counter"],
+           "outcome": outcome, "reason": null})
+    .to_string()
+}
+
+/// What a device's core did with a send or an offer, as the step server of a Kotlin device says it.
+fn kept_of_reply(name: &str, reply: &Value) -> Kept {
+    let reason = reply["reason"].as_str().map(str::to_string);
+    match reply["kept"].as_str() {
+        Some("taken") => Kept::Taken,
+        Some("held") => Kept::Held,
+        Some("not_signed") => Kept::NotSigned,
+        Some("refused") => Kept::Refused(reason.unwrap_or_default()),
+        Some("waiting") => Kept::Waiting(reason.unwrap_or_default()),
+        _ => panic!("{name}: the core kept a send as nothing the ABI says: {reply}"),
     }
 }
 
@@ -493,15 +578,36 @@ impl Device {
                     machine,
                     &json!({ "op": "peer_outbound", "event": event, "data": data }),
                 );
-                let reason = reply["reason"].as_str().map(str::to_string);
-                match reply["kept"].as_str() {
-                    Some("taken") => Kept::Taken,
-                    Some("held") => Kept::Held,
-                    Some("not_signed") => Kept::NotSigned,
-                    Some("refused") => Kept::Refused(reason.unwrap_or_default()),
-                    Some("waiting") => Kept::Waiting(reason.unwrap_or_default()),
-                    _ => panic!("{name}: the core kept a send as nothing the ABI says: {reply}"),
+                kept_of_reply(name, &reply)
+            }
+        }
+    }
+
+    /// The change the copy offered, given to the core, which signs it in the call: the verdict.
+    fn made(&mut self, data: &str) -> Kept {
+        let name = self.name;
+        match &mut self.core {
+            Core::Rust(peer) => peer.made(data),
+            Core::Kotlin(machine) => {
+                let reply = ask(name, machine, &json!({ "op": "peer_made", "data": data }));
+                kept_of_reply(name, &reply)
+            }
+        }
+    }
+
+    /// The host's journal takes every record the core made, and says so: the world's host keeps
+    /// nothing a crash could lose, so it commits at once.
+    fn record(&mut self) {
+        let name = self.name;
+        match &mut self.core {
+            Core::Rust(peer) => {
+                let through = peer.take_records().last().map(|record| record.seq);
+                if let Some(through) = through {
+                    peer.recorded(through);
                 }
+            }
+            Core::Kotlin(machine) => {
+                ask(name, machine, &json!({ "op": "peer_record" }));
             }
         }
     }
@@ -771,20 +877,23 @@ impl Devices {
         let mut world = World::new(seed);
         let mut devices = Vec::new();
         for (name, node, core) in cores {
+            // The copy keeps a journal: it offers each change on `#journal`, which its host's
+            // sealer takes, as it takes every send.
+            let mut router = record_copy(name);
+            router.add_peer(JOURNAL, peer(&[JOURNAL], false));
             match &core {
-                Core::Rust(_) => world.add(name, RecordList::new(), record_copy(name)),
-                Core::Kotlin(machine) => world.add_external(name, machine, record_copy(name)),
+                Core::Rust(_) => world.add(name, RecordList::new(), router),
+                Core::Kotlin(machine) => world.add_external(name, machine, router),
             }
             let sent = Sends::default();
             world.set_sealer(name, Box::new(ToTheCore(sent.clone())));
-            // Joined with `journal` false (docs/adr/0083, docs/adr/0093): this host gives its
-            // core what the machine sends to `#people` (`Peer::outbound`), which a copy that
-            // keeps a journal does not send; a host that gives its core each offered change
-            // and its copy the verdict comes with the core's `Peer::made`.
+            // Joined with `journal` (docs/adr/0083, docs/adr/0093): the copy offers each change it
+            // closes, the host gives it to its core (`Peer::made`), which signs it in the call,
+            // and gives the copy the verdict; the copy takes the change in after it.
             world.raise(
                 name,
                 "record_list.join",
-                &format!(r#"{{"node":"{node}","journal":false}}"#),
+                &format!(r#"{{"node":"{node}","journal":true}}"#),
             );
             devices.push(Device {
                 name,
@@ -892,18 +1001,23 @@ impl Devices {
         self.device_mut(name).suspend_after = Some(requests);
     }
 
-    /// The person of the device `name` changes a field `DUE` of row `row` to `value`, now.
+    /// The person of the device `name` changes a field `DUE` of row `row` to `value`, now. The
+    /// copy's offer is given its verdict before the person's next command, as a host gives a copy
+    /// no command while an offer is outstanding (docs/adr/0093, section 3.2).
     pub fn set(&mut self, name: &str, row: u64, value: i64) {
         let now = self.world.now_ms();
         record_edit_at(&mut self.world, name, row, DUE, value, "", now);
         self.written.entry((row, DUE)).or_default().push(value);
+        self.give_sends();
     }
 
-    /// The person of the device `name` gives row `row` a title, now.
+    /// The person of the device `name` gives row `row` a title, now, and the copy's offer is given
+    /// its verdict.
     pub fn title(&mut self, name: &str, row: u64, title: &str) {
         let now = self.world.now_ms();
         record_edit_at(&mut self.world, name, row, TITLE, 0, title, now);
         self.written.entry((row, TITLE)).or_default().push(0);
+        self.give_sends();
     }
 
     /// The machines run until nothing is left to happen, and what they sent is the cores'.
@@ -916,15 +1030,61 @@ impl Devices {
         );
     }
 
-    /// What every machine sent since it was last asked, given to its device's core.
+    /// What every machine sent since it was last asked, given to its device's core: a change a
+    /// copy offered is signed in the call, the record the core made of it taken into the host's
+    /// journal, and the verdict given back to the copy, which takes the change in after it
+    /// (docs/adr/0083, section 3.1; docs/adr/0093, section 3.1). What a copy reports of a change it
+    /// closed is its host's journal's, and the core is given nothing of it.
     pub fn give_sends(&mut self) {
         self.quiet();
-        for device in &mut self.devices {
-            let sent = std::mem::take(&mut *device.sent.lock().expect("the sends are whole"));
-            for (event, data) in sent {
-                let kept = device.outbound(&event, &data);
-                device.kept.push(kept);
+        loop {
+            let mut verdicts = Vec::new();
+            for device in &mut self.devices {
+                let sent = std::mem::take(&mut *device.sent.lock().expect("the sends are whole"));
+                for (event, data) in sent {
+                    let kept = match event.as_str() {
+                        OFFERED => {
+                            let kept = device.made(&data);
+                            device.record();
+                            verdicts.push((device.name, verdict_of(&data, &kept)));
+                            kept
+                        }
+                        CLOSED => continue,
+                        _ => device.outbound(&event, &data),
+                    };
+                    device.kept.push(kept);
+                }
             }
+            if verdicts.is_empty() {
+                return;
+            }
+            for (name, verdict) in verdicts {
+                self.world.raise(name, VERDICT, &verdict);
+            }
+            self.quiet();
+        }
+    }
+
+    /// What a round said of the device's own changes, told to its copy as its host tells it
+    /// (docs/adr/0093, section 8): each change that waited and was signed is confirmed, its record
+    /// taken into the journal, the earliest change withdrawn is named, the copy withdrawing it and
+    /// every provisional change after it, and a risen stamp is raised.
+    fn tell_the_copy(&mut self, device: usize, came: &Ran) {
+        let name = self.devices[device].name;
+        for (_, data) in &came.taken {
+            let change: Value =
+                serde_json::from_str(data).expect("a change the core signed is JSON");
+            let stamp = stamp_in(&change).expect("a change has a stamp");
+            self.world.raise(name, CONFIRM, &stamp_text(stamp));
+        }
+        if !came.taken.is_empty() {
+            self.devices[device].record();
+        }
+        if let Some(earliest) = came.withdrawn.first() {
+            self.world.raise(name, WITHDRAW, &stamp_text(*earliest));
+        }
+        if let Some(raised) = came.raised {
+            self.world.raise(name, RAISE, &stamp_text(raised));
         }
     }
 
@@ -1034,6 +1194,7 @@ impl Devices {
                 for (event, data) in &came.events {
                     self.world.raise(name, event, data);
                 }
+                self.tell_the_copy(device, &came);
                 let held = &mut self.devices[device];
                 held.refused.extend(came.refused.iter().cloned());
                 held.steps.extend(came.steps.iter().cloned());

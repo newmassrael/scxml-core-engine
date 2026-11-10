@@ -38,6 +38,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -61,6 +62,8 @@ class HostedDevice(private val lines: Lines) : AutoCloseable {
         when (op) {
             "peer_make" -> make(request)
             "peer_outbound" -> outbound(request)
+            "peer_made" -> made(request)
+            "peer_record" -> record()
             "peer_round" -> round(request)
             "peer_standing" -> ok { put("standing", core().standing()) }
             "peer_carried" -> throw ProtocolError("no exchange of the device's core waits for what was carried")
@@ -116,6 +119,30 @@ class HostedDevice(private val lines: Lines) : AutoCloseable {
             put("kept", sent.kept.name.lowercase())
             put("reason", sent.reason)
         }
+    }
+
+    /**
+     * The change the copy offered (`data`, `record_list.made`'s payload), given to the core: the
+     * verdict it gave, as `kept` names it, and why when it refused it or keeps it waiting.
+     */
+    private fun made(request: JsonObject): JsonObject {
+        val sent = core().made(text(request, "data"))
+        return ok {
+            put("kept", sent.kept.name.lowercase())
+            put("reason", sent.reason)
+        }
+    }
+
+    /**
+     * The host's journal takes every record the core gives, at once, and says so: the records'
+     * text, which the world's host keeps nowhere else.
+     */
+    private fun record(): JsonObject {
+        val held = core()
+        val records = held.takeRecords()
+        val numbers = Json.parseToJsonElement(records).jsonArray.map { it.jsonObject.getValue("seq").jsonPrimitive.content.toLong() }
+        numbers.maxOrNull()?.let { held.recorded(it) }
+        return ok { put("records", records) }
     }
 
     /**
