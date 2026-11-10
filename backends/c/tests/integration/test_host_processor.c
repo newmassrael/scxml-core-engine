@@ -29,11 +29,13 @@
 // A gate holding only the first would pass on an engine that dispatched
 // to nothing and called it delivered, which is the silence being repaid.
 //
-// The last scenario has no sibling on the other engines and could not
-// have one: their reply lists grow, so a report cannot fail to fit. This
-// one is bounded — the MCU profile has no allocator — and a bounded list
-// that quietly shortened a report would leave the machine somewhere the
-// document never described.
+// The reply list's count is bounded on this backend, as it is on no other
+// engine, and a bounded list that quietly shortened a report would leave the
+// machine somewhere the document never described; the overflow scenario holds
+// that. A reply's data is not bounded on this machine, whose data model is a
+// script engine: it grows in the engine's heap (docs/adr/0086, section 8.6
+// (d)), so a reply longer than a fixed slot arrives whole, which
+// `a_reply_longer_than_a_fixed_slot_arrives_whole` holds.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -451,53 +453,60 @@ static int a_report_that_does_not_fit_is_reported_rather_than_shortened(void) {
     return bad;
 }
 
-// The other way a bounded report fails to fit: one entry too large for its
-// slot. The whole entry is refused rather than shortened, and for the same
-// reason the count arm refuses — a truncated payload is one that parses to
-// something the host never said, and a truncated event NAME can match a
-// DIFFERENT transition, making the machine take a step nobody asked for.
-//
-// Its own scenario because the count arm above cannot reach this branch:
-// one reply that does not fit overflows a list that had room for four.
+// The data of a reply is not bounded by a slot on this machine: its data model
+// is a script engine, so each reply's data grows in the engine's heap at the
+// size of the text and the list owns it until it is raised (docs/adr/0086,
+// section 8.6 (d)). A reply longer than the fixed slot a machine without a
+// script engine holds (`SCE_MAX_DATA_LEN`) is therefore taken whole and
+// arrives, rather than refused: the reply the slot used to refuse is the one
+// asked here. What is still refused whole, never cut, is a text the heap
+// cannot give and a text past fixed storage, which `c11_unit_host_answer_heap`
+// holds on the list a handler pushes into.
 typedef struct {
     const char *data;
     int calls;
-    bool push_accepted;
-} oversize_ctx_t;
+    // The first call's push: the reply of the first send, whose arrival moves the
+    // machine on to the `pairs` send that makes the second call.
+    bool first_push_accepted;
+} long_reply_ctx_t;
 
-static void oversize_handler(void *user_data, const sce_host_send_request_t *request,
-                             sce_host_send_response_list_t *out) {
-    oversize_ctx_t *ctx = (oversize_ctx_t *)user_data;
+static void long_reply_handler(void *user_data, const sce_host_send_request_t *request,
+                               sce_host_send_response_list_t *out) {
+    long_reply_ctx_t *ctx = (long_reply_ctx_t *)user_data;
     (void)request;
     ctx->calls++;
-    ctx->push_accepted = sce_host_response_push(out, "turn.done", ctx->data);
+    const bool accepted = sce_host_response_push(out, "turn.done", ctx->data);
+    if (ctx->calls == 1) {
+        ctx->first_push_accepted = accepted;
+    }
 }
 
-static int an_entry_too_large_for_its_slot_is_refused(void) {
-    static char oversized[SCE_MAX_DATA_LEN + 64];
-    memset(oversized, 'x', sizeof(oversized) - 1u);
-    oversized[sizeof(oversized) - 1u] = '\0';
+static int a_reply_longer_than_a_fixed_slot_arrives_whole(void) {
+    static char long_reply[SCE_MAX_DATA_LEN + 64];
+    memset(long_reply, 'x', sizeof(long_reply) - 1u);
+    long_reply[sizeof(long_reply) - 1u] = '\0';
 
-    oversize_ctx_t ctx;
+    long_reply_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
-    ctx.data = oversized;
+    ctx.data = long_reply;
 
     sce_host_processor_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
-    (void)sce_host_registry_register(&wiring, DECLARED_TYPE, oversize_handler, &ctx);
+    (void)sce_host_registry_register(&wiring, DECLARED_TYPE, long_reply_handler, &ctx);
 
     statechart_host_processor_t sm;
     statechart_host_processor_init_with_host_processors(&sm, &wiring);
     statechart_host_processor_run(&sm);
 
     int bad = 0;
-    bad |= check("oversize", "handler calls", ctx.calls, 1);
-    if (ctx.push_accepted) {
-        (void)fprintf(stderr, "host_processor: FAIL [oversize] - a payload larger than the slot was accepted\n");
+    if (!ctx.first_push_accepted) {
+        (void)fprintf(stderr, "host_processor: FAIL [long reply] - a reply longer than a fixed slot was refused\n");
         bad = 1;
     }
-    bad |= check("oversize", "served", counter(&sm, "served"), 0);
-    bad |= check("oversize", "refused", counter(&sm, "refused"), 1);
+    bad |= check("long reply", "served", counter(&sm, "served"), 1);
+    bad |= check("long reply", "refused", counter(&sm, "refused"), 0);
+    // Served, the machine moved on to `pairs` and sent the host its second request.
+    bad |= check("long reply", "handler calls", ctx.calls, 2);
     statechart_host_processor_destroy(&sm);
     return bad;
 }
@@ -638,7 +647,7 @@ int main(void) {
     bad |= the_registry_reports_what_it_holds();
     bad |= a_reply_naming_an_undeclared_event_is_dropped();
     bad |= a_report_that_does_not_fit_is_reported_rather_than_shortened();
-    bad |= an_entry_too_large_for_its_slot_is_refused();
+    bad |= a_reply_longer_than_a_fixed_slot_arrives_whole();
     bad |= registration_refuses_the_reserved_types_the_shared_table_names();
     bad |= a_mesh_router_is_registered_through_its_own_door();
     bad |= the_mesh_target_rule_matches_the_shared_table();
