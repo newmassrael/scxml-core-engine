@@ -24,6 +24,7 @@
 
 #include "sce/number_text.h"
 #include "sce/saved_json.h"
+#include "sce/session_id.h"
 
 #include <limits.h>
 #include <math.h>
@@ -329,51 +330,6 @@ static inline bool sce_saved_read_string_bounded(sce_jv_t v, const char *what, c
     return sce_jv_string(v, out, capacity + 1u, NULL);
 }
 
-/* The code point of the UTF-8 sequence at `text[*at]`, advancing past it; U+FFFD
- * for a byte that starts no well-formed sequence, one byte consumed, as the other
- * backends read a malformed text. */
-static inline uint32_t sce_saved_next_code_point_(const unsigned char *text, size_t n, size_t *at) {
-    const uint32_t lead = text[*at];
-    size_t length;
-    uint32_t point;
-    if (lead < 0x80u) {
-        ++*at;
-        return lead;
-    }
-    if (lead >= 0xC2u && lead <= 0xDFu) {
-        length = 2u;
-        point = lead & 0x1Fu;
-    } else if (lead >= 0xE0u && lead <= 0xEFu) {
-        length = 3u;
-        point = lead & 0x0Fu;
-    } else if (lead >= 0xF0u && lead <= 0xF4u) {
-        length = 4u;
-        point = lead & 0x07u;
-    } else {
-        ++*at;
-        return 0xFFFDu;
-    }
-    if (*at + length > n) {
-        ++*at;
-        return 0xFFFDu;
-    }
-    for (size_t i = 1u; i < length; ++i) {
-        const uint32_t continuation = text[*at + i];
-        if ((continuation & 0xC0u) != 0x80u) {
-            ++*at;
-            return 0xFFFDu;
-        }
-        point = (point << 6) | (continuation & 0x3Fu);
-    }
-    if ((length == 3u && point < 0x800u) || (length == 4u && point < 0x10000u) || point > 0x10FFFFu ||
-        (point >= 0xD800u && point <= 0xDFFFu)) {
-        ++*at;
-        return 0xFFFDu;
-    }
-    *at += length;
-    return point;
-}
-
 /* The decoded bytes of a string, with room to take back the bytes a malformed
  * sequence read ahead and left unconsumed. */
 typedef struct sce_saved_bytes_s {
@@ -422,7 +378,7 @@ static inline bool sce_saved_bytes_point_(sce_saved_bytes_t *b, uint32_t *point)
     }
     {
         size_t at = 0u;
-        const uint32_t read = sce_saved_next_code_point_(seq, got, &at);
+        const uint32_t read = sce_utf8_next_code_point(seq, got, &at);
         /* What the sequence did not use is read again as the start of the next. */
         for (size_t i = got; i > at; --i) {
             for (uint8_t k = b->n_held; k > 0u; --k) {
@@ -518,42 +474,21 @@ static inline bool sce_saved_read_variant(sce_jv_t v, const char *what, const ch
 
 /* ── A session id ──────────────────────────────────────────────────────────── */
 
-/* XML 1.0 `NameStartChar` and `NameChar`. */
-static inline bool sce_saved_name_start_(uint32_t c) {
-    return c == 0x3Au || (c >= 0x41u && c <= 0x5Au) || c == 0x5Fu || (c >= 0x61u && c <= 0x7Au) ||
-           (c >= 0xC0u && c <= 0xD6u) || (c >= 0xD8u && c <= 0xF6u) || (c >= 0xF8u && c <= 0x2FFu) ||
-           (c >= 0x370u && c <= 0x37Du) || (c >= 0x37Fu && c <= 0x1FFFu) || (c >= 0x200Cu && c <= 0x200Du) ||
-           (c >= 0x2070u && c <= 0x218Fu) || (c >= 0x2C00u && c <= 0x2FEFu) || (c >= 0x3001u && c <= 0xD7FFu) ||
-           (c >= 0xF900u && c <= 0xFDCFu) || (c >= 0xFDF0u && c <= 0xFFFDu) || (c >= 0x10000u && c <= 0xEFFFFu);
-}
-
-static inline bool sce_saved_name_char_(uint32_t c) {
-    return sce_saved_name_start_(c) || c == 0x2Du || c == 0x2Eu || (c >= 0x30u && c <= 0x39u) || c == 0xB7u ||
-           (c >= 0x300u && c <= 0x36Fu) || (c >= 0x203Fu && c <= 0x2040u);
-}
-
 /* Whether `id` may be a session's id: an XML 1.0 Nmtoken, one name character or
  * more (production `Nmtoken`, fifth edition), `_sessionid` being one and another
- * session addressing this one as `#_scxml_<id>`. False with the reason in `err`. */
+ * session addressing this one as `#_scxml_<id>`. False with the reason in `err`.
+ * The rule is the one a host's id is judged by (`sce/session_id.h`). */
 static inline bool sce_saved_session_id_ok(const char *id, sce_saved_error_t *err) {
-    const size_t n = strlen(id);
-    size_t at = 0u;
-    if (n == 0u) {
+    uint32_t point = 0u;
+    if (id[0] == '\0') {
         return sce_saved_refuse(err, "the session id is empty, and a session id is one name character or more (an "
                                      "XML Nmtoken)");
     }
-    while (at < n) {
-        const size_t before = at;
-        const uint32_t point = sce_saved_next_code_point_((const unsigned char *)id, n, &at);
-        /* A byte that starts no well-formed sequence reads as U+FFFD, one byte wide, and is no
-         * name character however the replacement character itself is classed. */
-        const bool malformed = point == 0xFFFDu && at - before == 1u;
-        if (malformed || !sce_saved_name_char_(point)) {
-            return sce_saved_refuse(err,
-                                    "the session id holds U+%04X, which is not a name character: a session id is an "
-                                    "XML Nmtoken (letters, digits, '.', '-', '_', ':')",
-                                    (unsigned)point);
-        }
+    if (!sce_session_id_is_nmtoken(id, &point)) {
+        return sce_saved_refuse(err,
+                                "the session id holds U+%04X, which is not a name character: a session id is an "
+                                "XML Nmtoken (letters, digits, '.', '-', '_', ':')",
+                                (unsigned)point);
     }
     return true;
 }

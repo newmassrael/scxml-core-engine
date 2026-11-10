@@ -4920,6 +4920,21 @@ set_tests_properties(c11_unit_saved_state PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# The id a host may give a machine's root session (docs/adr/0045, "Questions the owner
+# answered" 2): an Nmtoken that fits its bound and whose location fits a URI's is taken, and
+# every other is refused with its reason. Header-only and allocation-free.
+add_executable(sce_c_session_id_unit_test unit/session_id_test.c)
+target_link_libraries(sce_c_session_id_unit_test PRIVATE sce_c_runtime)
+set_target_properties(sce_c_session_id_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_session_id COMMAND sce_c_session_id_unit_test)
+set_tests_properties(c11_unit_session_id PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 # An event's origin (docs/adr/0090): the pair its processor writes, the SCXML
 # processor's address codec a session's location and every origin it sends are
 # spelled by, a location read as a send target, and a format-2 stored origin read
