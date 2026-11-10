@@ -855,12 +855,13 @@ the sum of a start instant and a duration in `double` arithmetic can differ in i
 gives for the same moment, which would order a timeout and an input differently on the two sides.
 
 The lane itself is designed in `docs/SCE_TTCN3_LANE.md` (ADR 0091 order of work step 5). Everything that touches
-Titan lives in a separate EPL-2.0 repository, `sce-ttcn3-titan`, which uses SCE only as a tool: the adapter
-interface, the reference adapters and codec bindings, the Titan binding, the pinned Titan with this change, and the
-lane runner. SCE keeps the export, the validator, the wire surfaces the two share, the native runners with trace
-replay, and the corpus with its traces and expected logs. The change above is stated there as a protocol of the Main
-Controller, with its states and messages (§9.2 of that document), together with the recorded input trace both runs
-read (§10).
+Titan lives in a separate EPL-2.0 repository, `sce-ttcn3-titan`, created 2026-11-10 and private for now
+(https://github.com/newmassrael/sce-ttcn3-titan), which uses SCE only as a tool: the adapter interface, the reference
+adapters and codec bindings, the Titan binding, the pinned Titan with this change, and the lane runner. SCE keeps the
+export, the validator, the wire surfaces the two share, the native runners with trace replay, and the corpus with its
+traces and expected logs. The change above is stated as a protocol of the Main Controller, with its states and
+messages, in that repository's design (`docs/DESIGN.md` §9.2). The recorded input trace both runs read is SCE's
+(`docs/SCE_TTCN3_LANE.md` §10).
 
 ## 11. Document forms
 

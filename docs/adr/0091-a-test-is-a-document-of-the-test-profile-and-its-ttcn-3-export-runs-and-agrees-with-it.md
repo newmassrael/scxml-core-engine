@@ -49,7 +49,8 @@
   only as a tool, through SCE's programs and published wire surfaces. SCE keeps the export, the validator, those
   surfaces, the native runners with trace replay, and the corpus with its traces and expected logs. Answer 1's
   licence question is answered by that split (answer 1), §7 says which repository ships what, and step 5 is split
-  into slices.
+  into slices. The repository is created, https://github.com/newmassrael/sce-ttcn3-titan (private for now), and
+  its `docs/DESIGN.md` holds the downstream half of the design.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -431,7 +432,10 @@ traces are those a generator would also produce.
    clock of answer 3 to Eclipse Titan, and build the lane's Titan from a pinned release with that change until a
    release contains it. Settle the licence question of answer 1 before the binding is written.
    **Status (2026-11-10):** the design is written (`docs/SCE_TTCN3_LANE.md`), and the licence question is answered by
-   the repository split (answer 1). The downstream repository `sce-ttcn3-titan` is to be created. The SCE-side slices
+   the repository split (answer 1). The downstream repository `sce-ttcn3-titan` is created
+   (https://github.com/newmassrael/sce-ttcn3-titan, private for now), with its `SCE_PIN` at `0d48bef3bd`. Its
+   `docs/DESIGN.md` holds the downstream half of the design, §6 to §9, §11 and §13.2 under the numbers they have in
+   `docs/SCE_TTCN3_LANE.md`, which keeps SCE's side. The SCE-side slices
    come first: S1, the trace surface and native trace replay; S2, a corpus with traces and expected logs. The
    downstream slices follow: D1, the skeleton, its licence and the adapter interface; D2, the pinned Titan build and
    the Main Controller patch; D3, the reference adapters and codecs; D4, the binding and the logger; D5, the lane
@@ -523,7 +527,7 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      them on codec libraries that neither SCE nor Titan wrote: a CBOR library and an iCalendar library. Their
      authors share nothing with SCE's codec generator, so this is C2's first kind of independence, an
      independent encoding engine. The choice of library is pinned with the lane: libcbor and libical
-     (`docs/SCE_TTCN3_LANE.md` §8.4).
+     (§8.4 of the downstream design, `docs/DESIGN.md` of `sce-ttcn3-titan`).
    - **A tool that implements TRI and TCI natively** is admitted by the same adapters through a binding that is
      the identity. Elvior TestCast states TRI and TCI mappings for C, C++, C# and Java; it was the first answer's
      tool and is not used because its licence cannot be obtained. Running the suite on a second tool remains the
@@ -546,7 +550,8 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      binding and the reference adapter set, to be settled before the binding is written (order of work step 5).
 
      **Decided 2026-11-10: the lane is a separate repository, and no SCE file is relicensed.** Everything that
-     touches Titan lives in a downstream repository, `sce-ttcn3-titan`, published under EPL-2.0: the adapter
+     touches Titan lives in a downstream repository, `sce-ttcn3-titan`, created 2026-11-10 (private for now,
+     https://github.com/newmassrael/sce-ttcn3-titan) and published under EPL-2.0: the adapter
      interface, the reference adapter set, the codec bindings, the Titan binding, the pinned Titan build with its
      Main Controller patches, and the lane runner. It never includes, links or copies SCE code. It uses SCE only as
      a tool: it runs `sce-codegen export-ttcn3`, the validator and the native runners as processes, and reads and
