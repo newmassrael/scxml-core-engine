@@ -48,7 +48,12 @@ sealed class RootStartRefusal {
         /**
          * [NeedsParent] under the name it had while this was an enumeration of
          * one value, so a host that names the refusal that way still compiles.
+         *
+         * A getter, not a stored value: the companion is initialized with this
+         * class, which a first use of [NeedsParent] initializes while
+         * [NeedsParent] itself is still being built, so a stored copy would be
+         * that half-built object, its [reason] still null.
          */
-        val NEEDS_PARENT: NeedsParent = NeedsParent
+        val NEEDS_PARENT: NeedsParent get() = NeedsParent
     }
 }
