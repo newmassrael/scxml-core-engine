@@ -6,9 +6,9 @@ package com.sce.runtime
 /**
  * Typed reads of a live datamodel variable.
  *
- * The counterpart to the datamodel initialisation `ensureScriptEngine`
- * performs. These take a value back out in the host's own type, so a generated
- * machine can answer a question about its own datamodel without the caller
+ * The counterpart to the datamodel initialisation a start performs
+ * (`StateMachineEngine.declareDatamodel`). These take a value back out in the
+ * host's own type, so a generated machine can answer a question about its own datamodel without the caller
  * holding a script engine, a session id and the variable's name spelled as a
  * string.
  *

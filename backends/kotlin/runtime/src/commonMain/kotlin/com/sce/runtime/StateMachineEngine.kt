@@ -393,8 +393,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected var scriptSessionId: String? = null
         private set
 
-    /** Lazy initialization flag — generated ensureScriptEngine() sets this. */
+    /**
+     * Whether this machine's script session is established: set by
+     * [makeScriptSession] once every step succeeded, and cleared when the
+     * session is released. A session is made once, at the start, and what runs
+     * after the start reads it ([assertScriptSession]); nothing makes one
+     * lazily (docs/adr/0096).
+     */
     protected var scriptEngineInitialized: Boolean = false
+        private set
 
     /**
      * §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine.
@@ -405,8 +412,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * `_ioprocessors`. Leaving it empty means no BasicHTTP endpoint serves the
      * session, and no entry is published.
      *
-     * Must be set before the first event is processed, since `_ioprocessors`
-     * is populated once during lazy session setup.
+     * Must be set before the machine starts, since `_ioprocessors` is bound
+     * once, when the start establishes the script session.
      */
     var basicHttpAccessUri: String = ""
 
@@ -490,7 +497,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Allocate a script engine session ID.
-     * Called by generated ensureScriptEngine() during lazy initialization. A
+     * Called by [makeScriptSession] when a start establishes the session. A
      * session that was given an id takes it, so its script session and its
      * identity are one name.
      */
@@ -499,6 +506,108 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val sid = boundSessionIdentity() ?: "session_${scriptSessionIdCounter.incrementAndFetch()}"
         scriptSessionId = sid
         return sid
+    }
+
+    /**
+     * Establish this machine's script session, the first step of every start
+     * ([initialize], [start], [enterAt], and an invoked child's start), and the
+     * one place a session is made (docs/adr/0096). `null` when it is
+     * established; why it could not be otherwise, with what the steps made
+     * released, and the start is then refused with nothing entered.
+     *
+     * Generated code overrides it for a machine whose document needs a
+     * datamodel, through [makeScriptSession]; the default is a machine with no
+     * script engine, which has no session to fail.
+     */
+    protected open fun establishScriptSession(): ScriptSessionFailure? = null
+
+    /**
+     * §scxml-5.3: declare this document's datamodel now, in the session the
+     * start established: the document's `<data>`, the early-bound `<data>` of
+     * its states, the invoke params a parent handed this session, then its
+     * top-level `<script>`, in that order, the order Appendix D's `interpret`
+     * gives. Run by every start ([initialize], [start], [enterAt]) after
+     * [establishScriptSession] answered `null` and before any state is
+     * entered: a `cond` or an `assign` evaluated after it would otherwise
+     * reference variables that were never declared, and a host restoring saved
+     * values wants somewhere to put them. A `<data>` or a `<script>` that fails
+     * raises `error.execution` as executable content does.
+     *
+     * Generated code overrides this for a machine that has one; the default is
+     * a machine with no `<datamodel>` to declare.
+     */
+    protected open fun declareDatamodel() {}
+
+    /**
+     * The three steps of establishing a script session in [engine]: create it,
+     * which loads the engine's shared library into it, then bind the system
+     * variables, `_name` read as [sessionName] (docs/adr/0096). A step that
+     * fails releases what the steps before it made, the session id included,
+     * and is the answer, which names the step; the session is then not marked
+     * established, so a later start asks for it again rather than running over
+     * a session that is not there. `null` when every step succeeded, and the
+     * session is established ([scriptEngineInitialized]).
+     *
+     * The body of a generated [establishScriptSession].
+     */
+    protected fun makeScriptSession(engine: ScxmlScriptEngine, sessionName: String): ScriptSessionFailure? {
+        val sid = allocateScriptSession()
+        try {
+            engine.createSession(sid)
+        } catch (failure: Exception) {
+            // The engine keeps no session for a creation that failed.
+            scriptSessionId = null
+            return ScriptSessionFailure.ofCreation(failure)
+        }
+        try {
+            // The `_ioprocessors` entries come from the same helper every other
+            // backend uses ([IoProcessors.build]), so a machine reads the same
+            // entry names and the same addresses whichever one runs it.
+            engine.setupSystemVariables(sid, sessionName, IoProcessors.build(sid, basicHttpAccessUri))
+        } catch (failure: Exception) {
+            engine.destroySession(sid)
+            scriptSessionId = null
+            return ScriptSessionFailure.ofSystemVariables(failure)
+        }
+        scriptEngineInitialized = true
+        return null
+    }
+
+    /**
+     * Hold that the script session this machine's executable content runs in
+     * was established by its start ([establishScriptSession]). A start whose
+     * session could not be established was refused before anything could reach
+     * here, so reaching here without one is a defect of the generated code or
+     * a host that drives a machine whose start it was refused, not a condition
+     * of the run (docs/adr/0096).
+     *
+     * @throws IllegalStateException when no session is established.
+     */
+    protected fun assertScriptSession() {
+        check(scriptEngineInitialized) {
+            "the script session is established by the start, before any executable content runs " +
+                "(codegen invariant; a start that was refused leaves the machine unstarted)"
+        }
+    }
+
+    /**
+     * The first step of every start: release a session an earlier run left
+     * (a run ended or stopped keeps its datamodel readable until then), then
+     * establish this run's ([establishScriptSession]). `null` when the start
+     * may go on; the failure that refuses it otherwise, with nothing of the
+     * run begun.
+     */
+    private fun establishScriptSessionForStart(): ScriptSessionFailure? {
+        releaseScriptSession()
+        return establishScriptSession()
+    }
+
+    /** Destroy the established script session, if there is one, and forget its id. */
+    private fun releaseScriptSession() {
+        if (!scriptEngineInitialized) return
+        scriptSessionId?.let { scriptEngine?.destroySession(it) }
+        scriptEngineInitialized = false
+        scriptSessionId = null
     }
 
     /**
@@ -607,18 +716,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * journal a reported failure instead of a machine quietly somewhere else.
      */
     fun stateOfName(name: String): S? = resolveState(name)
-
-    /**
-     * §scxml-5.3: declare this document's datamodel now.
-     *
-     * Generated code overrides this for a machine that has one; the default is
-     * a machine with no `<datamodel>` to declare. [enterAt] calls it for the
-     * reason [initialize] reaches the same code: a `cond` or an `assign`
-     * evaluated after the door returns would otherwise reference variables that
-     * were never declared, and a host restoring saved values wants somewhere to
-     * put them.
-     */
-    protected open fun declareDatamodel() {}
 
     /**
      * W3C SCXML Appendix D: a macrostep has completed and the configuration is
@@ -2684,26 +2781,42 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * answers for a host that would rather not start it at all.
      */
     fun rootStartRefusal(): RootStartRefusal? =
-        if (needsParent) RootStartRefusal.NEEDS_PARENT else null
+        if (needsParent) RootStartRefusal.NeedsParent else null
 
     /**
      * [initialize], for a host that refuses to start a machine needing a
-     * parent as a root ([rootStartRefusal]). A refusal starts nothing.
+     * parent as a root ([rootStartRefusal]).
+     *
+     * It refuses for either of two reasons, and answers the refusal rather
+     * than throwing it: [RootStartRefusal.NeedsParent] before anything is
+     * established, and [RootStartRefusal.ScriptSession] for a machine whose
+     * script session cannot be established (docs/adr/0096). A refusal starts
+     * nothing: no state is entered and no executable content runs.
      */
     fun initializeAsRoot(): RootStartRefusal? {
         rootStartRefusal()?.let { return it }
-        initialize()
-        return null
+        return try {
+            initialize()
+            null
+        } catch (refused: ScriptSessionUnavailableException) {
+            RootStartRefusal.ScriptSession(refused.failure)
+        }
     }
 
     /**
      * [start], for a host that refuses to start a machine needing a parent as
-     * a root ([rootStartRefusal]). A refusal starts nothing.
+     * a root ([rootStartRefusal]), refusing for the two reasons
+     * [initializeAsRoot] does. A refusal starts nothing, and no coroutine is
+     * launched for it.
      */
     fun startAsRoot(scope: CoroutineScope): RootStartRefusal? {
         rootStartRefusal()?.let { return it }
-        start(scope)
-        return null
+        return try {
+            start(scope)
+            null
+        } catch (refused: ScriptSessionUnavailableException) {
+            RootStartRefusal.ScriptSession(refused.failure)
+        }
     }
 
     /**
@@ -2977,9 +3090,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * exactly the states it names, and every compound state the entry reaches
      * only as an ancestor of one of them takes no default.
      *
-     * Override in generated code only for script engine initialization.
+     * The datamodel is declared first ([declareDatamodel]), in the session the
+     * start established, so no state is entered before its `<data>` is bound.
      */
-    protected open fun enterInitialConfiguration() {
+    private fun enterInitialConfiguration() {
+        declareDatamodel()
         Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))
     }
 
@@ -2988,11 +3103,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * W3C SCXML Appendix D: Enter initial state, then process events.
      *
+     * A machine with a script engine establishes its script session first, on
+     * the caller's thread, before the coroutine of the run is launched; one
+     * whose session cannot be established is not started (docs/adr/0096): no
+     * coroutine is launched, no state is entered, no executable content runs,
+     * no event is taken, and the inbox is not opened. A machine without a
+     * script engine has no session to fail.
+     *
      * @param scope CoroutineScope that controls the lifecycle.
      *              Use `viewModelScope` for Android, `TestScope` for testing.
+     * @throws ScriptSessionUnavailableException naming the step that failed,
+     *   when the script session cannot be established.
      */
     fun start(scope: CoroutineScope) {
         if (job != null) return  // Already started
+
+        // Appendix D's `interpret` creates the datamodel before the initial
+        // configuration is entered. Its session is established here rather than
+        // inside the coroutine below, so a refusal reaches the caller of `start`
+        // instead of ending a coroutine it holds no handle on, and nothing of
+        // the run has begun when it does (docs/adr/0096).
+        establishScriptSessionForStart()?.let { throw ScriptSessionUnavailableException(it) }
 
         // A run that follows a stop, or one that ended, gets an open inbox; what
         // was posted before this first run is kept for it.
@@ -3073,8 +3204,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Enters initial configuration, runs macrostep completion loop until stable.
      * No coroutines — completes immediately for simple state machines.
      * For delayed sends/invokes, follow with [tick] polling loop.
+     *
+     * A machine with a script engine establishes its script session first, and
+     * one whose session cannot be established is not started (docs/adr/0096):
+     * no state is entered, no executable content runs, no event is taken, the
+     * inbox is not opened and the run is not owned by this thread. A machine
+     * without a script engine has no session to fail, and never throws it.
+     *
+     * @throws ScriptSessionUnavailableException naming the step that failed,
+     *   when the script session cannot be established.
      */
     fun initialize() {
+        // Appendix D's `interpret` creates the datamodel before the initial
+        // configuration is entered, so its session is established before
+        // anything of the run begins, and a session that cannot be established
+        // refuses the start here (docs/adr/0096).
+        establishScriptSessionForStart()?.let { throw ScriptSessionUnavailableException(it) }
+
         syncMode = true
         // The thread that starts a synchronous run is its owner (ARCHITECTURE.md
         // "Engine Threading"), and the run takes what was posted before it.
@@ -3135,6 +3281,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * requested configuration is the one outcome this door must never produce,
      * because a host has no way to detect it afterwards.
      *
+     * It also refuses a machine whose script session cannot be established,
+     * with [ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE] and the
+     * [ScriptSessionFailure] naming the step that failed (docs/adr/0096): the
+     * session is established before any of the rest is touched, so nothing is
+     * entered and the inbox is not opened. What such a refusal does touch is a
+     * session an earlier run of this engine left readable, which every start
+     * releases before it makes its own.
+     *
      * ## What it does not do
      *
      *  - No `onEntry`, and no `onExit`: no state is entered or left.
@@ -3153,14 +3307,24 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * The Kotlin twin of `Engine::enter_at` (Rust), `enterAt` (C++), `EnterAt`
      * (Go) and `enter_at` (Python).
      *
-     * @return [ConfigurationRejection.NONE] on success; the rule that was
-     *         broken otherwise, with the engine untouched.
+     * @return a verdict whose [ConfigurationVerdict.rejection] is
+     *         [ConfigurationRejection.NONE] on success; the rule that was
+     *         broken otherwise, or the failure of the script session, with the
+     *         configuration and the inbox untouched.
      */
-    fun enterAt(configuration: Collection<S>, current: S): ConfigurationRejection {
+    fun enterAt(configuration: Collection<S>, current: S): ConfigurationVerdict {
         // Before anything is touched: a rejection must not half-enter.
         val verdict = judgeConfiguration(configuration, current)
         if (verdict != ConfigurationRejection.NONE) {
-            return verdict
+            return ConfigurationVerdict(verdict)
+        }
+
+        // §scxml-5.3: the datamodel is declared before anything can read it, in
+        // a session established first; a session that cannot be established
+        // refuses the entry before the configuration or the inbox is touched,
+        // as a configuration of another document is (docs/adr/0096).
+        establishScriptSessionForStart()?.let {
+            return ConfigurationVerdict(ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE, it)
         }
 
         // The synchronous door, like [initialize] — a host that resumes drives
@@ -3194,7 +3358,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // what was posted before is applied as it would be to that run.
         if (endedHere) closeInbox()
 
-        return ConfigurationRejection.NONE
+        return ConfigurationVerdict.ACCEPTED
     }
 
     /** Whether [configuration] is one of this document, with [current] as its current state. */
@@ -3774,8 +3938,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected fun enterSaved(saved: SavedState, wallNowMs: Long) {
         val (states, current) = savedConfiguration(saved)
-        check(enterAt(states, current) == ConfigurationRejection.NONE) {
-            "beginRestore judged this configuration and enterAt refused it"
+        // A saved machine is a `sce-static` one (SCE Accepted Subset §2.15),
+        // which has no script session to fail, so a refusal here is the one
+        // [beginRestore] judged against.
+        val entered = enterAt(states, current)
+        check(entered.accepted) {
+            "beginRestore judged this configuration and enterAt refused it: ${entered.reason}"
         }
         // What each `<history>` recorded, which the saved run's exits wrote and
         // this one has not made.
@@ -4507,12 +4675,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
             activeInvokes.clear()
             pendingInvokes.clear()
-            if (scriptEngineInitialized) {
-                scriptSessionId?.let { scriptEngine?.destroySession(it) }
-                scriptEngineInitialized = false
-                scriptSessionId = null
-            }
-            sessionUsedByARun = false
+            releaseScriptSession()
         }
     }
 
@@ -5038,7 +5201,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-B-1: the script session is NOT destroyed here. A run ended by
             // stop() leaves its datamodel readable, as one that ended in a
             // top-level final does; [cleanup] releases it, and so does the next
-            // run's start ([beginRun]).
+            // run's start ([establishScriptSessionForStart]).
             // Reset state for stop/start reuse. What each `<history>` recorded
             // belongs to the session that is ending (§scxml-3.10): a restarted
             // machine is a new session, and one that remembered would enter a
@@ -5375,9 +5538,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-6.4: Set invoke parameters on a child SM before starting it.
      *
-     * Stores param values that will be applied when the child's script engine
-     * is initialized. Called by generated code between child construction
-     * and startInvoke.
+     * Stores param values that the child's own start applies, after its
+     * `<data>` and before its top-level `<script>` ([declareDatamodel]), in
+     * the session that start established, so a child's session is made by the
+     * child (docs/adr/0096). Called by generated code between child
+     * construction and startInvoke.
      *
      * @param child Child state machine instance
      * @param params Map of variable name to value pairs
@@ -5387,8 +5552,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * §scxml-6.4: Pending invoke parameters to be applied during script engine init.
-     * Set by parent's setInvokeParams, consumed by child's ensureScriptEngine.
+     * §scxml-6.4: Pending invoke parameters to be applied when the datamodel is
+     * initialized. Set by parent's setInvokeParams, consumed by the child's
+     * [declareDatamodel].
      */
     protected var pendingInvokeParams: Map<String, Any?> = emptyMap()
 
@@ -5438,6 +5604,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *   as the Rust backend names it. [generatedInvokeId] unless given.
      * @throws IllegalStateException for a child [adoptChild] did not give the
      *   id of this start (codegen invariant).
+     *
+     * A child whose start is refused because its script session cannot be
+     * established is a failed invoke (docs/adr/0096, [refuseChildStart]): it
+     * is not kept, this machine raises `error.execution`, and no `done.invoke`
+     * is raised for it.
      */
     protected fun startInvoke(
         invokeId: String,
@@ -5476,7 +5647,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // engine invoked.
             child.clock = clock
             enterTree(child)
-            child.initialize()
+            try {
+                child.initialize()
+            } catch (refused: ScriptSessionUnavailableException) {
+                refuseChildStart(child, eventInvokeId, refused.failure)
+                return
+            }
             activeInvokes[invokeId] = InvokeEntry(
                 child, Job(), autoforward, finalizeScript, onComplete, generatedInvokeId, savedDocument,
             )
@@ -5490,7 +5666,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         val scope = engineScope ?: return
         enterTree(child)
-        child.start(scope)
+        try {
+            child.start(scope)
+        } catch (refused: ScriptSessionUnavailableException) {
+            refuseChildStart(child, eventInvokeId, refused.failure)
+            return
+        }
 
         val monitorJob = scope.launch(Dispatchers.Default) {
             child.completion.await()
@@ -5507,6 +5688,29 @@ abstract class StateMachineEngine<S : State, E : Event>(
         activeInvokes[invokeId] = InvokeEntry(
             child, monitorJob, autoforward, finalizeScript, null, generatedInvokeId, savedDocument,
         )
+    }
+
+    /**
+     * End the `<invoke>` named [invokedAs] without a child, because
+     * the start of [child] was refused for [failure], its script session not
+     * established (docs/adr/0096). The path a `src` or a `namelist` that cannot
+     * be read takes: this machine keeps no child and raises `error.execution`,
+     * whose data names the invoke and the step, on its internal queue, and no
+     * `done.invoke` is raised for it. The child never ran, so nothing it sent
+     * is delivered: it is cut off from this machine, it leaves the tree's
+     * directory it entered for its start, and its Mesh router, installed before
+     * the start, is told the session ended. A document that declares no
+     * `error.execution` is told nothing, as for every other error event.
+     *
+     * [invokedAs] is the id `_event.invokeid` would have carried: the id the
+     * start was made under for an invoke that keeps it in an `idlocation`, the
+     * document's own id otherwise.
+     */
+    private fun refuseChildStart(child: StateMachineEngine<*, *>, invokedAs: String, failure: ScriptSessionFailure) {
+        child.onSendToParent = null
+        child.assignedSessionId?.let { tree.leave(it, child) }
+        child.detachMesh()
+        resolveEventByName("error.execution")?.let { raisePlatformError(it, failure.childStartRefusal(invokedAs)) }
     }
 
     /**
@@ -5920,7 +6124,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (activeInvokes.values.none { it.finalizeScript.isNotEmpty() }) return
 
         val engine = scriptEngine ?: error("scriptEngine is required for executeFinalizeForChildEvent (codegen invariant: state machine has active invokes ⇒ needs_script_engine == true)")
-        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
 
         for ((_, entry) in activeInvokes) {
             if (entry.finalizeScript.isNotEmpty() &&
@@ -6138,26 +6342,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * A run starts: where an earlier run ended no longer answers for this one
      * (§scxml-D-enterStates records it afresh), and neither does its
-     * datamodel — §scxml-D-interpret initialises it anew, so the session an
-     * ended run left readable is released and the next script use opens a
-     * fresh one.
+     * datamodel — §scxml-D-interpret initialises it anew, in the session the
+     * start established in place of the one an ended run left readable
+     * ([establishScriptSessionForStart]).
      */
     private fun beginRun() {
         isInFinalState = false
         terminalState = null
-        // Only a session an earlier RUN used: one opened before the first run
-        // (a host seeding the datamodel) belongs to this run.
-        if (sessionUsedByARun && scriptEngineInitialized) {
-            scriptSessionId?.let { scriptEngine?.destroySession(it) }
-            scriptEngineInitialized = false
-            scriptSessionId = null
-        }
-        sessionUsedByARun = true
         lateBoundStates.clear()
     }
-
-    /** A run has started on this engine since its script session was last released. */
-    private var sessionUsedByARun = false
 
     /**
      * §scxml-5.3.3 and §scxml-D-enterStates, late binding: the states whose `<data>` this run

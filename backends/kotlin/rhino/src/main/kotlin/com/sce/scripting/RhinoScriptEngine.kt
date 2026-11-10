@@ -41,6 +41,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
 
     private val sessions = mutableMapOf<String, Session>()
 
+    // Rhino carries the ECMAScript semantics, `JSON` and the rest of the
+    // language as its own standard objects (`initStandardObjects`), and loads no
+    // library chunk of this repository into a session, so its creation has no
+    // `library` step to fail: a failure here is the `create` step
+    // (docs/adr/0096).
     override fun createSession(sessionId: String) {
         val cx = Context.enter()
         try {
@@ -64,7 +69,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         machineName: String,
         ioProcessors: List<IoProcessorDescriptor>,
     ) {
-        val session = sessions[sessionId] ?: return
+        // A bind on a session this engine does not hold binds nothing, and a
+        // machine started over it would have no system variables, so it is a
+        // failure the start is refused for (docs/adr/0096).
+        val session = sessions[sessionId]
+            ?: throw ScriptEngineException("Session not found: $sessionId")
         val cx = Context.enter()
         try {
             val scope = session.scope

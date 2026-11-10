@@ -18,6 +18,7 @@ import com.sce.runtime.SYSTEM_VARIABLE_NAMES
 import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
+import com.sce.runtime.ScriptLibraryNotLoadedException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
 import com.sce.runtime.strictEcmascriptAssignment
@@ -77,8 +78,17 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
     override fun createSession(sessionId: String) {
         val handle = QuickJSNative.createContext()
         if (handle == 0L) throw ScriptEngineException("Failed to create QuickJS context")
+        // The session is filed only once its library loaded: a creation that
+        // fails keeps no session (docs/adr/0096). It was filed first, and a
+        // library that did not load left it in the map, a session the next
+        // `setupSystemVariables` found and bound as if it were whole.
+        try {
+            registerBuiltins(handle)
+        } catch (failure: Exception) {
+            QuickJSNative.destroyContext(handle)
+            throw failure
+        }
         sessions[sessionId] = Session(handle)
-        registerBuiltins(handle)
     }
 
     override fun destroySession(sessionId: String) {
@@ -91,7 +101,11 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         machineName: String,
         ioProcessors: List<IoProcessorDescriptor>,
     ) {
-        val session = sessions[sessionId] ?: return
+        // A bind on a session this engine does not hold binds nothing, and a
+        // machine started over it would have no system variables, so it is a
+        // failure the start is refused for (docs/adr/0096).
+        val session = sessions[sessionId]
+            ?: throw ScriptEngineException("Session not found: $sessionId")
 
         // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
         // supports, each with a 'location' field. Names and locations are
@@ -450,25 +464,37 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
 
     // === Private Helpers ===
 
+    /**
+     * Load the shared library into the new context [handle]. Every chunk is
+     * part of it, and one that does not load fails the creation as the
+     * `library` step ([ScriptLibraryNotLoadedException], docs/adr/0096).
+     */
     private fun registerBuiltins(handle: Long) {
         // Reference registry for complex values (functions, DOM objects)
-        var err = QuickJSNative.eval(handle, "var __sce_refs = {}")
-        if (err != null) throw ScriptEngineException("Failed to initialize ref registry: $err")
+        loadLibraryChunk(handle, "the reference registry", "var __sce_refs = {}")
 
         // §scxml-5.10: the system variables, before anything can write one.
-        err = QuickJSNative.eval(handle, SYSTEM_VARIABLES_SETUP)
-        if (err != null) throw ScriptEngineException("Failed to initialize the system variables: $err")
+        loadLibraryChunk(handle, "the system variable bindings", SYSTEM_VARIABLES_SETUP)
 
         // W3C SCXML 5.9.2: In() predicate via lookup table
-        err = QuickJSNative.eval(handle, """
+        loadLibraryChunk(
+            handle,
+            "the In() predicate",
+            """
             var __sce_active_states = {};
             function In(stateId) { return __sce_active_states[stateId] === true; }
-        """.trimIndent())
-        if (err != null) throw ScriptEngineException("Failed to initialize In() predicate: $err")
+            """.trimIndent(),
+        )
 
         // W3C DOM: Prototype and factory for XML element objects
-        err = QuickJSNative.eval(handle, DOM_PROTO_SETUP)
-        if (err != null) throw ScriptEngineException("Failed to initialize DOM support: $err")
+        loadLibraryChunk(handle, "the DOM read surface", DOM_PROTO_SETUP)
+    }
+
+    /** Run the library chunk [chunk] in [handle], or name it as [library] in the failure. */
+    private fun loadLibraryChunk(handle: Long, library: String, chunk: String) {
+        QuickJSNative.eval(handle, chunk)?.let { err ->
+            throw ScriptLibraryNotLoadedException(library, err)
+        }
     }
 
     /**

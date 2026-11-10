@@ -17,6 +17,7 @@ import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScriptLanguage
+import com.sce.runtime.ScriptLibraryNotLoadedException
 import com.sce.runtime.ScriptSource
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -159,9 +160,13 @@ class LuaScriptEngine : ScxmlScriptEngine {
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
         val session = Session(handle)
         sessions[sessionId] = session
+        // A creation that fails keeps no session (docs/adr/0096): a library
+        // chunk that does not load is a [ScriptLibraryNotLoadedException], and
+        // whatever else the setup throws is the creation's own failure; either
+        // way the state is closed and the session is not filed.
         try {
             registerBuiltins(handle)
-        } catch (failure: ScriptEngineException) {
+        } catch (failure: Exception) {
             destroySession(sessionId)
             throw failure
         }
@@ -188,7 +193,11 @@ class LuaScriptEngine : ScxmlScriptEngine {
         machineName: String,
         ioProcessors: List<IoProcessorDescriptor>,
     ) {
-        val session = sessions[sessionId] ?: return
+        // A bind on a session this engine does not hold binds nothing, and a
+        // machine started over it would have no system variables, so it is a
+        // failure the start is refused for (docs/adr/0096).
+        val session = sessions[sessionId]
+            ?: throw ScriptEngineException("Session not found: $sessionId")
         val L = session.handle
 
         // §scxml-5.10: each bound read-only, through [bindSystemVariable].
@@ -759,22 +768,32 @@ class LuaScriptEngine : ScxmlScriptEngine {
         }
     }
 
+    /**
+     * Load the shared library into the new state [L]: every chunk below is part
+     * of it, and one that does not load fails the creation as the `library`
+     * step ([loadLibraryChunk]) rather than leaving a session that answers part
+     * of the language (docs/adr/0096).
+     */
     private fun registerBuiltins(L: Long) {
         // Sandbox — remove dangerous libraries before any user code runs
-        LuaNative.doString(L, """
+        loadLibraryChunk(L, "the sandbox") {
+            """
             os = nil
             io = nil
             loadfile = nil
             dofile = nil
             require = nil
-        """.trimIndent())
+            """.trimIndent()
+        }
 
         // Null/undefined sentinels — C++ parity: lightuserdata with tags
         // Using tables with unique metatables as sentinels, checked by rawequal
-        LuaNative.doString(L, """
+        loadLibraryChunk(L, "the null and undefined sentinels") {
+            """
             _NULL = setmetatable({}, {__tostring = function() return "null" end})
             _UNDEFINED = setmetatable({}, {__tostring = function() return "undefined" end})
-        """.trimIndent())
+            """.trimIndent()
+        }
 
         // `_scxml_truthy`, `_typeof`, `_isArray`, `_indexOf`, `_concat`,
         // `parseInt` and `parseFloat` were written out here too, one of six
@@ -786,31 +805,37 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // its `parseInt` answered 0 where the clause says NaN.
 
         // String metatable __add for + operator coercion
-        LuaNative.doString(L, """
+        loadLibraryChunk(L, "the string concatenation metatable") {
+            """
             local mt = getmetatable("")
             if mt then
                 mt.__add = function(a, b)
                     return tostring(a) .. tostring(b)
                 end
             end
-        """.trimIndent())
+            """.trimIndent()
+        }
 
         // debug.setmetatable for non-object property access — C++ parity
         // Allows (1).bar and true.foo to return nil instead of erroring
-        LuaNative.doString(L, """
+        loadLibraryChunk(L, "the property access of non-objects") {
+            """
             debug.setmetatable(0, {__index = function() return nil end})
             debug.setmetatable(true, {__index = function() return nil end})
-        """.trimIndent())
+            """.trimIndent()
+        }
 
         // In() predicate — delegates to Kotlin callback via global lookup
         // Since JNI callbacks are expensive, we store a lookup table that Kotlin updates
         LuaNative.createTable(L, 0, 0)
         setGlobal(L, "__sce_active_states")
-        LuaNative.doString(L, """
+        loadLibraryChunk(L, "the In() predicate") {
+            """
             function In(stateId)
                 return __sce_active_states[stateId] == true
             end
-        """.trimIndent())
+            """.trimIndent()
+        }
 
         // W3C SCXML B.2: the ECMAScript operators Lua does not share — `+`,
         // `==` and the bitwise family. Single Source of Truth at
@@ -822,14 +847,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // write of one. A session it did not load into cannot bind its system
         // variables read-only, so a failed load fails the session here rather
         // than at its first binding.
-        LuaNative.doString(L, loadEcmaSemantics())?.let { err ->
-            throw ScriptEngineException("Loading ecma_semantics.lua failed: $err")
-        }
+        loadLibraryChunk(L, "ECMAScript semantics") { loadEcmaSemantics() }
 
         // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
         // Shared with C++ LuaEngine (CMake header) and Rust sce-rust-lua (include_str!)
-        // via sce/include/scripting/json_builtins.lua — see ARCHITECTURE.md
-        LuaNative.doString(L, loadJsonBuiltins())
+        // via sce/include/scripting/json_builtins.lua — see ARCHITECTURE.md.
+        // Its result used to be discarded, so a JSON library that did not load
+        // left a session whose `JSON.stringify` was absent.
+        loadLibraryChunk(L, "JSON builtins") { loadJsonBuiltins() }
 
         // `Object.keys` comes from `loadEcmaSemantics()` above with the rest
         // of the engine vocabulary. Defining it HERE also put it after that
@@ -837,7 +862,26 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // that lets a per-engine copy outlive the shared definition silently.
 
         // W3C DOM: Register metatable once at session init, not per-element
-        LuaNative.doString(L, DOM_METATABLE_SETUP)
+        loadLibraryChunk(L, "the DOM read surface") { DOM_METATABLE_SETUP }
+    }
+
+    /**
+     * Run the library chunk [chunk] names in the state [L], or throw
+     * [ScriptLibraryNotLoadedException] naming it as [library]: when the chunk
+     * cannot be read (a resource the build did not copy), and when it does not
+     * run. The answer of `doString` is never dropped here, since a chunk that
+     * did not load leaves the session without part of the language and nothing
+     * would say so until a document met the gap.
+     */
+    private fun loadLibraryChunk(L: Long, library: String, chunk: () -> String) {
+        val text = try {
+            chunk()
+        } catch (failure: IllegalStateException) {
+            throw ScriptLibraryNotLoadedException(library, failure.message ?: "the chunk could not be read", failure)
+        }
+        LuaNative.doString(L, text)?.let { err ->
+            throw ScriptLibraryNotLoadedException(library, err)
+        }
     }
 
     /**

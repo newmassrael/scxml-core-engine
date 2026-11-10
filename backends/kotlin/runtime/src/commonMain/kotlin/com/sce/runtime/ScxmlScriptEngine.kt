@@ -26,7 +26,16 @@ interface ScxmlScriptEngine {
      * Each session has its own variable scope (datamodel).
      * Must be called before any evaluation methods.
      *
+     * Loads the engine's shared library into the new session (the ECMAScript
+     * semantics, the JSON builtins and the DOM read surface, where the engine
+     * carries them as chunks of its own). A creation that fails keeps no
+     * session: a chunk that does not load throws
+     * [ScriptLibraryNotLoadedException], any other failure an exception of its
+     * own, and either refuses the start that asked for the session
+     * (docs/adr/0096).
+     *
      * @param sessionId Unique session identifier (typically hashCode-based)
+     * @throws ScriptLibraryNotLoadedException when a library chunk does not load
      */
     fun createSession(sessionId: String)
 
@@ -49,9 +58,15 @@ interface ScxmlScriptEngine {
      * invents neither, so `_ioprocessors` reads identically whichever engine
      * backs the session.
      *
+     * A session the engine does not hold is a failure, not a call to ignore:
+     * a bind that binds nothing would start a machine with no system variables
+     * (docs/adr/0096).
+     *
      * @param sessionId Active session
      * @param machineName SCXML document name attribute
      * @param ioProcessors Entries to publish in `_ioprocessors`
+     * @throws ScriptEngineException when [sessionId] names no session of this
+     *   engine, or a variable cannot be bound
      */
     fun setupSystemVariables(
         sessionId: String,
@@ -539,8 +554,11 @@ enum class PayloadReading {
  * Exception thrown by [ScxmlScriptEngine] on evaluation or execution failure.
  *
  * §scxml-5.9: Callers should catch this and raise error.execution.
+ *
+ * Open for [ScriptLibraryNotLoadedException], the failure of a session's
+ * creation that names the shared library as the step that failed.
  */
-class ScriptEngineException(message: String, cause: Throwable? = null) :
+open class ScriptEngineException(message: String, cause: Throwable? = null) :
     RuntimeException(message, cause)
 
 /**
