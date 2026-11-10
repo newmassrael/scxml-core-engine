@@ -2,9 +2,25 @@
 
 - Status: Accepted (2026-11-06). The owner accepted it under the standing rule of 2026-10-26 and 2026-10-27, the
   most long-term correct structure, textbook in its foundations, cost ignored, and took the recommendation of each
-  of the nine questions in "Open questions", which are therefore decided as recommended there. Nothing has landed
-  yet; "Landing order" lists the steps. Numbered 0092 because 0090 is taken on `main` and 0091 on a branch.
-  Amended 2026-11-07: a union variable has no default value ("Amendment (2026-11-07)").
+  of the nine questions in "Open questions", which are therefore decided as recommended there. Numbered 0092
+  because 0090 is taken on `main` and 0091 on a branch. Amended 2026-11-07: a union variable has no default value
+  ("Amendment (2026-11-07)"); amended 2026-11-11: what the Kotlin lane decided where this record is silent
+  ("Amendment (2026-11-11)"). Landed on `main` ("Landing order" numbers the steps):
+  - step 1, the type and its document: f3786292f6 (the kind), 40d50d4506 (the type and its size), a1fcd00872 (the
+    revision rule);
+  - step 2, the grammar: 62b22223c2 (`S` and `G`), 07f662da90 (the unit's payload schema), 9ec6bdef31
+    (`payload-schema`);
+  - step 3, the runtimes: ff8c45d2a9 (Rust), 07d8880036 (Go), 5bfc0a6a2a (Kotlin), f6dc8f133a (Python), 0ab2a3307d
+    (C++), 9a863ded7d (Swift), b1ac3d69cd (C11), b93168cde0 (the Interpreter), held to one refusal per text by
+    3646559436;
+  - step 4, on three of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
+    3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift) and the
+    replay vocabulary (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust
+    (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8)
+    and on Kotlin (the change that adds "Amendment (2026-11-11)"). C++, Go, Python, C11 and the Interpreter still
+    refuse a statechart that holds a union by name (`generate/unsupported-feature`);
+  - steps 5 (algorithms), 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic
+    CBOR encoder) and 8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
 - Amends:
   - ADR 0086 section 1.1 (the type grammar gains `union:<alias>`), section 2.1 (the size calculus gains its row),
@@ -706,6 +722,34 @@ would move with the enum's order. So:
    then the tag narrowing of section 6.1.
 3. A `union:U` variable with no `<sce:set>` is refused (`scxml/static-datamodel-rule`, on its `sce:type`, naming
    both repairs), and so is one with an `expr`. No diagnostic code is added.
+
+## Amendment (2026-11-11): the Kotlin lane where this record is silent
+
+Step 4 on Kotlin met four questions sections 6 and 7 leave open. Each is decided by a rule this record already
+states, and none changes a document, a wire or a diagnostic:
+
+1. **A machine's case is named as the machine's enum names the variant.** Section 7 item 1 says a case's
+   identifier is "its variant's identifier as each backend already spells the enum's variant", so that a union is
+   spelled with no name the enum's spelling has not already proven safe. A Kotlin machine's enum class names a
+   variant as an upper snake constant (`ABSOLUTE`), so the machine's sealed interface nests `data class
+   ABSOLUTE(val value: R)` and `data object NONE`; the Kotlin row's `Absolute` is the unit's spelling
+   (`forge/kotlin/union.kt.jinja2`), which predates the machine's and is the type a host imports. The two are
+   different types already, each over its own records, so naming them apart costs nothing a host reads, and the
+   machine's names stay clear of the `Companion` its saved form extends.
+2. **A field of a case is written by assigning the holder the next value whole.** Section 6.1 item 6 says a field
+   is written where its case is proven, and section 7 states no write. A Kotlin record is an immutable data class,
+   whose field a machine writes as `r = r.copy(f = v)`, so a union, which holds such records, is immutable too: the
+   write `shape.radius = v` under one case left is `shape = U.CIRCLE(shape.provenCircle().copy(radius = v))`, and
+   under several cases that share the field `shape = shape.provenFieldRadiusWith(v)`, a function of the interface
+   beside the shared read, written once. A Rust and a Swift union are written in place, through a place of the
+   field; the one spelling decides which (`ComposedSpelling::union_member_write`).
+3. **An index read of a list of unions is read.** Swift refuses it because its checked read answers an index
+   outside the list with the element type's zero, which a union does not have (the amendment of 2026-11-07). A
+   Kotlin machine's checked read fails the statement instead and answers nothing, as Rust's does, so the read
+   needs no zero and is lowered.
+4. **The saved form is carried by the type**, as a Kotlin record's is (ADR 0087 item 8): `toSaved` and a
+   `fromSaved` on the interface's companion, extensions written beside the type, the tag beside the case's fields
+   by the runtime's `SavedValues.union` and read first by `SavedValues.unionTag` (section 6.1 item 7).
 
 ## Consequences
 
