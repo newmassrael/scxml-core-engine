@@ -100,17 +100,129 @@ fn kotlin_bound_check(ty: &ValueType, path: &str, value: &str, depth: usize) -> 
     }
 }
 
-/// The body a Kotlin data class takes for `checks`: an `init` that runs each
-/// where a value is made, or nothing where there is none.
-pub(crate) fn kotlin_init_block(checks: &[String]) -> String {
+/// The `init` a Kotlin data class runs `checks` in where a value is made,
+/// indented as a member, or `None` where there is no check.
+fn kotlin_init(checks: &[String]) -> Option<String> {
     if checks.is_empty() {
-        return String::new();
+        return None;
     }
     let body: String = checks
         .iter()
         .map(|check| format!("        {check}\n"))
         .collect();
-    format!(" {{\n    init {{\n{body}    }}\n}}")
+    Some(format!("    init {{\n{body}    }}\n"))
+}
+
+/// The body a Kotlin data class takes for `checks`: an `init` that runs each
+/// where a value is made, or nothing where there is none.
+pub(crate) fn kotlin_init_block(checks: &[String]) -> String {
+    kotlin_init(checks).map_or_else(String::new, |init| format!(" {{\n{init}}}"))
+}
+
+/// The Kotlin expression that writes the value of `ty` held at `value` as a
+/// saved state does (`com.sce.runtime.SavedValues`): a number, a truth value,
+/// a text and a byte string by `of`, an enum and a record by their own
+/// `toSaved`, a value that may be absent as `null` or as its present value,
+/// and a list element by element. `depth` names the parameter of each nested
+/// lambda, so none hides its holder's. `Err` for a byte string inside a list,
+/// which a saved state would write as an array where it writes a byte string
+/// as its text, and for a union, which a Kotlin machine does not hold.
+fn kotlin_saved_write(ty: &ValueType, value: &str, depth: usize) -> Result<String, String> {
+    let element = format!("sceSaved{depth}");
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_)) | ValueType::Record { .. } => {
+            format!("{value}.toSaved()")
+        }
+        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
+            format!("SavedValues.of({value})")
+        }
+        ValueType::Optional { elem } => format!(
+            "SavedValues.optional({value}) {{ {element} -> {} }}",
+            kotlin_saved_write(elem, &element, depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            format!(
+                "SavedValues.list({value}) {{ {element} -> {} }}",
+                kotlin_saved_write(elem, &element, depth + 1)?
+            )
+        }
+        ValueType::Union { .. } => return Err(KOTLIN_HOLDS_NO_UNION.to_string()),
+    })
+}
+
+/// What a read of a saved value holds still down the whole walk of one type:
+/// the spelling that names the machine's types, the scope the type is written
+/// in (`within`, the record whose field it is), the records a statechart holds
+/// and the enums it declares.
+struct KotlinSavedReader<'a, 'm> {
+    spelling: &'a KotlinComposed<'m>,
+    within: Option<&'a str>,
+    records: &'a dyn RecordEnv,
+    enums: &'a BTreeMap<String, MachineEnum>,
+}
+
+impl KotlinSavedReader<'_, '_> {
+    /// The Kotlin expression that reads the saved value `saved` (an
+    /// expression), named `what` in a refusal (an expression of a `String`),
+    /// as a value of `ty`, as [`kotlin_saved_write`] writes it: a text and a
+    /// byte string held to the bound the machine keeps them to, a list to its
+    /// bound and to the lower count its type states, an enum and a record by
+    /// their own `fromSaved`. Each refusal is the runtime's `StateRefusal`,
+    /// before the record's own `init` could meet a value past a bound. `depth`
+    /// names the parameters of each nested lambda, so none hides its holder's.
+    fn read(
+        &self,
+        ty: &ValueType,
+        saved: &str,
+        what: &str,
+        depth: usize,
+    ) -> Result<String, String> {
+        let (inner_saved, inner_what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
+        Ok(match ty {
+            ValueType::Scalar(SceType::Enum(reference)) => format!(
+                "{}.fromSaved({saved}, {what})",
+                machine_enum(self.enums, &reference.alias)?.ty
+            ),
+            ValueType::Scalar(scalar) => {
+                format!("SavedValues.{}({saved}, {what})", scalar.as_attr())
+            }
+            ValueType::Text { max } => format!("SavedValues.string({saved}, {what}, {})", max.max),
+            ValueType::Bytes { max } => format!("SavedValues.bytes({saved}, {what}, {})", max.max),
+            ValueType::Optional { elem } => format!(
+                "SavedValues.optional({saved}, {what}) {{ {inner_saved}, {inner_what} -> {} }}",
+                self.read(elem, &inner_saved, &inner_what, depth + 1)?
+            ),
+            ValueType::List { elem, max } => {
+                let each = self.read(elem, &inner_saved, &inner_what, depth + 1)?;
+                if max.min == 0 {
+                    format!(
+                        "SavedValues.list({saved}, {what}, {}) {{ {inner_saved}, {inner_what} -> \
+                         {each} }}",
+                        max.max
+                    )
+                } else {
+                    format!(
+                        "SavedValues.listWithin({saved}, {what}, {}, {}) {{ {inner_saved}, \
+                         {inner_what} -> {each} }}",
+                        max.min, max.max
+                    )
+                }
+            }
+            ValueType::Record { alias } => {
+                let held = self.records.record(self.within, alias)?;
+                format!(
+                    "{}.fromSaved({saved}, {what})",
+                    self.spelling.record_type(held.alias)
+                )
+            }
+            ValueType::Union { .. } => return Err(KOTLIN_HOLDS_NO_UNION.to_string()),
+        })
+    }
 }
 
 /// Why a Kotlin walk meets no union: the one decision of what is lowered
@@ -150,7 +262,11 @@ impl ComposedSpelling for KotlinComposed<'_> {
     }
     // Immutable and compared whole, as a record of entries is; each member
     // named as the schema names its field, which is how a read names it. A
-    // value past a bound is refused in its `init`, where it is made.
+    // value past a bound is refused in its `init`, where it is made. Its
+    // companion is what the saved form written beside the type extends with
+    // `fromSaved` ([`Self::saved_record_ext`]): declared on every such record,
+    // since a record a payload declares first may be held by a variable too,
+    // and Kotlin gives a class declared without one no companion.
     fn record_def(
         &self,
         ty: &str,
@@ -162,12 +278,62 @@ impl ComposedSpelling for KotlinComposed<'_> {
             .iter()
             .map(|(id, ty)| format!("val {id}: {ty}"))
             .collect();
+        let init = kotlin_init(checks).map_or_else(String::new, |init| format!("{init}\n"));
         format!(
             "/** SCE Accepted Subset §2.15: a `record:{alias}` value that holds a composed \
-             value (docs/adr/0086). */\ndata class {ty}({}){}",
+             value (docs/adr/0086). */\ndata class {ty}({}) {{\n{init}    /** What a value \
+             is read back from a saved state through (`fromSaved`). */\n    companion object\n}}",
             params.join(", "),
-            kotlin_init_block(checks)
         )
+    }
+    // The record's saved form, an object of its fields keyed by their ids in
+    // the schema's order, each written and read as its type says
+    // ([`kotlin_saved_write`], [`KotlinSavedReader`]): what a variable that
+    // holds the record writes it by (`SavedValues`). Extensions, as a record of
+    // entries' members are named (`toSaved`, `fromSaved` on its companion), so
+    // the machine's saving reads one spelling for either.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        // The fields of the record name its types in its own document's scope.
+        let reader = KotlinSavedReader {
+            spelling: self,
+            within: Some(held.alias),
+            records,
+            enums,
+        };
+        let mut writes = Vec::with_capacity(held.schema.fields.len());
+        let mut reads = Vec::with_capacity(held.schema.fields.len());
+        for field in &held.schema.fields {
+            let key = crate::filters::escape_kotlin(field.id.clone());
+            let refused =
+                |why: String| format!("the field `{}` of `{}`: {why}", field.id, held.schema.name);
+            let written = kotlin_saved_write(&field.sce_type, &format!("this.{}", field.id), 0)
+                .map_err(refused)?;
+            writes.push(format!("\"{key}\" to {written}"));
+            let read = reader
+                .read(
+                    &field.sce_type,
+                    &format!("SavedValues.field(value, what, \"{key}\")"),
+                    &format!("\"$what.{key}\""),
+                    0,
+                )
+                .map_err(refused)?;
+            reads.push(format!("{} = {read}", field.id));
+        }
+        Ok(Some(format!(
+            "/** This value as a saved state writes it. */\nfun {ty}.toSaved(): Any = \
+             linkedMapOf<String, Any?>({})\n\n/** The value a saved state holds, refused unless \
+             it is one. */\nfun {ty}.Companion.fromSaved(value: Any?, what: String): {ty} = \
+             {ty}({})",
+            writes.join(", "),
+            reads.join(", "),
+        )))
     }
     // One check of the runtime's `ValueBounds` per constructor that holds a
     // bound, recursively through each list and optional value; a record a
@@ -470,8 +636,10 @@ mod tests {
 
     /// The Kotlin row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
-    /// composed value sent (docs/adr/0086, sections 5 and 6), and no union
-    /// held yet (docs/adr/0092, section 7).
+    /// composed value sent (docs/adr/0086, sections 5 and 6), a variable of a
+    /// record that holds a composition, which a lift writes whole and a saved
+    /// state keeps by its type (docs/adr/0087, "Landing order" item 8), and no
+    /// union held yet (docs/adr/0092, section 7).
     #[test]
     fn the_kotlin_row_lowers_every_composed_position_but_a_union() {
         use crate::forge::event_schema_check::ComposedLowering;
@@ -482,7 +650,7 @@ mod tests {
                 reads: true,
                 copies: true,
                 unions: false,
-                records: false,
+                records: true,
                 sends: true,
             }
         );
@@ -551,10 +719,80 @@ mod tests {
                  val blob: ByteArray, val tags: List<String>) {\n    init {\n        \
                  com.sce.runtime.ValueBounds.bytes(\"blob\", blob, 4)\n        \
                  com.sce.runtime.ValueBounds.list(\"tags\", tags, 4) { scePath0, sceValue0 -> \
-                 com.sce.runtime.ValueBounds.text(scePath0, sceValue0, 8) }\n    }\n}"
+                 com.sce.runtime.ValueBounds.text(scePath0, sceValue0, 8) }\n    }\n\n    \
+                 /** What a value is read back from a saved state through (`fromSaved`). */\n    \
+                 companion object\n}"
             ),
             "{def}"
         );
+    }
+
+    /// A Kotlin record that holds a composed value is saved as an object of
+    /// its fields keyed by their ids, each by its type, and read back by its
+    /// type (docs/adr/0087, "Landing order" item 8): a text and a byte string
+    /// held to their bounds, a list to its bound and to the lower count it
+    /// states, an enum and a nested record by their own `fromSaved`, a value
+    /// that may be absent read absent from `null`. The read is an extension of
+    /// the companion every such record declares.
+    #[test]
+    fn a_kotlin_record_that_holds_a_composed_value_is_saved_by_its_type() {
+        let held = held();
+        let enums = enums();
+        let ext = KOTLIN
+            .saved_record_ext("Item", &held, &enums)
+            .expect("Item has a saved form")
+            .expect("a Kotlin record carries its saved form");
+        assert!(
+            ext.contains(
+                "fun MItemRecord.toSaved(): Any = linkedMapOf<String, Any?>(\"id\" to \
+                 SavedValues.of(this.id), \"level\" to this.level.toSaved(), \"due\" to \
+                 SavedValues.optional(this.due) { sceSaved0 -> SavedValues.of(sceSaved0) }, \
+                 \"blob\" to SavedValues.of(this.blob), \"tags\" to SavedValues.list(this.tags) \
+                 { sceSaved0 -> SavedValues.of(sceSaved0) })"
+            ),
+            "{ext}"
+        );
+        assert!(
+            ext.contains(
+                "fun MItemRecord.Companion.fromSaved(value: Any?, what: String): MItemRecord = \
+                 MItemRecord(id = SavedValues.uint32(SavedValues.field(value, what, \"id\"), \
+                 \"$what.id\"), level = MLevelEnum.fromSaved(SavedValues.field(value, what, \
+                 \"level\"), \"$what.level\"), due = SavedValues.optional(SavedValues.field(value, \
+                 what, \"due\"), \"$what.due\") { sceSaved0, sceWhat0 -> \
+                 SavedValues.int64(sceSaved0, sceWhat0) }, blob = \
+                 SavedValues.bytes(SavedValues.field(value, what, \"blob\"), \"$what.blob\", 4), \
+                 tags = SavedValues.list(SavedValues.field(value, what, \"tags\"), \"$what.tags\", \
+                 4) { sceSaved0, sceWhat0 -> SavedValues.string(sceSaved0, sceWhat0, 8) })"
+            ),
+            "{ext}"
+        );
+    }
+
+    /// A list that states a lower count is read back from a saved state held
+    /// to it as well as to its bound, so a restore refuses a list its record's
+    /// `init` would; a record a list holds is read by its own `fromSaved`.
+    #[test]
+    fn a_kotlin_saved_list_is_held_to_its_lower_count() {
+        let held = held();
+        let enums = enums();
+        let reader = KotlinSavedReader {
+            spelling: &KOTLIN,
+            within: None,
+            records: &held,
+            enums: &enums,
+        };
+        let read = |text: &str| reader.read(&ty(text), "s", "w", 0).expect("a read");
+        assert_eq!(
+            read("list<record:Item>[1..3]"),
+            "SavedValues.listWithin(s, w, 1, 3) { sceSaved0, sceWhat0 -> \
+             MItemRecord.fromSaved(sceSaved0, sceWhat0) }"
+        );
+        assert_eq!(
+            read("list<list<uint8>[2]>[3]"),
+            "SavedValues.list(s, w, 3) { sceSaved0, sceWhat0 -> SavedValues.list(sceSaved0, \
+             sceWhat0, 2) { sceSaved1, sceWhat1 -> SavedValues.uint8(sceSaved1, sceWhat1) } }"
+        );
+        assert!(kotlin_saved_write(&ty("list<bytes[4]>[2]"), "x", 0).is_err());
     }
 
     /// A Kotlin record holds a host's value to every bound where it is made

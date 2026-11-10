@@ -763,6 +763,30 @@ object EventPayload {
             LiftOutcome.Refused(refusal)
         }
 
+    /**
+     * What a `<sce:lift>` of a value read whole reads: [text] as one value of a
+     * record that holds a list or a record at any depth (docs/adr/0087,
+     * "Landing order" item 8), which [read] reads out of the whole object it is
+     * handed, at the empty path and pointer, by the reader a delivery's field of
+     * that type is read by ([Value.record] at any depth, handed the defaults of
+     * the fields a later revision added); or the refusal of the first place
+     * that is not one. What is refused before the value is read is what [lift]
+     * refuses, a text that is no object among it; no defaults are read there,
+     * since the record's own reader reads them. Neither outcome is logged, as
+     * for [liftRecord].
+     */
+    fun <T> liftValue(
+        text: String,
+        depth: Int,
+        pathBound: Int,
+        read: (Value) -> T,
+    ): LiftOutcome<T> =
+        try {
+            LiftOutcome.Lifted(read(Value(lift(text, depth, pathBound, null).values, "", "")))
+        } catch (refusal: Refusal) {
+            LiftOutcome.Refused(refusal)
+        }
+
     /** The members of a schema's defaults, which the generator spells as one JSON object. */
     private fun defaultsOf(defaults: String): Map<String, Any?> {
         val parsed = try {

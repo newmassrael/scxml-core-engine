@@ -3224,10 +3224,13 @@ impl StaticTarget for KotlinTarget {
     }
     // The runtime's `EventPayload.liftRecord` reads the text and hands the fields
     // to a lambda that reads each through the reader a delivery's value of its
-    // type is read by (`Value.uint32`, `Value.string(bound)`, ...). A refusal is
-    // the record of the standard refusal document, its code matched constant by
-    // constant onto the machine's enum of it: an exhaustive `when` the compiler
-    // holds to the runtime's codes, both spelled as the enum document names them.
+    // type is read by (`Value.uint32`, `Value.string(bound)`, ...); its
+    // `liftValue` hands the whole object to the composed reader of a record that
+    // holds a list or a record, which reads it as a delivery's field of that
+    // type is read (`KotlinComposed`). A refusal is the record of the standard
+    // refusal document, its code matched constant by constant onto the machine's
+    // enum of it: an exhaustive `when` the compiler holds to the runtime's codes,
+    // both spelled as the enum document names them.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
         const PAYLOAD: &str = "com.sce.runtime.EventPayload";
         let enum_reader = |alias: &str, v: &str| -> Option<String> {
@@ -3260,29 +3263,47 @@ impl StaticTarget for KotlinTarget {
                 scalar => format!("{v}.{}()", scalar.as_attr()),
             })
         };
-        let schema = lift.record()?;
-        let mut members = Vec::with_capacity(schema.fields.len());
-        for field in &schema.fields {
-            let reader = match &field.sce_type {
-                EntryType::Scalar(ty) => read(ty, field.max_size, "v")?,
-                // The present value is bound to a name of its own, so the lambda
-                // shadows nothing.
-                EntryType::Optional { elem } => format!(
-                    "v.optional {{ present -> {} }}",
-                    read(elem, field.max_size, "present")?
-                ),
-            };
-            members.push((
-                self.record_field(&field.id),
-                format!("r.field(\"{}\").let {{ v -> {reader} }}", field.id),
-            ));
-        }
-        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
         let path_bound = lift.path_bound()?;
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "null".to_string(),
-            |json| format!("\"{}\"", filters::escape_kotlin(json.clone())),
-        );
+        let (text, depth) = (lift.text, lift.depth);
+        // The call that reads the text: a record field by field through
+        // `liftRecord`, or a value whole through `liftValue`, by the reader a
+        // delivery's field of its type is read by (docs/adr/0087, "Landing
+        // order" item 8), which reads a record's defaults itself.
+        let call = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let mut members = Vec::with_capacity(schema.fields.len());
+                for field in &schema.fields {
+                    let reader = match &field.sce_type {
+                        EntryType::Scalar(ty) => read(ty, field.max_size, "v")?,
+                        // The present value is bound to a name of its own, so the
+                        // lambda shadows nothing.
+                        EntryType::Optional { elem } => format!(
+                            "v.optional {{ present -> {} }}",
+                            read(elem, field.max_size, "present")?
+                        ),
+                    };
+                    members.push((
+                        self.record_field(&field.id),
+                        format!("r.field(\"{}\").let {{ v -> {reader} }}", field.id),
+                    ));
+                }
+                let record =
+                    self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "null".to_string(),
+                    |json| format!("\"{}\"", filters::escape_kotlin(json.clone())),
+                );
+                format!(
+                    "{PAYLOAD}.liftRecord({text}, {depth}, {path_bound}, {defaults}) {{ r -> \
+                     {record} }}"
+                )
+            }
+            // The composed walk's reader names the value it reads `it`, the one
+            // parameter of the lambda `liftValue` hands the whole object to.
+            Lifted::Whole { reader } => {
+                format!("{PAYLOAD}.liftValue({text}, {depth}, {path_bound}) {{ {reader} }}")
+            }
+        };
         // The refusal, as a record of the standard refusal document.
         let (code_alias, code_model) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
@@ -3305,11 +3326,8 @@ impl StaticTarget for KotlinTarget {
             &members_of_refusal,
         );
         Some(format!(
-            "when (val sceLift = {PAYLOAD}.liftRecord({text}, {depth}, {path_bound}, \
-             {defaults}) {{ r -> {record} }}) {{ is {PAYLOAD}.LiftOutcome.Lifted -> {{ {write}; \
+            "when (val sceLift = {call}) {{ is {PAYLOAD}.LiftOutcome.Lifted -> {{ {write}; \
              {absent} }}; is {PAYLOAD}.LiftOutcome.Refused -> {{ {refused} }} }}",
-            text = lift.text,
-            depth = lift.depth,
             write = self.assign(lift.location, "sceLift.value"),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_record),

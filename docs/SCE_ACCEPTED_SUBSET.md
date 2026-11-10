@@ -5532,7 +5532,7 @@ not lower.
 
 - `cpp` lowers reads, copies, sends; refuses unions, records
 
-- `kotlin` lowers reads, copies, sends; refuses unions, records
+- `kotlin` lowers reads, copies, records, sends; refuses unions
 
 - `go` lowers reads, copies, sends; refuses unions, records
 

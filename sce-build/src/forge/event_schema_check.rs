@@ -325,7 +325,10 @@ impl ComposedLowering {
                 ..walks
             },
 
-            Language::Kotlin => walks,
+            Language::Kotlin => Self {
+                records: true,
+                ..walks
+            },
 
             Language::Go => walks,
 

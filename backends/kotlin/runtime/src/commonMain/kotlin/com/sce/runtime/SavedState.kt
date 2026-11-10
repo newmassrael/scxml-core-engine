@@ -1681,6 +1681,27 @@ object SavedValues {
     }
 
     /**
+     * A list of a type that states a lower count (docs/adr/0086, section 15)
+     * read back element by element, only if it holds at least [least] and no
+     * more than [capacity] elements — a machine never holds fewer or more, and
+     * a restored one must not be the first to. Both counts are held before any
+     * element is read, as [list] holds its bound.
+     */
+    fun <T> listWithin(
+        value: Any?,
+        what: String,
+        least: Int,
+        capacity: Int,
+        element: (Any?, String) -> T,
+    ): List<T> {
+        val items = value as? List<*> ?: throw notA(value, what, "an array")
+        if (items.size < least) {
+            throw StateRefusal("'$what' holds ${items.size} elements, fewer than the $least its type declares")
+        }
+        return list(value, what, capacity, element)
+    }
+
+    /**
      * A byte string read back from its Latin-1 text ([of]), only if it holds no more
      * than the [capacity] bytes the machine bounds it by — a machine never holds
      * more, and a restored one must not be the first to. A character past U+00FF is

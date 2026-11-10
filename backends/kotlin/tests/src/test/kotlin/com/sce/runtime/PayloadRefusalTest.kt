@@ -196,6 +196,40 @@ class PayloadRefusalTest {
         }
     }
 
+    /**
+     * A lift of a value read whole hands the whole object to the reader of its
+     * type, which reads the record's defaults itself and holds a list to both
+     * its counts before an element is read; what is refused before the value is
+     * read is what a lift of a record refuses (docs/adr/0087, "Landing order"
+     * item 8).
+     */
+    @Test
+    fun `a lift reads a value whole by the reader of its type or answers its refusal`() {
+        val read = { v: EventPayload.Value ->
+            v.record("{\"w\":7}") { fields ->
+                Pair(fields.field("items").listWithin(1, 2) { item -> item.uint8() }, fields.uint8("w"))
+            }
+        }
+        val lifted = EventPayload.liftValue("{\"items\":[1,2]}", 2, 256, read)
+        assertTrue(
+            lifted is EventPayload.LiftOutcome.Lifted &&
+                lifted.value == Pair(listOf(1.toUByte(), 2.toUByte()), 7.toUByte()),
+        )
+        for ((text, expected) in listOf(
+            " \t" to Triple(EventPayload.RefusalCode.NOT_JSON, "", null),
+            "{\"items\":[[1]]}" to Triple(EventPayload.RefusalCode.TOO_DEEP, "/items/0", 2L),
+            "[1]" to Triple(EventPayload.RefusalCode.NOT_OBJECT, "", null),
+            "{\"items\":[1,2,3]}" to Triple(EventPayload.RefusalCode.TOO_MANY, "/items", 2L),
+            "{\"items\":[]}" to Triple(EventPayload.RefusalCode.TOO_FEW, "/items", 1L),
+            "{\"items\":[1,256]}" to Triple(EventPayload.RefusalCode.OUT_OF_RANGE, "/items/1", null),
+            "{\"w\":1}" to Triple(EventPayload.RefusalCode.MISSING, "/items", null),
+        )) {
+            val outcome = EventPayload.liftValue(text, 2, 256, read)
+            val refusal = (outcome as? EventPayload.LiftOutcome.Refused)?.refusal ?: fail("$text is lifted")
+            assertEquals(expected, Triple(refusal.code, refusal.pointer, refusal.bound), text)
+        }
+    }
+
     /** What a generated reader of an enum field answers for a name its enum does not declare. */
     @Test
     fun `a name no variant declares is refused as unknown variant`() {
