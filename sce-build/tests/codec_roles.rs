@@ -673,6 +673,33 @@ fn a_disjunction_of_the_codecs_own_flags_is_a_group_of_its_assignments() {
 }
 
 #[test]
+fn a_disjunction_one_of_whose_flags_another_gate_reads_is_a_check_a_source_is_held_to() {
+    // `has_seq` is derived from whether the value holds `seq`, so it is not the
+    // disjunction's to derive: the disjunction is no group (docs/adr/0065 §6
+    // R4c) but a check, `wants_trailer` is the value's own, and the source is
+    // held to the gate, which the encode refuses a value that contradicts.
+    let roles = roles_of("codec_present_if_checked");
+    assert!(roles.groups.is_empty(), "{}", roles.table());
+    let flag = |flag: &str| ElementId::Flag {
+        field: "flags".to_string(),
+        flag: flag.to_string(),
+    };
+    assert!(
+        matches!(roles.role_of(&flag("has_seq")), Some(Role::Derived(_))),
+        "{}",
+        roles.table()
+    );
+    assert_eq!(
+        roles.role_of(&flag("wants_trailer")),
+        Some(&Role::Presented),
+        "{}",
+        roles.table()
+    );
+    let held: Vec<&str> = roles.source_checks().map(|c| c.field.as_str()).collect();
+    assert_eq!(held, ["trailer"], "{}", roles.table());
+}
+
+#[test]
 fn more_gates_on_a_chain_than_a_value_says_stay_checks() {
     // A value holds an arm for each assignment of a chain's gates, and the
     // runtime's sets of kinds go up to eight (docs/adr/0065 §6 R6b). Up to that

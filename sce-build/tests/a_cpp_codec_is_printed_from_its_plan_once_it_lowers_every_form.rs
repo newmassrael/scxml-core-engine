@@ -78,6 +78,7 @@ const PRINTED: &[&str] = &[
     "codec_peek_arm_a",
     "codec_peek_arm_b",
     "codec_present_if_basic",
+    "codec_present_if_checked",
     "codec_present_if_disjunction",
     "codec_present_if_length_ref",
     "codec_present_if_negation",

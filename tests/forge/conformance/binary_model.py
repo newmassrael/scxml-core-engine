@@ -93,12 +93,30 @@ What the model reads so far, and refuses by name past it:
   flag holds it; where a peeked byte holds it (`<sce:peek-byte>`), the tag is
   the arm's own first byte, which the arm's value states and the decode reads
   without moving past. A variant whose caller supplies its tag is not read
-  yet.
+  yet;
+* a disjunction of the codec's own flags one of whose flags another gate
+  reads: no group (R4c) but a check (`codec_roles::source_checks`). Each of
+  its flags is derived where something else derives it and is the value's own
+  where nothing does, and the field it gates is presented alone, present or
+  not as the value says; a value whose field contradicts the gate is one the
+  encode refuses ([`EncodeRefused`]).
+
+The encode refuses a value of the codec's interface only where the page says
+it does (docs/adr/0065 §2): a gate it cannot derive that the value
+contradicts, two things the value says of one number that disagree, or a
+derived number past the field that carries it where no type of the value
+bounds it. It raises [`EncodeRefused`] there, naming the refusal. A value no
+type of the interface holds (a byte string past its bound, two lists of one
+count that differ, an entry of a list that says other than its law) is no
+value of the codec, and a case that states one is written wrong: the model
+raises `ValueError` for it, as for any other.
 
 Each fixture this module writes is listed in FIXTURES with its hand-chosen
-sources; `regenerate` writes them into `numerical_reference.json` under the
-fixture's `sources`, adding the key, and the fixture's entry, where the file
-has none.
+sources and, where its encode can refuse, its hand-chosen refused cases;
+`regenerate` writes them into `numerical_reference.json` under the fixture's
+`sources` and `refused`, adding the keys, and the fixture's entry, where the
+file has none. A refused case states the value and the refusal (`error`) its
+encode answers it with; the model holds it to refusing exactly that.
 """
 
 from __future__ import annotations
@@ -150,8 +168,10 @@ READ_ATTRIBUTES = {
     "variant": {"tag"},
 }
 
-#: The attributes of the document root the model reads.
-READ_ROOT_ATTRIBUTES = {"name", f"{SCE}kind", f"{SCE}default-endian"}
+#: The attributes of the document root the model reads. `sce:encode-may-fail`
+#: says nothing of the wire: it states that the encode refuses some value
+#: (docs/adr/0065 §1), which a refused case is held to.
+READ_ROOT_ATTRIBUTES = {"name", f"{SCE}kind", f"{SCE}default-endian", f"{SCE}encode-may-fail"}
 
 #: The children of the document root besides its datamodel that say nothing of
 #: the wire: why the document is a codec, and its own decoded examples.
@@ -169,6 +189,31 @@ class Unread(Exception):
 class Refused(Exception):
     """A document the page refuses (`validation/attribute-rule-violated`,
     docs/adr/0095 §3): no frame is written for it."""
+
+
+#: The refusals an encode answers a value of its interface with
+#: (docs/adr/0065 §2), as a refused case names them.
+LENGTH_OUT_OF_RANGE = "length-out-of-range"
+PRESENT_IF_MISMATCH = "present-if-mismatch"
+INCONSISTENT_SOURCE = "inconsistent-source"
+REFUSALS = (LENGTH_OUT_OF_RANGE, PRESENT_IF_MISMATCH, INCONSISTENT_SOURCE)
+
+
+class EncodeRefused(Exception):
+    """A value of the codec's interface that its encode refuses
+    (docs/adr/0065 §2): the value says what no frame can carry, and the
+    encode answers it with the refusal `kind`, before its first byte.
+
+    A value outside the type its interface presents (a byte string past its
+    bound, two lists of one count that differ, an entry of a list that says
+    other than its law) is no value of the codec at all and is not this: the
+    type refuses it before an encode is called, and the model raises
+    `ValueError` for it, as for any case written wrong."""
+
+    def __init__(self, kind: str, why: str):
+        assert kind in REFUSALS, kind
+        super().__init__(f"{kind}: {why}")
+        self.kind = kind
 
 
 @dataclass
@@ -414,6 +459,9 @@ class Codec:
     #: The flag inputs the codec declares (`<sce:flag-inputs>`), in order: the
     #: values a parent hands its decode, each one bit.
     inputs: list[str] = field(default_factory=list)
+    #: Whether the document states that its encode refuses some value
+    #: (`sce:encode-may-fail`, docs/adr/0065 §1).
+    may_fail: bool = False
 
     def field(self, id: str) -> Field:
         return next(f for f in self.fields if f.id == id)
@@ -609,6 +657,26 @@ class Codec:
             out.append(group)
         return out
 
+    def checked(self, f: Field) -> bool:
+        """Whether the gate of `f` is one the encode cannot derive a flag from,
+        and so holds the value to, refusing one that contradicts it
+        (docs/adr/0065 §2, `codec_roles::source_checks`): a disjunction of the
+        codec's own flags that is no group (R4c), because another gate reads
+        one of its flags, so that flag is not the disjunction's to derive. Its
+        field is then presented alone, present or not as the value says."""
+        if f.gate is None or f.gate.one() is not None or f.id in self.by_kind():
+            return False
+        one_flag = {(c.carrier, c.flag) for g in self.fields
+                    if g.gate is not None and g.gate.one() is not None for c in g.gate.clauses}
+        return any(
+            (c.carrier, c.flag) in one_flag or any(
+                g.gate is not None and g.gate.one() is None and g.gate.text != f.gate.text
+                and any((d.carrier, d.flag) == (c.carrier, c.flag) for d in g.gate.clauses)
+                for g in self.fields
+            )
+            for c in f.gate.clauses
+        )
+
     def gate_flags(self) -> dict[tuple[str, str], list[Field]]:
         """Each flag of a carrier a gate of one flag names, and the presented
         fields it gates: the encoder sets it from their presence. A flag input
@@ -668,7 +736,8 @@ class Codec:
             )
         disjunctions: dict[str, list[Field]] = {}
         for f in self.fields:
-            if f.gate is not None and f.gate.one() is None and f.id not in held:
+            if (f.gate is not None and f.gate.one() is None and f.id not in held
+                    and not self.checked(f)):
                 disjunctions.setdefault(f.gate.text, []).append(f)
         for label, fields in disjunctions.items():
             clauses = fields[0].gate.clauses
@@ -686,8 +755,6 @@ class Codec:
         for (carrier, name), decided in self.decided().items():
             if carrier and self.flag(carrier, name).width != 1:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
-        one_flag = {(c.carrier, c.flag) for f in self.fields if f.gate for c in f.gate.clauses
-                    if f.gate.one() is not None}
         held = self.by_kind()
         for f in self.fields:
             if f.gate is None or f.gate.one() is not None or f.id in held:
@@ -697,15 +764,9 @@ class Codec:
                     raise Unread(f"{self.name}: the disjunction `{f.gate.text}` reads a flag input")
                 if c.when_clear or self.flag(c.carrier, c.flag).width != 1:
                     raise Unread(f"{self.name}: the disjunction `{f.gate.text}` is not of set flags")
-                if (c.carrier, c.flag) in one_flag or any(
-                    g.gate is not None and g.gate.one() is None and g.gate.text != f.gate.text
-                    and any((d.carrier, d.flag) == (c.carrier, c.flag) for d in g.gate.clauses)
-                    for g in self.fields
-                ):
-                    raise Unread(
-                        f"{self.name}: another gate reads a flag of `{f.gate.text}`, so it is "
-                        "a check and not a group"
-                    )
+        # A disjunction one of whose flags another gate reads is no group but a
+        # check ([`Codec.checked`]): each of its flags is derived by what derives
+        # it elsewhere or is the value's own, and the field is held to it.
         for (carrier, name) in self.gate_flags():
             if f"{carrier}.{name}" in self.measured():
                 raise Unread(f"{self.name}: {carrier}.{name} is derived by two kinds")
@@ -1111,7 +1172,8 @@ def read_document(path: Path) -> Codec:
                 aligned_at=aligned_at(stem, node),
             )
         )
-    codec = Codec(root.get("name"), fields, inputs)
+    may_fail = root.get(f"{SCE}encode-may-fail", "false").strip() in ("true", "1")
+    codec = Codec(root.get("name"), fields, inputs, may_fail)
     codec.check()
     return codec
 
@@ -1454,19 +1516,42 @@ def said_length(codec: Codec, name: str, contents: dict[str, bytes | list[bytes]
     """What the measure `name` says on the wire, from the contents it measures
     that are present: the bytes of a sequence or a body less the
     `sce:length-arith` offset, or the entries of a list; `None` where none is
-    present. Every present one must agree."""
+    present. Every present one must agree: two lists of one count (R5) are held
+    of one count by their type, so a pair that differs is no value of the
+    codec; any other contents that differ are two things the value says of one
+    number, which the encode refuses."""
     lengths = set()
     for f in codec.measured()[name]:
         if f.id in contents:
             lengths.add(len(contents[f.id]) - f.arith)
     if len(lengths) > 1:
-        raise ValueError(f"{codec.name}: the contents `{name}` measures disagree")
+        if codec.aligned(name) is not None:
+            raise ValueError(f"{codec.name}: the two lists `{name}` counts differ")
+        raise EncodeRefused(INCONSISTENT_SOURCE, f"{codec.name}: the contents `{name}` "
+                            "measures disagree")
     if not lengths:
         return None
     wire = lengths.pop()
+    # A content that holds a length offset (`sce:length-arith`) holds at least
+    # that many bytes by its type (docs/adr/0077 §3), so a shorter one is no
+    # value of the codec.
     if wire < 0:
         raise ValueError(f"{codec.name}: a length below what `{name}` can say")
     return wire
+
+
+def past_measure(codec: Codec, name: str, wire: int, bits: int) -> None:
+    """Refuse the number `wire` the measure `name` derives where it is past the
+    `bits` that carry it. A byte string, a text or a list is held within what
+    its measure can say by its type (docs/adr/0077 §1, §3), so one past it is
+    no value of the codec; the encoded length of a body is bounded by nothing
+    its type holds, and the encode refuses it (docs/adr/0065 §2)."""
+    if wire < 1 << bits:
+        return
+    if all(m.measure() == BODY_LENGTH for m in codec.measured()[name]):
+        raise EncodeRefused(LENGTH_OUT_OF_RANGE, f"{codec.name}: {wire} is past the {bits} bits "
+                            f"of `{name}`")
+    raise ValueError(f"{codec.name}: {wire} is past the {bits} bits of `{name}`")
 
 
 def handed(codec: Codec, inputs: dict | None) -> dict[str, int]:
@@ -1554,16 +1639,18 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
             elif (f.id, flag.name) in bound:
                 value = (value & ~mask) | (mask if bound[(f.id, flag.name)] else 0)
             elif gated is not None:
+                # Fields one flag gates that no group holds announce it each;
+                # where they disagree the value says two things of one flag.
                 sets = {(source[g.id] is not None) != g.gate.when_clear for g in gated}
                 if len(sets) > 1:
-                    raise ValueError(f"{codec.name}: the fields `{flag.name}` gates disagree")
+                    raise EncodeRefused(INCONSISTENT_SOURCE, f"{codec.name}: the fields "
+                                        f"`{flag.name}` gates disagree")
                 value = (value & ~mask) | (mask if sets.pop() else 0)
             elif f"{f.id}.{flag.name}" in codec.measured():
                 wire = said_length(codec, f"{f.id}.{flag.name}", contents)
                 if wire is None:
                     continue
-                if wire >= 1 << flag.width:
-                    raise ValueError(f"{codec.name}: {wire} past the {flag.name} flag")
+                past_measure(codec, f"{f.id}.{flag.name}", wire, flag.width)
                 value = (value & ~mask) | (wire << flag.bit)
         carriers[f.id] = value
     out = bytearray()
@@ -1575,6 +1662,14 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
         if f.gate is not None:
             holds = gate_holds(codec, f.gate, carriers, inputs, source)
             if codec.presented(f) and holds != (source[f.id] is not None):
+                # A gate the encode cannot derive a flag from is one the value
+                # is held to, and the encode refuses a value that contradicts
+                # it (docs/adr/0065 §2). Every other gate is derived from what
+                # the value presents, or decided by the inputs the case hands,
+                # which the value says: there the case is written wrong.
+                if codec.checked(f):
+                    raise EncodeRefused(PRESENT_IF_MISMATCH, f"{codec.name}: `{f.id}` "
+                                        f"disagrees with `{f.gate.text}`")
                 raise ValueError(f"{codec.name}: `{f.id}` disagrees with its gate")
             if not holds:
                 continue
@@ -1595,8 +1690,12 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
             value = said_length(codec, f.id, contents)
             if value is None:
                 value = source[f.id] if codec.stated(f) else None
-            elif codec.stated(f) and source[f.id] is not None:
-                raise ValueError(f"{codec.name}: `{f.id}` is stated where it is derived")
+            else:
+                if codec.stated(f) and source[f.id] is not None:
+                    raise ValueError(f"{codec.name}: `{f.id}` is stated where it is derived")
+                # A derived number past its field; a stated one is the value's
+                # own number, held to its field's bits below.
+                past_measure(codec, f.id, value, f.bits)
             if value is None:
                 raise ValueError(f"{codec.name}: nothing says `{f.id}`")
         elif holds_bytes(f):
@@ -1788,15 +1887,23 @@ def decode_at(
 
 @dataclass
 class Written:
-    """The sources of a fixture with their frames, each held by the model."""
+    """The sources of a fixture with their frames, and its refused cases with
+    the refusal of each, each held by the model."""
 
     sources: list[dict]
+    refused: list[dict] = field(default_factory=list)
 
 
-def write(stem: str, sources: list[tuple]) -> Written:
+def write(stem: str, sources: list[tuple], refused: list[tuple] | None = None) -> Written:
     """Each `(source, note)`, or `(source, note, inputs)` for a codec that
     takes flag inputs, with its frame, held by the model. A case of such a
-    codec states the inputs its parent hands it, which its decode is given."""
+    codec states the inputs its parent hands it, which its decode is given.
+
+    Each refused case `(source, kind, note)`, or `(source, kind, note,
+    inputs)`, is a value of the codec's interface whose encode the model holds
+    to refusing with `kind` (docs/adr/0065 §2): a value it writes a frame of,
+    or refuses otherwise, is a case written wrong, and so is one that is no
+    value of the codec at all (`ValueError`), which no encode is called on."""
     codec = read_codec(stem)
     out = []
     for source, note, *rest in sources:
@@ -1809,16 +1916,41 @@ def write(stem: str, sources: list[tuple]) -> Written:
         if codec.inputs:
             case["inputs"] = inputs
         out.append(case | {"encoded": list(frame), "note": note})
-    return Written(out)
+    refusals = []
+    if refused and not codec.may_fail:
+        raise AssertionError(f"{stem}: states that its encode refuses nothing, and has refused "
+                             "cases (sce:encode-may-fail, docs/adr/0065 §1)")
+    for source, kind, note, *rest in refused or []:
+        if kind not in REFUSALS:
+            raise AssertionError(f"{stem}: `{kind}` is no refusal; one of {REFUSALS}")
+        inputs = rest[0] if rest else None
+        try:
+            frame = encode(codec, source, inputs)
+        except EncodeRefused as refusal:
+            if refusal.kind != kind:
+                raise AssertionError(
+                    f"{stem}: {source} is refused as {refusal.kind}, not {kind}: {refusal}"
+                ) from refusal
+        else:
+            raise AssertionError(f"{stem}: {source} is no refused value: its frame is "
+                                 f"{list(frame)}")
+        case = {"source": source}
+        if codec.inputs:
+            case["inputs"] = inputs
+        refusals.append(case | {"error": kind, "note": note})
+    return Written(out, refusals)
 
 
 @dataclass
 class Fixture:
-    """A fixture's hand-chosen sources, and what its entry says where the model
-    writes the entry itself."""
+    """A fixture's hand-chosen sources, what its entry says where the model
+    writes the entry itself, and its hand-chosen refused cases: each a value
+    of the codec's interface, the refusal its encode answers it with and a
+    note."""
 
     sources: list[tuple[dict, str]]
     description: str = ""
+    refused: list[tuple[dict, str, str]] = field(default_factory=list)
 
 
 ABOUT = (
@@ -2105,6 +2237,34 @@ FIXTURES = {
         ],
         "a disjunction no other gate reads is a group (R4c): an arm for each assignment of its "
         "flags that satisfies it, the first flag the lowest bit, and the flags derived from it.",
+    ),
+    "codec_present_if_checked": Fixture(
+        [
+            ({"flags": 0x00, "seq": None, "trailer": None},
+             "neither flag: no seq and no trailer, the frame is the carrier alone"),
+            ({"flags": 0x01, "seq": 0x1234, "trailer": 0x07},
+             "seq sets has_seq, so the trailer is there by has_seq"),
+            ({"flags": 0x02, "seq": None, "trailer": 0xFF},
+             "wants_trailer alone: the trailer is there without seq"),
+            ({"flags": 0x03, "seq": 0x0000, "trailer": 0x00},
+             "both flags: seq and the trailer, each zero and still present"),
+            ({"flags": 0xFC, "seq": None, "trailer": None},
+             "the bits the value presents beside the two flags are kept"),
+        ],
+        "a disjunction one of whose flags another gate reads is a check and not a group: "
+        "has_seq is derived from seq, wants_trailer is the value's own, and the trailer is "
+        "there exactly where either is set; the encode refuses a value whose trailer says "
+        "otherwise (docs/adr/0065 §2).",
+        [
+            ({"flags": 0x00, "seq": None, "trailer": 0x05}, PRESENT_IF_MISMATCH,
+             "the trailer given where neither flag is set"),
+            ({"flags": 0x00, "seq": 0x0102, "trailer": None}, PRESENT_IF_MISMATCH,
+             "the trailer left out where seq sets has_seq, the value's own has_seq bit clear"),
+            ({"flags": 0x02, "seq": None, "trailer": None}, PRESENT_IF_MISMATCH,
+             "the trailer left out where wants_trailer is set"),
+            ({"flags": 0x01, "seq": None, "trailer": 0x09}, PRESENT_IF_MISMATCH,
+             "the trailer given where the value's own has_seq bit is set and no seq derives it"),
+        ],
     ),
     "codec_zenoh_wireexpr": Fixture(
         [
@@ -3127,14 +3287,37 @@ def case_text(case: dict) -> str:
     return "        " + json.dumps(case, ensure_ascii=True)
 
 
+def with_refused(text: str, fixture: str, wanted: bool) -> str:
+    """`text` with a `refused` key last in `fixture`'s entry where `wanted`, to
+    be filled by [`regenerate`], and with none where not: the refused cases are
+    the model's to write, so a fixture that states none carries none."""
+    start, end = entry_span(text, fixture)
+    key = ',\n      "refused": ['
+    at = text.find(key, start, end)
+    if wanted:
+        return text if at >= 0 else text[:end] + key + "\n      ]" + text[end:]
+    if at < 0:
+        return text
+    closing = text.index("\n      ]", at + len(key)) + len("\n      ]")
+    return text[:at] + text[closing:]
+
+
 def regenerate(text: str) -> tuple[str, str]:
-    """`text` with each fixture's sources written, and a report."""
+    """`text` with each fixture's sources and refused cases written, and a
+    report."""
     reports = []
     for fixture, spec in FIXTURES.items():
-        written = write(fixture, spec.sources)
+        written = write(fixture, spec.sources, spec.refused)
         text = ensure_sources(text, fixture, spec.description)
         start, end = span(text, fixture, "sources")
         body = "\n" + ",\n".join(case_text(item) for item in written.sources)
         text = text[:start] + body + text[end:]
-        reports.append(f"{fixture}: {len(written.sources)} sources; the model holds each")
+        text = with_refused(text, fixture, bool(written.refused))
+        report = f"{fixture}: {len(written.sources)} sources"
+        if written.refused:
+            start, end = span(text, fixture, "refused")
+            body = "\n" + ",\n".join(case_text(item) for item in written.refused)
+            text = text[:start] + body + text[end:]
+            report += f", {len(written.refused)} refused"
+        reports.append(report + "; the model holds each")
     return text, "\n".join(reports)

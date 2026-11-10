@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a gate the encode cannot derive a flag from
+     (docs/adr/0065 §2, §6 R4c). One-byte uint8 carrier "flags" holds
+     "has_seq" (bit 0) and "wants_trailer" (bit 1). "seq" (uint16 BE) is
+     gated on flags.has_seq alone, so has_seq is derived from whether the
+     value holds seq. "trailer" (uint8) is gated on the disjunction
+     flags.has_seq || flags.wants_trailer, which reads has_seq as well: the
+     disjunction is no group, since one of its flags is another gate's to
+     derive, but a check. wants_trailer is the value's own, the trailer is
+     presented alone, and a value whose trailer is present where neither flag
+     is set, or absent where either is, is one no frame carries: the encode
+     refuses it before its first byte with PresentIfMismatch. The
+     conformance oracle holds those values as its refused cases
+     (docs/adr/0081 §5). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_present_if_checked">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_seq" bit="0"/>
+      <sce:flag name="wants_trailer" bit="1"/>
+    </sce:flags>
+    <sce:field id="seq" sce:type="uint16" sce:byte="1" sce:bit-size="16"
+               sce:present-if="flags.has_seq"/>
+    <sce:field id="trailer" sce:type="uint8" sce:byte="3" sce:bit-size="8"
+               sce:present-if="flags.has_seq || flags.wants_trailer"/>
+  </datamodel>
+</scxml>

@@ -44597,6 +44597,23 @@
         {"source": {"status": 4, "reading": 4095}, "encoded": [4, 255, 240], "note": "ready alone; reading at its largest, the low four bits of byte 2 no field's"},
         {"source": {"status": 0, "reading": 15}, "encoded": [0, 0, 240], "note": "the low four bits of reading are the high four of byte 2, and nothing else is set"}
       ]
+    },
+    "codec_present_if_checked": {
+      "fixture": "CodecPresentIfChecked",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a disjunction one of whose flags another gate reads is a check and not a group: has_seq is derived from seq, wants_trailer is the value's own, and the trailer is there exactly where either is set; the encode refuses a value whose trailer says otherwise (docs/adr/0065 \u00a72).",
+      "sources": [
+        {"source": {"flags": 0, "seq": null, "trailer": null}, "encoded": [0], "note": "neither flag: no seq and no trailer, the frame is the carrier alone"},
+        {"source": {"flags": 1, "seq": 4660, "trailer": 7}, "encoded": [1, 18, 52, 7], "note": "seq sets has_seq, so the trailer is there by has_seq"},
+        {"source": {"flags": 2, "seq": null, "trailer": 255}, "encoded": [2, 255], "note": "wants_trailer alone: the trailer is there without seq"},
+        {"source": {"flags": 3, "seq": 0, "trailer": 0}, "encoded": [3, 0, 0, 0], "note": "both flags: seq and the trailer, each zero and still present"},
+        {"source": {"flags": 252, "seq": null, "trailer": null}, "encoded": [252], "note": "the bits the value presents beside the two flags are kept"}
+      ],
+      "refused": [
+        {"source": {"flags": 0, "seq": null, "trailer": 5}, "error": "present-if-mismatch", "note": "the trailer given where neither flag is set"},
+        {"source": {"flags": 0, "seq": 258, "trailer": null}, "error": "present-if-mismatch", "note": "the trailer left out where seq sets has_seq, the value's own has_seq bit clear"},
+        {"source": {"flags": 2, "seq": null, "trailer": null}, "error": "present-if-mismatch", "note": "the trailer left out where wants_trailer is set"},
+        {"source": {"flags": 1, "seq": null, "trailer": 9}, "error": "present-if-mismatch", "note": "the trailer given where the value's own has_seq bit is set and no seq derives it"}
+      ]
     }
   },
   "string_lookups": {
