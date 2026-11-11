@@ -20,12 +20,21 @@ Each test is the twin of the Rust case of the same name in
 ``a_test_suite_runs_through_its_runner_test.go``, with the same suite, world,
 verdicts and ``NOW``. What the generator writes for each table is held by
 ``sce-build/tests/a_test_suite_is_generated_in_python.rs``.
+
+The suite is also replayed from the committed trace of ``answers_the_job``
+(docs/SCE_TTCN3_LANE.md §10.5), through ``run_suite_with_traces``, through the
+runner in place (``run_runner``) and through the suite's unit run as its own
+program (§4), as the Rust, Kotlin and C++ suites are.
 """
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+import pytest
 
 _HERE = Path(__file__).resolve().parent
 # The tests directory, so this package is importable by the name it has there.
@@ -45,7 +54,9 @@ from integration.static_datamodel import (  # noqa: E402 -- path inserted above
     runtime_suite,
 )
 from sce_runtime import saved_values  # noqa: E402
+from sce_runtime.saved_json import parse_json, write_jcs  # noqa: E402
 from sce_runtime.testprofile import (  # noqa: E402
+    RUNNER_USAGE,
     CaseResult,
     Features,
     Instant,
@@ -54,9 +65,13 @@ from sce_runtime.testprofile import (  # noqa: E402
     ModuleParameters,
     SystemAdapter,
     SystemInput,
+    Trace,
+    TraceRefusal,
     Verdict,
     features_of,
+    run_runner,
     run_suite,
+    run_suite_with_traces,
 )
 
 #: A millisecond of ``NOW``, which counts microseconds.
@@ -210,6 +225,182 @@ def test_a_generated_test_case_writes_its_test_log() -> None:
     results = suite_run(features_of(), 0, requested)
     assert names_of(results) == ["answers_the_job"]
     assert results[0].canonical_log("runtime_suite") == answers_the_job_log()
+
+
+#: The directory of the suite's committed traces (docs/SCE_TTCN3_LANE.md §10.2).
+TRACES_DIR = ANSWERS_THE_JOB_LOG.parents[1] / "traces"
+
+
+def test_a_recorded_trace_replays_to_the_test_log_every_runtime_writes() -> None:
+    """docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the
+    committed trace of ``answers_the_job`` writes the test log every runtime
+    writes of it, byte for byte: the configuration's unit reads the reply from
+    its canonical form and writes it back the same, and the clock advances to
+    the trace's instant as it did to the Responder's. The twin of the Rust case
+    of the same name."""
+    text = (TRACES_DIR / "answers_the_job.json").read_bytes().decode("utf-8")
+    results = run_suite_with_traces(runtime_suite.suite(), features_of(), lambda _: Trace.parse(text))
+    assert names_of(results) == ["answers_the_job"]
+    assert results[0].result.verdict == Verdict.PASS, results[0].result.log
+    assert results[0].canonical_log("runtime_suite") == answers_the_job_log()
+
+
+def test_the_configuration_reads_the_inputs_of_a_recorded_trace() -> None:
+    """§10.2, §10.5: the configuration's unit reads the reply from its canonical
+    form into the record its components take, and writes it back the same; an
+    input on a port it does not have, of a type the port does not take, or of a
+    value that does not belong to the type is refused by name."""
+    reply = asking_configuration.read_job_reply(parse_json('{"code":"0","job":"7"}'))
+    assert reply == job_reply.JobReplyPayload(job=7, code=0)
+    assert write_jcs(asking_configuration.canonical_job_reply(reply)) == '{"code":"0","job":"7"}'
+    message = asking_configuration.input("sut", "job_reply", asking_configuration.canonical_job_reply(reply))
+    assert message.event == job_reply.EVENT_NAME
+    assert message.type_name == "job_reply"
+    assert message.value == reply
+    for port, type_name, value, why in [
+        ("sut", "job_request", None, "'job_request' is not on the `in` list of the type of the system port 'sut'"),
+        ("oracle", "job_reply", None, "'oracle' is not a system port of the test case's configuration"),
+        (
+            "sut",
+            "job_reply",
+            parse_json('{"code":"0","job":"07"}'),
+            "job_reply.job: '07' is not the text of an integer's decimal digits",
+        ),
+    ]:
+        with pytest.raises(TraceRefusal) as refusal:
+            asking_configuration.input(port, type_name, value)
+        assert refusal.value.reason == why
+    assert answers_the_job.test_case().inputs is asking_configuration.input, (
+        "the test case hands the runner its configuration's reader"
+    )
+
+
+class ProgramRun:
+    """What one run of the runner program printed and the status it exited
+    with."""
+
+    def __init__(self, status: int, out: List[str], err: List[str]) -> None:
+        self.status = status
+        self.out = out
+        self.err = err
+
+
+def run_in_place(logs: Path, *given: str) -> ProgramRun:
+    """The suite's runner program run in place (``run_runner``), given
+    ``given`` after the directories of the traces and of the logs."""
+    out: List[str] = []
+    err: List[str] = []
+    status = run_runner(
+        runtime_suite.suite(),
+        runtime_suite.module_parameter,
+        ["--trace-dir", str(TRACES_DIR), "--log-dir", str(logs), *given],
+        out.append,
+        err.append,
+    )
+    return ProgramRun(status, out, err)
+
+
+def test_the_suites_runner_program_writes_the_log_of_each_trace(tmp_path: Path) -> None:
+    """docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case
+    its world selects against its trace and writes ``<case>.log.json``, the
+    canonical log with nothing after it, and prints each case's verdict; a
+    module parameter's value on its command line replaces its default, and one
+    the suite does not declare, or that is no value of its type, is refused with
+    exit status 2 before any case runs. The twin of the Rust case of the same
+    name."""
+    logs = tmp_path / "default"
+    run = run_in_place(logs)
+    assert run.status == 0, run.err
+    assert run.out == ["answers_the_job pass"]
+    assert (logs / "answers_the_job.log.json").read_bytes().decode("utf-8") == answers_the_job_log()
+
+    overridden = tmp_path / "overridden"
+    given = run_in_place(overridden, "--world", "", "--module-parameter", "job=9")
+    assert given.status == 0, given.err
+    log = (overridden / "answers_the_job.log.json").read_text(encoding="utf-8")
+    assert '"kind":"message-sent","port":"sut","type":"job_request","value":{"job":"9"}' in log, (
+        "the request names the job of the value given"
+    )
+
+    for literal, why in [
+        ("limit=1", "the suite declares no module parameter 'limit'"),
+        ("job=seven", "--module-parameter job=seven: job: 'seven' is not the text of an integer's decimal digits"),
+    ]:
+        refused = tmp_path / literal
+        attempt = run_in_place(refused, "--module-parameter", literal)
+        assert attempt.status == 2, literal
+        assert any(why in line for line in attempt.err), attempt.err
+        assert attempt.err[-1] == RUNNER_USAGE
+        assert not refused.exists(), "no case ran, so no log was written"
+
+
+def test_a_test_case_whose_trace_is_missing_ends_in_error_and_its_log_is_written(tmp_path: Path) -> None:
+    """P13, §4: a test case whose trace is missing ends with ``error`` and its
+    log is written, the reason on the standard error, and the program exits 0,
+    since the verdict is the log's."""
+    logs = tmp_path / "logs"
+    run = run_in_place(logs, "--world", "ptcs")
+    assert run.status == 0, run.err
+    assert run.out == ["answers_the_job pass", "serves_a_ptc error"]
+    assert (logs / "serves_a_ptc.log.json").read_text(encoding="utf-8") == (
+        '{"records":[{"at":"0","kind":"test-case-started"},{"at":"0","kind":"test-case-ended",'
+        '"verdict":"error"}],"schema":"sce-test-log.v1","suite":"runtime_suite",'
+        '"test_case":"serves_a_ptc","verdict":"error"}'
+    )
+    assert any(
+        line.startswith("serves_a_ptc: mtc: the trace is refused: ") and "is not read" in line for line in run.err
+    ), run.err
+
+
+def test_the_suites_unit_is_the_runner_program(tmp_path: Path) -> None:
+    """§4: the suite's runner is a program: the suite's unit run as a module of
+    its package (``python -m integration.static_datamodel.runtime_suite``), as
+    its own process, prints the verdict of each case and nothing else on its
+    standard output, writes its log and exits with the status the command line
+    asks for. The twin of the Kotlin and C++ program cases."""
+    tests_dir = _HERE.parents[1]
+    path = [str(tests_dir), str(_HERE.parents[2] / "runtime"), str(_HERE.parents[2] / "forge-runtime")]
+    inherited = os.environ.get("PYTHONPATH")
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(path + ([inherited] if inherited else [])))
+
+    def program(name: str, *given: str) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "integration.static_datamodel.runtime_suite",
+                "--trace-dir",
+                str(TRACES_DIR),
+                "--log-dir",
+                str(tmp_path / f"{name}-logs"),
+                *given,
+            ],
+            cwd=tests_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+
+    run = program("default")
+    assert run.returncode == 0, run.stderr
+    assert run.stdout == "answers_the_job pass\n", "the standard output is the contract's lines alone"
+    assert (tmp_path / "default-logs" / "answers_the_job.log.json").read_bytes().decode(
+        "utf-8"
+    ) == answers_the_job_log()
+
+    given = program("given", "--module-parameter", "job=9")
+    assert given.returncode == 0, given.stderr
+    assert '"value":{"job":"9"}' in (tmp_path / "given-logs" / "answers_the_job.log.json").read_text(
+        encoding="utf-8"
+    )
+
+    refused = program("undeclared", "--module-parameter", "limit=1")
+    assert refused.returncode == 2
+    assert "the suite declares no module parameter 'limit'" in refused.stderr
+    assert refused.stdout == ""
+    assert not (tmp_path / "undeclared-logs").exists(), "no case ran, so no log was written"
 
 
 def test_runs_the_test_cases_a_world_selects() -> None:

@@ -209,6 +209,19 @@ TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # scripts/regen_static_datamodel_kotlin.sh, scripts/regen_static_datamodel_go.sh).
 TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
 TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
+# The configuration whose system port takes a record of every form of the canonical value
+# Python holds (docs/SCE_TTCN3_LANE.md §10.3, §10.5), so its unit's reader and writer of each
+# form are generated; test_a_record_reads_back_the_form_it_writes.py round-trips a value of
+# each and replays a trace of them. Python lowers no union, so it takes the configuration the
+# C++ tree takes (tests/CMakeLists.txt), whose order_taken stands in order_placed's place. Its
+# records (order_taken, form_extras; job_status is generated above), the record and the enum
+# they hold that nothing above generates (order_customer, shape_kind_open) and its test case
+# are a module each; its listener is a component, of which only the machine's module is kept,
+# as of the components above. The port type writes no file.
+TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
+TRACE_FORMS=(order_taken form_extras unionless_forms_configuration replays_every_unionless_form)
+TRACE_FORMS_IMPORTS=("$TEST_PROFILE_DIR/imports/order_customer.scxml" "sce-build/tests/fixtures/union/shape_kind_open.scxml")
+TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -239,6 +252,15 @@ for component in "${TEST_COMPONENTS[@]}"; do
 done
 for document in "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l python -o "$TMP/table_$document/"
+done
+for document in "${TRACE_FORMS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l python -o "$TMP/forms_$document/"
+done
+for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
+    "$CODEGEN" generate "${TRACE_FORMS_IMPORTS[$i]}" -l python -o "$TMP/forms_import_$i/"
+done
+for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -293,8 +315,26 @@ for document in "${TEST_TABLES[@]}"; do
         MODULES+=("$(basename "$generated" .py)")
     done
 done
+
+for document in "${TRACE_FORMS[@]}"; do
+    for generated in "$TMP/forms_$document"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
+
+for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
+    for generated in "$TMP/forms_import_$i"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.py` alone, which the test's
 # factory of machines and each configuration's table above import (`<machine>_sm`).
+for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
+    cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
+    MACHINES+=("$component")
+done
 for component in "${TEST_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")

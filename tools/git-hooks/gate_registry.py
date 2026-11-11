@@ -2337,6 +2337,9 @@ GATES: dict[str, dict] = {
                   # which `test_a_test_suite_runs_through_its_runner.py` reads
                   # at run time.
                   "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
+                  # The suite's committed traces, which the same test replays,
+                  # read at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
                   # The trace's wire schema, whose status
                   # `test_a_recorded_trace_is_read_and_replayed.py` holds the
                   # runtime's to, read at run time.
