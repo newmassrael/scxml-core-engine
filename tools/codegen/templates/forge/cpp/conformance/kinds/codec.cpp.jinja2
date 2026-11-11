@@ -33,9 +33,9 @@
     for (const auto &case_entry : spec["cases"]) {
 {% if f.fields %}
         const auto &decoded_json = case_entry["decoded"];
-{# A field the encode derives is no element of a printed value, so it is
-   neither read from the case nor read back (docs/adr/0081 §3). #}
-{% for field in f.fields if not (f.cpp_printed and field.derived) %}
+{# A field the encode derives is no element of the value, so it is neither
+   read from the case nor read back (docs/adr/0081 §3). #}
+{% for field in f.fields if not field.derived %}
 {% if field.optional %}
         {# An absent entry is JSON `null` in the case and empty in the struct. #}
         std::optional<{{ field.type | cpp_type }}> input_{{ field.name }};
@@ -52,8 +52,7 @@
             expected_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
 
-{% if f.cpp_printed %}
-        {# A codec printed from its plan (docs/adr/0081 step 4) is made by its
+        {# A codec, printed from its plan (docs/adr/0081 step 4), is made by its
            constructor, its elements in declaration order; a field the encode
            derives is no element of it. A byte string is made through its
            bound's one door, the type the value presents it as, where it is
@@ -93,23 +92,9 @@
 {% endif %}
 {% endfor %}
         };
-{% else %}
-        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
-{% for field in f.fields %}
-        _codec_val.{{ field.name }} = input_{{ field.name }};
-{% endfor %}
-{% endif %}
-{% if (f.cbor or f.encode_refuses_bound) and not f.cpp_printed %}
-        {# A CBOR encode (SCE_FORGE.md §4.6.1), and a binary one with a bounded
-           field (docs/adr/0077 §3), refuses a value past its declared bound
-           with `std::nullopt`; every case is in bounds. A printed one is
-           handed its entries within their bounds and refuses nothing. #}
-        auto encoded_or = _codec_val.encode_to_vec();
-        CHECK(encoded_or.has_value(), "{{ f.name }} case %d encode refused", i);
-        auto encoded = encoded_or.value_or(std::vector<std::uint8_t>{});
-{% else %}
+        {# A value is handed its entries within their bounds, so its encode
+           refuses nothing of them. #}
         auto encoded = _codec_val.encode_to_vec();
-{% endif %}
         CHECK(encoded == expected_bytes,
               "{{ f.name }} case %d encode: size actual=%zu expected=%zu",
               i, encoded.size(), expected_bytes.size());
@@ -119,9 +104,9 @@
         CHECK(round_tripped.has_value(),
               "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {
-{# A printed codec's element is read through its accessor. #}
-{% set acc = "()" if f.cpp_printed else "" %}
-{% for field in f.fields if not (f.cpp_printed and field.derived) %}
+{# Each element is read through its accessor. #}
+{% set acc = "()" %}
+{% for field in f.fields if not field.derived %}
 {% if field.optional %}
             CHECK(round_tripped->{{ field.name }}{{ acc }} == input_{{ field.name }},
                   "{{ f.name }} case %d decode {{ field.name }}: present actual=%d expected=%d, or the values differ",

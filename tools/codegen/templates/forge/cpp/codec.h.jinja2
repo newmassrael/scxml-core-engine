@@ -52,10 +52,8 @@
 {% if has_string_fields %}
 #include <string>
 {% endif %}
-{% if cpp_source %}
 #include <type_traits>
 #include <utility>
-{% endif %}
 
 #include "sce/forge/codec.h"
 {% if all_imports %}
@@ -94,8 +92,8 @@ struct {{ struct_name }}{{ variant.default_arm.variant_name }} {
    compiled where the feature's macro is non-zero, as in C. Its alternative is
    left out of the `std::variant` where the macro is 0, which moves the index of
    every alternative after it, so everything below names such a variant's
-   alternatives by type (`std::in_place_type_t`, `std::get_if`), and a parent's
-   carrier bits count the index per build (`parent_tag_gated_chain_cpp`). Each
+   alternatives by type (`std::in_place_type_t`, `std::get_if`), and the printer
+   counts an arm's index per build (`cpp_source`, `Alternatives`). Each
    separator of the list sits inside the guard of its own alternative: after
    each one before the last one every build holds
    (`cpp_last_held_alternative`), before each one after it. A variant without
@@ -122,51 +120,13 @@ using {{ struct_name }}Variant = std::variant<
 >;
 
 {% endif %}
-{% if cpp_source %}
 {{ cpp_source.before }}
 
-{% endif %}
 struct {{ struct_name }} {
-{# Every field is initialized: its declared default where it has one, else its
-   value-initialized zero. A field left without one makes a default-constructed
-   codec hold indeterminate bytes, which a copy then reads (C++ Core Guidelines
-   ES.20, C.48); gcc's -Wmaybe-uninitialized found it through a variant whose
-   first alternative is such a codec. #}
-{% if cpp_source %}
 {# docs/adr/0081 step 4: printed from the plan. The value presents each element
-   through an accessor and is made by its constructor; it holds them privately. #}
+   through an accessor and is made by its constructor; it holds them privately,
+   a variant's arm among them, each initialized where it is declared. #}
 {{ cpp_source.members }}
-{% else %}
-{% for field in fields %}
-    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% else %}{}{% endif %};
-{% endfor %}
-{% endif %}
-{# A variant printed from its plan holds its arm privately, in `cpp_source`. #}
-{% if has_variant and not cpp_source %}
-{% if variant.default_arm_index is defined and variant.has_feature_gated_arm %}
-    // RFC variant-default-uniformity (Cpp): a freshly-constructed
-    // envelope holds the arm marked `<sce:arm default="true"/>`, which
-    // every build holds (docs/adr/0072), encoding its wire-MID for
-    // byte-exact round-trip. The arm is selected by its type, since an
-    // arm before it under a build feature is not an alternative where
-    // that feature's macro is 0, and its index differs per build.
-    {{ struct_name }}Variant body{std::in_place_type_t<{% for arm in variant.arms %}{% if arm.is_default %}{{ arm.body_type }}{% endif %}{% endfor %}>{}};
-{% elif variant.default_arm_index is defined %}
-    // RFC variant-default-uniformity (Cpp): the
-    // `std::in_place_index_t<N>{}` tag-type selects the arm marked
-    // `<sce:arm default="true"/>` by index so a freshly-constructed
-    // envelope holds that arm (not the first declared alternative
-    // which `std::variant`'s default constructor would otherwise
-    // pick), encoding its wire-MID for byte-exact round-trip.
-    // (We construct the tag type explicitly — `std::in_place_index<N>`
-    // is a variable template of type `std::in_place_index_t<N>` and
-    // the brace-init form `std::in_place_index<N>{}` does not parse
-    // in a member-init context.)
-    {{ struct_name }}Variant body{std::in_place_index_t<{{ variant.default_arm_index }}>{}};
-{% else %}
-    {{ struct_name }}Variant body;
-{% endif %}
-{% endif %}
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -267,17 +227,8 @@ struct {{ struct_name }} {
 {% endif %}
             }
         }
-{% if cpp_source %}
 {{ cpp_source.decoded }}
         return _decoded;
-{% else %}
-        return {{ struct_name }}{
-{% for field in fields %}
-            /*{{ field.id }}=*/{{ field.id }},
-{% endfor %}
-            /*body=*/body,
-        };
-{% endif %}
 {% elif needs_streaming %}
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
@@ -301,16 +252,8 @@ struct {{ struct_name }} {
         {{ field.present_if_decode_stmt }}
 {% endif %}
 {% endfor %}
-{% if cpp_source %}
 {{ cpp_source.decoded }}
         return _decoded;
-{% else %}
-        return {{ struct_name }}{
-{% for field in fields %}
-            /*{{ field.id }}=*/{{ field.id }},
-{% endfor %}
-        };
-{% endif %}
 {% elif has_variable_fields %}
         std::size_t _frame_len = cursor.remaining();
 {% if min_bytes > 0 %}
@@ -321,15 +264,7 @@ struct {{ struct_name }} {
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
-{% if cpp_source %}
 {{ cpp_source.decoded }}
-{% else %}
-        {{ struct_name }} _decoded{
-{% for field in fields %}
-            /*{{ field.id }}=*/{{ field.id }},
-{% endfor %}
-        };
-{% endif %}
 {% if has_tail_fields %}
         // A tail field runs to the end of the frame, so the frame is consumed whole.
         if (!cursor.advance(_frame_len)) return std::nullopt;
@@ -354,15 +289,7 @@ struct {{ struct_name }} {
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
-{% if cpp_source %}
 {{ cpp_source.decoded }}
-{% else %}
-        {{ struct_name }} _decoded{
-{% for field in fields %}
-            /*{{ field.id }}=*/{{ field.id }},
-{% endfor %}
-        };
-{% endif %}
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
         return _decoded;
 {% endif %}
@@ -452,123 +379,9 @@ struct {{ struct_name }} {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w{{ encode_params_after_first_arg }}) const noexcept {
-{% if cpp_source %}
         // The encode over any source of the codec, this value one of them,
         // handed the inputs the caller hands this encode.
         return Wire::encode_source(*this, w{{ encode_args_with_comma }});
-{% else %}
-{% if has_parent_flags %}
-        (void)parent_flags;
-{% endif %}
-{% if has_flag_inputs %}
-{{ flag_input_unused_suppress }}
-{% endif %}
-{% if has_parent_tag_derivation %}
-        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
-        // parent-tag variant's active arm before the carrier byte is
-        // emitted. Each `_derived_<carrier>` local is OR'd into the
-        // carrier's encode site.
-{{ parent_tag_derivation_block }}
-{% endif %}
-{% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
-{% if has_no_fields %}
-        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
-        // wire-protocol header byte alone marks this codec on the wire).
-        // Suppress the unused-sink warning explicitly so empty codecs
-        // stay warning-clean.
-        (void)w;
-        return std::nullopt;
-{% elif has_variant %}
-{% if variant.has_streaming_prefix %}
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode. Peek-byte mode: arm body's encode
-        // prepends its own header byte (which the decoder peeked); no
-        // separate tag byte here. Streaming-prefix mode (own-field):
-        // carrier is part of the prefix fields and emits via the same
-        // per-field path.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% else %}
-        // Encode fixed prefix (tag field bytes are part of the prefix).
-{% for expr in encode_exprs %}
-        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
-{% endfor %}
-{% endif %}
-        // Append the active arm body's encoded bytes.
-{% for arm in variant.arms %}
-{% if arm.c_feature_macro %}
-#if {{ arm.c_feature_macro }}
-{% endif %}
-        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
-        }
-{% if arm.c_feature_macro %}
-#endif
-{% endif %}
-{% endfor %}
-{% if variant.default_arm %}
-        if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
-{{ variant.default_arm.body_said_checks }}            if (auto _e = _p->body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }}); _e) return _e;
-        }
-{% endif %}
-        return std::nullopt;
-{% elif needs_streaming %}
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-        return std::nullopt;
-{% elif has_variable_fields %}
-{% for expr in encode_exprs %}
-        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
-{% endfor %}
-{% for field in fields %}
-{% if field.is_variable %}
-{% if has_dma_aligned_fields %}
-        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
-        // current write position and this field's authored byte
-        // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §synth-5-B
-        // "wire layout, not host allocator").
-        while (w.position() < {{ field.byte_off }}) {
-            if (auto _e = w.write_u8(0); _e) return _e;
-        }
-{% endif %}
-        if (auto _e = w.write_bytes(this->{{ field.member }}.data(), this->{{ field.member }}.size()); _e) return _e;
-{% endif %}
-{% endfor %}
-        return std::nullopt;
-{% else %}
-{% for expr in encode_exprs %}
-        if (auto _e = w.write_u8({{ expr }}); _e) return _e;
-{% endfor %}
-        return std::nullopt;
-{% endif %}
-{% endif %}
     }
 
 {% if encode_can_refuse %}
@@ -622,34 +435,8 @@ struct {{ struct_name }} {
         return _sce_v;
     }
 {% endif %}
-{# A variant printed from its plan answers its tag in `cpp_source`. #}
-{% if has_variant and has_caller_tag and not cpp_source %}
-
-    /// The tag of the arm this value holds: the one the arm declares, or,
-    /// for the catch-all arm, the unknown tag it holds. It is the `tag` the
-    /// decode of a value of this arm takes, so a value decoded under a tag
-    /// answers that tag. The literals are the ones the decode matches on
-    /// (RFC §synth-5-B variant primitive). A variant holds one alternative
-    /// at all times, so the `0` at the end is not reached.
-    [[nodiscard]] std::uint8_t tag() const noexcept {
-{% for arm in variant.arms %}
-{% if arm.c_feature_macro %}
-#if {{ arm.c_feature_macro }}
-{% endif %}
-        if (std::get_if<{{ arm.body_type }}>(&body) != nullptr) return {{ arm.tag_literal }};
-{% if arm.c_feature_macro %}
-#endif
-{% endif %}
-{% endfor %}
-{% if variant.default_arm %}
-        if (const auto* _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) return _p->tag;
-{% endif %}
-        return 0;
-    }
-{% endif %}
-{% if cpp_source %}
+{# A variant answers its tag, and holds its arm, in `cpp_source`. #}
 {{ cpp_source.private }}
-{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}

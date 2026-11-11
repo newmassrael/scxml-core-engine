@@ -18,7 +18,7 @@
 # `sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs` refuses
 # them by the term and the carrier write each backend renders and, where a
 # backend's toolchain is present, by a decode and encode of two frames whose
-# stored flag is made stale. The runs do not reach the gated C++ chain or the
+# stored flag is made stale. The runs do not reach the gated C++ switch or the
 # unmasked tag: their variant has no gated arm, and their tags fill the flag.
 #
 # Anchors are literal slices of the source; an edit that moves one is
@@ -26,6 +26,7 @@
 
 mutation_tests -p sce-build --test a_parent_writes_the_tag_its_catch_all_holds
 mutation_targets sce-build/src/forge/generator.rs
+mutation_targets sce-build/src/forge/generator/cpp_source.rs
 mutation_oracles sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs
 
 mutation_case "the derivation forgets the embedded variant's catch-all" <<'PY'
@@ -34,26 +35,30 @@ edit("sce-build/src/forge/generator.rs",
      r'''                catch_all: false,''')
 PY
 
-# ── The C++ parent ──
+# ── The C++ parent, printed from its plan (docs/adr/0081 step 4) ──
 
-mutation_case "a C++ parent leaves the catch-all's term out of its chain" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''    if let Some(term) = catch_all {
-        chain.push_str(&format!("{term} : "));
-    }''',
-     r'''    let _ = catch_all;''')
+mutation_case "a C++ parent leaves the catch-all's case out of its switch" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''                    if term.catch_all {
+                        let index = alternatives.index(term.arms.len());''',
+     r'''                    if term.catch_all && term.mask == u64::MAX {
+                        let index = alternatives.index(term.arms.len());''')
 PY
 
-mutation_case "a C++ parent of a gated variant leaves the catch-all's term out" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''        chain.push_str(&format!("            {term} :\n"));''',
-     r'''        let _ = term;''')
+mutation_case "a C++ parent of a gated variant names the catch-all by a fixed index" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''                    if term.catch_all {
+                        let index = alternatives.index(term.arms.len());''',
+     r'''                    if term.catch_all {
+                        let index = term.arms.len();''')
 PY
 
 mutation_case "a C++ parent writes the catch-all's tag unmasked" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''->tag & 0x{mask:X}u) << {})",''',
-     r'''->tag) << {})",''')
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''(std::get_if<{index}>(&_v)->tag) & 0x{:X}ull; break;\n",
+                            term.mask''',
+     r'''(std::get_if<{index}>(&_v)->tag) & 0x{:X}ull; break;\n",
+                            u64::MAX''')
 PY
 
 # ── The C parent ──
@@ -120,10 +125,16 @@ edit("sce-build/src/forge/generator.rs",
      r'''                keep: 0xFF,''')
 PY
 
-mutation_case "a C and C++ carrier write keeps the stored flag" <<'PY'
+mutation_case "a C carrier write keeps the stored flag" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        Language::Cpp | Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),''',
-     r'''        Language::Cpp | Language::C11 => format!("{stored} | {local}"),''')
+     r'''        Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),''',
+     r'''        Language::C11 => format!("{stored} | {local}"),''')
+PY
+
+mutation_case "a C++ carrier write keeps the stored flag" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''            let set = format!("{bits} = ({bits} & ~0x{mask:X}ull) | {placed};");''',
+     r'''            let set = format!("{bits} = {bits} | {placed}; // 0x{mask:X}");''')
 PY
 
 mutation_case "a Python and Go carrier write keeps the stored flag" <<'PY'

@@ -32,6 +32,7 @@ mutation_targets tools/codegen/templates/_macros/forge_rust_codec_decode_body.ji
 mutation_targets tools/codegen/templates/forge/c/codec.h.jinja2
 mutation_targets tools/codegen/templates/forge/cpp/codec.h.jinja2
 mutation_targets sce-build/src/forge/generator/rust_source.rs
+mutation_targets sce-build/src/forge/generator/cpp_source.rs
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets sce-build/src/forge/parser.rs
 mutation_targets sce-build/src/forge/variant_default_overlay.rs
@@ -152,26 +153,16 @@ edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
      r'''    {{ arm.body_type }}{{ "," if not loop.last or variant.default_arm else "" }}''')
 PY
 
-mutation_case "the C++ encode branch of a gated arm is outside its macro" <<'PY'
-edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
-     r'''{% if arm.c_feature_macro %}
-#if {{ arm.c_feature_macro }}
-{% endif %}
-        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
-        }
-{% if arm.c_feature_macro %}
-#endif
-{% endif %}''',
-     r'''        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
-        }''')
+mutation_case "a printed C++ line that names a gated arm is outside its macro" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''            Some(m) => format!("#if {m}\n{lines}#endif\n"),''',
+     r'''            Some(_) => lines.to_string(),''')
 PY
 
-mutation_case "the C++ default value names the default arm by its index" <<'PY'
-edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
-     r'''    {{ struct_name }}Variant body{std::in_place_type_t<{% for arm in variant.arms %}{% if arm.is_default %}{{ arm.body_type }}{% endif %}{% endfor %}>{}};''',
-     r'''    {{ struct_name }}Variant body{std::in_place_index_t<{{ variant.default_arm_index }}>{}};''')
+mutation_case "the C++ default value names the default arm by a fixed index" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''                Some(i) => format!("{{std::in_place_index_t<{}>{{}}}}", variant.index(i)),''',
+     r'''                Some(i) => format!("{{std::in_place_index_t<{}>{{}}}}", i),''')
 PY
 
 mutation_case "the C++ header never defines the macro to its default" <<'PY'
@@ -190,21 +181,32 @@ edit("sce-build/src/forge/generator.rs",
 PY
 
 mutation_case "a C++ parent compares a gated variant's index with a fixed number" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''    let chain = if d.arms.iter().any(|arm| arm.feature.is_some()) {''',
-     r'''    let chain = if d.arms.iter().any(|arm| arm.feature.is_some() && arm.value == u64::MAX) {''')
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''                        let index = alternatives.index(i);
+                        cases.push_str(&alternatives.guarded(''',
+     r'''                        let index = i;
+                        cases.push_str(&alternatives.guarded(''')
 PY
 
-mutation_case "a C++ parent counts no gated alternative before an arm" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''                index.push_str(&format!(" + ({name} ? 1 : 0)"));''',
-     r'''                let _ = name;''')
+mutation_case "a C++ index counts no gated alternative before it" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''        format!("({held} + {})", gated.join(" + "))''',
+     r'''        held.to_string()''')
 PY
 
-mutation_case "a C++ parent's term of a gated arm is outside its macro" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''                chain.push_str(&format!("#if {name}\n"));''',
-     r'''                let _ = name;''')
+mutation_case "a C++ parent's case of a gated arm is outside its macro" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source.rs",
+     r'''                        cases.push_str(&alternatives.guarded(
+                            i,
+                            &format!(
+                                "                case {index}: {local} |= 0x{:X}ull; break;\n",
+                                arm.tag
+                            ),
+                        ));''',
+     r'''                        cases.push_str(&format!(
+                            "                case {index}: {local} |= 0x{:X}ull; break;\n",
+                            arm.tag
+                        ));''')
 PY
 
 # ── The refusal of a left-out arm's tag ──

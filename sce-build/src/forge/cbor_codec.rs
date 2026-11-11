@@ -723,20 +723,14 @@ fn render_cpp(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Cpp, imports);
-    // Owned values, as every C++ codec holds them: a text string is a
-    // `std::string` and a byte string a `std::vector<uint8_t>`. A list of
-    // records is a `std::vector` of the schema's payload, which carries no
-    // bound: the encode refuses a count past it.
+    // The header's context: the namespace, the guard, the imports a record's
+    // payload type is brought into scope by, and the refusal of an entry whose
+    // enum resolved no carrier, which every backend makes. Each entry's type
+    // is the one its value is presented as: a `std::vector` of the schema's
+    // payload for a list of records.
     let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
         Some(present) => l.type_name(present).into_owned(),
         None => format!("std::vector<{}>", record_type_of(&l, imports, e)),
-    })?;
-    // Each field of a record as the schema's C++ unit holds it: a text in the
-    // `OwnedText<N>` of its bound (docs/adr/0086, section 7.4), a byte string
-    // in a `std::vector<uint8_t>`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| match ty {
-        ValueType::Text { max } => crate::forge::composed_lowering::cpp_text_type(max.max),
-        other => scalar_record_field_type(&l, other),
     })?;
     // docs/adr/0081 step 4: the map is printed from its plan, its entries
     // presented through accessors and encoded over any source, a list of
@@ -746,28 +740,7 @@ fn render_cpp(
         "cpp_source".into(),
         crate::forge::generator::cpp_cbor_printed(m, imports).into(),
     );
-    // A value-initialized member holds its type's zero, which is the right
-    // start for every entry but an enum's: a closed set need not declare the
-    // carrier's zero, so an enum starts at its first declared variant — the
-    // one default C++ codecs spell (`LangCtx::default_expr`). An optional
-    // entry starts absent.
-    if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
-        for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            entry["field_type"] = if e.is_required() {
-                value_type
-            } else {
-                l.codec_optional_of(&value_type)
-            }
-            .into();
-            entry["init"] = match e.leaf_type() {
-                Some(SceType::Enum(r)) if e.is_required() => l.enum_default_expr(&r.alias),
-                _ => String::new(),
-            }
-            .into();
-        }
-    }
-    render_in_key_order(&l, env, ctx)
+    l.render(env, "codec_cbor", ctx)
 }
 
 fn render_go(

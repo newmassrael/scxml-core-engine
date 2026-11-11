@@ -13452,9 +13452,13 @@ fn render_codec(
     // closure) deletes the gate entirely.
 
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
-    // A Rust codec's `encode` is its source's (ADR 0058): the statements the
-    // other backends write for each field, one by one, are not written for it.
-    let field_encode_blocks = !matches!(lang, crate::generator::Language::Rust);
+    // A Rust codec's `encode` is its source's (ADR 0058), and a C++ codec's is
+    // printed from its plan (docs/adr/0081 step 4): the statements the other
+    // backends write for each field, one by one, are not written for either.
+    let field_encode_blocks = !matches!(
+        lang,
+        crate::generator::Language::Rust | crate::generator::Language::Cpp
+    );
     // ADR 0049: a Rust codec is also rendered as `{Codec}View` when asked to.
     let emit_views = views && matches!(lang, crate::generator::Language::Rust);
     // What a value presents and derives, which says which list is held to the
@@ -13538,24 +13542,6 @@ fn render_codec(
                     "enum_from_underlying".into(),
                     l.enum_from_underlying(&r.alias).into(),
                 );
-                // C++ has no Default trait; the equivalent is a brace
-                // init on the declaration, and without one a
-                // value-initialized codec would hold the carrier's zero
-                // — not a value of a closed set. The other five either
-                // spell their default elsewhere (Rust's `Default`,
-                // Kotlin's constructor, Python's dataclass) or have only
-                // the language's own zero-initialization (C11, Go).
-                //
-                // A gated field declares `std::optional<T>`, whose
-                // default must be the ABSENT state — initializing it
-                // with a value of `T` would make a fresh codec claim the
-                // field was on the wire.
-                if matches!(l.lang, crate::generator::Language::Cpp) && f.present_if.is_none() {
-                    obj.insert(
-                        "cpp_default_init".into(),
-                        format!("{{{}}}", l.enum_default_expr(&r.alias)).into(),
-                    );
-                }
                 obj.insert(
                     "enum_is_open".into(),
                     serde_json::Value::Bool(l.enum_import(&r.alias).is_open),
@@ -13642,18 +13628,8 @@ fn render_codec(
                         vle_decode_stmt(&l.codec_field_decode_local(&f.id), *width_bits, lang)
                             .into(),
                     );
-                    // VLE encode reads from the self-prefixed struct
-                    // member at the non-gated callsite; per-language
-                    // self/receiver shape via `codec_field_ref`.
-                    obj.insert(
-                        "vle_encode_block".into(),
-                        vle_encode_block(
-                            &l.codec_field_ref(&l.codec_field_id(&f.id)),
-                            *width_bits,
-                            lang,
-                        )
-                        .into(),
-                    );
+                    // A VLE's encode is the field's own encode block
+                    // (`present_if_encode_vle`), which no template reads apart.
                 } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
                     // RFC §synth-5-B B2 repeat primitive — populate the per-
                     // field decode/encode pre-rendered statements plus
@@ -13767,12 +13743,6 @@ fn render_codec(
                         m,
                         lang,
                     );
-                    refuse_template_list_of_entries_that_say(
-                        &repeat_thread,
-                        f,
-                        alias,
-                        cpp_printed.is_some(),
-                    )?;
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &repeat_thread.inputs))
                         .flatten();
@@ -13982,12 +13952,6 @@ fn render_codec(
                         lang,
                         |input| ChainEntryBinds::local_of(f, input),
                     );
-                    refuse_template_list_of_entries_that_say(
-                        &entry_thread,
-                        f,
-                        alias,
-                        cpp_printed.is_some(),
-                    )?;
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
                         .flatten();
@@ -14583,13 +14547,8 @@ fn render_codec(
                     let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
                     obj.insert("rs_flag_default_literal".into(), rs_literal.into());
                 }
-                // C++ default member initializer: `T id{0x02u};`. C++ has
-                // no Default trait — the equivalent of Rust's manual
-                // `impl Default` is a brace-enclosed init right on the
-                // field declaration. Suffix mirrors stdint typedef
-                // semantics (uint8_t accepts unsigned literals via the
-                // `u` suffix; widening occurs implicitly).
-                obj.insert("cpp_default_init".into(), cpp_flag_default_init(f).into());
+                // The C++ value is printed from its plan, which initializes
+                // the carrier's private member itself (`cpp_flag_default_init`).
                 // Kotlin default-value expression: emitted as the right-
                 // hand side of the data class primary constructor's
                 // `var id: UByte = …` default. UByte / UShort have no
@@ -15206,20 +15165,17 @@ fn render_codec(
         (String::new(), false)
     };
     // A value outside a field's bound is refused there too, on the backends
-    // whose containers hold any length (docs/adr/0077 §3). A C++ codec printed
+    // whose containers hold any length (docs/adr/0077 §3). A C++ value printed
     // from its plan presents each byte string through a type that holds its
-    // bound, so nothing is left to refuse (docs/adr/0081 step 4).
-    let (bound_lines, bound_failures) = if cpp_printed.is_some() {
-        (Vec::new(), Vec::new())
-    } else {
-        encode_bound_guard_lines(&m.fields, lang)
-    };
+    // bound, so nothing is left to refuse (docs/adr/0081 step 4), as a Rust
+    // value does not.
+    let (bound_lines, bound_failures) = encode_bound_guard_lines(&m.fields, lang);
     let indent = encode_body_indent(lang);
     for line in &bound_lines {
         present_if_encode_prologue.push_str(&format!("{indent}{line}\n"));
     }
-    // A printed C++ encode refuses what its plan's totality names, and
-    // nothing of the template's prologue, which it does not run.
+    // A printed C++ encode refuses what its plan's totality names; it runs no
+    // prologue of the template's.
     let encode_can_refuse = if cpp_printed.is_some() {
         cpp_printed_refuses
     } else {
@@ -15521,14 +15477,6 @@ fn render_codec(
                     "body_encode_args_with_leading_comma".into(),
                     body_encode_args_with_leading_comma.into(),
                 );
-                // C++: each input the arm says of itself, held against the
-                // flag the parent binds to it before the arm is written.
-                obj.insert(
-                    "body_said_checks".into(),
-                    arm_flag_bind_args
-                        .cpp_said_checks("*_p", "            ")
-                        .into(),
-                );
                 // RFC variant-default-uniformity: surface the
                 // `default="true"` marker so the Rust template can pick
                 // this arm as the Default-trait starting value. At most
@@ -15716,14 +15664,6 @@ fn render_codec(
                 obj.insert(
                     "body_encode_args_with_leading_comma".into(),
                     body_encode_args_with_leading_comma.into(),
-                );
-                // C++: each input the catch-all's body says of itself, held
-                // against the flag the parent binds to it.
-                obj.insert(
-                    "body_said_checks".into(),
-                    default_flag_bind_args
-                        .cpp_said_checks("_p->body", "            ")
-                        .into(),
                 );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
@@ -18509,6 +18449,14 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
     }
 }
 
+/// Why no helper that writes the template's encode of a field is handed C++:
+/// a C++ codec's encode is printed from its plan (docs/adr/0081 step 4,
+/// `cpp_source`), and `render_codec` asks no C++ codec for the template's
+/// encode blocks (`field_encode_blocks`), its encode expressions or its
+/// prologue. A helper handed C++ is a call site that let it through.
+const CPP_ENCODE_IS_PRINTED: &str =
+    "a C++ codec's encode is printed from its plan (docs/adr/0081 step 4)";
+
 /// RFC §synth-5-B B2 repeat primitive — pre-rendered streaming encode block
 /// for one repeat field. Iterates the host-language list and appends
 /// each element's encode() bytes onto the parent's `r` buffer.
@@ -18539,11 +18487,7 @@ fn repeat_streaming_encode_block(
     match lang {
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        Language::Cpp => format!(
-            "        for (const auto& _e : {id}) {{\n            \
-                 if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n        \
-             }}"
-        ),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         // Kotlin: `for (_e in this.<id>) { _e.encode(w)?.let { return it } }`.
         // Nested encode threads the parent sink — no intermediate
         // toList()/toByteArray splice. The `?.let { return it }` is
@@ -19033,31 +18977,7 @@ fn embed_streaming_encode_block(
                 )
             }
         }
-        Language::Cpp => {
-            // Embed encode now threads the parent sink through the
-            // nested codec — no intermediate vector splice (mirrors
-            // the Rust arm's `b.encode(w, ...)?` shape).
-            let comma_thread = if thread_arg_norm.is_empty() {
-                String::new()
-            } else {
-                format!(", {thread_arg_norm}")
-            };
-            // An input the body says of itself is held against the flag
-            // the parent binds to it before the body is written.
-            if !has_present_if {
-                format!(
-                    "{}        if (auto _e = {id}.encode(w{comma_thread}); _e) return _e;",
-                    thread.cpp_said_checks(id, "        ")
-                )
-            } else {
-                format!(
-                    "        if (this->{id}.has_value()) {{\n{}            \
-                     if (auto _e = this->{id}->encode(w{comma_thread}); _e) return _e;\n        \
-                 }}",
-                    thread.cpp_said_checks(&format!("*this->{id}"), "            ")
-                )
-            }
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             // Embed encode threads the parent sink through the nested
             // codec (no intermediate ByteArray splice).
@@ -19163,84 +19083,6 @@ struct EmbedThreadArgs {
     /// locals are gone (ADR 0049). The joined strings are what every other
     /// caller reads.
     inputs: Vec<ThreadInput>,
-    /// Each input a C++ codec printed from its plan says of its own value and
-    /// so is not handed on encode (docs/adr/0065 §6 R4a), with what the parent
-    /// would have handed it: a parent on the template's encode tests the two
-    /// agree, as the codec's own encode tested what it was handed before it was
-    /// printed. Empty for every other language.
-    said: Vec<SaidCheck>,
-}
-
-/// Refuses a C++ codec on the template's encode whose list holds entries of a
-/// printed codec that says an input of its own value: each entry would say it
-/// anew while the parent binds one value to it, and the template's walk holds
-/// no test of the two. A codec printed from its plan (`printed`) writes its
-/// lists itself and is not refused.
-fn refuse_template_list_of_entries_that_say(
-    thread: &EmbedThreadArgs,
-    field: &CodecField,
-    alias: &str,
-    printed: bool,
-) -> Result<(), ForgeError> {
-    match thread.said.first() {
-        Some(check) if !printed => Err(ForgeError::from(GenerateError::unsupported(format!(
-            "the list `{}` holds entries of `{alias}`, which says its input `{}` of its own \
-             value; a C++ codec on the template's encode cannot hold it against the flag it \
-             binds to it (docs/adr/0081 step 4)",
-            field.id, check.reader
-        )))),
-        _ => Ok(()),
-    }
-}
-
-/// An input a printed C++ codec says of its own value, which a parent on the
-/// template's encode holds against what it binds to the input.
-struct SaidCheck {
-    /// The namespace of the held codec, whose `input_<name>` reads the input
-    /// off any source of it.
-    namespace: String,
-    /// The input's name as the held codec's reader spells it.
-    reader: String,
-    /// What the parent binds to the input, as its encode body evaluates it.
-    handed: String,
-    /// The bits of the input.
-    mask: u64,
-    /// Whether the held codec says the input in some of its values only
-    /// (docs/adr/0065 §6 R4e), so that its `input_<name>` answers a
-    /// `std::optional`, empty where it says nothing of it: a value that says
-    /// nothing disagrees with no flag.
-    partial: bool,
-}
-
-impl EmbedThreadArgs {
-    /// The statements, each at `indent`, that refuse the encode with
-    /// `PresentIfMismatch` where an input the held codec `held` says of itself
-    /// is not what the parent binds to it: the parent's own flag and the held
-    /// value contradict each other, as a gated field and its flag do.
-    fn cpp_said_checks(&self, held: &str, indent: &str) -> String {
-        self.said
-            .iter()
-            .map(|check| {
-                if check.partial {
-                    format!(
-                        "{indent}if (const auto _s = {}::input_{}({held}); _s && ((*_s & 0x{mask:X}u) != ({} & 0x{mask:X}u))) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
-                        check.namespace,
-                        check.reader,
-                        check.handed,
-                        mask = check.mask
-                    )
-                } else {
-                    format!(
-                        "{indent}if (({}::input_{}({held}) & 0x{mask:X}u) != ({} & 0x{mask:X}u)) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
-                        check.namespace,
-                        check.reader,
-                        check.handed,
-                        mask = check.mask
-                    )
-                }
-            })
-            .collect()
-    }
 }
 
 /// One argument an entry's `decode` is handed (a `u8`: a flag input or the
@@ -19299,7 +19141,6 @@ fn embed_parent_flags_thread_args(
         decode_arg: format!("{}{}", flag_bind_args.decode_arg, caller_tag_decode_arg),
         encode_arg: flag_bind_args.encode_arg,
         inputs,
-        said: flag_bind_args.said,
     }
 }
 
@@ -19354,7 +19195,6 @@ fn embed_flag_bind_thread_args_supplying(
                 decode_arg: String::new(),
                 encode_arg: String::new(),
                 inputs: Vec::new(),
-                said: Vec::new(),
             }
         }
     };
@@ -19363,39 +19203,18 @@ fn embed_flag_bind_thread_args_supplying(
             decode_arg: String::new(),
             encode_arg: String::new(),
             inputs: Vec::new(),
-            said: Vec::new(),
         };
     }
     let mut decode_out = String::new();
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
-    let mut said: Vec<SaidCheck> = Vec::new();
     for input in &imp.codec_flag_inputs {
-        // A C++ codec printed from its plan is not handed, on encode, an input
-        // its value says (docs/adr/0065 §6 R4a): its encode reads it off the
-        // value. Its decode is handed every input. What the parent binds to it
-        // is kept, for a parent on the template's encode to hold it against
-        // what the value says.
-        let encode_hands = !(matches!(lang, Language::Cpp)
-            && imp.cpp_printed
-            && imp.codec_says_inputs.contains(&input.name));
-        let mut keep_said = |handed: &str| {
-            if !encode_hands {
-                said.push(SaidCheck {
-                    namespace: imp
-                        .member_type
-                        .rsplit_once("::")
-                        .map(|(namespace, _)| namespace.to_string())
-                        .expect("a generated C++ codec's class is named in its namespace"),
-                    reader: filters::to_snake_case(input.name.clone()),
-                    handed: handed.trim_start_matches(", ").to_string(),
-                    mask: (1u64 << input.width.clamp(1, 8)) - 1,
-                    partial: imp.codec_partly_says_inputs.contains(&input.name),
-                });
-            }
-        };
+        // A C++ codec is printed from its plan, and is not handed, on encode,
+        // an input its value says (docs/adr/0065 §6 R4a): its encode reads it
+        // off the value. Its decode is handed every input.
+        let encode_hands =
+            !(matches!(lang, Language::Cpp) && imp.codec_says_inputs.contains(&input.name));
         if let Some(arg) = supplied(&input.name) {
-            keep_said(&arg);
             // A Swift codec takes its inputs as labelled parameters, named as the leaf names them.
             let passed = match lang {
                 Language::Swift => format!("{}: {arg}", input.name),
@@ -19513,7 +19332,6 @@ fn embed_flag_bind_thread_args_supplying(
                 if encode_hands {
                     encode_out.push_str(&encode_arg);
                 }
-                keep_said(&encode_arg);
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: decode_arg.trim_start_matches(", ").to_string(),
@@ -19535,7 +19353,6 @@ fn embed_flag_bind_thread_args_supplying(
                 if encode_hands {
                     encode_out.push_str(&arg);
                 }
-                keep_said(&arg);
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: arg.trim_start_matches(", ").to_string(),
@@ -19548,7 +19365,6 @@ fn embed_flag_bind_thread_args_supplying(
         decode_arg: decode_out,
         encode_arg: encode_out,
         inputs,
-        said,
     }
 }
 
@@ -20186,13 +20002,7 @@ fn repeat_streaming_encode_block_gated(
     match lang {
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block_gated"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        Language::Cpp => format!(
-            "        if (this->{id}.has_value()) {{\n            \
-                 for (const auto& _e : *this->{id}) {{\n                \
-                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n            \
-                 }}\n        \
-             }}"
-        ),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
@@ -21135,23 +20945,14 @@ fn tlv_chain_streaming_encode_block(
                  }}"
             )
         }
-        // Cpp / Kotlin / Go / Python encode is identical to repeat: walk
-        // the host-language list and append each element's encoded bytes
-        // onto the parent's `r` buffer. Repeat already extends to all 6
-        // backends (item B2 closures); TLV chain encode mirrors that shape
-        // with no overflow check (encoder writes whatever the struct
-        // holds; the author keeps `len ≤ max_depth` via the host
-        // language's list length, mirroring the variant tag/body trust
-        // contract).
-        Language::Cpp => {
-            let decls = entry_binds.decls(lang, "        ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
-            format!(
-                "        {decls}for (const auto& _e : {id}) {{\n            \
-                     if (auto _se = _e.encode(w{encode_arg}); _se) return _se;{updates}\n        \
-                 }}"
-            )
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        // Kotlin / Go / Python encode is identical to repeat: walk the
+        // host-language list and append each element's encoded bytes onto
+        // the parent's `r` buffer. Repeat already extends to every backend
+        // (item B2 closures); TLV chain encode mirrors that shape with no
+        // overflow check (encoder writes whatever the struct holds; the
+        // author keeps `len ≤ max_depth` via the host language's list
+        // length, mirroring the variant tag/body trust contract).
         Language::Kotlin => {
             let decls = entry_binds.decls(lang, "        ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
@@ -21584,17 +21385,7 @@ fn tlv_chain_streaming_encode_block_gated(
     match lang {
         Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block_gated"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        Language::Cpp => {
-            let decls = entry_binds.decls(lang, "            ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
-            format!(
-                "        if (this->{id}.has_value()) {{\n            \
-                     {decls}for (const auto& _e : *this->{id}) {{\n                \
-                         if (auto _se = _e.encode(w{encode_arg}); _se) return _se;{updates}\n            \
-                     }}\n        \
-                 }}"
-            )
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             let decls = entry_binds.decls(lang, "            ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
@@ -21708,8 +21499,8 @@ fn rust_bit_extract(carrier: &str, bit: u32, mask_lit: &str, from_ty: &str, to_t
 
 /// The C++ default member initializer of a flags carrier whose flags declare
 /// values (`<sce:flag value=..>`): the OR of them, as a literal of the
-/// carrier's width (`{0x02u}`), which the template's public member and the
-/// plan printer's private one both take (RFC variant-default-uniformity).
+/// carrier's width (`{0x02u}`), which the plan printer's private member takes
+/// (RFC variant-default-uniformity).
 fn cpp_flag_default_init(field: &CodecField) -> String {
     let acc = flag_default_carrier_value(field);
     match field.sce_type.int_bit_width() {
@@ -23966,16 +23757,7 @@ fn present_if_encode_fixed(
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_fixed"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        (Language::Cpp, false) => streaming_fixed_field_encode_cpp(l, field, default_endian, n),
-        (Language::Cpp, true) => {
-            let inner = streaming_fixed_field_encode_cpp_from_local(l, field, default_endian, n);
-            format!(
-                "        if ({id}.has_value()) {{\n            \
-                     auto _v = *{id};\n\
-                 {inner}\
-                 \n        }}"
-            )
-        }
+        (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         (Language::Kotlin, false) => {
             streaming_fixed_field_encode_kotlin(l, field, default_endian, n)
         }
@@ -24049,14 +23831,7 @@ fn present_if_encode_tail(field: &CodecField, lang: crate::generator::Language) 
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_tail"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        (Language::Cpp, false) => {
-            format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
-        }
-        (Language::Cpp, true) => format!(
-            "        if ({id}.has_value()) {{\n            \
-                 if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
-             }}"
-        ),
+        (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         // Kotlin: writer-based emit threads the parent sink directly.
         (Language::Kotlin, false) => {
             format!("        w.writeBytes(this.{id})?.let {{ return it }}")
@@ -24134,26 +23909,7 @@ fn present_if_encode_string_length_ref(
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_string_length_ref"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        // Cpp `std::string::data()` returns `const char*`; reinterpret-
-        // cast to `const std::uint8_t*` is the textbook byte-aliasing
-        // pattern (allowed by [basic.lval]/11 — char and unsigned char
-        // alias any object representation). Avoids the narrowing-
-        // conversion warning that `r.insert(r.end(), str.begin(),
-        // str.end())` would emit on `char → uint8_t`.
-        (Language::Cpp, None) => format!(
-            "        if (auto _e = w.write_bytes(\n            \
-                 reinterpret_cast<const std::uint8_t*>({id}.data()), {id}.size()); _e) return _e;"
-        ),
-        // Gated String encode on Cpp:
-        // `std::optional<std::string>::has_value()` + arrow access on
-        // the optional yields `const std::string*`; reinterpret-cast
-        // through `->data()` keeps the same byte-aliasing pattern.
-        (Language::Cpp, Some(_)) => format!(
-            "        if ({id}.has_value()) {{\n            \
-                 if (auto _e = w.write_bytes(\n                \
-                     reinterpret_cast<const std::uint8_t*>({id}->data()), {id}->size()); _e) return _e;\n        \
-             }}"
-        ),
+        (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         // Kotlin `String.toByteArray(charset)` is the standard library
         // call for charset-encoded byte serialization; UTF-8 is total
         // on String (Kotlin's String is UTF-16 internally but
@@ -24271,14 +24027,7 @@ fn present_if_encode_length_ref(
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_length_ref"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        (Language::Cpp, false) => {
-            format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
-        }
-        (Language::Cpp, true) => format!(
-            "        if ({id}.has_value()) {{\n            \
-                 if (auto _e = w.write_bytes({id}->data(), {id}->size()); _e) return _e;\n        \
-             }}"
-        ),
+        (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         (Language::Kotlin, false) => {
             format!("        w.writeBytes(this.{id})?.let {{ return it }}")
         }
@@ -24384,9 +24133,10 @@ fn present_if_encode_vle(
             Language::C11 => {
                 format!("self->{}", filters::to_snake_case(id.to_string()))
             }
-            // Cpp / Kotlin: encode lives inside a member function so
-            // member access resolves implicitly without a prefix.
-            Language::Cpp | Language::Kotlin => id.to_string(),
+            // Kotlin: encode lives inside a member function so member
+            // access resolves implicitly without a prefix.
+            Language::Kotlin => id.to_string(),
+            Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
             Language::Swift => no_swift_emitter("present_if_encode_vle"),
         };
         return vle_encode_block(&value_expr, width_bits, lang);
@@ -24394,15 +24144,7 @@ fn present_if_encode_vle(
     match lang {
         Language::Swift => no_swift_emitter("present_if_encode_vle"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        Language::Cpp => {
-            let inner = vle_encode_block("_v", width_bits, lang);
-            format!(
-                "        if ({id}.has_value()) {{\n            \
-                     auto _v = *{id};\n\
-                 {inner}\n        \
-                 }}"
-            )
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             let inner = vle_encode_block("_v", width_bits, lang);
             format!(
@@ -24536,13 +24278,7 @@ fn encode_multibyte_unified(
                             format!("({value_ref} >> {shift} & 0xFF) as u8")
                         }
                     }
-                    Language::Cpp => {
-                        if shift == 0 {
-                            format!("static_cast<uint8_t>({value_ref} & 0xFF)")
-                        } else {
-                            format!("static_cast<uint8_t>(({value_ref} >> {shift}) & 0xFF)")
-                        }
-                    }
+                    Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
                     Language::Go => {
                         if shift == 0 {
                             format!("byte({value_ref} & 0xFF)")
@@ -24588,51 +24324,6 @@ fn encode_multibyte_unified(
         Endian::Big | Endian::Native => make(false),
         Endian::Little => make(true),
     }
-}
-
-/// Cpp encode counterpart — non-gated. Delegates the byte-extraction to the
-/// encode SSOT ([`encode_multibyte_unified`]); the cast spelling (bare
-/// `uint8_t`) and `& 0xFF` mask match both the positional path and the
-/// decode fold, which also emit bare `uint16_t`/`uint32_t`.
-fn streaming_fixed_field_encode_cpp(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    let id = field.id.as_str();
-    let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, id);
-    if n == 1 {
-        // Single-byte uint8 carrier: no narrowing cast needed; the value
-        // already fits write_u8's parameter type. Keeps the parent-tag
-        // injection needle simple (`w.write_u8({id})`).
-        return format!("        if (auto _e = w.write_u8({source}); _e) return _e;");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Cpp)
-        .into_iter()
-        .map(|e| format!("        if (auto _e = w.write_u8({e}); _e) return _e;"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Cpp encode counterpart — gated, reads from `_v` local.
-fn streaming_fixed_field_encode_cpp_from_local(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, "_v");
-    if n == 1 {
-        return format!("            if (auto _e = w.write_u8({source}); _e) return _e;");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Cpp)
-        .into_iter()
-        .map(|e| format!("            if (auto _e = w.write_u8({e}); _e) return _e;"))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Kotlin encode counterpart — non-gated. Reads `this.<id>` and appends `n`
@@ -25697,7 +25388,7 @@ fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) ->
             format!("self.{id}.is_some()"),
             format!("self.{id}.is_none()"),
         ),
-        Language::Cpp => (format!("{id}.has_value()"), format!("!{id}.has_value()")),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => (format!("this.{id} != null"), format!("this.{id} == null")),
         Language::Go => (
             format!("s.{id}.IsPresent()"),
@@ -25736,11 +25427,12 @@ fn present_if_mismatch_check(
             format!("    {refuse}"),
             "}".to_string(),
         ],
-        Language::Cpp | Language::Kotlin => vec![
+        Language::Kotlin => vec![
             format!("if ({test}) {{"),
             format!("    if ({absent}) {refuse}"),
             format!("}} else if ({given}) {refuse}"),
         ],
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Go => vec![
             format!("if {test} {{"),
             format!("\tif {absent} {{"),
@@ -25772,7 +25464,7 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
     use crate::generator::Language;
     match lang {
         Language::Rust => "return Err(CodecError::PresentIfMismatch);".to_string(),
-        Language::Cpp => "return ::SCE::Forge::CodecError::PresentIfMismatch;".to_string(),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => "return CodecError.PresentIfMismatch".to_string(),
         Language::Go => "return codec.ErrPresentIfMismatch".to_string(),
         Language::Python => format!("raise PresentIfMismatch(\"{field_id}\")"),
@@ -25853,7 +25545,7 @@ fn present_if_chain_encode_prologue(
     (text, true)
 }
 
-/// The refusals at the top of a C++, Kotlin, Go, Python or Swift encode of a value
+/// The refusals at the top of a Kotlin, Go, Python or Swift encode of a value
 /// whose byte string, text, list or chain lies outside its bound, each before
 /// the first byte is written (docs/adr/0077 §3), and the failures they raise.
 ///
@@ -25861,9 +25553,11 @@ fn present_if_chain_encode_prologue(
 /// `ByteArray`, a slice, `bytes`), so the bound is checked where the value is
 /// encoded, with the error a decode of the frame gives. A text is measured in
 /// the UTF-8 bytes the wire carries. A gated field is checked where it is
-/// present. Rust holds the bound in the field's type and refuses nothing here;
-/// C11 holds the value in an array of the bound and checks its length beside
-/// it (`c_over_bound_cond`).
+/// present. Rust holds the bound in the field's type and refuses nothing here,
+/// and so does C++, whose value, printed from its plan, presents each element
+/// through a type that holds its bound (docs/adr/0081 step 4); C11 holds the
+/// value in an array of the bound and checks its length beside it
+/// (`c_over_bound_cond`).
 fn encode_bound_guard_lines(
     fields: &[CodecField],
     lang: crate::generator::Language,
@@ -25873,7 +25567,7 @@ fn encode_bound_guard_lines(
     use crate::generator::Language;
     if !matches!(
         lang,
-        Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::Swift
+        Language::Kotlin | Language::Go | Language::Python | Language::Swift
     ) {
         return (Vec::new(), Vec::new());
     }
@@ -25919,7 +25613,6 @@ fn encode_bound_guard_lines(
         };
         // The size of the value `v`, in what the wire counts.
         let size = |v: &str| match lang {
-            Language::Cpp => format!("{v}.size()"),
             Language::Kotlin if text => format!("{v}.encodeToByteArray().size"),
             Language::Kotlin => format!("{v}.size"),
             Language::Go => format!("len({v})"),
@@ -25928,7 +25621,7 @@ fn encode_bound_guard_lines(
             // A text is measured in the UTF-8 bytes the wire carries.
             Language::Swift if text => format!("{v}.utf8.count"),
             Language::Swift => format!("{v}.count"),
-            Language::Rust | Language::C11 => bound_held_elsewhere(lang),
+            Language::Rust | Language::Cpp | Language::C11 => bound_held_elsewhere(lang),
         };
         // A Kotlin size is an `Int`, which no larger bound can be passed by.
         let most = most.filter(|most| !(lang == Language::Kotlin && *most > i32::MAX as u64));
@@ -25944,10 +25637,6 @@ fn encode_bound_guard_lines(
         };
         let gated = field.present_if.is_some();
         let condition = match (lang, gated) {
-            (Language::Cpp, false) => outside(&id),
-            (Language::Cpp, true) => {
-                format!("{id}.has_value() && ({})", outside(&format!("(*{id})")))
-            }
             (Language::Kotlin, false) => outside(&format!("this.{id}")),
             (Language::Kotlin, true) => outside("it"),
             (Language::Go, false) => outside(&format!("s.{id}")),
@@ -25967,13 +25656,12 @@ fn encode_bound_guard_lines(
             // A gated field is an optional, bound to `value` where it is given.
             (Language::Swift, false) => outside(&format!("self.{id}")),
             (Language::Swift, true) => format!("let value = self.{id}, {}", outside("value")),
-            (Language::Rust | Language::C11, _) => bound_held_elsewhere(lang),
+            (Language::Rust | Language::Cpp | Language::C11, _) => bound_held_elsewhere(lang),
         };
         if outside("v").is_empty() {
             continue;
         }
         match lang {
-            Language::Cpp => lines.push(format!("if ({condition}) {refuse}")),
             Language::Kotlin if gated => {
                 lines.push(format!("this.{id}?.let {{ if ({condition}) {refuse} }}"))
             }
@@ -25992,7 +25680,7 @@ fn encode_bound_guard_lines(
                 lines.push(format!("    {refuse}"));
                 lines.push("}".to_string());
             }
-            Language::Rust | Language::C11 => bound_held_elsewhere(lang),
+            Language::Rust | Language::Cpp | Language::C11 => bound_held_elsewhere(lang),
         }
     }
     (lines, failures)
@@ -26107,9 +25795,7 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
     use crate::generator::Language;
     match lang {
         Language::Rust => format!("        w.write_vle_u{width_bits}({value_expr})?;"),
-        Language::Cpp => format!(
-            "        if (auto _e = w.write_vle_u{width_bits}(static_cast<std::uint{width_bits}_t>({value_expr})); _e) return _e;"
-        ),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::C11 => format!(
             "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u{width_bits}(w, (uint{width_bits}_t)({value_expr})));"
         ),
@@ -26721,20 +26407,11 @@ fn parent_tag_derivation_local_for_carrier(
     use crate::generator::Language;
     let carrier_snake = filters::to_snake_case(carrier.to_string());
     let carrier_pascal = filters::to_pascal_case(carrier.to_string());
-    let local_rust = format!("_derived_{carrier_snake}");
+    let local_snake = format!("_derived_{carrier_snake}");
     let local_camel = format!("_derived{carrier_pascal}");
     match lang {
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
-        Language::Cpp => {
-            let terms: Vec<String> = items
-                .iter()
-                .map(|d| parent_tag_match_term_cpp(d, imports))
-                .collect();
-            let joined = terms.join(" | ");
-            format!(
-                "        const std::uint8_t {local_rust} = static_cast<std::uint8_t>({joined});\n"
-            )
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             let terms: Vec<String> = items
                 .iter()
@@ -26762,20 +26439,15 @@ fn parent_tag_derivation_local_for_carrier(
                 .map(|d| parent_tag_match_term_python(d, imports))
                 .collect();
             let joined = terms.join(" | ");
-            format!("        _derived_{carrier_snake} = {joined}\n")
+            format!("        {local_snake} = {joined}\n")
         }
         Language::C11 => {
             // C11 has no expression-form switch; emit a switch per embed
             // that ORs into a pre-declared local. uint8_t carrier per
             // v1 rpf lock-in.
-            let mut block = format!("    uint8_t _derived_{carrier_snake} = 0u;\n");
+            let mut block = format!("    uint8_t {local_snake} = 0u;\n");
             for d in items {
-                block.push_str(&parent_tag_switch_block_c11(
-                    d,
-                    &format!("_derived_{carrier_snake}"),
-                    m,
-                    imports,
-                ));
+                block.push_str(&parent_tag_switch_block_c11(d, &local_snake, m, imports));
             }
             block
         }
@@ -26801,142 +26473,6 @@ fn parent_tag_embed_import<'a>(
     imports.iter().find(|i| i.alias == d.embed_alias).expect(
         "parent-tag embed alias must resolve in parent imports (cross-doc validator guarantees)",
     )
-}
-
-/// Single-embed match-expression term for Cpp. Uses std::variant
-/// alternative index dispatch via a chained ternary so the result
-/// type is `std::uint8_t` without needing `std::visit` or overloaded
-/// helpers. Optional embeds add a `has_value()` gate; absent → 0. An
-/// embedded variant with an arm under a build feature is written by
-/// `parent_tag_gated_chain_cpp`, whose indices hold in every build. A
-/// catch-all body is found by its wrapper's type, ahead of every arm, and
-/// fills the carrier with the tag it holds (ADR 0058).
-fn parent_tag_match_term_cpp(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
-    // The import lookup ensures the embed alias resolves (parity with the
-    // other backends); an arm is dispatched by `.index()`, so only the
-    // catch-all's wrapper spells the dispatcher's type.
-    let import = parent_tag_embed_import(d, imports);
-    let snake = filters::to_snake_case(d.embed_field_id.clone());
-    let mask: u64 = (1u64 << d.width) - 1;
-    // A variant printed from its plan holds its arm privately and presents
-    // it through `body()` (docs/adr/0081 step 4).
-    let member = if import.cpp_printed { "body()" } else { "body" };
-    let body = if d.present_if.is_some() {
-        format!("(*{snake}).{member}")
-    } else {
-        format!("{snake}.{member}")
-    };
-    let body_access = format!("{body}.index()");
-    let catch_all = d.catch_all.then(|| {
-        // The catch-all's wrapper is `<Struct>Default` in the dispatcher's
-        // namespace (`forge/cpp/codec.h.jinja2`), next to its `<Struct>`.
-        let wrapper = format!("{}Default", import.member_type);
-        format!(
-            "std::get_if<{wrapper}>(&{body}) != nullptr ? \
-             static_cast<std::uint8_t>((std::get_if<{wrapper}>(&{body})->tag & 0x{mask:X}u) << {})",
-            d.bit
-        )
-    });
-    let chain = if d.arms.iter().any(|arm| arm.feature.is_some()) {
-        parent_tag_gated_chain_cpp(d, &body_access, catch_all.as_deref(), mask)
-    } else {
-        parent_tag_chain_cpp(d, &body_access, catch_all.as_deref(), mask)
-    };
-    if d.present_if.is_some() {
-        format!("({snake}.has_value() ? ({chain}) : static_cast<std::uint8_t>(0))")
-    } else {
-        // Wrap once so the outer `... | ...` chain in
-        // `parent_tag_derivation_local_for_carrier` composes without
-        // surprise precedence.
-        format!("({chain})")
-    }
-}
-
-/// The chained ternary of `parent_tag_match_term_cpp` over an embedded
-/// variant every build holds each arm of: the catch-all's term first where
-/// the variant has one, then arm `i` is the alternative at index `i`, and the
-/// last arm is the fallthrough.
-fn parent_tag_chain_cpp(
-    d: &ParentTagDerivation,
-    body_access: &str,
-    catch_all: Option<&str>,
-    mask: u64,
-) -> String {
-    let mut chain = String::new();
-    if let Some(term) = catch_all {
-        chain.push_str(&format!("{term} : "));
-    }
-    for (idx, arm) in d.arms.iter().enumerate() {
-        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
-        let literal = format!("static_cast<std::uint8_t>(0x{shifted:02X})");
-        if idx + 1 == d.arms.len() {
-            // Final arm is the fallthrough — saves one comparison.
-            chain.push_str(&literal);
-        } else {
-            chain.push_str(&format!("{body_access} == {idx} ? {literal} : "));
-        }
-    }
-    chain
-}
-
-/// The chained ternary of `parent_tag_match_term_cpp` over an embedded
-/// variant with an arm under a build feature (docs/adr/0072). The embedded
-/// header leaves such an arm's alternative out where the feature's macro is 0,
-/// so the term the arm adds is compiled under the same macro, and the index of
-/// every alternative after it is counted per build: the arms before it every
-/// build holds, plus `(SCE_FEATURE_<NAME> ? 1 : 0)` for each one before it
-/// under a feature. The catch-all's term, which names its wrapper by type, is
-/// first where the variant has one. The fallthrough is the last arm every
-/// build holds, so it is the same arm in every build, and the last arm, as in
-/// a variant without a gated arm, when that one is held by every build; it is
-/// 0 when every arm is under a feature.
-fn parent_tag_gated_chain_cpp(
-    d: &ParentTagDerivation,
-    body_access: &str,
-    catch_all: Option<&str>,
-    mask: u64,
-) -> String {
-    let literal_of = |arm: &InvertedArm| {
-        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
-        format!("static_cast<std::uint8_t>(0x{shifted:02X})")
-    };
-    let fallthrough = d.arms.iter().rposition(|arm| arm.feature.is_none());
-    let mut chain = String::from("\n");
-    if let Some(term) = catch_all {
-        chain.push_str(&format!("            {term} :\n"));
-    }
-    let mut held_before = 0usize;
-    let mut gated_before: Vec<String> = Vec::new();
-    for (idx, arm) in d.arms.iter().enumerate() {
-        let feature_macro = arm.feature.as_deref().map(c_feature_macro);
-        if Some(idx) != fallthrough {
-            let mut index = format!("static_cast<std::size_t>({held_before}");
-            for name in &gated_before {
-                index.push_str(&format!(" + ({name} ? 1 : 0)"));
-            }
-            index.push(')');
-            if let Some(name) = &feature_macro {
-                chain.push_str(&format!("#if {name}\n"));
-            }
-            chain.push_str(&format!(
-                "            {body_access} == {index} ? {} :\n",
-                literal_of(arm)
-            ));
-            if feature_macro.is_some() {
-                chain.push_str("#endif\n");
-            }
-        }
-        match feature_macro {
-            Some(name) => gated_before.push(name),
-            None => held_before += 1,
-        }
-    }
-    let last = fallthrough.map_or_else(
-        || "static_cast<std::uint8_t>(0)".to_string(),
-        |idx| literal_of(&d.arms[idx]),
-    );
-    chain.push_str(&format!("            {last}"));
-    chain
 }
 
 /// Single-embed match-expression term for Kotlin. Uses `when` over the
@@ -27204,7 +26740,8 @@ fn parent_tag_carrier_value(
         Language::Rust | Language::Python | Language::Go => {
             format!("({stored} & 0x{keep:02X}) | {local}")
         }
-        Language::Cpp | Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),
+        Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => format!("(({stored} and 0x{keep:02X}u.toUByte()) or {local})"),
         Language::Swift => no_swift_emitter("parent_tag_carrier_value"),
     }
@@ -27235,17 +26772,7 @@ fn inject_parent_tag_carrier_suffix(
             let value = parent_tag_carrier_value(&stored, carrier, lang);
             block.replace(&needle, &format!("w.write_u8({value})?;"))
         }
-        Language::Cpp => {
-            // Sink-based emit: `w.write_u8(<id>);` → `w.write_u8(<value>);`.
-            // The Cpp uint8 carrier path emits the bare identifier
-            // (no narrowing cast — see `streaming_fixed_field_encode_cpp`
-            // n=1 branch). parent-tag derivation v1 lock-in only targets uint8
-            // carriers, so the single-byte form is the only relevant
-            // needle.
-            let needle = format!("w.write_u8({field_id});");
-            let value = parent_tag_carrier_value(field_id, carrier, lang);
-            block.replace(&needle, &format!("w.write_u8({value});"))
-        }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             // Sink-based emit: `w.writeU8(this.<id>.toByte())` → `w.writeU8(<value>.toByte())`.
             let stored = format!("this.{field_id}");
@@ -27324,9 +26851,10 @@ fn parent_tag_apply_simple_path_suffix(
             Some(stem) => format!("{}.toByte()", parent_tag_carrier_value(stem, carrier, lang)),
             None => parent_tag_carrier_value(expr, carrier, lang),
         },
-        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
+        Language::Rust | Language::Go | Language::Python | Language::C11 => {
             parent_tag_carrier_value(expr, carrier, lang)
         }
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Swift => no_swift_emitter("parent_tag_apply_simple_path_suffix"),
     }
 }
@@ -27412,7 +26940,7 @@ fn encode_byte_unified(pieces: &[(&CodecField, Piece)], l: &LangCtx) -> String {
                         (false, to) => format!("(({bits}) << {to})"),
                     }
                 }
-                Language::Cpp | Language::C11 => {
+                Language::C11 => {
                     let bits = format!("({} & 0x{mask:02X}) << {to}", down(&field_ref));
                     if one {
                         bits
@@ -27420,6 +26948,7 @@ fn encode_byte_unified(pieces: &[(&CodecField, Piece)], l: &LangCtx) -> String {
                         format!("({bits})")
                     }
                 }
+                Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
                 // Go joins only operands of one type, so a piece of a wider
                 // field is narrowed to a byte before it moves.
                 Language::Go if carrier_bits != Some(8) => {
@@ -27437,7 +26966,8 @@ fn encode_byte_unified(pieces: &[(&CodecField, Piece)], l: &LangCtx) -> String {
     }
     let sep = match lang {
         Language::Kotlin => " or ",
-        Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => " | ",
+        Language::Rust | Language::Go | Language::Python | Language::C11 => " | ",
+        Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Swift => no_swift_emitter("encode_byte_unified"),
     };
     l.codec_to_byte(&parts.join(sep))
@@ -27462,7 +26992,7 @@ fn encode_single_field_unified(
     match span.bytes {
         1 => {
             match lang {
-                Language::Cpp => exprs.push(field_ref),
+                Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
                 Language::Kotlin => exprs.push(format!("{field_ref}.toByte()")),
                 Language::Rust => exprs.push(field_ref),
                 Language::Go => exprs.push(format!("byte({field_ref})")),

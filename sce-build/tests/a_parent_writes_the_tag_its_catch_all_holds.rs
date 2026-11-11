@@ -28,9 +28,6 @@ use std::process::Command;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
-/// The catch-all's wrapper the C++ dispatcher declares next to its struct.
-const CPP_WRAPPER: &str = "::SCE::Generated::CaChild::CaChildDefault";
-
 /// The module the Go codecs are generated into, and the run test's
 /// `go.mod` declares.
 const GO_MODULE: &str = "example.com/sce-catch-all";
@@ -162,12 +159,13 @@ fn parent_code(gated: bool, language: Language) -> String {
         .unwrap_or_else(|| panic!("the parent's file for {language:?}"))
 }
 
-/// The C++ term of the catch-all: its wrapper, found by type, fills `K` with
-/// the tag it holds.
-fn cpp_catch_all_term() -> String {
+/// The C++ case of the catch-all, the alternative at `index` of the embedded
+/// body's variant: the wrapper there fills `K` with the tag it holds, masked to
+/// the flag's two bits (docs/adr/0081 step 4, the printed parent tag).
+fn cpp_catch_all_case(index: &str) -> String {
     format!(
-        "std::get_if<{CPP_WRAPPER}>(&key.body) != nullptr ? \
-         static_cast<std::uint8_t>((std::get_if<{CPP_WRAPPER}>(&key.body)->tag & 0x3u) << 5)"
+        "                case {index}: _p_header_k |= static_cast<std::uint64_t>(\
+         std::get_if<{index}>(&_v)->tag) & 0x3ull; break;\n"
     )
 }
 
@@ -216,16 +214,16 @@ fn the_c_parent_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// The C++ parent tests for the catch-all's wrapper ahead of the arms, whose
-/// last one is the fallthrough the wrapper reached before.
+/// The C++ parent, printed from its plan, switches on the alternative the
+/// embedded body holds: each arm fills `K` with its own tag, and the catch-all,
+/// the last alternative, with the tag it holds.
 #[test]
 fn the_cpp_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::Cpp);
     let derived = format!(
-        "        const std::uint8_t _derived_header = static_cast<std::uint8_t>(({} : \
-         key.body.index() == 0 ? static_cast<std::uint8_t>(0x00) : \
-         static_cast<std::uint8_t>(0x20)));\n",
-        cpp_catch_all_term()
+        "                case 0: _p_header_k |= 0x0ull; break;\n\
+         \x20               case 1: _p_header_k |= 0x1ull; break;\n{}",
+        cpp_catch_all_case("2")
     );
     assert_holds(
         &code,
@@ -234,22 +232,19 @@ fn the_cpp_parent_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// Over a variant with an arm under a build feature (docs/adr/0072) the
-/// catch-all's term is first, outside every guard, and the arms after it count
-/// their index per build as before.
+/// Over a variant with an arm under a build feature (docs/adr/0072) the gated
+/// arm's case is inside its guard, and the alternatives after it, the
+/// catch-all's among them, count their index per build, outside every guard.
 #[test]
 fn the_cpp_parent_of_a_gated_variant_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(true, Language::Cpp);
-    let derived = [
-        "        const std::uint8_t _derived_header = static_cast<std::uint8_t>((".to_string(),
-        format!("            {} :", cpp_catch_all_term()),
-        "#if SCE_FEATURE_LOCAL_ARM".to_string(),
-        "            key.body.index() == static_cast<std::size_t>(0) ? static_cast<std::uint8_t>(0x00) :"
-            .to_string(),
-        "#endif".to_string(),
-        "            static_cast<std::uint8_t>(0x20)));".to_string(),
-    ]
-    .join("\n");
+    let derived = format!(
+        "#if SCE_FEATURE_LOCAL_ARM\n\
+         \x20               case 0: _p_header_k |= 0x0ull; break;\n\
+         #endif\n\
+         \x20               case (0 + SCE_FEATURE_LOCAL_ARM): _p_header_k |= 0x1ull; break;\n{}",
+        cpp_catch_all_case("(1 + SCE_FEATURE_LOCAL_ARM)")
+    );
     assert_holds(
         &code,
         &derived,
@@ -332,7 +327,7 @@ fn the_cpp_parent_writes_k_from_the_body_alone() {
     let code = parent_code(false, Language::Cpp);
     assert_holds(
         &code,
-        "w.write_u8((header & 0x9Fu) | _derived_header);",
+        "_f_header = (_f_header & ~0x60ull) | (_p_header_k << 5);",
         "the C++ parent writes the stored K bits with the derived ones",
     );
 }
@@ -518,8 +513,10 @@ int fail(const char* what) {
     return 1;
 }
 
-// Decode `frame`, store `stale` as its header, and encode: the bytes must be
-// the frame's.
+// Decode `frame`, make the value again with `stale` as its header, and encode:
+// the bytes must be the frame's. The value is printed from its plan
+// (docs/adr/0081 step 4), so it is made by its constructor and read by its
+// accessors.
 std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8_t stale, int& failed) {
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     std::optional<Parent> decoded = Parent::decode(cursor);
@@ -527,10 +524,10 @@ std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8
         failed |= fail("the frame must decode");
         return decoded;
     }
-    decoded->header = stale;
+    const Parent restated(stale, decoded->key());
     std::vector<std::uint8_t> written;
     ::SCE::Forge::VectorSink sink(written);
-    if (decoded->encode(sink).has_value()) {
+    if (restated.encode(sink).has_value()) {
         failed |= fail("the decoded value must encode");
     } else if (written != frame) {
         failed |= fail("the encode must write K from the body");
@@ -543,13 +540,13 @@ std::optional<Parent> rewrite(const std::vector<std::uint8_t>& frame, std::uint8
 int main() {
     int failed = 0;
     const std::optional<Parent> held = rewrite({0x5d, 0x07}, 0x3d, failed);
-    const CatchAll* catch_all = held.has_value() ? std::get_if<CatchAll>(&held->key.body) : nullptr;
-    if (catch_all == nullptr || catch_all->tag != 2 || catch_all->body.payload != 0x07) {
+    const CatchAll* catch_all = held.has_value() ? std::get_if<CatchAll>(&held->key().body()) : nullptr;
+    if (catch_all == nullptr || catch_all->tag != 2 || catch_all->body.payload() != 0x07) {
         failed |= fail("tag 2 must reach the catch-all, which keeps it");
     }
     const std::optional<Parent> named = rewrite({0x3d, 0x12, 0x34}, 0x5d, failed);
-    const Wide* wide = named.has_value() ? std::get_if<Wide>(&named->key.body) : nullptr;
-    if (wide == nullptr || wide->payload != 0x1234) {
+    const Wide* wide = named.has_value() ? std::get_if<Wide>(&named->key().body()) : nullptr;
+    if (wide == nullptr || wide->payload() != 0x1234) {
         failed |= fail("tag 1 must reach the two-byte arm");
     }
     return failed;

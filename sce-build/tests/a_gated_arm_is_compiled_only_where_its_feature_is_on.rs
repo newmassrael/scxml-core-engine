@@ -469,22 +469,61 @@ const CPP_PUT: &str = "::SCE::Generated::CodecZenohMsgPut::CodecZenohMsgPut";
 const CPP_DEL: &str = "::SCE::Generated::CodecZenohMsgDel::CodecZenohMsgDel";
 const CPP_QUERY: &str = "::SCE::Generated::CodecZenohQuery::CodecZenohQuery";
 
-/// Whether `code` names a `std::variant` alternative by a fixed index: an
-/// `in_place_index`, or `.index() == ` followed by a number. Where an
-/// alternative before it is under a feature, that number is the alternative's
-/// index only in the build where the feature is on.
+/// Whether `code` names a `std::variant` alternative past the first by a fixed
+/// index: an `in_place_index`, a `get_if` or `.index() == ` followed by a
+/// number other than 0. Where an alternative before it is under a feature,
+/// that number is the alternative's index only in the build where the feature
+/// is on; the first alternative is at 0 in every build that holds it, and an
+/// alternative after a gated one is named by its index counted per build
+/// (`(0 + SCE_FEATURE_<NAME>)`).
 fn names_an_alternative_by_a_fixed_index(code: &str) -> bool {
-    code.contains("in_place_index")
-        || code
-            .match_indices(".index() == ")
-            .any(|(at, needle)| code[at + needle.len()..].starts_with(|c: char| c.is_ascii_digit()))
+    [
+        "in_place_index<",
+        "in_place_index_t<",
+        "std::get_if<",
+        ".index() == ",
+    ]
+    .iter()
+    .any(|needle| {
+        code.match_indices(needle).any(|(at, found)| {
+            code[at + found.len()..].starts_with(|c: char| c.is_ascii_digit() && c != '0')
+        })
+    })
+}
+
+/// Whether each line of `code` that names one of `arms` sits inside a guard of
+/// `guard` (`#if SCE_FEATURE_<NAME>`) where the macro is on, its `#else`
+/// branch left out, an `#include` aside: the header includes every arm's
+/// codec, which declares nothing of the variant.
+fn named_only_inside(code: &str, guard: &str, arms: &[&str]) -> bool {
+    // Each open conditional, and whether it is `guard` on its first branch.
+    let mut open: Vec<bool> = Vec::new();
+    for line in code.lines() {
+        let t = line.trim();
+        if t.starts_with("#if") {
+            open.push(t == guard);
+        } else if t == "#else" {
+            if let Some(top) = open.last_mut() {
+                *top = false;
+            }
+        } else if t == "#endif" {
+            open.pop();
+        } else if !t.starts_with("#include")
+            && arms.iter().any(|arm| t.contains(arm))
+            && !open.contains(&true)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 /// Every item of the C++ codec that names the put or the delete arm sits
 /// inside `#if SCE_FEATURE_REQUEST_PUT_DEL`, which the header defines to 1
 /// before its first use unless the build defined it: the arm's alternative of
-/// the `std::variant`, its decode case and its encode branch. The query arm's
-/// items do not.
+/// the `std::variant`, its decode case, and each line the printed value names
+/// it on (its traits, its tag and its encode, docs/adr/0081 step 4). The query
+/// arm's items do not.
 #[test]
 fn every_cpp_item_of_a_gated_arm_is_inside_its_macro() {
     let code = generate(Language::Cpp, &ForgeCompileOptions::default());
@@ -521,55 +560,39 @@ fn every_cpp_item_of_a_gated_arm_is_inside_its_macro() {
         "the variant's alternatives are not the gated list:\n{code}"
     );
 
+    // Each gated arm is named only inside the guard, where the macro is on.
+    assert!(
+        named_only_inside(&code, CPP_GUARD, &GATED),
+        "a gated arm is named outside `{CPP_GUARD}`:\n{code}"
+    );
+    // The query arm, which every build holds, is named outside every guard of
+    // the gated arms: its alternative, its decode case and what the printed
+    // value names it by.
     let lines: Vec<&str> = code.lines().collect();
-    let gated_item = |line: &str| {
+    let mut inside = false;
+    let mut query_outside = 0usize;
+    for line in &lines {
         let t = line.trim();
-        t.contains("CodecZenohMsgPut")
-            || t.contains("CodecZenohMsgDel")
-            || t == "case 1: {"
-            || t == "case 2: {"
-    };
-    // The alternative, the decode case and the encode branch of each of the
-    // two arms.
-    let guards: Vec<usize> = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| l.trim() == CPP_GUARD)
-        .map(|(at, _)| at)
-        .collect();
-    assert_eq!(guards.len(), 6, "three items of each gated arm:\n{code}");
-    for at in guards {
-        assert!(
-            gated_item(lines[at + 1]),
-            "`{CPP_GUARD}` stands in front of something every build holds:\n{}",
-            lines[at + 1]
-        );
-        let close = lines[at + 1..]
-            .iter()
-            .position(|l| matches!(l.trim(), "#endif" | "#else"))
-            .expect("the guard is closed");
-        assert!(
-            lines[at + 1..at + 1 + close]
-                .iter()
-                .all(|l| !l.contains("CodecZenohQuery")),
-            "the query arm is inside the gated arm's guard"
-        );
-    }
-    let query_alternative = format!("{CPP_QUERY},");
-    let query_encode = format!("if (auto _p = std::get_if<{CPP_QUERY}>");
-    let mut query_items = 0usize;
-    for (at, line) in lines.iter().enumerate() {
-        let t = line.trim();
-        if t == query_alternative || t == "case 3: {" || t.starts_with(query_encode.as_str()) {
-            query_items += 1;
-            assert_ne!(
-                lines[at - 1].trim(),
-                CPP_GUARD,
+        if t == CPP_GUARD {
+            inside = true;
+        } else if inside && matches!(t, "#endif" | "#else") {
+            inside = false;
+        } else if t.contains(UNGATED) && !t.starts_with("#include") {
+            assert!(
+                !inside,
                 "the query arm, which every build holds, is guarded:\n{t}"
             );
+            query_outside += 1;
         }
     }
-    assert_eq!(query_items, 3, "the query's alternative, case and encode");
+    assert!(
+        lines.iter().any(|l| l.trim() == "case 3: {"),
+        "the query's decode case is not written:\n{code}"
+    );
+    assert!(
+        query_outside >= 2,
+        "the query's alternative and decode are named outside the guard:\n{code}"
+    );
 }
 
 /// In a C++ build without the feature, the decode's case for each gated arm's
@@ -600,17 +623,19 @@ fn a_cpp_build_without_the_feature_refuses_the_gated_arms_tag() {
     );
 }
 
-/// A C++ variant with a gated arm names no alternative by a fixed index: its
-/// default value is the default arm chosen by type, which every build holds
-/// at a different index (2 with the feature, 0 without).
+/// A C++ variant with a gated arm names no alternative past the first by a
+/// fixed index: its default value is the default arm at the index it has in
+/// the build, counted from the macros of the gated arms before it (2 with the
+/// feature, 0 without).
 #[test]
 fn a_cpp_variant_with_a_gated_arm_names_its_alternatives_by_type() {
     let code = generate(Language::Cpp, &ForgeCompileOptions::default());
     assert!(
-        code.contains(&format!(
-            "    CodecZenohRequestVariant body{{std::in_place_type_t<{CPP_QUERY}>{{}}}};\n"
-        )),
-        "the default value is not the query arm chosen by type:\n{code}"
+        code.contains(
+            "    CodecZenohRequestVariant body_{std::in_place_index_t<\
+             (0 + SCE_FEATURE_REQUEST_PUT_DEL + SCE_FEATURE_REQUEST_PUT_DEL)>{}};\n"
+        ),
+        "the default value is not the query arm at its index in the build:\n{code}"
     );
     assert!(
         !names_an_alternative_by_a_fixed_index(&code),
@@ -667,10 +692,10 @@ fn a_cpp_gated_last_alternative_carries_its_separator_before_it() {
     );
 }
 
-/// A parent whose carrier bits an embedded variant's arm fills compares the
-/// embedded body's index with one counted per build: the term of the gated
-/// arm is under its macro, and the arm after it adds 1 where the macro is
-/// non-zero. The last arm every build holds is the fallthrough.
+/// A parent whose carrier bits an embedded variant's arm fills switches on the
+/// embedded body's index, each case at the index counted per build: the case
+/// of the gated arm is under its macro, and each arm after it adds the macro,
+/// 1 where the feature is on.
 #[test]
 fn a_cpp_parent_counts_a_gated_variants_index_per_build() {
     let dir = gated_dispatch_fixture();
@@ -696,13 +721,15 @@ fn a_cpp_parent_counts_a_gated_variants_index_per_build() {
         1,
         "the parent defines the embedded arm's macro to 1 once:\n{code}"
     );
+    // The printed parent switches on the alternative the embedded body holds
+    // (docs/adr/0081 step 4): the gated arm's case inside its guard, each arm
+    // after it at its index counted per build.
     let derived = [
-        "        const std::uint8_t _derived_header = static_cast<std::uint8_t>((",
         "#if SCE_FEATURE_LOCAL_ARM",
-        "            key.body.index() == static_cast<std::size_t>(0) ? static_cast<std::uint8_t>(0x00) :",
+        "                case 0: _p_header_k |= 0x0ull; break;",
         "#endif",
-        "            key.body.index() == static_cast<std::size_t>(0 + (SCE_FEATURE_LOCAL_ARM ? 1 : 0)) ? static_cast<std::uint8_t>(0x20) :",
-        "            static_cast<std::uint8_t>(0x40)));",
+        "                case (0 + SCE_FEATURE_LOCAL_ARM): _p_header_k |= 0x1ull; break;",
+        "                case (1 + SCE_FEATURE_LOCAL_ARM): _p_header_k |= 0x2ull; break;",
     ]
     .join("\n");
     assert!(
