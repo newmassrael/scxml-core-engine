@@ -151,8 +151,9 @@
 //! fields ([`JsComposed`]): a variable of one is built where it is declared, a
 //! payload that holds one is read by the descriptor of its type, a member is
 //! read by its own name where the narrowing admits it, a field of a case is
-//! written by an `<assign>` of the whole variable with that field changed, and
-//! a `<sce:lift>` reads a text into one whole.
+//! written by an `<assign>` of the whole variable with that field changed, a
+//! `<sce:lift>` reads a text into one whole, and a statechart hands an
+//! algorithm the very object the algorithm reads, with no adapter between.
 
 use std::collections::BTreeMap;
 use std::ops::Range;

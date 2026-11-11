@@ -6429,12 +6429,17 @@ pub fn lower(
     // A union crosses a call where the lane lowers an algorithm over a union, the
     // crossing included (docs/adr/0092, section 6.1 item 7, and "Decided while
     // landing step 5"): the adapter maps the machine's sum into the type the
-    // union's unit declares, which only such a lane's algorithm takes. Any other
-    // refuses the document by name, naming the call and the union.
-    let crosses_unions = target
-        .expr_target()
-        .language()
-        .is_some_and(|l| crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS.contains(&l));
+    // union's unit declares, which only such a lane's algorithm takes. A target
+    // that calls an algorithm with no adapter between (the Interpreter's,
+    // [`StaticTarget::has_state_adapters`]) hands it the very value the machine
+    // holds, which is the one the algorithm reads: its union, the wire's own
+    // object on both sides, crosses as it is. Any other refuses the document by
+    // name, naming the call and the union.
+    let crosses_unions = !target.has_state_adapters()
+        || target
+            .expr_target()
+            .language()
+            .is_some_and(|l| crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS.contains(&l));
     if !crosses_unions {
         let crossing = scope.callees.iter().find_map(|callee| {
             let value = callee.value.as_ref()?;

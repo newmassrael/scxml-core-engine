@@ -246,20 +246,3 @@ fn a_case_field_read_where_no_test_proves_its_case_is_refused() {
         "{code:?}: {why}"
     );
 }
-
-/// A statechart that hands an algorithm a union still holds none on the
-/// Interpreter (docs/adr/0092, Landing order step 4 has not landed on it), so
-/// the statechart is refused by name rather than lowered with a call no
-/// variable of it can make.
-#[test]
-fn a_statechart_that_holds_a_union_is_still_refused_by_name() {
-    let path = fixtures().join("statechart_shape_crossing.scxml");
-    let (code, _, why) = refused(
-        lower_file(path.to_str().expect("a utf-8 path"), Vec::new())
-            .expect_err("the Interpreter holds no union in a statechart yet"),
-    );
-    assert!(
-        matches!(code, DiagnosticCode::GenerateUnsupportedFeature),
-        "{code:?}: {why}"
-    );
-}

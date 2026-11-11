@@ -968,6 +968,34 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AUnionIsReadBuiltWrit
     std::filesystem::remove_all(dir, ec);
 }
 
+// A statechart hands an algorithm a union and takes one back (docs/adr/0092, section
+// 6.1 item 7): on the Interpreter the machine's union and the one the algorithm reads
+// are one object, so the call hands it over as it is and the variable takes back the
+// object the algorithm answers. `statechart_shape_crossing` starts at a circle of 2,
+// which `algorithm_shape_grown` answers as it was given, and whose extent
+// `algorithm_shape_extent` reads from the case its tag names.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AUnionCrossesACallOfAnAlgorithmAsItIs) {
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-union-crossing-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(std::filesystem::path(SCE_PROJECT_ROOT) /
+                                        "sce-build/tests/fixtures/union/statechart_shape_crossing.scxml",
+                                    dir);
+    ASSERT_TRUE(set.ok) << "statechart_shape_crossing is not lowered: " << set.refusal.dump();
+    const auto scenario = nlohmann::json::parse(R"({
+        "machine": "statechart_shape_crossing",
+        "steps": [
+            {"note": "a circle of 2 at the start, and no extent asked yet",
+             "expect": {"state": "idle", "variables": {"shape": {"kind": "circle", "radius": 2}, "extent": 0}}},
+            {"note": "grown as it was given, and its extent read from its case",
+             "event": "grow",
+             "expect": {"state": "idle", "variables": {"shape": {"kind": "circle", "radius": 2}, "extent": 2}}}
+        ]
+    })");
+    replay(set.documents.at(0), scenario);
+    std::filesystem::remove_all(dir, ec);
+}
+
 // docs/adr/0084, D7: the scenarios of the standard host features
 // (tests/host_features/scenarios), replayed on the lowered documents of the machines
 // the generated C++ engine runs them on, with the reference host registered on the

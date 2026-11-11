@@ -44,9 +44,10 @@
 //! (`readValue`): its tag's key holds the declared name of the case's variant
 //! beside the fields of the case's record, and no other key. So a member is
 //! read by its own name wherever the narrowing admits the read, a value is
-//! copied and sent as it is, and a field is written by writing the holder
-//! whole. The Interpreter keeps no saved state of its own, so nothing is
-//! written for one.
+//! copied and sent as it is, a field is written by writing the holder whole,
+//! and a statechart hands an algorithm the very object the algorithm reads
+//! (`static_js_algorithm.rs`). The Interpreter keeps no saved state of its own,
+//! so nothing is written for one.
 
 use super::*;
 use crate::forge::static_js::RUNTIME_GLOBAL;

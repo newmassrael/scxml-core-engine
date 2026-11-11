@@ -3,7 +3,8 @@
 //
 //! The Interpreter's lowering holds a union (docs/adr/0092, sections 4, 6.1 and
 //! 7, the Interpreter row), held to
-//! `sce-build/tests/fixtures/static_datamodel/static_union.scxml`:
+//! `sce-build/tests/fixtures/static_datamodel/static_union.scxml` and
+//! `sce-build/tests/fixtures/union/statechart_shape_crossing.scxml`:
 //!
 //! * A union is the wire's own object: its tag's key holding the declared name
 //!   of the case's variant beside the case's fields.
@@ -13,10 +14,13 @@
 //! * A union variable is built where it is declared, the case's record with the
 //!   tag's key set; a field of its case is written by an `<assign>` of the whole
 //!   variable with that field changed; one is taken whole as it is.
+//! * A statechart hands an algorithm its union and takes one back as it is,
+//!   with no adapter between.
 //!
 //! What the lowered machine does when the Interpreter runs it is held by
 //! `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
-//! (`AUnionIsReadBuiltWrittenAndLiftedAsTheWireObject`).
+//! (`AUnionIsReadBuiltWrittenAndLiftedAsTheWireObject`,
+//! `AUnionCrossesACallOfAnAlgorithmAsItIs`).
 
 use std::path::{Path, PathBuf};
 
@@ -157,4 +161,34 @@ fn a_text_is_lifted_into_the_union_by_its_descriptor() {
         .unwrap_or_else(|| panic!("a <script> lifts the text:\n{out}"));
     holds(script, &format!(", {SHAPE}"));
     holds(script, "lifted = sceLift.value;");
+}
+
+/// Pinned by the crossing gate of `static_lowering::lower` (`has_state_adapters`):
+/// the machine hands each algorithm its union by name and takes back what the
+/// algorithm answers, the very object, with no adapter between.
+#[test]
+fn a_union_crosses_a_call_of_an_algorithm_as_it_is() {
+    let out = lowered("union/statechart_shape_crossing.scxml");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let installer = installer(&document);
+    holds(
+        &installer,
+        "SceStatic.algorithms.algorithm_shape_grown = function (shape, radius) { ",
+    );
+    holds(
+        &installer,
+        "SceStatic.algorithms.algorithm_shape_extent = function (shape) { ",
+    );
+    let grown = attributes(&document, "assign", ("location", "shape"), "expr");
+    assert_eq!(grown.len(), 1, "one <assign> takes `shape` back: {grown:?}");
+    holds(
+        &grown[0],
+        "SceStatic.algorithms.algorithm_shape_grown(shape, 3)",
+    );
+    let extent = attributes(&document, "assign", ("location", "extent"), "expr");
+    assert_eq!(extent.len(), 1, "one <assign> asks the extent: {extent:?}");
+    holds(
+        &extent[0],
+        "SceStatic.algorithms.algorithm_shape_extent(shape)",
+    );
 }
