@@ -1049,8 +1049,73 @@ static void check_union(void) {
     }
 }
 
+/* A lift of a value read whole (docs/adr/0092, section 6.1 item 5): the object the text is
+   handed to the reader of its type, which reads a union's tag first; the refusals before
+   it are a lift's, with their pointer; and the path a reader leaves its refusal at is the
+   refusal record's strict pointer, written whole token by token. */
+static void check_a_value_is_lifted_whole(void) {
+    static const char *const kinds[] = {"dot", "circle", "disc"};
+    char pointer[16];
+    const char *value = NULL;
+    size_t kind = 99u;
+    bool at_tag = false;
+    const char *refusal =
+        sce_payload_lift_value(" {\"kind\":\"disc\",\"radius\":4}", 2u, &value, pointer, sizeof(pointer));
+    if (refusal != NULL || value == NULL || *value != '{' ||
+        sce_payload_union_open(value, "kind", kinds, 3u, &kind, &at_tag) != NULL || kind != 2u) {
+        fprintf(stderr, "FAIL: a union's text was not handed whole to its reader (%s)\n",
+                refusal != NULL ? refusal : "read");
+        failures++;
+    }
+
+    const struct {
+        const char *text;
+        const char *refusal;
+        const char *pointer;
+    } refused[] = {
+        {"[1]", SCE_PAYLOAD_REFUSE_NOT_OBJECT, ""},
+        {"  ", sce_payload_refuse_empty_text, ""},
+        {"{\"kind\":\"path\",\"points\":[[1]]}", sce_payload_refuse_too_deep, "/points/0"},
+    };
+
+    for (size_t i = 0u; i < sizeof(refused) / sizeof(refused[0]); ++i) {
+        value = "unread";
+        refusal = sce_payload_lift_value(refused[i].text, 2u, &value, pointer, sizeof(pointer));
+        if (refusal != refused[i].refusal || value != NULL || strcmp(pointer, refused[i].pointer) != 0) {
+            fprintf(stderr, "FAIL: %s lifted as (%s) at '%s', the case says (%s) at '%s'\n", refused[i].text,
+                    refusal != NULL ? refusal : "nothing", pointer, refused[i].refusal, refused[i].pointer);
+            failures++;
+        }
+    }
+
+    const struct {
+        const char *path;
+        size_t cap;
+        bool whole;
+        const char *pointer;
+    } paths[] = {
+        {"", 4u, true, ""},
+        {"text", 8u, true, "/text"},
+        {"items/2/tags", 16u, true, "/items/2/tags"},
+        {"a~b", 8u, true, "/a~0b"},
+        {"items/2/tags", 9u, false, "/items/2"},
+        {"text", 5u, false, ""},
+    };
+
+    for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+        const bool whole = sce_payload_pointer_of_path(pointer, paths[i].cap, paths[i].path);
+        if (whole != paths[i].whole || strcmp(pointer, paths[i].pointer) != 0) {
+            fprintf(stderr, "FAIL: the path '%s' in %u bytes is the pointer '%s' (%s), the case says '%s' (%s)\n",
+                    paths[i].path, (unsigned)paths[i].cap, pointer, whole ? "whole" : "cut", paths[i].pointer,
+                    paths[i].whole ? "whole" : "cut");
+            failures++;
+        }
+    }
+}
+
 int main(void) {
     check_union();
+    check_a_value_is_lifted_whole();
     check_cross_product();
     check_maximal_sizes();
     check_the_writer_refuses_a_shape_it_cannot_close();

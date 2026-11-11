@@ -1922,6 +1922,59 @@ SCE_C_UNUSED static inline const char *sce_payload_union_open(const char *p, con
     return sce_payload_value_variant(tag_value, names, count, index);
 }
 
+/* Read the text a `<sce:lift>` reads into a value read whole (docs/adr/0092, section 6.1
+   item 5), a union's included: the three refusals `sce_payload_lift` gives before anything
+   is read, in its order and with its pointer, and then `*value` at the object the text is,
+   which the generated reader of the value's type reads as a delivery's field of that type
+   is read, its tag first. A text that is no object is `notObject`, as a record's is. A type
+   read whole has no defaults of its own: a union has none, and a record's are read inside
+   its reader. `*value` is NULL when a refusal is answered. */
+SCE_C_UNUSED static inline const char *sce_payload_lift_value(const char *text, uint32_t depth, const char **value,
+                                                              char *pointer, size_t cap) {
+    sce_payload_fields_t fields;
+    const char *const refusal = sce_payload_lift(text, depth, NULL, &fields, pointer, cap);
+    *value = (refusal == NULL) ? fields.object : NULL;
+    return refusal;
+}
+
+/* The strict RFC 6901 pointer (`/items/2/tags/0`) of the place a generated reader left
+   its refusal at, written as the path it extends (`items/2/tags/0`,
+   `sce_payload_path_join`), into `pointer` of `cap` bytes: what a lift of a value read
+   whole names the refused place by in its refusal record (docs/adr/0087, section 2.4). A
+   path's segments are a record's field ids, which are code identifiers, and the digits of
+   an index, so none holds a `/`, and each becomes one token, its `~` written `~0`. The
+   empty path, the value itself, is the empty pointer. Each token is written whole or not
+   at all: false when one does not fit, and `pointer` then holds the tokens before it. */
+SCE_C_UNUSED static inline bool sce_payload_pointer_of_path(char *pointer, size_t cap, const char *path) {
+    size_t at = 0u;
+    if (cap == 0u) {
+        return false;
+    }
+    pointer[0] = '\0';
+    for (const char *segment = path; *segment != '\0';) {
+        size_t token = 0u;
+        const char *end = segment;
+        for (; *end != '\0' && *end != '/'; ++end) {
+            token += (*end == '~') ? 2u : 1u;
+        }
+        if (at + 1u + token + 1u > cap) {
+            return false;
+        }
+        pointer[at++] = '/';
+        for (const char *c = segment; c < end; ++c) {
+            if (*c == '~') {
+                pointer[at++] = '~';
+                pointer[at++] = '0';
+            } else {
+                pointer[at++] = *c;
+            }
+        }
+        pointer[at] = '\0';
+        segment = (*end == '/') ? end + 1 : end;
+    }
+    return true;
+}
+
 /* The short form JSON gives a control character, or 0 when it has none. */
 SCE_C_UNUSED static inline char sce_payload_short_escape(unsigned char c) {
     switch (c) {

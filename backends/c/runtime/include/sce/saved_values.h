@@ -453,6 +453,58 @@ static inline bool sce_saved_list(sce_jv_t v, const char *what, size_t capacity,
     return true;
 }
 
+/* A list of a type that states a lower count (docs/adr/0086, section 15): its element
+ * count as `sce_saved_list` reads it, refused too if it holds fewer than `least`, a count
+ * no value of its type holds. A machine never holds fewer, and a restored one must not be
+ * the first to; both counts are held before any element is read. */
+static inline bool sce_saved_list_within(sce_jv_t v, const char *what, size_t least, size_t capacity, size_t *count,
+                                         sce_saved_error_t *err) {
+    if (!sce_saved_list(v, what, capacity, count, err)) {
+        return false;
+    }
+    if (*count < least) {
+        return sce_saved_refuse(err, "'%s' holds %lu elements, fewer than the %lu its type declares", what,
+                                (unsigned long)*count, (unsigned long)least);
+    }
+    return true;
+}
+
+/* A union's tag (docs/adr/0092, section 6.1 item 7): the member a union's saved object
+ * opens with, under the key `tag`, its value the declared name `variant` of the case the
+ * value is in. The writer of the union opens the object, writes this, and then writes the
+ * members of the case's record into the same object, so the tag stands beside them. */
+static inline void sce_saved_write_union_tag(sce_jw_t *w, const char *tag, const char *variant) {
+    sce_jw_key(w, tag);
+    sce_jw_string(w, variant);
+}
+
+/* The case a saved union value is in, read before any field of the case, since the tag
+ * says which fields follow (docs/adr/0092, section 4): the value must be an object whose
+ * member `tag` is a text naming one of the `count` cases of `names`, in the tag enum's
+ * order, and `*index` is its position there. `union_name` is the union's document, which
+ * a tag that names no case of it is refused by. The case's record is then read from the
+ * same object, whose tag it does not ask for. */
+static inline bool sce_saved_read_union_tag(sce_jv_t v, const char *what, const char *tag, const char *union_name,
+                                            const char *const *names, size_t count, size_t *index,
+                                            sce_saved_error_t *err) {
+    char declared[SCE_SAVED_ERROR_LEN / 2u];
+    sce_jv_t held;
+    if (!sce_saved_field(v, what, tag, &held, err)) {
+        return false;
+    }
+    if (sce_jv_kind(held) != SCE_JSON_STRING) {
+        return sce_saved_refuse(err, "'%s' has its tag '%s' as no text", what, tag);
+    }
+    for (size_t i = 0u; i < count; ++i) {
+        if (sce_jv_string_is(held, names[i])) {
+            *index = i;
+            return true;
+        }
+    }
+    (void)sce_jv_string(held, declared, sizeof(declared), NULL);
+    return sce_saved_refuse(err, "'%s' (%s) is not a case of %s", what, declared, union_name);
+}
+
 /* An enum value read back from the name its document declares for the variant:
  * refused unless it is a text and one of `names`, by that name. `index` is its
  * position in `names`. `alias` is the enum, as the document imports it. */

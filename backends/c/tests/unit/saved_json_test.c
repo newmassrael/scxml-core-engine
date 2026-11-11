@@ -381,6 +381,49 @@ static void a_variant_is_read_by_the_name_its_document_declares(void) {
           "%s", err.message);
 }
 
+// A union (docs/adr/0092, section 6.1 item 7) is one object, its tag written first beside
+// the members of its case, and read back by its tag first; a tag that names no case, or
+// that is no text, is refused naming the union. A list of a type that states a lower count
+// is held to it as to its bound.
+static void a_union_is_saved_by_its_tag_and_read_back_by_it_first(void) {
+    static const char *const cases[] = {"dot", "circle", "rect"};
+    char out[64];
+    sce_jw_t w;
+    sce_jv_t v;
+    sce_saved_error_t err;
+    size_t index = 9u;
+    sce_jw_init(&w, out, sizeof(out));
+    sce_jw_begin_object(&w);
+    sce_saved_write_union_tag(&w, "kind", "circle");
+    sce_jw_key(&w, "radius");
+    sce_saved_write_uint16(&w, 7u);
+    sce_jw_end_object(&w);
+    CHECK(sce_jw_finish(&w) && strcmp(out, "{\"kind\":\"circle\",\"radius\":7}") == 0, "wrote %s", out);
+
+    CHECK(sce_json_parse(out, strlen(out), &v, &err), "%s", err.message);
+    CHECK(sce_saved_read_union_tag(v, "shape", "kind", "union_shape", cases, 3u, &index, &err) && index == 1u,
+          "circle");
+    CHECK(sce_json_parse("{\"radius\":1,\"kind\":\"oval\"}", 26u, &v, &err), "%s", err.message);
+    CHECK(!sce_saved_read_union_tag(v, "shape", "kind", "union_shape", cases, 3u, &index, &err) &&
+              strcmp(err.message, "'shape' (oval) is not a case of union_shape") == 0,
+          "%s", err.message);
+    CHECK(sce_json_parse("{\"kind\":3}", 10u, &v, &err), "%s", err.message);
+    CHECK(!sce_saved_read_union_tag(v, "shape", "kind", "union_shape", cases, 3u, &index, &err) &&
+              strcmp(err.message, "'shape' has its tag 'kind' as no text") == 0,
+          "%s", err.message);
+    CHECK(sce_json_parse("{\"radius\":1}", 12u, &v, &err), "%s", err.message);
+    CHECK(!sce_saved_read_union_tag(v, "shape", "kind", "union_shape", cases, 3u, &index, &err) &&
+              strcmp(err.message, "'shape' has no field 'kind'") == 0,
+          "%s", err.message);
+
+    size_t count = 0u;
+    CHECK(sce_json_parse("[1]", 3u, &v, &err), "%s", err.message);
+    CHECK(sce_saved_list_within(v, "l", 1u, 3u, &count, &err) && count == 1u, "a list at its lower count");
+    CHECK(!sce_saved_list_within(v, "l", 2u, 3u, &count, &err) &&
+              strcmp(err.message, "'l' holds 1 elements, fewer than the 2 its type declares") == 0,
+          "%s", err.message);
+}
+
 static void a_writer_over_no_buffer_measures_the_text(void) {
     sce_jw_t measure;
     sce_jw_t real;
@@ -633,6 +676,7 @@ int main(void) {
     a_text_a_byte_string_and_a_list_are_held_to_the_bounds_the_machine_has();
     a_session_id_is_an_xml_nmtoken();
     a_variant_is_read_by_the_name_its_document_declares();
+    a_union_is_saved_by_its_tag_and_read_back_by_it_first();
     a_writer_over_no_buffer_measures_the_text();
     canonical_members_are_sorted_by_their_utf16_code_units();
     a_canonical_text_escapes_only_what_json_stringify_escapes();
