@@ -103,13 +103,24 @@ let package = Package(
                 .product(name: "SceTestProfile", package: "runtime"),
             ]
         ),
+        // The runner program of the generated suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4): a
+        // `main.swift` that calls the suite's entry, `RuntimeSuite.main()`. It is a target of this
+        // package because the suite's unit is a file of `StaticDatamodelMachines`, which only this
+        // package compiles, as the Rust program is a binary of the crate that holds its suite.
+        .executableTarget(
+            name: "RuntimeSuiteRunner",
+            dependencies: ["StaticDatamodelMachines"]
+        ),
         // The test profile's runtime runs the generated test components
         // (`ATestComponentRunsThroughItsDoorsTests.swift`, docs/SCE_TEST_PROFILE.md §12.3) and the
-        // generated suite through its runner (`ATestSuiteRunsThroughItsRunnerTests.swift`, §12.4).
+        // generated suite through its runner (`ATestSuiteRunsThroughItsRunnerTests.swift`, §12.4), and
+        // the runner program as a process, which the dependency on its target builds before the tests
+        // run (docs/SCE_TTCN3_LANE.md §4).
         .testTarget(
             name: "StaticDatamodelTests",
             dependencies: [
                 "StaticDatamodelMachines",
+                "RuntimeSuiteRunner",
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
                 .product(name: "SceHostFeatures", package: "host-features"),
