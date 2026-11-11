@@ -5316,8 +5316,7 @@ fn render_union_c11(
     use crate::generator::Language;
     let unit = UnionUnit::read(m, imports)?;
     let tag = unit.tag;
-    let union_type = union_unit_type(&m.name, Language::C11)
-        .ok_or_else(|| union_refused(m, "C11 names no type of a union's unit".to_string()))?;
+    let union_type = union_unit_type(&m.name, Language::C11);
     let kind_type = enum_qualified_type(&tag.document_name, Language::C11);
     let mut members: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
     let mut cases = Vec::with_capacity(unit.cases.len());
@@ -39724,18 +39723,15 @@ fn record_field_inits(
 }
 
 /// The type the union `alias` an algorithm imports is spelled as on the
-/// backend of `l`: the type its own unit declares (docs/adr/0092, section 7, the
-/// Rust, C++, Kotlin, Go and Python rows), named as the import line brings it
-/// in, as an event schema's record is ([`event_schema_payload_type`]): Rust
-/// through the sibling module (`<snake>::<Pascal>`), C++ by the struct of the
-/// unit's namespace, Kotlin by the sealed interface the wildcard import of the
-/// unit's package brings in, Go by the value struct of the package its import
-/// binds, Python by the class of the module its import binds, as a schema unit
-/// names it
-/// (`SchemaUnitNames::union`). A backend that does not lower an algorithm's
-/// union refuses the algorithm by name before its body is rendered
-/// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]), so asked of one
-/// it is a fault of the pipeline, not of the document.
+/// backend of `l`: the type its own unit declares (docs/adr/0092, section 7),
+/// named as the import line brings it in, as an event schema's record is
+/// ([`event_schema_payload_type`]): Rust through the sibling module
+/// (`<snake>::<Pascal>`), C++ by the struct of the unit's namespace, Kotlin by
+/// the sealed interface the wildcard import of the unit's package brings in, Go
+/// by the value struct of the package its import binds, Swift by the enum of
+/// its module, Python by the class of the module its import binds and C11 by
+/// the typedef its header declares, as a schema unit names it
+/// (`SchemaUnitNames::union`; [`union_unit_type`]).
 fn algorithm_union_type(
     l: &LangCtx,
     imports: &[ImportContext],
@@ -39750,14 +39746,7 @@ fn algorithm_union_type(
                  before a backend renders it"
             ))
         })?;
-    union_unit_type(&import.document_name, l.lang).ok_or_else(|| {
-        GenerateError::InvalidConfig(format!(
-            "an algorithm's union reached the renderer of {}, which lowers none in an \
-             algorithm (docs/adr/0092, Landing order step 5)",
-            l.lang.canonical_name()
-        ))
-        .into()
-    })
+    Ok(union_unit_type(&import.document_name, l.lang))
 }
 
 /// The type the unit of the union document `document` declares, as a unit of
@@ -39767,33 +39756,35 @@ fn algorithm_union_type(
 /// brings in (`<Pascal>`), Go by the value struct of the package its import
 /// binds to [`go_package_alias`] (`sce_<snake>.<Pascal>`), C++ by the struct
 /// of the namespace its `#include` brings in (`SCE::Generated::<Pascal>::<Pascal>`),
-/// and Python by the class of the module its import binds to
-/// [`python_module_alias`] (`sce_<snake>.<Pascal>`),
-/// as an imported record's payload type is named ([`event_schema_payload_type`]). What an
-/// algorithm's union is spelled as ([`algorithm_union_type`]), what a Go test
-/// template names a union by, and what a statechart's adapter maps the
-/// machine's own sum into (`crate::forge::static_lowering`). `None` on a backend
-/// that names no unit's union outside the unit yet.
-pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) -> Option<String> {
+/// Swift by the enum of the module its units are files of (`<Pascal>`), Python
+/// by the class of the module its import binds to [`python_module_alias`]
+/// (`sce_<snake>.<Pascal>`), and C11 by the typedef its `#include` declares
+/// (`<snake>_t`), as an imported record's payload type is named
+/// ([`event_schema_payload_type`]). What an algorithm's union is spelled as
+/// ([`algorithm_union_type`]), what a Go test template names a union by, and
+/// what a statechart's adapter maps the machine's own sum into
+/// (`crate::forge::static_lowering`). Every backend names one, so a backend
+/// added to [`crate::generator::Language`] is asked for its spelling here.
+pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     let pascal = filters::to_pascal_case(document.to_string());
     let snake = filters::to_snake_case(document.to_string());
     match lang {
-        Language::Rust => Some(format!("{snake}::{pascal}")),
-        Language::Kotlin => Some(pascal),
-        Language::Go => Some(format!("{}.{pascal}", go_package_alias(&snake))),
+        Language::Rust => format!("{snake}::{pascal}"),
+        Language::Kotlin => pascal,
+        Language::Go => format!("{}.{pascal}", go_package_alias(&snake)),
         // The struct of the unit's namespace its `#include` brings in, as an
         // imported record's payload type is named.
-        Language::Cpp => Some(format!("SCE::Generated::{pascal}::{pascal}")),
+        Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}"),
         // Swift's units are files of one module, so the enum of the unit is named bare, as a
         // record's struct is.
-        Language::Swift => Some(pascal),
+        Language::Swift => pascal,
         // The class of the module its import binds, as an imported record's
         // payload class is named.
-        Language::Python => Some(format!("{}.{pascal}", python_module_alias(&snake))),
+        Language::Python => format!("{}.{pascal}", python_module_alias(&snake)),
         // The typedef the unit's `#include` declares, named by its document as
         // a C11 import's type is (`<snake>_t`).
-        Language::C11 => Some(format!("{snake}_t")),
+        Language::C11 => format!("{snake}_t"),
     }
 }
 
@@ -39807,18 +39798,19 @@ pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) 
 /// the pattern a Rust `match` takes the case apart by. Go's is the call of the
 /// constructor of the case its unit declares, `<Union><Case>(r)` or
 /// `<Union><Case>()` ([`crate::forge::composed_lowering::go_case_ident`]),
-/// which no `switch` takes apart, and Python's the call of the class of the
-/// case, spelled alike
-/// ([`crate::forge::composed_lowering::python_case_ident`]). A backend that lowers no
-/// union in an algorithm refused the algorithm before its body was rendered
-/// ([`algorithm_union_type`]), and a statechart's call of one before its
-/// adapter was written, so asked of one it is a fault of the pipeline.
+/// which no `switch` takes apart, Swift's the case of the unit's enum
+/// (lowerCamelCase), called with the record or named alone, Python's the call
+/// of the class of the case, spelled alike
+/// ([`crate::forge::composed_lowering::python_case_ident`]), and C11's the call
+/// of the constructor the unit declares beside its typedef,
+/// `<snake>_case_<case>(r)` or `<snake>_case_<case>()`
+/// ([`crate::forge::composed_lowering::c11_case_ident`]).
 pub(crate) fn algorithm_union_case(
     lang: crate::generator::Language,
     union_type: &str,
     variant: &str,
     record: Option<&str>,
-) -> Result<String, ForgeError> {
+) -> String {
     use crate::generator::Language;
     let case = match lang {
         Language::Rust => format!(
@@ -39828,20 +39820,20 @@ pub(crate) fn algorithm_union_case(
         Language::Kotlin => format!("{union_type}.{}", kotlin_case_ident(variant)),
         // A constructor is called with nothing as with a record.
         Language::Go => {
-            return Ok(format!(
+            return format!(
                 "{union_type}{}({})",
                 crate::forge::composed_lowering::go_case_ident(variant),
                 record.unwrap_or_default()
-            ))
+            )
         }
         // The union's struct of the case's alternative, nested in it, holding
         // the record or nothing, as a machine's union is built.
         Language::Cpp => {
-            return Ok(format!(
+            return format!(
                 "{union_type}{{{union_type}::{}{{{}}}}}",
                 crate::forge::composed_lowering::cpp_case_ident(variant),
                 record.unwrap_or_default()
-            ))
+            )
         }
         // A case of the unit's enum, named as the unit declares it (lowerCamelCase, whatever
         // the tag's document is called); built by its constructor with the record or nothing.
@@ -39853,28 +39845,28 @@ pub(crate) fn algorithm_union_case(
         // no nesting a case is named by), called with the record or nothing, as
         // a machine's union is built.
         Language::Python => {
-            return Ok(format!(
+            return format!(
                 "{union_type}{}({})",
                 crate::forge::composed_lowering::python_case_ident(variant),
                 record.unwrap_or_default()
-            ))
+            )
         }
         // The constructor of the case the union's unit declares beside its
         // typedef, `<snake>_case_<case>(r)` or `<snake>_case_<case>()`, as a
         // machine's union is built.
         Language::C11 => {
-            return Ok(format!(
+            return format!(
                 "{}_case_{}({})",
                 union_type.trim_end_matches("_t"),
                 crate::forge::composed_lowering::c11_case_ident(variant),
                 record.unwrap_or_default()
-            ))
+            )
         }
     };
-    Ok(match record {
+    match record {
         Some(record) => format!("{case}({record})"),
         None => case,
-    })
+    }
 }
 
 /// The statement that closes the body of the algorithm `name` on `lang` at a
@@ -39891,58 +39883,53 @@ pub(crate) fn algorithm_union_case(
 /// in, and what the unit's own proven reads do in a case the narrowing proved
 /// the value is not in (`forge/go/union.go.jinja2`); a `may-fail` body hands a
 /// failure on as an `error`, never as a panic, so the two are not confused.
-/// Python's is a `raise` of `AssertionError`, as its unit's proven reads raise
-/// (`forge/python/union.py.jinja2`). The
-/// statement stands at `pad`, the body's own indentation. Only a body that
-/// holds a union ends this way, and a backend that does not lower one refused
-/// the algorithm before its body was rendered, so asked of one it is a fault of
-/// the pipeline, not of the document.
-fn unreached_end(
-    lang: crate::generator::Language,
-    name: &str,
-    pad: &str,
-) -> Result<String, ForgeError> {
+/// Swift's is `preconditionFailure`, as its unit's proven reads do
+/// (`forge/swift/union.swift.jinja2`), Python's a `raise` of `AssertionError`,
+/// as its unit's proven reads raise (`forge/python/union.py.jinja2`), and
+/// C11's `abort`. The statement stands at `pad`, the body's own indentation.
+/// Only a body that holds a union ends this way.
+fn unreached_end(lang: crate::generator::Language, name: &str, pad: &str) -> String {
     use crate::generator::Language;
     let why = crate::forge::algorithm_union::unreached_end_reason(name);
     match lang {
-        Language::Rust => Ok(format!("{pad}unreachable!(\"{why}\")")),
-        Language::Kotlin => Ok(format!(
+        Language::Rust => format!("{pad}unreachable!(\"{why}\")"),
+        Language::Kotlin => format!(
             "{pad}throw IllegalStateException(\"{}\")",
             filters::escape_kotlin(why)
-        )),
-        Language::Go => Ok(format!("{pad}panic(\"{}\")", filters::escape_go(why))),
+        ),
+        Language::Go => format!("{pad}panic(\"{}\")", filters::escape_go(why)),
         // `std::abort`, which ends the process, what the unit's own proven
         // reads do in a case the narrowing proved the value is not in
         // (`forge/cpp/union.h.jinja2`); a `may-fail` body hands a failure on as
         // its `AlgorithmResult`, never by ending the process. `[[noreturn]]`, so
         // the compiler asks the body for no value after it.
-        Language::Cpp => Ok(format!(
+        Language::Cpp => format!(
             "{pad}{} // {}",
             crate::forge::composed_lowering::CPP_UNREACHED,
             why
-        )),
+        ),
         // `preconditionFailure` returns `Never`, so a function with a result may end in it, and
         // it is what the unit's own proven reads do in a case the narrowing proved the value is
         // not in (`forge/swift/union.swift.jinja2`).
-        Language::Swift => Ok(format!(
+        Language::Swift => format!(
             "{pad}preconditionFailure(\"{}\")",
             filters::escape_swift(why)
-        )),
+        ),
         // `AssertionError`, what the unit's own proven reads raise in a case the
         // narrowing proved the value is not in (`forge/python/union.py.jinja2`),
         // and never the `AlgorithmFailure` a `may-fail` body hands a failure on
         // by, so the two are not confused; a function that ends in a `raise`
         // returns no `None` there.
-        Language::Python => Ok(format!(
+        Language::Python => format!(
             "{pad}raise AssertionError({})",
             filters::py_string_literal(why)
-        )),
+        ),
         // `abort`, which ends the process and returns nothing, so the compiler
         // asks the body for no value after it; the union's unit includes
         // `<stdlib.h>` for it (`forge/c/union.h.jinja2`). A `may-fail` body
         // hands a failure on through `sce_failure_`, never by ending the
         // process.
-        Language::C11 => Ok(format!("{pad}abort(); /* {why} */")),
+        Language::C11 => format!("{pad}abort(); /* {why} */"),
     }
 }
 
@@ -42103,7 +42090,7 @@ fn lower_algorithm_stmt(
                 &union_type,
                 &built.case.variant.name,
                 record.as_deref(),
-            )?;
+            );
             let local = l.local_id(name);
             // The local is never written, so Kotlin declares it `val`, at the
             // union's type rather than the case's class, so a test of its case
@@ -46651,7 +46638,7 @@ fn render_algorithm(
     let body = if crate::forge::algorithm_union::ends_unreached(m) {
         format!(
             "{body}\n{}",
-            unreached_end(lang, &m.name, &"    ".repeat(body_indent))?
+            unreached_end(lang, &m.name, &"    ".repeat(body_indent))
         )
     } else {
         body

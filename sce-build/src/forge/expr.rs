@@ -1318,9 +1318,13 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
-                    _ => Err(format!(
-                        "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
-                         backend that does not lower one yet (docs/adr/0092, Landing order step 5)"
+                    // The Interpreter holds an algorithm's union as the wire's own
+                    // object, read by its member's name, and names no unit's type,
+                    // so a read on one reaching it is a fault of the pipeline.
+                    ExprTarget::Js => Err(format!(
+                        "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on its \
+                         unit's type, which the Interpreter does not hold (docs/adr/0092, Landing \
+                         order step 5)"
                     )),
                 };
                 whole = Some(read.map_err(refused)?);

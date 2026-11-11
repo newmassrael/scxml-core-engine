@@ -372,7 +372,7 @@ impl UnitNames for GoNames<'_> {
     // The value struct the union's unit declares, through its document's
     // package.
     fn union(&self, alias: &str) -> Option<String> {
-        self.scope.unions.get(alias).and_then(|union| {
+        self.scope.unions.get(alias).map(|union| {
             self.spelling.names_document(&union.name);
             union_unit_type(&union.name, Language::Go)
         })
@@ -440,7 +440,7 @@ impl GoSpelling {
     /// package.
     fn union_type(&self, union: &ScopedUnion) -> String {
         self.names_document(&union.name);
-        union_unit_type(&union.name, Language::Go).unwrap_or_default()
+        union_unit_type(&union.name, Language::Go)
     }
 
     /// The Go type of a value of `ty`, read in `scope`; empty, with the

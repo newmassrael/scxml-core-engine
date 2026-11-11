@@ -966,8 +966,9 @@ impl AdapterSpec<'_> {
     /// algorithm holds. The record a case holds is read through `binding` and built
     /// on the arriving side by `record(alias, binding)`, the copy of a record slot in
     /// the same direction, so a union crosses exactly as each of its records does.
-    /// `None` for a target with no spelling of the machine's sum or of the unit's,
-    /// and for a record it cannot copy, which refuses the adapter by name.
+    /// `None` for a target with no generated backend or no spelling of the
+    /// machine's sum, and for a record it cannot copy, which refuses the adapter
+    /// by name.
     fn union_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -980,7 +981,7 @@ impl AdapterSpec<'_> {
         let lang = self.lang?;
         let spelling = target.composed_spelling(self.machine)?;
         let machine = spelling.union_type(&union.document);
-        let unit = union_unit_type(&union.document, lang)?;
+        let unit = union_unit_type(&union.document, lang);
         let cases = union
             .cases
             .iter()
@@ -990,16 +991,15 @@ impl AdapterSpec<'_> {
                     Some(alias) => Some(record(alias, binding)?),
                     None => None,
                 };
-                let unit_case = |held: Option<&str>| {
-                    algorithm_union_case(lang, &unit, &case.variant, held).ok()
-                };
+                let unit_case =
+                    |held: Option<&str>| algorithm_union_case(lang, &unit, &case.variant, held);
                 let (from, to) = match crossing {
                     Crossing::ToAlgorithm => (
                         spelling.union_value(&machine, &union.tag, &ident, None),
-                        unit_case(built.as_deref())?,
+                        unit_case(built.as_deref()),
                     ),
                     Crossing::FromAlgorithm => (
-                        unit_case(None)?,
+                        unit_case(None),
                         spelling.union_value(&machine, &union.tag, &ident, built.as_deref()),
                     ),
                 };
@@ -10015,7 +10015,7 @@ impl StaticTarget for CppTarget {
                         },
                     )?;
                     let unit =
-                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp)?;
+                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp);
                     declarations.push(format!("const {machine} &{name}"));
                     arguments.push(cpp_union_crossing(&machine, &unit, &name, &cases));
                 }
@@ -10071,7 +10071,7 @@ impl StaticTarget for CppTarget {
                         },
                     )?;
                     let unit =
-                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp)?;
+                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp);
                     cpp_union_crossing(&unit, &machine, from, &cases)
                 }
                 // The machine's own record, made of the algorithm's where there is
@@ -11733,7 +11733,7 @@ impl StaticTarget for GoTarget<'_> {
                         &to_algorithm,
                     )?;
                     let unit =
-                        crate::forge::generator::union_unit_type(&union.document, Language::Go)?;
+                        crate::forge::generator::union_unit_type(&union.document, Language::Go);
                     declarations.push(format!("{name} {machine}"));
                     prelude.push_str(&go_union_crossing(
                         &format!("a{index}"),
@@ -14902,7 +14902,7 @@ impl StaticTarget for CTarget {
                         },
                     )?;
                     let unit =
-                        crate::forge::generator::union_unit_type(&union.document, Language::C11)?;
+                        crate::forge::generator::union_unit_type(&union.document, Language::C11);
                     let map = format!("{name}_union_in{index}");
                     helpers.push(c11_union_crossing(
                         &map,
@@ -15095,8 +15095,7 @@ impl StaticTarget for CTarget {
                         record_of(alias, machine_record(alias), held, Crossing::FromAlgorithm)
                     },
                 )?;
-                let unit =
-                    crate::forge::generator::union_unit_type(&union.document, Language::C11)?;
+                let unit = crate::forge::generator::union_unit_type(&union.document, Language::C11);
                 let map = format!("{name}_union_out");
                 helpers.push(c11_union_crossing(
                     &map,
@@ -15198,7 +15197,7 @@ impl StaticTarget for CTarget {
                         c11_optional_type(&algorithm_record(alias)?)?
                     }
                     StaticSlot::Union(union) => {
-                        crate::forge::generator::union_unit_type(&union.document, Language::C11)?
+                        crate::forge::generator::union_unit_type(&union.document, Language::C11)
                     }
                     _ => ty.clone(),
                 };
