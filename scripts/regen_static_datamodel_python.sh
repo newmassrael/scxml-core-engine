@@ -182,8 +182,9 @@ fi
 # their modules; test_a_test_template_matches_its_values.py matches them against values.
 # The Rust, Kotlin and Go trees generate the same templates
 # (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh,
-# scripts/regen_static_datamodel_go.sh), Rust and Kotlin the two over a union besides,
-# which Python, lowering no union, refuses by name.
+# scripts/regen_static_datamodel_go.sh), the ones over a union besides, which Python,
+# whose test profile matches no union yet (codegen_matrix::TEST_PROFILE_UNION_BACKENDS),
+# refuses by name though it generates the union's unit.
 TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
 TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)

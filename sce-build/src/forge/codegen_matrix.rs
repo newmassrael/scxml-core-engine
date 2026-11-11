@@ -397,6 +397,7 @@ pub const UNION_BACKENDS: &[Language] = &[
     Language::Cpp,
     Language::Kotlin,
     Language::Go,
+    Language::Python,
     Language::Swift,
 ];
 
@@ -437,6 +438,7 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
     Language::Kotlin,
     Language::Go,
     Language::Swift,
+    Language::Python,
 ];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
@@ -1265,8 +1267,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Rust, C++, Kotlin, Go and
-    /// Swift emit one, in [`Language::ALL`]'s order.
+    /// dispatch that refuses the document by name. Rust, C++, Kotlin, Go,
+    /// Python and Swift emit one, in [`Language::ALL`]'s order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1285,6 +1287,7 @@ mod tests {
                 Language::Cpp,
                 Language::Kotlin,
                 Language::Go,
+                Language::Python,
                 Language::Swift
             ]
         );
@@ -1296,8 +1299,8 @@ mod tests {
 
     /// docs/adr/0092, section 7, last paragraph: a backend's test profile
     /// matches a union only where the backend generates the union's unit the
-    /// template names, and names it once. C++ generates the unit and does not
-    /// match one in a template yet.
+    /// template names, and names it once. C++ and Python generate the unit and
+    /// do not match one in a template yet.
     #[test]
     fn a_test_profile_matches_a_union_only_where_its_unit_is_generated() {
         for &lang in TEST_PROFILE_UNION_BACKENDS {
@@ -1308,13 +1311,15 @@ mod tests {
                 .count();
             assert_eq!(times, 1, "{lang:?}");
         }
-        assert!(UNION_BACKENDS.contains(&Language::Cpp));
-        assert!(!TEST_PROFILE_UNION_BACKENDS.contains(&Language::Cpp));
+        for lang in [Language::Cpp, Language::Python] {
+            assert!(UNION_BACKENDS.contains(&lang), "{lang:?}");
+            assert!(!TEST_PROFILE_UNION_BACKENDS.contains(&lang), "{lang:?}");
+        }
     }
 
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a
     /// union only where it generates the union's unit the algorithm names, and
-    /// names it once. Rust, C++, Kotlin and Go lower one.
+    /// names it once. Rust, C++, Kotlin, Go and Python lower one.
     #[test]
     fn an_algorithm_over_a_union_is_lowered_where_its_unit_is_generated() {
         for &lang in ALGORITHM_UNION_BACKENDS {
@@ -1332,7 +1337,8 @@ mod tests {
                 Language::Cpp,
                 Language::Kotlin,
                 Language::Go,
-                Language::Swift
+                Language::Swift,
+                Language::Python
             ]
         );
     }

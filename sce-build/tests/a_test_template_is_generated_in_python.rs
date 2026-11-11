@@ -10,8 +10,10 @@
 //! through the module of its own document, which the unit imports exactly
 //! where its text names it. The tests are joined in Python's words (`and`,
 //! `or`, `not`, `True`, `False`); a value that may be absent is tested by
-//! `is None` and read as it is. Python lowers no union (docs/adr/0092), so a
-//! template whose type reaches one is refused as C++ and Go refuse it. A
+//! `is None` and read as it is. Python generates a union's unit, and its test
+//! profile matches no union yet (docs/adr/0092;
+//! `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so a template whose type
+//! reaches one is refused as C++ refuses it. A
 //! template over a record also declares `TYPE` and `canonical`, the name of its
 //! record type and its value's canonical form in the test log
 //! (docs/SCE_TEST_PROFILE.md §12.5).
@@ -411,8 +413,9 @@ fn unsupported(name: &str, err: Located<ForgeError>) -> String {
 }
 
 /// A template whose type reaches a union, in itself or below a field, is
-/// refused on Python by the union's own refusal, which a schema unit's union
-/// field is refused by: Python lowers no union.
+/// refused on Python by the union's own refusal: Python generates the union's
+/// unit, and its test profile matches no union yet
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 #[test]
 fn a_template_that_reaches_a_union_is_refused_on_python() {
     for (path, alias) in [

@@ -32,7 +32,8 @@
 //! one a parameter gives holds it as given. A length restriction on a text
 //! counts its characters through the profile's runtime ([`TEXT_LENGTH`]),
 //! which a Python text, a sequence of code points, counts by its `len`. Python
-//! lowers no union ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so a
+//! generates a union's unit, and its test profile matches no union yet
+//! ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so a
 //! template whose type reaches one is refused by the walk before anything is
 //! spelled.
 
@@ -190,9 +191,10 @@ struct CanonicalAt {
 /// body of the unit's `canonical`: a list is a generator over its elements,
 /// and a field that may be absent is bound by an assignment expression and
 /// written only where it holds a value, `None`, which the record omits,
-/// where it holds none. Python lowers no union
-/// ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so the walk refuses one
-/// before it asks for its form, and the trait's refusal stands for it.
+/// where it holds none. Python's test profile matches no union yet
+/// ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so the walk
+/// refuses one before it asks for its form, and the trait's refusal stands for
+/// it.
 struct PythonCanonical;
 
 impl CanonicalSpelling for PythonCanonical {

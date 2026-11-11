@@ -18,8 +18,8 @@
 //! Rust refuses, as Kotlin and Go do. A module parameter is read from the run
 //! after the machine is built and before it starts, as on Rust, C++, Kotlin and
 //! Go. What Python refuses is held here too: a component that declares
-//! `<sce:action>`, and one whose template reaches a union, which Python does
-//! not lower.
+//! `<sce:action>`, and one whose template reaches a union, which Python's test
+//! profile does not match yet.
 //!
 //! What the generated components do when they run is held by
 //! `backends/python/tests/integration/static_datamodel/test_a_test_component_runs_through_its_doors.py`,
@@ -911,7 +911,8 @@ fn a_component_that_declares_a_host_action_is_refused_on_python() {
 
 /// docs/adr/0092, section 7: a component whose template reaches a union is
 /// refused on Python, which generates no unit of that template, by the union's
-/// own refusal, as on C++ and Go.
+/// own refusal, as on C++: Python's test profile matches no union yet
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 #[test]
 fn a_component_whose_template_reaches_a_union_is_refused_on_python() {
     let dir = tempfile::tempdir().expect("a directory");

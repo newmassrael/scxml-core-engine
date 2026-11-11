@@ -43,8 +43,8 @@ pub(crate) fn python_case_ident(variant: &str) -> String {
 }
 
 /// The read of the record of the case `variant` where a test proved it, on a
-/// machine's union: a method of the union's class, written once.
-fn python_case_read(variant: &str) -> String {
+/// machine's union as on a unit's: a method of the union's class, written once.
+pub(crate) fn python_case_read(variant: &str) -> String {
     format!(
         "proven_{}",
         crate::filters::to_snake_case(variant.to_string())
@@ -74,6 +74,43 @@ pub(crate) fn python_union_member(
         UnionMember::Tag => PYTHON_UNION_KIND.to_string(),
         UnionMember::Case(case) => format!("{}().{member}", python_case_read(&case.variant.name)),
         UnionMember::Shared => format!("{}()", python_shared_read(member)),
+    })
+}
+
+/// The Python read of `member` of the union value `holder`, a parameter or a
+/// local of an algorithm spelled as Python names it, whose type is the class
+/// the union's own unit declares (docs/adr/0092, section 7, the Python row, and
+/// Landing order step 5), where the value may be in the cases `left`, as
+/// [`unit_union_member_of`] classifies it: the tag by `kind`, which every case
+/// of the unit answers whatever key the tag is written under; the field of the
+/// one case left, through that case's proven read; or the field the cases left
+/// each declare, read through `value`, which every case that holds a record
+/// holds it in. Python reads an attribute whatever class holds it, so the read
+/// of a field the narrowing proved each case left declares is that attribute,
+/// and the unit needs no accessor of it and no case analysis, as Rust's and
+/// Kotlin's units need none. A case's record is the payload class its event
+/// schema's unit declares, whose fields are named as the schema writes them
+/// ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
+/// [`unit_union_member_of`]'s.
+pub(crate) fn python_unit_union_read(
+    holder: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    let field = crate::forge::generator::event_schema_field_ident(
+        member,
+        crate::generator::Language::Python,
+    );
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{PYTHON_UNION_KIND}"),
+        UnionMember::Case(case) => {
+            format!(
+                "{holder}.{}().{field}",
+                python_case_read(&case.variant.name)
+            )
+        }
+        UnionMember::Shared => format!("{holder}.{PYTHON_CASE_VALUE}.{field}"),
     })
 }
 
@@ -1374,6 +1411,29 @@ mod tests {
             panic!("the tag is never written alone");
         };
         assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// An algorithm's union is its unit's class (docs/adr/0092, Landing order
+    /// step 5): the tag by `kind`, the field of the one case left by that
+    /// case's proven read, a field several cases declare through the `value`
+    /// each holds its record in, and no read where no case left declares the
+    /// field.
+    #[test]
+    fn an_algorithms_union_is_read_on_its_units_class() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let read = |left: &[&ScopedCase], member: &str| {
+            python_unit_union_read("shape", union, left, member)
+        };
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(read(&[], "kind"), Ok("shape.kind".to_string()));
+        assert_eq!(
+            read(&[case(&shapes, "circle")], "radius"),
+            Ok("shape.proven_circle().radius".to_string())
+        );
+        assert_eq!(read(&both, "radius"), Ok("shape.value.radius".to_string()));
+        assert!(read(&[], "radius").is_err());
+        assert!(read(&[case(&shapes, "dot"), case(&shapes, "circle")], "radius").is_err());
     }
 
     /// The reader is the runtime's name of the union's type, its tag read by

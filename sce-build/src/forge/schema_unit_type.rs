@@ -26,8 +26,9 @@
 //! through its sibling module (`union_shape::UnionShape`), on Kotlin the sealed
 //! interface, on Go the value struct through the package its import binds
 //! (`sce_union_shape.UnionShape`), on C++ the struct through its namespace
-//! (`SCE::Generated::UnionShape::UnionShape`), on Swift the enum bare in the
-//! module. Every other backend refuses it by name.
+//! (`SCE::Generated::UnionShape::UnionShape`), on Python the class through the
+//! module its import binds (`sce_union_shape.UnionShape`), on Swift the enum
+//! bare in the module. Every other backend refuses it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -162,7 +163,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "bytes".to_string(),
             ValueType::Optional { elem } => format!("Optional[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, .. } => format!("list[{}]", inner(elem, c11)?),
         },
         Language::Swift => match ty {
@@ -379,6 +380,13 @@ mod tests {
         assert_eq!(
             spelled(Language::Cpp, "list<optional<union:Shape>>[3]"),
             "::SCE::Forge::OwnedList<std::optional<UnionShape>, 3>"
+        );
+        // Python names its class inside `list` and `Optional` (docs/adr/0092,
+        // section 7, the Python row).
+        assert_eq!(spelled(Language::Python, "union:Shape"), "UnionShape");
+        assert_eq!(
+            spelled(Language::Python, "list<optional<union:Shape>>[3]"),
+            "list[Optional[UnionShape]]"
         );
         for lang in Language::ALL.iter().copied() {
             if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {

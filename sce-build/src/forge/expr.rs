@@ -1290,6 +1290,17 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
+                    // Python reads a field several cases share through the
+                    // `value` each holds its record in, whatever its class.
+                    ExprTarget::Python => crate::forge::composed_lowering::python_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Python,
+                        ),
+                        union,
+                        &left,
+                        property,
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"
