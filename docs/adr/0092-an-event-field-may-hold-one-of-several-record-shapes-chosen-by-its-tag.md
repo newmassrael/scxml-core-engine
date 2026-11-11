@@ -1029,7 +1029,7 @@ a document, a wire or a diagnostic code.
 2. **A field of a case is written by assigning the holder the next value whole**, as on Kotlin ("Amendment
    (2026-11-11)" item 2): a Python record is a frozen dataclass a machine writes a field of by
    `dataclasses.replace`, so the write `shape.radius = v` under one case left is `shape =
-   U.Circle(dataclasses.replace(shape.proven_circle(), radius=v))` (the case's class named as item 1 says), and
+   UCircle(dataclasses.replace(shape.proven_circle(), radius=v))` (the case's class named as item 1 says), and
    under several cases that share the field `shape = shape.proven_field_radius_with(v)`, a method of the union's
    class beside the shared read (`ComposedSpelling::union_member_write`).
 3. **The writer tells a case by its class**: a `dict` of one writer per case, keyed by the case's class and
