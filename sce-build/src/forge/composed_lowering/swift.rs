@@ -212,6 +212,62 @@ impl SavedReader<'_, '_> {
     }
 }
 
+/// The name the read of a field several cases leave binds the record of the case to.
+const SWIFT_UNIT_RECORD_BINDING: &str = "sceRecord";
+
+/// The Swift read of `member` of the union value `holder`, a parameter or a local of an
+/// algorithm spelled as Swift names it, whose type is the union's own unit, the enum its unit
+/// declares (docs/adr/0092, section 7, the Swift row, and Landing order step 5), where the
+/// value may be in the cases `left`, as [`unit_union_member_of`] classifies it: the tag's
+/// property, which the unit answers under one name whatever key the tag is written under; the
+/// field of the one case left, through that case's proven read; or the field the cases left
+/// each declare, read by a `switch` over them that takes each case's record apart, whose
+/// `default` the narrowing proved is never taken. The `switch` is a closure called where the
+/// read stands, since a Swift `switch` is no operand, and it tests `holder` itself, a parameter
+/// or a local the body never writes. A field is named as its event schema's unit names it
+/// ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
+/// [`unit_union_member_of`]'s.
+pub(crate) fn swift_unit_union_read(
+    holder: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    let field = crate::forge::generator::event_schema_field_ident(
+        member,
+        crate::generator::Language::Swift,
+    );
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{SWIFT_UNION_KIND}"),
+        UnionMember::Case(case) => {
+            format!("{holder}.{}.{field}", swift_case_read(&case.variant.name))
+        }
+        UnionMember::Shared => {
+            let arms: String = left
+                .iter()
+                .map(|case| {
+                    format!(
+                        "case .{}(let {SWIFT_UNIT_RECORD_BINDING}): return \
+                         {SWIFT_UNIT_RECORD_BINDING}.{field}; ",
+                        swift_machine_case_ident(&case.variant.name)
+                    )
+                })
+                .collect();
+            // A `switch` over every case of an enum is exhaustive, and a `default` beside it is
+            // one Swift warns is never run.
+            let rest = if unit_union_leaves_others(union, left) {
+                format!(
+                    "default: preconditionFailure(\"{}\"); ",
+                    crate::filters::escape_swift(unit_union_other_case(union, left))
+                )
+            } else {
+                String::new()
+            };
+            format!("{{ switch {holder} {{ {arms}{rest}}} }}()")
+        }
+    })
+}
+
 /// The name a Swift union reader binds the case the tag named to.
 const SWIFT_CASE_BINDING: &str = "sceCase";
 

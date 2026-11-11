@@ -33169,6 +33169,10 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     // [`algorithm_optional_spelled`] says Swift spells the element.
     fn lowered(ty: &AlgorithmValueType) -> bool {
         ty.record_alias().is_some()
+            // A union is held whole, as the enum its unit declares (docs/adr/0092, Landing
+            // order step 5); one that may be absent, or in a list, is refused where the judge
+            // reads it, as `optional<list<T>>` is.
+            || ty.union_alias().is_some()
             || ty.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
             || ty.optional_elem().is_some_and(|elem| {
                 algorithm_optional_spelled(crate::generator::Language::Swift, elem)
@@ -33241,11 +33245,13 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 "the <sce:var name=\"{name}\">, a name Swift reserves,"
             )),
             AlgorithmStmt::RecordFromCall { .. } => None,
-            // A union an algorithm holds is not lowered on Swift yet
-            // (docs/adr/0092, Landing order step 5).
-            AlgorithmStmt::UnionVar { name, alias, .. } => Some(format!(
-                "the <sce:var name=\"{name}\"> of union:{alias}"
+            // A union an algorithm holds is the enum its unit declares, built whole as the case
+            // its tag names (docs/adr/0092, Landing order step 5), so the local is named as
+            // written like any other.
+            AlgorithmStmt::UnionVar { name, .. } if reserved(name) => Some(format!(
+                "the <sce:var name=\"{name}\">, a name Swift reserves,"
             )),
+            AlgorithmStmt::UnionVar { .. } => None,
             AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
@@ -33296,6 +33302,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 ))
             }
             SwiftImportKind::BoundedCollection { unlowered: None } => {}
+            SwiftImportKind::Union => {}
             SwiftImportKind::Schema(fields) => {
                 if let Some(why) = swift_schema_fields_unlowered(
                     fields
@@ -33791,6 +33798,10 @@ pub(crate) enum SwiftImportKind {
     /// what of it is not (`None` when none, or when the document-set compile that knows is not
     /// the route).
     BoundedCollection { unlowered: Option<String> },
+    /// A union, the enum the unit of its document declares, which an algorithm takes, builds
+    /// and gives back whole (docs/adr/0092, Landing order step 5). The unit is written for
+    /// every union Swift generates ([`crate::forge::codegen_matrix::UNION_BACKENDS`]).
+    Union,
     /// Any other kind, for which the Swift backend writes no unit yet.
     Other,
 }
@@ -33823,6 +33834,7 @@ fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
                 None if imp.kind == "bounded-collection" => SwiftImportKind::BoundedCollection {
                     unlowered: imp.swift_unlowered.clone(),
                 },
+                None if imp.kind == "union" => SwiftImportKind::Union,
                 None => SwiftImportKind::Other,
             },
         })
@@ -39571,7 +39583,10 @@ pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) 
         // The struct of the unit's namespace its `#include` brings in, as an
         // imported record's payload type is named.
         Language::Cpp => Some(format!("SCE::Generated::{pascal}::{pascal}")),
-        Language::Python | Language::C11 | Language::Swift => None,
+        // Swift's units are files of one module, so the enum of the unit is named bare, as a
+        // record's struct is.
+        Language::Swift => Some(pascal),
+        Language::Python | Language::C11 => None,
     }
 }
 
@@ -39619,7 +39634,13 @@ pub(crate) fn algorithm_union_case(
                 record.unwrap_or_default()
             ))
         }
-        Language::Python | Language::C11 | Language::Swift => {
+        // A case of the unit's enum, named as the unit declares it (lowerCamelCase, whatever
+        // the tag's document is called); built by its constructor with the record or nothing.
+        Language::Swift => format!(
+            "{union_type}.{}",
+            crate::forge::enum_naming::variant_ident(Language::Swift, "", variant)
+        ),
+        Language::Python | Language::C11 => {
             return Err(GenerateError::InvalidConfig(format!(
                 "an algorithm's union local reached the renderer of {}, which lowers none in an \
                  algorithm (docs/adr/0092, Landing order step 5)",
@@ -39676,15 +39697,20 @@ fn unreached_end(
             crate::forge::composed_lowering::CPP_UNREACHED,
             why
         )),
-        Language::Python | Language::C11 | Language::Swift => {
-            Err(GenerateError::InvalidConfig(format!(
-                "algorithm '{name}' ends where every case of a union returned, which the \
+        // `preconditionFailure` returns `Never`, so a function with a result may end in it, and
+        // it is what the unit's own proven reads do in a case the narrowing proved the value is
+        // not in (`forge/swift/union.swift.jinja2`).
+        Language::Swift => Ok(format!(
+            "{pad}preconditionFailure(\"{}\")",
+            filters::escape_swift(why)
+        )),
+        Language::Python | Language::C11 => Err(GenerateError::InvalidConfig(format!(
+            "algorithm '{name}' ends where every case of a union returned, which the \
                  renderer of {} does not close, as it lowers no union in an algorithm \
                  (docs/adr/0092, Landing order step 5)",
-                lang.canonical_name()
-            ))
-            .into())
-        }
+            lang.canonical_name()
+        ))
+        .into()),
     }
 }
 
@@ -41821,6 +41847,9 @@ fn lower_algorithm_stmt(
                         // By position in the schema's order, as a record local
                         // is (docs/adr/0059, section 5).
                         Language::Cpp => format!("{ty}{{{}}}", cpp_positional_init(&inits)),
+                        // The record's own initializer, its labels the fields in the
+                        // schema's order, which `record_field_inits` yields.
+                        Language::Swift => format!("{ty}({})", joined(": ")),
                         _ => format!("{ty} {{ {} }}", joined(": ")),
                     })
                 }
@@ -41833,14 +41862,15 @@ fn lower_algorithm_stmt(
             )?;
             let local = l.local_id(name);
             // `algorithm_union_type` has refused every backend but Rust, C++,
-            // Kotlin and Go. The local is never written, so Kotlin declares it
-            // `val`, at the union's type rather than the case's class, so a
-            // test of its case reads it as a value of the union, and C++
-            // `const`; Go's constructor answers the union's type, which the
-            // short declaration takes.
+            // Kotlin, Go and Swift. The local is never written, so Kotlin
+            // declares it `val`, at the union's type rather than the case's
+            // class, so a test of its case reads it as a value of the union, as
+            // Swift's `let` does, and C++ `const`; Go's constructor answers the
+            // union's type, which the short declaration takes.
             let line = match lang {
                 Language::Kotlin => format!("{pad}val {local}: {union_type} = {value}\n"),
                 Language::Cpp => format!("{pad}const {union_type} {local} = {value};\n"),
+                Language::Swift => format!("{pad}let {local}: {union_type} = {value}\n"),
                 Language::Go => format!("{pad}{local} := {value}\n"),
                 _ => format!("{pad}let {local} = {value};\n"),
             };

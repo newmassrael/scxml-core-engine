@@ -1279,6 +1279,15 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
+                    ExprTarget::Swift => crate::forge::composed_lowering::swift_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Swift,
+                        ),
+                        union,
+                        &left,
+                        property,
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"
