@@ -1939,8 +1939,14 @@ impl<'a> Judge<'a> {
             .and_then(AlgorithmValueType::optional_elem)
             .and_then(AlgorithmValueType::record_alias);
         let held_list = held.and_then(AlgorithmValueType::list_elem);
+        let held_union = held.and_then(AlgorithmValueType::union_alias);
         let expected = match &value.ret {
             Some(StaticSlot::Record(returned)) if held_record == Some(returned.as_str()) => {
+                InferredType::Unknown
+            }
+            // A union a call answers is taken whole into a union variable of the
+            // same document (docs/adr/0092, section 6.1 item 7).
+            Some(StaticSlot::Union(returned)) if held_union == Some(returned.alias.as_str()) => {
                 InferredType::Unknown
             }
             // An optional record a call answers is taken whole into an optional
@@ -1993,6 +1999,7 @@ impl<'a> Judge<'a> {
                         StaticSlot::Optional(t) => {
                             format!("a value of optional<{}>", t.as_attr())
                         }
+                        StaticSlot::Union(union) => format!("a union of `{}`", union.alias),
                     },
                     target.id
                 )))
@@ -2722,6 +2729,16 @@ impl<'a> Judge<'a> {
                      optional<union:{alias}> to hold `null`"
                 )))
             });
+        }
+        // ... or what an imported algorithm returns as a union of the same
+        // document, the call being the whole of the right side (section 6.1
+        // item 7), as a record variable takes a record one returns.
+        if let Some(callee) = self
+            .scope
+            .whole_value_call(written)
+            .filter(|c| StaticScope::returns_state(c))
+        {
+            return Some(self.state_from_call(ctx, action, var, callee));
         }
         if let Err(refusal) =
             self.expr(ctx, written, at_expr, Expected::Hint(InferredType::Unknown))

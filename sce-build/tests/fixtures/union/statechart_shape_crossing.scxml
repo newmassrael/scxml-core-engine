@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A statechart that hands an algorithm a union and takes one back
+     (docs/adr/0092, section 6.1 item 7): `shape` is grown by
+     algorithm_shape_grown.scxml, which takes the union and returns one, and its
+     extent asked of algorithm_shape_extent.scxml, which takes the union. Each
+     call maps the machine's own sum into the type the union's unit declares,
+     case by case, and back; the statechart imports the union, the tag's enum
+     and each case's record, the documents the algorithms name. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="sce-static"
+       name="statechart_shape_crossing">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect_minimal.scxml" as="Rect"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:import kind="algorithm" src="algorithm_shape_extent.scxml" as="Extent"/>
+  <sce:import kind="algorithm" src="algorithm_shape_grown.scxml" as="Grown"/>
+  <datamodel>
+    <data id="shape" sce:type="union:Shape" sce:direction="out">
+      <sce:set name="kind" expr="ShapeKind.circle"/>
+      <sce:set name="radius" expr="2"/>
+    </data>
+    <data id="extent" sce:type="uint16" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="grow" type="internal">
+      <assign location="shape" expr="Grown(shape, 3)"/>
+      <assign location="extent" expr="Extent(shape)"/>
+    </transition>
+  </state>
+</scxml>

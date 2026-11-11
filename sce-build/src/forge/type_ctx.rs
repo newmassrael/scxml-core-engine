@@ -242,12 +242,45 @@ pub enum StaticSlot {
     /// record, or a record, which is lifted — or by `null`, and taken back whole
     /// into an optional record variable.
     OptionalRecord(String),
+    /// `union:<alias>` (docs/adr/0092, section 6.1 item 7), named by the alias
+    /// the STATECHART imports the union document under: a union the statechart
+    /// holds in a variable of its own, passed by the name of that variable and
+    /// taken back whole into one, mapped case by case between the machine's own
+    /// sum and the type the union's unit declares, which the algorithm holds.
+    Union(UnionSlot),
+}
+
+/// A union an imported algorithm's slot holds, as the statechart that calls it
+/// holds the same document ([`StaticSlot::Union`]): what an adapter maps a value
+/// by, case by case, read where the import is resolved
+/// (`crate::forge::static_imports`), so a target spells the crossing from the
+/// slot alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionSlot {
+    /// The alias the STATECHART imports the union document under.
+    pub alias: String,
+    /// The union document's name, which the machine's sum and the type the
+    /// union's own unit declares are both named by.
+    pub document: String,
+    /// Each case, in the document's order.
+    pub cases: Vec<UnionSlotCase>,
+}
+
+/// One case of a [`UnionSlot`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionSlotCase {
+    /// The declared name of the tag's variant the case is for.
+    pub variant: String,
+    /// The alias the STATECHART imports the case's record document under, which
+    /// the machine names the record's type by; `None` for an empty case, the
+    /// tag alone.
+    pub record: Option<String>,
 }
 
 impl StaticSlot {
     /// Whether the slot holds a value the statechart keeps in a variable of its own
-    /// (a record or a list) and so passes by the name of that variable. A value
-    /// that may be absent is a value, passed by any expression of its type.
+    /// (a record, a union or a list) and so passes by the name of that variable. A
+    /// value that may be absent is a value, passed by any expression of its type.
     pub fn is_state(&self) -> bool {
         !matches!(self, Self::Scalar(_) | Self::Optional(_))
     }
@@ -281,15 +314,17 @@ impl StaticValueSignature {
     /// Whether a call is made through the adapter a target declares for it: a
     /// parameter is a record or a list the statechart holds, or a value of an
     /// enum, which the machine's type and the algorithm's spell apart and the
-    /// adapter maps by declared name, as it does what an enum is returned as.
+    /// adapter maps by declared name, as it does what an enum is returned as; and
+    /// so is a union returned, which the adapter maps case by case into the
+    /// machine's own sum whatever the parameters are (docs/adr/0092, section 6.1
+    /// item 7).
     pub fn adapted(&self) -> bool {
         self.params
             .iter()
             .any(|slot| slot.is_state() || slot.enum_alias().is_some())
-            || self
-                .ret
-                .as_ref()
-                .is_some_and(|slot| slot.enum_alias().is_some())
+            || self.ret.as_ref().is_some_and(|slot| {
+                slot.enum_alias().is_some() || matches!(slot, StaticSlot::Union(_))
+            })
     }
 }
 
@@ -1088,13 +1123,15 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
             StaticSlot::Record(_)
             | StaticSlot::OptionalRecord(_)
             | StaticSlot::ScalarList(_)
-            | StaticSlot::RecordList(_) => InferredType::Unknown,
+            | StaticSlot::RecordList(_)
+            | StaticSlot::Union(_) => InferredType::Unknown,
         })
         .collect();
     let ret = match value.ret.as_ref()? {
         StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
         StaticSlot::Optional(t) => optional(t),
-        StaticSlot::Record(_) => InferredType::Unknown,
+        // A union is taken back whole into a union variable, as a record is.
+        StaticSlot::Record(_) | StaticSlot::Union(_) => InferredType::Unknown,
         StaticSlot::OptionalRecord(_) => {
             InferredType::Optional(crate::forge::types::OptionalElem::Record)
         }
@@ -1118,7 +1155,8 @@ pub fn state_call_name(alias: &str, codes: &[char]) -> String {
 }
 
 /// Every way the state parameters of `value` can be held: a record parameter by
-/// a variable, a payload or a loop's item, a list parameter by a variable.
+/// a variable, a payload or a loop's item, a list or a union parameter by a
+/// variable.
 fn state_code_combinations(value: &StaticValueSignature) -> Vec<Vec<char>> {
     let mut combos: Vec<Vec<char>> = vec![Vec::new()];
     for slot in value.params.iter().filter(|s| s.is_state()) {
@@ -1242,7 +1280,8 @@ impl StaticScope {
     /// Whether `callee` returns a record or a list: a value that is the right side of
     /// an assignment to a variable of its type and nothing else. An optional record
     /// is one too (docs/adr/0055, step 9): taken whole into an optional record
-    /// variable.
+    /// variable; and so is a union (docs/adr/0092, section 6.1 item 7), taken whole
+    /// into a union variable.
     pub fn returns_state(callee: &StaticCallee) -> bool {
         callee.value.as_ref().is_some_and(|v| {
             matches!(
@@ -1252,6 +1291,7 @@ impl StaticScope {
                         | StaticSlot::OptionalRecord(_)
                         | StaticSlot::ScalarList(_)
                         | StaticSlot::RecordList(_)
+                        | StaticSlot::Union(_)
                 )
             )
         })
@@ -1432,10 +1472,38 @@ impl StaticScope {
                 Some(_) => Err(format!("`{name}` is a list of numbers, not of records")),
                 None => Err(format!("`{name}` is not a list variable")),
             },
+            // A union is handed over by the name of the variable that holds it, of
+            // the same union document (docs/adr/0092, section 6.1 item 7); the
+            // present value of an optional one is put into a union variable first.
+            (StaticSlot::Union(union), ArgShape::Name(name)) => {
+                let written = variable(name).and_then(|v| v.value_type.as_ref());
+                match written.and_then(AlgorithmValueType::union_alias) {
+                    Some(held) if held == union.alias => Ok('v'),
+                    Some(held) => Err(format!(
+                        "`{name}` is a union of `{held}`, and the algorithm takes a union of \
+                         `{}`",
+                        union.alias
+                    )),
+                    None if written
+                        .and_then(AlgorithmValueType::optional_elem)
+                        .and_then(AlgorithmValueType::union_alias)
+                        .is_some() =>
+                    {
+                        Err(format!(
+                            "`{name}` may be absent, and the algorithm takes a union of `{}` \
+                             that is present: put its present value into a variable of \
+                             union:{} where a test proves it present, and hand the algorithm \
+                             that",
+                            union.alias, union.alias
+                        ))
+                    }
+                    None => Err(format!("`{name}` is not a union variable")),
+                }
+            }
             _ => Err(
-                "a record or a list is handed over by the name of the variable that holds \
-                      it, or `_event.data` for the payload of the event, and not by an \
-                      expression that computes one"
+                "a record, a union or a list is handed over by the name of the variable that \
+                 holds it, or `_event.data` for the payload of a record event, and not by an \
+                 expression that computes one"
                     .to_string(),
             ),
         }

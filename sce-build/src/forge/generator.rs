@@ -39326,7 +39326,6 @@ fn algorithm_union_type(
     imports: &[ImportContext],
     alias: &str,
 ) -> Result<String, ForgeError> {
-    use crate::generator::Language;
     let import = imports
         .iter()
         .find(|i| i.kind == "union" && i.alias == alias)
@@ -39336,17 +39335,36 @@ fn algorithm_union_type(
                  before a backend renders it"
             ))
         })?;
-    match l.lang {
-        Language::Rust => Ok(format!("{}::{}", import.namespace, import.type_name)),
-        Language::Kotlin => Ok(import.type_name.clone()),
-        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
-            Err(GenerateError::InvalidConfig(format!(
-                "an algorithm's union reached the renderer of {}, which lowers none in an \
-                 algorithm (docs/adr/0092, Landing order step 5)",
-                l.lang.canonical_name()
-            ))
-            .into())
-        }
+    union_unit_type(&import.document_name, l.lang).ok_or_else(|| {
+        GenerateError::InvalidConfig(format!(
+            "an algorithm's union reached the renderer of {}, which lowers none in an \
+             algorithm (docs/adr/0092, Landing order step 5)",
+            l.lang.canonical_name()
+        ))
+        .into()
+    })
+}
+
+/// The type the unit of the union document `document` declares, as a unit of
+/// `lang` that imports it names it (docs/adr/0092, section 7): Rust through the
+/// sibling module its `use super::<snake>;` brings in (`<snake>::<Pascal>`), and
+/// Kotlin by the sealed interface the wildcard import of the unit's package
+/// brings in (`<Pascal>`), as an imported record's payload type is named
+/// ([`event_schema_payload_type`]). What an algorithm's union is spelled as
+/// ([`algorithm_union_type`]), and what a statechart's adapter maps the
+/// machine's own sum into (`crate::forge::static_lowering`). `None` on a backend
+/// that names no unit's union outside the unit yet
+/// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
+pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) -> Option<String> {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(document.to_string());
+    match lang {
+        Language::Rust => Some(format!(
+            "{}::{pascal}",
+            filters::to_snake_case(document.to_string())
+        )),
+        Language::Kotlin => Some(pascal),
+        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => None,
     }
 }
 
@@ -39356,10 +39374,12 @@ fn algorithm_union_type(
 /// section 7 item 3: built only whole): Rust's enum variant
 /// ([`crate::forge::composed_lowering::rust_case_ident`]) and Kotlin's class
 /// nested in the sealed interface, or its `data object`
-/// ([`kotlin_case_ident`]). A backend that lowers no union in an algorithm
-/// refused the algorithm before its body was rendered
-/// ([`algorithm_union_type`]), so asked of one it is a fault of the pipeline.
-fn algorithm_union_case(
+/// ([`kotlin_case_ident`]). Spelled with a binding in place of `record`, it is
+/// the pattern a Rust `match` takes the case apart by. A backend that lowers no
+/// union in an algorithm refused the algorithm before its body was rendered
+/// ([`algorithm_union_type`]), and a statechart's call of one before its
+/// adapter was written, so asked of one it is a fault of the pipeline.
+pub(crate) fn algorithm_union_case(
     lang: crate::generator::Language,
     union_type: &str,
     variant: &str,

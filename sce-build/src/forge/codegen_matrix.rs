@@ -399,11 +399,14 @@ pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin, Lang
 /// type the union's own unit declares, its tag and its cases' fields read where
 /// the narrowing proves them, a union local built as the case its tag names,
 /// and the end of a body no path reaches closed as the backend says it is not
-/// reached. A backend joins this list in the change that gives it those
-/// spellings, and only after it is in [`UNION_BACKENDS`], whose unit the
+/// reached; and a statechart's call of such an algorithm, its union handed over
+/// and taken back case by case between the machine's own sum and the unit's
+/// (section 6.1 item 7). A backend joins this list in the change that gives it
+/// those spellings, and only after it is in [`UNION_BACKENDS`], whose unit the
 /// algorithm names. A backend not listed refuses such an algorithm by name
-/// (`generate/unsupported-feature`) where it renders it; the algorithm is judged
-/// alike on every backend before that.
+/// (`generate/unsupported-feature`) where it renders it, and a statechart that
+/// calls one where it renders the statechart; the algorithm is judged alike on
+/// every backend before that.
 pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md

@@ -307,6 +307,159 @@ fn own_record_aliases(model: &SCXMLModel, base_dir: &Path) -> HashMap<RecordId, 
     aliases
 }
 
+/// The alias `model` imports each union document under, by the document's
+/// identity (docs/adr/0092, section 6.1 item 7): what a union slot of an imported
+/// algorithm is named by in the statechart, as a record slot is
+/// ([`own_record_aliases`]). A union document that cannot be read is left out, and
+/// a slot of it is refused where it is read.
+fn own_union_aliases(model: &SCXMLModel, base_dir: &Path) -> HashMap<String, String> {
+    let mut aliases = HashMap::new();
+    for import in model
+        .forge_imports
+        .iter()
+        .filter(|i| i.kind == ForgeKind::Union)
+    {
+        if let Ok(source) = crate::forge::import_source::ImportSource::read(base_dir, import) {
+            aliases
+                .entry(crate::forge::stdlib::identity(&source.path))
+                .or_insert_with(|| import.alias.clone());
+        }
+    }
+    aliases
+}
+
+/// The alias the statechart imports the record `alias` of `imports` (written
+/// relative to `base_dir`) under, when the record is one a call copies field by
+/// field into the algorithm's own type and back: every field a number, a truth
+/// value, a string the schema bounds, a value of a closed enum, or an optional
+/// value of one of those. `Err` names the field that is none, and a record whose
+/// document the statechart does not import, which it holds no variable of. The one
+/// reading of a record slot and of the record a union slot's case holds.
+fn crossing_record(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+    own: &HashMap<RecordId, String>,
+) -> Result<String, String> {
+    let (id, fields) = record_schema(imports, base_dir, alias)
+        .ok_or_else(|| format!("its record `{alias}` is a schema this call cannot resolve"))?;
+    let fields = fields?;
+    // A record is copied into the algorithm's own type and back, field by field; the
+    // fields of a number or a truth value copy the same way on every backend, a
+    // string the schema bounds is held within the same bound on both sides, and an
+    // enum field crosses by the declared name of its variant.
+    for field in &fields {
+        // An optional field is held in the same optional type on both sides,
+        // and copies as it is (docs/adr/0055); the present value of an optional
+        // value of an enum crosses by the declared name of its variant, as an
+        // enum field does.
+        let ty = match &field.ty {
+            EntryType::Scalar(ty) => ty,
+            EntryType::Optional { elem } => {
+                if let SceType::Enum(reference) = elem {
+                    let what = format!("the field `{}` of its record `{alias}`", field.id);
+                    crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
+                }
+                continue;
+            }
+        };
+        if crate::forge::static_lowering::record_field_copies(ty, field.max_size) {
+            if let SceType::Enum(reference) = ty {
+                let what = format!("the field `{}` of its record `{alias}`", field.id);
+                // The machine holds the field in its own type for the enum
+                // document the schema imports, whether or not the statechart
+                // imports it too (docs/adr/0054), so that is the document the
+                // value crosses from and back to, and it needs no import here.
+                crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
+            }
+            continue;
+        }
+        return Err(match (ty, field.max_size) {
+            (SceType::String, None) => format!(
+                "its record `{alias}` has a string field with no `sce:max-size`, which \
+                 bounds the text an algorithm's record holds"
+            ),
+            (held, _) => format!(
+                "its record `{alias}` has a field of type {}, and only records of numbers, \
+                 truth values, bounded strings and enums are handed to an algorithm",
+                held.as_attr()
+            ),
+        });
+    }
+    own.get(&id).cloned().ok_or_else(|| {
+        format!(
+            "it names a record of the schema `{alias}` stands for, and the statechart \
+             does not import that document as an event-schema"
+        )
+    })
+}
+
+/// The union `alias` of `imports` (written relative to `base_dir`) as a statechart
+/// hands it to an algorithm or takes it back (docs/adr/0092, section 6.1 item 7): the
+/// statechart's own import of the same union document (`own_unions`, by identity),
+/// and each case's record the statechart's own import of the same schema document,
+/// copied field by field as a record slot is ([`crossing_record`]). A union crosses
+/// case by case, so every case's record is one a call copies; one that is not, and
+/// a union or a record the statechart does not import, are refused naming the case.
+fn crossing_union(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+    own: &HashMap<RecordId, String>,
+    own_unions: &HashMap<String, String>,
+) -> Result<crate::forge::type_ctx::UnionSlot, String> {
+    let unreadable = || format!("its union `{alias}` is a document this call cannot resolve");
+    let import = imports
+        .iter()
+        .find(|i| i.alias == alias && i.kind == ForgeKind::Union)
+        .ok_or_else(unreadable)?;
+    let source = crate::forge::import_source::ImportSource::read(base_dir, import)
+        .map_err(|_| unreadable())?;
+    let parsed = source.parse().ok().flatten().ok_or_else(unreadable)?;
+    let ForgeDocument::Union(union) = &parsed.document else {
+        return Err(unreadable());
+    };
+    // The union's own imports are written relative to it.
+    let union_base = source.path.parent().unwrap_or(base_dir);
+    let cases = union
+        .cases
+        .iter()
+        .map(|case| {
+            let record = case
+                .record
+                .as_deref()
+                .map(|record| {
+                    crossing_record(&parsed.imports, union_base, record, own).map_err(|why| {
+                        format!(
+                            "its union `{alias}` holds in its case `{}` a record a call does not \
+                             copy: {why}",
+                            case.variant
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok(crate::forge::type_ctx::UnionSlotCase {
+                variant: case.variant.clone(),
+                record,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let own_alias = own_unions
+        .get(&crate::forge::stdlib::identity(&source.path))
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "it names a union of the document `{alias}` stands for, and the statechart \
+                 does not import that document as a union"
+            )
+        })?;
+    Ok(crate::forge::type_ctx::UnionSlot {
+        alias: own_alias,
+        document: union.name.clone(),
+        cases,
+    })
+}
+
 /// Each enum `model` imports, by the alias it imports it under: what an enum a
 /// record's field or a slot of an imported algorithm holds is matched against.
 fn own_enum_documents(model: &SCXMLModel, base_dir: &Path) -> BTreeMap<String, EnumDocument> {
@@ -355,7 +508,10 @@ fn crossable_enum<'d>(
 /// and an enum field of a record is held by the statechart in its type for the
 /// enum document the schema imports (docs/adr/0054), which is the record's own and
 /// so the algorithm's — the value crosses by the variant's declared name, which
-/// only one document gives both sides. A list
+/// only one document gives both sides. A union crosses by document too
+/// (docs/adr/0092, section 6.1 item 7): a union slot is the statechart's own import
+/// of the union document (`own_unions`), and each case's record its own import of
+/// the record's schema ([`crossing_union`]). A list
 /// returned is held to `may-fail` and `returns-max-size`, the two things that let a
 /// statechart receive a list that could not be built and know how much room it needs
 /// (the rule a list of numbers is already held to).
@@ -365,6 +521,7 @@ fn value_signature(
     callee_base: &Path,
     own: &HashMap<RecordId, String>,
     own_enums: &BTreeMap<String, EnumDocument>,
+    own_unions: &HashMap<String, String>,
 ) -> Result<Option<StaticValueSignature>, String> {
     let signature = &algorithm.signature;
     let holds_enum = |t: &AlgorithmValueType| matches!(t.scalar(), Some(SceType::Enum(_)));
@@ -380,59 +537,7 @@ fn value_signature(
     if !state_param && !state_return {
         return Ok(None);
     }
-    let record = |alias: &str| -> Result<String, String> {
-        let (id, fields) = record_schema(callee_imports, callee_base, alias)
-            .ok_or_else(|| format!("its record `{alias}` is a schema this call cannot resolve"))?;
-        let fields = fields?;
-        // A record is copied into the algorithm's own type and back, field by field; the
-        // fields of a number or a truth value copy the same way on every backend, a
-        // string the schema bounds is held within the same bound on both sides, and an
-        // enum field crosses by the declared name of its variant.
-        for field in &fields {
-            // An optional field is held in the same optional type on both sides,
-            // and copies as it is (docs/adr/0055); the present value of an optional
-            // value of an enum crosses by the declared name of its variant, as an
-            // enum field does.
-            let ty = match &field.ty {
-                EntryType::Scalar(ty) => ty,
-                EntryType::Optional { elem } => {
-                    if let SceType::Enum(reference) = elem {
-                        let what = format!("the field `{}` of its record `{alias}`", field.id);
-                        crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
-                    }
-                    continue;
-                }
-            };
-            if crate::forge::static_lowering::record_field_copies(ty, field.max_size) {
-                if let SceType::Enum(reference) = ty {
-                    let what = format!("the field `{}` of its record `{alias}`", field.id);
-                    // The machine holds the field in its own type for the enum
-                    // document the schema imports, whether or not the statechart
-                    // imports it too (docs/adr/0054), so that is the document the
-                    // value crosses from and back to, and it needs no import here.
-                    crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
-                }
-                continue;
-            }
-            return Err(match (ty, field.max_size) {
-                (SceType::String, None) => format!(
-                    "its record `{alias}` has a string field with no `sce:max-size`, which \
-                     bounds the text an algorithm's record holds"
-                ),
-                (held, _) => format!(
-                    "its record `{alias}` has a field of type {}, and only records of numbers, \
-                     truth values, bounded strings and enums are handed to an algorithm",
-                    held.as_attr()
-                ),
-            });
-        }
-        own.get(&id).cloned().ok_or_else(|| {
-            format!(
-                "it names a record of the schema `{alias}` stands for, and the statechart \
-                 does not import that document as an event-schema"
-            )
-        })
-    };
+    let record = |alias: &str| crossing_record(callee_imports, callee_base, alias, own);
     // An enum slot is named, as a record slot is, by the alias the statechart imports
     // the same document under: the type of a value of that enum, which a slot of an
     // optional value of it holds too.
@@ -476,10 +581,17 @@ fn value_signature(
             AlgorithmValueType::Text { .. } => Ok(StaticSlot::Scalar(SceType::String)),
             AlgorithmValueType::Bytes { .. } => Ok(StaticSlot::Scalar(SceType::Bytes)),
             AlgorithmValueType::Record { alias } => Ok(StaticSlot::Record(record(alias)?)),
-            // An algorithm's slot holds a union (docs/adr/0092, Landing order
-            // step 5), and a statechart does not hand one over or take one back
-            // yet (section 6.1 item 7).
-            AlgorithmValueType::Union { .. } => Err(composed(ty)),
+            // A union crosses as a record does (docs/adr/0092, section 6.1 item
+            // 7): by the statechart's own import of the same document, mapped
+            // case by case where a lane lowers the crossing, and refused by name
+            // where the statechart is rendered on any other.
+            AlgorithmValueType::Union { alias } => Ok(StaticSlot::Union(crossing_union(
+                callee_imports,
+                callee_base,
+                alias,
+                own,
+                own_unions,
+            )?)),
             AlgorithmValueType::List { elem, .. } => match &**elem {
                 AlgorithmValueType::Scalar(t) => {
                     if crate::forge::types::ListElem::of(t).is_none() {
@@ -603,6 +715,7 @@ pub(crate) fn resolve(
     let mut callees = Vec::new();
     let own = own_record_aliases(model, base_dir);
     let own_enums = own_enum_documents(model, base_dir);
+    let own_unions = own_union_aliases(model, base_dir);
     for import in model
         .forge_imports
         .iter()
@@ -691,21 +804,27 @@ pub(crate) fn resolve(
         // is the statechart's reading of that, and replaces the host-only refusal
         // when it holds. When it does not, the reason is added to the refusal.
         let callee_base = source.path.parent().unwrap_or(base_dir);
-        let (value, host_only, refused_why) =
-            match value_signature(algorithm, &parsed.imports, callee_base, &own, &own_enums) {
-                Ok(Some(value)) => (Some(value), None, None),
-                Ok(None) => (None, signature.host_only, None),
-                Err(reason) => (
-                    None,
-                    Some(format!(
-                        "{}: {reason}",
-                        signature
-                            .host_only
-                            .unwrap_or_else(|| "has a slot a statechart cannot pass".to_string())
-                    )),
-                    Some(reason),
-                ),
-            };
+        let (value, host_only, refused_why) = match value_signature(
+            algorithm,
+            &parsed.imports,
+            callee_base,
+            &own,
+            &own_enums,
+            &own_unions,
+        ) {
+            Ok(Some(value)) => (Some(value), None, None),
+            Ok(None) => (None, signature.host_only, None),
+            Err(reason) => (
+                None,
+                Some(format!(
+                    "{}: {reason}",
+                    signature
+                        .host_only
+                        .unwrap_or_else(|| "has a slot a statechart cannot pass".to_string())
+                )),
+                Some(reason),
+            ),
+        };
         callees.push(StaticCallee {
             alias: import.alias.clone(),
             document_name: parsed.document.name().to_string(),

@@ -956,6 +956,75 @@ impl AdapterSpec<'_> {
                 .unwrap_or_default()
         })
     }
+
+    /// The union `union` a call hands over or takes back, as `target` maps it case
+    /// by case in `crossing`'s direction (docs/adr/0092, section 6.1 item 7): the
+    /// machine's own sum ([`crate::forge::composed_lowering::ComposedSpelling::union_type`]),
+    /// and each case as the side the value leaves names it and as the side it
+    /// arrives at builds it, between the machine's sum and the type the union's own
+    /// unit declares ([`crate::forge::generator::union_unit_type`]), which the
+    /// algorithm holds. The record a case holds is read through `binding` and built
+    /// on the arriving side by `record(alias, binding)`, the copy of a record slot in
+    /// the same direction, so a union crosses exactly as each of its records does.
+    /// `None` for a target with no spelling of the machine's sum or of the unit's,
+    /// and for a record it cannot copy, which refuses the adapter by name.
+    fn union_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        union: &crate::forge::type_ctx::UnionSlot,
+        crossing: Crossing,
+        binding: &str,
+        record: &dyn Fn(&str, &str) -> Option<String>,
+    ) -> Option<(String, Vec<CrossedCase>)> {
+        use crate::forge::generator::{algorithm_union_case, union_unit_type};
+        let lang = self.lang?;
+        let spelling = target.composed_spelling(self.machine)?;
+        let machine = spelling.union_type(&union.document);
+        let unit = union_unit_type(&union.document, lang)?;
+        let cases = union
+            .cases
+            .iter()
+            .map(|case| {
+                let ident = spelling.union_case_ident(&case.variant);
+                let built = match case.record.as_deref() {
+                    Some(alias) => Some(record(alias, binding)?),
+                    None => None,
+                };
+                let unit_case = |held: Option<&str>| {
+                    algorithm_union_case(lang, &unit, &case.variant, held).ok()
+                };
+                let (from, to) = match crossing {
+                    Crossing::ToAlgorithm => (
+                        spelling.union_value(&machine, &ident, None),
+                        unit_case(built.as_deref())?,
+                    ),
+                    Crossing::FromAlgorithm => (
+                        unit_case(None)?,
+                        spelling.union_value(&machine, &ident, built.as_deref()),
+                    ),
+                };
+                Some(CrossedCase {
+                    from,
+                    holds_record: case.record.is_some(),
+                    to,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some((machine, cases))
+    }
+}
+
+/// One case of a union a call hands over or takes back, as an adapter maps it
+/// ([`AdapterSpec::union_crossing`]).
+pub struct CrossedCase {
+    /// The case as the side the value leaves names it, holding nothing: what a
+    /// test of the case, or a pattern of it, is written by.
+    pub from: String,
+    /// Whether the case holds a record, which a pattern of it binds.
+    pub holds_record: bool,
+    /// The value of the case on the side the value arrives at, holding the record
+    /// built from the one the leaving value holds.
+    pub to: String,
 }
 
 /// Which way a value of an enum crosses an adapter (docs/SCE_ACCEPTED_SUBSET.md
@@ -968,8 +1037,9 @@ pub enum Crossing {
 }
 
 /// The alias of each enum a call of `value` hands a value of over or takes one back
-/// in: a slot that is a value of one, and an enum field of a record, or of the
-/// records of a list, a slot holds — each a value an adapter maps by declared name.
+/// in: a slot that is a value of one, and an enum field of a record, of the records
+/// of a list, or of the record a case of a union holds, that a slot holds — each a
+/// value an adapter maps by declared name.
 fn crossing_enums(
     value: &crate::forge::type_ctx::StaticValueSignature,
     records: &std::collections::BTreeMap<String, EntrySchema>,
@@ -979,10 +1049,7 @@ fn crossing_enums(
         if let Some(alias) = slot.enum_alias() {
             aliases.insert(alias.to_string());
         }
-        if let StaticSlot::Record(record)
-        | StaticSlot::RecordList(record)
-        | StaticSlot::OptionalRecord(record) = slot
-        {
+        for record in crossing_records(slot) {
             for field in records.get(record).iter().flat_map(|s| s.fields.iter()) {
                 if let SceType::Enum(reference) = field.sce_type.present_type() {
                     aliases.insert(reference.alias.clone());
@@ -991,6 +1058,24 @@ fn crossing_enums(
         }
     }
     aliases
+}
+
+/// The alias the statechart imports each record `slot` copies across a call
+/// under: the record of a record slot, of an optional record and of a list of
+/// records, and the record of each case of a union (docs/adr/0092, section 6.1
+/// item 7); none for any other slot.
+fn crossing_records(slot: &StaticSlot) -> Vec<&str> {
+    match slot {
+        StaticSlot::Record(record)
+        | StaticSlot::RecordList(record)
+        | StaticSlot::OptionalRecord(record) => vec![record.as_str()],
+        StaticSlot::Union(union) => union
+            .cases
+            .iter()
+            .filter_map(|case| case.record.as_deref())
+            .collect(),
+        StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => Vec::new(),
+    }
 }
 
 /// Each declared variant of `model` as the two sides of a crossing spell it in `lang`,
@@ -2492,6 +2577,33 @@ fn upper_case_verdict(verdict: crate::test_component::Verdict) -> String {
 /// one it is written in.
 const SWIFT_PRESENT: &str = "scePresent";
 
+/// The record a case of a union holds, as a Kotlin adapter reads it while it
+/// maps the union across a call ([`kotlin_union_crossing`]): the `value` of the
+/// `when`'s subject, smart-cast to the case its arm tests.
+const KOTLIN_CROSSED_RECORD: &str = "sceCase.value";
+
+/// The Kotlin map of the union `value` across a call (docs/adr/0092, section
+/// 6.1 item 7): a `when` over every case of the sealed interface the value
+/// leaves, each arm the case the value arrives as, its record built from
+/// [`KOTLIN_CROSSED_RECORD`]. The subject is bound to a name of its own, so a
+/// value that is a property of another module (an `AlgorithmResult`'s) is
+/// smart-cast where a property itself is not; an empty case is tested by its
+/// object, a case that holds a record by its class. Every case is an arm, so the
+/// `when` is exhaustive and needs no `else`.
+fn kotlin_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
+    let arms: Vec<String> = cases
+        .iter()
+        .map(|case| {
+            if case.holds_record {
+                format!("is {} -> {}", case.from, case.to)
+            } else {
+                format!("{} -> {}", case.from, case.to)
+            }
+        })
+        .collect();
+    format!("when (val sceCase = {value}) {{ {} }}", arms.join("; "))
+}
+
 /// Kotlin: a variable is a property of the machine class, a record an
 /// immutable data class replaced field by field, a list an immutable `List`,
 /// and an optional value (docs/adr/0055) a `T?`.
@@ -2862,11 +2974,40 @@ impl StaticTarget for KotlinTarget {
                     ));
                     arguments.push(format!("{name}.map {{ {} }}", to_algorithm(alias, "it")?));
                 }
+                // A union is the machine's sealed interface, mapped case by case
+                // into the one the union's unit declares (docs/adr/0092, section
+                // 6.1 item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        KOTLIN_CROSSED_RECORD,
+                        &to_algorithm,
+                    )?;
+                    declarations.push(format!("{name}: {machine}"));
+                    arguments.push(kotlin_union_crossing(&name, &cases));
+                }
                 _ => return None,
             }
         }
         let converted = |from: &str| -> Option<(String, String)> {
             Some(match value.ret.as_ref()? {
+                // The machine's sealed interface, built case by case from the one
+                // the union's unit declares.
+                StaticSlot::Union(union) => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::FromAlgorithm,
+                        KOTLIN_CROSSED_RECORD,
+                        &from_algorithm,
+                    )?;
+                    (machine, kotlin_union_crossing(from, &cases))
+                }
                 StaticSlot::Scalar(SceType::Enum(reference)) => (
                     self.enum_type(spec.machine, &reference.alias)?,
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?,
@@ -3672,6 +3813,31 @@ impl StaticTarget for KotlinTarget {
     }
 }
 
+/// The record a case of a union holds, as a Rust adapter binds it while it maps
+/// the union across a call ([`rust_union_crossing`]): a reference into the value
+/// the `match` takes apart.
+const RUST_CROSSED_RECORD: &str = "sce_case";
+
+/// The Rust map of the union `value` across a call (docs/adr/0092, section 6.1
+/// item 7), `value` a reference to it: a `match` over every case of the enum the
+/// value leaves, a case that holds a record binding it to
+/// [`RUST_CROSSED_RECORD`], each arm the case the value arrives as, its record
+/// built from the one bound. Every case is an arm, so the `match` is exhaustive,
+/// and a case either side gains is a build error.
+fn rust_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
+    let arms: Vec<String> = cases
+        .iter()
+        .map(|case| {
+            if case.holds_record {
+                format!("{}({RUST_CROSSED_RECORD}) => {}", case.from, case.to)
+            } else {
+                format!("{} => {}", case.from, case.to)
+            }
+        })
+        .collect();
+    format!("match {value} {{ {} }}", arms.join(", "))
+}
+
 /// Rust: a variable is a field of the machine's policy struct, a record a
 /// plain `Copy` struct updated in place, a list a `BoundedList` whose bound is
 /// its type's (docs/adr/0086, section 7.4).
@@ -4103,6 +4269,24 @@ impl StaticTarget for RustTarget {
                     ));
                     arguments.push(format!("&{name}_algorithm"));
                 }
+                // A union is lent as the machine's own enum, and mapped case by
+                // case into the one the union's unit declares, each case's record
+                // copied as a record argument is (docs/adr/0092, section 6.1
+                // item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        RUST_CROSSED_RECORD,
+                        &|alias: &str, from: &str| to_algorithm(alias, from, false),
+                    )?;
+                    declarations.push(format!("{name}: &{machine}"));
+                    arguments.push(rust_union_crossing(&name, &cases));
+                }
                 // A number, a truth value and a value that may be absent are no
                 // state a call lends: they are the scalar parameters above.
                 AdapterParam::State {
@@ -4112,6 +4296,18 @@ impl StaticTarget for RustTarget {
             }
         }
         let (returned_type, converted) = match value.ret.as_ref()? {
+            // The machine's own enum, built case by case from the one the union's
+            // unit declares, which the algorithm gave back.
+            StaticSlot::Union(union) => {
+                let (machine, cases) = spec.union_crossing(
+                    self,
+                    union,
+                    Crossing::FromAlgorithm,
+                    RUST_CROSSED_RECORD,
+                    &from_algorithm,
+                )?;
+                (machine, rust_union_crossing("&r", &cases))
+            }
             StaticSlot::Scalar(SceType::Enum(reference)) => (
                 self.enum_type(spec.machine, &reference.alias)?,
                 spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?,
@@ -6191,6 +6387,42 @@ pub fn lower(
             )));
         }
     }
+    // A union crosses a call where the lane lowers an algorithm over a union, the
+    // crossing included (docs/adr/0092, section 6.1 item 7, and "Decided while
+    // landing step 5"): the adapter maps the machine's sum into the type the
+    // union's unit declares, which only such a lane's algorithm takes. Any other
+    // refuses the document by name, naming the call and the union.
+    let crosses_unions = target
+        .expr_target()
+        .language()
+        .is_some_and(|l| crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS.contains(&l));
+    if !crosses_unions {
+        let crossing = scope.callees.iter().find_map(|callee| {
+            let value = callee.value.as_ref()?;
+            value
+                .params
+                .iter()
+                .chain(value.ret.iter())
+                .find_map(|slot| match slot {
+                    StaticSlot::Union(union) => Some((callee, union)),
+                    _ => None,
+                })
+        });
+        if let Some((callee, union)) = crossing {
+            return Err(GenerateError::unsupported(format!(
+                "`{}(…)`: an imported algorithm that takes or returns union:{} has no {lang} \
+                 lowering of the crossing yet (docs/adr/0092, Landing order step 5; lowered \
+                 for: {})",
+                callee.alias,
+                union.alias,
+                crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS
+                    .iter()
+                    .map(|l| l.canonical_name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+    }
     let names = names(&scope, target);
     // The runtime's optional type, for a target whose unit imports it by a line
     // of its own, in a machine that holds an optional value or hands one to an
@@ -7291,14 +7523,18 @@ pub fn lower(
             .iter()
             .filter(|_| target.adapter_names_returned_schema());
         for slot in value.params.iter().chain(returned) {
-            if let StaticSlot::Record(alias)
-            | StaticSlot::RecordList(alias)
-            | StaticSlot::OptionalRecord(alias) = slot
-            {
+            for alias in crossing_records(slot) {
                 if let Some(line) = records
                     .get(alias)
                     .and_then(|schema| target.schema_import(&schema.name))
                 {
+                    imports.insert(line);
+                }
+            }
+            // ... and the union's own unit, whose type the adapter maps the
+            // machine's sum into and back (docs/adr/0092, section 6.1 item 7).
+            if let StaticSlot::Union(union) = slot {
+                if let Some(line) = target.schema_import(&union.document) {
                     imports.insert(line);
                 }
             }
@@ -9679,6 +9915,9 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
+                // A union crosses no C++ call yet (docs/adr/0092, Landing order
+                // step 5): the document was refused by name before any adapter.
+                StaticSlot::Union(_) => return None,
                 // The machine's own record, made of the algorithm's where there is
                 // one, and absent where it is absent (docs/adr/0055, step 9).
                 StaticSlot::OptionalRecord(alias) => {
@@ -18989,11 +19228,15 @@ fn lower_action(
                             &failed(construct.clone()),
                         )
                     });
-                    // ... and the record an adapter gave back.
+                    // ... and the record an adapter gave back, or the union
+                    // (docs/adr/0092, section 6.1 item 7), the machine's own sum.
                     let held_record = state_call.as_ref().and_then(|(_, ret)| match ret {
                         StaticSlot::Record(alias) => {
                             Some(target.record_type(rewrites.machine, alias))
                         }
+                        StaticSlot::Union(union) => target
+                            .composed_spelling(rewrites.machine)
+                            .map(|spelling| spelling.union_type(&union.document)),
                         _ => None,
                     });
                     match &whole_record {
@@ -20052,6 +20295,14 @@ fn whole_union_copy(
     }) else {
         return Ok(None);
     };
+    // A union an imported algorithm returns is the adapter's value of the machine's
+    // own sum already (section 6.1 item 7), assigned as any value a call answers is.
+    if matches!(
+        rewrites.whole_state_call(&action.expr),
+        Some((_, StaticSlot::Union(_)))
+    ) {
+        return Ok(None);
+    }
     let target = rewrites.target;
     let refused = |why: String| {
         GenerateError::unsupported(format!(
