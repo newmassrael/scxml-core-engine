@@ -5,7 +5,9 @@
   of the nine questions in "Open questions", which are therefore decided as recommended there. Numbered 0092
   because 0090 is taken on `main` and 0091 on a branch. Amended 2026-11-07: a union variable has no default value
   ("Amendment (2026-11-07)"); amended 2026-11-11: what the Kotlin lane decided where this record is silent
-  ("Amendment (2026-11-11)"). Landed on `main` ("Landing order" numbers the steps):
+  ("Amendment (2026-11-11)"); what landing step 5 decided is in "Decided while landing step 5 (2026-11-11)" and
+  "Decided while landing step 5 on Kotlin, with the crossing (2026-11-11)". Landed on `main` ("Landing order"
+  numbers the steps):
   - step 1, the type and its document: f3786292f6 (the kind), 40d50d4506 (the type and its size), a1fcd00872 (the
     revision rule);
   - step 2, the grammar: 62b22223c2 (`S` and `G`), 07f662da90 (the unit's payload schema), 9ec6bdef31
@@ -19,8 +21,12 @@
     (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8)
     and on Kotlin (the change that adds "Amendment (2026-11-11)"). C++, Go, Python, C11 and the Interpreter still
     refuse a statechart that holds a union by name (`generate/unsupported-feature`);
-  - steps 5 (algorithms), 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic
-    CBOR encoder) and 8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
+  - step 5, on two of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
+    (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
+    Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"). C++, Go,
+    Python, C11, Swift and the Interpreter refuse such an algorithm and such a call by name;
+  - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
+    8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
 - Amends:
   - ADR 0086 section 1.1 (the type grammar gains `union:<alias>`), section 2.1 (the size calculus gains its row),
@@ -764,6 +770,54 @@ argument of a union on each. The one committed tree that holds `date_expression`
 `static_datamodel` (`DateExpression.swift`, `ResolveDate.swift`, and the harness `NumericalConformanceTests.swift`).
 A statechart that hands `resolve_date` a lifted `date_expression` needs, besides, the crossing of item 4 on its
 lane.
+
+## Decided while landing step 5 on Kotlin, with the crossing (2026-11-11)
+
+Item 4 above leaves open when a statechart's call crosses a union ("once a lane spells the crossing") and no step
+of the landing names it. Each question is decided by a rule this record, ADR 0086 or SCE_FORGE.md section 4.12
+already states; none changes a document, a wire or a diagnostic code.
+
+1. **The crossing is part of step 5, lane by lane.** Section 6.1 item 7 is a rule of the language: a union crosses
+   as a composed value does, and a record crosses a statechart's call by the statechart's own import of the same
+   document, copied into the algorithm's type and back (SCE_FORGE.md section 4.12). An algorithm's union parameter
+   that no statechart can fill is half of step 5's "a union parameter, return and local", and the last paragraph of
+   section 7 makes a missing position a step of the landing, not a rule. So a lane lowers the crossing in the change
+   that lowers its algorithms over a union, and `ALGORITHM_UNION_BACKENDS` lists a lane only with both: the list is
+   the one gate a statechart's call is held to as well, refused by name elsewhere (`generate/unsupported-feature`,
+   naming the call and the union) where the statechart is rendered.
+2. **A union crosses case by case, by a total case analysis.** The machine holds its own sum and the algorithm the
+   type the union's unit declares (section 7; "Amendment (2026-11-11)" item 1 keeps the two apart). The call's
+   adapter maps one to the other by a `match` (Rust) or a `when` (Kotlin) over every case, each case's record copied
+   field by field exactly as a record argument is, an enum field by the declared name of its variant; the result is
+   mapped back the same way. Every case is an arm and none is a default, so a case either side gains is a build
+   error, the property the enum crossing already has (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "A value of an
+   enum"). Holding one type on both sides was rejected: it would undo item 1 of the amendment of 2026-11-11 and make
+   the machine's saved form and sends the unit's. Crossing through the JSON text, written by one side and read by
+   the other, was rejected: it adds a refusal where the type already proves the value fits, and a parse per call.
+3. **What a slot takes and gives back.** A union slot is the statechart's own import of the same union document, by
+   identity (as a record slot is), and each case's record the statechart's own import of that schema, which it needs
+   already to hold the union (step 4); a case whose record a call does not copy (a byte string, an unbounded text)
+   refuses the import, naming the case. An argument is the name of a variable of the union; one that may be absent
+   is refused, naming the repair (put its present value into a union variable where a test proves it present, which
+   section 6.1 item 5 admits). A loop's item and a payload's field of a union are refused by the rule a computed
+   argument is, until a lane spells them. What the algorithm returns is taken whole into a variable of the same
+   union by an `<assign>`, as a record is; into an `optional<union:U>` it is refused, naming the type. A call whose
+   only state is the union it returns goes through the adapter too, which builds the machine's value.
+4. **Kotlin lowers an algorithm over a union on its unit's sealed interface** (section 7, the Kotlin row): the tag
+   by `kind`, a field of the one case left by `provenAbsolute().f`, a field several cases leave by a `when` over
+   them that tests the parameter or local itself (both are never written, so each arm is smart-cast) and whose
+   `else` throws `IllegalStateException`, written only where a case is not left. A local is a `val` of the
+   interface's type, so a test of its case reads it as the union; the end no path reaches is a `throw` of
+   `IllegalStateException`, the exception the unit's proven reads throw, inside the `try` of a `may-fail` body,
+   whose `catch` takes only `AlgorithmFailure`. The classification of a read of a unit's union
+   (`composed_lowering::unit_union_member_of`) is one for Rust and Kotlin, beside the machine's
+   (`union_member_of`): the unit's admits a field the cases left declare with one type whatever the others declare,
+   since the read is a case analysis over the cases left and needs no accessor on the type.
+
+Step 6 still needs, lane by lane, step 5 with its crossing on C++, Go, Python, C11 and Swift (each first holding a
+union in a statechart, step 4, except Swift), the Interpreter's lowering of an algorithm over a union and of the
+call, and on every lane the numerical conformance harness's argument of a union; then the standard library's
+change itself.
 
 ## Amendment (2026-11-07): a union variable has no default value
 

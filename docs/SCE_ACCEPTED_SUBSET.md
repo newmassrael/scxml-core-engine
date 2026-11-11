@@ -718,9 +718,11 @@ type is read only where a test proves one case on Rust. A `<foreach>` over a lis
 a proven case holds walks it there. An algorithm's parameter, return and local of
 `union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
 its local built whole as the case its tag names, and its body judged for the point
-where every case returned before any backend is asked; Rust lowers it on the union's
-own enum, and every other backend refuses it by name (SCE_FORGE.md section 4.12,
-"Unions").
+where every case returned before any backend is asked; Rust and Kotlin lower it on
+the type the union's own unit declares, and every other backend refuses it by name
+(SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
+and takes one back as it does a record (A union, under "State an algorithm takes and
+gives back", below).
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`
@@ -6054,6 +6056,24 @@ model: a list of records whose field is a value of an enum, set (`SetStatus`, th
 status taken from the payload of the event), counted by a variant the statechart names
 (`CountStatus`), and read back as a value of the enum (`StatusOf`), with a variant
 spelled with an underscore and declared values that are not the variants' positions.
+
+**A union.** A slot of the algorithm may be a union (`<sce:param name="shape"
+type="union:Shape"/>`, `<sce:return type="union:Shape"/>`; docs/adr/0092, section 6.1
+item 7). It is identified as a record is, by its document: a slot takes a union of the
+union document the statechart imports, and each case's record is the statechart's own
+import of that schema, which it imports already to hold the union. A case whose record
+a call does not copy (a byte string, a text with no bound) refuses the import, naming
+the case. The statechart hands over the name of a variable of the union; a union that
+may be absent is refused, naming the repair, which is to put its present value into a
+union variable where a test proves it present; a loop's item and a payload's field are
+refused as any computed argument is. What the algorithm returns is taken whole by an
+`<assign>` to a variable of the same union, and only there. The call's adapter maps
+the machine's own sum into the type the union's unit declares, case by case, each
+case's record copied field by field as a record argument is, and maps what returns
+back the same way: a `match` in Rust and a `when` in Kotlin over every case, so a case
+either side gains does not build. Rust and Kotlin lower the call; every other backend
+refuses the statechart by name (`generate/unsupported-feature`, naming the call and
+the union) until it lowers an algorithm over a union.
 
 A call is a statement like any other. It reads the variables as they stand, and
 nothing the algorithm does reaches the machine's state: the machine hands over a copy
