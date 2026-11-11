@@ -245,13 +245,17 @@ endif()
 
 # ── Tier 4: sce_c_runtime_posix (STATIC, optional — platform impl) ──
 # Default ON: the SCE-shipped POSIX reference implementation of
-# `clock.h` (§scxml-6.2 delayed-send clock) and `http_client.h`
-# (§scxml-C-2 BasicHTTP fixtures). Bare-metal consumers opt out and supply
-# their own `sce_c_runtime_<target>` providing the same symbols.
+# `clock.h` (§scxml-6.2 delayed-send clock), `http_client.h`
+# (§scxml-C-2 BasicHTTP fixtures) and `directory.h` (the log directory the
+# runner program of a generated test suite makes, docs/SCE_TTCN3_LANE.md §4).
+# Bare-metal consumers opt out and supply their own `sce_c_runtime_<target>`
+# providing the same symbols. No generated machine states `directory.h`: the
+# runner program, which is hand-written, links this library itself.
 option(SCE_C_RUNTIME_POSIX "Build the POSIX reference impl for backends/c/runtime" ON)
 if(SCE_C_RUNTIME_POSIX)
     add_library(sce_c_runtime_posix STATIC
         posix/clock.c
+        posix/directory.c
         posix/http_client.c
     )
     target_link_libraries(sce_c_runtime_posix PUBLIC sce_c_runtime)

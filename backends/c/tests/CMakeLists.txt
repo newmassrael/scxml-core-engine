@@ -5061,6 +5061,11 @@ set_tests_properties(c11_unit_json_text PROPERTIES
 # through.
 add_executable(sce_c_test_case_run_unit_test unit/test_case_run_test.c)
 target_link_libraries(sce_c_test_case_run_unit_test PRIVATE sce_c_runtime m)
+# The suite's runner reads a recorded trace's values through
+# sce/test/from_canonical.h, which holds a text's UTF-8 to the forge runtime's
+# one check (sce/forge/codec.h).
+target_include_directories(sce_c_test_case_run_unit_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
 target_compile_definitions(sce_c_test_case_run_unit_test PRIVATE
     SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 set_target_properties(sce_c_test_case_run_unit_test PROPERTIES
@@ -5086,6 +5091,36 @@ set_tests_properties(c11_unit_text_length PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# The recorded input trace (docs/SCE_TTCN3_LANE.md §10): its reader, its one
+# canonical text, its player, and the readers of the canonical form of a value
+# it holds (sce/test/input_trace.h, sce/test/from_canonical.h), held to the
+# Rust reader's refusals by name, the trace's status to the one its wire schema
+# declares, read from SCE_PROJECT_ROOT; and the runner's command line and its
+# readers of a module parameter's literal (sce/test/runner.h), the program run
+# whole being an integration test above. `m` for `strtod`, which a number of a
+# value is read by.
+foreach(_SCE_TRACE_UNIT input_trace runner)
+    add_executable(sce_c_${_SCE_TRACE_UNIT}_unit_test unit/${_SCE_TRACE_UNIT}_test.c)
+    target_link_libraries(sce_c_${_SCE_TRACE_UNIT}_unit_test PRIVATE sce_c_runtime m)
+    target_include_directories(sce_c_${_SCE_TRACE_UNIT}_unit_test PRIVATE
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include")
+    target_compile_definitions(sce_c_${_SCE_TRACE_UNIT}_unit_test PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
+    target_compile_options(sce_c_${_SCE_TRACE_UNIT}_unit_test PRIVATE
+        -Wall -Wextra -Werror -Wpedantic
+        -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+    )
+    set_target_properties(sce_c_${_SCE_TRACE_UNIT}_unit_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_unit_${_SCE_TRACE_UNIT} COMMAND sce_c_${_SCE_TRACE_UNIT}_unit_test)
+    set_tests_properties(c11_unit_${_SCE_TRACE_UNIT} PROPERTIES
+        TIMEOUT 10
+        LABELS "unit;c11"
+    )
+endforeach()
 
 # ─── Forge concat unit test ─────────────────────────────────────────
 #

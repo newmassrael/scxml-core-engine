@@ -17,7 +17,9 @@
  * They are data: what a case does is its components' machines, which the run
  * drives (sce/test/test_case_run.h). The runner is a library function, with no
  * `main`: a generated or hand-written test calls it with the system adapters
- * that play the SUT.
+ * that play the SUT (`sce_test_run_suite`), or with the recorded input trace of
+ * each test case (`sce_test_run_suite_with_traces`), which the program of a
+ * generated suite does (sce/test/runner.h).
  *
  * C's own, against its siblings: the runner returns no list, since a list of
  * results would need storage sized by the suite. It runs each case in one run
@@ -35,6 +37,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "sce/saved_json.h"
+#include "sce/test/input_trace.h"
 #include "sce/test/module_parameters.h"
 #include "sce/test/test_case_run.h"
 
@@ -76,6 +80,11 @@ typedef struct sce_test_case_s {
     sce_test_machine_factory_t machines;
     const char *const *module_parameters;
     size_t module_parameter_count;
+    /** The reader of its configuration's inputs, which a trace replayed for it
+        is read with (`sce_test_run_suite_with_traces`): which records each
+        system port takes, and each record's value from its canonical form. NULL
+        for a configuration with no system port, whose every input is refused. */
+    sce_test_input_reader_fn inputs;
 } sce_test_case_t;
 
 /** A selection (§11.8): whether a world of the suite's features runs a test
@@ -140,39 +149,54 @@ static inline const sce_test_case_result_t *sce_test_suite_refused_(sce_test_cas
 }
 
 /**
- * Runs the test cases of `*suite` that `*world` selects (P11).
- *
- * One at a time, on the calling thread, in the suite's order, each a fresh run
- * in `*run` from `NOW = 0` with fresh entities against the adapter `adapters`
- * builds for it, and each one's result handed to `report` with `user_data` as it
- * ends. Each component reads the suite's module parameters, with the values
- * `*overrides` gives (NULL for none) in place of their defaults.
- *
- * A test case whose components read a module parameter the run has no value
- * for ends with `error` (P13) before any component is created, and before its
- * adapter is built, as does one for which `adapters` builds no adapter. An
- * override of a module parameter the suite does not declare is refused before
- * any case runs: false, the reason in `*refusal` where it is not NULL.
+ * The module parameters of a run of `*suite`: its defaults, with the values
+ * `*overrides` gives (NULL for none) in their place, in `*parameters`. An
+ * override of a module parameter the suite does not declare is the caller's
+ * mistake, not a verdict of any test case: false, the reason in `*refusal` where
+ * it is not NULL, which a runner reads before it runs any case.
  */
-static inline bool sce_test_run_suite(const sce_test_suite_t *suite, const sce_test_features_t *world,
-                                      sce_test_adapter_factory_t adapters,
-                                      const sce_test_module_parameters_t *overrides, sce_test_case_run_t *run,
-                                      sce_test_case_result_fn report, void *user_data,
-                                      sce_test_override_refusal_t *refusal) {
-    sce_test_module_parameters_t parameters = suite->module_parameters;
-    if (overrides != NULL) {
-        for (size_t i = 0u; i < overrides->count; ++i) {
-            const sce_test_module_parameter_t *given = &overrides->entries[i];
-            if (!sce_test_module_parameters_has(&parameters, given->id)) {
-                if (refusal != NULL) {
-                    (void)snprintf(refusal->reason, sizeof(refusal->reason),
-                                   "overrides the module parameter '%s', which the suite '%s' does not declare",
-                                   given->id, suite->name);
-                }
-                return false;
+static inline bool sce_test_suite_parameters(const sce_test_suite_t *suite,
+                                             const sce_test_module_parameters_t *overrides,
+                                             sce_test_module_parameters_t *parameters,
+                                             sce_test_override_refusal_t *refusal) {
+    *parameters = suite->module_parameters;
+    if (overrides == NULL) {
+        return true;
+    }
+    for (size_t i = 0u; i < overrides->count; ++i) {
+        const sce_test_module_parameter_t *given = &overrides->entries[i];
+        if (!sce_test_module_parameters_has(parameters, given->id)) {
+            if (refusal != NULL) {
+                (void)snprintf(refusal->reason, sizeof(refusal->reason),
+                               "overrides the module parameter '%s', which the suite '%s' does not declare", given->id,
+                               suite->name);
             }
-            (void)sce_test_module_parameters_set(&parameters, given->id, given->value);
+            return false;
         }
+        (void)sce_test_module_parameters_set(parameters, given->id, given->value);
+    }
+    return true;
+}
+
+/**
+ * The adapter a test case runs against, built by the caller of
+ * `sce_test_run_selected_` given `user_data` and the test case; NULL, the reason
+ * in `*why`, where it has none, which ends the test case with `error` (P13).
+ */
+typedef sce_test_system_adapter_t *(*sce_test_adapter_of_fn)(void *user_data, const sce_test_case_t *test_case,
+                                                             sce_saved_error_t *why);
+
+/* The runner of `sce_test_run_suite` and `sce_test_run_suite_with_traces`: the
+   test cases `*world` selects, each against the adapter `adapter_of` builds for
+   it, or ended with `error` for the reason it gives where it builds none. */
+static inline bool sce_test_run_selected_(const sce_test_suite_t *suite, const sce_test_features_t *world,
+                                          const sce_test_module_parameters_t *overrides,
+                                          sce_test_adapter_of_fn adapter_of, void *adapter_user,
+                                          sce_test_case_run_t *run, sce_test_case_result_fn report, void *user_data,
+                                          sce_test_override_refusal_t *refusal) {
+    sce_test_module_parameters_t parameters;
+    if (!sce_test_suite_parameters(suite, overrides, &parameters, refusal)) {
+        return false;
     }
     for (size_t e = 0u; e < suite->execute_count; ++e) {
         const sce_test_execute_t *execute = &suite->executes[e];
@@ -193,10 +217,11 @@ static inline bool sce_test_run_suite(const sce_test_suite_t *suite, const sce_t
                        run, "the test case reads the module parameter '%s', which is given no value", missing));
             continue;
         }
-        sce_test_system_adapter_t *adapter = adapters.make(adapters.user_data, test_case->name);
+        sce_saved_error_t why;
+        why.message[0] = '\0';
+        sce_test_system_adapter_t *adapter = adapter_of(adapter_user, test_case, &why);
         if (adapter == NULL) {
-            report(user_data, test_case->name,
-                   sce_test_suite_refused_(run, "no system adapter is given for the test case"));
+            report(user_data, test_case->name, sce_test_suite_refused_(run, "%s", why.message));
             continue;
         }
         sce_test_case_run_init(run, test_case->configuration, test_case->machines, adapter,
@@ -207,6 +232,120 @@ static inline bool sce_test_run_suite(const sce_test_suite_t *suite, const sce_t
         }
     }
     return true;
+}
+
+/* The adapter the factory `*user_data` builds for a test case, by its name. */
+static inline sce_test_system_adapter_t *sce_test_adapter_of_factory_(void *user_data, const sce_test_case_t *test_case,
+                                                                      sce_saved_error_t *why) {
+    const sce_test_adapter_factory_t *adapters = (const sce_test_adapter_factory_t *)user_data;
+    sce_test_system_adapter_t *adapter = adapters->make(adapters->user_data, test_case->name);
+    if (adapter == NULL) {
+        (void)sce_saved_refuse(why, "no system adapter is given for the test case");
+    }
+    return adapter;
+}
+
+/**
+ * Runs the test cases of `*suite` that `*world` selects (P11).
+ *
+ * One at a time, on the calling thread, in the suite's order, each a fresh run
+ * in `*run` from `NOW = 0` with fresh entities against the adapter `adapters`
+ * builds for it, and each one's result handed to `report` with `user_data` as it
+ * ends. Each component reads the suite's module parameters, with the values
+ * `*overrides` gives (NULL for none) in place of their defaults.
+ *
+ * A test case whose components read a module parameter the run has no value
+ * for ends with `error` (P13) before any component is created, and before its
+ * adapter is built, as does one for which `adapters` builds no adapter. An
+ * override of a module parameter the suite does not declare is refused before
+ * any case runs: false, the reason in `*refusal` where it is not NULL.
+ */
+static inline bool sce_test_run_suite(const sce_test_suite_t *suite, const sce_test_features_t *world,
+                                      sce_test_adapter_factory_t adapters,
+                                      const sce_test_module_parameters_t *overrides, sce_test_case_run_t *run,
+                                      sce_test_case_result_fn report, void *user_data,
+                                      sce_test_override_refusal_t *refusal) {
+    return sce_test_run_selected_(suite, world, overrides, sce_test_adapter_of_factory_, &adapters, run, report,
+                                  user_data, refusal);
+}
+
+/**
+ * Gives the text of the recorded input trace of a test case, given its name:
+ * the `*len` bytes at `*text`, lent until the next call; false, naming why in
+ * `*err`, where there is none or it is not read. `user_data` is handed back
+ * unchanged.
+ */
+typedef struct sce_test_trace_source_s {
+    bool (*read)(void *user_data, const char *test_case, const char **text, size_t *len, sce_saved_error_t *err);
+    void *user_data;
+} sce_test_trace_source_t;
+
+/**
+ * What `sce_test_run_suite_with_traces` holds while it runs: the source of the
+ * traces, the suite each is held to, and the trace of the test case running and
+ * its player. Placed by the caller, which outlives the run, and reused case
+ * after case.
+ */
+typedef struct sce_test_traces_s {
+    sce_test_trace_source_t source;
+    const char *suite;
+    sce_test_input_trace_t trace;
+    sce_test_input_trace_player_t player;
+} sce_test_traces_t;
+
+/* The player of the trace the source `*user_data` gives for a test case, read
+   by the test case's configuration; NULL, why in `*why`, where the trace is not
+   given, is of another suite or test case, or does not fit. */
+static inline sce_test_system_adapter_t *sce_test_adapter_of_trace_(void *user_data, const sce_test_case_t *test_case,
+                                                                    sce_saved_error_t *why) {
+    sce_test_traces_t *traces = (sce_test_traces_t *)user_data;
+    const char *text = NULL;
+    size_t len = 0u;
+    sce_saved_error_t refused;
+    refused.message[0] = '\0';
+    if (!traces->source.read(traces->source.user_data, test_case->name, &text, &len, &refused) ||
+        !sce_test_input_trace_parse(&traces->trace, text, len, &refused)) {
+        (void)sce_saved_refuse(why, "the trace is refused: %s", refused.message);
+        return NULL;
+    }
+    if (strcmp(traces->trace.suite, traces->suite) != 0 || strcmp(traces->trace.test_case, test_case->name) != 0) {
+        (void)sce_saved_refuse(why, "the trace is of the test case '%s' of the suite '%s'", traces->trace.test_case,
+                               traces->trace.suite);
+        return NULL;
+    }
+    if (!sce_test_input_trace_player_init(&traces->player, &traces->trace, test_case->inputs, &refused)) {
+        (void)sce_saved_refuse(why, "the trace is refused: %s", refused.message);
+        return NULL;
+    }
+    return &traces->player.adapter;
+}
+
+/**
+ * Runs the test cases of `*suite` that `*world` selects, each against its
+ * recorded input trace (docs/SCE_TTCN3_LANE.md §10.5).
+ *
+ * `sce_test_run_suite`, with the adapter of each test case a player of the trace
+ * `traces` gives for its name (sce/test/input_trace.h), read by the test case's
+ * configuration (`sce_test_case_t::inputs`), the trace and its player held in
+ * `*storage`.
+ *
+ * A test case whose trace is not given, is of another suite or test case, or does
+ * not fit its configuration (a port that is no system port of it, a type its
+ * port does not take, a value that does not belong to its type) ends with
+ * `error` (P13) before any component is created, its log line naming why. So
+ * does one whose components read a module parameter the run has no value for, as
+ * under `sce_test_run_suite`, before its trace is asked for.
+ */
+static inline bool sce_test_run_suite_with_traces(const sce_test_suite_t *suite, const sce_test_features_t *world,
+                                                  sce_test_trace_source_t traces,
+                                                  const sce_test_module_parameters_t *overrides,
+                                                  sce_test_case_run_t *run, sce_test_traces_t *storage,
+                                                  sce_test_case_result_fn report, void *user_data,
+                                                  sce_test_override_refusal_t *refusal) {
+    storage->source = traces;
+    storage->suite = suite->name;
+    return sce_test_run_selected_(suite, world, overrides, sce_test_adapter_of_trace_, storage, run, report, user_data,
+                                  refusal);
 }
 
 #ifdef __cplusplus
