@@ -107,6 +107,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_string_literal"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_text_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_timers"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_union"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_wide"
@@ -1746,6 +1747,110 @@ func TestALiftReadsATextIntoARecordOrKeepsItsRefusal(t *testing.T) {
 		"lifts":  func() any { return policy.Lifts() },
 		"errors": func() any { return policy.Errors() },
 	}))
+}
+
+// staticUnion drives the machine that holds a union (docs/adr/0092), reading
+// each variable back as a saved state holds it: a union as its tag beside the
+// fields of its case, and every other value as its type's saved form, which is
+// the JSON a scenario states. A union is the machine's own value struct, which a
+// host reads through its tag and its proven case, so its saved form is the one
+// spelling of it every lane shares. A step that says `restore` saves the machine,
+// discards it and restores it from the text, every union read back by its tag
+// (section 6.1 item 7).
+func staticUnion(t *testing.T) machine {
+	t.Helper()
+	type state = static_union.StaticUnionState
+	type event = static_union.StaticUnionEvent
+	start := func() (*static_union.StaticUnionPolicy, *sce.Engine[state, event]) {
+		policy := static_union.NewStaticUnionPolicy()
+		policy.SessionID = sce.GenerateSessionID()
+		engine := sce.NewEngine[state, event](&policy)
+		engine.SetClock(sce.NewManualClock(0))
+		if err := engine.Initialize(); err != nil {
+			t.Fatal(err)
+		}
+		return &policy, engine
+	}
+	policy, engine := start()
+	variables := map[string]func() any{}
+	for _, id := range []string{
+		"built", "kept", "last_kind", "lifted", "lift_why", "refusals", "dots", "labels", "points",
+		"radius", "width", "height", "many_shapes", "many_width", "many_radius", "maybe_width",
+	} {
+		variables[id] = func() any {
+			saved, err := static_union.StaticUnionSaveAt(engine, savedAtMs)
+			if err != nil {
+				t.Fatalf("the machine saves: %v", err)
+			}
+			value, err := saved.Variable(id)
+			if err != nil {
+				t.Fatalf("the saved state holds `%s`: %v", id, err)
+			}
+			var read any
+			if err := json.Unmarshal([]byte(sce.WriteJSON(value)), &read); err != nil {
+				t.Fatalf("the saved `%s` is no JSON: %v", id, err)
+			}
+			return read
+		}
+	}
+	return machine{
+		send: func(name, data string) {
+			engine.RaiseExternalByName(name, data)
+			settleComposed(policy, engine.Step, engine.Tick)
+		},
+		resolves: func(name string) bool {
+			_, ok := engine.ResolveEventByName(name)
+			return ok
+		},
+		advance: engine.AdvanceTimeMs,
+		state: func() string {
+			var atomic []string
+			for _, active := range engine.GetActiveStates() {
+				if !policy.IsCompoundState(active) {
+					atomic = append(atomic, active.String())
+				}
+			}
+			if len(atomic) != 1 {
+				return fmt.Sprintf("<%d active atomic states>", len(atomic))
+			}
+			return atomic[0]
+		},
+		configuration: func() []string {
+			var ids []string
+			for _, active := range engine.GetActiveStates() {
+				ids = append(ids, active.String())
+			}
+			return ids
+		},
+		ended:     func() bool { return engine.IsInFinalState() },
+		donedata:  func() string { return engine.DonedataAtFinal() },
+		variables: variables,
+		restore: func() {
+			saved, err := static_union.StaticUnionSaveAt(engine, savedAtMs)
+			if err != nil {
+				t.Fatalf("the machine saves: %v", err)
+			}
+			// Through its text, as a state that crossed a process boundary would.
+			again, err := sce.SavedStateFromJSON(saved.ToJSON())
+			if err != nil {
+				t.Fatalf("the saved text reads: %v", err)
+			}
+			next := static_union.NewStaticUnionPolicy()
+			restored, err := static_union.StaticUnionRestoreAt(&next, again, sce.NewManualClock(0), savedAtMs)
+			if err != nil {
+				t.Fatalf("the machine restores: %v", err)
+			}
+			policy, engine = &next, restored
+		},
+	}
+}
+
+// A payload that holds a union, read by testing its tag at the top, in a list and
+// where it may be absent; a union variable built where it is declared and written
+// where its case is proven, one that may be absent taking a union whole, and a
+// text lifted into a union or its refusal kept (docs/adr/0092, sections 4 and 6.1).
+func TestAUnionPayloadIsReadByItsTagAndEveryUnionRestores(t *testing.T) {
+	replay(t, "static_union", staticUnion(t))
 }
 
 // A delivery written against an earlier revision of a schema that grew lacks

@@ -72,7 +72,7 @@ pub(crate) use c11::{c11_pairs, c11_path_len, C11_WIRE};
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
 };
-pub(crate) use go::go_raise_checks;
+pub(crate) use go::{go_raise_checks, go_union_member};
 pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member, kotlin_unit_union_read};
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};
 pub(crate) use rust::{
@@ -517,6 +517,15 @@ pub trait ComposedSpelling {
     fn copy_list_into(&self, held: &Held, elem: &str, elem_ty: &str, _list_ty: &str) -> String {
         self.copy_list(held, elem, elem_ty)
     }
+    /// A copy of the union value `held`, or of a union that may be absent, into
+    /// a place of the same type (docs/adr/0092, section 6.1 item 5):
+    /// [`Self::copy_whole`] of a value
+    /// not copied as it is read, for a backend whose copy of such a value is
+    /// one spelling whatever its type; a backend whose copy of a list is not
+    /// the copy of a union spells it apart (Go).
+    fn copy_union(&self, held: &Held) -> String {
+        self.copy_whole(held, false)
+    }
 
     /// The declaration that writes the composed record `alias` as a saved state
     /// does and reads it back (docs/adr/0092, section 6.1 item 7), for a backend
@@ -925,7 +934,15 @@ pub fn copier(
     let same = machine_type(from, from_within, records, enums, spelling)?
         == machine_type(to, to_within, records, enums, spelling)?;
     if same {
-        return Ok(spelling.copy_whole(held, plain(from)));
+        // A union, and one that may be absent, is copied as a union is.
+        let union = match from {
+            ValueType::Optional { elem } => &**elem,
+            other => other,
+        };
+        return Ok(match union {
+            ValueType::Union { .. } => spelling.copy_union(held),
+            _ => spelling.copy_whole(held, plain(from)),
+        });
     }
     let element = Held::reference(spelling.copy_binding());
     // The type the place copied into holds a part in, which a backend whose

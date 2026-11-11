@@ -5,14 +5,23 @@
 //! (docs/adr/0086, section 7.1, the Go row), and the checks a Go raise seam
 //! runs over a host's value before it encodes it (section 5.4).
 //!
-//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
-//! |---|---|---|---|
-//! | `[]T` | `string` / `[]byte` | `optional.Of[T]` | the machine's struct |
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record | `union:U` |
+//! |---|---|---|---|---|
+//! | `[]T` | `string` / `[]byte` | `optional.Of[T]` | the machine's struct | the machine's value struct |
 //!
 //! No Go type carries a bound (section 7.4, last paragraph), so two places
 //! whose types differ only in their bounds are one type, and a value that fits
 //! is copied as it is: the list a place holds into a slice of its own, since
 //! the variable it is copied into is appended to in place.
+//!
+//! A union (docs/adr/0092, section 7, the Go row, and its item 4) is a value
+//! struct of the machine, not an interface: an unexported tag and one
+//! unexported member per case that holds a record, built only by the
+//! constructor of its case (`<Union><Case>(r R)`, `<Union><Case>()` for an
+//! empty case), its tag answered by `Kind()` and the record of a case a test
+//! proved by `Proven<Case>()`. A field of a case is written in place, through
+//! the pointer an unexported accessor answers where the narrowing proved the
+//! case, as a Rust union is.
 
 use super::*;
 
@@ -56,11 +65,179 @@ const GO_READ_BINDING: &str = "sceValue";
 /// The name a Go writer and a copy bind an element or a present value to.
 const GO_ELEMENT_BINDING: &str = "sceElement";
 
-/// Why a Go walk meets no union: the one decision of what is lowered refuses a
-/// union on Go before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const GO_HOLDS_NO_UNION: &str = "a Go machine holds no union yet (docs/adr/0092, section 7): \
-     the one decision of what is lowered refuses a union on Go before any walk reaches one";
+/// The method a Go union answers the value of its tag's enum by, whatever key
+/// the tag is written under (docs/adr/0092, section 7, the Go row: `Kind() E`),
+/// on a machine's union as on a unit's.
+const GO_UNION_KIND: &str = "Kind";
+
+/// The member of a machine's Go union that holds its tag.
+const GO_UNION_TAG: &str = "tag";
+
+/// The name a Go writer binds the union it writes to, in the function literal
+/// that tells its cases apart.
+const GO_UNION_BINDING: &str = "sceUnion";
+
+/// The member of a machine's Go union that holds the record of the case whose
+/// identifier is `case` ([`ComposedSpelling::union_case_ident`]): unexported,
+/// and never the tag's member, since every one begins `case`.
+fn go_case_member(case: &str) -> String {
+    format!("case{case}")
+}
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// machine's union as on a unit's.
+fn go_case_read(variant: &str) -> String {
+    format!(
+        "Proven{}",
+        crate::filters::to_pascal_case(variant.to_string())
+    )
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+fn go_shared_read(field: &str) -> String {
+    format!(
+        "ProvenField{}",
+        crate::filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The unexported accessor that answers a pointer to what the read `read`
+/// answers (a case's record, a shared field), which a write of a field goes
+/// through (docs/adr/0092, section 6.1 item 6): unexported, so a host that
+/// holds a union builds a new one by a constructor rather than writing into a
+/// case.
+fn go_place_of(read: &str) -> String {
+    let mut chars = read.chars();
+    let first: String = chars
+        .next()
+        .map(|c| c.to_lowercase().collect())
+        .unwrap_or_default();
+    format!("{first}{}Place", chars.as_str())
+}
+
+/// A Go string literal of `text`.
+fn go_literal(text: &str) -> String {
+    format!("\"{}\"", crate::filters::escape_go(text.to_string()))
+}
+
+/// The Go spelling of what follows a union's value to read `member` where it
+/// may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's method; the field of the one case
+/// left, through that case's proven read; or the accessor of a field several
+/// cases share. `Err` as [`union_member_of`]'s.
+pub(crate) fn go_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    Ok(match union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{GO_UNION_KIND}()"),
+        UnionMember::Case(case) => format!("{}().{member}", go_case_read(&case.variant.name)),
+        UnionMember::Shared => format!("{}()", go_shared_read(member)),
+    })
+}
+
+/// The Go function value that writes a value of `ty` as a saved state does
+/// (`sce.SavedWrite*`, a `func(T) any`): a number, a truth value, a text and a
+/// byte string by the runtime's writer of its type, an enum, a record and a
+/// union by their own `ToSaved` (a method expression of the type), a value that
+/// may be absent as `nil` or as its present value, and a list element by
+/// element. `within` is the scope the type is written in, `depth` names the
+/// parameter of each nested literal, so none hides its holder's. `Err` for a
+/// byte string inside a list, which a saved state would write as an array
+/// where it writes a byte string as its text.
+fn go_saved_writer(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &GoComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let element = format!("sceSaved{depth}");
+    let typed = |ty: &ValueType| machine_type(ty, within, records, enums, spelling);
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!("{}.ToSaved", typed(ty)?)
+        }
+        ValueType::Scalar(scalar) => format!(
+            "sce.SavedWrite{}",
+            crate::filters::to_pascal_case(scalar.as_attr())
+        ),
+        ValueType::Text { .. } => "sce.SavedWriteString".to_string(),
+        ValueType::Bytes { .. } => "sce.SavedWriteBytes".to_string(),
+        ValueType::Optional { elem } => format!(
+            "func({element} {}) any {{ return optional.Wire({element}, {}) }}",
+            typed(ty)?,
+            go_saved_writer(elem, within, names, spelling, depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            format!(
+                "func({element} {}) any {{ return sce.SavedWriteList({element}, {}) }}",
+                typed(ty)?,
+                go_saved_writer(elem, within, names, spelling, depth + 1)?
+            )
+        }
+    })
+}
+
+/// The Go function value that reads a saved value back as a value of `ty`, as
+/// [`go_saved_writer`] writes it (a `func(any, string) (T, error)`, the value
+/// and the name a refusal gives it): a text and a byte string held to the
+/// bound the type states, a list to its bound and to the lower count its type
+/// states, an enum, a record and a union by their own `<Type>FromSaved`, a
+/// value that may be absent read absent from `null`. Each refusal is the
+/// runtime's `StateRefusal`. `within` and `depth` as [`go_saved_writer`]'s.
+fn go_saved_reader(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &GoComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let (saved, what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
+    let typed = |ty: &ValueType| machine_type(ty, within, records, enums, spelling);
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!("{}FromSaved", typed(ty)?)
+        }
+        ValueType::Scalar(scalar) => format!(
+            "sce.SavedRead{}",
+            crate::filters::to_pascal_case(scalar.as_attr())
+        ),
+        ValueType::Text { max } => format!("sce.SavedBoundedString({})", max.max),
+        ValueType::Bytes { max } => format!("sce.SavedBoundedBytes({})", max.max),
+        ValueType::Optional { elem } => {
+            let present = typed(elem)?;
+            format!(
+                "func({saved} any, {what} string) ({}, error) {{ return \
+                 sce.SavedReadOptional({saved}, {what}, {}, optional.None[{present}], \
+                 optional.Some[{present}]) }}",
+                typed(ty)?,
+                go_saved_reader(elem, within, names, spelling, depth + 1)?
+            )
+        }
+        ValueType::List { elem, max } => format!(
+            "func({saved} any, {what} string) ({}, error) {{ return \
+             sce.SavedReadListWithin({saved}, {what}, {}, {}, {}) }}",
+            typed(ty)?,
+            max.min,
+            max.max,
+            go_saved_reader(elem, within, names, spelling, depth + 1)?
+        ),
+    })
+}
 
 /// The check of a Go value of `ty`, written in the scope `within` names, at
 /// `value`, named `path` (an expression of a Go `string`): an expression of
@@ -167,7 +344,46 @@ fn go_bound_check(
             }
         }
         ValueType::Scalar(_) => None,
-        ValueType::Union { .. } => return Err(GO_HOLDS_NO_UNION.to_string()),
+        // The record of the case the value is in, checked as a record is, at
+        // the union's own path: a field of a case stands at the union's place
+        // (docs/adr/0092, section 2.1). A case whose record holds no bound, and
+        // an empty case, check nothing.
+        ValueType::Union { alias } => {
+            let held = records.union(within, alias)?;
+            let tag = machine_enum(enums, held.tag_enum()?)?;
+            let mut arms = String::new();
+            for case in &held.union.cases {
+                let Some(record) = &case.record else {
+                    continue;
+                };
+                let variant = case.variant.name.as_str();
+                let Some((_, tag_ident)) = tag.variants.iter().find(|(name, _)| name == variant)
+                else {
+                    return Err(format!(
+                        "`union:{alias}`: the machine's `{}` has no variant `{variant}`",
+                        tag.ty
+                    ));
+                };
+                if let Some(check) = go_bound_check(
+                    &ValueType::Record {
+                        alias: record.clone(),
+                    },
+                    Some(held.key.as_str()),
+                    path,
+                    &format!("{value}.{}()", go_case_read(variant)),
+                    depth,
+                    names,
+                    spelling,
+                )? {
+                    arms.push_str(&format!("case {tag_ident}: return {check}; "));
+                }
+            }
+            (!arms.is_empty()).then(|| {
+                format!(
+                    "func() error {{ switch {value}.{GO_UNION_KIND}() {{ {arms}}}; return nil }}()"
+                )
+            })
+        }
     })
 }
 
@@ -497,9 +713,10 @@ impl ComposedSpelling for GoComposed<'_> {
     // machine replaces a byte string, a record's field and an element and
     // never writes into one. The list a place holds is copied into a slice of
     // its own, since the variable it is copied into is appended to and
-    // emptied in place: on a machine that holds no union, a place is copied
-    // whole only into a list variable from a list (`whole_list_copy`), so a
-    // place that is not copied as it is read is a list.
+    // emptied in place: a place is copied whole into a list variable from a
+    // list (`whole_list_copy`) and into a union variable from a union, which
+    // the walk copies by [`Self::copy_union`], so a place that is not copied
+    // as it is read here is a list.
     fn copy_whole(&self, held: &Held, plain: bool) -> String {
         if plain || held.by_reference {
             held.text.clone()
@@ -534,9 +751,111 @@ impl ComposedSpelling for GoComposed<'_> {
         )
     }
 
-    // A Go machine holds no union yet: the gate refuses one by name before a
-    // walk reaches it, so each spelling below either names what it would be or
-    // says why there is none.
+    // A union is a value struct, copied as a record is: the machine changes a
+    // case by a whole assignment and writes a field of one through the place
+    // a proven read answers, never into a list a case holds, so the copy shares
+    // nothing the machine writes into.
+    fn copy_union(&self, held: &Held) -> String {
+        held.text.clone()
+    }
+
+    // The record's saved form, an object of its fields keyed by their ids in
+    // the schema's order, each written and read as its type says
+    // ([`go_saved_writer`], [`go_saved_reader`]): the names a record of entries'
+    // saved form has (`ToSaved`, `<Type>FromSaved`), so the machine's saving
+    // reads one spelling for either.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for field in &held.schema.fields {
+            let key = go_literal(&field.id);
+            let refused =
+                |why: String| format!("the field `{}` of `{}`: {why}", field.id, held.schema.name);
+            // The fields of the record name its types in its own document's scope.
+            let within = Some(held.alias);
+            let write = go_saved_writer(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            let read = go_saved_reader(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            writes.push_str(&format!("\tsaved.Set({key}, ({write})(r.{}))\n", field.id));
+            reads.push_str(&format!(
+                "\t{{\n\t\tsaved, err := sce.SavedField(value, what, {key})\n\t\tif err != nil \
+                 {{\n\t\t\treturn record, err\n\t\t}}\n\t\tif record.{}, err = ({read})(saved, \
+                 what + \".{}\"); err != nil {{\n\t\t\treturn record, err\n\t\t}}\n\t}}\n",
+                field.id,
+                crate::filters::escape_go(field.id.clone())
+            ));
+        }
+        Ok(Some(format!(
+            "// ToSaved is this value as a saved state writes it.\nfunc (r {ty}) ToSaved() any \
+             {{\n\tsaved := sce.NewJSONObject()\n{writes}\treturn saved\n}}\n\n// {ty}FromSaved \
+             is the value a saved state holds, refused unless it is one.\nfunc {ty}FromSaved(value \
+             any, what string) ({ty}, error) {{\n\tvar record {ty}\n{reads}\treturn record, nil\n}}"
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its
+    // case (docs/adr/0092, section 6.1 item 7): written by the runtime's
+    // `SavedWriteUnion` over the record's own `ToSaved`, and read by its tag
+    // first, which names the record the rest of the object is read as.
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = go_literal(&records.union_of_key(key)?.union.tag);
+        let ty = &def.ty;
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let variant = go_literal(&case.variant);
+            let built = format!("{ty}{}", case.ident);
+            match &case.record {
+                Some(record) => {
+                    writes.push_str(&format!(
+                        "\tcase {}:\n\t\treturn sce.SavedWriteUnion({tag}, {variant}, \
+                         u.{}.ToSaved())\n",
+                        case.tag_ident,
+                        go_case_member(&case.ident)
+                    ));
+                    reads.push_str(&format!(
+                        "\tcase {variant}:\n\t\trecord, err := {record}FromSaved(value, what)\n\t\t\
+                         if err != nil {{\n\t\t\treturn {ty}{{}}, err\n\t\t}}\n\t\treturn \
+                         {built}(record), nil\n"
+                    ));
+                }
+                None => {
+                    writes.push_str(&format!(
+                        "\tcase {}:\n\t\treturn sce.SavedWriteUnion({tag}, {variant}, nil)\n",
+                        case.tag_ident
+                    ));
+                    reads.push_str(&format!("\tcase {variant}:\n\t\treturn {built}(), nil\n"));
+                }
+            }
+        }
+        let name = crate::filters::escape_go(def.name.clone());
+        Ok(Some(format!(
+            "// ToSaved is this value as a saved state writes it: its tag beside the fields of \
+             its case.\nfunc (u {ty}) ToSaved() any {{\n\tswitch u.{GO_UNION_TAG} {{\n{writes}\t}}\n\t\
+             panic(\"a value of {name} is in no case of its tag\")\n}}\n\n// {ty}FromSaved is the \
+             value a saved state holds, read by its tag first, refused unless it is one of the \
+             cases of {name}.\nfunc {ty}FromSaved(value any, what string) ({ty}, error) {{\n\t\
+             tag, err := sce.SavedReadUnionTag(value, what, {tag})\n\tif err != nil {{\n\t\treturn \
+             {ty}{{}}, err\n\t}}\n\tswitch tag {{\n{reads}\t}}\n\treturn {ty}{{}}, \
+             sce.Refuse(fmt.Sprintf(\"'%s' (%s) is not a case of {name}\", what, tag))\n}}"
+        )))
+    }
+
+    // The machine's own value struct, beside its records (docs/adr/0092,
+    // section 7, the Go row): named by the union's document, so one union is
+    // one type of the machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}{}Union",
@@ -544,55 +863,237 @@ impl ComposedSpelling for GoComposed<'_> {
             crate::filters::to_pascal_case(name.to_string())
         )
     }
+    // The variant in Pascal case, which follows the union's type in the name of
+    // the case's constructor (section 7 item 1: Go has no nesting).
     fn union_case_ident(&self, variant: &str) -> String {
         crate::filters::to_pascal_case(variant.to_string())
     }
+    // The tag is read by the one method every union of a Go unit and of a Go
+    // machine answers it by, whatever key it is written under.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(GO_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "Proven{}",
-            crate::filters::to_pascal_case(variant.to_string())
-        )
+        go_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        go_shared_read(field)
+    }
+    // A struct of the tag and one member per case that holds a record, built
+    // only by the constructor of a case. Every read the narrowing proves is a
+    // method of it whose other cases panic, the one place they are written (as
+    // a proven optional is read through the runtime's one `Proven`,
+    // docs/adr/0055, section 5); beside each is the unexported accessor of the
+    // pointer a write goes through ([`Self::union_member_place`]).
+    fn union_def(&self, def: &UnionDef) -> String {
+        let name = crate::filters::escape_go(def.name.clone());
+        let ty = &def.ty;
+        let other = |read: &str| {
+            format!(
+                "panic(\"a value of {name} read as {} is in another case\")",
+                crate::filters::escape_go(read.to_string())
+            )
+        };
+        let mut members = format!("\t{GO_UNION_TAG} {}\n", def.tag_ty);
+        let mut built = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let (ident, tag) = (&case.ident, &case.tag_ident);
+            let member = go_case_member(ident);
+            let variant = &case.variant;
+            match &case.record {
+                Some(record) => {
+                    members.push_str(&format!("\t{member} {record}\n"));
+                    built.push_str(&format!(
+                        "\n\n// {ty}{ident} is the case `{variant}`, holding its record.\nfunc \
+                         {ty}{ident}(r {record}) {ty} {{\n\treturn {ty}{{{GO_UNION_TAG}: {tag}, \
+                         {member}: r}}\n}}"
+                    ));
+                    let (read, place) = (&case.proven, go_place_of(&case.proven));
+                    reads.push_str(&format!(
+                        "\n\n// {read} is the record of the case `{variant}`, read where a test of \
+                         the tag\n// proved the value is in it.\nfunc (u {ty}) {read}() {record} \
+                         {{\n\tif u.{GO_UNION_TAG} != {tag} {{\n\t\t{panic}\n\t}}\n\treturn \
+                         u.{member}\n}}\n\n// {place} is the record of the case `{variant}`, \
+                         written where a test of the\n// tag proved the value is in it.\nfunc (u \
+                         *{ty}) {place}() *{record} {{\n\tif u.{GO_UNION_TAG} != {tag} {{\n\t\t\
+                         {panic}\n\t}}\n\treturn &u.{member}\n}}",
+                        panic = other(variant),
+                    ));
+                }
+                None => built.push_str(&format!(
+                    "\n\n// {ty}{ident} is the case `{variant}`, its tag alone.\nfunc {ty}{ident}() \
+                     {ty} {{\n\treturn {ty}{{{GO_UNION_TAG}: {tag}}}\n}}"
+                )),
+            }
+        }
+        for field in &def.shared {
+            let arms = |read: bool| -> String {
+                field
+                    .cases
+                    .iter()
+                    .filter_map(|ident| def.cases.iter().find(|case| case.ident == *ident))
+                    .map(|case| {
+                        format!(
+                            "\tcase {}:\n\t\treturn {}u.{}.{}\n",
+                            case.tag_ident,
+                            if read { "" } else { "&" },
+                            go_case_member(&case.ident),
+                            field.field
+                        )
+                    })
+                    .collect()
+            };
+            let (id, accessor, fty) = (&field.field, &field.accessor, &field.ty);
+            let place = go_place_of(accessor);
+            reads.push_str(&format!(
+                "\n\n// {accessor} is the field `{id}` the cases that declare it share, read where a\n\
+                 // test of the tag proved the value is in one of them.\nfunc (u {ty}) \
+                 {accessor}() {fty} {{\n\tswitch u.{GO_UNION_TAG} {{\n{}\t}}\n\t{panic}\n}}\n\n// \
+                 {place} is the field `{id}` the cases that declare it share, written where\n// a \
+                 test of the tag proved the value is in one of them.\nfunc (u *{ty}) {place}() \
+                 *{fty} {{\n\tswitch u.{GO_UNION_TAG} {{\n{}\t}}\n\t{panic}\n}}",
+                arms(true),
+                arms(false),
+                panic = other(id),
+            ));
+        }
         format!(
-            "ProvenField{}",
-            crate::filters::to_pascal_case(field.to_string())
+            "// SCE Accepted Subset §2.15: a `union:{name}` value (docs/adr/0092): exactly one\n\
+             // case, told apart by its tag, built only by the constructor of its case, and\n\
+             // holding a member for the record of each case (section 7 item 4).\ntype {ty} struct \
+             {{\n{members}}}\n\n// {GO_UNION_KIND} is the case this value is in, as its tag names \
+             it.\nfunc (u {ty}) {GO_UNION_KIND}() {} {{\n\treturn u.{GO_UNION_TAG}\n}}{built}{reads}",
+            def.tag_ty
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{GO_HOLDS_NO_UNION}")
+    // The case's constructor, handed the record or nothing.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        format!("{ty}{case}({})", record.unwrap_or_default())
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{GO_HOLDS_NO_UNION}")
+    // The tag first, by the enum's reader, in the runtime's `ReadUnion`, which
+    // refuses a value that is no object before it; then the record of the case
+    // the tag names, read from the same value by the case's arm of a `switch`
+    // over the tag's enum (docs/adr/0092, section 4). The tag's reader answers
+    // only a variant the enum declares, so the `switch` ends in no case left.
+    fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String {
+        let ty = &read.ty;
+        let arms: String = read
+            .arms
+            .iter()
+            .map(|arm| {
+                let built = format!("{ty}{}", arm.case_ident);
+                match &arm.record {
+                    Some(record) => format!(
+                        "case {}: sceCase, err := {record}; if err != nil {{ return {ty}{{}}, err \
+                         }}; return {built}(sceCase), nil; ",
+                        arm.tag_ident
+                    ),
+                    None => format!("case {}: return {built}(), nil; ", arm.tag_ident),
+                }
+            })
+            .collect();
+        format!(
+            "sce.ReadUnion({value}, {}, func({GO_READ_BINDING} sce.PayloadValue) ({tag_ty}, error) \
+             {{ return {} }}, func(sceTag {tag_ty}, {GO_READ_BINDING} sce.PayloadValue) ({ty}, \
+             error) {{ switch sceTag {{ {arms}}}; panic(\"the tag's reader answered no variant of \
+             its enum\") }})",
+            go_literal(read.tag),
+            read.tag_reader,
+            tag_ty = read.tag_ty,
+        )
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{GO_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{GO_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case (docs/adr/0092, section
+    // 2.1): the runtime's `UnionJSON`, which orders the keys as `RecordJSON`
+    // does, or the `map[string]any` a `<send>` holds a record in with the tag
+    // beside its fields, which `ScriptValueToJSON` orders. The case is told by
+    // the declared name of the tag's variant, which the machine's enum answers
+    // (`String`) and the tag is written as; its record is bound in its arm, as a
+    // record's writer reads it.
+    fn write_union(&self, held: &Held, _ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let tag = go_literal(tag);
+        let result = match self.carrier {
+            GoCarrier::Json => "sce.RawJSON",
+            GoCarrier::Wire => "any",
+        };
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let variant = go_literal(&arm.variant);
+                let written = match (self.carrier, &arm.fields) {
+                    (GoCarrier::Json, fields) => {
+                        let pairs: String = fields
+                            .iter()
+                            .flatten()
+                            .map(|(id, json)| format!(", sce.Pair({}, {json})", go_literal(id)))
+                            .collect();
+                        format!("sce.UnionJSON({tag}, {variant}{pairs})")
+                    }
+                    (GoCarrier::Wire, fields) => {
+                        let members: String = fields
+                            .iter()
+                            .flatten()
+                            .map(|(id, value)| format!(", {}: {value}", go_literal(id)))
+                            .collect();
+                        format!("map[string]any{{{tag}: {variant}{members}}}")
+                    }
+                };
+                match &arm.fields {
+                    Some(_) => format!(
+                        "case {variant}: {GO_ELEMENT_BINDING} := {GO_UNION_BINDING}.{}(); return \
+                         {written}; ",
+                        go_case_read(&arm.variant)
+                    ),
+                    None => format!("case {variant}: return {written}; "),
+                }
+            })
+            .collect();
+        format!(
+            "func() {result} {{ {GO_UNION_BINDING} := {}; switch \
+             {GO_UNION_BINDING}.{GO_UNION_KIND}().String() {{ {arms}}}; panic(\"a union's tag \
+             names no case of it\") }}()",
+            held.text
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(GO_HOLDS_NO_UNION.to_string())
+        go_union_member(union, left, member)
     }
     fn union_place_of(&self, read: &str) -> String {
-        format!("{read}Place")
+        go_place_of(read)
     }
+    // A field is written in place, through the pointer the accessor beside its
+    // proven read answers: the field of the one case left, or the field the
+    // cases left share. The holder is a variable of the machine, which Go takes
+    // the address of for the accessor's pointer receiver.
     fn union_member_place(
         &self,
-        _holder: &str,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(GO_HOLDS_NO_UNION.to_string())
+        if member == union.tag {
+            return Err(format!(
+                "the tag `{member}` of `union:{}` is never written alone: the case changes by a \
+                 whole assignment (docs/adr/0092, section 6.1 item 6)",
+                union.name
+            ));
+        }
+        // The read stands exactly where the write does: one case left that
+        // declares the field, or several that share it.
+        go_union_member(union, left, member)?;
+        Ok(match left {
+            [case] => format!(
+                "{holder}.{}().{member}",
+                go_place_of(&go_case_read(&case.variant.name))
+            ),
+            _ => format!("*{holder}.{}()", go_place_of(&go_shared_read(member))),
+        })
     }
 }
 
@@ -608,10 +1109,11 @@ mod tests {
 
     /// The Go row of the one table of what each backend lowers of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
-    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
-    /// (docs/adr/0092, section 7).
+    /// value sent (docs/adr/0086, sections 5 and 6), and a union held, read by
+    /// its tag, lifted and saved (docs/adr/0092, section 7); no variable of a
+    /// record that holds a composition yet.
     #[test]
-    fn the_go_row_lowers_every_composed_position_but_a_union() {
+    fn the_go_row_lowers_every_composed_position_but_a_composed_record_variable() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Go),
@@ -619,7 +1121,7 @@ mod tests {
                 name: "go",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: false,
                 sends: true,
             }
@@ -964,18 +1466,296 @@ mod tests {
         );
     }
 
-    /// A Go walk names no union: the one decision of what is lowered refuses
-    /// one on Go first, and the walk that would declare or check one says why
-    /// there is none.
+    /// The case of the shape union named `name`.
+    fn case<'s>(shapes: &'s Shapes, name: &str) -> &'s ScopedCase {
+        shapes
+            .union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == name)
+            .expect("a case")
+    }
+
+    /// A union is the machine's own value struct at any depth, named by its
+    /// document (docs/adr/0092, section 7, the Go row), and its tag is read by
+    /// `Kind` whatever key it is written under.
     #[test]
-    fn a_go_walk_reads_no_union() {
+    fn a_go_machine_holds_a_union_in_its_own_value_struct() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &GO).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
-        assert!(GO
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
+        let kinds = kinds();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &GO),
+            Ok("MShapeUnion".to_string())
+        );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &GO
+            ),
+            Ok("[]optional.Of[MShapeUnion]".to_string())
+        );
+        assert_eq!(GO.union_tag_read("type"), Some("Kind".to_string()));
+        assert_eq!(
+            GO.union_value("MShapeUnion", "Dot", None),
+            "MShapeUnionDot()"
+        );
+        assert_eq!(
+            GO.union_value("MShapeUnion", "Circle", Some("r")),
+            "MShapeUnionCircle(r)"
+        );
+    }
+
+    /// The declaration: an unexported tag and one unexported member per case
+    /// that holds a record, a constructor per case, `Kind`, a proven read per
+    /// case that holds a record whose other cases panic, beside the
+    /// unexported accessor of the pointer a write goes through, and one
+    /// accessor for `radius`, which `circle` and `disc` share.
+    #[test]
+    fn a_go_union_is_declared_with_its_constructors_and_its_proven_reads() {
+        let def = union_definition(SHAPE_KEY, &shapes(), &kinds(), &GO).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "Kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "ProvenFieldRadius".to_string(),
+                ty: "uint16".to_string(),
+                cases: vec!["Circle".to_string(), "Disc".to_string()],
+            }]
+        );
+        let text = GO.union_def(&def);
+        let panic =
+            |read: &str| format!("panic(\"a value of shape read as {read} is in another case\")");
+        for fragment in [
+            "type MShapeUnion struct {\n\ttag MKindEnum\n\tcaseCircle MRadiusRecord\n\tcaseDisc \
+             MRadiusRecord\n}\n"
+                .to_string(),
+            "func (u MShapeUnion) Kind() MKindEnum {\n\treturn u.tag\n}".to_string(),
+            "func MShapeUnionDot() MShapeUnion {\n\treturn MShapeUnion{tag: Dot}\n}".to_string(),
+            "func MShapeUnionCircle(r MRadiusRecord) MShapeUnion {\n\treturn MShapeUnion{tag: \
+             Circle, caseCircle: r}\n}"
+                .to_string(),
+            format!(
+                "func (u MShapeUnion) ProvenCircle() MRadiusRecord {{\n\tif u.tag != Circle {{\n\t\t\
+                 {}\n\t}}\n\treturn u.caseCircle\n}}",
+                panic("circle")
+            ),
+            format!(
+                "func (u *MShapeUnion) provenCirclePlace() *MRadiusRecord {{\n\tif u.tag != Circle \
+                 {{\n\t\t{}\n\t}}\n\treturn &u.caseCircle\n}}",
+                panic("circle")
+            ),
+            format!(
+                "func (u MShapeUnion) ProvenFieldRadius() uint16 {{\n\tswitch u.tag {{\n\tcase \
+                 Circle:\n\t\treturn u.caseCircle.radius\n\tcase Disc:\n\t\treturn \
+                 u.caseDisc.radius\n\t}}\n\t{}\n}}",
+                panic("radius")
+            ),
+            format!(
+                "func (u *MShapeUnion) provenFieldRadiusPlace() *uint16 {{\n\tswitch u.tag {{\n\t\
+                 case Circle:\n\t\treturn &u.caseCircle.radius\n\tcase Disc:\n\t\treturn \
+                 &u.caseDisc.radius\n\t}}\n\t{}\n}}",
+                panic("radius")
+            ),
+        ] {
+            assert!(text.contains(&fragment), "expected `{fragment}` in:\n{text}");
+        }
+        // An empty case has no member and nothing to read.
+        assert!(!text.contains("caseDot"), "{text}");
+        assert!(!text.contains("ProvenDot"), "{text}");
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// method, a field of the one case left through that case's proven read,
+    /// and a field two cases share through its accessor; a write goes through
+    /// the pointer the unexported accessor beside each answers, and the tag is
+    /// never written alone.
+    #[test]
+    fn a_go_proven_read_and_write_are_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(go_union_member(union, &all, "kind"), Ok("Kind()".into()));
+        assert_eq!(
+            go_union_member(union, &[case(&shapes, "disc")], "radius"),
+            Ok("ProvenDisc().radius".into())
+        );
+        assert_eq!(
+            GO.union_member(union, &both, "radius"),
+            Ok("ProvenFieldRadius()".into())
+        );
+        assert!(go_union_member(union, &[case(&shapes, "dot")], "radius").is_err());
+        assert_eq!(
+            GO.union_member_place("p.vS", union, &[case(&shapes, "disc")], "radius"),
+            Ok("p.vS.provenDiscPlace().radius".into())
+        );
+        assert_eq!(
+            GO.union_member_place("p.vS", union, &both, "radius"),
+            Ok("*p.vS.provenFieldRadiusPlace()".into())
+        );
+        let tag = GO
+            .union_member_place("p.vS", union, &all, "kind")
+            .expect_err("the tag is never written alone");
+        assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// The reader reads the tag by the enum's reader inside the runtime's
+    /// `ReadUnion`, and then the record of the case it names from the same
+    /// value, each case an arm of a `switch` over the tag's enum; the writer
+    /// tells the case by its tag's declared name and writes the tag among the
+    /// case's fields, as the JSON text and as the value a `<send>` holds; a
+    /// union is copied by value, never as a list is.
+    #[test]
+    fn a_go_union_is_read_tag_first_written_by_its_case_and_copied_by_value() {
+        let shapes = shapes();
+        let kinds = kinds();
+        let read = reader(&ty("union:Shape"), None, &shapes, &kinds, &GO, "v").expect("read");
+        for fragment in [
+            "sce.ReadUnion(v, \"kind\", func(sceValue sce.PayloadValue) (MKindEnum, error) { \
+             return func() (MKindEnum, error) { sceName, err := sceValue.Name();",
+            "func(sceTag MKindEnum, sceValue sce.PayloadValue) (MShapeUnion, error) { switch \
+             sceTag { case Dot: return MShapeUnionDot(), nil; case Circle: sceCase, err := ",
+            "return MShapeUnionCircle(sceCase), nil; case Disc: ",
+            "}; panic(\"the tag's reader answered no variant of its enum\") })",
+        ] {
+            assert!(read.contains(fragment), "expected `{fragment}` in:\n{read}");
+        }
+        let json =
+            writer(&ty("union:Shape"), None, &shapes, &GO, &Held::place("x.s")).expect("write");
+        assert_eq!(
+            json,
+            "func() sce.RawJSON { sceUnion := x.s; switch sceUnion.Kind().String() { case \"dot\": \
+             return sce.UnionJSON(\"kind\", \"dot\"); case \"circle\": sceElement := \
+             sceUnion.ProvenCircle(); return sce.UnionJSON(\"kind\", \"circle\", \
+             sce.Pair(\"radius\", sce.ValueJSON(sceElement.radius))); case \"disc\": sceElement := \
+             sceUnion.ProvenDisc(); return sce.UnionJSON(\"kind\", \"disc\", sce.Pair(\"radius\", \
+             sce.ValueJSON(sceElement.radius))); }; panic(\"a union's tag names no case of it\") }()"
+        );
+        let wire = GoComposed {
+            machine: "M",
+            carrier: GoCarrier::Wire,
+        };
+        let sent = writer(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &wire,
+            &Held::place("x.s"),
+        )
+        .expect("write");
+        assert!(
+            sent.contains(
+                "case \"circle\": sceElement := sceUnion.ProvenCircle(); return \
+                 map[string]any{\"kind\": \"circle\", \"radius\": int64(sceElement.radius)}; "
+            ),
+            "{sent}"
+        );
+        let copy = |from: &str, to: &str| {
+            copier(
+                &ty(from),
+                None,
+                &ty(to),
+                None,
+                &shapes,
+                &kinds,
+                &GO,
+                &Held::place("x"),
+            )
+        };
+        assert_eq!(copy("union:Shape", "union:Shape"), Ok("x".to_string()));
+        assert_eq!(
+            copy("optional<union:Shape>", "optional<union:Shape>"),
+            Ok("x".to_string())
+        );
+        assert_eq!(
+            copy("union:Shape", "optional<union:Shape>"),
+            Ok("optional.Some(x)".to_string())
+        );
+    }
+
+    /// A union is saved as its tag beside the fields of its case, written by
+    /// the runtime's `SavedWriteUnion` over the record's own `ToSaved`, and read
+    /// back by its tag first (docs/adr/0092, section 6.1 item 7); a tag no case
+    /// names is refused naming the union.
+    #[test]
+    fn a_go_union_is_saved_by_its_tag_beside_its_case() {
+        let shapes = shapes();
+        let def = union_definition(SHAPE_KEY, &shapes, &kinds(), &GO).expect("declared");
+        let text = GO
+            .saved_union_ext(&def, SHAPE_KEY, &shapes)
+            .expect("spelled")
+            .expect("a Go union carries its saved form");
+        for fragment in [
+            "func (u MShapeUnion) ToSaved() any {\n\tswitch u.tag {\n\tcase Dot:\n\t\treturn \
+             sce.SavedWriteUnion(\"kind\", \"dot\", nil)\n\tcase Circle:\n\t\treturn \
+             sce.SavedWriteUnion(\"kind\", \"circle\", u.caseCircle.ToSaved())\n",
+            "func MShapeUnionFromSaved(value any, what string) (MShapeUnion, error) {\n\ttag, err \
+             := sce.SavedReadUnionTag(value, what, \"kind\")\n",
+            "\tcase \"dot\":\n\t\treturn MShapeUnionDot(), nil\n",
+            "\tcase \"circle\":\n\t\trecord, err := MRadiusRecordFromSaved(value, what)\n\t\tif err \
+             != nil {\n\t\t\treturn MShapeUnion{}, err\n\t\t}\n\t\treturn \
+             MShapeUnionCircle(record), nil\n",
+            "sce.Refuse(fmt.Sprintf(\"'%s' (%s) is not a case of shape\", what, tag))",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+    }
+
+    /// A composed record's saved form: each field written by the runtime's
+    /// writer of its type and read back held to every bound and count its type
+    /// states, a list's lower count included (docs/adr/0086, section 15.6).
+    #[test]
+    fn a_go_composed_record_is_saved_field_by_field_by_its_types() {
+        let held = held();
+        let enums = enums();
+        let text = GO
+            .saved_record_ext("Item", &held, &enums)
+            .expect("spelled")
+            .expect("a Go composed record carries its saved form");
+        for fragment in [
+            "func (r MItemRecord) ToSaved() any {\n\tsaved := sce.NewJSONObject()\n",
+            "\tsaved.Set(\"id\", (sce.SavedWriteUint32)(r.id))\n",
+            "\tsaved.Set(\"level\", (MLevelEnum.ToSaved)(r.level))\n",
+            "\tsaved.Set(\"due\", (func(sceSaved0 optional.Of[int64]) any { return \
+             optional.Wire(sceSaved0, sce.SavedWriteInt64) })(r.due))\n",
+            "\tsaved.Set(\"tags\", (func(sceSaved0 []string) any { return \
+             sce.SavedWriteList(sceSaved0, sce.SavedWriteString) })(r.tags))\n",
+            "func MItemRecordFromSaved(value any, what string) (MItemRecord, error) {\n\tvar record \
+             MItemRecord\n",
+            "\t\tif record.blob, err = (sce.SavedBoundedBytes(4))(saved, what + \".blob\"); err != \
+             nil {\n",
+            "\t\tif record.tags, err = (func(sceSaved0 any, sceWhat0 string) ([]string, error) { \
+             return sce.SavedReadListWithin(sceSaved0, sceWhat0, 0, 4, \
+             sce.SavedBoundedString(8)) })(saved, what + \".tags\"); err != nil {\n",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+    }
+
+    /// A union a raise seam is handed is checked by the record of the case it
+    /// is in, at the union's own path; one whose cases hold no bound checks
+    /// nothing.
+    #[test]
+    fn a_go_raise_seam_checks_a_union_by_its_case() {
+        let shapes = shapes();
+        let kinds = kinds();
+        assert_eq!(
+            go_bound_check(
+                &ty("union:Shape"),
+                None,
+                "\"one\"",
+                "one",
+                0,
+                (&shapes, &kinds),
+                &GO
+            ),
+            Ok(None)
+        );
         let none = BTreeMap::new();
         assert!(go_bound_check(
             &ty("union:Shape"),
@@ -986,8 +1766,7 @@ mod tests {
             (&shapes, &none),
             &GO
         )
-        .unwrap_err()
-        .contains("holds no union"));
+        .is_err());
     }
 
     /// A list sent where its field asks a lower count it does not prove is

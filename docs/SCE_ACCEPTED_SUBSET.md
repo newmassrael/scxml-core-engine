@@ -4824,7 +4824,12 @@ either in its own sum (or `Option` of it), lent to a host by reference. The Kotl
 machine holds either in its own sealed interface (or `T?` of it), immutable as its
 records are: a field of a case is written by assigning the variable the next value
 whole, the case's record copied with the field replaced, or, for a field several
-cases share, the interface's `provenField<Field>With`. A saved state holds the value as
+cases share, the interface's `provenField<Field>With`. The Go machine holds either in
+its own value struct (or `optional.Of` of it), an unexported tag and one unexported
+member per case that holds a record, built only by the constructor of its case
+(docs/adr/0092, section 7 item 4): its tag is read by `Kind()`, a case's record by
+`Proven<Case>()`, and a field of a case is written in place through the pointer the
+unexported `proven<Case>Place()` beside it answers. A saved state holds the value as
 one object, its tag beside its case's fields, read back by its tag first, and the
 saved shape names the union's document and each case's record. A backend whose row
 of "Which backend lowers a composed value" holds no union refuses the variable by
@@ -5553,7 +5558,7 @@ not lower.
 
 - `kotlin` lowers reads, copies, unions, records, sends; refuses none
 
-- `go` lowers reads, copies, sends; refuses unions, records
+- `go` lowers reads, copies, unions, sends; refuses records
 
 - `python` lowers reads, copies, sends; refuses unions, records
 

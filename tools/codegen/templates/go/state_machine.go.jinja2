@@ -331,10 +331,12 @@ var {{ machine_name }}SavedEnumKeys = [...]string{}
    field's own type, and the refusal of one that is not of it: what a restore
    reads each variable by (below), and what a test component reads each module
    parameter by from the run's values (docs/SCE_TEST_PROFILE.md §11.8), whether
-   or not the machine saves. A record's or an enum's saved form is its own
-   type's (`<Type>FromSaved`, emitted with the type by the static lowering). #}
+   or not the machine saves. A record's, a union's or an enum's saved form is
+   its own type's (`<Type>FromSaved`, emitted with the type by the static
+   lowering); a union reads itself back by its tag first (docs/adr/0092,
+   section 6.1 item 7). #}
 {% macro saved_read(field, raw) -%}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
+{%- if field.saved_kind == "optional" and field.saved_elem in ["enum", "record", "union"] -%}
 sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", {{ field.saved_type }}FromSaved, optional.None[{{ field.saved_type }}], optional.Some[{{ field.saved_type }}])
 {%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
 sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", sce.SavedBoundedBytes({{ field.bound if field.bound is not none else 2147483647 }}), optional.None[[]byte], optional.Some[[]byte])
@@ -342,7 +344,7 @@ sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", sce.SavedBoundedB
 sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", sce.SavedBoundedString({{ field.bound }}), optional.None[string], optional.Some[string])
 {%- elif field.saved_kind == "optional" -%}
 sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", sce.SavedRead{{ field.saved_type | to_pascal_case }}, optional.None[{{ GO_SAVED_TYPE[field.saved_type] }}], optional.Some[{{ GO_SAVED_TYPE[field.saved_type] }}])
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{%- elif field.saved_kind in ["record", "enum", "union"] -%}
 {{ field.saved_type }}FromSaved({{ raw }}, "{{ field.id | escape_go }}")
 {%- elif field.saved_kind == "list" -%}
 sce.SavedReadList({{ raw }}, "{{ field.id | escape_go }}", {{ field.bound }}, sce.SavedRead{{ field.saved_type | to_pascal_case }})
@@ -357,16 +359,16 @@ sce.SavedRead{{ field.saved_type | to_pascal_case }}({{ raw }}, "{{ field.id | e
 {%- endif -%}
 {%- endmacro %}
 {% if static_saved_shape %}
-{# A record's or an enum's saved form is its own type's (`ToSaved` /
+{# A record's, a union's or an enum's saved form is its own type's (`ToSaved` /
    `<Type>FromSaved`, emitted with the type by the static lowering). #}
 {% macro saved_write(field) -%}
-{# An enum's and a record's saved form is its own type's, so an optional one of
-   either is written through it where it is present. #}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
+{# An enum's, a record's and a union's saved form is its own type's, so an
+   optional one of any of them is written through it where it is present. #}
+{%- if field.saved_kind == "optional" and field.saved_elem in ["enum", "record", "union"] -%}
 optional.Wire(p.{{ field.name }}, func(v {{ field.saved_type }}) any { return v.ToSaved() })
 {%- elif field.saved_kind == "optional" -%}
 optional.Wire(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{%- elif field.saved_kind in ["record", "enum", "union"] -%}
 p.{{ field.name }}.ToSaved()
 {%- elif field.saved_kind == "list" -%}
 sce.SavedWriteList(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
