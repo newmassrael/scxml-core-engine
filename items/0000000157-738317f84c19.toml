@@ -6,3 +6,9 @@ commit = "c6e0d2638b317943f081d87ff4b7709589d66b24"
 base = "5d221ea561351badc701807ee78a6f2531d20f43"
 machine = "mf977c53d872e"
 at = 1794390271
+
+[return]
+reason = "hook-refused"
+detail = "the pre-push hook refused the landing push (its words are in the account)"
+report = "mf977c53d872e:0000000157-738317f84c19/attempt-1.log"
+at = 1794391840
