@@ -34,6 +34,22 @@
 //! `var` of a function that closes over it, built once when the algorithm is
 //! installed.
 //!
+//! # Unions
+//!
+//! A value of `union:U` is the plain object of its wire form (docs/adr/0092,
+//! section 2.1 and section 7, the Interpreter row): the tag's key holding the
+//! declared name of the case's variant, which is what a value of the tag's enum
+//! is here, beside the fields of the case's record. So the tag is `u.kind` and
+//! a field of a case `u.f`, the read every proven read is, whichever cases the
+//! narrowing leaves; the judge that runs before any backend
+//! ([`crate::forge::narrowing::check_algorithm`]) has admitted each read only
+//! where its cases are proven, and runs before this lowering too ([`judge`]).
+//! A union local is the object built whole as the case its tag names
+//! ([`AlgorithmUnions::built`]), never written afterwards, and a union is
+//! returned by name. The end of a body no path reaches ([`ends_unreached`])
+//! throws, the script engine's statement that the point is not reached, with
+//! no failure name: it is no failure an algorithm reports.
+//!
 //! # Imports
 //!
 //! What a body's expressions are typed against includes the documents it
@@ -52,15 +68,17 @@
 //! an overflow of its own: the statement is skipped, the guard is false, and
 //! `error.execution` is raised (§scxml-5.9.1, 3.12.2).
 
+use crate::forge::algorithm_union::{ends_unreached, unreached_end_reason, AlgorithmUnions};
 use crate::forge::const_fold::{self, ConstSite, ConstValue};
-use crate::forge::error::GenerateError;
+use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::expr::{self, ExprTarget};
 use crate::forge::generator::{
     judge_text_write, AlgorithmTypes, ImportContext, RecordField, RecordImport, TextRefusal,
     TextSource,
 };
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport, SceType,
+    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
+    RecordFieldInit, SceType,
 };
 use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, present_record_of, proves_written, Chain, Facts,
@@ -163,6 +181,13 @@ fn refuse(algorithm: &str, what: impl std::fmt::Display) -> GenerateError {
     GenerateError::unsupported(format!(
         "the algorithm `{algorithm}`: {what} has no ecmascript lowering yet"
     ))
+}
+
+/// [`refuse`], as the error a statement of the body hands on: a statement's
+/// lowering also hands on what the judge of a union local refuses, which keeps
+/// its own code ([`AlgorithmUnions::built`]).
+fn refusal(algorithm: &str, what: impl std::fmt::Display) -> ForgeError {
+    refuse(algorithm, what).into()
 }
 
 /// Whether a scalar type is a value this lowering can hold in a local, an
@@ -435,9 +460,13 @@ struct Body<'a> {
     /// The parameters a `foreach` reads: a list, or bytes.
     iterable: HashSet<&'a str>,
     /// What a `return` hands back by name, without judging it as an
-    /// expression: a buffer, a record, a list or bytes parameter. None of them
-    /// is an operand, and each is returned whole (SCE_FORGE.md §4.12).
+    /// expression: a buffer, a record, a list or bytes parameter, a union
+    /// parameter or local. None of them is an operand, and each is returned
+    /// whole (SCE_FORGE.md §4.12).
     whole_values: HashSet<&'a str>,
+    /// The unions the parameters and locals hold, and the case a union local
+    /// builds (docs/adr/0092, Landing order step 5).
+    unions: AlgorithmUnions<'a>,
 }
 
 impl Body<'_> {
@@ -522,6 +551,37 @@ impl Body<'_> {
         Ok(format!("{RUNTIME_GLOBAL}.bounded({text}, {bound})"))
     }
 
+    /// The members of a plain object that holds a value of `record`, one per
+    /// field in the schema's order, each `'<id>': <value>` with the value the
+    /// `<sce:set>` among `given` that names the field gives, read where
+    /// `proven` holds: what a record local is, and what a union local holds
+    /// beside its tag. `local` names the local a refusal is about.
+    fn field_values(
+        &self,
+        local: &str,
+        record: &RecordImport,
+        given: &[&RecordFieldInit],
+        proven: &Facts,
+    ) -> Result<Vec<String>, GenerateError> {
+        let mut members = Vec::with_capacity(record.fields.len());
+        for field in &record.fields {
+            let id = &field.id;
+            let Some(set) = given.iter().find(|set| &set.name == id) else {
+                return Err(refuse(
+                    self.algorithm,
+                    format!("{local}, which gives no value for `{id}`"),
+                ));
+            };
+            let value = if field.holds_text() {
+                self.text_write(&set.expr, field)?
+            } else {
+                self.slot_at(&set.expr, InferredType::of_field(&field.ty), proven)?
+            };
+            members.push(format!("{}: {value}", quoted(id)));
+        }
+        Ok(members)
+    }
+
     /// The statements of one block, entered with `entry` proven present
     /// (docs/adr/0055): each read where what the ones before it prove holds, as
     /// [`crate::forge::narrowing::check_algorithm`] judged them.
@@ -530,7 +590,7 @@ impl Body<'_> {
         stmts: &[AlgorithmStmt],
         depth: usize,
         entry: &Facts,
-    ) -> Result<Vec<String>, GenerateError> {
+    ) -> Result<Vec<String>, ForgeError> {
         let mut proven = entry.clone();
         let mut lowered = Vec::with_capacity(stmts.len());
         for stmt in stmts {
@@ -564,7 +624,7 @@ impl Body<'_> {
         stmt: &AlgorithmStmt,
         depth: usize,
         proven: &Facts,
-    ) -> Result<String, GenerateError> {
+    ) -> Result<String, ForgeError> {
         let lowered = |text: &str, ty: InferredType| self.slot_at(text, ty, proven);
         Ok(match stmt {
             // A buffer starts empty; its capacity is what an append is held to.
@@ -587,7 +647,7 @@ impl Body<'_> {
                         InferredType::Optional(OptionalElem::of_value(elem))
                     }
                     _ => {
-                        return Err(refuse(
+                        return Err(refusal(
                             self.algorithm,
                             format!("the local `{name}` of type `{}`", sce_type.as_attr()),
                         ))
@@ -596,7 +656,7 @@ impl Body<'_> {
                 format!("var {name} = {};", lowered(init, ty)?)
             }
             AlgorithmStmt::Var { name, sce_type, .. } => {
-                return Err(refuse(
+                return Err(refusal(
                     self.algorithm,
                     format!("the buffer `{name}` of type `{}`", sce_type.as_attr()),
                 ))
@@ -611,38 +671,66 @@ impl Body<'_> {
             } => {
                 check_name(self.algorithm, name)?;
                 let record = self.record_import(alias)?;
-                let mut members = Vec::with_capacity(record.fields.len());
-                for field in &record.fields {
-                    let id = &field.id;
-                    let Some(given) = fields.iter().find(|given| &given.name == id) else {
-                        return Err(refuse(
-                            self.algorithm,
-                            format!("the record local `{name}`, which gives no value for `{id}`"),
-                        ));
-                    };
-                    let value = if field.holds_text() {
-                        self.text_write(&given.expr, field)?
-                    } else {
-                        lowered(&given.expr, InferredType::of_field(&field.ty))?
-                    };
-                    members.push(format!("{}: {value}", quoted(id)));
-                }
+                let given: Vec<&RecordFieldInit> = fields.iter().collect();
+                let members = self.field_values(
+                    &format!("the record local `{name}`"),
+                    record,
+                    &given,
+                    proven,
+                )?;
                 if fields.len() != record.fields.len() {
-                    return Err(refuse(
+                    return Err(refusal(
                         self.algorithm,
                         format!("the record local `{name}`, which gives a field `{alias}` does not declare"),
                     ));
                 }
                 format!("var {name} = {{{}}};", members.join(", "))
             }
-            // A union an algorithm holds is not lowered here yet (docs/adr/0092,
-            // Landing order step 5), as its parameter and its return are not
-            // ([`holds`]).
-            AlgorithmStmt::UnionVar { name, alias, .. } => {
-                return Err(refuse(
-                    self.algorithm,
-                    format!("the union local `{name}` of type `union:{alias}`"),
-                ))
+            // A union built whole as the case its tag names (docs/adr/0092,
+            // section 6.1 item 5): the plain object of its wire form, the tag's
+            // key holding the declared name of the case's variant, beside the
+            // fields of the case's record, each given as a record local's is.
+            // The judge held the build to its case and fields, and refuses a
+            // write of the local, so it is declared once and never changed.
+            AlgorithmStmt::UnionVar {
+                name,
+                name_spelling,
+                alias,
+                fields,
+                ..
+            } => {
+                check_name(self.algorithm, name)?;
+                let built = self
+                    .unions
+                    .built(name, name_spelling.as_ref(), alias, fields)?;
+                let tag = self
+                    .unions
+                    .union(alias)
+                    .map(|union| union.tag.as_str())
+                    .ok_or_else(|| {
+                        refusal(
+                            self.algorithm,
+                            format!(
+                                "the union local `{name}` of `union:{alias}`, a union whose \
+                                 document was not read"
+                            ),
+                        )
+                    })?;
+                let mut members = vec![format!(
+                    "{}: {}",
+                    quoted(tag),
+                    quoted(&built.case.variant.name)
+                )];
+                if let Some(record_alias) = built.record.as_deref() {
+                    let record = self.record_import(record_alias)?;
+                    members.extend(self.field_values(
+                        &format!("the union local `{name}`"),
+                        record,
+                        &built.fields,
+                        proven,
+                    )?);
+                }
+                format!("var {name} = {{{}}};", members.join(", "))
             }
             // A record received whole from a call.
             AlgorithmStmt::RecordFromCall {
@@ -674,13 +762,13 @@ impl Body<'_> {
                 };
                 if let Some((root, field, alias)) = held {
                     let Some(alias) = alias.copied() else {
-                        return Err(refuse(
+                        return Err(refusal(
                             self.algorithm,
                             format!("an assignment to the member `{target}`"),
                         ));
                     };
                     if field.contains(['.', '[']) {
-                        return Err(refuse(
+                        return Err(refusal(
                             self.algorithm,
                             format!("an assignment to the member `{target}`"),
                         ));
@@ -712,7 +800,7 @@ impl Body<'_> {
                     }
                 }
                 if target.contains('[') {
-                    return Err(refuse(
+                    return Err(refusal(
                         self.algorithm,
                         format!("an assignment to the element `{target}`"),
                     ));
@@ -727,7 +815,7 @@ impl Body<'_> {
             AlgorithmStmt::Append { target, expr, .. } => {
                 let target = target.trim();
                 let Some(buffer) = self.buffers.get(target) else {
-                    return Err(refuse(
+                    return Err(refusal(
                         self.algorithm,
                         format!("<sce:append target=\"{target}\">, which is not a buffer"),
                     ));
@@ -761,7 +849,7 @@ impl Body<'_> {
                     BufferElement::Record => {
                         let name = expr.trim();
                         if !self.records.contains_key(name) {
-                            return Err(refuse(
+                            return Err(refusal(
                                 self.algorithm,
                                 format!(
                                     "<sce:append target=\"{target}\"> of `{name}`, which is not a \
@@ -824,13 +912,13 @@ impl Body<'_> {
                     // Not a gap to close: a `sce-static` statechart has no
                     // variable of this kind, so nothing could hand the
                     // function one to loop over.
-                    return Err(refuse(
+                    return Err(refusal(
                         self.algorithm,
                         format!("<sce:foreach item=\"{item}\" in=\"{source}\">, a loop over a bounded-collection import, which a sce-static statechart cannot hold"),
                     ));
                 }
                 if !self.iterable.contains(source) {
-                    return Err(refuse(
+                    return Err(refusal(
                         self.algorithm,
                         format!("<sce:foreach item=\"{item}\" in=\"{source}\">, which is not a list or bytes parameter or a list buffer"),
                     ));
@@ -881,11 +969,12 @@ impl Body<'_> {
 
 /// Whether `ty` is a parameter or a return this lowering can hold.
 ///
-/// A composition no slot's lowering holds yet
-/// ([`AlgorithmValueType::slot_view`]) is not held here either, and is refused
-/// by name where it is met.
+/// A composition no algorithm's slot holds yet
+/// ([`AlgorithmValueType::algorithm_view`]: a union inside a list or an
+/// optional value among them) is not held here either, and is refused by name
+/// where it is met.
 fn holds(ty: &AlgorithmValueType) -> bool {
-    if ty.slot_view().is_err() {
+    if ty.algorithm_view().is_err() {
         return false;
     }
     match ty {
@@ -900,9 +989,9 @@ fn holds(ty: &AlgorithmValueType) -> bool {
             _ => false,
         },
         AlgorithmValueType::Record { .. } => true,
-        // This lowering does not hold an algorithm's union yet (docs/adr/0092,
-        // Landing order step 5).
-        AlgorithmValueType::Union { .. } => false,
+        // A union is the plain object of its wire form (docs/adr/0092, section
+        // 7, the Interpreter row), held whole.
+        AlgorithmValueType::Union { .. } => true,
         // A value that may be absent is `null` or its present value
         // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
         // declared name) or a record (a plain object). A byte string is the array
@@ -926,6 +1015,25 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
     }
 }
 
+/// The judge of a body that holds a union, run before [`lower`] reads it, as
+/// every backend's route runs it before the backend renders the body
+/// (docs/adr/0092, "Decided while landing step 5" item 1;
+/// [`crate::forge::narrowing::check_algorithm`]): a field read where no test
+/// proves its case, a write of a union, a union where it does not stand whole,
+/// a local built as no case, and an end a path reaches without a return are
+/// refused with the judge's own diagnostic, in the document. A body that holds
+/// no union reaches the lowering as it always has.
+pub(crate) fn judge(m: &AlgorithmModel, imports: &Imports) -> Result<(), ForgeError> {
+    if !m.holds_union() {
+        return Ok(());
+    }
+    crate::forge::narrowing::check_algorithm(
+        m,
+        &imports.contexts,
+        &crate::ForgeCompileOptions::default(),
+    )
+}
+
 /// The ECMAScript function `m` lowers to, as an expression —
 /// `function (a, b) { … }` — on one line, for the attribute that carries it.
 ///
@@ -933,15 +1041,18 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
 /// built once, when the algorithm is installed, and not on every call.
 ///
 /// Refused by name, never passed on half lowered: a parameter or a return of a
-/// type with no form here, and every statement it does not spell.
-pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, GenerateError> {
+/// type with no form here, and every statement it does not spell. A body that
+/// holds a union is one [`judge`] has admitted: the lowering reads its fields
+/// where the judge proved their cases, and closes its end where the judge
+/// proved it unreached.
+pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, ForgeError> {
     let mut params = Vec::new();
     let mut iterable: HashSet<&str> = HashSet::new();
     let mut whole_values: HashSet<&str> = HashSet::new();
     for param in &m.signature.params {
         check_name(&m.name, &param.name)?;
         if !holds(&param.sce_type) {
-            return Err(refuse(
+            return Err(refusal(
                 &m.name,
                 format!(
                     "the parameter `{}` of type `{}`",
@@ -998,7 +1109,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         // A `bytes` return is a buffer returned by name, like a list.
         Some(AlgorithmValueType::Bytes { .. }) => InferredType::Unknown,
         Some(ty) if !holds(ty) => {
-            return Err(refuse(
+            return Err(refusal(
                 &m.name,
                 format!("a return of type `{}`", ty.as_attr()),
             ))
@@ -1006,8 +1117,9 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         Some(ty @ (AlgorithmValueType::Scalar(_) | AlgorithmValueType::Text { .. })) => ty
             .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type),
-        // A list is returned by name, never judged as an operand. A union is
-        // refused by the guard above, as this lowering holds none yet.
+        // A list and a union are returned by name, never judged as an operand
+        // (SCE_FORGE.md §4.12; docs/adr/0092, "Decided while landing step 5"
+        // item 4).
         Some(AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. }) => {
             InferredType::Unknown
         }
@@ -1018,7 +1130,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         }
         Some(AlgorithmValueType::Record { alias }) => {
             let Some(record) = imports.record(alias) else {
-                return Err(refuse(
+                return Err(refusal(
                     &m.name,
                     format!("a return of the record `{alias}`, which no event-schema import names"),
                 ));
@@ -1032,6 +1144,8 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         .map(|(name, alias, _)| (*name, *alias))
         .collect();
     whole_values.extend(records.keys().copied());
+    // A union parameter or local is returned by name, as a record is.
+    whole_values.extend(types.unions.iter().map(|&(name, _)| name));
     let optional_records: HashMap<&str, &str> = types
         .optional_records
         .iter()
@@ -1049,8 +1163,20 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         buffers,
         iterable,
         whole_values,
+        unions: types.union_rules(),
     };
-    let statements = body.statements(&m.body, 0, &Facts::none())?;
+    let mut statements = body.statements(&m.body, 0, &Facts::none())?;
+    // docs/adr/0092, section 6.1 item 4: a body that ends where the tests of a
+    // union's tag have returned on every case ends at a point the judge proved
+    // no path passes. A function that runs past its last statement answers
+    // `undefined`, which a caller would take as the value; the point is closed
+    // by a throw that says it is not reached, as every backend closes it.
+    if ends_unreached(m) {
+        statements.push(format!(
+            "throw new Error({});",
+            quoted(&unreached_end_reason(&m.name))
+        ));
+    }
     let function = format!(
         "function ({}) {{ {} }}",
         params.join(", "),

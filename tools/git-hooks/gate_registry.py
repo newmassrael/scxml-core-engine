@@ -1933,7 +1933,11 @@ GATES: dict[str, dict] = {
                    "delegation, and `ci_owed` is where that is read.",
         "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "examples/**", "resources/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**",
+                  # The union documents every algorithm lane is held to, which
+                  # the Interpreter's lowered-algorithm test lowers and runs
+                  # (AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp).
+                  "sce-build/tests/fixtures/union/**"],
         "deps": ["codegen-build"],
         "ci_only": "110s building and running the whole C++ ctest tree. "
                    "cpp-suite.yml runs it. Its `extra` list is wide on "

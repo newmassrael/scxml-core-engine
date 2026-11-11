@@ -467,5 +467,48 @@ TEST(AnAlgorithmRunsLoweredUnderTheInterpreter, EveryAlgorithmFixtureIsLoweredOr
     EXPECT_GT(lowered, 0u) << "no algorithm fixture was lowered, so nothing was compared";
 }
 
+// An algorithm over a union (docs/adr/0092, section 7, the Interpreter row, and
+// Landing order step 5), lowered and run: the documents every algorithm lane is
+// held to (sce-build/tests/fixtures/union), each case of the union handed in as
+// the plain object of its wire form, the tag beside the case's fields, and a
+// union it answers compared as that object. `algorithm_shape_extent` reads the
+// tag and each case's fields where a test of the tag proves the case;
+// `algorithm_shape_grown` answers the union it was given, or a circle it builds
+// from a dot.
+TEST(AnAlgorithmRunsLoweredUnderTheInterpreter, AUnionIsReadByItsTagAndBuiltAsItsCase) {
+    const std::filesystem::path unions = kRoot / "sce-build/tests/fixtures/union";
+
+    const struct {
+        const char *name;
+        const char *cases;
+    } algorithms[] = {
+        {"algorithm_shape_extent",
+         R"([{"args": [{"kind": "dot"}], "expected": 0},
+             {"args": [{"kind": "circle", "radius": 5}], "expected": 5},
+             {"args": [{"kind": "rect", "width": 3, "height": 7}], "expected": 7},
+             {"args": [{"kind": "rect", "width": 9, "height": 2}], "expected": 9}])"},
+        {"algorithm_shape_grown",
+         R"([{"args": [{"kind": "dot"}, 4], "expected": {"kind": "circle", "radius": 4}},
+             {"args": [{"kind": "circle", "radius": 6}, 4], "expected": {"kind": "circle", "radius": 6}},
+             {"args": [{"kind": "rect", "width": 1, "height": 2}, 4],
+              "expected": {"kind": "rect", "width": 1, "height": 2}}])"},
+    };
+
+    for (const auto &algorithm : algorithms) {
+        Fixture fixture;
+        fixture.name = algorithm.name;
+        fixture.document = (unions / (fixture.name + ".scxml")).string();
+        const Lowered lowered = lower(fixture.document);
+        ASSERT_TRUE(lowered.ok) << fixture.name << " is refused: " << lowered.refusal;
+        const nlohmann::json cases = nlohmann::json::parse(algorithm.cases);
+        const Tally tally = run(fixture, lowered, cases);
+        EXPECT_EQ(tally.compared, cases.size()) << fixture.name;
+        EXPECT_EQ(tally.agreed, cases.size()) << fixture.name;
+        for (const auto &line : tally.disagreements) {
+            ADD_FAILURE() << line;
+        }
+    }
+}
+
 }  // namespace Tests
 }  // namespace SCE

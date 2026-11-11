@@ -1873,8 +1873,7 @@ fn lower_parsed(
             variable.id
         ))));
     }
-    let LoweredCallees { called, installed } =
-        lowered_algorithms(model, base_dir).map_err(refuse)?;
+    let LoweredCallees { called, installed } = lowered_algorithms(model, base_dir, label)?;
     let elements = roxmltree::Document::parse(text)
         .map(|document| ScxmlElements::of(&document))
         .map_err(|e| {
@@ -2065,11 +2064,16 @@ struct LoweredCallees {
 ///
 /// Refused here, by name: an import with no directory to be read from, one that
 /// cannot be read, one that is not an algorithm, one that calls itself, and
-/// every construct of a body that has no lowering yet.
+/// every construct of a body that has no lowering yet, each located in the
+/// statechart, `label`; and, with the judge's own diagnostic located in the
+/// algorithm's document, a body that holds a union the judge refuses
+/// ([`static_js_algorithm::judge`]).
 fn lowered_algorithms(
     model: &SCXMLModel,
     base_dir: Option<&Path>,
-) -> Result<LoweredCallees, GenerateError> {
+    label: &str,
+) -> Result<LoweredCallees, Located<ForgeError>> {
+    let refuse = |error: GenerateError| Located::in_file(ForgeError::from(error), label);
     let mut lowered = LoweredCallees {
         called: BTreeMap::new(),
         installed: Vec::new(),
@@ -2082,11 +2086,11 @@ fn lowered_algorithms(
         // calls (docs/adr/0048) has no function in the Interpreter's library yet,
         // and is refused by its name rather than read as an algorithm.
         if !callee.kind.is_algorithm() {
-            return Err(GenerateError::unsupported(format!(
+            return Err(refuse(GenerateError::unsupported(format!(
                 "`{}(…)`: a call of an imported {} has no ecmascript lowering yet",
                 callee.alias,
                 callee.kind.forge_kind()
-            )));
+            ))));
         }
         let what = |reason: &str| {
             GenerateError::unsupported(format!(
@@ -2098,12 +2102,14 @@ fn lowered_algorithms(
             .forge_imports
             .iter()
             .find(|i| i.alias == callee.alias && i.kind == ForgeKind::Algorithm)
-            .ok_or_else(|| what("has no <sce:import> this lowering can read"))?;
-        let dir = base_dir
-            .ok_or_else(|| what("cannot be read: the document was given with no directory"))?;
-        let (parsed, callee_dir) =
-            read_algorithm(dir, import).ok_or_else(|| what("cannot be read"))?;
-        let functions = algorithm_functions(parsed, &callee_dir, &what, &mut Vec::new())?;
+            .ok_or_else(|| refuse(what("has no <sce:import> this lowering can read")))?;
+        let dir = base_dir.ok_or_else(|| {
+            refuse(what(
+                "cannot be read: the document was given with no directory",
+            ))
+        })?;
+        let read = read_algorithm(dir, import).ok_or_else(|| refuse(what("cannot be read")))?;
+        let functions = algorithm_functions(read, label, &what, &mut Vec::new())?;
         lowered
             .called
             .insert(callee.document_name.clone(), functions[0].symbol.clone());
@@ -2112,17 +2118,26 @@ fn lowered_algorithms(
     Ok(lowered)
 }
 
-/// The document `import` names, read from `base_dir`, and the directory the
-/// imports it makes are resolved from. `None` for one that cannot be read, which
-/// the caller words in its own name for the document.
-fn read_algorithm(base_dir: &Path, import: &ForgeImport) -> Option<(ParsedForge, PathBuf)> {
+/// An algorithm document, read to be lowered: its model, the directory the
+/// imports it makes are resolved from, and the label a refusal of the document
+/// itself is located in, the path it was read from.
+struct ReadAlgorithm {
+    parsed: ParsedForge,
+    dir: PathBuf,
+    label: String,
+}
+
+/// The document `import` names, read from `base_dir`. `None` for one that
+/// cannot be read, which the caller words in its own name for the document.
+fn read_algorithm(base_dir: &Path, import: &ForgeImport) -> Option<ReadAlgorithm> {
     let source = ImportSource::read(base_dir, import).ok()?;
     let parsed = source.parse().ok().flatten()?;
     let dir = source
         .path
         .parent()
         .map_or_else(|| base_dir.to_path_buf(), Path::to_path_buf);
-    Some((parsed, dir))
+    let label = source.label().diagnostic_label.to_string();
+    Some(ReadAlgorithm { parsed, dir, label })
 }
 
 /// `more` added to `into`, a symbol installed once.
@@ -2134,44 +2149,53 @@ fn install(into: &mut Vec<LoweredAlgorithm>, more: Vec<LoweredAlgorithm>) {
     }
 }
 
-/// The algorithm `parsed` is, as the function it becomes, followed by the
+/// The algorithm `read` is, as the function it becomes, followed by the
 /// functions of every algorithm it imports, and theirs. The first is the
-/// document's own. `base_dir` is where its imports are resolved from, and
-/// `what` words a refusal in the caller's own name for the document.
+/// document's own. `what` words a refusal in the caller's own name for the
+/// document, and a refusal of this lowering is located where the caller is,
+/// `caller`; what the judge refuses of a body ([`static_js_algorithm::judge`])
+/// is the document's own fault, and is located in the document.
 ///
 /// `visiting` holds the symbols being lowered above this one, so an algorithm
 /// that imports itself, however far round, is refused rather than followed
 /// forever (v1 forbids recursion, SCE_FORGE.md §4.12).
 fn algorithm_functions(
-    parsed: ParsedForge,
-    base_dir: &Path,
+    read: ReadAlgorithm,
+    caller: &str,
     what: &dyn Fn(&str) -> GenerateError,
     visiting: &mut Vec<String>,
-) -> Result<Vec<LoweredAlgorithm>, GenerateError> {
+) -> Result<Vec<LoweredAlgorithm>, Located<ForgeError>> {
+    let refuse = |error: ForgeError| Located::in_file(error, caller);
+    let ReadAlgorithm { parsed, dir, label } = read;
     let ForgeDocument::Algorithm(algorithm) = parsed.document else {
-        return Err(what("is not an algorithm"));
+        return Err(refuse(what("is not an algorithm").into()));
     };
     let symbol = static_js_algorithm::symbol(&algorithm.name);
     if visiting.contains(&symbol) {
-        return Err(what("imports itself, which an algorithm may not"));
+        return Err(refuse(
+            what("imports itself, which an algorithm may not").into(),
+        ));
     }
     visiting.push(symbol.clone());
-    let imports =
-        static_js_algorithm::Imports::resolve(&algorithm.name, &parsed.imports, base_dir)?;
+    let imports = static_js_algorithm::Imports::resolve(&algorithm.name, &parsed.imports, &dir)
+        .map_err(|error| refuse(error.into()))?;
+    static_js_algorithm::judge(&algorithm, &imports)
+        .map_err(|error| Located::in_file(error, label.as_str()))?;
     let mut functions = vec![LoweredAlgorithm {
         symbol,
-        function: static_js_algorithm::lower(&algorithm, &imports)?,
+        function: static_js_algorithm::lower(&algorithm, &imports).map_err(refuse)?,
     }];
     for import in parsed
         .imports
         .iter()
         .filter(|import| import.kind == ForgeKind::Algorithm)
     {
-        let (callee, callee_dir) = read_algorithm(base_dir, import)
-            .ok_or_else(|| what(&format!("imports `{}`, which cannot be read", import.alias)))?;
+        let callee = read_algorithm(&dir, import).ok_or_else(|| {
+            refuse(what(&format!("imports `{}`, which cannot be read", import.alias)).into())
+        })?;
         install(
             &mut functions,
-            algorithm_functions(callee, &callee_dir, what, visiting)?,
+            algorithm_functions(callee, caller, what, visiting)?,
         );
     }
     visiting.pop();
@@ -2233,11 +2257,15 @@ pub fn lower_algorithm_document(
     })?;
     let what =
         |reason: &str| GenerateError::unsupported(format!("`{document}`: the document {reason}"));
-    let base_dir = path
+    let dir = path
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    let functions =
-        algorithm_functions(parsed, &base_dir, &what, &mut Vec::new()).map_err(refuse)?;
+    let read = ReadAlgorithm {
+        parsed,
+        dir,
+        label: document.to_string(),
+    };
+    let functions = algorithm_functions(read, document, &what, &mut Vec::new())?;
     Ok(LoweredAlgorithmDocument {
         symbol: functions[0].symbol.clone(),
         install: runtime_expression(&functions),
