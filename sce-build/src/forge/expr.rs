@@ -1248,6 +1248,20 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
+                    // Go spells the result of the function literal a field
+                    // several cases share is read by, as its conditional does
+                    // ([`go_conditional`]): the read's own type, where the
+                    // expression names it.
+                    ExprTarget::Go => crate::forge::composed_lowering::go_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Go,
+                        ),
+                        union,
+                        &left,
+                        property,
+                        go_nameable_type(expr.ty).as_deref(),
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"

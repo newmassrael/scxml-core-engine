@@ -147,6 +147,68 @@ pub(crate) fn go_union_member(
     })
 }
 
+/// The Go read of `member` of the union value `holder`, a parameter or a local
+/// of an algorithm spelled as Go names it, whose type is the value struct the
+/// union's own unit declares (docs/adr/0092, section 7, the Go row, and
+/// Landing order step 5), where the value may be in the cases `left`, as
+/// [`unit_union_member_of`] classifies it: the tag by `Kind()`, which the
+/// unit's struct answers whatever key the tag is written under; the field of
+/// the one case left, through that case's proven read; or the field the cases
+/// left each declare, read by a function literal called where it is written,
+/// whose `switch` over the declared name of the tag (the unit's `Kind()`
+/// through its enum's `DeclaredName`, so the read names no package) returns
+/// the field from each case left, and whose end the narrowing proved is never
+/// reached. Go spells the result of a function literal, so the shared read
+/// needs `read_type`, the type the expression names the read's value by, as a
+/// conditional's does; one the expression does not name (a value of an enum)
+/// is refused by name, naming the repair. A case's record is the payload
+/// struct its event schema's unit declares, whose fields are named in Pascal
+/// case ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
+/// [`unit_union_member_of`]'s.
+pub(crate) fn go_unit_union_read(
+    holder: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+    read_type: Option<&str>,
+) -> Result<String, String> {
+    let field =
+        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Go);
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{GO_UNION_KIND}()"),
+        UnionMember::Case(case) => {
+            format!("{holder}.{}().{field}", go_case_read(&case.variant.name))
+        }
+        UnionMember::Shared => {
+            let ty = read_type.ok_or_else(|| {
+                format!(
+                    "`{member}` of `union:{}`, read where it may be in the cases {}, is a value \
+                     whose type a Go expression does not name, which the function literal that \
+                     tells the cases apart returns: test the tag for one case and read the \
+                     field there (docs/adr/0092, section 6.1)",
+                    union.name,
+                    cases_named(left)
+                )
+            })?;
+            let arms: String = left
+                .iter()
+                .map(|case| {
+                    format!(
+                        "case {}: return {holder}.{}().{field}; ",
+                        go_literal(&case.variant.name),
+                        go_case_read(&case.variant.name)
+                    )
+                })
+                .collect();
+            format!(
+                "func() {ty} {{ switch {holder}.{GO_UNION_KIND}().DeclaredName().Proven() {{ \
+                 {arms}}}; panic({}) }}()",
+                go_literal(&unit_union_other_case(union, left))
+            )
+        }
+    })
+}
+
 /// The Go function value that writes a value of `ty` as a saved state does
 /// (`sce.SavedWrite*`, a `func(T) any`): a number, a truth value, a text and a
 /// byte string by the runtime's writer of its type, an enum, a record and a
@@ -1611,6 +1673,46 @@ mod tests {
             .union_member_place("p.vS", union, &all, "kind")
             .expect_err("the tag is never written alone");
         assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// An algorithm's union is its unit's value struct (docs/adr/0092, Landing
+    /// order step 5): the tag by `Kind()`, the field of the one case left by
+    /// that case's proven read and its Pascal name, a field several cases
+    /// declare by a function literal of the read's type whose `switch` over
+    /// the tag's declared name takes each case left apart, and no read where
+    /// no case left declares the field or where the read's type has no Go name.
+    #[test]
+    fn an_algorithms_union_is_read_on_its_units_value_struct() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let read = |left: &[&ScopedCase], member: &str, ty: Option<&str>| {
+            go_unit_union_read("shape", union, left, member, ty)
+        };
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(read(&[], "kind", None), Ok("shape.Kind()".to_string()));
+        assert_eq!(
+            read(&[case(&shapes, "circle")], "radius", None),
+            Ok("shape.ProvenCircle().Radius".to_string())
+        );
+        assert_eq!(
+            read(&both, "radius", Some("uint16")),
+            Ok(
+                "func() uint16 { switch shape.Kind().DeclaredName().Proven() { case \"circle\": \
+                 return shape.ProvenCircle().Radius; case \"disc\": return \
+                 shape.ProvenDisc().Radius; }; panic(\"a value of shape read as one of its cases \
+                 circle, disc is in another case\") }()"
+                    .to_string()
+            )
+        );
+        let unnamed = read(&both, "radius", None).expect_err("no Go name for the read's type");
+        assert!(unnamed.contains("`radius` of `union:shape`"), "{unnamed}");
+        assert!(read(&[], "radius", Some("uint16")).is_err());
+        assert!(read(
+            &[case(&shapes, "dot"), case(&shapes, "circle")],
+            "radius",
+            None
+        )
+        .is_err());
     }
 
     /// The reader reads the tag by the enum's reader inside the runtime's

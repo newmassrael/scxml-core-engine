@@ -39412,10 +39412,11 @@ fn record_field_inits(
 
 /// The type the union `alias` an algorithm imports is spelled as on the
 /// backend of `l`: the type its own unit declares (docs/adr/0092, section 7, the
-/// Rust and Kotlin rows), named as the import line brings it in, as an event
+/// Rust, Kotlin and Go rows), named as the import line brings it in, as an event
 /// schema's record is ([`event_schema_payload_type`]): Rust through the sibling
 /// module (`<snake>::<Pascal>`), Kotlin by the sealed interface the wildcard
-/// import of the unit's package brings in, as a schema unit names it
+/// import of the unit's package brings in, Go by the value struct of the
+/// package its import binds, as a schema unit names it
 /// (`SchemaUnitNames::union`). A backend that does not lower an algorithm's
 /// union refuses the algorithm by name before its body is rendered
 /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]), so asked of one
@@ -39474,7 +39475,10 @@ pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) 
 /// ([`crate::forge::composed_lowering::rust_case_ident`]) and Kotlin's class
 /// nested in the sealed interface, or its `data object`
 /// ([`kotlin_case_ident`]). Spelled with a binding in place of `record`, it is
-/// the pattern a Rust `match` takes the case apart by. A backend that lowers no
+/// the pattern a Rust `match` takes the case apart by. Go's is the call of the
+/// constructor of the case its unit declares, `<Union><Case>(r)` or
+/// `<Union><Case>()` ([`crate::forge::composed_lowering::go_case_ident`]),
+/// which no `switch` takes apart. A backend that lowers no
 /// union in an algorithm refused the algorithm before its body was rendered
 /// ([`algorithm_union_type`]), and a statechart's call of one before its
 /// adapter was written, so asked of one it is a fault of the pipeline.
@@ -39491,7 +39495,15 @@ pub(crate) fn algorithm_union_case(
             crate::forge::composed_lowering::rust_case_ident(variant)
         ),
         Language::Kotlin => format!("{union_type}.{}", kotlin_case_ident(variant)),
-        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+        // A constructor is called with nothing as with a record.
+        Language::Go => {
+            return Ok(format!(
+                "{union_type}{}({})",
+                crate::forge::composed_lowering::go_case_ident(variant),
+                record.unwrap_or_default()
+            ))
+        }
+        Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
             return Err(GenerateError::InvalidConfig(format!(
                 "an algorithm's union local reached the renderer of {}, which lowers none in an \
                  algorithm (docs/adr/0092, Landing order step 5)",
@@ -39515,7 +39527,11 @@ pub(crate) fn algorithm_union_case(
 /// Kotlin's is a `throw` of `IllegalStateException`, the exception the unit's
 /// own proven reads throw where a read stands in a case the narrowing proved
 /// the value is not in (`forge/kotlin/union.kt.jinja2`), and which a `may-fail`
-/// body's `try` does not catch, since it catches only `AlgorithmFailure`. The
+/// body's `try` does not catch, since it catches only `AlgorithmFailure`. Go's
+/// is a `panic`, the terminating statement a function with a result may end
+/// in, and what the unit's own proven reads do in a case the narrowing proved
+/// the value is not in (`forge/go/union.go.jinja2`); a `may-fail` body hands a
+/// failure on as an `error`, never as a panic, so the two are not confused. The
 /// statement stands at `pad`, the body's own indentation. Only a body that
 /// holds a union ends this way, and a backend that does not lower one refused
 /// the algorithm before its body was rendered, so asked of one it is a fault of
@@ -39533,7 +39549,8 @@ fn unreached_end(
             "{pad}throw IllegalStateException(\"{}\")",
             filters::escape_kotlin(why)
         )),
-        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+        Language::Go => Ok(format!("{pad}panic(\"{}\")", filters::escape_go(why))),
+        Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
             Err(GenerateError::InvalidConfig(format!(
                 "algorithm '{name}' ends where every case of a union returned, which the \
                  renderer of {} does not close, as it lowers no union in an algorithm \
@@ -41657,7 +41674,8 @@ fn lower_algorithm_stmt(
             let built = unions.built(name, name_spelling.as_ref(), alias, fields)?;
             let union_type = algorithm_union_type(l, imports, alias)?;
             // The case's record, built as a record local is: Rust's struct
-            // literal of its fields, Kotlin's data class by named arguments.
+            // literal of its fields, Kotlin's data class by named arguments,
+            // Go's composite literal of its fields by name.
             let record = match built.record.as_deref() {
                 None => None,
                 Some(record_alias) => {
@@ -41673,6 +41691,7 @@ fn lower_algorithm_stmt(
                     let ty = &record.qualified_type;
                     Some(match lang {
                         Language::Kotlin => format!("{ty}({})", joined(" = ")),
+                        Language::Go => format!("{ty}{{{}}}", joined(": ")),
                         _ => format!("{ty} {{ {} }}", joined(": ")),
                     })
                 }
@@ -41684,12 +41703,14 @@ fn lower_algorithm_stmt(
                 record.as_deref(),
             )?;
             let local = l.local_id(name);
-            // `algorithm_union_type` has refused every backend but Rust and
-            // Kotlin. The local is never written, so Kotlin declares it `val`,
+            // `algorithm_union_type` has refused every backend but Rust, Kotlin
+            // and Go. The local is never written, so Kotlin declares it `val`,
             // at the union's type rather than the case's class, so a test of
-            // its case reads it as a value of the union.
+            // its case reads it as a value of the union; Go's constructor
+            // answers the union's type, which the short declaration takes.
             let line = match lang {
                 Language::Kotlin => format!("{pad}val {local}: {union_type} = {value}\n"),
+                Language::Go => format!("{pad}{local} := {value}\n"),
                 _ => format!("{pad}let {local} = {value};\n"),
             };
             out.push_str(&line);
