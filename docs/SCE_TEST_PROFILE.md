@@ -1232,8 +1232,9 @@ C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h`
 - for a specific template (§6.2) alone, `Value value(<the formal parameters>)`, the value it sends, which matches
   it.
 
-A template whose type reaches a union at any depth is refused on C++ as a field of a union is (ADR 0092, section
-7).
+A template whose type reaches a union at any depth is refused on C++ by the union's own refusal (ADR 0092, section
+7): C++ generates the union's unit, a struct of one `std::variant`, and its walk spells no case of one and its
+runtime no canonical form of one yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 
 Rust generates `test-template` (§12.6, slice 6). The unit is a file `<name>.rs`, named by the document's file as
 every forge unit is, which declares:

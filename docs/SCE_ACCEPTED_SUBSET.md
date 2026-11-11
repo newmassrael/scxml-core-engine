@@ -538,7 +538,9 @@ do not bind the template's formal parameters one to one, each by a parameter of 
 the profile only once its runtime lands there for the document's kind, and until then
 generation refuses one by name (`generate/unsupported-feature`). C++ generates a template
 (`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
-depth by the union's own refusal (`generate/unsupported-feature`). Rust, Kotlin and Go
+depth by the union's own refusal (`generate/unsupported-feature`): it generates the
+union's unit, and its test profile matches no union yet
+(`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`). Rust, Kotlin and Go
 generate a template too, one whose type reaches a union among them, a `union-match`
 holding where the union is in the case its `variant` names. Python generates a
 template too, and refuses one whose type reaches a union as C++ does. C11 generates a
@@ -718,8 +720,9 @@ type is read only where a test proves one case on Rust. A `<foreach>` over a lis
 a proven case holds walks it there. An algorithm's parameter, return and local of
 `union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
 its local built whole as the case its tag names, and its body judged for the point
-where every case returned before any backend is asked; Rust and Kotlin lower it on
-the type the union's own unit declares, and every other backend refuses it by name
+where every case returned before any backend is asked; Rust, C++, Kotlin and Go
+lower it on the type the union's own unit declares, and every other backend refuses
+it by name
 (SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
 and takes one back as it does a record (A union, under "State an algorithm takes and
 gives back", below).
@@ -5464,8 +5467,9 @@ where it raised the event; where none does it returns nothing. Either way it wri
 the payload as the JSON a lift reads back. A list a place holds is taken whole into
 a list variable whose type it fits, each element copied into a list of the place's
 bound by a widening the build proved (`widenedMap`), so the variable shares nothing
-with the place. A payload that holds a union, at any depth, is refused by name on
-C++, which holds no union yet (docs/adr/0092, section 7).
+with the place. A payload that holds a union, at any depth, holds it in the machine's
+own struct of one `std::variant` (docs/adr/0092, section 7, the C++ row, and its item
+2), the shape the union's own C++ unit has.
 
 The C11 backend reads a composed payload with no allocator and no closure
 (docs/adr/0086, section 7.1, the C11 row): its payload struct holds each field in a
@@ -6080,8 +6084,11 @@ refused as any computed argument is. What the algorithm returns is taken whole b
 `<assign>` to a variable of the same union, and only there. The call's adapter maps
 the machine's own sum into the type the union's unit declares, case by case, each
 case's record copied field by field as a record argument is, and maps what returns
-back the same way: a `match` in Rust and a `when` in Kotlin over every case, so a case
-either side gains does not build. Rust and Kotlin lower the call; every other backend
+back the same way: a `match` in Rust, a `when` in Kotlin and a `std::visit` with one
+call operator per alternative in C++ over every case, so a case either side gains does
+not build; Go's `switch` over every case is held to the cases by the adapter's
+regeneration with the document, its compiler holding a `switch` to none. Rust, C++,
+Kotlin and Go lower the call; every other backend
 refuses the statechart by name (`generate/unsupported-feature`, naming the call and
 the union) until it lowers an algorithm over a union.
 

@@ -15,17 +15,20 @@
   - step 3, the runtimes: ff8c45d2a9 (Rust), 07d8880036 (Go), 5bfc0a6a2a (Kotlin), f6dc8f133a (Python), 0ab2a3307d
     (C++), 9a863ded7d (Swift), b1ac3d69cd (C11), b93168cde0 (the Interpreter), held to one refusal per text by
     3646559436;
-  - step 4, on three of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
-    3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift) and the
-    replay vocabulary (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust
-    (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8)
-    and on Kotlin (the change that adds "Amendment (2026-11-11)"); the statechart's part on Go (the change that
-    adds "Decided while landing step 4 on Go (2026-11-11)"), whose union's unit has not landed. C++, Python,
-    C11 and the Interpreter still refuse a statechart that holds a union by name (`generate/unsupported-feature`);
-  - step 5, on two of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
+  - step 4, on five of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
+    3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift; 1955e08e52
+    Go; the change that adds "Decided while landing ADR 0092 on C++" for C++) and the replay vocabulary
+    (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust (f357451c13,
+    9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on Kotlin (the
+    change that adds "Amendment (2026-11-11)"), on Go (43698d9e6e) and on C++ (the change that adds "Decided while
+    landing ADR 0092 on C++"). Python, C11 and the Interpreter still refuse a statechart that holds a union by name
+    (`generate/unsupported-feature`);
+  - step 5, on four of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
     (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
-    Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"). C++, Go,
-    Python, C11, Swift and the Interpreter refuse such an algorithm and such a call by name;
+    Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the Go
+    lowering and crossing (ad4d2f5984, 5ad49544dd) and the C++ lowering and crossing (the change that adds
+    "Decided while landing ADR 0092 on C++"). Python, C11, Swift and the Interpreter refuse such an algorithm and
+    such a call by name;
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
@@ -921,6 +924,64 @@ Step 6 still needs, lane by lane, step 5 with its crossing on C++, Python, C11 a
 holding a union in a statechart, step 4, and C++, Python and C11 the union's unit), the Interpreter's lowering of
 an algorithm over a union and of the call, and on every lane the numerical conformance harness's argument of a
 union; then the standard library's change itself.
+
+## Decided while landing ADR 0092 on C++ (2026-11-11)
+
+C++ now holds a union in a statechart (step 4), generates a union document
+(`codegen_matrix::UNION_BACKENDS`), lowers an algorithm over a union and hands one across a statechart's call
+(`ALGORITHM_UNION_BACKENDS`). Each question below is decided by a rule this record already states; none changes
+a document, a wire or a diagnostic code.
+
+1. **A machine's union is a struct of one `std::variant`** (section 7, the C++ row, and its item 2):
+   `<Machine><Document>Union`, nesting one alternative struct per case, named as the tag's enum names the
+   variant (`Circle`), holding the case's record as `value`, or empty; the variant is the member `cases`, its
+   alternatives in the tag enum's order. `kind()` answers the tag from the alternative's index, so the tag and
+   the case cannot disagree. `proven<Case>()` and `provenField<Field>()` are the reads the narrowing proves, and
+   `proven<Case>Place()` and `provenField<Field>Place()` the references a write of a field goes through (section
+   6.1 item 6), each ending the process with `std::abort()` in a case the narrowing proved the value is not in,
+   the one place that is written. A value is built only whole, `U{U::Circle{r}}`. The variant's first
+   alternative is the value of `U{}`, which is the place a reader fills before it answers, as Go's zero struct
+   is; no statement reads it.
+2. **The writer tells a case by its alternative**, `std::get_if` and `std::holds_alternative` on the union's
+   type, which the walk hands it, so the writer names no enum; the tag is written as the variant's declared name
+   among the case's fields by the runtime's `EventPayloadFields::unionCase`, and as a `ScriptObject` member for a
+   `<send>`.
+3. **A lift reads a union whole** through the runtime's `EventPayloadFields::liftValue`, beside `liftRecord`,
+   which hands the composed reader the text's object at its root, so a refusal inside it points below the root
+   as a field of a lifted record does (section 6.1 item 5).
+4. **The saved form is two functions beside the type**, `<Type>ToSaved` and `<Type>FromSaved`, the names a C++
+   record of entries and enum already have: the tag beside the case's fields by the runtime's `savedWriteUnion`,
+   read first by `savedReadUnionTag`; a case's record that holds a composition carries its saved form too, a
+   list's lower count held by `savedReadOwnedListWithin` (docs/adr/0086, section 15.6). An index read of a list
+   of unions is read, as on Kotlin and Go: the checked read records an index outside the list as the failure
+   the statement ends at, and the value it answers beside the failure is never read.
+5. **The unit's union has the machine's shape** in the unit's namespace (`SCE::Generated::<Pascal>::<Pascal>`),
+   named by the same spellings (`composed_lowering::cpp`), with `kind()` and `proven<Case>()` and no place of a
+   field, since an algorithm never writes a union ("Decided while landing step 5" item 3). Two variants of one
+   alternative's name, and a case named as the union's own struct, which C++ refuses as a member, are refused
+   by name. A schema unit's union field names the unit's struct.
+6. **The test profile is a step of its own.** C++ generates a union's unit, and its test-template walk spells
+   no case of a union and its runtime no canonical form of one yet, so a template, a component and a
+   configuration that reach a union stay refused by the union's name. The backends whose test profile matches
+   a union are a list of their own, `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`, each in
+   `UNION_BACKENDS`, by the last paragraph of section 7.
+7. **An algorithm reads its union on the unit's struct**: the tag by `kind()`, a field of the one case left by
+   `proven<Case>().f`, and a field several cases leave by a lambda called where it is written, which takes each
+   case left apart by `std::get_if` on its alternative and whose result is deduced from its returns, of one type
+   by `unit_union_member_of`. A union local is `const`, never written. The end no path reaches is
+   `std::abort();`, `[[noreturn]]`, so the compiler asks the body for nothing after it; a `may-fail` body hands
+   a failure on as its `AlgorithmResult`, never by ending the process.
+8. **The crossing is total by the compiler** ("Decided while landing step 5 on Kotlin" item 2): the adapter
+   maps the leaving value by `std::visit` with a struct declared where it is visited, one call operator per
+   alternative, each answering the case the value arrives as, its record copied as a record argument is.
+   `std::visit` asks the struct for every alternative of the leaving variant, so a case either side gains does
+   not build, as a Rust `match` and a Kotlin `when` do not.
+
+Step 6 still needs, lane by lane, step 5 with its crossing on Python, C11 and Swift (each but Swift first
+holding a union in a statechart, step 4, and Python and C11 the union's unit), the Interpreter's lowering of an
+algorithm over a union and of the call, and on every lane the numerical conformance harness's argument of a
+union; then the standard library's change itself. C++'s test profile matching a union
+(`TEST_PROFILE_UNION_BACKENDS`) is not on step 6's path.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
