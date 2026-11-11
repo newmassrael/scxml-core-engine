@@ -76,7 +76,9 @@ fn the_payload_holds_the_union_in_the_machines_own_struct() {
     holds(
         &code,
         &[
-            "#include <cstdlib>\n#include <variant>\n",
+            // The header's includes are sorted, so the two are apart (`<string>` falls between).
+            "#include <cstdlib>\n",
+            "#include <variant>\n",
             &format!(
                 "struct {UNION} {{\n    /// The case `dot`, its tag alone.\n    struct Dot {{}};\n"
             ),
