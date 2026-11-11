@@ -158,7 +158,7 @@ pub(super) const CANONICAL_PATH: &str =
 const CANONICAL: &str = "canonical";
 
 /// A value the canonical writer reads, in Go.
-struct GoCanonicalAt {
+pub(super) struct GoCanonicalAt {
     /// What names the value: `value`, an element of a list by the index a
     /// closure binds, the value of an optional field, or a field of any of
     /// them.
@@ -822,7 +822,7 @@ impl UnitNames for GoNames<'_> {
 /// One position of the value a matcher stands at, in Go: the expression a
 /// test reads it by.
 #[derive(Clone)]
-struct GoAt {
+pub(super) struct GoAt {
     expr: String,
 }
 
