@@ -16,12 +16,14 @@
 //! A body that leaves a case unreturned is refused with
 //! `algorithm/return-missing`, a case's field read where no test proves its case
 //! with `expression/union-read-unproven`, a union taken as a value, a write of a
-//! union local and a tag that is no variant literal each by name; a backend that
-//! does not lower an algorithm's union yet refuses one by name.
+//! union local and a tag that is no variant literal each by name; every backend
+//! of `ALGORITHM_UNION_BACKENDS` generates the algorithm, and one not listed
+//! refuses it by name.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::generator::{GeneratedOutput, Language};
@@ -265,27 +267,39 @@ fn a_union_is_taken_whole_only_by_a_return_of_its_type() {
     }
 }
 
-/// A backend that does not lower an algorithm's union yet refuses one by name,
-/// after the body was judged as it is on every backend. Swift is the one
-/// generated backend left out of `ALGORITHM_UNION_BACKENDS`, and it names the
-/// union it does not lower among the constructs it has no lowering of
-/// (`forge::generator::swift_algorithm_unlowered`), before the body is rendered.
+/// Every backend either lowers an algorithm's union, listed in
+/// `ALGORITHM_UNION_BACKENDS` and generating the algorithm, or refuses it by
+/// the union's name (`generate/unsupported-feature`), after the body was
+/// judged as it is on every backend. Every generated backend lowers one today,
+/// so the refusing side holds a backend added to `Language::ALL` before its
+/// lowering lands. Go is handed the module path its imports are under, which
+/// every other backend ignores.
 #[test]
 fn a_backend_that_lowers_no_union_in_an_algorithm_refuses_one_by_name() {
-    let language = Language::Swift;
-    assert!(
-        !sce_build::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS.contains(&language),
-        "{language:?} lowers an algorithm over a union"
-    );
-    let result = generated(&fixtures().join("algorithm_shape_extent.scxml"), language);
-    let (code, why) = refused_code(result);
-    assert!(
-        matches!(code, DiagnosticCode::GenerateUnsupportedFeature),
-        "{code:?}: {why}"
-    );
-    assert!(
-        why.contains("has no Swift lowering yet")
-            && (why.contains("<sce:import as=\"Shape\">") || why.contains("union:Shape")),
-        "{language:?}: {why}"
-    );
+    let path = fixtures().join("algorithm_shape_extent.scxml");
+    let options = ForgeCompileOptions {
+        go_module_prefix: Some("example.com/generated".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    for language in Language::ALL.iter().copied() {
+        let result = sce_build::compile_forge_file(&path, language, &[], &options);
+        if ALGORITHM_UNION_BACKENDS.contains(&language) {
+            if let Err(refusal) = result {
+                panic!(
+                    "{language:?} lowers a union in an algorithm and refused one: {}",
+                    refusal.error
+                );
+            }
+            continue;
+        }
+        let (code, why) = refused_code(result);
+        assert!(
+            matches!(code, DiagnosticCode::GenerateUnsupportedFeature),
+            "{language:?}: {code:?}: {why}"
+        );
+        assert!(
+            why.contains("union:Shape") || why.contains("<sce:import as=\"Shape\">"),
+            "{language:?}: {why}"
+        );
+    }
 }

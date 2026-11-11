@@ -456,19 +456,21 @@ fn python_maps_the_machines_union_into_the_units_and_back() {
 /// union, or refuses that statechart by the union's name, rather than write a
 /// call no unit answers. Every generated lane lowers the crossing today, so the
 /// refusing side holds a backend added to `Language::ALL` before its crossing
-/// lands.
+/// lands. Go is generated through the entry that takes its module path
+/// ([`go_machine`]), which a Go statechart that calls an algorithm needs.
 #[test]
 fn a_lane_that_lowers_no_union_crossing_refuses_the_statechart() {
     let path = fixtures().join("statechart_shape_crossing.scxml");
     for language in Language::ALL.iter().copied() {
-        let result = generated(&path, language);
         if ALGORITHM_UNION_BACKENDS.contains(&language) {
-            if let Err(refusal) = result {
+            if matches!(language, Language::Go) {
+                go_machine();
+            } else if let Err(refusal) = generated(&path, language) {
                 panic!("{language:?} lowers a union crossing and refused one: {refusal}");
             }
             continue;
         }
-        let Err(refusal) = result else {
+        let Err(refusal) = generated(&path, language) else {
             panic!("{language:?} generated a statechart that hands an algorithm a union");
         };
         assert!(refusal.contains("union:Shape"), "{language:?}: {refusal}");
