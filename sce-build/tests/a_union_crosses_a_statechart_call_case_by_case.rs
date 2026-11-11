@@ -7,7 +7,7 @@
 //! its `union:Shape` variable to `algorithm_shape_grown.scxml` and
 //! `algorithm_shape_extent.scxml` and takes the grown shape back:
 //!
-//! * Kotlin, Rust and Go, the lanes that lower an algorithm over a union
+//! * Kotlin, Rust, Go and C++, the lanes that lower an algorithm over a union
 //!   (`ALGORITHM_UNION_BACKENDS`), map the machine's own sum into the type the
 //!   union's unit declares in the call's adapter, case by case, each case's
 //!   record copied as a record argument is, and map what the algorithm returns
@@ -149,6 +149,48 @@ fn rust_maps_the_machines_union_into_the_units_and_back() {
             // Each call made through its adapter, the variable lent.
             "call_Grown__v(&self.shape, ",
             "call_Extent__v(&self.shape)",
+        ],
+    );
+}
+
+/// Pinned by `CppTarget::state_adapter`, `AdapterSpec::union_crossing` and
+/// `cpp_union_crossing` (`sce-build/src/forge/static_lowering.rs`): the
+/// machine's struct is lent and visited case by case into the unit's, a call
+/// operator per alternative, the record from the alternative's `value`, and
+/// what the algorithm returns visited back into the machine's.
+#[test]
+fn cpp_maps_the_machines_union_into_the_units_and_back() {
+    let code = machine(Language::Cpp, &|name| {
+        name == "statechart_shape_crossing_sm.h"
+    });
+    let unit = "SCE::Generated::UnionShapeMinimal::UnionShapeMinimal";
+    holds(
+        &code,
+        &[
+            "#include \"union_shape_minimal.h\"",
+            "#include \"shape_radius_minimal.h\"",
+            "#include \"shape_rect_minimal.h\"",
+            // The union handed over.
+            &format!("call_Extent__v(const {MACHINE_UNION} &p0) {{"),
+            &format!("[&]() -> {unit} {{ struct sceArms {{ "),
+            &format!(
+                "{unit} operator()(const {MACHINE_UNION}::Dot &) const {{ return \
+                 {unit}{{{unit}::Dot{{}}}}; }} "
+            ),
+            &format!(
+                "{unit} operator()(const {MACHINE_UNION}::Circle &sceCase) const {{ return \
+                 {unit}{{{unit}::Circle{{SCE::Generated::ShapeRadiusMinimal::\
+                 ShapeRadiusMinimalPayload{{/*radius=*/sceCase.value.radius}}}}}}; }} "
+            ),
+            "return ::std::visit(sceArms{}, (p0).cases); }()",
+            // The union taken back.
+            &format!("inline {MACHINE_UNION} call_Grown__v("),
+            &format!(
+                "{MACHINE_UNION} operator()(const {unit}::Circle &sceCase) const {{ return \
+                 {MACHINE_UNION}{{{MACHINE_UNION}::Circle{{StatechartShapeCrossingRadiusRecord{{\
+                 /*radius=*/sceCase.value.radius}}}}}}; }} "
+            ),
+            "return ::std::visit(sceArms{}, (r).cases); }()",
         ],
     );
 }

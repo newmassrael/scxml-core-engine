@@ -9559,6 +9559,45 @@ fn cpp_saved_name(attr: &str) -> String {
     }
 }
 
+/// The alternative of a case a C++ adapter's arm is handed while it maps a union
+/// across a call ([`cpp_union_crossing`]), and the record it holds, which each
+/// case's record is copied from.
+const CPP_CROSSED_CASE: &str = "sceCase";
+const CPP_CROSSED_RECORD: &str = "sceCase.value";
+
+/// The C++ map of the union `value`, a value of `from_ty`, across a call into a
+/// value of `to_ty` (docs/adr/0092, section 6.1 item 7): `std::visit` over the
+/// leaving value's alternatives with a struct of one call operator per case,
+/// declared where it is visited, each taking the case's alternative of
+/// `from_ty`, the one that holds a record binding it to [`CPP_CROSSED_CASE`],
+/// and answering the case the value arrives as, its record built from
+/// [`CPP_CROSSED_RECORD`]. `std::visit` asks the struct for every alternative of
+/// the leaving variant, so a case either side gains, which no operator takes,
+/// is a build error, as a Rust `match` and a Kotlin `when` make it; a variant
+/// holding no alternative is the runtime's `bad_variant_access`.
+fn cpp_union_crossing(from_ty: &str, to_ty: &str, value: &str, cases: &[CrossedCase]) -> String {
+    use crate::forge::composed_lowering::{cpp_case_ident, CPP_UNION_CASES};
+    let arms: String = cases
+        .iter()
+        .map(|case| {
+            let alternative = format!("{from_ty}::{}", cpp_case_ident(&case.variant));
+            let bound = if case.holds_record {
+                CPP_CROSSED_CASE
+            } else {
+                ""
+            };
+            format!(
+                "{to_ty} operator()(const {alternative} &{bound}) const {{ return {}; }} ",
+                case.to
+            )
+        })
+        .collect();
+    format!(
+        "[&]() -> {to_ty} {{ struct sceArms {{ {arms}}}; return ::std::visit(sceArms{{}}, \
+         ({value}).{CPP_UNION_CASES}); }}()"
+    )
+}
+
 impl StaticTarget for CppTarget {
     // The start site holds the id it generates in the `std::string` local
     // `generatedInvokeId` (`defer_scxml_invoke`), which it goes on to start the
@@ -9894,12 +9933,42 @@ impl StaticTarget for CppTarget {
                     ));
                     arguments.push(format!("a{index}"));
                 }
+                // A union is the machine's own struct, mapped case by case into
+                // the one the union's unit declares, each case's record copied as
+                // a record argument is (docs/adr/0092, section 6.1 item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        CPP_CROSSED_RECORD,
+                        &|alias, from| {
+                            record_of(alias, algorithm_record(alias)?, from, Crossing::ToAlgorithm)
+                        },
+                    )?;
+                    let unit =
+                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp)?;
+                    declarations.push(format!("const {machine} &{name}"));
+                    arguments.push(cpp_union_crossing(&machine, &unit, &name, &cases));
+                }
                 _ => return None,
             }
         }
         let returned_type = match value.ret.as_ref()? {
             StaticSlot::Scalar(SceType::Enum(reference)) => {
                 self.enum_type(spec.machine, &reference.alias)?
+            }
+            // The machine's own struct, which the adapter builds case by case.
+            StaticSlot::Union(union) => {
+                use crate::forge::composed_lowering::ComposedSpelling;
+                crate::forge::composed_lowering::CppComposed {
+                    machine: spec.machine,
+                    carrier: crate::forge::composed_lowering::CppCarrier::Json,
+                }
+                .union_type(&union.document)
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => self.scalar_type(ty),
             StaticSlot::Optional(ty) => spec.optional_type(self, ty)?,
@@ -9923,9 +9992,23 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
-                // A union crosses no C++ call yet (docs/adr/0092, Landing order
-                // step 5): the document was refused by name before any adapter.
-                StaticSlot::Union(_) => return None,
+                // The machine's own struct, built case by case from the one the
+                // union's unit declares, which the algorithm gave back
+                // (docs/adr/0092, section 6.1 item 7).
+                StaticSlot::Union(union) => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::FromAlgorithm,
+                        CPP_CROSSED_RECORD,
+                        &|alias, held| {
+                            record_of(alias, machine_record(alias), held, Crossing::FromAlgorithm)
+                        },
+                    )?;
+                    let unit =
+                        crate::forge::generator::union_unit_type(&union.document, Language::Cpp)?;
+                    cpp_union_crossing(&unit, &machine, from, &cases)
+                }
                 // The machine's own record, made of the algorithm's where there is
                 // one, and absent where it is absent (docs/adr/0055, step 9).
                 StaticSlot::OptionalRecord(alias) => {
