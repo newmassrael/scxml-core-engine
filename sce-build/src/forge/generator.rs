@@ -39793,7 +39793,7 @@ fn unreached_end(
     pad: &str,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let why = format!("{name}: every case of its union returned before the end of its body");
+    let why = crate::forge::algorithm_union::unreached_end_reason(name);
     match lang {
         Language::Rust => Ok(format!("{pad}unreachable!(\"{why}\")")),
         Language::Kotlin => Ok(format!(
@@ -46529,7 +46529,7 @@ fn render_algorithm(
     // compiler cannot see. The body is closed there by the target's statement
     // that the point is not reached; a body whose last statement returns on
     // every path the compiler sees needs none.
-    let body = if declared_return.is_some() && !crate::forge::narrowing::always_returns(&m.body) {
+    let body = if crate::forge::algorithm_union::ends_unreached(m) {
         format!(
             "{body}\n{}",
             unreached_end(lang, &m.name, &"    ".repeat(body_indent))?

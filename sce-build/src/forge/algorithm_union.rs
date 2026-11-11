@@ -29,7 +29,7 @@ use crate::forge::error::{ExprError, ForgeError, ValidationError};
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::generator::{import_type_scope, ImportContext};
 use crate::forge::model::{AlgorithmModel, AlgorithmStmt, RecordFieldInit};
-use crate::forge::narrowing::{after_algorithm_statement, Chain, Facts, Statement};
+use crate::forge::narrowing::{after_algorithm_statement, always_returns, Chain, Facts, Statement};
 use crate::forge::value_path::{
     case_of_tag_literal, case_record_alias, cases_left, tag_enum_alias,
 };
@@ -219,6 +219,24 @@ pub(crate) fn reaches_end(
     !exhausted(&facts)
 }
 
+/// Whether the body of `m` is closed after its last statement by the target's
+/// statement that the point is not reached (docs/adr/0092, section 6.1 item 4,
+/// and "Decided while landing step 5" item 6): `m` returns a value, and its
+/// last statement does not return on every path a target's compiler sees.
+/// Only a body that holds a union is left so by the parser, and the judge
+/// proved its end unreached ([`reaches_end`]) before any target was asked; a
+/// body that holds none ends in a `<sce:return>`. One rule for every generated
+/// backend and the Interpreter's lowering.
+pub(crate) fn ends_unreached(m: &AlgorithmModel) -> bool {
+    m.signature.return_type.is_some() && !always_returns(&m.body)
+}
+
+/// What the statement that closes the body of the algorithm `name` at its
+/// unreached end says ([`ends_unreached`]), one sentence on every target.
+pub(crate) fn unreached_end_reason(name: &str) -> String {
+    format!("{name}: every case of its union returned before the end of its body")
+}
+
 /// The alias `m` imports each record by that a union local of it builds a case
 /// of: no expression names that record, and a backend names its type where it
 /// builds the case, so the import is kept for the renderer
@@ -382,6 +400,45 @@ mod tests {
         assert!(reaches_end(&other, &Facts::none(), &exhausted));
         // A body that holds no union ends only at a `<sce:return>`.
         assert!(reaches_end(&every, &Facts::none(), &|_: &Facts| false));
+    }
+
+    /// A body that returns a value and whose last statement does not return on
+    /// every path is closed after it, and the closing statement says why, on
+    /// every target; a body whose last statement returns, and one that returns
+    /// nothing, are not.
+    #[test]
+    fn a_body_is_closed_where_its_last_statement_does_not_return() {
+        use crate::forge::model::{AlgorithmSignature, AlgorithmValueType};
+        let algorithm = |returns: bool, body: Vec<AlgorithmStmt>| AlgorithmModel {
+            name: "extent".into(),
+            signature: AlgorithmSignature {
+                params: Vec::new(),
+                return_type: returns.then_some(AlgorithmValueType::Scalar(SceType::Uint16)),
+                may_fail: false,
+            },
+            consts: Vec::new(),
+            body,
+            test_vectors: Vec::new(),
+            source_location: None,
+        };
+        let chain = vec![
+            if_returning("e.kind === K.a"),
+            if_returning("e.kind === K.b"),
+        ];
+        assert!(ends_unreached(&algorithm(true, chain.clone())));
+        assert!(!ends_unreached(&algorithm(false, chain)));
+        let returned = vec![
+            if_returning("e.kind === K.a"),
+            AlgorithmStmt::Return {
+                expr: Some("0".into()),
+                expr_spelling: None,
+            },
+        ];
+        assert!(!ends_unreached(&algorithm(true, returned)));
+        assert_eq!(
+            unreached_end_reason("extent"),
+            "extent: every case of its union returned before the end of its body"
+        );
     }
 
     /// A union local names its case by a variant literal of the tag's enum,
