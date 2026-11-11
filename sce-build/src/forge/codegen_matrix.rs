@@ -436,6 +436,7 @@ pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
     Language::Cpp,
     Language::Kotlin,
     Language::Go,
+    Language::Swift,
 ];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
@@ -1330,7 +1331,8 @@ mod tests {
                 Language::Rust,
                 Language::Cpp,
                 Language::Kotlin,
-                Language::Go
+                Language::Go,
+                Language::Swift
             ]
         );
     }

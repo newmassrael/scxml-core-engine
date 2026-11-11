@@ -33126,6 +33126,9 @@ pub(crate) fn swift_unlowered_construct(
                 (ForgeKind::Enum, None) => SwiftImportKind::Enum {
                     unlowered: import_unlowered(imp),
                 },
+                // The unit of a union is written for every union Swift generates, so a
+                // callee that takes one is no more refused than its own generation is.
+                (ForgeKind::Union, None) => SwiftImportKind::Union,
                 _ => SwiftImportKind::Other,
             },
         })

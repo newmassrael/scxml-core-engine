@@ -2585,6 +2585,36 @@ fn upper_case_verdict(verdict: crate::test_component::Verdict) -> String {
 /// one it is written in.
 const SWIFT_PRESENT: &str = "scePresent";
 
+/// The record a case of a union holds, as a Swift adapter reads it while it maps
+/// the union across a call ([`swift_union_crossing`]): the one a `case … (let …)`
+/// pattern binds.
+const SWIFT_CROSSED_RECORD: &str = "sceCase";
+
+/// The Swift map of the union `value` across a call (docs/adr/0092, section 6.1
+/// item 7): a `switch` over every case of the enum the value leaves, each arm
+/// returning the case the value arrives as, its record built from
+/// [`SWIFT_CROSSED_RECORD`]. A case that holds a record binds it in its pattern,
+/// an empty case is tested by its name. Every case is an arm, so the `switch` is
+/// exhaustive and has no `default`: a case either side gains is a build error.
+/// A Swift `switch` is no operand, so it is a closure called where the map
+/// stands, its result the type of the case every arm returns.
+fn swift_union_crossing(value: &str, cases: &[CrossedCase]) -> String {
+    let arms: Vec<String> = cases
+        .iter()
+        .map(|case| {
+            if case.holds_record {
+                format!(
+                    "case {}(let {SWIFT_CROSSED_RECORD}): return {}",
+                    case.from, case.to
+                )
+            } else {
+                format!("case {}: return {}", case.from, case.to)
+            }
+        })
+        .collect();
+    format!("{{ switch {value} {{ {} }} }}()", arms.join("; "))
+}
+
 /// The record a case of a union holds, as a Kotlin adapter reads it while it
 /// maps the union across a call ([`kotlin_union_crossing`]): the `value` of the
 /// `when`'s subject, smart-cast to the case its arm tests.
@@ -17429,10 +17459,38 @@ impl StaticTarget for SwiftTarget {
                     ));
                     arguments.push(format!("{name}.map {{ {} }}", to_algorithm(alias, "$0")?));
                 }
+                // A union is the machine's own enum, mapped case by case into the one the
+                // union's unit declares (docs/adr/0092, section 6.1 item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        SWIFT_CROSSED_RECORD,
+                        &to_algorithm,
+                    )?;
+                    declarations.push(format!("_ {name}: {machine}"));
+                    arguments.push(swift_union_crossing(&name, &cases));
+                }
                 _ => return None,
             }
         }
         let (returned_type, returned) = match value.ret.as_ref()? {
+            // The machine's own enum, built case by case from the one the union's unit
+            // declares.
+            StaticSlot::Union(union) => {
+                let (machine, cases) = spec.union_crossing(
+                    self,
+                    union,
+                    Crossing::FromAlgorithm,
+                    SWIFT_CROSSED_RECORD,
+                    &from_algorithm,
+                )?;
+                (machine, swift_union_crossing("r", &cases))
+            }
             // The variant of the same declared name in the machine's own enum.
             StaticSlot::Scalar(SceType::Enum(reference)) => (
                 self.enum_type(spec.machine, &reference.alias)?,

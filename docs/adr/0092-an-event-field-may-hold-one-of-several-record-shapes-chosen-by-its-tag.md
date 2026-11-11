@@ -23,11 +23,12 @@
     change that adds "Amendment (2026-11-11)"), on Go (43698d9e6e) and on C++ (the change that adds "Decided while
     landing ADR 0092 on C++"). Python, C11 and the Interpreter still refuse a statechart that holds a union by name
     (`generate/unsupported-feature`);
-  - step 5, on four of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
+  - step 5, on five of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
     (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
     Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the Go
     lowering and crossing (ad4d2f5984, 5ad49544dd) and the C++ lowering and crossing (the change that adds
-    "Decided while landing ADR 0092 on C++"). Python, C11, Swift and the Interpreter refuse such an algorithm and
+    "Decided while landing ADR 0092 on C++") and the Swift lowering and crossing (the change that adds "Decided
+    while landing step 5 and the crossing on Swift"). Python, C11 and the Interpreter refuse such an algorithm and
     such a call by name;
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
@@ -977,11 +978,37 @@ a document, a wire or a diagnostic code.
    `std::visit` asks the struct for every alternative of the leaving variant, so a case either side gains does
    not build, as a Rust `match` and a Kotlin `when` do not.
 
-Step 6 still needs, lane by lane, step 5 with its crossing on Python, C11 and Swift (each but Swift first
-holding a union in a statechart, step 4, and Python and C11 the union's unit), the Interpreter's lowering of an
-algorithm over a union and of the call, and on every lane the numerical conformance harness's argument of a
-union; then the standard library's change itself. C++'s test profile matching a union
-(`TEST_PROFILE_UNION_BACKENDS`) is not on step 6's path.
+Step 6 still needs, lane by lane, step 5 with its crossing on Python and C11 (each first holding a union in a
+statechart, step 4, and the union's unit), the Interpreter's lowering of an algorithm over a union and of the
+call, and on every lane the numerical conformance harness's argument of a union; then the standard library's
+change itself. C++'s test profile matching a union (`TEST_PROFILE_UNION_BACKENDS`) is not on step 6's path.
+
+## Decided while landing step 5 and the crossing on Swift (2026-11-11)
+
+Swift held the union's unit and a statechart's union (step 4) before this step. Each question below is decided by
+a rule the Kotlin section ("Decided while landing step 5 on Kotlin, with the crossing") already states; only the
+Swift spelling is chosen.
+
+1. **An algorithm reads its union on the unit's enum**: the tag by `kind`, a field of the one case left by
+   `proven<Case>.f`, and a field several cases leave by an immediately called closure whose `switch` takes each
+   case left apart (`case .a(let sceRecord): return sceRecord.f`), with a `default` that cannot be reached
+   because the closure is only written where the tag test proved those cases. A union local is a `let` of the
+   unit's type holding the case around its record's payload struct, never written. The end no path reaches is
+   `preconditionFailure(...)`, which returns `Never`, so the compiler asks the body for nothing after it; a
+   `may-fail` body throws its failure, never by ending the process.
+2. **The crossing is total by the compiler**: the adapter maps the leaving value by a closure whose `switch`
+   names every case of the machine's own enum, each case's record copied as a record argument is, and the result
+   back the same way. There is no `default`, so a case either side gains does not build, as in the other lanes.
+3. **A statechart's call of an algorithm that takes a union is judged by the algorithm's own generation.** The
+   callee gate that reads an imported algorithm's own imports (`swift_unlowered_construct`) read a union import as
+   a kind Swift writes no unit for, and refused every statechart that calls such an algorithm, though the
+   algorithm itself generated. A union is a kind Swift writes a unit for ever since `UNION_BACKENDS` lists it, so
+   the gate classifies it beside an enum.
+4. **The Swift package holds both to the compiler.** `statechart_shape_crossing` is a candidate machine of
+   `scripts/regen_static_datamodel_swift.sh`, so the two algorithms it calls are generated beside it by the
+   derivation that generates every algorithm a lowered machine calls, and `AnAlgorithmNarrowsAUnionByItsTagTests`
+   and `AUnionCrossesAStatechartCallTests` run them. The type-check test of `sce-build` skips where no `swiftc`
+   is installed, so this is the gate that holds the spelling to a Swift compiler.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 

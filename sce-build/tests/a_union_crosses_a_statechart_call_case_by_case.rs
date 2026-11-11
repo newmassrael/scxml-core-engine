@@ -195,6 +195,42 @@ fn cpp_maps_the_machines_union_into_the_units_and_back() {
     );
 }
 
+/// Pinned by `SwiftTarget::state_adapter` and `swift_union_crossing`
+/// (`sce-build/src/forge/static_lowering.rs`): a closure called where it is
+/// written, whose `switch` over the machine's enum builds the unit's case of
+/// each, the record from the case's bound payload, and a `switch` over the
+/// unit's builds the machine's back, every case an arm of its own.
+#[test]
+fn swift_maps_the_machines_union_into_the_units_and_back() {
+    let code = machine(Language::Swift, &|name| {
+        name == "statechart_shape_crossing_sm.swift"
+    });
+    let unit = "UnionShapeMinimal";
+    holds(
+        &code,
+        &[
+            // The union handed over.
+            &format!("call_Extent__v(_ p0: {MACHINE_UNION}) -> UInt16 {{"),
+            &format!(
+                "case {MACHINE_UNION}.rect(let sceCase): return {unit}.rect(ShapeRectMinimalPayload(\
+                 width: sceCase.width, height: sceCase.height))"
+            ),
+            &format!("case {MACHINE_UNION}.dot: return {unit}.dot"),
+            &format!(
+                "case {MACHINE_UNION}.circle(let sceCase): return {unit}.circle(\
+                 ShapeRadiusMinimalPayload(radius: sceCase.radius))"
+            ),
+            // The union taken back.
+            &format!("call_Grown__v(_ p0: {MACHINE_UNION}, _ p1: UInt16) -> {MACHINE_UNION} {{"),
+            &format!(
+                "case {unit}.circle(let sceCase): return {MACHINE_UNION}.circle(\
+                 StatechartShapeCrossingRadiusRecord(radius: sceCase.radius))"
+            ),
+            &format!("case {unit}.dot: return {MACHINE_UNION}.dot"),
+        ],
+    );
+}
+
 /// The module path a Go machine imports the generated packages under.
 const GO_PREFIX: &str = "example.com/generated";
 
@@ -325,7 +361,7 @@ fn a_union_that_may_be_absent_is_refused_as_an_argument_by_name() {
 /// that hands one a union, rather than write a call no unit answers.
 #[test]
 fn a_lane_that_lowers_no_union_crossing_refuses_the_statechart() {
-    for language in [Language::Swift, Language::Python] {
+    for language in [Language::Python] {
         assert!(
             generated(
                 &fixtures().join("statechart_shape_crossing.scxml"),

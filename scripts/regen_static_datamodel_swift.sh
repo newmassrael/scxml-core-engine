@@ -58,6 +58,10 @@ fi
 # host-run invoke names its peer by a `srcexpr` and hands the router the `_mesh_*` envelope, so
 # the compile gate holds the lowering of a request's `src` to the Swift compiler.
 CANDIDATES+=("sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml")
+# The statechart that hands an algorithm a union and takes one back (docs/adr/0092, section 6.1 item 7):
+# each call maps the machine's own sum into the type the union's unit declares, case by case, and back,
+# which only a compile of the machine beside the union's unit holds to the Swift compiler.
+CANDIDATES+=("sce-build/tests/fixtures/union/statechart_shape_crossing.scxml")
 MACHINES=()
 SOURCES=()
 # What a machine that is not lowered yet is refused for, one line each, so a run reads
@@ -315,7 +319,11 @@ TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records, read from
-# the union kind's fixtures.
+# the union kind's fixtures. The algorithms over the union (docs/adr/0092, Landing order step 5) are not
+# listed: the statechart that calls them, `statechart_shape_crossing`, is a candidate machine above, and
+# an algorithm a machine calls is generated beside it (below), so the unit an algorithm is written as,
+# which takes the union and returns one, is held to the Swift compiler beside the union's unit it names.
+# AnAlgorithmNarrowsAUnionByItsTagTests.swift runs them and the machine.
 UNION_DIR="sce-build/tests/fixtures/union"
 UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 # The test components ATestComponentRunsThroughItsDoorsTests.swift runs through the profile's
