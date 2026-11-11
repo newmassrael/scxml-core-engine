@@ -9,7 +9,11 @@
 // this file, and the components are the machines it writes from the components
 // there, each in the package its configuration's table imports it from (regen:
 // `scripts/regen_static_datamodel_go.sh`). Only the system adapter, which plays
-// the system under test, is written here.
+// the system under test, is written here; the same suite is also replayed from
+// the committed trace of `answers_the_job` (docs/SCE_TTCN3_LANE.md §10.5),
+// through testprofile.RunSuiteWithTraces, through the runner in place
+// (testprofile.RunRunner) and through the suite's runner program (§4) as a
+// process.
 //
 // Each test is the twin of the Rust case of the same name in
 // backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs, named
@@ -24,7 +28,9 @@
 package static_datamodel
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -246,6 +252,273 @@ func TestATestSuiteRunsThroughItsRunner_AGeneratedTestCaseWritesItsTestLog(t *te
 	got, want := results[0].CanonicalLog("runtime_suite"), suiteAnswersTheJobLog(t)
 	if got != want {
 		t.Fatalf("the test log is\n%s\nnot the shared\n%s", got, want)
+	}
+}
+
+// suiteTracesDir is the directory of the suite's committed traces
+// (docs/SCE_TTCN3_LANE.md §10.2), the input the Responder above gives
+// answers_the_job when it answers with success, as a file every backend's
+// player reads.
+func suiteTracesDir() string {
+	return filepath.Join("..", "..", "..", "..", "..", "sce-build", "tests", "fixtures", "test_profile", "runtime",
+		"traces")
+}
+
+// docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the committed
+// trace of `answers_the_job` writes the test log every runtime writes of it,
+// byte for byte: the configuration's unit reads the reply from its canonical
+// form and writes it back the same, and the clock advances to the trace's
+// instant as it did to the Responder's. The twin of
+// `a_recorded_trace_replays_to_the_test_log_every_runtime_writes` (Rust).
+func TestATestSuiteRunsThroughItsRunner_ARecordedTraceReplaysToTheTestLogEveryRuntimeWrites(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(suiteTracesDir(), "answers_the_job.json"))
+	if err != nil {
+		t.Fatalf("the committed trace: %v", err)
+	}
+	results, err := testprofile.RunSuiteWithTraces(runtime_suite.Suite(), testprofile.FeaturesOf(),
+		func(string) (testprofile.Trace, error) { return testprofile.ParseTrace(string(raw)) }, nil)
+	if err != nil {
+		t.Fatalf("the suite declares every module parameter it is given: %v", err)
+	}
+	if got := suiteNames(results); !reflect.DeepEqual(got, []string{"answers_the_job"}) {
+		t.Fatalf("the suite runs %v", got)
+	}
+	if results[0].Result.Verdict != testprofile.VerdictPass {
+		t.Errorf("verdict %v: %v", results[0].Result.Verdict, results[0].Result.Log)
+	}
+	if got, want := results[0].CanonicalLog("runtime_suite"), suiteAnswersTheJobLog(t); got != want {
+		t.Fatalf("the test log is\n%s\nnot the shared\n%s", got, want)
+	}
+}
+
+// §10.2, §10.5: the configuration's unit reads the reply from its canonical
+// form into the record its components take, and writes it back the same; an
+// input on a port it does not have, of a type the port does not take, or of a
+// value that does not belong to the type is refused by name.
+func TestATestSuiteRunsThroughItsRunner_TheConfigurationReadsTheInputsOfARecordedTrace(t *testing.T) {
+	value, err := sce.ParseJSON(`{"code":"0","job":"7"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, err := asking_configuration.ReadJobReply(value)
+	if err != nil || reply != (job_reply.JobReplyPayload{Job: 7, Code: 0}) {
+		t.Fatalf("the reply reads as %v, %v", reply, err)
+	}
+	if text, err := sce.WriteJCS(asking_configuration.CanonicalJobReply(reply)); err != nil ||
+		text != `{"code":"0","job":"7"}` {
+		t.Errorf("the reply is written back as %s, %v", text, err)
+	}
+	message, err := asking_configuration.Input("sut", "job_reply", value)
+	if err != nil {
+		t.Fatalf("an input the configuration takes: %v", err)
+	}
+	if message.Event != job_reply.EventName || message.TypeName() != "job_reply" {
+		t.Errorf("the message is %v of %s", message, message.TypeName())
+	}
+	if held, ok := testprofile.ValueAs[job_reply.JobReplyPayload](message); !ok || held != reply {
+		t.Errorf("the message carries %v", held)
+	}
+	refusedAs := func(systemPort, typeName string, value any) string {
+		t.Helper()
+		_, err := asking_configuration.Input(systemPort, typeName, value)
+		if err == nil {
+			t.Fatalf("%s %s is read", systemPort, typeName)
+		}
+		return err.Error()
+	}
+	if got := refusedAs("sut", "job_request", nil); got !=
+		"'job_request' is not on the `in` list of the type of the system port 'sut'" {
+		t.Errorf("a type the port does not take: %s", got)
+	}
+	if got := refusedAs("oracle", "job_reply", nil); got !=
+		"'oracle' is not a system port of the test case's configuration" {
+		t.Errorf("a port the configuration does not have: %s", got)
+	}
+	malformed, err := sce.ParseJSON(`{"code":"0","job":"07"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := refusedAs("sut", "job_reply", malformed); got !=
+		"job_reply.job: '07' is not the text of an integer's decimal digits" {
+		t.Errorf("a value that is not of its type: %s", got)
+	}
+}
+
+// suiteProgramRun is what one run of the runner program printed and the status
+// it exited with.
+type suiteProgramRun struct {
+	status int
+	out    string
+	err    string
+}
+
+// suiteRunInPlace is the suite's runner program run in place
+// (testprofile.RunRunner), given args after the directories of the traces and
+// of the logs.
+func suiteRunInPlace(logs string, args ...string) suiteProgramRun {
+	var out, err bytes.Buffer
+	line := append([]string{"--trace-dir", suiteTracesDir(), "--log-dir", logs}, args...)
+	status := testprofile.RunRunner(runtime_suite.Suite(), runtime_suite.ModuleParameter, line, &out, &err)
+	return suiteProgramRun{status: status, out: out.String(), err: err.String()}
+}
+
+// suiteLogText is the text of the log file at path, failing the test where it
+// is not written.
+func suiteLogText(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the log of the case is written: %v", err)
+	}
+	return string(raw)
+}
+
+// docs/SCE_TTCN3_LANE.md §4: the suite's runner program runs each test case its
+// world selects against its trace and writes `<case>.log.json`, the canonical
+// log with nothing after it, and prints each case's verdict; a module
+// parameter's value on its command line replaces its default, and one the
+// suite does not declare, or that is no value of its type, is refused with exit
+// status 2 before any case runs. The twin of
+// `the_suites_runner_program_writes_the_log_of_each_trace` (Rust).
+func TestATestSuiteRunsThroughItsRunner_TheSuitesRunnerProgramWritesTheLogOfEachTrace(t *testing.T) {
+	logs := filepath.Join(t.TempDir(), "logs")
+	run := suiteRunInPlace(logs)
+	if run.status != 0 {
+		t.Fatalf("status %d: %s", run.status, run.err)
+	}
+	if run.out != "answers_the_job pass\n" {
+		t.Errorf("the standard output is %q", run.out)
+	}
+	if got := suiteLogText(t, filepath.Join(logs, "answers_the_job.log.json")); got != suiteAnswersTheJobLog(t) {
+		t.Errorf("the log is\n%s", got)
+	}
+
+	overridden := filepath.Join(t.TempDir(), "logs")
+	given := suiteRunInPlace(overridden, "--world", "", "--module-parameter", "job=9")
+	if given.status != 0 {
+		t.Fatalf("status %d: %s", given.status, given.err)
+	}
+	log := suiteLogText(t, filepath.Join(overridden, "answers_the_job.log.json"))
+	if !strings.Contains(log,
+		`"kind":"message-sent","port":"sut","type":"job_request","value":{"job":"9"}`) {
+		t.Errorf("the request names the job of the value given: %s", log)
+	}
+
+	for _, refusal := range []struct {
+		literal string
+		why     string
+	}{
+		{"limit=1", "the suite declares no module parameter 'limit'"},
+		{"job=seven", "--module-parameter job=seven: job: 'seven' is not the text of an integer's decimal digits"},
+	} {
+		refused := filepath.Join(t.TempDir(), "logs")
+		attempt := suiteRunInPlace(refused, "--module-parameter", refusal.literal)
+		if attempt.status != 2 {
+			t.Errorf("%s: status %d", refusal.literal, attempt.status)
+		}
+		if !strings.Contains(attempt.err, refusal.why) || !strings.HasSuffix(attempt.err, testprofile.RunnerUsage+"\n") {
+			t.Errorf("%s: %s", refusal.literal, attempt.err)
+		}
+		if _, err := os.Stat(refused); !os.IsNotExist(err) {
+			t.Errorf("no case ran, so no log was written: %v", err)
+		}
+	}
+}
+
+// P13, §4: a test case whose trace is missing ends with `error` and its log is
+// written, the reason on the standard error, and the program exits 0, since
+// the verdict is the log's.
+func TestATestSuiteRunsThroughItsRunner_ATestCaseWhoseTraceIsMissingEndsInErrorAndItsLogIsWritten(t *testing.T) {
+	logs := filepath.Join(t.TempDir(), "logs")
+	run := suiteRunInPlace(logs, "--world", "ptcs")
+	if run.status != 0 {
+		t.Fatalf("status %d: %s", run.status, run.err)
+	}
+	if run.out != "answers_the_job pass\nserves_a_ptc error\n" {
+		t.Errorf("the standard output is %q", run.out)
+	}
+	want := `{"records":[{"at":"0","kind":"test-case-started"},{"at":"0","kind":"test-case-ended",` +
+		`"verdict":"error"}],"schema":"sce-test-log.v1","suite":"runtime_suite",` +
+		`"test_case":"serves_a_ptc","verdict":"error"}`
+	if got := suiteLogText(t, filepath.Join(logs, "serves_a_ptc.log.json")); got != want {
+		t.Errorf("the log of the case with no trace is %s", got)
+	}
+	if !strings.Contains(run.err, "serves_a_ptc: mtc: the trace is refused: ") ||
+		!strings.Contains(run.err, "is not read") {
+		t.Errorf("the missing trace is named on the standard error: %s", run.err)
+	}
+}
+
+// suiteProgram runs the suite's runner program as a process of its own, given
+// args after the directories of the traces and of the logs: this test binary,
+// which TestMain turns into the program, runtime_suite.Main, the one
+// cmd/runtime_suite_runner calls (suiteRunnerProgramEnv).
+func suiteProgram(t *testing.T, logs string, args ...string) suiteProgramRun {
+	t.Helper()
+	line := append([]string{"--trace-dir", suiteTracesDir(), "--log-dir", logs}, args...)
+	command := exec.Command(os.Args[0], line...)
+	command.Env = append(os.Environ(), suiteRunnerProgramEnv+"=1")
+	var out, err bytes.Buffer
+	command.Stdout = &out
+	command.Stderr = &err
+	status := 0
+	if failure := command.Run(); failure != nil {
+		exited, isExit := failure.(*exec.ExitError)
+		if !isExit {
+			t.Fatalf("the runner program runs: %v", failure)
+		}
+		status = exited.ExitCode()
+	}
+	return suiteProgramRun{status: status, out: out.String(), err: err.String()}
+}
+
+// §4: the suite's runner is a program: run as a process of its own, it prints
+// the verdict of each case on its standard output and nothing else, every
+// diagnostic on its standard error, writes the log of each case, and exits with
+// the status the command line asks for. The twin of the C++
+// `ARunnerProgram.WritesTheLogOfEachTrace` and the Kotlin
+// `theSuitesUnitIsTheRunnerProgram`.
+func TestATestSuiteRunsThroughItsRunner_TheSuitesUnitIsTheRunnerProgram(t *testing.T) {
+	logs := filepath.Join(t.TempDir(), "logs")
+	run := suiteProgram(t, logs)
+	if run.status != 0 {
+		t.Fatalf("status %d: %s", run.status, run.err)
+	}
+	if run.out != "answers_the_job pass\n" {
+		t.Errorf("the standard output is the contract's lines alone: %q", run.out)
+	}
+	// The standard error may hold the engine's diagnostics, whatever they say:
+	// none of its lines is one of the standard output's.
+	for _, line := range strings.Split(run.err, "\n") {
+		if line != "" && strings.Contains(run.out, line+"\n") {
+			t.Errorf("a line of the standard error is one of the standard output's: %s", line)
+		}
+	}
+	if got := suiteLogText(t, filepath.Join(logs, "answers_the_job.log.json")); got != suiteAnswersTheJobLog(t) {
+		t.Errorf("the log is\n%s", got)
+	}
+
+	overridden := filepath.Join(t.TempDir(), "logs")
+	given := suiteProgram(t, overridden, "--world", "", "--module-parameter", "job=9")
+	if given.status != 0 {
+		t.Fatalf("status %d: %s", given.status, given.err)
+	}
+	log := suiteLogText(t, filepath.Join(overridden, "answers_the_job.log.json"))
+	if !strings.Contains(log,
+		`"kind":"message-sent","port":"sut","type":"job_request","value":{"job":"9"}`) {
+		t.Errorf("the request names the job of the value given: %s", log)
+	}
+
+	undeclared := filepath.Join(t.TempDir(), "logs")
+	refused := suiteProgram(t, undeclared, "--module-parameter", "limit=1")
+	if refused.status != 2 {
+		t.Errorf("status %d", refused.status)
+	}
+	if !strings.Contains(refused.err, "the suite declares no module parameter 'limit'") {
+		t.Errorf("the refusal is on the standard error: %s", refused.err)
+	}
+	if _, err := os.Stat(undeclared); !os.IsNotExist(err) {
+		t.Errorf("no case ran, so no log was written: %v", err)
 	}
 }
 

@@ -222,6 +222,18 @@ TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # tables (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh).
 TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
 TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
+# The configuration whose system port takes a record of every form of the canonical value
+# Go holds (docs/SCE_TTCN3_LANE.md §10.5), whose unit reads and writes each, and the test
+# case that replays a trace of the three to its listener: what
+# a_record_reads_back_the_form_it_writes_test.go round-trips and replays. Each record, the
+# record, the enum and the listener it names, the configuration and the test case a package
+# of its own, as above; job_status, order_line and paint_color are generated above already.
+# Go lowers no union, so it reads the configuration C++ reads, the one over order_taken
+# rather than the Rust and Kotlin one over order_placed (scripts/regen_static_datamodel_kotlin.sh).
+TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
+TRACE_FORMS=(order_taken form_extras unionless_forms_configuration replays_every_unionless_form)
+TRACE_FORMS_IMPORTS=("$TEST_PROFILE_DIR/imports/order_customer.scxml" sce-build/tests/fixtures/union/shape_kind_open.scxml)
+TRACE_FORMS_COMPONENTS=(unionless_forms_listener)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -267,6 +279,15 @@ for component in "${TEST_COMPONENTS[@]}"; do
 done
 for document in "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l go -o "$TMP/table_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${TRACE_FORMS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l go -o "$TMP/forms_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
+    "$CODEGEN" generate "${TRACE_FORMS_IMPORTS[$i]}" -l go -o "$TMP/forms_import_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l go -o "$TMP/component_$component/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -335,10 +356,25 @@ for document in "${TEST_TABLES[@]}"; do
         PACKAGES+=("$package")
     done
 done
+FORMS_OUTPUTS=()
+for document in "${TRACE_FORMS[@]}"; do
+    FORMS_OUTPUTS+=("$TMP/forms_$document")
+done
+for i in "${!TRACE_FORMS_IMPORTS[@]}"; do
+    FORMS_OUTPUTS+=("$TMP/forms_import_$i")
+done
+for output in "${FORMS_OUTPUTS[@]}"; do
+    for generated in "$output"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.go` alone, into the package
 # named by its document, which the test's factory of machines and each configuration's
 # table above import (`<module path>/<snake of the machine's name>`).
-for component in "${TEST_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}"; do
     mkdir -p "$GENERATED_DIR/$component"
     cp "$TMP/component_$component"/*_sm.go "$GENERATED_DIR/$component/"
     MACHINES+=("$component")

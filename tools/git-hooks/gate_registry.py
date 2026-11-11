@@ -2203,7 +2203,13 @@ GATES: dict[str, dict] = {
                   # The test log every runtime writes of the generated suite,
                   # which the Go suite runner's test of `answers_the_job`
                   # reads at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
+                  # The suite's committed traces, which the same test replays,
+                  # and the trace's wire schema, whose status the runtime's
+                  # `TestSchemaFileDeclaresStatus` holds its own to, both read
+                  # at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
+                  "schemas/sce-test-trace.v1.schema.json"],
         "deps": ["codegen-build"],
         # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
         # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
