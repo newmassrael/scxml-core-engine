@@ -721,9 +721,10 @@ type is read only where a test proves one case on Rust. A `<foreach>` over a lis
 a proven case holds walks it there. An algorithm's parameter, return and local of
 `union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
 its local built whole as the case its tag names, and its body judged for the point
-where every case returned before any backend is asked; Rust, C++, Kotlin, Go, Python
-and C11 lower it on the type the union's own unit declares, and every other backend
-refuses it by name
+where every case returned before any backend is asked; Rust, C++, Kotlin, Go, Swift,
+Python and C11 lower it on the type the union's own unit declares, the Interpreter on
+the wire's own object, and a backend not listed in `ALGORITHM_UNION_BACKENDS` refuses
+it by name
 (SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
 and takes one back as it does a record (A union, under "State an algorithm takes and
 gives back", below).
@@ -6107,17 +6108,18 @@ refused as any computed argument is. What the algorithm returns is taken whole b
 `<assign>` to a variable of the same union, and only there. The call's adapter maps
 the machine's own sum into the type the union's unit declares, case by case, each
 case's record copied field by field as a record argument is, and maps what returns
-back the same way: a `match` in Rust, a `when` in Kotlin and a `std::visit` with one
-call operator per alternative in C++ over every case, so a case either side gains does
-not build; Go's `switch` over every case, Python's `dict` of one builder per case
+back the same way: a `match` in Rust, a `when` in Kotlin, a `switch` with no
+`default` in Swift and a `std::visit` with one call operator per alternative in C++
+over every case, so a case either side gains does not build; Go's `switch` over every case, Python's `dict` of one builder per case
 indexed by the tag's declared name, and C11's function of one test per case of the
 declared name the leaving value's tag answers, are held to the cases by the
 adapter's regeneration with the document, none of the three holding a case analysis
 to every case, and a value in no case ends the run in Go and C11 (a Go `panic`, a
-C11 `abort`). Rust, C++, Kotlin, Go, Python and C11 lower the call; every other
-backend
-refuses the statechart by name (`generate/unsupported-feature`, naming the call and
-the union) until it lowers an algorithm over a union.
+C11 `abort`). Rust, C++, Kotlin, Go, Swift, Python and C11 lower the call, and the
+Interpreter hands the machine's union over as it is, the wire's own object on both
+sides; a backend not listed in `ALGORITHM_UNION_BACKENDS` refuses the statechart by
+name (`generate/unsupported-feature`, naming the call and the union) until it lowers
+an algorithm over a union.
 
 A call is a statement like any other. It reads the variables as they stand, and
 nothing the algorithm does reaches the machine's state: the machine hands over a copy
