@@ -727,7 +727,12 @@ the wire's own object, and a backend not listed in `ALGORITHM_UNION_BACKENDS` re
 it by name
 (SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
 and takes one back as it does a record (A union, under "State an algorithm takes and
-gives back", below).
+gives back", below). Another algorithm hands it a union parameter or local by name,
+as the argument of a parameter of the same union document, compared by the
+document's identity; a union of another document and an argument that is no name of
+a union are refused (`expression/unsupported-construct`), and an algorithm whose
+return is a union is called by a host and a statechart alone (docs/adr/0092,
+"Decided while handing a union from one algorithm to another").
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`
@@ -5848,9 +5853,9 @@ or a host action's argument, judged against the signature the forge import
 pass discovers — its parameters' and return's types. An algorithm whose
 signature takes or returns a `list<T>` or a `record:` is not called from a
 statechart unless the statechart can hand it what it takes and receive what it
-returns — a host calls it, and another algorithm when its slots are records
-(SCE_FORGE.md §4.12) — and is refused where it is called, with two
-exceptions: an algorithm that takes scalars only, declares `may-fail` and
+returns — a host calls it, and another algorithm when its slots are records or
+unions it is handed by name (SCE_FORGE.md §4.12) — and is refused where it is
+called, with two exceptions: an algorithm that takes scalars only, declares `may-fail` and
 returns a `list<T>` of numbers or bools with a `returns-max-size` is taken
 whole by an `<assign>` to a list variable (below), and an algorithm whose
 records are ones the statechart imports as event-schemas is handed the

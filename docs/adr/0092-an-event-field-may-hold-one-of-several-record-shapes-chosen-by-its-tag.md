@@ -7,7 +7,9 @@
   ("Amendment (2026-11-07)"); amended 2026-11-11: what the Kotlin lane decided where this record is silent
   ("Amendment (2026-11-11)"); what landing step 5 decided is in "Decided while landing step 5 (2026-11-11)" and
   "Decided while landing step 5 on Kotlin, with the crossing (2026-11-11)", and what landing step 6 decided in
-  "Decided while landing step 6 (2026-11-12)". Landed on `main` ("Landing order" numbers the steps):
+  "Decided while landing step 6 (2026-11-12)"; amended 2026-11-12: an algorithm hands a union it holds to another
+  algorithm's parameter ("Decided while handing a union from one algorithm to another (2026-11-12)"). Landed on
+  `main` ("Landing order" numbers the steps):
   - step 1, the type and its document: f3786292f6 (the kind), 40d50d4506 (the type and its size), a1fcd00872 (the
     revision rule);
   - step 2, the grammar: 62b22223c2 (`S` and `G`), 07f662da90 (the unit's payload schema), 9ec6bdef31
@@ -748,11 +750,14 @@ wire or a diagnostic code.
    where it builds the case; the import is kept for the renderer though no expression names it. The local takes no
    `init` (no value an algorithm holds is handed to it whole yet) and is not written afterwards: neither a field
    (item 6) nor a whole assignment, each refused by name, until a lane spells a write of the unit's type.
-4. **Where a union stands whole.** Only in a `<sce:return>` of its own union, by the name of a parameter or a local,
-   as a record is returned (SCE_FORGE.md section 4.12). It is no operand, no argument and no value of another place.
-   An algorithm whose slot holds a union is called by a host alone for now: another algorithm's call of it is
-   refused by the callee's `host_only` reason, and a statechart's call by name in `forge::static_imports`, which is
-   how a union crosses between a statechart and an algorithm (section 6.1 item 7) once a lane spells the crossing.
+4. **Where a union stands whole.** In a `<sce:return>` of its own union, by the name of a parameter or a local,
+   as a record is returned (SCE_FORGE.md section 4.12), and, since the amendment of 2026-11-12, as the argument of
+   another algorithm's parameter of its own union document, by the same name ("Decided while handing a union from
+   one algorithm to another"). It is no operand and no value of another place. An algorithm whose return is a union
+   is called by a host and a statechart alone: another algorithm's call of it is refused by the callee's
+   `host_only` reason, which names the return, and a statechart's call is judged by name in
+   `forge::static_imports`, which is how a union crosses between a statechart and an algorithm (section 6.1 item
+   7) once a lane spells the crossing.
 5. **The point no path reaches** (section 6.1 item 4) is judged as a path through the body
    (`forge::algorithm_union::reaches_end`) over the one sequencing rule of an algorithm's body
    (`forge::narrowing::after_algorithm_statement`): a path ends at a `<sce:return>`, at an `<sce:if>` whose two
@@ -1291,6 +1296,75 @@ diagnostic code or a rule of the language.
 9. **A consumer's migration** is a section of docs/SCE_CODEC_CONSUMER_MIGRATION.md (section 10.4, ADR 0078).
 
 Steps 7 and 8 have not landed.
+
+## Decided while handing a union from one algorithm to another (2026-11-12)
+
+"Decided while landing step 5" item 4 left an algorithm whose slot holds a union callable by a host alone, so an
+algorithm that takes the standard library's date expression could not hand it to `sce:std/time/resolve_date`, which
+takes that union: a consumer's algorithm of exactly that shape, `(today int64, expression union:DateExpression)`,
+calling `resolve_date` and then `civil_from_days` on the day it answers, was refused on every backend. Section 1.1
+item 3 lets a union stand everywhere a type does, an algorithm's parameter among them, and section 6.1 item 7 says
+a union crosses as a composed value does, by its name; SCE_FORGE.md section 4.12 says how a record crosses one
+algorithm's call of another. Each question below is decided by those rules; none changes a document, a wire or a
+diagnostic code.
+
+1. **What is handed, and where.** A union parameter or local of the calling algorithm, by its name, as the argument
+   of a parameter of `union:<alias>` of the algorithm it calls, under either call form: an expression's
+   `ResolveDate(today, expression)` and `<sce:call target="ResolveDate" args="today, expression">`. This is the one
+   new position a union stands whole in; it stays no operand, no value of a local or an assignment, and no argument
+   of a parameter of any other type (`expression/unsupported-construct`, as before). A union a caller holds as a
+   local is handed as a parameter is: both are names of the one value the body never writes (item 3 of "Decided
+   while landing step 5").
+2. **The same document, by identity.** A parameter takes a union of the union document it imports, compared by the
+   document's identity (`forge::stdlib::identity`: `sce:std/time/date_expression.scxml` imported by that name or by
+   a path beside the resolver is one document), as a record argument is held to its schema's document (SCE_FORGE.md
+   section 4.12: two documents that agree case for case are two types). Section 6.1 item 7 lets two revisions of
+   one union fit each other where a union crosses a wire between two builds; within one build the caller and the
+   callee each name the one unit their import resolves to, and two documents are two units, so the rule of a call
+   is identity. The slot is `CalleeSlot::Union` (`forge::generator`), the identity and the document's name it
+   carries `UnionParam` (`forge::types`), read from the callee's own import where the callee reads it
+   (`algorithm_record_slots`), and the expression pipeline's signature carries it beside the parameter's type
+   (`FuncSig::unions`), since a union is typed `Unknown` there as a value of an enum is.
+3. **What is refused, and where.** A union of another document (the refusal names both documents and the callee),
+   and an argument that is no name of a union the caller holds (a number, a conditional, a call that answers a
+   union), naming the document the parameter takes and the repair, which is to hand the name that holds it. Both
+   are `expression/unsupported-construct`, raised by one rule (`judge_union_argument` in `forge::expr`) where the
+   judge of an algorithm's body reads each expression before any backend (`forge::narrowing::check_algorithm`), so
+   every backend and the Interpreter refuse the same documents with one code. The judge now runs for a body that
+   imports an algorithm with a union parameter even when the body holds no union, since such a body has no union
+   to hand. Every lowering reads the same rule again where it lowers the call, so the two cannot drift.
+4. **How each lane hands it.** Every backend's parameter is the type the union's own unit declares, by value, on
+   both sides (Landing order step 5), so the call needs no adapter: unlike a statechart's call ("Decided while
+   landing step 5 on Kotlin, with the crossing" item 2), the caller and the callee hold one type. Rust's union is no
+   `Copy` type, and the caller may read its own union after the call, so Rust hands `name.clone()`; C11, C++, Go and
+   Swift copy the value they pass, and Kotlin, Python and the Interpreter hand the very object, which no algorithm
+   writes, so each hands the name as it is (`handed_union` in `forge::expr`, the one spelling both call forms use).
+5. **A union return is not taken by another algorithm.** Receiving needs more than handing: a place of the calling
+   algorithm that takes whole a union a call answers. A local of a union takes no `init` and is not written ("Decided
+   while landing step 5" item 3), a `<sce:return>` of a union names a parameter or a local (item 4), and a call is no
+   name an argument may be (item 3 above); admitting any of the three is a construct of its own, a declaration on
+   each lane and a rule of what the call ends in the narrowing, not a consequence of this one. So an algorithm whose
+   return is a union is called by a host and a statechart alone, whatever its parameters, and another algorithm's
+   call of it is refused by the callee's `host_only` reason, which now names the slot another algorithm cannot fill
+   ("returns union:Shape") rather than the first slot that is no scalar, which a union parameter no longer is. The
+   rule for returns: a union an algorithm call answers is taken by another algorithm once a union local takes it
+   whole by an `init` of a call of its own union document, a change that lands on every lane at once.
+6. **A call of an algorithm only a host calls is refused at its target.** Its arguments stand in no slot, so the
+   judge does not read them: an argument judged against no parameter would be refused for a reason that is not the
+   call's (a union handed whole "as a value"), and `<sce:call>` of such a callee is refused naming its slot where it
+   is lowered, as the expression form is.
+
+`sce-build/tests/an_algorithm_hands_a_union_to_another_by_its_name.rs` holds the handing on every generated backend
+and the Interpreter (`algorithm_shape_extent_at_least_one.scxml` hands its parameter to `algorithm_shape_extent.scxml`
+and reads its own tag after the call), compiles the Rust under `rustc -D warnings`, and holds each refusal
+(`algorithm_date_handed_as_shape.scxml` hands a date expression where a shape is taken).
+`every_standard_algorithm_generates_on_every_algorithm_backend.rs` holds the consumer's shape over
+`sce:std/time/resolve_date` on every backend that generates algorithms and the Interpreter. The numerical
+conformance harness, which runs `resolve_date` with a union on every lane, gains no fixture here: the catalog
+generates exactly the documents it lists, so an algorithm over the shape union needs the shape enum, its two
+records, the union and the callee as fixtures of their own, each with an oracle model, and one over the date
+expression would be the first fixture of `tests/forge/resources` that imports a standard document by name in every
+lane's harness build.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
