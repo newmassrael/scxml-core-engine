@@ -1576,7 +1576,8 @@ machine. A name the build cannot hold as a session id (`SCE_MAX_SESSION_ID_LEN`,
 `SCE_MAX_URI_LEN`) ends the run with `error`, the reason in its log, and the machine is not started
 (`sce_test_context_error`). C11 refuses by name a component that declares
 `<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of, and one that
-uses a template whose type reaches a union, which C11 does not lower (ADR 0092, section 7).
+uses a template whose type reaches a union, which C11's test profile does not match yet (ADR 0092, section 7;
+`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 
 A C11 component reads a module parameter as the other backends' do. The machine's construction starts the member at
 its type's zero, or for an enum at the variant its document declares first, a compound literal of the buffer's own
