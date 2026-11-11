@@ -1317,8 +1317,10 @@ it, under the alias `sce_<document>` every Python unit imports a sibling module 
 sce_<document>`), so an enum a record of another document holds is named by its one declaration; the unit imports
 exactly the modules its text names, as the Go unit does, so it reaches no module a run need not have generated.
 Python joins the tests by the join Rust, Kotlin and Go share, in Python's words (`and`, `or`, `not`, `True`,
-`False`, `test_template_walk::Connectives`), whose precedence is C's. Python lowers no union, so a template whose
-type reaches a union at any depth is refused on Python as on C++ and Go (ADR 0092, section 7).
+`False`, `test_template_walk::Connectives`), whose precedence is C's. A template whose type reaches a union at any
+depth is refused on Python by the union's own refusal, as on C++ (ADR 0092, section 7): Python generates the union's
+unit, a class and one frozen dataclass per case, and its walk spells no case of one and its runtime no canonical
+form of one yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 
 C11 generates `test-template` (§12.6, slice 6). The unit is a header `<name>.h`, named by the document's file as every
 forge unit is, and, since C has no namespace, each declaration carries the document's name:
@@ -1517,8 +1519,8 @@ context on its policy, registers the test-port processor and the test-component 
 `__test__ = False`, so pytest collects none, whatever the document's name makes of its own. The engine takes a session
 id it is given, or draws one, whether or not a saved state can hold its machine, so the component's session id needs
 no saved shape. Python refuses by name a component that declares `<sce:action>`, whose policy is constructed with a
-host the component is given nothing of, and one that uses a template whose type reaches a union, which Python does
-not lower (ADR 0092, section 7).
+host the component is given nothing of, and one that uses a template whose type reaches a union, which Python's
+test profile does not match yet (ADR 0092, section 7; `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 
 C11 generates `test-component` (§12.6, slice 6). The unit is the statechart machine the C11 generator writes for any
 `sce-static` document, `<file>_sm.h` and `<file>_sm.c`, lowered through the same doors by the same lowering and
@@ -2145,15 +2147,16 @@ one set of bytes.
    for the same reason. It has `text_length` for a template's length restriction, a text's `len`, since a Python
    text is a sequence of code points, and the Python host send request carries a test-port send's value
    (`HostSendRequest.value`). Python generates templates, and the refusal of §11.9 is lifted for Python for
-   `test-template`; Python lowers no union, so a template whose type reaches one stays refused there, as on C++ and
-   Go. Python generates test components next, through the doors of §12.3, and runs them through
-   `sce_runtime.testprofile.TestCaseRun`; the refusal is lifted for Python for `test-component`, but for a component
-   that declares `<sce:action>` and for one whose template reaches a union. Python then generates the configuration,
-   case and suite tables over the same rows, each importing what it reads as a sibling module, and runs the examples
-   end to end through `sce_runtime.testprofile.run_suite`; the refusal is lifted for Python for the remaining kinds,
-   and for a component's module parameter. C11's runtime library of §12.2 is the headers `sce/test/` of
-   `backends/c/runtime`, the Rust one ported function for function and held to its cases, allocating nothing: a run
-   is one struct the caller places, each of its tables bounded at compile time and overridable with `-D` (the
+   `test-template`; Python's test profile matches no union yet, though Python generates a union's unit, so a template
+   whose type reaches one stays refused there, as on C++. Python generates test components next, through the doors
+   of §12.3, and runs them through `sce_runtime.testprofile.TestCaseRun`; the refusal is lifted for Python for
+   `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
+   Python then generates the configuration, case and suite tables over the same rows, each importing what it reads
+   as a sibling module, and runs the examples end to end through `sce_runtime.testprofile.run_suite`; the refusal
+   is lifted for Python for the remaining kinds, and for a component's module parameter. C11's runtime library of
+   §12.2 is the headers `sce/test/` of `backends/c/runtime`, the Rust one ported function for function and held to
+   its cases, allocating nothing: a run is one struct the caller places, each of its tables bounded at compile time
+   and overridable with `-D` (the
    components present at once, `SCE_TEST_MAX_COMPONENTS` 8; a component's ports and timers, `SCE_TEST_MAX_PORTS` and
    `SCE_TEST_MAX_TIMERS` 8 each; the messages waiting in all its queues, one pool of
    `SCE_TEST_MAX_QUEUED_MESSAGES` 16, each value of at most `SCE_TEST_MAX_VALUE_SIZE` 256 bytes; the lines of its log,

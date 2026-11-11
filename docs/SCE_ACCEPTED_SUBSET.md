@@ -720,7 +720,7 @@ type is read only where a test proves one case on Rust. A `<foreach>` over a lis
 a proven case holds walks it there. An algorithm's parameter, return and local of
 `union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
 its local built whole as the case its tag names, and its body judged for the point
-where every case returned before any backend is asked; Rust, C++, Kotlin and Go
+where every case returned before any backend is asked; Rust, C++, Kotlin, Go and Python
 lower it on the type the union's own unit declares, and every other backend refuses
 it by name
 (SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
@@ -6093,9 +6093,10 @@ the machine's own sum into the type the union's unit declares, case by case, eac
 case's record copied field by field as a record argument is, and maps what returns
 back the same way: a `match` in Rust, a `when` in Kotlin and a `std::visit` with one
 call operator per alternative in C++ over every case, so a case either side gains does
-not build; Go's `switch` over every case is held to the cases by the adapter's
-regeneration with the document, its compiler holding a `switch` to none. Rust, C++,
-Kotlin and Go lower the call; every other backend
+not build; Go's `switch` over every case, and Python's `dict` of one builder per case
+indexed by the tag's declared name, are held to the cases by the adapter's
+regeneration with the document, neither language holding one to every case. Rust,
+C++, Kotlin, Go and Python lower the call; every other backend
 refuses the statechart by name (`generate/unsupported-feature`, naming the call and
 the union) until it lowers an algorithm over a union.
 

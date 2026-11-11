@@ -15,21 +15,22 @@
   - step 3, the runtimes: ff8c45d2a9 (Rust), 07d8880036 (Go), 5bfc0a6a2a (Kotlin), f6dc8f133a (Python), 0ab2a3307d
     (C++), 9a863ded7d (Swift), b1ac3d69cd (C11), b93168cde0 (the Interpreter), held to one refusal per text by
     3646559436;
-  - step 4, on five of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
+  - step 4, on six of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
     3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift; 1955e08e52
-    Go; the change that adds "Decided while landing ADR 0092 on C++" for C++) and the replay vocabulary
-    (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust (f357451c13,
-    9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on Kotlin (the
-    change that adds "Amendment (2026-11-11)"), on Go (43698d9e6e) and on C++ (the change that adds "Decided while
-    landing ADR 0092 on C++"). Python, C11 and the Interpreter still refuse a statechart that holds a union by name
-    (`generate/unsupported-feature`);
-  - step 5, on five of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
+    Go; the change that adds "Decided while landing ADR 0092 on C++" for C++; the change that adds "Decided while
+    landing ADR 0092 on Python" for Python) and the replay vocabulary (dd2d10284a); the statechart's payload read,
+    variable, write, lift and saved state on Rust (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on
+    Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on Kotlin (the change that adds "Amendment (2026-11-11)"), on Go
+    (43698d9e6e), on C++ (the change that adds "Decided while landing ADR 0092 on C++") and on Python (the change
+    that adds "Decided while landing ADR 0092 on Python"). C11 and the Interpreter still refuse a statechart that
+    holds a union by name (`generate/unsupported-feature`);
+  - step 5, on six of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
     (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
     Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the Go
-    lowering and crossing (ad4d2f5984, 5ad49544dd) and the C++ lowering and crossing (the change that adds
-    "Decided while landing ADR 0092 on C++") and the Swift lowering and crossing (the change that adds "Decided
-    while landing step 5 and the crossing on Swift"). Python, C11 and the Interpreter refuse such an algorithm and
-    such a call by name;
+    lowering and crossing (ad4d2f5984, 5ad49544dd), the C++ lowering and crossing (the change that adds "Decided
+    while landing ADR 0092 on C++"), the Swift lowering and crossing (the change that adds "Decided while landing
+    step 5 and the crossing on Swift") and the Python lowering and crossing (the change that adds "Decided while
+    landing ADR 0092 on Python"). C11 and the Interpreter refuse such an algorithm and such a call by name;
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
@@ -1009,6 +1010,75 @@ Swift spelling is chosen.
    derivation that generates every algorithm a lowered machine calls, and `AnAlgorithmNarrowsAUnionByItsTagTests`
    and `AUnionCrossesAStatechartCallTests` run them. The type-check test of `sce-build` skips where no `swiftc`
    is installed, so this is the gate that holds the spelling to a Swift compiler.
+
+## Decided while landing ADR 0092 on Python (2026-11-11)
+
+Python now holds a union in a statechart (step 4), generates a union document
+(`codegen_matrix::UNION_BACKENDS`), lowers an algorithm over a union and hands one across a statechart's call
+(`ALGORITHM_UNION_BACKENDS`). Each question below is decided by a rule this record already states; none changes
+a document, a wire or a diagnostic code.
+
+1. **A machine's union is a class of the machine and one frozen dataclass per case derived from it** (section 7,
+   the Python row): `<Machine><Document>Union`, and per case `<Machine><Document>Union<Case>`, the variant in
+   Pascal case after the union's class, since Python spells no nesting a case is named by (section 7 item 1),
+   holding the case's record as `value`, or nothing, in the tag enum's order. Each case answers the value of the
+   tag's enum it is for by `kind`, an attribute its class holds, whatever key the tag is written under, so the
+   tag and the case cannot disagree. `proven_<case>()` and `proven_field_<field>()` are methods of the union's
+   class that test the case by `isinstance` and raise `AssertionError` in a case the narrowing proved the value
+   is not in, the one place that is written. A value is built only whole, by the class of its case.
+2. **A field of a case is written by assigning the holder the next value whole**, as on Kotlin ("Amendment
+   (2026-11-11)" item 2): a Python record is a frozen dataclass a machine writes a field of by
+   `dataclasses.replace`, so the write `shape.radius = v` under one case left is `shape =
+   U.Circle(dataclasses.replace(shape.proven_circle(), radius=v))` (the case's class named as item 1 says), and
+   under several cases that share the field `shape = shape.proven_field_radius_with(v)`, a method of the union's
+   class beside the shared read (`ComposedSpelling::union_member_write`).
+3. **The writer tells a case by its class**: a `dict` of one writer per case, keyed by the case's class and
+   indexed by the value's own, so the writer names no enum; the tag is written as the variant's declared name
+   among the case's fields by the runtime's `union_json`, and in the `dict` a `<send>` holds a record in.
+4. **A lift reads a union whole** through the runtime's `lift_value`, beside `lift_record`, which hands the
+   runtime's name of the union's type (`UnionOf`) the text's object at its root, so a refusal inside it points
+   below the root as a field of a lifted record does (section 6.1 item 5).
+5. **The saved form is carried by the type**, `to_saved` and the class method `from_saved`, the names a Python
+   record of entries and enum already have, set on the class beside its declaration, as a Kotlin extension is
+   written beside its type, since a class is declared before the machine knows a variable holds it: the tag
+   beside the case's fields by the runtime's `saved_write_union`, read first by `saved_read_union`, which refuses
+   a name no case has; a case's record that holds a composition carries its saved form the same way, a list's
+   lower count held by `saved_read_list_within` (docs/adr/0086, section 15.6). A union is copied whole
+   (`whole_copy`), and a published variable's reader answers a copy, since a case's record may hold a list a
+   host could write into. An index read of a list of unions is read, as on Kotlin, Go and C++: the checked read
+   raises `AlgorithmFailure` for an index outside the list, and answers no value then.
+6. **The unit's union has the machine's shape** (as on Go and C++): the row's `U = Union[UNone, UAbsolute,
+   ...]` is spelled as the class every case derives from, which a type annotation names as it would the alias
+   and which carries the proven reads, named by the same spellings (`composed_lowering::python`): a case's class
+   `<Pascal><Case>` holding the payload class of its record as `value`, which its `__post_init__` holds to that
+   class (section 7 item 3), `kind`, and `proven_<case>()`. The unit declares no shared accessor and no write,
+   since an algorithm never writes a union ("Decided while landing step 5" item 3). Two variants of one class's
+   name, or of one proven read, are refused by name. A schema unit's union field names the unit's class through
+   the module its import binds (`sce_<snake>.<Pascal>`).
+7. **The test profile is a step of its own**, as on C++ (item 6 of the section above): Python generates a
+   union's unit, and its test-template walk spells no case of a union and its runtime no canonical form of one
+   yet, so a template, a component and a configuration that reach a union stay refused by the union's name;
+   Python is not in `codegen_matrix::TEST_PROFILE_UNION_BACKENDS`.
+8. **An algorithm reads its union on the unit's class**: the tag by `kind`, a field of the one case left by
+   `proven_<case>().f`, and a field several cases leave by `value.f`. Python reads an attribute whatever class
+   holds it, and the narrowing proved that each case left holds a record that declares the field with one type
+   (`unit_union_member_of`), so the read needs no case analysis and the unit no accessor. A union local is a
+   name bound to the class of its case built from its record. The end no path reaches is a `raise` of
+   `AssertionError`, what the unit's proven reads raise, never the `AlgorithmFailure` a `may-fail` body hands a
+   failure on by, so the two are not confused.
+9. **The crossing is a total map by the tag's declared name** ("Decided while landing step 5 on Kotlin" item 2):
+   the adapter indexes a `dict` of one builder per case, keyed by the variant's declared name, by the declared
+   name the leaving value's tag answers (`kind.sce_name` on the machine's enum, `kind.declared_name()` on the
+   unit's), the name the tag is written as (section 2.1), so it names neither enum; each builder answers the case
+   the value arrives as, its record copied from the leaving case's `value` as a record argument is. Python holds
+   a `dict` to no case, so, as Go's `switch`, every case is a key by the adapter's regeneration with the document,
+   and a value whose tag names no key raises rather than cross as another case.
+
+Step 6 still needs step 5 with its crossing on C11 (first holding a union in a statechart, step 4, and the
+union's unit), the Interpreter's lowering of an algorithm over a union and of the
+call, and on every lane, Python's among them, the numerical conformance harness's argument of a union; then the
+standard library's change itself. Python's test profile matching a union (`TEST_PROFILE_UNION_BACKENDS`) is not on
+step 6's path.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
