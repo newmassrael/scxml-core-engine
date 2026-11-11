@@ -969,7 +969,7 @@ impl ComposedSpelling for CppComposed<'_> {
     }
     // The case's alternative, handed the record or nothing, as the one member
     // of the union's struct.
-    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+    fn union_value(&self, ty: &str, _tag: &str, case: &str, record: Option<&str>) -> String {
         format!("{ty}{{{ty}::{case}{{{}}}}}", record.unwrap_or_default())
     }
     // The tag first, by the enum's reader, in the runtime's `readUnion`, which
@@ -1672,11 +1672,11 @@ mod tests {
         );
         assert_eq!(CPP.union_tag_read("type"), Some("kind".to_string()));
         assert_eq!(
-            CPP.union_value("MShapeUnion", "Dot", None),
+            CPP.union_value("MShapeUnion", "kind", "Dot", None),
             "MShapeUnion{MShapeUnion::Dot{}}"
         );
         assert_eq!(
-            CPP.union_value("MShapeUnion", "Circle", Some("r")),
+            CPP.union_value("MShapeUnion", "kind", "Circle", Some("r")),
             "MShapeUnion{MShapeUnion::Circle{r}}"
         );
     }

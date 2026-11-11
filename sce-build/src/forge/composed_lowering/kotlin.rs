@@ -855,7 +855,7 @@ impl ComposedSpelling for KotlinComposed<'_> {
         )
     }
     // The case's constructor, holding the record or nothing.
-    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+    fn union_value(&self, ty: &str, _tag: &str, case: &str, record: Option<&str>) -> String {
         match record {
             Some(record) => format!("{ty}.{case}({record})"),
             None => format!("{ty}.{case}"),
@@ -1635,11 +1635,11 @@ mod tests {
             )
         );
         assert_eq!(
-            KOTLIN.union_value("MShapeUnion", "CIRCLE", Some("r")),
+            KOTLIN.union_value("MShapeUnion", "kind", "CIRCLE", Some("r")),
             "MShapeUnion.CIRCLE(r)"
         );
         assert_eq!(
-            KOTLIN.union_value("MShapeUnion", "DOT", None),
+            KOTLIN.union_value("MShapeUnion", "kind", "DOT", None),
             "MShapeUnion.DOT"
         );
     }

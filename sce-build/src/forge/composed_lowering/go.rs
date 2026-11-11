@@ -1039,7 +1039,7 @@ impl ComposedSpelling for GoComposed<'_> {
         )
     }
     // The case's constructor, handed the record or nothing.
-    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+    fn union_value(&self, ty: &str, _tag: &str, case: &str, record: Option<&str>) -> String {
         format!("{ty}{case}({})", record.unwrap_or_default())
     }
     // The tag first, by the enum's reader, in the runtime's `ReadUnion`, which
@@ -1570,11 +1570,11 @@ mod tests {
         );
         assert_eq!(GO.union_tag_read("type"), Some("Kind".to_string()));
         assert_eq!(
-            GO.union_value("MShapeUnion", "Dot", None),
+            GO.union_value("MShapeUnion", "kind", "Dot", None),
             "MShapeUnionDot()"
         );
         assert_eq!(
-            GO.union_value("MShapeUnion", "Circle", Some("r")),
+            GO.union_value("MShapeUnion", "kind", "Circle", Some("r")),
             "MShapeUnionCircle(r)"
         );
     }

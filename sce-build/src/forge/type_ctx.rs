@@ -262,6 +262,9 @@ pub struct UnionSlot {
     /// The union document's name, which the machine's sum and the type the
     /// union's own unit declares are both named by.
     pub document: String,
+    /// The key the union's tag is written under beside a case's fields
+    /// (docs/adr/0092, section 2.1).
+    pub tag: String,
     /// Each case, in the document's order.
     pub cases: Vec<UnionSlotCase>,
 }

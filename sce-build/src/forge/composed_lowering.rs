@@ -594,10 +594,14 @@ pub trait ComposedSpelling {
     fn union_shared_read(&self, field: &str) -> String;
     /// The declaration of a union's type, its cases and its reads.
     fn union_def(&self, def: &UnionDef) -> String;
-    /// A value of the union held in `ty`, in the case `case` (its identifier,
-    /// [`Self::union_case_ident`]) holding the record value `record`, or none
-    /// for an empty case (docs/adr/0092, section 7 item 3: built only whole).
-    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String;
+    /// A value of the union held in `ty`, whose tag is written under the key
+    /// `tag`, in the case `case` (its identifier, [`Self::union_case_ident`])
+    /// holding the record value `record`, or none for an empty case
+    /// (docs/adr/0092, section 7 item 3: built only whole). A backend whose sum
+    /// names its case by a constructor reads no `tag`; one whose union is the
+    /// wire's own object (the Interpreter's) writes the case's declared name
+    /// under it (section 2.1).
+    fn union_value(&self, ty: &str, tag: &str, case: &str, record: Option<&str>) -> String;
     /// The reader of a value of a union at `value`, as `read` says it: its tag
     /// first, and then the case the tag names, by its arm.
     fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String;

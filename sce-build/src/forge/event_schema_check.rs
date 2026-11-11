@@ -261,13 +261,14 @@ impl ComposedLowering {
     /// generated backend and so has no line of [`Self::of`]: it reads a composed
     /// payload at any depth, takes a list whole and sends a composed value, as
     /// its target spells the walks
-    /// ([`crate::forge::composed_lowering::JsComposed`]), and holds no union yet.
+    /// ([`crate::forge::composed_lowering::JsComposed`]), and holds a union as
+    /// the wire's own object (docs/adr/0092, section 7, the Interpreter row).
     /// Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
         reads: true,
         copies: true,
-        unions: false,
+        unions: true,
         records: false,
         sends: true,
     };

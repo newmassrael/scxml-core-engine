@@ -36,8 +36,8 @@
 //! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
 //! a bounded-collection import), an `<invoke type="scxml">` whose `src` names a
 //! Mesh peer rather than a document, a model's generation
-//! (`sce-host-model-generate`, docs/adr/0087, section 7.1), a union
-//! (docs/adr/0092, the row of this lowering in
+//! (`sce-host-model-generate`, docs/adr/0087, section 7.1), a variable of a
+//! record that holds a composition (the row of this lowering in
 //! [`crate::forge::event_schema_check::ComposedLowering::ECMASCRIPT`]), and the executable
 //! content the walk does not lower are refused with
 //! `generate/unsupported-feature` naming the construct, never passed through:
@@ -143,6 +143,16 @@
 //! `error.execution` taken in its place, as on the generated backends
 //! (docs/adr/0086, section 4.2), and the value the door read is the one every
 //! expression of the content reads, through the library's `taken`.
+//!
+//! # A union
+//!
+//! A value of `union:U` (docs/adr/0092) is the wire's own object, the tag's
+//! key holding the declared name of the case's variant beside the case's
+//! fields ([`JsComposed`]): a variable of one is built where it is declared, a
+//! payload that holds one is read by the descriptor of its type, a member is
+//! read by its own name where the narrowing admits it, a field of a case is
+//! written by an `<assign>` of the whole variable with that field changed, and
+//! a `<sce:lift>` reads a text into one whole.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -158,7 +168,7 @@ use crate::forge::model::{
 };
 use crate::forge::static_js_algorithm;
 use crate::forge::static_lowering::{
-    lower, Callee, CalleeImport, LiftStatement, LoweredElement, LoweredSite, RenderCall,
+    lower, Callee, CalleeImport, LiftStatement, Lifted, LoweredElement, LoweredSite, RenderCall,
     StaticTarget,
 };
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
@@ -1061,9 +1071,10 @@ impl StaticTarget for JsTarget {
         self.assign_element(target, "[]")
     }
     // The element that replaces the `<sce:lift>`: a `<script>` that hands the text
-    // to the library's `lift` with the type the record is read as, written as the
-    // library's `field` takes a type (`{record: …, defaults: …}`), and writes the
-    // record or the refusal into the two variables. The library answers rather
+    // to the library's `lift` with the type the value is read as, written as the
+    // library's `field` takes a type (`{record: …, defaults: …}`, or a union's
+    // `{union: …}`), and writes the value or the refusal into the two variables.
+    // The library answers rather
     // than throws, so the script raises nothing, as the generated backends' lift
     // does not: a 64-bit integer past what the data model holds exactly is
     // refused as past its width here (`outOfRange`), where a backend whose int64
@@ -1081,23 +1092,32 @@ impl StaticTarget for JsTarget {
                 other => field_kind(other, &[])?,
             })
         };
-        let schema = lift.record()?;
-        let mut fields = Vec::with_capacity(schema.fields.len());
-        for field in &schema.fields {
-            let declared = match &field.sce_type {
-                EntryType::Scalar(ty) => kind(ty, field.max_size)?,
-                EntryType::Optional { elem } => {
-                    format!("{{optional: {}}}", kind(elem, field.max_size)?)
+        // The type the text is read as: a record field by field, its defaults
+        // beside it as a JSON object, which is an object literal here; or a
+        // value read whole, a union (docs/adr/0092, section 6.1 item 5), by the
+        // descriptor the composed walk spells ([`JsComposed`]), which a field of
+        // a delivery of that type is read by too.
+        let read = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let mut fields = Vec::with_capacity(schema.fields.len());
+                for field in &schema.fields {
+                    let declared = match &field.sce_type {
+                        EntryType::Scalar(ty) => kind(ty, field.max_size)?,
+                        EntryType::Optional { elem } => {
+                            format!("{{optional: {}}}", kind(elem, field.max_size)?)
+                        }
+                    };
+                    fields.push(format!("'{}': {declared}", field.id));
                 }
-            };
-            fields.push(format!("'{}': {declared}", field.id));
-        }
-        // The defaults are a JSON object, which is an object literal here.
-        let defaults = lift
-            .defaults
-            .as_ref()
-            .map(|json| format!(", defaults: {json}"))
-            .unwrap_or_default();
+                let defaults = lift
+                    .defaults
+                    .as_ref()
+                    .map(|json| format!(", defaults: {json}"))
+                    .unwrap_or_default();
+                format!("{{record: {{{}}}{defaults}}}", fields.join(", "))
+            }
+            Lifted::Whole { reader, .. } => reader.clone(),
+        };
         let path_bound = lift.path_bound()?;
         let refusal = self.record_value(
             "",
@@ -1111,11 +1131,10 @@ impl StaticTarget for JsTarget {
         let script = format!(
             "(function (sceLift) {{ if (sceLift.refusal === null) {{ {location} = sceLift.value; \
              {absent} = null; }} else {{ {absent} = {refusal}; }} }})({RUNTIME_GLOBAL}.lift({text}, \
-             {{record: {{{fields}}}{defaults}}}, {depth}, {path_bound}));",
+             {read}, {depth}, {path_bound}));",
             location = lift.location,
             absent = lift.refusal,
             text = lift.text,
-            fields = fields.join(", "),
             depth = lift.depth,
         );
         Some(self.script_element(&script))

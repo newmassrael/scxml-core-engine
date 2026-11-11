@@ -931,6 +931,41 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     for (const auto &name : notYetLowered) {
         RecordProperty("not_yet_lowered_" + name, "refused by sce-codegen lower");
     }
+    // ... and the scenario of a union (docs/adr/0092, step 4) is lowered: it holds a
+    // restore, which the scan skips, and is replayed with that step carried on by the
+    // same machine (`AUnionIsReadBuiltWrittenAndLiftedAsTheWireObject`).
+    EXPECT_NE(std::find(restoring.begin(), restoring.end(), "static_union"), restoring.end())
+        << "static_union was not skipped for its restore: the replay below no longer stands for it";
+}
+
+// The scenario of a union (docs/adr/0092, step 4) on the Interpreter: a payload read by
+// its tag at any depth, a union variable built where it is declared and a field of its
+// case written, one taken whole from the payload, a text lifted into one whole, and the
+// deliveries outside the type refused whole. It holds one step that restores the
+// machine from a saved state, which the Interpreter keeps none of, so the scan above
+// skips it; every step of it is a step of this engine's all the same, and it is
+// replayed here with the restore carried on by the same machine: what that step holds
+// the generated backends to, that a union is read back from a saved state by its tag,
+// is theirs, and the delivery it carries and what it expects after it are held here.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AUnionIsReadBuiltWrittenAndLiftedAsTheWireObject) {
+    const auto scenario = nlohmann::json::parse(slurp(kFixtures / "scenarios" / "static_union.json"), nullptr, false);
+    ASSERT_FALSE(scenario.is_discarded()) << "a scenario is JSON";
+    nlohmann::json carried = scenario;
+    std::size_t restores = 0;
+    for (auto &step : carried.at("steps")) {
+        if (step.contains("restore")) {
+            step.erase("restore");
+            ++restores;
+        }
+    }
+    EXPECT_EQ(restores, 1u) << "the scenario of a union restores the machine once";
+    const auto dir = std::filesystem::temp_directory_path() / ("sce-union-" + std::to_string(::getpid()));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    const LoweredSet set = lowerSet(kFixtures / "static_union.scxml", dir);
+    ASSERT_TRUE(set.ok) << "static_union is not lowered: " << set.refusal.dump();
+    replay(set.documents.at(0), carried);
+    std::filesystem::remove_all(dir, ec);
 }
 
 // docs/adr/0084, D7: the scenarios of the standard host features

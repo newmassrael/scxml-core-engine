@@ -689,7 +689,7 @@ impl ComposedSpelling for C11Composed<'_> {
     fn union_def(&self, _def: &UnionDef) -> String {
         unreachable!("{C11_HOLDS_NO_UNION}")
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
+    fn union_value(&self, _ty: &str, _tag: &str, _case: &str, _record: Option<&str>) -> String {
         unreachable!("{C11_HOLDS_NO_UNION}")
     }
     fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {

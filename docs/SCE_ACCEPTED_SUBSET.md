@@ -4843,7 +4843,12 @@ it) and one frozen dataclass per case derived from it, holding the case's record
 row): its tag is read by `kind`, a case's record by `proven_<case>()`, and, immutable as
 its records are, a field of a case is written by assigning the variable the next value
 whole, the case's record replaced with the field, or, for a field several cases share,
-by the class's `proven_field_<field>_with`. A saved state holds the value as
+by the class's `proven_field_<field>_with`. The Interpreter's lowering holds either as
+the wire's own object (or `null`), its tag's key holding the declared name of the case's
+variant beside the fields of the case's record (docs/adr/0092, section 7, the Interpreter
+row): a member is read by its own name, a value is copied and sent as it is, and a field
+of a case is written by an `<assign>` of the whole variable, written again with the field
+changed by the library's `set`, as a record's field is. A saved state holds the value as
 one object, its tag beside its case's fields, read back by its tag first, and the
 saved shape names the union's document and each case's record. A backend whose row
 of "Which backend lowers a composed value" holds no union refuses the variable by
@@ -5582,7 +5587,7 @@ not lower.
 
 - `swift` lowers reads, copies, unions, sends; refuses records
 
-- `ecmascript` lowers reads, copies, sends; refuses unions, records
+- `ecmascript` lowers reads, copies, unions, sends; refuses records
 <!-- composed-lowering-rows: end -->
 
 The fixtures `static_composed_payload` and `static_composed_send`

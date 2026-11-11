@@ -995,12 +995,12 @@ impl AdapterSpec<'_> {
                 };
                 let (from, to) = match crossing {
                     Crossing::ToAlgorithm => (
-                        spelling.union_value(&machine, &ident, None),
+                        spelling.union_value(&machine, &union.tag, &ident, None),
                         unit_case(built.as_deref())?,
                     ),
                     Crossing::FromAlgorithm => (
                         unit_case(None)?,
-                        spelling.union_value(&machine, &ident, built.as_deref()),
+                        spelling.union_value(&machine, &union.tag, &ident, built.as_deref()),
                     ),
                 };
                 Some(CrossedCase {
@@ -5864,6 +5864,7 @@ fn union_variable_field(
             };
             spelling.union_value(
                 &union_type,
+                &union.tag,
                 &spelling.union_case_ident(&case.variant.name),
                 record.as_deref(),
             )
@@ -19386,7 +19387,24 @@ fn lower_action(
                     }
                     _ => lower(&action.expr, slot)?,
                 };
-                rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+                // The `<assign>` the write is, for a lowering that rewrites the
+                // document itself (the Interpreter's): a holder assigned whole is
+                // its location and the holder's next value its expression, as a
+                // record's field is written there ([`StaticTarget::field_assignment`]);
+                // a place takes the value as it is.
+                match &written {
+                    crate::forge::composed_lowering::UnionMemberWrite::Holder { holder, next } => {
+                        rewrites.note(&action.location, action.spellings.get("location"), holder);
+                        rewrites.note(
+                            &action.expr,
+                            action.spellings.get("expr"),
+                            &next(&value.text),
+                        );
+                    }
+                    crate::forge::composed_lowering::UnionMemberWrite::Place(_) => {
+                        rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+                    }
+                }
                 let write = |v: &str| match &written {
                     crate::forge::composed_lowering::UnionMemberWrite::Place(place) => {
                         target.assign(place, v)

@@ -799,7 +799,7 @@ impl ComposedSpelling for PythonComposed<'_> {
         )
     }
     // The case's class, handed the record or nothing.
-    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+    fn union_value(&self, ty: &str, _tag: &str, case: &str, record: Option<&str>) -> String {
         format!("{ty}{case}({})", record.unwrap_or_default())
     }
     // The runtime's name of the union's type, which its one reader of a value
@@ -1292,11 +1292,11 @@ mod tests {
         );
         assert_eq!(PYTHON.union_tag_read("type"), Some("kind".to_string()));
         assert_eq!(
-            PYTHON.union_value("MShapeUnion", "Dot", None),
+            PYTHON.union_value("MShapeUnion", "kind", "Dot", None),
             "MShapeUnionDot()"
         );
         assert_eq!(
-            PYTHON.union_value("MShapeUnion", "Circle", Some("r")),
+            PYTHON.union_value("MShapeUnion", "kind", "Circle", Some("r")),
             "MShapeUnionCircle(r)"
         );
     }

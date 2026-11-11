@@ -456,6 +456,7 @@ fn crossing_union(
     Ok(crate::forge::type_ctx::UnionSlot {
         alias: own_alias,
         document: union.name.clone(),
+        tag: union.tag.clone(),
         cases,
     })
 }

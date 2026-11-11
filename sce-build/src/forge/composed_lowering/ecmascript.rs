@@ -6,9 +6,9 @@
 //! document a `sce-static` statechart is lowered to
 //! ([`crate::forge::static_js`]).
 //!
-//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
-//! |---|---|---|---|
-//! | array | string / the text of its bytes | `null` or the value | plain object |
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record | `union:U` |
+//! |---|---|---|---|---|
+//! | array | string / the text of its bytes | `null` or the value | plain object | plain object, its tag beside its case's fields |
 //!
 //! The Interpreter is no generated backend: it has no `Language` and no row
 //! of [`crate::forge::event_schema_check::ComposedLowering::of`], and its row
@@ -39,6 +39,14 @@
 //! as an array of its elements, a record as an object of its fields, an absent
 //! value as `null`, and each scalar as a scalar param crosses, a 64-bit integer
 //! as the text of its digits.
+//!
+//! A union (docs/adr/0092) is the wire's own object, as the library reads one
+//! (`readValue`): its tag's key holds the declared name of the case's variant
+//! beside the fields of the case's record, and no other key. So a member is
+//! read by its own name wherever the narrowing admits the read, a value is
+//! copied and sent as it is, and a field is written by writing the holder
+//! whole. The Interpreter keeps no saved state of its own, so nothing is
+//! written for one.
 
 use super::*;
 use crate::forge::static_js::RUNTIME_GLOBAL;
@@ -66,12 +74,10 @@ const JS_ELEMENT_BINDING: &str = "sceElement";
 /// The name a copy binds an element or a present value to.
 const JS_COPY_BINDING: &str = "sceCopied";
 
-/// Why an Interpreter walk meets no union: the one decision of what is
-/// lowered refuses a union for the Interpreter before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const JS_HOLDS_NO_UNION: &str =
-    "the Interpreter's lowering holds no union yet (docs/adr/0092, section 7): the one \
-     decision of what is lowered refuses a union for it before any walk reaches one";
+/// What the writer of a union throws for a value whose tag names none of its
+/// cases, which nothing the data model holds of a union is: every one is read,
+/// built or lifted as a case.
+const JS_UNION_IN_NO_CASE: &str = "a value of a union whose tag names none of its cases";
 
 /// `held`, a list, with `each` (a value of its element bound to `binding`)
 /// taken for every element, by the array's own `map`; `held` itself where
@@ -267,56 +273,179 @@ impl ComposedSpelling for JsComposed {
         each_element(&held.text, JS_COPY_BINDING, elem)
     }
 
-    // The Interpreter's lowering holds no union yet: the gate refuses one by
-    // name before a walk reaches it, so each spelling below either names what it
-    // would be or says why there is none.
+    // A union is the wire's own object (docs/adr/0092, section 2.1, and section
+    // 7, the Interpreter row): the tag's key holding the declared name of the
+    // case's variant, which is what the data model holds a value of the tag's
+    // enum as, beside the fields of the case's record. Its type is named only
+    // where a refusal reads it, and a case by the declared name of its variant.
     fn union_type(&self, name: &str) -> String {
         format!("union:{name}")
     }
     fn union_case_ident(&self, variant: &str) -> String {
         variant.to_string()
     }
-    fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+    // The tag is the member of its own key.
+    fn union_tag_read(&self, tag: &str) -> Option<String> {
+        Some(tag.to_string())
     }
+    // The object holds the fields of its case itself, so no read of a case's
+    // record or of a shared field is declared: these names only keep the reads
+    // a declaration lists apart, and nothing reads them.
     fn union_case_read(&self, variant: &str) -> String {
         format!("proven_{variant}")
     }
     fn union_shared_read(&self, field: &str) -> String {
         format!("proven_field_{field}")
     }
+    // Nothing is declared: the data model holds no types.
     fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{JS_HOLDS_NO_UNION}")
+        String::new()
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{JS_HOLDS_NO_UNION}")
+    // The case's record with the tag's key set to the case's declared name, by
+    // the library's `set`, as a record's field is written; the tag alone for an
+    // empty case. Parenthesised, as `JsTarget::record_value` writes a record.
+    fn union_value(&self, _ty: &str, tag: &str, case: &str, record: Option<&str>) -> String {
+        let (key, name) = (js_string(tag), js_string(case));
+        match record {
+            Some(record) => format!("{RUNTIME_GLOBAL}.set({record}, {key}, {name})"),
+            None => format!("({{{key}: {name}}})"),
+        }
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{JS_HOLDS_NO_UNION}")
+    // The descriptor the library reads a union by
+    // (`static_js/sce_static.js`, `readValue`): the tag's key, and each case by
+    // the declared name of its variant, holding the descriptor of its record or
+    // `null` for an empty case. The tag is read first, as an enum of those
+    // names, and the record of the case it names from the same object.
+    fn read_union(&self, _value: &str, read: &UnionRead<'_>) -> String {
+        let cases: Vec<String> = read
+            .arms
+            .iter()
+            .map(|arm| {
+                format!(
+                    "{}: {}",
+                    js_string(&arm.case_ident),
+                    arm.record.as_deref().unwrap_or("null")
+                )
+            })
+            .collect();
+        format!(
+            "{{union: {{tag: {}, cases: {{{}}}}}}}",
+            js_string(read.tag),
+            cases.join(", ")
+        )
     }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{JS_HOLDS_NO_UNION}")
+    // The object as it is where no field of any case changes as it crosses:
+    // what the data model holds of a union is already the wire's form, the tag
+    // beside its case's fields and no other key. Otherwise each case written by
+    // its arm, the tag's key and the case's fields of the value bound to
+    // [`JS_ELEMENT_BINDING`]; a value whose tag names no case, which nothing the
+    // data model holds is, throws rather than crosses as nothing.
+    fn write_union(&self, held: &Held, _ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let as_held = arms.iter().all(|arm| {
+            arm.fields
+                .iter()
+                .flatten()
+                .all(|(id, value)| *value == format!("{JS_ELEMENT_BINDING}.{id}"))
+        });
+        if as_held {
+            return held.text.clone();
+        }
+        let key = js_string(tag);
+        let cases: String = arms
+            .iter()
+            .map(|arm| {
+                let name = js_string(&arm.variant);
+                let fields: String = arm
+                    .fields
+                    .iter()
+                    .flatten()
+                    .map(|(id, value)| format!(", {}: {value}", js_string(id)))
+                    .collect();
+                format!("case {name}: return ({{{key}: {name}{fields}}}); ")
+            })
+            .collect();
+        format!(
+            "(function ({JS_ELEMENT_BINDING}) {{ switch ({JS_ELEMENT_BINDING}[{key}]) {{ {cases}}} \
+             throw new Error({}); }})({})",
+            js_string(JS_UNION_IN_NO_CASE),
+            held.text
+        )
     }
+    // A member is read by its own name: the tag, or a field every case left
+    // declares, which the object holds under that name in each of them.
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(JS_HOLDS_NO_UNION.to_string())
+        if member == union.tag
+            || (!left.is_empty()
+                && left
+                    .iter()
+                    .all(|case| case_field(union, case, member).is_some()))
+        {
+            return Ok(member.to_string());
+        }
+        Err(format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field not every \
+             case left declares (docs/adr/0092, section 6.1)",
+            union.name,
+            cases_named(left)
+        ))
     }
     fn union_place_of(&self, read: &str) -> String {
         format!("{read}_place")
     }
+    // No field is written in place: a union, as a record, is written whole
+    // ([`Self::union_member_write`]).
     fn union_member_place(
         &self,
         _holder: &str,
-        _union: &ScopedUnion,
+        union: &ScopedUnion,
         _left: &[&ScopedCase],
-        _member: &str,
+        member: &str,
     ) -> Result<String, String> {
-        Err(JS_HOLDS_NO_UNION.to_string())
+        Err(format!(
+            "`{member}` of `union:{}` has no place of its own in the Interpreter's data model: \
+             the union is written whole",
+            union.name
+        ))
     }
+    // The holder written again with the field changed, by the library's `set`,
+    // as a record's field is (`JsTarget::field_assignment`): a copy of the
+    // machine's state taken earlier keeps what it saw. The tag is never written
+    // alone (docs/adr/0092, section 6.1 item 6), and a field is written only
+    // where every case left declares it.
+    fn union_member_write(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<UnionMemberWrite, String> {
+        if member == union.tag {
+            return Err(format!(
+                "the tag `{member}` of `union:{}` is never written alone",
+                union.name
+            ));
+        }
+        let field = js_string(&self.union_member(union, left, member)?);
+        let written = holder.to_string();
+        let next: UnionNext = Box::new(move |value: &str| {
+            format!("{RUNTIME_GLOBAL}.set({written}, {field}, {value})")
+        });
+        Ok(UnionMemberWrite::Holder {
+            holder: holder.to_string(),
+            next,
+        })
+    }
+}
+
+/// `text` as a single-quoted ECMAScript string: the one ECMAScript quoter
+/// ([`crate::filters::ecmascript_string_literal`]).
+fn js_string(text: &str) -> String {
+    crate::filters::ecmascript_string_literal(text)
 }
 
 #[cfg(test)]
@@ -326,10 +455,11 @@ mod tests {
 
     /// The Interpreter's row of the one table of what is lowered of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
-    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
-    /// (docs/adr/0092, section 7), named as its refusals are.
+    /// value sent (docs/adr/0086, sections 5 and 6), and a union held
+    /// (docs/adr/0092, section 7), named as its refusals are; no variable of a
+    /// record that holds a composition yet.
     #[test]
-    fn the_interpreter_row_lowers_every_composed_position_but_a_union() {
+    fn the_interpreter_row_lowers_every_composed_position_but_a_composed_record() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::ECMASCRIPT,
@@ -337,7 +467,7 @@ mod tests {
                 name: "ecmascript",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: false,
                 sends: true,
             }
@@ -494,17 +624,126 @@ mod tests {
         );
     }
 
-    /// An Interpreter walk names no union: the one decision of what is lowered
-    /// refuses one for the Interpreter first, and the walk that would declare
-    /// one says why there is none.
+    /// An Interpreter union is the wire's own object (docs/adr/0092, section 7,
+    /// the Interpreter row): declared as nothing, read by the descriptor of its
+    /// tag and of each case by the declared name of its variant, built as the
+    /// case's record with the tag's key set, written for a `<send>` as it is
+    /// where no field changes as it crosses, and copied as it is.
     #[test]
-    fn an_interpreter_walk_reads_no_union() {
+    fn an_interpreter_union_is_the_wire_object() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &JsComposed).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
+        let kinds = kinds();
+        let def = union_definition(SHAPE_KEY, &shapes, &kinds, &JsComposed).expect("declared");
+        assert_eq!(def.ty, "union:shape");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(JsComposed.union_def(&def), "");
+        assert_eq!(
+            reader(&ty("union:Shape"), None, &shapes, &kinds, &JsComposed, "v").expect("read"),
+            "{union: {tag: 'kind', cases: {'dot': null, 'circle': {record: {'radius': \
+             'uint16'}}, 'disc': {record: {'radius': 'uint16'}}}}}"
+        );
+        assert_eq!(
+            JsComposed.union_value("union:shape", "kind", "dot", None),
+            "({'kind': 'dot'})"
+        );
+        assert_eq!(
+            JsComposed.union_value("union:shape", "kind", "circle", Some("({'radius': 2})")),
+            "SceStatic.set(({'radius': 2}), 'kind', 'circle')"
+        );
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &JsComposed,
+                &Held::place("x.s")
+            )
+            .expect("write"),
+            "x.s"
+        );
+        assert_eq!(
+            copier(
+                &ty("union:Shape"),
+                None,
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &kinds,
+                &JsComposed,
+                &Held::place("x.s"),
+            ),
+            Ok("x.s".to_string())
+        );
+    }
+
+    /// A union whose case holds a field that changes as it crosses is written
+    /// case by case, the tag's key beside the case's fields, and a value in no
+    /// case throws rather than crosses as nothing.
+    #[test]
+    fn an_interpreter_union_is_written_case_by_case_where_a_field_changes() {
+        let at = Held::place("x.s");
+        let arms = [
+            UnionWriteArm {
+                case_ident: "dot".to_string(),
+                variant: "dot".to_string(),
+                fields: None,
+            },
+            UnionWriteArm {
+                case_ident: "stamp".to_string(),
+                variant: "stamp".to_string(),
+                fields: Some(vec![(
+                    "at".to_string(),
+                    "String(sceElement.at)".to_string(),
+                )]),
+            },
+        ];
+        assert_eq!(
+            JsComposed.write_union(&at, "union:u", "kind", &arms),
+            "(function (sceElement) { switch (sceElement['kind']) { case 'dot': return \
+             ({'kind': 'dot'}); case 'stamp': return ({'kind': 'stamp', 'at': \
+             String(sceElement.at)}); } throw new Error('a value of a union whose tag names \
+             none of its cases'); })(x.s)"
+        );
+    }
+
+    /// A member is read by its own name where every case left declares it, and
+    /// a field is written by writing the holder whole with the field changed;
+    /// the tag is never written alone, and a field another case left does not
+    /// declare is neither read nor written.
+    #[test]
+    fn an_interpreter_union_member_is_read_by_name_and_written_whole() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let round: Vec<&ScopedCase> = union
+            .cases
+            .iter()
+            .filter(|case| case.variant.name != "dot")
+            .collect();
+        assert_eq!(
+            JsComposed.union_member(union, &all, "kind"),
+            Ok("kind".to_string())
+        );
+        assert_eq!(
+            JsComposed.union_member(union, &round, "radius"),
+            Ok("radius".to_string())
+        );
+        assert!(JsComposed.union_member(union, &all, "radius").is_err());
+        match JsComposed.union_member_write("built", union, &round, "radius") {
+            Ok(UnionMemberWrite::Holder { holder, next }) => {
+                assert_eq!(holder, "built");
+                assert_eq!(next("7"), "SceStatic.set(built, 'radius', 7)");
+            }
+            Ok(UnionMemberWrite::Place(place)) => {
+                panic!("an Interpreter union has no place: {place}")
+            }
+            Err(why) => panic!("{why}"),
+        }
         assert!(JsComposed
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
+            .union_member_write("built", union, &all, "kind")
+            .is_err());
+        assert!(JsComposed
+            .union_member_write("built", union, &all, "radius")
+            .is_err());
     }
 }
