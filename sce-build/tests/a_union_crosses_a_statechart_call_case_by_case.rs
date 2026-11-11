@@ -403,7 +403,9 @@ fn a_union_that_may_be_absent_is_refused_as_an_argument_by_name() {
 /// of one builder per case, indexed by the declared name of the machine's tag,
 /// builds the unit's case of each by its class, the record from the leaving
 /// case's `value`, and one indexed by the declared name of the unit's tag
-/// builds the machine's back.
+/// builds the machine's back. A `dict` is read by its key, so each builder is
+/// held on its own: the entries stand in the union document's order of its
+/// cases (`UnionSlot::cases`), which no reading of the map depends on.
 #[test]
 fn python_maps_the_machines_union_into_the_units_and_back() {
     let code = machine(Language::Python, &|name| {
@@ -418,18 +420,28 @@ fn python_maps_the_machines_union_into_the_units_and_back() {
             "from . import shape_rect_minimal as sce_shape_rect_minimal\n",
             // The union handed over.
             "def _call_Extent__v(p0):\n",
+            &format!("\"dot\": lambda sce_case: {unit}Dot()"),
             &format!(
-                "(lambda sce_case: {{\"dot\": lambda sce_case: {unit}Dot(), \"circle\": lambda \
-                 sce_case: {unit}Circle(sce_shape_radius_minimal.ShapeRadiusMinimalPayload(\
-                 radius=sce_case.value.radius)), \"rect\": lambda sce_case: {unit}Rect(\
-                 sce_shape_rect_minimal.ShapeRectMinimalPayload(width=sce_case.value.width, \
-                 height=sce_case.value.height))}}[sce_case.kind.sce_name](sce_case))(p0)"
+                "\"circle\": lambda sce_case: {unit}Circle(\
+                 sce_shape_radius_minimal.ShapeRadiusMinimalPayload(radius=sce_case.value.radius))"
             ),
-            // The union taken back.
             &format!(
-                "    return (lambda sce_case: {{\"dot\": lambda sce_case: {MACHINE_UNION}Dot(), \
-                 \"circle\": lambda sce_case: {MACHINE_UNION}Circle(\
-                 StatechartShapeCrossingRadiusRecord(radius=sce_case.value.radius)), "
+                "\"rect\": lambda sce_case: {unit}Rect(\
+                 sce_shape_rect_minimal.ShapeRectMinimalPayload(width=sce_case.value.width, \
+                 height=sce_case.value.height))"
+            ),
+            "}[sce_case.kind.sce_name](sce_case))(p0)",
+            // The union taken back.
+            "    return (lambda sce_case: {",
+            &format!("\"dot\": lambda sce_case: {MACHINE_UNION}Dot()"),
+            &format!(
+                "\"circle\": lambda sce_case: {MACHINE_UNION}Circle(\
+                 StatechartShapeCrossingRadiusRecord(radius=sce_case.value.radius))"
+            ),
+            &format!(
+                "\"rect\": lambda sce_case: {MACHINE_UNION}Rect(\
+                 StatechartShapeCrossingRectRecord(width=sce_case.value.width, \
+                 height=sce_case.value.height))"
             ),
             "}[sce_case.kind.declared_name()](sce_case))(r)",
             // Each call made through its adapter, by the variable's name.
