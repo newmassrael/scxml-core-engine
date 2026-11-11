@@ -738,13 +738,14 @@ fn render_cpp(
         ValueType::Text { max } => crate::forge::composed_lowering::cpp_text_type(max.max),
         other => scalar_record_field_type(&l, other),
     })?;
-    // docs/adr/0081 step 4: a map whose plan the C++ printer lowers is printed
-    // from it, its entries presented through accessors and encoded over any
-    // source, a list of records within its bound as a view of the schema's
-    // payload; any other keeps the template's struct whole.
-    if let Some(printed) = crate::forge::generator::cpp_cbor_printed(m, imports) {
-        ctx.insert("cpp_source".into(), printed.into());
-    }
+    // docs/adr/0081 step 4: the map is printed from its plan, its entries
+    // presented through accessors and encoded over any source, a list of
+    // records within its bound as a view of the schema's payload; one whose
+    // plan the C++ printer does not lower was refused before it was rendered.
+    ctx.insert(
+        "cpp_source".into(),
+        crate::forge::generator::cpp_cbor_printed(m, imports).into(),
+    );
     // A value-initialized member holds its type's zero, which is the right
     // start for every entry but an enum's: a closed set need not declare the
     // carrier's zero, so an enum starts at its first declared variant — the

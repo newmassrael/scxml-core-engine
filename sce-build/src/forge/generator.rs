@@ -420,9 +420,19 @@ pub struct ImportContext {
     /// codec from its plan, so its value presents its elements through
     /// accessors and a parent reads them by call (`entry.kind()`), not as
     /// members. `false` on every other backend, for non-codec imports, and
-    /// for a codec the printer does not lower yet.
+    /// for a codec the C++ backend refuses ([`Self::cpp_unlowered`]).
     #[serde(skip)]
     pub cpp_printed: bool,
+
+    /// For a codec import, when the generation is for C++: what of the codec
+    /// the C++ printer does not lower (`forge::generator::cpp_codec_unlowered`,
+    /// the first form), read as the codec is generated, its own imports
+    /// resolved, so a codec it holds that is refused refuses it too. `None`
+    /// for a codec the C++ backend prints, on every other backend, and for
+    /// non-codec imports. The document that imports it is refused for it, as
+    /// the unit its member names is not written.
+    #[serde(skip)]
+    pub cpp_unlowered: Option<String>,
 
     /// docs/adr/0077 §7: `true` when the imported codec, or a codec it holds,
     /// is given a capacity by the deployment of a tree that holds capacities
@@ -1494,6 +1504,7 @@ fn resolve_single_import(
         codec_inline_holds: false,
         codec_lent_holds: false,
         cpp_printed: false,
+        cpp_unlowered: None,
         codec_may_exceed_capacity: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
@@ -2059,6 +2070,25 @@ pub fn generate_cpp_with_imports_and_externs(
     options: &crate::ForgeCompileOptions,
 ) -> Result<GeneratedOutput, ForgeError> {
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
+    // docs/adr/0081 step 4: a document that imports a codec the C++ backend
+    // refuses is refused for it, since the unit its member names is not
+    // written. A codec names such a codec in its own refusal, at the field or
+    // the arm that holds it (`cpp_source::unlowered`).
+    if !matches!(doc, ForgeDocument::Codec(_)) {
+        if let Some((alias, why)) = imports.iter().find_map(|import| {
+            import
+                .cpp_unlowered
+                .as_deref()
+                .map(|why| (import.alias.as_str(), why))
+        }) {
+            return Err(GenerateError::unsupported(format!(
+                "{} '{}': the codec `{alias}` it imports is one the C++ backend refuses ({why})",
+                doc.kind(),
+                doc.name()
+            ))
+            .into());
+        }
+    }
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
     load_forge_templates(
@@ -10605,8 +10635,9 @@ pub(crate) fn codec_inline_holds(m: &CodecModel, imports: &[ImportContext]) -> b
 }
 
 /// Whether the C++ backend prints `m` from its encode plan (docs/adr/0081 step
-/// 4, §6): its plan uses only the forms the C++ printer lowers. Such a value
-/// presents its elements through accessors and is made by its constructor.
+/// 4): its plan uses only the forms the C++ printer lowers. Such a value
+/// presents its elements through accessors and is made by its constructor;
+/// every other codec is refused ([`refuse_cpp_unlowered`]).
 pub(crate) fn cpp_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bool {
     cpp_source::unlowered(
         &crate::forge::encode_plan::CodecPlan::of(m, imports),
@@ -10615,9 +10646,9 @@ pub(crate) fn cpp_codec_printed(m: &CodecModel, imports: &[ImportContext]) -> bo
     .is_none()
 }
 
-/// Every form of `m`'s encode plan the C++ printer does not lower, each of
-/// which keeps `m` on the template's encode; empty where
-/// [`cpp_codec_printed`].
+/// Every form of `m`'s encode plan the C++ printer does not lower, as the
+/// clause a refusal names it by, the first of which the C++ backend refuses
+/// `m` for; empty where [`cpp_codec_printed`].
 pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> Vec<String> {
     cpp_source::unlowered_forms(
         &crate::forge::encode_plan::CodecPlan::of(m, imports),
@@ -10625,21 +10656,36 @@ pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
     )
 }
 
-/// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
-/// its namespace (docs/adr/0081 step 4), or `None` where the plan uses a form
-/// the C++ printer does not lower, which keeps the template's struct whole.
-pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> Option<String> {
-    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
-    if !cpp_source::cbor::unlowered_forms(&plan, imports).is_empty() {
-        return None;
+/// The refusal of the codec `m` for the form `form` of its plan the C++
+/// printer does not lower ([`cpp_codec_unlowered`]): the sentence `generate`
+/// answers the codec with, as `generate/unsupported-feature`.
+pub(crate) fn cpp_codec_refusal(m: &CodecModel, form: &str) -> String {
+    format!("codec '{}': {form}", m.name)
+}
+
+/// Refuses the codec `m`, whose plan is `plan`, by the first form of it the
+/// C++ printer does not lower (docs/adr/0081 step 4): the C++ backend writes
+/// every codec from its plan, and a codec it cannot print is not written
+/// another way. Asked of every encoding before the codec is rendered.
+fn refuse_cpp_unlowered(
+    m: &CodecModel,
+    plan: &crate::forge::encode_plan::CodecPlan<'_>,
+    imports: &[ImportContext],
+) -> Result<(), ForgeError> {
+    match cpp_source::unlowered(plan, imports) {
+        Some(form) => Err(GenerateError::unsupported(cpp_codec_refusal(m, &form)).into()),
+        None => Ok(()),
     }
+}
+
+/// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
+/// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
+/// a map whose plan uses a form the C++ printer does not lower
+/// ([`refuse_cpp_unlowered`]), so every map it is asked of is printed.
+pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> String {
+    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
     let l = LangCtx::new(crate::generator::Language::Cpp, imports);
-    Some(cpp_source::cbor::render(
-        &plan,
-        &l,
-        imports,
-        &filters::to_pascal_case(m.name.clone()),
-    ))
+    cpp_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()))
 }
 
 /// The text the C++ backend prints the content-line codec `m` as from its plan,
@@ -13190,6 +13236,15 @@ fn render_codec(
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
+        // docs/adr/0081 step 4: a C++ map is printed from its plan, or refused
+        // by the form the printer does not lower, as a positional codec is.
+        if matches!(lang, crate::generator::Language::Cpp) {
+            refuse_cpp_unlowered(
+                m,
+                &crate::forge::encode_plan::CodecPlan::of(m, imports),
+                imports,
+            )?;
+        }
         let mut text = crate::forge::cbor_codec::render(env, m, imports, lang)?;
         // ADR 0058: the map's entries are what a value says, whatever holds them.
         if matches!(lang, crate::generator::Language::Rust) {
@@ -13225,6 +13280,13 @@ fn render_codec(
     }
     // SCE_FORGE.md §4.6.4: so is a content-line codec, for the same reason.
     if m.encoding == CodecEncoding::ContentLine {
+        if matches!(lang, crate::generator::Language::Cpp) {
+            refuse_cpp_unlowered(
+                m,
+                &crate::forge::encode_plan::CodecPlan::of(m, imports),
+                imports,
+            )?;
+        }
         let mut text = crate::forge::content_line_codec::render(env, m, imports, lang)?;
         // ADR 0058: the component's properties are what a value says.
         if matches!(lang, crate::generator::Language::Rust) {
@@ -13339,26 +13401,26 @@ fn render_codec(
     let l = LangCtx::new(lang, imports);
     let type_key = l.codec_type_key();
 
-    // docs/adr/0081 step 4: a C++ codec whose plan uses only the forms the C++
-    // printer lowers is printed from the plan, its value presented through
-    // accessors and encoded over any source of it; any other keeps the
-    // template's encode whole (§6), so no codec has two.
+    // docs/adr/0081 step 4: a C++ codec is printed from its plan, its value
+    // presented through accessors and encoded over any source of it, or
+    // refused by the first form of the plan the C++ printer does not lower.
     // Whether that printed encode can refuse a value, which its plan's
     // totality says and the facades that return its bytes answer.
     let (cpp_printed, cpp_printed_refuses) = if matches!(lang, crate::generator::Language::Cpp) {
         let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
-        match (&plan, cpp_source::unlowered(&plan, imports)) {
-            (crate::forge::encode_plan::CodecPlan::Positional(p), None) => (
-                Some(cpp_source::render(
-                    p,
-                    &l,
-                    imports,
-                    &filters::to_pascal_case(m.name.clone()),
-                )),
-                !p.totality.is_total(),
-            ),
-            _ => (None, false),
-        }
+        refuse_cpp_unlowered(m, &plan, imports)?;
+        let crate::forge::encode_plan::CodecPlan::Positional(p) = &plan else {
+            unreachable!("a CBOR or a content-line codec is rendered by its own module above");
+        };
+        (
+            Some(cpp_source::render(
+                p,
+                &l,
+                imports,
+                &filters::to_pascal_case(m.name.clone()),
+            )),
+            !p.totality.is_total(),
+        )
     } else {
         (None, false)
     };
@@ -48723,6 +48785,7 @@ mod tests {
             codec_inline_holds: false,
             codec_lent_holds: false,
             cpp_printed: false,
+            cpp_unlowered: None,
             codec_may_exceed_capacity: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
@@ -49649,6 +49712,7 @@ mod tests {
                 codec_inline_holds: false,
                 codec_lent_holds: false,
                 cpp_printed: false,
+                cpp_unlowered: None,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
@@ -49718,6 +49782,7 @@ mod tests {
                 codec_inline_holds: false,
                 codec_lent_holds: false,
                 cpp_printed: false,
+                cpp_unlowered: None,
                 codec_may_exceed_capacity: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,

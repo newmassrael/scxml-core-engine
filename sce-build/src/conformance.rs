@@ -3892,8 +3892,8 @@ impl CasePrinter {
     /// encode does not print the plan, which runs its `cases` as before. A
     /// codec the C++ backend does not print (`cpp_printed`) is refused by
     /// name: a printer runs every case of every shape it prints
-    /// (docs/adr/0081 §5), and a codec it keeps on the template's encode has
-    /// no value a constructor makes from the case.
+    /// (docs/adr/0081 §5), and a codec the C++ backend refuses has no value a
+    /// constructor makes from the case.
     fn of(
         cpp_printed: bool,
         language: Language,
@@ -3905,9 +3905,9 @@ impl CasePrinter {
             Language::Cpp if cpp_printed => Some(CasePrinter::Cpp),
             Language::Cpp => {
                 return Err(format!(
-                    "{where_}: the C++ backend keeps this codec on the template's encode \
-                     (docs/adr/0081 §6), whose value no case is made into; a codec with \
-                     '{key}' is one it prints from its plan"
+                    "{where_}: the C++ backend refuses this codec (docs/adr/0081 step 4), \
+                     so no value of it is made from a case; a codec with '{key}' is one it \
+                     prints from its plan"
                 ))
             }
             // Their encodes do not print the plan: they run the `cases`.
@@ -5171,8 +5171,8 @@ mod tests {
 
     /// A byte case reaches only a harness whose printer prints the codec from
     /// its plan: Kotlin's is handed none, and the C++ one refuses by name a
-    /// codec its backend keeps on the template's encode, whose value no case
-    /// can be made into (docs/adr/0081 §5, §6).
+    /// codec its backend refuses, whose value no case can be made into
+    /// (docs/adr/0081 §5, step 4).
     #[test]
     fn a_source_case_reaches_no_harness_whose_printer_does_not_print_the_codec() {
         let manifest_path =
@@ -5214,9 +5214,9 @@ mod tests {
             &resource_dir,
             &reference_path,
         )
-        .expect_err("a codec the C++ backend keeps on the template's encode is refused");
+        .expect_err("a codec the C++ backend does not print is refused");
         assert!(
-            refused.contains("keeps this codec on the template's encode"),
+            refused.contains("the C++ backend refuses this codec"),
             "{refused}"
         );
     }

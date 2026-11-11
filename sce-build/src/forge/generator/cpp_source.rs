@@ -8,9 +8,10 @@
 //! codec, reading each element through a customization point (the member
 //! function where the type has one, otherwise a function its namespace
 //! declares) and checked by a C++17 trait (ADR 0059 §3). The printer reads the
-//! model only through the plan, and lowers the plan's forms one landing at a
-//! time (§6): [`unlowered`] names the first form a codec's plan uses that it
-//! does not print yet, and such a codec keeps the template's encode whole.
+//! model only through the plan, and every codec the C++ backend writes is
+//! printed from it: [`unlowered`] names the first form a codec's plan uses that
+//! it does not print, and the generator refuses such a codec by that name
+//! (`generate/unsupported-feature`), as it refuses each codec that holds it.
 
 use super::*;
 use crate::forge::bit_layout::BitSpan;
@@ -26,17 +27,20 @@ pub(super) mod cbor;
 pub(super) mod content_line;
 pub(super) mod source_case;
 
-/// The first form of `plan` the C++ printer does not print yet, or `None`
-/// where it prints the codec whole. `imports` are the codec's own, which say
-/// whether a codec it holds is printed too.
+/// The first form of `plan` the C++ printer does not print, as the clause the
+/// codec's refusal names it by, or `None` where it prints the codec whole.
+/// `imports` are the codec's own, which say whether a codec it holds is
+/// refused too ([`ImportContext::cpp_unlowered`]).
 pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Option<String> {
     unlowered_forms(plan, imports).into_iter().next()
 }
 
-/// Every form of `plan` the C++ printer does not print yet, in the order
-/// [`unlowered`] meets them; empty where it prints the codec whole. A codec
-/// moves at the landing that lowers the last of them, so a landing is chosen
-/// by the codecs whose every form it lowers.
+/// Every form of `plan` the C++ printer does not print, in the order
+/// [`unlowered`] meets them; empty where it prints the codec whole. They are a
+/// number a C++ value has no type for yet (a float or a bool), a list a group
+/// holds held to a law, whose start no arm of a C++ group holds, a chain of
+/// slots whose entries are held to an input, which the Rust printer does not
+/// write either, and a codec held that is refused for one of these.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
@@ -58,9 +62,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // arm's codec is handed is bound on its import ([`UNBOUND_ARM_OR_BODY`]).
     if m.variant.is_some() {
         for arm in &plan.arms {
-            if !held_printed(imports, arm.codec) {
+            if let Some(why) = held_refused(imports, arm.codec) {
                 forms.push(format!(
-                    "`{}`, an arm of a codec the printer does not print",
+                    "the arm `{}` is a codec the C++ backend refuses ({why})",
                     arm.codec
                 ));
             }
@@ -74,9 +78,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             // written as its carrier; the decode reads the carrier into the
             // type, refusing one a closed set does not declare.
             Value::Scalar(SceType::Enum(_)) => {}
-            Value::Scalar(_) => forms.push(format!(
-                "`{id}`, which is not an integer, a flag set or an enum"
-            )),
+            // A float or a bool, which no C++ value presents yet.
+            Value::Scalar(t) => forms.push(untyped_scalar(id, t)),
             // A byte string is presented within its bound (docs/adr/0077 §3),
             // and a text likewise, in UTF-8 bytes; one the protocol states no
             // bound of is held to `kUnbounded` (§7).
@@ -99,7 +102,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // bodies or lists, its gates flag inputs or one-bit flags of the codec's
     // own. The encode keeps a body or a list as the arms that hold it present
     // it, all as one type, and two lists of one count as one `Aligned` of the
-    // two (R5); one held to a law is not yet, nor is a float or a bool.
+    // two (R5). A list held to a law is not: the law's start is the flag the
+    // parent binds, which no arm of a C++ group holds, so the decode would have
+    // no start to hold the list it read to (docs/adr/0065 §6 R8). A float and
+    // a bool have no C++ type, as an element of one has not.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
         // of the kinds the arm says (R6b), optionally where a gate of its own
@@ -121,13 +127,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 Value::Body { .. } | Value::List { .. } => {
                     forms.extend(held_codec_forms(imports, id, &value));
                     if matches!(&value, Value::List { law, .. } if !law.is_none()) {
-                        forms.push(format!("`{id}`, a list a group holds held to a law"));
+                        forms.push(format!(
+                            "field '{id}': a list on one side of a gate, held to the law its \
+                             entries say their inputs by, has no C++ lowering"
+                        ));
                     }
                 }
-                Value::Scalar(_) => forms.push(format!(
-                    "`{id}`, a member of a group that is not an integer, an enum, a byte string, \
-                     a text, a body or a list"
-                )),
+                Value::Scalar(t) => forms.push(untyped_scalar(id, t)),
             }
         }
     }
@@ -162,7 +168,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // which a count of the writes finds first. Each refusal the totality
     // analysis names is one the encode writes (`assert_all_written`). A chain
     // walked as slots holds its named entry apart from the others, which a
-    // check of each entry would not read.
+    // check of each entry would not read; the Rust printer's check of each
+    // entry reads the chain as a list of entries too, so neither printer
+    // determines it.
     for check in &plan.input_checks {
         if let CheckSite::List { list } = &check.site {
             let slots = plan.program.iter().any(|write| {
@@ -171,7 +179,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             });
             if slots {
                 forms.push(format!(
-                    "`{}`, a chain of slots whose entries are held to an input",
+                    "field '{}': a chain of slots whose entries are held to an input has no \
+                     C++ lowering",
                     list.id
                 ));
             }
@@ -280,16 +289,35 @@ fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
     )
 }
 
-/// Whether the codec a value holds as `alias` is one the C++ printer prints,
-/// whose namespace has the encode over any source of it (`Wire`).
-fn held_printed(imports: &[ImportContext], alias: &str) -> bool {
-    imports
-        .iter()
-        .any(|import| import.alias == alias && import.cpp_printed)
+/// Why the C++ backend refuses the codec a value holds as `alias`, or `None`
+/// where it prints it, so its namespace has the encode over any source of it
+/// (`Wire`). The import says why ([`ImportContext::cpp_unlowered`]), read as
+/// the codec is generated, its own imports resolved; an import not read as C++
+/// generates it says nothing of the codec, and is refused for that.
+fn held_refused(imports: &[ImportContext], alias: &str) -> Option<String> {
+    match imports.iter().find(|import| import.alias == alias) {
+        Some(import) if import.cpp_printed => None,
+        Some(import) => Some(
+            import
+                .cpp_unlowered
+                .clone()
+                .unwrap_or_else(|| "it was not read as the C++ backend generates it".to_string()),
+        ),
+        None => Some("it is not imported".to_string()),
+    }
+}
+
+/// What a C++ value has no type for: `id`, a float or a bool of the type `ty`.
+fn untyped_scalar(id: &str, ty: &SceType) -> String {
+    format!(
+        "field '{id}': a `{}` field has no C++ type yet",
+        ty.as_attr()
+    )
 }
 
 /// What of `id`, a body or a list of entries the value presents alone or a
-/// group of it holds, the printer does not print yet.
+/// group of it holds, the printer does not print: one of a codec the C++
+/// backend refuses.
 ///
 /// A body is encoded over a source of its codec, which a codec the printer
 /// prints has; it is written whole, every input it takes handed by what the
@@ -305,9 +333,9 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
         Value::Body { codec } => {
             // Every input it is handed is bound on its import
             // ([`UNBOUND_ARM_OR_BODY`]).
-            if !held_printed(imports, codec) {
+            if let Some(why) = held_refused(imports, codec) {
                 forms.push(format!(
-                    "`{id}`, a body of a codec the printer does not print"
+                    "field '{id}': a body of `{codec}`, a codec the C++ backend refuses ({why})"
                 ));
             }
         }
@@ -315,9 +343,9 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
             // An input its entries are handed that the import binds nothing to
             // is one the chain supplies from the entry before
             // ([`UNBOUND_ARM_OR_BODY`]), which the walk hands each entry.
-            if !held_printed(imports, codec) {
+            if let Some(why) = held_refused(imports, codec) {
                 forms.push(format!(
-                    "`{id}`, a list of entries of a codec the printer does not print"
+                    "field '{id}': a list of `{codec}`, a codec the C++ backend refuses ({why})"
                 ));
             }
         }

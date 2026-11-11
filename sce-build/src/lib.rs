@@ -3234,8 +3234,8 @@ pub fn cpp_codec_printed_file(
 }
 
 /// Every form of the codec at `path` that the C++ printer does not lower
-/// (docs/adr/0081 step 4, §6), in the order the printer meets them, each of
-/// which keeps the codec on the template's encode; empty where it lowers every
+/// (docs/adr/0081 step 4), in the order the printer meets them, the first of
+/// which the C++ backend refuses the codec by; empty where it lowers every
 /// form and the codec is printed. Read as [`cpp_codec_printed_file`] reads it.
 /// `None` for a document that is not a codec.
 pub fn cpp_codec_unlowered_file(
@@ -7353,11 +7353,13 @@ fn validate_and_enrich_imports(
                 );
                 // docs/adr/0081 step 4: whether the C++ backend prints the
                 // import from its plan, so a parent reads its elements through
-                // accessors. Read as the import is generated, its own imports
-                // resolved.
+                // accessors, or refuses it, and for what, so the parent is
+                // refused for it too. Read as the import is generated, its own
+                // imports resolved, which carries a refusal of a codec it holds.
                 if matches!(language, generator::Language::Cpp) {
-                    ctx.cpp_printed =
-                        cpp_codec_printed_file(&source.path, &[], options)?.unwrap_or(false);
+                    let unlowered = cpp_codec_unlowered_file(&source.path, &[], options)?;
+                    ctx.cpp_printed = unlowered.as_ref().is_some_and(Vec::is_empty);
+                    ctx.cpp_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
                 }
                 // ADR 0058: whether the import has a source interface, which
                 // a parent that lists or embeds it is written through.

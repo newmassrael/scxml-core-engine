@@ -33,8 +33,9 @@ use crate::forge::model::CborEntry;
 use crate::forge::value_type::ValueType;
 use crate::generator::Language;
 
-/// Every form of the CBOR codec `plan` the C++ printer does not print yet:
-/// none, since every CBOR plan is printed. An encode that can refuse is
+/// Every form of the CBOR codec `plan` the C++ printer does not print, each a
+/// clause the codec's refusal names it by: none, since every CBOR plan is
+/// printed. An encode that can refuse is
 /// printed with its checks before the first byte (`refusal_checks`), and a
 /// record's byte string is held in the `std::vector` of the schema's unit and
 /// held to its bound by those checks. The caller asks every plan alike, as it
