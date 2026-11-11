@@ -135,7 +135,14 @@ fn a_python_algorithm_returns_a_union_it_was_given_or_built() {
             "grown = {SHAPE}Circle(sce_shape_radius_minimal.ShapeRadiusMinimalPayload(radius="
         ),
     );
-    holds(&text, "return grown\n");
+    // The body's last statement returns the local, and the module ends there.
+    // A render carries no line break after its last line: the file gains one
+    // where it is written (`generator::with_trailing_newline`), so the end is
+    // read past any.
+    assert!(
+        text.trim_end().ends_with("\n    return grown"),
+        "the unit ends in `return grown`:\n{text}"
+    );
     // Its last statement returns, so the body needs nothing after it.
     assert!(!text.contains("raise AssertionError"), "{text}");
 }
