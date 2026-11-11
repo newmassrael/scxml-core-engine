@@ -69,8 +69,9 @@ pub use rust::{RustCarrier, RustComposed};
 pub use swift::{SwiftCarrier, SwiftComposed};
 
 pub(crate) use c11::{
-    c11_pairs, c11_path_len, c11_shared_union_read, c11_union_member, C11_BOUND, C11_INTO,
-    C11_PATH, C11_PATH_CAP, C11_UNION_TAG, C11_WIRE,
+    c11_case_ident, c11_pairs, c11_path_len, c11_shared_union_read, c11_union_member,
+    c11_unit_union_read, C11_BOUND, C11_INTO, C11_PATH, C11_PATH_CAP, C11_UNION_CASES,
+    C11_UNION_TAG, C11_WIRE,
 };
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_case_ident, cpp_case_read, cpp_raise_checks,

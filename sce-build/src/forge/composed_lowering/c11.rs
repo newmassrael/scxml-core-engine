@@ -282,6 +282,70 @@ pub(crate) fn c11_union_member(
     }
 }
 
+/// The C11 read of `member` of the union value `holder`, a parameter or a local
+/// of an algorithm spelled as C11 names it, whose type is the struct the
+/// union's own unit declares (docs/adr/0092, section 7, the C11 row, and
+/// Landing order step 5), where the value may be in the cases `left`, as
+/// [`unit_union_member_of`] classifies it: the tag as its member, which the
+/// unit's struct holds whatever key the tag is written under; the field of the
+/// one case left, as that case's member of `as`; or the field the cases left
+/// each declare, read by a conditional over the tag whose last arm is the last
+/// case left, the narrowing having proved the value is in one of them. A
+/// parameter and a local are names, so reading the holder once per case reads
+/// one value. The tag's constants are the ones the tag's enum document
+/// declares, which the union's unit includes. A case's record is the payload
+/// struct its event schema's unit declares, whose fields are named as the
+/// schema writes them ([`crate::forge::generator::event_schema_field_ident`]).
+/// `Err` as [`unit_union_member_of`]'s.
+pub(crate) fn c11_unit_union_read(
+    holder: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    let field =
+        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::C11);
+    let read =
+        |case: &ScopedCase| format!("{holder}.{}.{field}", c11_case_read(&case.variant.name));
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{C11_UNION_TAG}"),
+        UnionMember::Case(case) => read(case),
+        UnionMember::Shared => {
+            let tag_enum = union
+                .scope
+                .enums
+                .get(&union.tag_enum)
+                .map(|held| held.name.as_str())
+                .ok_or_else(|| {
+                    format!(
+                        "`union:{}` has its tag of the enum `{}`, which its scope does not hold",
+                        union.name, union.tag_enum
+                    )
+                })?;
+            let mut cases = left.iter().rev();
+            let Some(last) = cases.next() else {
+                return Err(format!(
+                    "`{member}` of `union:{}` is read where no case is left",
+                    union.name
+                ));
+            };
+            let mut conditional = read(last);
+            for case in cases {
+                conditional = format!(
+                    "{holder}.{C11_UNION_TAG} == {} ? {} : {conditional}",
+                    crate::forge::enum_naming::variant_ident(
+                        crate::generator::Language::C11,
+                        tag_enum,
+                        &case.variant.name
+                    ),
+                    read(case)
+                );
+            }
+            format!("({conditional})")
+        }
+    })
+}
+
 /// The read of `member` of a C11 union where it may be in the cases `left`
 /// and is a field those cases share ([`UnionMember::Shared`]): one member path
 /// after the union's value per case left, each with the constant of the tag's

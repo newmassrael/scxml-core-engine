@@ -27,8 +27,9 @@
 //! interface, on Go the value struct through the package its import binds
 //! (`sce_union_shape.UnionShape`), on C++ the struct through its namespace
 //! (`SCE::Generated::UnionShape::UnionShape`), on Python the class through the
-//! module its import binds (`sce_union_shape.UnionShape`), on Swift the enum
-//! bare in the module. Every other backend refuses it by name.
+//! module its import binds (`sce_union_shape.UnionShape`), on C11 the typedef
+//! its header declares (`union_shape_t`), on Swift the enum bare in the module.
+//! Every other backend refuses it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -193,7 +194,7 @@ pub(crate) fn unit_type(
                 )
             }
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, max } => {
                 let item = inner(elem, c11)?;
                 c11.declare(
@@ -226,10 +227,15 @@ fn c11_mangle(ty: &ValueType, names: &dyn UnitNames) -> String {
                 .unwrap_or_else(|| alias.to_string())
                 .trim_end_matches("_t")
         ),
-        // By its alias, as a record is by its type. [`unit_type`] refuses a
-        // union before it names a composition that holds one, so no unit
-        // declares this name yet (docs/adr/0092, section 7).
-        ValueType::Union { alias } => format!("union_{alias}"),
+        // By the type its unit declares, as a record is, so one union is one
+        // name whatever alias a unit imports it under (docs/adr/0092, section 7).
+        ValueType::Union { alias } => format!(
+            "union_{}",
+            names
+                .union(alias)
+                .unwrap_or_else(|| alias.to_string())
+                .trim_end_matches("_t")
+        ),
         ValueType::List { elem, max } => format!("list_{}_{}", max.max, c11_mangle(elem, names)),
     }
 }
@@ -387,6 +393,26 @@ mod tests {
         assert_eq!(
             spelled(Language::Python, "list<optional<union:Shape>>[3]"),
             "list[Optional[UnionShape]]"
+        );
+        // C11 names the typedef its unit declares, and a composition over it by
+        // that type, inside the struct of each composition.
+        assert_eq!(spelled(Language::C11, "union:Shape"), "UnionShape");
+        let mut c11 = C11Declarations::default();
+        assert_eq!(
+            unit_type(
+                Language::C11,
+                &read("list<optional<union:Shape>>[3]"),
+                &Names,
+                &mut c11
+            ),
+            Ok("sce_list_3_opt_union_UnionShape_t".to_string())
+        );
+        assert!(
+            c11.defs
+                .iter()
+                .any(|def| def.contains("    bool present;\n    UnionShape value;\n")),
+            "{:#?}",
+            c11.defs
         );
         for lang in Language::ALL.iter().copied() {
             if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {

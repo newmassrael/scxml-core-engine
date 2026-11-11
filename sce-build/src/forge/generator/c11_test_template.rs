@@ -47,8 +47,8 @@
 //! ([`super::test_template_walk::canonical_value`]); [`C11Canonical`] spells it
 //! as the statements that write it through the runtime's `sce_jcs_t`.
 //!
-//! What C11 refuses by name: a union, which it lowers nowhere
-//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), by the walk before
+//! What C11 refuses by name: a union, which its test profile matches nowhere
+//! yet ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), by the walk before
 //! anything is spelled; and a reference, inside a list, to a template of an
 //! optional type, whose value the list holds in its own optional type rather
 //! than the one the referenced template takes.
@@ -448,9 +448,9 @@ impl JoinSpelling for CSpelling {
         }
     }
 
-    /// Never asked: C11 lowers no union, and the walk refuses a `union-match`
-    /// on a backend that lowers none before it builds the test of a case
-    /// (`TemplateWalk::union_case`).
+    /// Never asked: C11's test profile matches no union yet, and the walk
+    /// refuses a `union-match` on such a backend before it builds the test of
+    /// a case (`TemplateWalk::union_case`).
     fn case_test(
         &self,
         _at: &CAt,
@@ -728,7 +728,8 @@ struct C11CanonicalAt {
 /// and an integer of any width through the runtime's macro, since C has no
 /// overload by the width and signedness of a field. A byte string, of one entry or inside a
 /// list, holds its octets in `data` and their count in `len`, which its form
-/// reads alike. C11 lowers no union, so the walk's refusal of one stands.
+/// reads alike. C11's test profile matches no union yet, so the walk's refusal
+/// of one stands.
 struct C11Canonical;
 
 impl CanonicalSpelling for C11Canonical {

@@ -1307,6 +1307,17 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
+                    // C reads a field several cases share by a test of the tag
+                    // over them, the holder a name read once per case.
+                    ExprTarget::C => crate::forge::composed_lowering::c11_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::C11,
+                        ),
+                        union,
+                        &left,
+                        property,
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"

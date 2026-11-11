@@ -15,9 +15,9 @@
 //! is compared by its two parts; a value is built as the initializer of its
 //! variable. A byte string is held in the buffer of its bound beside its
 //! length, of one entry as inside a list, so it is compared, counted, built and
-//! written in the test log by its length and its octets. C11 lowers no union
-//! (docs/adr/0092), so a template whose type reaches one is refused as C++
-//! refuses it.
+//! written in the test log by its length and its octets. C11's test profile
+//! matches no union yet (docs/adr/0092, `TEST_PROFILE_UNION_BACKENDS`), so a
+//! template whose type reaches one is refused as C++ refuses it.
 //!
 //! What the generated units do when they run is held by
 //! `backends/c/tests/integration/test_a_test_template_matches_its_values.c`,
@@ -361,8 +361,8 @@ fn refused(path: &Path) -> String {
 }
 
 /// A template whose type reaches a union, in itself or below a field, is
-/// refused on C11 by the union's own refusal, which a schema unit's union field
-/// is refused by: C11 lowers no union.
+/// refused on C11 by the union's own refusal: C11 generates a union's unit,
+/// and its test profile matches no union yet.
 #[test]
 fn a_template_that_reaches_a_union_is_refused_on_c11() {
     for (path, alias) in [

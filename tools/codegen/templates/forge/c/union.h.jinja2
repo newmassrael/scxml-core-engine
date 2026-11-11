@@ -1,0 +1,86 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="union") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+{# docs/adr/0092, section 7, the C11 row, and its items 1 and 3. The tag's enum
+   and each case's record through the header of its document, and only the
+   documents the type names. `memset` zeroes a value before its case is written,
+   and `abort` is what an algorithm over the union ends in where every case of
+   it returned (docs/adr/0092, section 6.1 item 4), so a unit that names the
+   union has both. #}
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+{% for line in c_type_includes %}
+{{ line }}
+{% endfor %}
+
+/* The revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own). */
+#define {{ c_const_prefix }}_REVISION UINT32_C({{ schema_revision }})
+/* The most bytes a value's JSON text takes: its largest case, every list full, every text at its bound,
+ * every number at its longest spelling. */
+#define {{ c_const_prefix }}_DATA_MAX_LEN UINT64_C({{ data_max_len }})
+/* The id of the union's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of `_JSON_SCHEMA`. */
+#define {{ c_const_prefix }}_SCHEMA_ID "{{ schema_id }}"
+{% if payload_grammar %}
+/* A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `{{ tag }}` beside the fields
+ * of its record, every bound as this build resolved it. Held as its characters, since no string literal
+ * of C holds a text of any length. */
+static const char {{ c_const_prefix }}_JSON_SCHEMA[] = {{ json_schema_chars }};
+{% else %}
+/* No _JSON_SCHEMA: {{ payload_grammar_absent }}. */
+{% endif %}
+
+/* A value of `{{ union_name }}`: exactly one case, told apart by its tag `{{ tag }}`, a value of
+ * `{{ kind_type }}`, the record of its case held in `{{ cases_member }}`; an empty case holds none. Its
+ * storage is the tag and the largest case's record. A value is built only whole, by the constructor of
+ * its case. */
+typedef struct {
+    {{ kind_type }} {{ tag_member }};
+    union {
+{% for c in cases if c.record %}
+        {{ c.record }} {{ c.ident }};
+{% endfor %}
+    } {{ cases_member }};
+} {{ union_type }};
+
+/* The name the tag's document declares for the case `value` is in, which its text writes under
+ * `{{ tag }}`; NULL for a tag that names no case, which no constructor builds. */
+static inline const char *{{ union_stem }}_variant(const {{ union_type }} *value) {
+{% for c in cases %}
+    if (value->{{ tag_member }} == {{ c.kind }}) {
+        return "{{ c.variant | escape_c }}";
+    }
+{% endfor %}
+    return NULL;
+}
+{% for c in cases %}
+
+{% if c.record %}
+/* The case `{{ c.variant }}`, holding `record`; the rest of the value zeroed. */
+static inline {{ union_type }} {{ union_stem }}_case_{{ c.ident }}({{ c.record }} record) {
+{% else %}
+/* The case `{{ c.variant }}`, its tag alone; the rest of the value zeroed. */
+static inline {{ union_type }} {{ union_stem }}_case_{{ c.ident }}(void) {
+{% endif %}
+    {{ union_type }} value;
+    memset(&value, 0, sizeof(value));
+    value.{{ tag_member }} = {{ c.kind }};
+{% if c.record %}
+    value.{{ cases_member }}.{{ c.ident }} = record;
+{% endif %}
+    return value;
+}
+{% endfor %}
+
+#endif /* {{ guard }} */

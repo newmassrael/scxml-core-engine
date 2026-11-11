@@ -294,10 +294,6 @@ enum Why {
 /// Every capability a backend lacks, with the reason. The one hand-written
 /// table in this file, and checked both ways against the derived rows.
 const ACCEPTED: &[(Language, &str, Why)] = &[
-    // The union (docs/adr/0092, section 7, `codegen_matrix::UNION_BACKENDS`):
-    // its sum type lands one backend at a time, Kotlin, Rust, Swift, Go, C++
-    // and Python so far.
-    (Language::C11, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
     (
         Language::C11,
@@ -467,12 +463,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // The gates, which run what an emitter writes.
 ];
-
-/// A union's sum type is generated one backend at a time (docs/adr/0092, landing order).
-const UNION_NOT_YET: &str =
-    "no union template and union field spelling for this backend yet: its dispatch refuses a \
-     union document by name (`union_check::document_unlowered`) and its schema unit a union \
-     field (`schema_unit_type::unit_type`); Rust and Kotlin lower both";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =

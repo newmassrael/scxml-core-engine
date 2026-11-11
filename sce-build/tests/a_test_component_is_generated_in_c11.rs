@@ -26,8 +26,8 @@
 //! read from the run as a saved value of its type is read back, between the
 //! construction of the machine and the entry into its initial configuration.
 //! What C11 refuses is held here too: a component that declares
-//! `<sce:action>`, and one whose template reaches a union, which C11 does not
-//! lower.
+//! `<sce:action>`, and one whose template reaches a union, which C11's test
+//! profile does not match yet.
 //!
 //! What the generated components do when they run is held by
 //! `backends/c/tests/integration/test_a_test_component_runs_through_its_doors.c`,
