@@ -400,7 +400,10 @@ class ATestSuiteRunsThroughItsRunnerTest {
         }
         val run = program("default", emptyList())
         assertEquals(0, run.status, "${run.err}")
-        assertEquals(listOf("answers_the_job pass"), run.out)
+        assertEquals(listOf("answers_the_job pass"), run.out, "the standard output is the contract's lines alone")
+        // The standard error may hold diagnostics, whatever they say: none of
+        // its lines is one of the standard output's.
+        assertTrue(run.err.filter { it.isNotEmpty() }.none { it in run.out }, "${run.err}")
         assertEquals(answersTheJobLog(), File(scratch, "default-logs/answers_the_job.log.json").readText())
         val refused = program("undeclared", listOf("--module-parameter", "limit=1"))
         assertEquals(2, refused.status)

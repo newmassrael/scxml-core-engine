@@ -53,6 +53,10 @@
 #include <utility>
 #include <vector>
 
+#include "common/ILoggerBackend.h"
+#include "common/LogSink.h"
+#include "common/Logger.h"
+#include "common/SourceLocation.h"
 #include "saved/SavedJson.h"
 #include "saved/SavedValues.h"
 #include "test/FromCanonical.h"
@@ -250,12 +254,63 @@ private:
     std::FILE *file_;
 };
 
+/// The name a diagnostic line on the standard error gives @p level.
+inline const char *levelName(LogLevel level) noexcept {
+    switch (level) {
+    case LogLevel::Trace:
+        return "trace";
+    case LogLevel::Debug:
+        return "debug";
+    case LogLevel::Info:
+        return "info";
+    case LogLevel::Warn:
+        return "warning";
+    case LogLevel::Error:
+        return "error";
+    case LogLevel::Critical:
+        return "critical";
+    case LogLevel::Off:
+        break;
+    }
+    return "off";
+}
+
+/// Whether the runner program keeps a diagnostic at @p level: where the
+/// configured SCE::Logger keeps one, so the level is chosen as it is for any
+/// SCE program (`SPDLOG_LEVEL`, Logger::setLevel), and only the stream changes.
+inline bool standardErrorWanted(LogLevel level) noexcept {
+    try {
+        return Logger::shouldLog(level);
+    } catch (...) {
+        return false;
+    }
+}
+
+/// A diagnostic, as one line on the standard error, written whole so that two
+/// threads' lines do not interleave inside one.
+inline void standardErrorEmit(LogLevel level, std::string message, const SCE::source_location &) {
+    const std::string line = std::string("[") + levelName(level) + "] " + message + "\n";
+    std::fwrite(line.data(), 1, line.size(), stderr);
+}
+
+/// The runner program's sink of every SCE_LOG_* line (docs/adr/0060): the
+/// standard error, since the standard output is the contract's
+/// (docs/SCE_TTCN3_LANE.md §4), the `<test case> <verdict>` lines and nothing
+/// else, which a lane parses.
+inline constexpr LogSink STANDARD_ERROR_SINK{&standardErrorWanted, &standardErrorEmit};
+
 }  // namespace detail
 
 /// The runner program of @p suite, its module parameters read by
 /// @p parameter, on the command line of a program's `main`: main() above,
 /// which prints on the standard output and the standard error.
+///
+/// The program is what chooses where SCE's diagnostics go (docs/adr/0060), and
+/// it chooses the standard error before any machine runs: SCE::Logger's own
+/// sink writes them to the standard output, which here is the contract's
+/// alone. A host that calls the stream overload above chooses for itself.
 inline int main(const Suite &suite, ParameterReader parameter, int argc, char **argv) {
+    installLogSink(&detail::STANDARD_ERROR_SINK);
     std::vector<std::string> args;
     for (int at = 1; at < argc; ++at) {
         args.emplace_back(argv[at]);

@@ -122,7 +122,15 @@ TEST(ARunnerProgram, WritesTheLogOfEachTrace) {
     const std::filesystem::path logs = scratch("default") / "logs";
     const ProgramRun first = runProgram(logs, streams, {});
     ASSERT_EQ(first.status, 0) << first.err;
-    EXPECT_EQ(first.out, "answers_the_job pass\n");
+    EXPECT_EQ(first.out, "answers_the_job pass\n") << "the standard output is the contract's lines alone";
+    // The standard error may hold the engine's diagnostics, whatever they say:
+    // none of its lines is one of the standard output's.
+    std::istringstream diagnostics(first.err);
+    for (std::string line; std::getline(diagnostics, line);) {
+        if (!line.empty()) {
+            EXPECT_EQ(first.out.find(line + "\n"), std::string::npos) << line;
+        }
+    }
     EXPECT_EQ(fileText(logs / "answers_the_job.log.json"), sharedLog());
 
     const std::filesystem::path overridden = scratch("overridden") / "logs";

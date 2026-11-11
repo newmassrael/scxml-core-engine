@@ -171,8 +171,9 @@ Every backend's runner takes one command line, so the downstream's lane calls th
 | `--module-parameter <id>=<value>` | a module parameter's value in place of its default, a literal of its type as the `value` of a `<sce:module-parameter>` writes one (TP §11.4, §11.8); repeated, one per parameter |
 
 The runner runs the test cases the world selects, in the suite's order, and prints `<test case> <verdict>` on a line
-for each. A test case whose trace is missing or refused (§10.2) ends with `error` (P13) and its log is written, the
-reason on the standard error. The exit status is 0 when every selected test case ran and its log was written, whatever
+for each, and nothing else on the standard output; every diagnostic of the run, the engine's log lines among them,
+goes to the standard error. A test case whose trace is missing or refused (§10.2) ends with `error` (P13) and its log
+is written, the reason on the standard error. The exit status is 0 when every selected test case ran and its log was written, whatever
 its verdict, since the verdict is the log's; it is 2 when the command line is not this one, a module parameter's value
 is refused (a parameter the suite does not declare, or a literal that is no value of its type), or a log cannot be
 written. The runner is generated per suite as the `main` of the suite's unit, which a crate makes a program with a

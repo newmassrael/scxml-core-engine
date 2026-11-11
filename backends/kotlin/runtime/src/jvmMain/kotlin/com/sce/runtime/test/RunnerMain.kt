@@ -48,17 +48,29 @@ object JvmRunnerFiles : RunnerFiles {
  * the command line [args] a JVM `main` is given (docs/SCE_TTCN3_LANE.md §4):
  * [runRunner] over [JvmRunnerFiles], the standard output and the standard
  * error, after which the process exits with the status it returns.
+ *
+ * The standard output is the contract's, the `<test case> <verdict>` lines and
+ * nothing else, which a lane parses. So the program keeps it for those lines
+ * and hands the JVM's `System.out` to the standard error while the cases run:
+ * a machine's `<log>`, which a generated Kotlin statechart writes with
+ * `println`, and any other diagnostic of the run, goes there.
  */
 fun runnerMain(suite: Suite, parameter: ParameterReader, args: Array<String>): Nothing {
-    val status = runRunner(
-        suite = suite,
-        parameter = parameter,
-        args = args.toList(),
-        files = JvmRunnerFiles,
-        out = { line -> println(line) },
-        err = { line -> System.err.println(line) },
-    )
-    System.out.flush()
+    val contract = System.out
+    System.setOut(System.err)
+    val status = try {
+        runRunner(
+            suite = suite,
+            parameter = parameter,
+            args = args.toList(),
+            files = JvmRunnerFiles,
+            out = { line -> contract.println(line) },
+            err = { line -> System.err.println(line) },
+        )
+    } finally {
+        System.setOut(contract)
+    }
+    contract.flush()
     System.err.flush()
     exitProcess(status)
 }
