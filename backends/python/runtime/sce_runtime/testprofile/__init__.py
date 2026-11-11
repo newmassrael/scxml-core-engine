@@ -38,6 +38,18 @@ template over a record writes (``<template>.canonical``), with the name of its
 record type (``<template>.TYPE``): a send carries the three together as one
 ``TestValue`` (``message_value``).
 
+The recorded input trace
+------------------------
+A test case's inputs from the system under test can be a recorded trace
+(docs/SCE_TTCN3_LANE.md §10), ``schemas/sce-test-trace.v1.schema.json``: a
+``Trace`` read by ``Trace.parse``, played by a ``TraceAdapter`` behind the system
+adapter's interface, each value read back from the canonical form by
+``from_canonical``, the inverse of ``canonical``, through the ``input`` the unit
+of a test configuration generates (``TestCase.inputs``). ``run_suite_with_traces``
+runs a suite against the trace of each test case, and ``runner_main`` is the
+runner program of a generated suite (§4), whose ``main`` the suite's unit
+declares.
+
 Ownership
 ---------
 The state of a run is shared between the run and a context per component, as
@@ -58,7 +70,7 @@ naming the component, as the Rust runtime panics. An exception that leaves a
 step part way goes out of the run, as a panic does in Rust.
 """
 
-from . import canonical
+from . import canonical, from_canonical
 from .module_parameters import ModuleParameters, ModuleParameterValue
 from .port import Duration, Instant, Message, Port, TestValue, message_value
 from .run import (
@@ -78,6 +90,21 @@ from .run import (
     TestCaseRun,
     receives,
 )
+from .runner import (
+    RUNNER_USAGE,
+    ParameterReader,
+    RunnerOptions,
+    RunnerUsageRefusal,
+    bool_parameter,
+    bytes_parameter,
+    enum_parameter,
+    integer_parameter,
+    read_trace,
+    run_runner,
+    runner_main,
+    text_parameter,
+    undeclared_parameter,
+)
 from .suite import (
     CaseResult,
     Execute,
@@ -89,15 +116,30 @@ from .suite import (
     enabled,
     features_of,
     run_suite,
+    run_suite_with_traces,
 )
 from .testlog import TEST_LOG_SCHEMA, TestLogEvent, TestLogRecord
 from .text_length import text_length
 from .timer import Timer, TimerStatus
+from .trace import (
+    TEST_TRACE_SCHEMA,
+    TEST_TRACE_SCHEMA_STATUS,
+    InputReader,
+    SystemOutput,
+    Trace,
+    TraceAdapter,
+    TraceInput,
+    no_inputs,
+)
+from .trace_refusal import TraceRefusal
 from .verdict import Verdict, worse
 
 __all__ = [
     "MTC_NAME",
+    "RUNNER_USAGE",
     "TEST_LOG_SCHEMA",
+    "TEST_TRACE_SCHEMA",
+    "TEST_TRACE_SCHEMA_STATUS",
     "CaseResult",
     "ComponentContext",
     "ComponentMachine",
@@ -107,6 +149,7 @@ __all__ = [
     "Endpoint",
     "Execute",
     "Features",
+    "InputReader",
     "Instant",
     "LogKind",
     "LogRecord",
@@ -116,11 +159,15 @@ __all__ = [
     "ModuleParameterValue",
     "ModuleParameters",
     "OverrideRefusal",
+    "ParameterReader",
     "Port",
+    "RunnerOptions",
+    "RunnerUsageRefusal",
     "Selection",
     "Suite",
     "SystemAdapter",
     "SystemInput",
+    "SystemOutput",
     "TestCase",
     "TestCaseResult",
     "TestCaseRun",
@@ -129,13 +176,29 @@ __all__ = [
     "TestValue",
     "Timer",
     "TimerStatus",
+    "Trace",
+    "TraceAdapter",
+    "TraceInput",
+    "TraceRefusal",
     "Verdict",
+    "bool_parameter",
+    "bytes_parameter",
     "canonical",
     "enabled",
+    "enum_parameter",
     "features_of",
+    "from_canonical",
+    "integer_parameter",
     "message_value",
+    "no_inputs",
+    "read_trace",
     "receives",
+    "run_runner",
     "run_suite",
+    "run_suite_with_traces",
+    "runner_main",
     "text_length",
+    "text_parameter",
+    "undeclared_parameter",
     "worse",
 ]

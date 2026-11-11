@@ -2336,7 +2336,11 @@ GATES: dict[str, dict] = {
                   # The test log every runtime writes of the generated suite,
                   # which `test_a_test_suite_runs_through_its_runner.py` reads
                   # at run time.
-                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**"],
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
+                  # The trace's wire schema, whose status
+                  # `test_a_recorded_trace_is_read_and_replayed.py` holds the
+                  # runtime's to, read at run time.
+                  "schemas/sce-test-trace.v1.schema.json"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",

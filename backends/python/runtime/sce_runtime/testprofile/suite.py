@@ -10,17 +10,20 @@ The tables are generated from the ``test-case`` and ``test-suite`` documents (a
 case's configuration from its ``test-configuration``). They are data: what a
 case does is its components' machines, which the run drives (``TestCaseRun``).
 The runner is a library function, with no ``main``: a generated or hand-written
-test calls it with the system adapters that play the SUT.
+test calls it with the system adapters that play the SUT (``run_suite``), or
+with the recorded input trace of each test case (``run_suite_with_traces``),
+which the program of a generated suite does (``runner.run_runner``).
 
-Cross-language siblings: ``sce_rust_runtime::test::run_suite`` (Rust),
-``SCE::Test::runSuite`` (C++), ``com.sce.runtime.test.runSuite`` (Kotlin),
-``testprofile.RunSuite`` (Go).
+Cross-language siblings: ``sce_rust_runtime::test::run_suite`` and
+``run_suite_with_traces`` (Rust), ``SCE::Test::runSuite`` and
+``runSuiteWithTraces`` (C++), ``com.sce.runtime.test.runSuite`` and
+``runSuiteWithTraces`` (Kotlin), ``testprofile.RunSuite`` (Go).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import AbstractSet, Callable, List, Optional
+from typing import AbstractSet, Callable, List, Optional, Union
 
 from .module_parameters import ModuleParameters, copy_of
 from .port import Duration
@@ -35,6 +38,8 @@ from .run import (
     TestCaseRun,
 )
 from .testlog import TestCaseEnded, TestCaseStarted, TestLogRecord
+from .trace import InputReader, Trace, TraceAdapter, no_inputs
+from .trace_refusal import TraceRefusal
 from .verdict import Verdict
 
 #: The features a world of a suite's feature model enables (ADR 0057 §2): a
@@ -73,6 +78,12 @@ class TestCase:
     machines: MachineFactory
     #: The ids of the module parameters its components read.
     module_parameters: List[str] = field(default_factory=list)
+    #: The reader of its configuration's inputs, which a trace replayed for it
+    #: is read with (``run_suite_with_traces``): which records each system port
+    #: takes, and each record's value from its canonical form. A generated test
+    #: case gives its configuration's ``input``; the default is the reader of a
+    #: configuration with no system port, which refuses every input.
+    inputs: InputReader = no_inputs
 
 
 #: A selection (§11.8): whether a world of the suite's features runs a test
@@ -169,6 +180,73 @@ def run_suite(
     Raises ``OverrideRefusal``, and runs no case, when ``overrides`` gives a
     module parameter the suite does not declare.
     """
+
+    def adapter_of(test_case: TestCase) -> _Adapted:
+        adapter = adapters(test_case.name)
+        if adapter is None:
+            return _NoAdapter("no system adapter is given for the test case")
+        return adapter
+
+    return _run_selected(suite, world, overrides, adapter_of)
+
+
+def run_suite_with_traces(
+    suite: Suite,
+    world: Features,
+    traces: Callable[[str], Trace],
+    overrides: Optional[ModuleParameters] = None,
+) -> List[CaseResult]:
+    """Run the test cases of ``suite`` that ``world`` selects, each against its
+    recorded input trace (docs/SCE_TTCN3_LANE.md §10.5): ``run_suite``, with the
+    adapter of each test case a ``TraceAdapter`` that plays the trace ``traces``
+    gives for its name, read by the test case's configuration
+    (``TestCase.inputs``). ``traces`` raises a ``TraceRefusal`` for a trace it
+    does not have or does not read.
+
+    A test case whose trace is not given, is of another suite or test case, or
+    does not fit its configuration (a port that is no system port of it, a type
+    its port does not take, a value that does not belong to its type) ends with
+    ``error`` (P13) before any component is created, its log line naming why. So
+    does one whose components read a module parameter the run has no value for,
+    as under ``run_suite``, before its trace is asked for.
+
+    Raises ``OverrideRefusal``, and runs no case, when ``overrides`` gives a
+    module parameter the suite does not declare.
+    """
+
+    def adapter_of(test_case: TestCase) -> _Adapted:
+        try:
+            trace = traces(test_case.name)
+            if trace.suite != suite.name or trace.test_case != test_case.name:
+                return _NoAdapter(f"the trace is of the test case '{trace.test_case}' of the suite '{trace.suite}'")
+            return TraceAdapter.replaying(trace, test_case.inputs)
+        except TraceRefusal as refused:
+            return _NoAdapter(f"the trace is refused: {refused.reason}")
+
+    return _run_selected(suite, world, overrides, adapter_of)
+
+
+@dataclass(frozen=True)
+class _NoAdapter:
+    """Why a test case is given no adapter, which it ends with ``error`` for
+    (P13)."""
+
+    why: str
+
+
+#: The adapter a test case runs against, or why it is given none.
+_Adapted = Union[SystemAdapter, _NoAdapter]
+
+
+def _run_selected(
+    suite: Suite,
+    world: Features,
+    overrides: Optional[ModuleParameters],
+    adapter_of: Callable[[TestCase], _Adapted],
+) -> List[CaseResult]:
+    """The runner of ``run_suite`` and ``run_suite_with_traces``: the test cases
+    ``world`` selects, each against the adapter ``adapter_of`` builds for it, or
+    ended with ``error`` for the reason it gives where it builds none."""
     parameters = copy_of(suite.module_parameters)
     given = copy_of(overrides)
     for parameter in given.ids():
@@ -192,9 +270,9 @@ def run_suite(
                 )
             )
             continue
-        adapter = adapters(test_case.name)
-        if adapter is None:
-            results.append(_refused(test_case.name, "no system adapter is given for the test case"))
+        adapter = adapter_of(test_case)
+        if isinstance(adapter, _NoAdapter):
+            results.append(_refused(test_case.name, adapter.why))
             continue
         run = TestCaseRun(test_case.configuration, test_case.machines, adapter, execute.guard, parameters)
         results.append(CaseResult(test_case=test_case.name, result=run.run()))
