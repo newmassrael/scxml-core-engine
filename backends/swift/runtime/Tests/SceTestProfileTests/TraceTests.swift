@@ -282,6 +282,14 @@ struct FromCanonicalTests {
         #expect(holds(open("1"), "written by its name"))
         #expect(holds(open("300"), "past the range"))
         #expect(holds(open("hexagon"), "names no variant of its enum, and is no number"))
+        // A name is compared by its bytes: the decomposed spelling of a declared name, which Swift's `==`
+        // on a text holds equal to it, names no variant, as it names none on every other runtime.
+        let accented: [(String, UInt8)] = [("caf\u{E9}", 3)]
+        #expect(try FromCanonical.enumerated(.text("caf\u{E9}"), accented, "c") == 3)
+        let decomposed = refusal { () throws(TraceRefusal) -> UInt8 in
+            try FromCanonical.enumerated(.text("cafe\u{301}"), accented, "c")
+        }
+        #expect(decomposed == "c: 'cafe\u{301}' names no variant of its enum")
     }
 
     /// A record holds only the fields it declares, each once; a field whose type is not optional is
