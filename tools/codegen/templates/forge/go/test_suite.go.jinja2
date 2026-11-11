@@ -56,3 +56,32 @@ func Suite() {{ runtime }}.Suite {
 {% endif %}
 	}
 }
+
+// ModuleParameter is the value the runner is given for the module parameter id
+// (docs/SCE_TTCN3_LANE.md §4, `--module-parameter id=value`), a literal of its declared type as the
+// `value` of a `<sce:module-parameter>` writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the
+// saved value of that type; an error, naming why, where the suite declares no such parameter or the
+// literal is no value of its type. It is a {{ runtime }}.ParameterReader.
+{% if parameters %}
+func ModuleParameter(id, literal string) ({{ runtime }}.ModuleParameterValue, error) {
+	switch id {
+{% for parameter in parameters %}
+	case {{ parameter.id }}:
+		return {{ parameter.reader }}
+{% endfor %}
+	}
+	return nil, {{ runtime }}.UndeclaredParameter(id)
+}
+{% else %}
+func ModuleParameter(id, _ string) ({{ runtime }}.ModuleParameterValue, error) {
+	return nil, {{ runtime }}.UndeclaredParameter(id)
+}
+{% endif %}
+
+// Main is the runner program of the suite `{{ suite_name }}` (docs/SCE_TTCN3_LANE.md §4): every test
+// case the world of `--world` selects, run against its recorded input trace from `--trace-dir`, its
+// canonical test log written to `--log-dir` ({{ runtime }}.RunnerMain), after which the process exits.
+// A module makes it a program with a `package main` whose `main` calls it.
+func Main() {
+	{{ runtime }}.RunnerMain(Suite(), ModuleParameter)
+}

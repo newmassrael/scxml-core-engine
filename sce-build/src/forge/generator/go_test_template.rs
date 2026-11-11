@@ -40,17 +40,26 @@
 //! through the unit's `Proven<Case>()` after that comparison in the same
 //! conjunction, which Go evaluates first, and built by the constructor of its
 //! case.
+//!
+//! The inverse of [`GoCanonical`], [`GoReading`], reads a value back from
+//! that form with the readers of the same package `canonical`, over the same
+//! walk ([`super::test_template_walk::canonical_form`]): the unit of a test
+//! configuration reads the values of a recorded input trace with it
+//! (docs/SCE_TTCN3_LANE.md §10.5).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
-    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
+    Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk,
+    Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 
 /// The package of the test profile's Go runtime, which declares the length of
@@ -140,8 +149,10 @@ pub(super) fn render_test_template_go(
 /// The package of the test profile's Go runtime whose functions write the
 /// canonical form of a value in the test log
 /// (`backends/go/runtime/testprofile/canonical/canonical.go`), imported under
-/// its own name, [`CANONICAL`].
-const CANONICAL_PATH: &str = "github.com/newmassrael/sce-go-runtime/testprofile/canonical";
+/// its own name, [`CANONICAL`]. The unit of a test configuration reads and
+/// writes its records' forms through it too.
+pub(super) const CANONICAL_PATH: &str =
+    "github.com/newmassrael/sce-go-runtime/testprofile/canonical";
 
 /// The name a unit names the writers of [`CANONICAL_PATH`] by.
 const CANONICAL: &str = "canonical";
@@ -171,8 +182,10 @@ struct GoCanonicalAt {
 /// (`CanonicalSpelling::optional_value`), which the runtime calls only there,
 /// since what an absent field holds is no value of its type. A union is
 /// written by a closure of no parameter whose `switch` binds the record of
-/// each case where its case is the value's (`CanonicalSpelling::union`).
-struct GoCanonical;
+/// each case where its case is the value's (`CanonicalSpelling::union`). The
+/// unit of a test configuration writes its records' forms with it too, beside
+/// their readers ([`GoReading`]).
+pub(super) struct GoCanonical;
 
 impl CanonicalSpelling for GoCanonical {
     type At = GoCanonicalAt;
@@ -330,6 +343,429 @@ impl CanonicalSpelling for GoCanonical {
     }
 }
 
+/// The name a unit names the forge runtime's optional value by
+/// (`optional.Of[T]`, docs/adr/0055), which the render door imports where the
+/// text names it.
+const OPTIONAL: &str = crate::std_imports::GO_FORGE_OPTIONAL_NAME;
+
+/// `text` as a Go string literal.
+pub(super) fn go_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_go(text.to_string()))
+}
+
+/// A value the canonical reader reads, in Go: the JSON it is read from, its
+/// type, and where it stands.
+pub(super) struct GoReadingAt<'s> {
+    /// An expression of the `any` the value is read from: the reader's
+    /// parameter `value`, a field of its record's object
+    /// (`canonical.Member`), or a name a function binds.
+    json: String,
+    /// The object of the record the value is a field of, and the field's id,
+    /// where it is one: what a field that may be absent is looked up by, with
+    /// the object's `Get`.
+    member: Option<(String, String)>,
+    /// The value's type, read in [`Self::scope`]: what a function that reads
+    /// it answers, which Go names in the function's signature.
+    ty: ValueType,
+    /// The scope the value's type is read in: its record's own document's.
+    scope: &'s TypeScope,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+/// The Go reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from an `any` by the readers of the profile
+/// runtime's package `canonical`
+/// (`backends/go/runtime/testprofile/canonical/from_canonical.go`), each of
+/// which answers the value and an error that names where the value stands
+/// where it does not belong to its type. Which form each SCE type takes is the
+/// walk its writer's is ([`super::test_template_walk::canonical_form`]), so the
+/// reader reads exactly what [`GoCanonical`] writes.
+///
+/// Each read is an expression of two values, the value read and the error, so
+/// a Go statement takes both: a leaf a call of the runtime's reader; a record,
+/// a list and a value that may be absent a function literal, called where it
+/// stands, that reads its parts one statement at a time and answers the first
+/// refusal. A function literal names the types of what it answers, so the
+/// position tracks the SCE type it stands at, read in its record's scope, and
+/// names it as the schema unit declares it ([`GoSpelling::type_of`]), which
+/// notes the documents whose packages the unit imports. A field whose type is
+/// not optional is read from `canonical.Member`, which every reader refuses as
+/// absent where the object does not name it; one that may be absent is looked
+/// up by the object's `Get`, read where it is there and absent otherwise, as a
+/// `null` element of a list is. Go lowers no union, so the walk's refusal of
+/// one stands.
+pub(super) struct GoReading<'s> {
+    /// The spelling that names the types the reader answers.
+    pub(super) spelling: &'s GoSpelling,
+    /// The type of the record read, `record:<alias>` in [`Self::scope`].
+    pub(super) record_type: &'s ValueType,
+    /// The scope the record type is read in: the port type's that takes it.
+    pub(super) scope: &'s TypeScope,
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+impl<'s> GoReading<'s> {
+    /// The Go type of the value at `at`.
+    fn type_of(&self, at: &GoReadingAt<'s>) -> String {
+        self.spelling.type_of(&at.ty, at.scope)
+    }
+
+    /// The type `ty` holds inside it, which `inner` reads off it: the element
+    /// type of a list, the value type of an optional value. Where it is of
+    /// another kind, which the walk never hands here, the refusal is kept and
+    /// `ty` stands in its place.
+    fn inner_of(
+        &self,
+        ty: &ValueType,
+        kind: &str,
+        inner: impl Fn(&ValueType) -> Option<&ValueType>,
+    ) -> ValueType {
+        inner(ty).cloned().unwrap_or_else(|| {
+            self.spelling
+                .refuse(format!("a value of {ty} is read where {kind} stands"));
+            ty.clone()
+        })
+    }
+
+    /// A function literal of no parameter that answers `answers` and an
+    /// error, its body `statements`, called where it stands.
+    fn called(answers: &str, statements: &[String]) -> String {
+        format!(
+            "func() ({answers}, error) {{ {} }}()",
+            statements.join("; ")
+        )
+    }
+
+    /// The read of a value that may be absent, at `at`, whose type is
+    /// `optional<T>`: a function literal whose parameters are `parameters`,
+    /// called with `arguments`, that answers the absent value where `absent`
+    /// holds and otherwise the value `written` reads, from the parameter it
+    /// binds, made present.
+    fn optional_read(
+        &self,
+        at: &GoReadingAt<'s>,
+        parameters: &str,
+        absent: &str,
+        written: String,
+        arguments: &str,
+    ) -> String {
+        let optional = self.type_of(at);
+        let held = self.inner_of(&at.ty, "an optional value", |ty| match ty {
+            TypeOf::Optional { elem } => Some(elem.as_ref()),
+            _ => None,
+        });
+        let none = format!(
+            "{OPTIONAL}.None[{}]()",
+            self.spelling.type_of(&held, at.scope)
+        );
+        format!(
+            "func({parameters}) ({optional}, error) {{ if {absent} {{ return {none}, nil }}; read, \
+             err := {written}; if err != nil {{ return {none}, err }}; return \
+             {OPTIONAL}.Some(read), nil }}({arguments})"
+        )
+    }
+}
+
+impl<'s> CanonicalForm for GoReading<'s> {
+    type At = GoReadingAt<'s>;
+
+    /// The reader's parameter `value`, read as the record.
+    fn root(&self) -> GoReadingAt<'s> {
+        GoReadingAt {
+            json: "value".to_string(),
+            member: None,
+            ty: self.record_type.clone(),
+            scope: self.scope,
+            what: self.what.clone(),
+            depth: 0,
+            records: 0,
+        }
+    }
+
+    /// The field `id` of the object its record bound, of the type its record
+    /// declares, read in the record's own scope.
+    fn field(&self, at: &GoReadingAt<'s>, id: &str) -> GoReadingAt<'s> {
+        let scope: &'s TypeScope = at.scope;
+        let declared: Option<(ValueType, &'s TypeScope)> = match &at.ty {
+            TypeOf::Record { alias } => scope.records.get(alias).and_then(|record| {
+                record
+                    .fields
+                    .iter()
+                    .find(|(field, _)| field.as_str() == id)
+                    .map(|(_, ty)| (ty.clone(), &record.scope))
+            }),
+            _ => None,
+        };
+        let (ty, field_scope) = declared.unwrap_or_else(|| {
+            self.spelling.refuse(format!(
+                "a value of {} is read where a record that declares '{id}' stands",
+                at.ty
+            ));
+            (at.ty.clone(), scope)
+        });
+        let object = format!("object_{}", at.records);
+        GoReadingAt {
+            json: format!("{CANONICAL}.Member({object}, {})", go_literal(id)),
+            member: Some((object, id.to_string())),
+            ty,
+            scope: field_scope,
+            what: format!("{}.{id}", at.what),
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &GoReadingAt<'s>, prefix: &str) -> (String, GoReadingAt<'s>) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = GoReadingAt {
+            json: name.clone(),
+            member: None,
+            ty: at.ty.clone(),
+            scope: at.scope,
+            what: at.what.clone(),
+            depth: at.depth + 1,
+            records: at.records,
+        };
+        (name, value)
+    }
+
+    fn case_record(&self, bound: GoReadingAt<'s>) -> GoReadingAt<'s> {
+        bound
+    }
+
+    /// The element the loop over the list binds, of the list's element type.
+    fn list_element(&self, list: &GoReadingAt<'s>, bound: GoReadingAt<'s>) -> GoReadingAt<'s> {
+        let ty = self.inner_of(&list.ty, "a list", |ty| match ty {
+            TypeOf::List { elem, .. } => Some(elem.as_ref()),
+            _ => None,
+        });
+        GoReadingAt {
+            ty,
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    /// The value an optional field or element holds, of its value type, bound
+    /// where it is there.
+    fn optional_value(&self, field: &GoReadingAt<'s>, bound: GoReadingAt<'s>) -> GoReadingAt<'s> {
+        let ty = self.inner_of(&field.ty, "an optional value", |ty| match ty {
+            TypeOf::Optional { elem } => Some(elem.as_ref()),
+            _ => None,
+        });
+        GoReadingAt { ty, ..bound }
+    }
+
+    fn boolean(&self, at: &GoReadingAt<'s>) -> String {
+        format!(
+            "{CANONICAL}.ReadBoolean({}, {})",
+            at.json,
+            go_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, from the variants of the
+    /// enum's own package: a closed enum's, or an open enum's and the number
+    /// no variant declares, which the package's `<Enum>FromUnderlying` makes
+    /// a value of.
+    fn enumerated(&self, at: &GoReadingAt<'s>, declared: &ScopedEnum) -> String {
+        self.spelling.names_document(&declared.name);
+        let enum_type = enum_qualified_type(&declared.name, Language::Go);
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "{{Name: {}, Value: {}}}",
+                    go_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ref(
+                        Language::Go,
+                        &enum_type,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        let variants = format!(
+            "[]{CANONICAL}.Variant[{enum_type}]{{{}}}",
+            variants.join(", ")
+        );
+        if declared.strict {
+            format!(
+                "{CANONICAL}.ReadEnumerated({}, {variants}, {})",
+                at.json,
+                go_literal(&at.what)
+            )
+        } else {
+            let (_, from_underlying) = enum_number_symbols(&declared.name, true, Language::Go);
+            format!(
+                "{CANONICAL}.ReadOpenEnumerated({}, {variants}, {from_underlying}, {})",
+                at.json,
+                go_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read as the integer type of its width, which bounds it.
+    fn integer(&self, at: &GoReadingAt<'s>, width: &SceType) -> String {
+        format!(
+            "{CANONICAL}.ReadInteger[{}]({}, {})",
+            go_type(width),
+            at.json,
+            go_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &GoReadingAt<'s>, max: &Bound) -> String {
+        format!(
+            "{CANONICAL}.ReadText({}, {}, {})",
+            at.json,
+            max.max,
+            go_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &GoReadingAt<'s>, max: &Bound) -> String {
+        format!(
+            "{CANONICAL}.ReadBytes({}, {}, {})",
+            at.json,
+            max.max,
+            go_literal(&at.what)
+        )
+    }
+
+    /// A function literal that reads the elements within the list's bounds
+    /// and each element in turn, as `binding`, into a slice of the list's
+    /// type.
+    fn list(&self, at: &GoReadingAt<'s>, max: &Bound, binding: &str, element: String) -> String {
+        let list = self.type_of(at);
+        let items = format!("items_{}", at.depth);
+        Self::called(
+            &list,
+            &[
+                format!(
+                    "{items}, err := {CANONICAL}.ReadElements({}, {}, {}, {})",
+                    at.json,
+                    max.min,
+                    max.max,
+                    go_literal(&at.what)
+                ),
+                "if err != nil { return nil, err }".to_string(),
+                format!("read := make({list}, 0, len({items}))"),
+                format!(
+                    "for _, {binding} := range {items} {{ element, err := {element}; if err != \
+                     nil {{ return nil, err }}; read = append(read, element) }}"
+                ),
+                "return read, nil".to_string(),
+            ],
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read, as `binding`, where its record's object names it, and
+    /// absent where it does not, which the canonical form writes by omitting
+    /// it. A member that is there and `null` is read, and refused by the
+    /// reader of its type, since an absent field is never written as `null`.
+    fn optional_field(&self, field: &GoReadingAt<'s>, binding: &str, written: String) -> String {
+        let (object, id) = field.member.clone().unwrap_or_else(|| {
+            self.spelling.refuse(format!(
+                "the value at {} is read as a field where it is none",
+                field.what
+            ));
+            (String::new(), String::new())
+        });
+        self.optional_read(
+            field,
+            &format!("{binding} any, held bool"),
+            "!held",
+            written,
+            &format!("{object}.Get({})", go_literal(&id)),
+        )
+    }
+
+    /// The element read, as `binding`, where it is not `null`.
+    fn optional_element(
+        &self,
+        element: &GoReadingAt<'s>,
+        binding: &str,
+        written: String,
+    ) -> String {
+        self.optional_read(
+            element,
+            &format!("{binding} any"),
+            &format!("{binding} == nil"),
+            written,
+            &element.json,
+        )
+    }
+
+    /// A function literal that binds the record's object, refused where it
+    /// names a field the record does not declare, and reads each field into
+    /// the record's payload struct by its name, in the order the schema
+    /// declares them, answering the first refusal.
+    fn record(
+        &self,
+        at: &GoReadingAt<'s>,
+        _record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let payload = self.type_of(at);
+        let ids: Vec<String> = fields.iter().map(|(id, _)| go_literal(id)).collect();
+        let object = format!(
+            "{CANONICAL}.ReadRecord({}, []string{{{}}}, {})",
+            at.json,
+            ids.join(", "),
+            go_literal(&at.what)
+        );
+        let refused = format!("if err != nil {{ return {payload}{{}}, err }}");
+        if fields.is_empty() {
+            // No field reads the object, so it is not bound.
+            return Self::called(
+                &payload,
+                &[
+                    format!("if _, err := {object}; err != nil {{ return {payload}{{}}, err }}"),
+                    format!("return {payload}{{}}, nil"),
+                ],
+            );
+        }
+        let mut statements = vec![
+            format!("object_{}, err := {object}", at.records),
+            refused,
+            format!("var read {payload}"),
+        ];
+        for (id, value) in fields {
+            statements.push(format!(
+                "if read.{}, err = {value}; err != nil {{ return {payload}{{}}, err }}",
+                event_schema_field_ident(&id, Language::Go)
+            ));
+        }
+        statements.push("return read, nil".to_string());
+        Self::called(&payload, &statements)
+    }
+
+    fn union(
+        &self,
+        _at: &GoReadingAt<'s>,
+        union: &ScopedUnion,
+        _cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        Err(crate::forge::value_type::union_unlowered(&union.name))
+    }
+}
+
 /// The name the generated `Matches` and `Specific` take the formal parameter
 /// `id` by: `param_<id>`, so that no parameter's name is one the unit declares
 /// (`Value`, `Matches`, `Specific`), the name `Matches` gives the value it is
@@ -390,9 +826,10 @@ struct GoAt {
     expr: String,
 }
 
-/// The Go spelling of a template's unit.
+/// The Go spelling of a template's unit, and the names a configuration's
+/// readers of its records name ([`GoReading`]).
 #[derive(Default)]
-struct GoSpelling {
+pub(super) struct GoSpelling {
     /// Every document whose declaration a spelling named: the packages the
     /// unit may import, of which it imports those its text names.
     named: RefCell<BTreeSet<String>>,
@@ -445,7 +882,7 @@ impl GoSpelling {
 
     /// The Go type of a value of `ty`, read in `scope`; empty, with the
     /// refusal kept, where the type names what the scope does not read.
-    fn type_of(&self, ty: &ValueType, scope: &TypeScope) -> String {
+    pub(super) fn type_of(&self, ty: &ValueType, scope: &TypeScope) -> String {
         let names = GoNames {
             scope,
             spelling: self,
@@ -456,34 +893,54 @@ impl GoSpelling {
         })
     }
 
-    /// The import specs of the unit whose text is `text`: the standard
-    /// `bytes`, the profile's runtime, its writers of the canonical form
-    /// ([`CANONICAL_PATH`]) and the package of each document a spelling
-    /// named, each kept only where the text names it, since Go
-    /// refuses a file that imports a package it never names. A document's
-    /// package is the one every Go unit imports it by
-    /// ([`forge_import_identity`]), below `options`' `go_module_prefix`, which
-    /// is refused by name where it is missing and a document is named.
+    /// The refusal a spelling kept, if one did, taken: the unit is refused by
+    /// it once the walk is done.
+    pub(super) fn take_refusal(&self) -> Option<String> {
+        self.refusal.borrow_mut().take()
+    }
+
+    /// The import specs of the template's unit whose text is `text`: the
+    /// standard `bytes`, the profile's runtime, its writers of the canonical
+    /// form ([`CANONICAL_PATH`]) and the package of each document a spelling
+    /// named ([`Self::document_imports`]), each kept only where the text names
+    /// it, since Go refuses a file that imports a package it never names.
     fn imports(
         &self,
         text: &str,
         options: &crate::ForgeCompileOptions,
     ) -> Result<Vec<String>, ForgeError> {
-        let mut candidates = vec![
+        let candidates = vec![
             format!("\"{BYTES_PACKAGE}\""),
             format!("\"{TEST_RUNTIME_PATH}\""),
             format!("\"{CANONICAL_PATH}\""),
         ];
+        let mut imports = crate::std_imports::go_imports_named_in(text, &candidates);
+        imports.extend(self.document_imports(text, options)?);
+        Ok(imports)
+    }
+
+    /// The import spec of the package of each document a spelling named,
+    /// kept only where `text` names it: the package every Go unit imports it
+    /// by ([`forge_import_identity`]), below `options`' `go_module_prefix`,
+    /// which is refused by name where it is missing and a document is named.
+    pub(super) fn document_imports(
+        &self,
+        text: &str,
+        options: &crate::ForgeCompileOptions,
+    ) -> Result<Vec<String>, ForgeError> {
         let named = self.named.borrow();
         if !named.is_empty() {
             go_import_root(options.go_module_prefix.as_deref())?;
         }
-        candidates.extend(named.iter().map(|document| {
-            forge_import_identity(document, &Language::Go, false, options)
-                .include_stmt
-                .trim()
-                .to_string()
-        }));
+        let candidates: Vec<String> = named
+            .iter()
+            .map(|document| {
+                forge_import_identity(document, &Language::Go, false, options)
+                    .include_stmt
+                    .trim()
+                    .to_string()
+            })
+            .collect();
         Ok(crate::std_imports::go_imports_named_in(text, &candidates))
     }
 }

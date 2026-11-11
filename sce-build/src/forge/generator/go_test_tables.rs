@@ -5,7 +5,12 @@
 //! §11.8, §12.2): a test configuration's `Configuration`, `Machine` and
 //! `ModuleParameters`, a test case's `TestCase`, and a test suite's `Suite`,
 //! each the data the profile's runtime and its runner read (the package
-//! `testprofile` of `sce-go-runtime`, `RunSuite`).
+//! `testprofile` of `sce-go-runtime`, `RunSuite`). A configuration's unit also
+//! reads the inputs of a recorded trace (`Input`, docs/SCE_TTCN3_LANE.md
+//! §10.5), with a reader and a writer of each record its system ports take
+//! ([`GoReading`], [`GoCanonical`]), and a suite's declares the entry of its
+//! runner program, `Main`, and the reader of its module parameters' values,
+//! `ModuleParameter` (§4, `testprofile.RunnerMain`).
 //!
 //! Which rows each unit holds, and what is refused, is decided by the rows
 //! every backend shares ([`super::test_tables`]); this file spells them in Go,
@@ -27,11 +32,16 @@
 //! `ModuleParameters`, `Name`, `TestCase`, `Suite`) and no sibling's alias can
 //! be.
 
+use super::go_test_template::{
+    go_literal as literal, GoCanonical, GoReading, GoSpelling, CANONICAL_PATH,
+};
 use super::test_tables::{
     configuration_rows, execute_rows, module_parameter_defaults, selection_body,
-    test_case_configuration, EndpointRow,
+    test_case_configuration, trace_records, EndpointRow,
 };
-use super::test_template_walk::{hex_octets, integer_literal};
+use super::test_template_walk::{
+    canonical_form, canonical_value, hex_octets, integer_literal, CanonicalForm, CanonicalSpelling,
+};
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
 use crate::generator::Language;
@@ -44,11 +54,6 @@ const RUNTIME: &str = "testprofile";
 /// each module parameter's default through the writer of a saved value of its
 /// type (`sce.SavedWrite<Type>`).
 const SAVED_VALUES: &str = "sce";
-
-/// `text` as a Go string literal.
-fn literal(text: &str) -> String {
-    format!("\"{}\"", filters::escape_go(text.to_string()))
-}
 
 /// The import spec and the alias of the sibling package of the document
 /// `document`, below `options`' `go_module_prefix`, which is refused by name
@@ -165,9 +170,20 @@ pub(super) fn render_test_configuration_go(
         .iter()
         .map(|id| literal(id))
         .collect();
+    let traced = trace_inputs(m, imports, options)?;
+    for spec in traced.imports {
+        import_once(&mut go_imports, spec);
+    }
 
     let l = LangCtx::new(Language::Go, imports);
     let mut ctx = l.base_context(&m.name);
+    ctx.insert(
+        "system_ports".into(),
+        format!("[]string{{{}}}", traced.system_ports.join(", ")).into(),
+    );
+    ctx.insert("inputs".into(), serde_json::Value::Array(traced.inputs));
+    ctx.insert("readers".into(), serde_json::Value::Array(traced.readers));
+    ctx.insert("canonical_path".into(), CANONICAL_PATH.into());
     ctx.insert("configuration_name".into(), m.name.clone().into());
     ctx.insert("runtime".into(), RUNTIME.into());
     ctx.insert(
@@ -189,6 +205,114 @@ pub(super) fn render_test_configuration_go(
         format!("[]string{{{}}}", module_parameters.join(", ")).into(),
     );
     l.render(env, "test_configuration", ctx)
+}
+
+/// What the unit of a configuration writes of the inputs a recorded trace may
+/// carry ([`trace_inputs`]).
+struct TraceInputs {
+    /// Each system port's id, as a Go string literal.
+    system_ports: Vec<String>,
+    /// An arm of the unit's `Input` per port and record.
+    inputs: Vec<serde_json::Value>,
+    /// Each record's reader and writer, once.
+    readers: Vec<serde_json::Value>,
+    /// The import spec of each package the readers and writers name.
+    imports: Vec<String>,
+}
+
+/// The name of the unit's function that reads, or writes, the record whose
+/// type in the test log is `type_name`: `Read<Record>`, `Canonical<Record>`.
+fn record_function(verb: &str, type_name: &str) -> String {
+    format!("{verb}{}", filters::to_pascal_case(type_name.to_string()))
+}
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5), as every backend
+/// reads them ([`trace_records`]): each system port's id; an arm of the unit's
+/// `Input` per port and record its type's `in` list names, in document order;
+/// and each record's reader and writer of its canonical form, once, both over
+/// the one walk of the form ([`canonical_form`]), so the value a trace hands
+/// the run and the value the test log writes of it are the same bytes. Each
+/// record is named by its type in the test log, which names its functions, and
+/// the package of each document its reader and writer name is imported under
+/// `options`' module path, the package of the record among them, whose
+/// `EventName` its message carries.
+fn trace_inputs(
+    m: &TestConfigurationModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<TraceInputs, ForgeError> {
+    let refused = |why: String| {
+        super::test_tables::refused(
+            ForgeKind::TestConfiguration,
+            &m.name,
+            m.source_location.as_ref(),
+            why,
+        )
+    };
+    let traced = trace_records(m, imports)?;
+    let spelling = GoSpelling::default();
+    let mut text = String::new();
+    let mut readers = Vec::new();
+    for record in &traced.records {
+        let row = &record.row;
+        let payload = spelling.type_of(&row.record_type, row.scope);
+        let reading = GoReading {
+            spelling: &spelling,
+            record_type: &row.record_type,
+            scope: row.scope,
+            what: record.type_name.clone(),
+        };
+        let read_expr = canonical_form(&reading, &row.record_type, &reading.root(), row.scope)
+            .map_err(refused)?;
+        let canonical_expr = canonical_value(
+            &GoCanonical,
+            &row.record_type,
+            &GoCanonical.root(),
+            row.scope,
+        )
+        .map_err(refused)?;
+        for spelled in [&payload, &read_expr, &canonical_expr] {
+            text.push_str(spelled);
+            text.push('\n');
+        }
+        readers.push(serde_json::json!({
+            "type": record.type_name,
+            "read": record_function("Read", &record.type_name),
+            "canonical": record_function("Canonical", &record.type_name),
+            "payload": payload,
+            "read_expr": read_expr,
+            "canonical_expr": canonical_expr,
+        }));
+    }
+    if let Some(why) = spelling.take_refusal() {
+        return Err(refused(why));
+    }
+    let inputs: Vec<serde_json::Value> = traced
+        .arms
+        .iter()
+        .map(|arm| {
+            let event = format!(
+                "{}.EventName",
+                go_package_alias(&filters::to_snake_case(arm.record.name.clone()))
+            );
+            text.push_str(&event);
+            text.push('\n');
+            serde_json::json!({
+                "port": literal(arm.port),
+                "type": literal(&arm.type_name),
+                "event": event,
+                "read": record_function("Read", &arm.type_name),
+                "canonical": record_function("Canonical", &arm.type_name),
+            })
+        })
+        .collect();
+    Ok(TraceInputs {
+        system_ports: traced.system_ports.iter().map(|id| literal(id)).collect(),
+        inputs,
+        readers,
+        imports: spelling.document_imports(&text, options)?,
+    })
 }
 
 // ── §11.7: the test case ───────────────────────────────────────
@@ -223,6 +347,7 @@ pub(super) fn render_test_case_go(
         "module_parameters".into(),
         format!("{alias}.ModuleParameters").into(),
     );
+    ctx.insert("inputs".into(), format!("{alias}.Input").into());
     l.render(env, "test_case", ctx)
 }
 
@@ -238,13 +363,26 @@ pub(super) fn render_test_suite_go(
 ) -> Result<String, ForgeError> {
     let parameters: Vec<serde_json::Value> = module_parameter_defaults(m, "Go", saved_default)?
         .into_iter()
-        .map(|(id, value)| {
-            serde_json::json!({
+        .zip(&m.module_parameters)
+        .map(|((id, value), parameter)| {
+            let reader = parameter_reader(&parameter.parameter_type).ok_or_else(|| {
+                super::test_tables::refused(
+                    ForgeKind::TestSuite,
+                    &m.name,
+                    m.source_location.as_ref(),
+                    format!(
+                        "the module parameter '{id}' of type {} has no Go reader of its value",
+                        parameter.parameter_type
+                    ),
+                )
+            })?;
+            Ok(serde_json::json!({
                 "id": literal(id),
                 "value": value,
-            })
+                "reader": reader,
+            }))
         })
-        .collect();
+        .collect::<Result<_, ForgeError>>()?;
     let mut go_imports = Vec::new();
     let mut executes = Vec::new();
     for execute in execute_rows(m, imports)? {
@@ -287,6 +425,43 @@ pub(super) fn render_test_suite_go(
     l.render(env, "test_suite", ctx)
 }
 
+/// The writer of the saved value of the integer type `scalar`
+/// (`sce.SavedWrite<Type>`, named for its Go type): the one a machine's saved
+/// state writes a value of that type with.
+fn saved_writer(scalar: &SceType) -> String {
+    format!(
+        "{SAVED_VALUES}.SavedWrite{}",
+        filters::to_pascal_case(go_type(scalar).to_string())
+    )
+}
+
+/// The runner's reader of a value of a module parameter of type `ty`, given on
+/// its command line as a literal of docs/SCE_TEST_PROFILE.md §11.4
+/// (docs/SCE_TTCN3_LANE.md §4): an expression of the saved value of `ty` the
+/// literal `literal` is, for the module parameter `id`, and the refusal that
+/// names why where it is none, by the readers of the profile's runtime
+/// (`testprofile.IntegerParameter` and its siblings). An integer is read at its
+/// width, which the writer of its saved value names. `None` for the types
+/// [`saved_default`] has no value of, of which no suite declares a module
+/// parameter.
+fn parameter_reader(ty: &ValueType) -> Option<String> {
+    match ty {
+        TypeOf::Scalar(SceType::Bool) => Some(format!("{RUNTIME}.BoolParameter(id, literal)")),
+        TypeOf::Scalar(SceType::Enum(_)) => Some(format!("{RUNTIME}.EnumParameter(literal)")),
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => Some(format!(
+            "{RUNTIME}.IntegerParameter(id, literal, {})",
+            saved_writer(scalar)
+        )),
+        TypeOf::Text { .. } => Some(format!("{RUNTIME}.TextParameter(literal)")),
+        TypeOf::Bytes { .. } => Some(format!("{RUNTIME}.BytesParameter(id, literal)")),
+        TypeOf::Scalar(_)
+        | TypeOf::Optional { .. }
+        | TypeOf::Record { .. }
+        | TypeOf::Union { .. }
+        | TypeOf::List { .. } => None,
+    }
+}
+
 /// The default `value` of a module parameter of type `ty`, a literal of
 /// docs/SCE_TEST_PROFILE.md §11.4, as the saved value the runtime holds it in
 /// (`testprofile.ModuleParameters`): the value a machine's saved state writes
@@ -308,9 +483,10 @@ fn saved_default(ty: &ValueType, value: &str) -> Option<String> {
             _ => None,
         },
         TypeOf::Scalar(SceType::Enum(_)) => Some(write("String", literal(value.trim()))),
-        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => Some(write(
-            &filters::to_pascal_case(go_type(scalar).to_string()),
-            integer_literal(Language::Go, value)?,
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => Some(format!(
+            "{}({})",
+            saved_writer(scalar),
+            integer_literal(Language::Go, value)?
         )),
         TypeOf::Text { .. } => Some(write("String", literal(value))),
         TypeOf::Bytes { .. } => {

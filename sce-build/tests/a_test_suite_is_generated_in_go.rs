@@ -8,8 +8,11 @@
 //! of the runner, through its configuration's unit; a suite's unit its module
 //! parameters at their defaults, as saved values of their types, and its test
 //! cases in run order, each with its guard and its selection. A port type
-//! writes no file. The twin of `a_test_suite_is_generated_in_kotlin.rs`, over
-//! the same fixtures.
+//! writes no file. A configuration's unit also reads the inputs of a recorded
+//! trace, by a reader and a writer of each record its system ports take, and a
+//! suite's is the entry of its runner program (docs/SCE_TTCN3_LANE.md §4,
+//! §10.5). The twin of `a_test_suite_is_generated_in_kotlin.rs`, over the same
+//! fixtures.
 //!
 //! A Go unit names another package only by an import path, so every unit a
 //! table reads is a sibling package below the module path the run is given
@@ -247,6 +250,258 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     );
 }
 
+/// The import spec of the profile's package of the canonical form, whose
+/// readers and writers a configuration's records are read and written by.
+const CANONICAL_IMPORT: &str =
+    "\t\"github.com/newmassrael/sce-go-runtime/testprofile/canonical\"\n";
+
+/// The import spec of the forge runtime's optional value.
+const OPTIONAL_IMPORT: &str = "\t\"github.com/newmassrael/sce-forge-runtime/optional\"\n";
+
+/// docs/SCE_TTCN3_LANE.md §10.2, §10.5: a configuration reads the inputs of a
+/// recorded trace. Each record on the `in` list of a system port's type is read
+/// back from its canonical form and written in it, once, through the package of
+/// its event schema; an input on a port the configuration does not have, or of
+/// a type its port does not take, is refused by name, and a record only sent to
+/// the system under test is not read. A configuration with no system port
+/// refuses every input. The twin of the Rust, Kotlin and C++ cases.
+#[test]
+fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
+    let asking = unit("asking_configuration");
+    for needle in [
+        CANONICAL_IMPORT.to_string(),
+        imported("job_reply"),
+        "func ReadJobReply(value any) (sce_job_reply.JobReplyPayload, error) {\n\treturn func() \
+         (sce_job_reply.JobReplyPayload, error) { object_0, err := canonical.ReadRecord(value, \
+         []string{\"job\", \"code\"}, \"job_reply\"); if err != nil { return \
+         sce_job_reply.JobReplyPayload{}, err }; var read sce_job_reply.JobReplyPayload; "
+            .to_string(),
+        "if read.Job, err = canonical.ReadInteger[uint32](canonical.Member(object_0, \"job\"), \
+         \"job_reply.job\"); err != nil { return sce_job_reply.JobReplyPayload{}, err }; "
+            .to_string(),
+        "return read, nil }()\n}".to_string(),
+        "func CanonicalJobReply(value sce_job_reply.JobReplyPayload) any {".to_string(),
+        "canonical.Integer(value.Code)".to_string(),
+        "func Input(systemPort, typeName string, value any) (testprofile.Message, error) {"
+            .to_string(),
+        "\tif systemPort == \"sut\" && typeName == \"job_reply\" {\n\t\tread, err := \
+         ReadJobReply(value)\n"
+            .to_string(),
+        "\t\treturn testprofile.NewMessage(sce_job_reply.EventName, read, \"job_reply\", \
+         CanonicalJobReply), nil\n"
+            .to_string(),
+        "\treturn testprofile.Message{}, testprofile.NotAnInput(systemPort, typeName, \
+         []string{\"sut\"})\n"
+            .to_string(),
+    ] {
+        assert!(
+            asking.contains(&needle),
+            "asking_configuration holds `{needle}`:\n{asking}"
+        );
+    }
+    assert!(
+        !asking.contains("ReadJobRequest") && !asking.contains(&imported("job_request")),
+        "a record the components only send is not read: {asking}"
+    );
+    assert_eq!(
+        asking.matches("func ReadJobReply(").count(),
+        1,
+        "a record is read by one function"
+    );
+    assert!(
+        !asking.contains(OPTIONAL_IMPORT),
+        "a record that holds no optional value names none: {asking}"
+    );
+
+    let keeping = unit("keeping_configuration");
+    assert!(
+        keeping.contains("\tif systemPort == \"quiet\" && typeName == \"job_reply\" {\n"),
+        "{keeping}"
+    );
+
+    let serving = unit("serving_configuration");
+    assert!(
+        serving.contains(
+            "func Input(systemPort, typeName string, _ any) (testprofile.Message, error) {\n\t\
+             return testprofile.Message{}, testprofile.NotAnInput(systemPort, typeName, \
+             []string{})\n}"
+        ),
+        "a configuration with no system port refuses every input: {serving}"
+    );
+    assert!(!serving.contains("func Read"), "{serving}");
+    assert!(!serving.contains(CANONICAL_IMPORT), "{serving}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
+/// record of every form Go holds generates a reader and a writer of each, which
+/// `backends/go/tests/integration/static_datamodel/a_record_reads_back_the_form_it_writes_test.go`
+/// compiles and round-trips: an open enum read through its package's
+/// `FromUnderlying`, a closed one by its variants, a list of optional elements
+/// and an optional field each by a function literal that answers the absent
+/// value or the value read, a list of records each record by an object of its
+/// own, a byte string by its hex. The one whose record holds a union, which Go
+/// does not lower, is refused by name.
+#[test]
+fn a_configuration_reads_a_record_of_every_form_it_holds() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/unionless_forms_configuration.scxml");
+    let forms = file_at(&path, "unionless_forms_configuration");
+    for (record, function) in [
+        ("order_taken", "OrderTaken"),
+        ("job_status", "JobStatus"),
+        ("form_extras", "FormExtras"),
+    ] {
+        for needle in [
+            imported(record),
+            format!("func Read{function}(value any) (sce_{record}.{function}Payload, error) {{"),
+            format!("func Canonical{function}(value sce_{record}.{function}Payload) any {{"),
+            format!("\tif systemPort == \"sut\" && typeName == \"{record}\" {{\n"),
+        ] {
+            assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+        }
+    }
+    for needle in [
+        OPTIONAL_IMPORT.to_string(),
+        imported("order_line"),
+        imported("order_customer"),
+        imported("paint_color"),
+        imported("shape_kind_open"),
+        "canonical.ReadOpenEnumerated(canonical.Member(object_0, \"shape\"), \
+         []canonical.Variant[sce_shape_kind_open.ShapeKindOpen]{{Name: \"dot\", Value: \
+         sce_shape_kind_open.ShapeKindOpenDot}, "
+            .to_string(),
+        "}, sce_shape_kind_open.ShapeKindOpenFromUnderlying, \"form_extras.shape\")".to_string(),
+        "canonical.ReadEnumerated(canonical.Member(object_1, \"color\"), \
+         []canonical.Variant[sce_paint_color.PaintColor]{{Name: \"red\", Value: \
+         sce_paint_color.PaintColorRed}, "
+            .to_string(),
+        "object_1, err := canonical.ReadRecord(item_0, []string{\"sku\", \"quantity\", \
+         \"color\"}, \"order_taken.lines[]\")"
+            .to_string(),
+        "func(present_1 any) (optional.Of[uint16], error) { if present_1 == nil { return \
+         optional.None[uint16](), nil }; read, err := canonical.ReadInteger[uint16](present_1, \
+         \"form_extras.slots[]\")"
+            .to_string(),
+        "return optional.Some(read), nil }(item_0)".to_string(),
+        "func(present_0 any, held bool) (optional.Of[string], error) { if !held { return \
+         optional.None[string](), nil }; read, err := canonical.ReadText(present_0, 32, \
+         \"order_taken.note\")"
+            .to_string(),
+        "}(object_0.Get(\"note\"))".to_string(),
+        "canonical.ReadBytes(canonical.Member(object_0, \"voucher_code\"), 4, \
+         \"order_taken.voucher_code\")"
+            .to_string(),
+        "canonical.ReadElements(canonical.Member(object_0, \"flags\"), 1, 2, \
+         \"form_extras.flags\")"
+            .to_string(),
+        "func() ([][]uint8, error) { items_0, err := ".to_string(),
+        "items_1, err := canonical.ReadElements(item_0, 0, 2, \"form_extras.grid[]\")".to_string(),
+        "if read.Least, err = canonical.ReadInteger[int64](canonical.Member(object_0, \
+         \"least\"), \"form_extras.least\")"
+            .to_string(),
+    ] {
+        assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+    }
+
+    let union = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
+    let Err(err) = generate(&union) else {
+        panic!("a configuration whose record holds a union generated on Go");
+    };
+    assert!(format!("{err:?}").contains("union"), "{err:?}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports
+/// take that the export would name alike, the stems of their files, are
+/// refused by name, since one reader and one type of the test log would hold
+/// both. The twin of the Rust, Kotlin and C++ tests of the same name, over the
+/// one refusal of the shared rows (`test_tables::trace_records`).
+#[test]
+fn two_records_named_alike_are_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let record = |name: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}" sce:event-name="{name}.event">
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+        )
+    };
+    for (folder, name) in [("a", "twin_a"), ("b", "twin_b")] {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir(&folder).expect("a folder");
+        std::fs::write(folder.join("twin.scxml"), record(name)).expect("the record is written");
+    }
+    let documents = [
+        (
+            "twins_port.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="twins_port">
+  <sce:import kind="event-schema" src="a/twin.scxml" as="TwinA"/>
+  <sce:import kind="event-schema" src="b/twin.scxml" as="TwinB"/>
+  <sce:message type="TwinA" direction="in"/>
+  <sce:message type="TwinB" direction="in"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_listener.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="twins_listener"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:test-port id="sut" type="TwinsPort"/>
+  <state id="waiting">
+    <transition sce:receive="sut" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_configuration.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="twins_configuration">
+  <sce:import kind="test-component" src="twins_listener.scxml" as="TwinsListener"/>
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:mtc type="TwinsListener"/>
+  <sce:system-port id="sut" type="TwinsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>
+"#,
+        ),
+    ];
+    for (file, text) in documents {
+        std::fs::write(dir.path().join(file), text).expect("the document is written");
+    }
+    let Err(err) = generate(&dir.path().join("twins_configuration.scxml")) else {
+        panic!("two records named alike generated on Go");
+    };
+    let ForgeError::Generate(boxed) = err.error else {
+        panic!("not a generation refusal: {err:?}");
+    };
+    let GenerateError::UnsupportedFeature { detail, .. } = *boxed else {
+        panic!("not an unsupported feature");
+    };
+    assert!(
+        detail.starts_with("test-configuration 'twins_configuration': "),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("two records its system ports take are named 'twin': "),
+        "{detail}"
+    );
+}
+
 /// §12.3, §12.6: a configuration imports a component's machine from the
 /// directory of the snake of its machine's name below the run's module path,
 /// and names the component the statechart declares in the package that
@@ -305,6 +560,7 @@ fn a_test_case_names_its_configurations_tables() {
         "\t\tConfiguration:    sce_asking_configuration.Configuration(),\n".to_string(),
         "\t\tMachines:         sce_asking_configuration.Machine,\n".to_string(),
         "\t\tModuleParameters: sce_asking_configuration.ModuleParameters(),\n".to_string(),
+        "\t\tInputs:           sce_asking_configuration.Input,\n".to_string(),
     ] {
         assert!(
             case.contains(&needle),
@@ -387,6 +643,26 @@ fn a_suite_holds_its_cases_in_order_with_guards_and_selections() {
         let found = at(&suite, &execute);
         assert!(found > last, "the test cases are in run order: `{execute}`");
         last = found;
+    }
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: a suite's unit is the runner program's: its
+/// `Main` hands the runtime's runner the suite and the reader of each module
+/// parameter's value, a literal of its type, which an undeclared parameter is
+/// refused by. The twin of the Rust, Kotlin and C++ cases.
+#[test]
+fn a_suite_is_the_runner_program_of_its_traces() {
+    let suite = unit("runtime_suite");
+    for needle in [
+        "func ModuleParameter(id, literal string) (testprofile.ModuleParameterValue, error) {\n\t\
+         switch id {\n\tcase \"job\":\n\t\treturn testprofile.IntegerParameter(id, literal, \
+         sce.SavedWriteUint32)\n\t}\n\treturn nil, testprofile.UndeclaredParameter(id)\n}",
+        "func Main() {\n\ttestprofile.RunnerMain(Suite(), ModuleParameter)\n}",
+    ] {
+        assert!(
+            suite.contains(needle),
+            "runtime_suite holds `{needle}`:\n{suite}"
+        );
     }
 }
 
@@ -477,6 +753,13 @@ fn a_selection_keeps_its_inner_joins_a_case_is_imported_once_and_an_empty_suite_
         text.contains("\t\tExecutes: []testprofile.Execute{},\n"),
         "{text}"
     );
+    assert!(
+        text.contains(
+            "func ModuleParameter(id, _ string) (testprofile.ModuleParameterValue, error) {\n\t\
+             return nil, testprofile.UndeclaredParameter(id)\n}"
+        ),
+        "a suite that declares no module parameter refuses every one: {text}"
+    );
     let imports = between(&text, "import (", ")");
     assert_eq!(imports, format!("import (\n{RUNTIME_IMPORT}"), "{text}");
 }
@@ -521,6 +804,18 @@ fn a_module_parameter_default_is_the_saved_value_of_its_type() {
         "\tmoduleParameters.Set(\"label\", sce.SavedWriteString(\"nightly\"))\n".to_string(),
         "\tmoduleParameters.Set(\"key\", sce.SavedWriteBytes([]byte{0x0a, 0xff}))\n".to_string(),
         "\tmoduleParameters.Set(\"color\", sce.SavedWriteString(\"green\"))\n".to_string(),
+        // The runner's reader of each, a literal of its type (docs/SCE_TTCN3_LANE.md
+        // §4): an integer at its width, saved by the writer of its type.
+        "\tcase \"armed\":\n\t\treturn testprofile.BoolParameter(id, literal)\n".to_string(),
+        "\tcase \"offset\":\n\t\treturn testprofile.IntegerParameter(id, literal, \
+         sce.SavedWriteInt8)\n"
+            .to_string(),
+        "\tcase \"widest\":\n\t\treturn testprofile.IntegerParameter(id, literal, \
+         sce.SavedWriteUint64)\n"
+            .to_string(),
+        "\tcase \"label\":\n\t\treturn testprofile.TextParameter(literal)\n".to_string(),
+        "\tcase \"key\":\n\t\treturn testprofile.BytesParameter(id, literal)\n".to_string(),
+        "\tcase \"color\":\n\t\treturn testprofile.EnumParameter(literal)\n".to_string(),
         SAVED_VALUES_IMPORT.to_string(),
         execute("answers_the_job", NO_GUARD, "nil"),
     ] {
