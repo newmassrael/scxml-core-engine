@@ -54,11 +54,27 @@ use super::*;
 const C11_READ_BINDING: &str = "sce_at";
 
 /// The place a C11 reader fills, a `void *` to the part's own type.
-const C11_INTO: &str = "sce_into";
+pub(crate) const C11_INTO: &str = "sce_into";
 
 /// The path a C11 reader names the place it refused by, and the room of it.
-const C11_PATH: &str = "sce_path";
-const C11_PATH_CAP: &str = "sce_path_cap";
+pub(crate) const C11_PATH: &str = "sce_path";
+pub(crate) const C11_PATH_CAP: &str = "sce_path_cap";
+
+/// The place a C11 reader writes the bound a refused value broke into, a
+/// `uint32_t *`: a text's or a byte string's bound for `tooLong`, a list's bound
+/// for `tooMany` and its lower count for `tooFew` (docs/adr/0087, section 2.4),
+/// written only where the reader refuses. A lift names it in its refusal
+/// record; a delivery's reason names the path alone.
+pub(crate) const C11_BOUND: &str = "sce_bound";
+
+/// The member of a C11 union that holds its tag, a value of the machine's enum
+/// of it, whatever key the tag is written under (docs/adr/0092, section 7, the
+/// C11 row: `.tag`).
+pub(crate) const C11_UNION_TAG: &str = "tag";
+
+/// The member of a C11 union that holds the record of its case, a C `union` of
+/// one member per case that holds a record (section 7, the C11 row: `.as`).
+pub(crate) const C11_UNION_CASES: &str = "as";
 
 /// The wire writer a C11 writer writes through, a `sce_forge_wire_t *`.
 pub(crate) const C11_WIRE: &str = "sce_wire";
@@ -68,12 +84,6 @@ const C11_WRITE_BINDING: &str = "sce_item";
 
 /// The name a C11 copy binds a pointer to an element or a present value to.
 const C11_COPY_BINDING: &str = "sce_copied";
-
-/// Why a C11 walk meets no union: the one decision of what is lowered refuses a
-/// union on C11 before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const C11_HOLDS_NO_UNION: &str = "a C11 machine holds no union yet (docs/adr/0092, section 7): \
-     the one decision of what is lowered refuses a union on C11 before any walk reaches one";
 
 /// Why a C11 copy meets no value whose parts change their type: a C11 machine
 /// takes a composed value whole only into a list variable, whose element is a
@@ -158,6 +168,10 @@ impl<'a> C11Composed<'a> {
     /// The call of the reader function of the type `ty` over the value at
     /// `value`, defined once by `body`, the statements of the function over
     /// its parameters `sce_value` and `sce_out`, a `ty *`.
+    ///
+    /// The definition stands under a guard of its name, as a type's does, so a
+    /// machine whose payload channel and whose `<sce:lift>` each read a value of
+    /// one type, each through a spelling of its own, defines its reader once.
     fn reader_of(
         &self,
         name: &str,
@@ -167,20 +181,22 @@ impl<'a> C11Composed<'a> {
     ) -> String {
         let function = format!("sce_composed_read_{name}");
         if !self.reached.borrow().reader_names.contains(&function) {
+            let guard = function.to_uppercase();
             let def = format!(
-                "/* docs/adr/0086, section 4: a value of `{ty}` read out of the text at `sce_value`\n   \
-                 into `sce_out`, refused whole, its path left in `{C11_PATH}`, when it is outside its\n   \
-                 type. */\n\
+                "#ifndef {guard}\n#define {guard}\n\
+                 /* docs/adr/0086, section 4: a value of `{ty}` read out of the text at `sce_value`\n   \
+                 into `sce_out`, refused whole, its path left in `{C11_PATH}` and the bound it broke\n   \
+                 in `*{C11_BOUND}`, when it is outside its type. */\n\
                  SCE_C_UNUSED static const char *{function}(const char *sce_value, {ty} *sce_out, char \
-                 *{C11_PATH},\n        size_t {C11_PATH_CAP}) {{\n    (void){C11_PATH};\n    \
-                 (void){C11_PATH_CAP};\n{}}}\n",
+                 *{C11_PATH},\n        size_t {C11_PATH_CAP}, uint32_t *{C11_BOUND}) {{\n    \
+                 (void){C11_PATH};\n    (void){C11_PATH_CAP};\n    (void){C11_BOUND};\n{}}}\n#endif\n",
                 body()
             );
             let mut reached = self.reached.borrow_mut();
             reached.reader_names.insert(function.clone());
             reached.readers.push(def);
         }
-        format!("{function}({value}, {C11_INTO}, {C11_PATH}, {C11_PATH_CAP})")
+        format!("{function}({value}, {C11_INTO}, {C11_PATH}, {C11_PATH_CAP}, {C11_BOUND})")
     }
 
     /// The statement that writes the JSON value `value`, a `sce_forge_wire_value_t`,
@@ -204,6 +220,99 @@ fn value_of(held: &Held) -> String {
 /// of the type is made of.
 fn stem(ty: &str) -> &str {
     ty.trim_end_matches("_t")
+}
+
+/// The statements of a reader whose one refusal names `bound`: the refusal of
+/// the runtime's `read`, the bound written where it refuses
+/// ([`C11_BOUND`]).
+fn refused_at_bound(read: &str, bound: u32) -> String {
+    format!(
+        "    const char *const sce_refusal = {read};\n    if (sce_refusal != NULL) {{\n        \
+         *{C11_BOUND} = {bound}u;\n    }}\n    return sce_refusal;\n"
+    )
+}
+
+/// The identifier of the case `variant` of a C11 union: its member of the
+/// union's `as`, named as the variant in snake case (docs/adr/0092, section 7
+/// item 1), on a machine's union as on a unit's.
+pub(crate) fn c11_case_ident(variant: &str) -> String {
+    crate::filters::to_snake_case(variant.to_string())
+}
+
+/// The read of the record of the case `variant` where a test proved it, after
+/// the union's value: its member of `as` (section 7, the C11 row).
+fn c11_case_read(variant: &str) -> String {
+    format!("{C11_UNION_CASES}.{}", c11_case_ident(variant))
+}
+
+/// The name of the accessor a field several cases share is written through,
+/// after the union's type ([`SharedFieldDef`]): a function of the union's type
+/// whose other cases end the process, as a C++ and a Go union's are.
+fn c11_shared_read(field: &str) -> String {
+    format!(
+        "proven_field_{}",
+        crate::filters::to_snake_case(field.to_string())
+    )
+}
+
+/// What follows a C11 union's value to read `member` where it may be in the
+/// cases `left` ([`ComposedSpelling::union_member`]), as [`union_member_of`]
+/// reads it: the tag's member, or the field of the one case left through that
+/// case's member of `as`. A field several cases share has no member path that
+/// names it in each: the expression lowering reads it by a test of the tag over
+/// the cases left ([`c11_shared_union_read`]), so `Err` here names that read.
+pub(crate) fn c11_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    match union_member_of(union, left, member)? {
+        UnionMember::Tag => Ok(C11_UNION_TAG.to_string()),
+        UnionMember::Case(case) => Ok(format!("{}.{member}", c11_case_read(&case.variant.name))),
+        UnionMember::Shared => Err(format!(
+            "`{member}` of `union:{}`, which the cases {} share, is read on C11 by a test of the \
+             tag over those cases, which no member path after the union's value spells \
+             (docs/adr/0092, section 6.1)",
+            union.name,
+            left.iter()
+                .map(|case| format!("`{}`", case.variant.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+/// The read of `member` of a C11 union where it may be in the cases `left`
+/// and is a field those cases share ([`UnionMember::Shared`]): one member path
+/// after the union's value per case left, each with the constant of the tag's
+/// enum that names that case, which `constant` answers for a variant's
+/// declared name. C has no expression that takes a case apart, so the
+/// expression lowering reads it by a conditional over the tag whose last arm
+/// is the last case, the narrowing having proved the value is in one of them.
+/// `None` for any other read, which [`c11_union_member`] spells.
+pub(crate) fn c11_shared_union_read(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+    constant: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<Vec<(String, String)>>, String> {
+    if union_member_of(union, left, member)? != UnionMember::Shared {
+        return Ok(None);
+    }
+    left.iter()
+        .map(|case| {
+            let variant = case.variant.name.as_str();
+            let tag = constant(variant).ok_or_else(|| {
+                format!(
+                    "`union:{}`: the statechart's enum of its tag declares no variant \
+                     `{variant}`",
+                    union.name
+                )
+            })?;
+            Ok((tag, format!("{}.{member}", c11_case_read(variant))))
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(Some)
 }
 
 /// The JSON text of the key `id`, quoted and escaped, as a C string literal's
@@ -238,7 +347,7 @@ pub(crate) fn c11_pairs(fields: &[(String, String)]) -> String {
 /// and the digits of the last index for each list, nothing for an optional
 /// value, whose present value stands where it does. What the buffer a C11
 /// lift names a refused place in is sized by. `Err` names a part no C11 walk
-/// reads (a union, a record the statechart does not hold).
+/// reads (a record or a union the statechart does not hold).
 pub(crate) fn c11_path_len(
     ty: &ValueType,
     within: Option<&str>,
@@ -260,7 +369,26 @@ pub(crate) fn c11_path_len(
             }
             longest
         }
-        ValueType::Union { .. } => return Err(C11_HOLDS_NO_UNION.to_string()),
+        // A field of a case stands at the union's own place (docs/adr/0092,
+        // section 2.1), so the longest path below a union is the longest below
+        // any case's record, or the tag's, where a refusal of the tag stands.
+        ValueType::Union { alias } => {
+            let held = records.union(within, alias)?;
+            let mut longest = 1 + held.union.tag.len() as u64;
+            for case in &held.union.cases {
+                if let Some(record) = &case.record {
+                    let below = c11_path_len(
+                        &ValueType::Record {
+                            alias: record.clone(),
+                        },
+                        Some(&held.key),
+                        records,
+                    )?;
+                    longest = longest.max(below);
+                }
+            }
+            longest
+        }
     })
 }
 
@@ -381,19 +509,25 @@ impl ComposedSpelling for C11Composed<'_> {
             )
         })
     }
-    // Into the buffer of the bound, its terminator after it.
+    // Into the buffer of the bound, its terminator after it; a text past it is
+    // refused with that bound.
     fn read_text(&self, max: u32, value: &str) -> String {
         let ty = self.text_type(max);
         self.reader_of(stem(&ty), &ty, value, || {
-            format!("    return sce_payload_value_text(sce_value, sce_out->data, {max}u);\n")
+            refused_at_bound(
+                &format!("sce_payload_value_text(sce_value, sce_out->data, {max}u)"),
+                max,
+            )
         })
     }
     fn read_bytes(&self, max: u32, value: &str) -> String {
         let ty = self.bytes_type(max);
         self.reader_of(stem(&ty), &ty, value, || {
-            format!(
-                "    return sce_payload_value_bytes(sce_value, sce_out->data, {max}u, \
-                 &sce_out->len);\n"
+            refused_at_bound(
+                &format!(
+                    "sce_payload_value_bytes(sce_value, sce_out->data, {max}u, &sce_out->len)"
+                ),
+                max,
             )
         })
     }
@@ -413,7 +547,8 @@ impl ComposedSpelling for C11Composed<'_> {
     }
     // The elements are counted when the list is opened, and a list past its
     // bound or short of its lower count is refused before any is read (section
-    // 15.5); each element is read into the next slot, at its index's path.
+    // 15.5), with the count it broke; each element is read into the next slot,
+    // at its index's path.
     fn read_list(&self, value: &str, least: u32, max: u32, elem: &str, elem_ty: &str) -> String {
         let ty = self.list_type(elem_ty, max);
         let name = if least == 0 {
@@ -429,7 +564,9 @@ impl ComposedSpelling for C11Composed<'_> {
                  &sce_cursor);\n    \
                  const size_t sce_head = strlen({C11_PATH});\n    \
                  sce_out->len = 0u;\n    \
-                 if (sce_refusal != NULL) {{\n        return sce_refusal;\n    }}\n    \
+                 if (sce_refusal != NULL) {{\n        \
+                 *{C11_BOUND} = (sce_refusal == SCE_PAYLOAD_REFUSE_SHORT_COUNT) ? {least}u : \
+                 {max}u;\n        return sce_refusal;\n    }}\n    \
                  while (sce_payload_list_next(&sce_cursor, &{C11_READ_BINDING})) {{\n        \
                  void *const {C11_INTO} = &sce_out->data[sce_out->len];\n        \
                  (void)sce_payload_path_index({C11_PATH}, {C11_PATH_CAP}, {C11_PATH}, \
@@ -635,7 +772,22 @@ impl ComposedSpelling for C11Composed<'_> {
         unreachable!("{C11_COPIES_ELEMENTS_AS_THEY_ARE}")
     }
     fn copy_present(&self, _value: &str) -> String {
-        unreachable!("{C11_COPIES_ELEMENTS_AS_THEY_ARE}")
+        unreachable!(
+            "a C11 value is lifted into the optional value of the type of the place it is \
+             copied into, which the walk names (`copy_present_into`)"
+        )
+    }
+    // The optional value of the place's own element, made present by the
+    // constructor its declaration holds (`sce/forge/optional.h`): a union put
+    // whole into a variable that may be absent (docs/adr/0092, section 6.1 item
+    // 5).
+    fn copy_present_into(&self, value: &str, present: &str) -> String {
+        let Some(name) = crate::forge::static_lowering::c11_optional_elem(present) else {
+            unreachable!(
+                "every C11 type a part is held in ends in `_t` or is a scalar: `{present}`"
+            )
+        };
+        format!("sce_optional_{name}_some({value})")
     }
     fn copy_list(&self, _held: &Held, _elem: &str, _elem_ty: &str) -> String {
         unreachable!(
@@ -658,9 +810,162 @@ impl ComposedSpelling for C11Composed<'_> {
         format!("{}_of({value}.data, {value}.len)", stem(list_ty))
     }
 
-    // A C11 machine holds no union yet: the gate refuses one by name before a
-    // walk reaches it, so each spelling below either names what it would be or
-    // says why there is none.
+    // A record that holds a composition carries its saved form in the
+    // functions a record of entries' has (`<type>_saved_write`,
+    // `<type>_saved_read`, `StaticTarget::record_def`), so a union's saved
+    // form reads one spelling for either: an object of its fields keyed by
+    // their ids in the schema's order, each written and read as its type says
+    // ([`c11_saved_writer`], [`c11_saved_reader`]), a list held to its bound
+    // and to the lower count its type states. Its members are written by a
+    // function of their own, which a union's saved form writes beside its tag.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for field in &held.schema.fields {
+            let id = crate::filters::escape_c(field.id.clone());
+            let refused =
+                |why: String| format!("the field `{}` of `{}`: {why}", field.id, held.schema.name);
+            // The fields of the record name their types in its own document's scope.
+            let names = (records, enums, Some(held.alias));
+            let write = c11_saved_writer(
+                &field.sce_type,
+                names,
+                self,
+                &format!("value->{}", field.id),
+                1,
+            )
+            .map_err(refused)?;
+            let read = c11_saved_reader(
+                &field.sce_type,
+                names,
+                self,
+                ("member", "member_what"),
+                &format!("value.{}", field.id),
+                1,
+            )
+            .map_err(refused)?;
+            writes.push_str(&format!("    sce_jw_key(w, \"{id}\");\n{write}"));
+            reads.push_str(&format!(
+                "    if (!sce_saved_field(v, what, \"{id}\", &member, err)) {{\n        return \
+                 false;\n    }}\n    sce_saved_path_field(member_what, sizeof(member_what), what, \
+                 \"{id}\");\n{read}"
+            ));
+        }
+        Ok(Some(format!(
+            "/* The members of `value` as a saved state writes them, each keyed by its id, into \
+             the\n   object being written. */\n\
+             static inline void {ty}_saved_write_members(sce_jw_t *w, const {ty} *value) {{\n\
+             {writes}}}\n\n\
+             /* `value` as a saved state writes it: an object of the schema's fields keyed by \
+             their ids. */\n\
+             static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *value) {{\n    \
+             sce_jw_begin_object(w);\n    {ty}_saved_write_members(w, value);\n    \
+             sce_jw_end_object(w);\n}}\n\n\
+             /* The value a saved state holds, refused unless it is one, each list held to its \
+             bound and\n   to the lower count its type states. `out` may be NULL, which judges \
+             the value and keeps\n   nothing. */\n\
+             static inline bool {ty}_saved_read(sce_jv_t v, const char *what, unsigned at, {ty} \
+             *out,\n    sce_saved_error_t *err) {{\n    {ty} value;\n    char \
+             member_what[SCE_SAVED_AT_LEN];\n    sce_jv_t member;\n    (void)at;\n    \
+             memset(&value, 0, sizeof(value));\n    if (sce_jv_kind(v) != SCE_JSON_OBJECT) {{\n        \
+             return sce_saved_refuse(err, \"'%s' is not an object\", what);\n    }}\n{reads}    \
+             if (out != NULL) {{\n        *out = value;\n    }}\n    return true;\n}}"
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its
+    // case (docs/adr/0092, section 6.1 item 7): the tag written first by the
+    // runtime's `sce_saved_write_union_tag`, as the declared name the union's
+    // own function answers, and the case's record's members after it; read by
+    // its tag first (`sce_saved_read_union_tag`), which names the record the
+    // rest of the object is read as, through the constructor of the case.
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = crate::filters::escape_c(records.union_of_key(key)?.union.tag.clone());
+        let ty = &def.ty;
+        let stem = stem(ty);
+        let mut writes = String::new();
+        let mut names = String::new();
+        let mut reads = String::new();
+        for (index, case) in def.cases.iter().enumerate() {
+            names.push_str(&format!(
+                "        \"{}\",\n",
+                crate::filters::escape_c(case.variant.clone())
+            ));
+            let ident = &case.ident;
+            let otherwise = if index == 0 { "" } else { "} else " };
+            match &case.record {
+                Some(record) => {
+                    writes.push_str(&format!(
+                        "    {otherwise}if (value->{C11_UNION_TAG} == {}) {{\n        \
+                         {record}_saved_write_members(w, &value->{C11_UNION_CASES}.{ident});\n",
+                        case.tag_ident
+                    ));
+                    reads.push_str(&format!(
+                        "    {otherwise}if (index == {index}u) {{\n        {record} record;\n        \
+                         memset(&record, 0, sizeof(record));\n        if (!{record}_saved_read(v, \
+                         what, at, &record, err)) {{\n            return false;\n        }}\n        \
+                         value = {stem}_case_{ident}(record);\n"
+                    ));
+                }
+                None => {
+                    writes.push_str(&format!(
+                        "    {otherwise}if (value->{C11_UNION_TAG} == {}) {{\n        /* Its tag \
+                         alone. */\n",
+                        case.tag_ident
+                    ));
+                    reads.push_str(&format!(
+                        "    {otherwise}if (index == {index}u) {{\n        value = \
+                         {stem}_case_{ident}();\n"
+                    ));
+                }
+            }
+        }
+        let name = crate::filters::escape_c(def.name.clone());
+        Ok(Some(format!(
+            "/* `value` as a saved state writes it: one object, its tag first beside the fields \
+             of its case. */\n\
+             static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *value) {{\n    \
+             const char *const declared = {stem}_variant(value);\n    \
+             sce_jw_begin_object(w);\n    sce_saved_write_union_tag(w, \"{tag}\", declared != \
+             NULL ? declared : \"\");\n{writes}    }}\n    sce_jw_end_object(w);\n}}\n\n\
+             /* The value a saved state holds, read by its tag first, refused unless it is one of \
+             the\n   cases of {name}. `out` may be NULL, which judges the value and keeps nothing. \
+             */\n\
+             static inline bool {ty}_saved_read(sce_jv_t v, const char *what, unsigned at, {ty} \
+             *out,\n    sce_saved_error_t *err) {{\n    static const char *const names[] = \
+             {{\n{names}    }};\n    size_t index = 0u;\n    {ty} value;\n    \
+             memset(&value, 0, sizeof(value));\n    if (!sce_saved_read_union_tag(v, what, \
+             \"{tag}\", \"{name}\", names, sizeof(names) / sizeof(names[0]), &index, err)) {{\n        \
+             return false;\n    }}\n{reads}    }}\n    (void)at;\n    if (out != NULL) {{\n        \
+             *out = value;\n    }}\n    return true;\n}}"
+        )))
+    }
+
+    fn take_declared(&self) -> Vec<String> {
+        self.take_declarations()
+    }
+    // C has no closure: a reader of a part is a function of the machine, each
+    // guarded by its name, after the types it reads into.
+    fn take_functions(&self) -> Vec<String> {
+        let mut defs = self.take_declarations();
+        defs.extend(self.take_readers());
+        defs
+    }
+
+    // The machine's own struct, beside its records (docs/adr/0092, section 7,
+    // the C11 row): named by the union's document, so one union is one type of
+    // the machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}_union_{}_t",
@@ -668,56 +973,401 @@ impl ComposedSpelling for C11Composed<'_> {
             crate::filters::to_snake_case(name.to_string())
         )
     }
+    // The variant in snake case, the case's member of the union's `as`.
     fn union_case_ident(&self, variant: &str) -> String {
-        crate::filters::to_snake_case(variant.to_string())
+        c11_case_ident(variant)
     }
+    // A member of `as` is named as the variant is: one C reserves, or one the
+    // preprocessor expands, has no member of that name to be.
+    fn union_case_refused(&self, variant: &str) -> Option<String> {
+        let ident = c11_case_ident(variant);
+        crate::reader_names::is_reserved_word(crate::generator::Language::C11, &ident).then(|| {
+            format!(
+                "the case `{variant}` is held in the C11 member `{ident}`, a word C reserves; \
+                 rename the variant"
+            )
+        })
+    }
+    // The tag is the one member every union of a C11 unit and of a C11 machine
+    // holds it in, whatever key it is written under.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(C11_UNION_TAG.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "proven_{}",
-            crate::filters::to_snake_case(variant.to_string())
-        )
+        c11_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        c11_shared_read(field)
+    }
+    // A struct of the tag and a C `union` of one member per case that holds a
+    // record (section 7, the C11 row): its storage is the tag and the largest
+    // case's record, the compiler's `sizeof` (section 5.1). A value is built
+    // only by the constructor of its case, which zeroes the rest of the value
+    // first, so two equal values are the same bytes (section 7 item 3). A read
+    // the narrowing proves is the case's member itself; beside the type stand
+    // the declared name of the case a value is in, which its writers name it
+    // by, and the place of each field several cases share, which a write goes
+    // through ([`Self::union_member_place`]) and whose other cases end the
+    // process, the one place they are written.
+    fn union_def(&self, def: &UnionDef) -> String {
+        let ty = &def.ty;
+        let stem = stem(ty);
+        let mut members = String::new();
+        let mut declared = String::new();
+        let mut built = String::new();
+        for case in &def.cases {
+            let (ident, variant, tag) = (&case.ident, &case.variant, &case.tag_ident);
+            declared.push_str(&format!(
+                "    if (value->{C11_UNION_TAG} == {tag}) {{\n        return \"{}\";\n    }}\n",
+                crate::filters::escape_c(variant.clone())
+            ));
+            match &case.record {
+                Some(record) => {
+                    members.push_str(&format!("        {record} {ident};\n"));
+                    built.push_str(&format!(
+                        "\n\n/* The case `{variant}`, holding `record`. */\n\
+                         static inline {ty} {stem}_case_{ident}({record} record) {{\n    {ty} \
+                         value;\n    memset(&value, 0, sizeof(value));\n    \
+                         value.{C11_UNION_TAG} = {tag};\n    \
+                         value.{C11_UNION_CASES}.{ident} = record;\n    return value;\n}}"
+                    ));
+                }
+                None => built.push_str(&format!(
+                    "\n\n/* The case `{variant}`, its tag alone. */\n\
+                     static inline {ty} {stem}_case_{ident}(void) {{\n    {ty} value;\n    \
+                     memset(&value, 0, sizeof(value));\n    value.{C11_UNION_TAG} = {tag};\n    \
+                     return value;\n}}"
+                )),
+            }
+        }
+        let mut places = String::new();
+        for field in &def.shared {
+            let arms: String = field
+                .cases
+                .iter()
+                .filter_map(|ident| def.cases.iter().find(|case| case.ident == *ident))
+                .map(|case| {
+                    format!(
+                        "    if (value->{C11_UNION_TAG} == {}) {{\n        return \
+                         &value->{C11_UNION_CASES}.{}.{};\n    }}\n",
+                        case.tag_ident, case.ident, field.field
+                    )
+                })
+                .collect();
+            let (id, fty) = (&field.field, &field.ty);
+            let place = self.union_place_of(&field.accessor);
+            places.push_str(&format!(
+                "\n\n/* The field `{id}` the cases that declare it share, written where a test of \
+                 the tag\n   proved the value is in one of them. */\n\
+                 static inline {fty} *{stem}_{place}({ty} *value) {{\n{arms}    abort();\n}}"
+            ));
+        }
         format!(
-            "proven_field_{}",
-            crate::filters::to_snake_case(field.to_string())
+            "/* SCE Accepted Subset §2.15: a `union:{}` value (docs/adr/0092): exactly one case,\n   \
+             told apart by its tag, holding the record of its case in `{C11_UNION_CASES}`, \
+             built only whole\n   by the constructor of its case (section 7, the C11 row, and \
+             its item 3). */\n\
+             typedef struct {{\n    {} {C11_UNION_TAG};\n    union {{\n{members}    }} \
+             {C11_UNION_CASES};\n}} {ty};\n\n\
+             /* The name the tag's document declares for the case `value` is in, which the \
+             value is\n   written by (section 2.1); NULL for a tag that names no case, which \
+             no constructor builds. */\n\
+             static inline const char *{stem}_variant(const {ty} *value) {{\n{declared}    \
+             return NULL;\n}}{built}{places}",
+            def.name, def.tag_ty
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{C11_HOLDS_NO_UNION}")
+    // The constructor of the case, handed the record or nothing.
+    fn union_value(&self, ty: &str, _tag: &str, case: &str, record: Option<&str>) -> String {
+        format!("{}_case_{case}({})", stem(ty), record.unwrap_or_default())
     }
-    fn union_value(&self, _ty: &str, _tag: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{C11_HOLDS_NO_UNION}")
+    // The tag first, against the names its enum declares, by the runtime's
+    // `sce_payload_union_open`, which refuses a value that is no object before
+    // it and says whether a refusal stands at the tag, whose key the path then
+    // names; then the record of the case the tag names, read from the same
+    // object by the reader of the record (docs/adr/0092, section 4), and the
+    // value built by the case's constructor. The tag's reader answers only a
+    // case the union declares, so the last `return` is not reached.
+    fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String {
+        let ty = &read.ty;
+        let names: String = read
+            .arms
+            .iter()
+            .map(|arm| format!("\"{}\", ", crate::filters::escape_c(arm.variant.clone())))
+            .collect();
+        let tag = crate::filters::escape_c(read.tag.to_string());
+        let arms: String = read
+            .arms
+            .iter()
+            .enumerate()
+            .map(|(index, arm)| {
+                let built = |record: Option<&str>| self.union_value(ty, read.tag, &arm.case_ident, record);
+                match &arm.record {
+                    Some(record) => format!(
+                        "    if (sce_index == {index}u) {{\n        \
+                         __typeof__(sce_out->{C11_UNION_CASES}.{case}) sce_case;\n        \
+                         memset(&sce_case, 0, sizeof(sce_case));\n        {{\n            \
+                         const char *const {C11_READ_BINDING} = sce_value;\n            \
+                         void *const {C11_INTO} = &sce_case;\n            \
+                         sce_refusal = {record};\n        }}\n        \
+                         if (sce_refusal != NULL) {{\n            return sce_refusal;\n        }}\n        \
+                         *sce_out = {};\n        return NULL;\n    }}\n",
+                        built(Some("sce_case")),
+                        case = arm.case_ident,
+                    ),
+                    None => format!(
+                        "    if (sce_index == {index}u) {{\n        *sce_out = {};\n        \
+                         return NULL;\n    }}\n",
+                        built(None)
+                    ),
+                }
+            })
+            .collect();
+        self.reader_of(stem(ty), ty, value, || {
+            format!(
+                "    static const char *const sce_names[] = {{ {names}}};\n    \
+                 size_t sce_index = 0u;\n    bool sce_at_tag = false;\n    \
+                 const char *sce_refusal = sce_payload_union_open(sce_value, \"{tag}\", sce_names, \
+                 sizeof(sce_names) / sizeof(sce_names[0]), &sce_index, &sce_at_tag);\n    \
+                 if (sce_refusal != NULL) {{\n        if (sce_at_tag) {{\n            \
+                 (void)sce_payload_path_join({C11_PATH}, {C11_PATH_CAP}, {C11_PATH}, \"{tag}\");\n        \
+                 }}\n        return sce_refusal;\n    }}\n{arms}    \
+                 return SCE_PAYLOAD_REFUSE_UNKNOWN_VARIANT;\n"
+            )
+        })
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{C11_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{C11_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case, its keys ascending by
+    // their bytes (docs/adr/0092, section 2.1): the case is told by the
+    // declared name its union's own function answers, which the tag is written
+    // as, and its record is bound in its arm as a record's writer reads it. A
+    // value whose tag names no case, which no constructor builds but a host's
+    // hand might, refuses the object whole (section 5.4).
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let value = value_of(held);
+        let tag_written = Self::put("sce_forge_wire_string(sce_variant)");
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let variant = crate::filters::escape_c(arm.variant.clone());
+                let mut members = arm.fields.clone().unwrap_or_default();
+                members.push((tag.to_string(), tag_written.clone()));
+                let written = self.write_record(&members);
+                match &arm.fields {
+                    Some(_) => format!(
+                        " else if (strcmp(sce_variant, \"{variant}\") == 0) {{\n    \
+                         __typeof__(sce_union->{C11_UNION_CASES}.{case}) const *const sce_next = \
+                         &sce_union->{C11_UNION_CASES}.{case};\n    {{\n        \
+                         __typeof__(sce_next) {C11_WRITE_BINDING} = sce_next;\n{written}    }}\n}}",
+                        case = arm.case_ident
+                    ),
+                    None => format!(
+                        " else if (strcmp(sce_variant, \"{variant}\") == 0) {{\n{written}}}"
+                    ),
+                }
+            })
+            .collect();
+        format!(
+            "{{\n    __typeof__({value}) const *const sce_union = &{value};\n    \
+             const char *const sce_variant = {}_variant(sce_union);\n    \
+             if (sce_variant == NULL) {{\n        sce_forge_wire_refuse({C11_WIRE});\n    }}\
+             {arms} else {{\n        sce_forge_wire_refuse({C11_WIRE});\n    }}\n}}\n",
+            stem(ty)
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(C11_HOLDS_NO_UNION.to_string())
+        c11_union_member(union, left, member)
     }
     fn union_place_of(&self, read: &str) -> String {
         format!("{read}_place")
     }
+    // A field is written in place: the field of the one case left is its
+    // member, and a field the cases left share is written through the place
+    // the union's own function answers, which takes the holder's address.
     fn union_member_place(
         &self,
-        _holder: &str,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(C11_HOLDS_NO_UNION.to_string())
+        if member == union.tag {
+            return Err(format!(
+                "the tag `{member}` of `union:{}` is never written alone: the case changes by a \
+                 whole assignment (docs/adr/0092, section 6.1 item 6)",
+                union.name
+            ));
+        }
+        Ok(match union_member_of(union, left, member)? {
+            UnionMember::Case(case) => {
+                format!("{holder}.{}.{member}", c11_case_read(&case.variant.name))
+            }
+            UnionMember::Shared => format!(
+                "(*{}_{}(&{holder}))",
+                stem(&self.union_type(&union.name)),
+                self.union_place_of(&c11_shared_read(member))
+            ),
+            UnionMember::Tag => unreachable!("the tag is refused above"),
+        })
     }
+}
+
+/// The names a C11 saved form of a value reads: the records and unions it
+/// holds, the machine's enums, and the scope its type is written in.
+type C11SavedNames<'n> = (
+    &'n dyn RecordEnv,
+    &'n BTreeMap<String, MachineEnum>,
+    Option<&'n str>,
+);
+
+/// The C statements that write `value`, an lvalue of a value of `ty`, as a saved
+/// state does (`sce/saved_values.h`) into the writer `w`, where its key or its
+/// element stands: a number and a truth value by the runtime's writer of its
+/// type, an enum, a record and a union by their own `<type>_saved_write`, a text
+/// and a byte string from the buffer that holds them, a value that may be
+/// absent as `null` or its present value, and a list element by element. `depth`
+/// names each loop's index, so none hides its holder's. `Err` for a byte string
+/// inside a list, which a saved state would write as an array where it writes a
+/// byte string as its text.
+fn c11_saved_writer(
+    ty: &ValueType,
+    names: C11SavedNames<'_>,
+    spelling: &C11Composed<'_>,
+    value: &str,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums, within) = names;
+    let pad = "    ".repeat(depth);
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_)) | ValueType::Record { .. } | ValueType::Union { .. } => {
+            let held = machine_type(ty, within, records, enums, spelling)?;
+            if matches!(ty, ValueType::Scalar(_)) {
+                format!("{pad}{held}_saved_write(w, {value});\n")
+            } else {
+                format!("{pad}{held}_saved_write(w, &({value}));\n")
+            }
+        }
+        ValueType::Scalar(scalar) => {
+            format!("{pad}sce_saved_write_{}(w, {value});\n", scalar.as_attr())
+        }
+        ValueType::Text { .. } => format!("{pad}sce_saved_write_string(w, ({value}).data);\n"),
+        ValueType::Bytes { .. } => {
+            format!("{pad}sce_saved_write_bytes(w, ({value}).data, ({value}).len);\n")
+        }
+        ValueType::Optional { elem } => format!(
+            "{pad}if (({value}).present) {{\n{}{pad}}} else {{\n{pad}    sce_jw_null(w);\n{pad}}}\n",
+            c11_saved_writer(elem, names, spelling, &format!("({value}).value"), depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            let at = format!("at_{depth}");
+            format!(
+                "{pad}sce_jw_begin_array(w);\n{pad}for (size_t {at} = 0u; {at} < ({value}).len; \
+                 ++{at}) {{\n{pad}    sce_jw_element(w);\n{}{pad}}}\n{pad}sce_jw_end_array(w);\n",
+                c11_saved_writer(
+                    elem,
+                    names,
+                    spelling,
+                    &format!("({value}).data[{at}]"),
+                    depth + 1
+                )?
+            )
+        }
+    })
+}
+
+/// The C statements that read the saved value `member` (a `sce_jv_t`), which
+/// `what` (a `const char *`) names in a refusal, into `dest`, an lvalue of a
+/// value of `ty`, as [`c11_saved_writer`] writes it, each ending the reading
+/// function with `false` at the first refusal: a text and a byte string into the
+/// buffer of the bound the type states, a list to its bound and to the lower
+/// count it states, an enum, a record and a union by their own
+/// `<type>_saved_read`, and a value that may be absent read absent from `null`.
+/// A record and a union are read at the revision `at` the reading function was
+/// handed. `depth` names each loop's locals, so none hides its holder's.
+fn c11_saved_reader(
+    ty: &ValueType,
+    names: C11SavedNames<'_>,
+    spelling: &C11Composed<'_>,
+    from: (&str, &str),
+    dest: &str,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums, within) = names;
+    let (member, what) = from;
+    let pad = "    ".repeat(depth);
+    let refused = |read: String| format!("{pad}if (!{read}) {{\n{pad}    return false;\n{pad}}}\n");
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_)) => refused(format!(
+            "{}_saved_read({member}, {what}, &({dest}), err)",
+            machine_type(ty, within, records, enums, spelling)?
+        )),
+        ValueType::Record { .. } | ValueType::Union { .. } => refused(format!(
+            "{}_saved_read({member}, {what}, at, &({dest}), err)",
+            machine_type(ty, within, records, enums, spelling)?
+        )),
+        ValueType::Scalar(scalar) => refused(format!(
+            "sce_saved_read_{}({member}, {what}, &({dest}), err)",
+            scalar.as_attr()
+        )),
+        ValueType::Text { max } => refused(format!(
+            "sce_saved_read_string_bounded({member}, {what}, ({dest}).data, {}u, err)",
+            max.max
+        )),
+        ValueType::Bytes { max } => refused(format!(
+            "sce_saved_read_bytes({member}, {what}, ({dest}).data, {}u, &({dest}).len, err)",
+            max.max
+        )),
+        ValueType::Optional { elem } => format!(
+            "{pad}if (sce_jv_is_null({member})) {{\n{pad}    ({dest}).present = false;\n{pad}}} \
+             else {{\n{pad}    ({dest}).present = true;\n{}{pad}}}\n",
+            c11_saved_reader(
+                elem,
+                names,
+                spelling,
+                from,
+                &format!("({dest}).value"),
+                depth + 1
+            )?
+        ),
+        ValueType::List { elem, max } => {
+            let (count, it, item, at, at_what) = (
+                format!("count_{depth}"),
+                format!("it_{depth}"),
+                format!("item_{depth}"),
+                format!("at_{depth}"),
+                format!("what_{depth}"),
+            );
+            format!(
+                "{pad}{{\n{pad}    size_t {count} = 0u;\n{pad}    sce_jiter_t {it};\n{pad}    \
+                 sce_jv_t {item};\n{pad}    char {at_what}[SCE_SAVED_AT_LEN];\n{pad}    if \
+                 (!sce_saved_list_within({member}, {what}, {}u, {}u, &{count}, err)) {{\n{pad}        \
+                 return false;\n{pad}    }}\n{pad}    (void){count};\n{pad}    \
+                 (void)sce_jv_iter({member}, &{it});\n{pad}    ({dest}).len = 0u;\n{pad}    for \
+                 (size_t {at} = 0u; sce_jiter_element(&{it}, &{item}); ++{at}) {{\n{pad}        \
+                 sce_saved_path_index({at_what}, sizeof({at_what}), {what}, {at});\n{}{pad}        \
+                 ({dest}).len = {at} + 1u;\n{pad}    }}\n{pad}}}\n",
+                max.min,
+                max.max,
+                c11_saved_reader(
+                    elem,
+                    names,
+                    spelling,
+                    (item.as_str(), at_what.as_str()),
+                    &format!("({dest}).data[{at}]"),
+                    depth + 2
+                )?
+            )
+        }
+    })
 }
 
 #[cfg(test)]
@@ -752,10 +1402,11 @@ mod tests {
 
     /// The C11 row of the one table of what each backend lowers of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
-    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
-    /// (docs/adr/0092, section 7).
+    /// value sent (docs/adr/0086, sections 5 and 6), and a union held, read by
+    /// its tag, lifted and saved (docs/adr/0092, section 7); no variable of a
+    /// record that holds a composition yet.
     #[test]
-    fn the_c11_row_lowers_every_composed_position_but_a_union() {
+    fn the_c11_row_lowers_every_composed_position_but_a_composed_record_variable() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::C11),
@@ -763,7 +1414,7 @@ mod tests {
                 name: "c11",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: false,
                 sends: true,
             }
@@ -865,7 +1516,8 @@ mod tests {
         assert_eq!(read("bool"), "sce_payload_value_bool(v, sce_into)");
         assert_eq!(
             read("list<list<uint8>[2]>[3]"),
-            "sce_composed_read_sce_static_list_uint8_2_list_3(v, sce_into, sce_path, sce_path_cap)"
+            "sce_composed_read_sce_static_list_uint8_2_list_3(v, sce_into, sce_path, sce_path_cap, \
+             sce_bound)"
         );
         let readers = spelling.take_readers();
         assert_eq!(readers.len(), 2, "{readers:#?}");
@@ -877,11 +1529,26 @@ mod tests {
             "{}",
             readers[0]
         );
+        // Each reader stands under a guard of its name, so a machine that reads one
+        // type through two spellings defines its reader once, and writes the bound a
+        // list breaks, past its bound or short of its lower count.
+        assert!(
+            readers[0].starts_with(
+                "#ifndef SCE_COMPOSED_READ_SCE_STATIC_LIST_UINT8_2\n\
+                 #define SCE_COMPOSED_READ_SCE_STATIC_LIST_UINT8_2\n"
+            ) && readers[0].ends_with("#endif\n")
+                && readers[0].contains("size_t sce_path_cap, uint32_t *sce_bound) {")
+                && readers[0].contains(
+                    "*sce_bound = (sce_refusal == SCE_PAYLOAD_REFUSE_SHORT_COUNT) ? 0u : 2u;"
+                ),
+            "{}",
+            readers[0]
+        );
         assert!(
             readers[1].contains("sce_payload_list_open_within(sce_value, 0u, 3u, &sce_cursor)")
                 && readers[1].contains(
                     "sce_refusal = sce_composed_read_sce_static_list_uint8_2(sce_at, sce_into, \
-                     sce_path, sce_path_cap);"
+                     sce_path, sce_path_cap, sce_bound);"
                 )
                 && readers[1].contains(
                     "(void)sce_payload_path_index(sce_path, sce_path_cap, sce_path, \
@@ -897,19 +1564,31 @@ mod tests {
         assert_eq!(
             read("list<uint8>[1..2]"),
             "sce_composed_read_sce_static_list_uint8_2_from_1(v, sce_into, sce_path, \
-             sce_path_cap)"
+             sce_path_cap, sce_bound)"
         );
-        assert!(spelling.take_readers()[0]
-            .contains("sce_payload_list_open_within(sce_value, 1u, 2u, &sce_cursor)"));
-        // A text and a byte string into the buffer of their bound, held to it.
+        let within = spelling.take_readers().join("\n");
+        assert!(
+            within.contains("sce_payload_list_open_within(sce_value, 1u, 2u, &sce_cursor)")
+                && within.contains(
+                    "*sce_bound = (sce_refusal == SCE_PAYLOAD_REFUSE_SHORT_COUNT) ? 1u : 2u;"
+                ),
+            "{within}"
+        );
+        // A text and a byte string into the buffer of their bound, held to it, the
+        // bound written where it refuses.
         let _ = read("string[8]");
         let _ = read("bytes[4]");
         let readers = spelling.take_readers().join("\n");
         assert!(
-            readers.contains("return sce_payload_value_text(sce_value, sce_out->data, 8u);")
-                && readers.contains(
-                    "return sce_payload_value_bytes(sce_value, sce_out->data, 4u, &sce_out->len);"
-                ),
+            readers.contains(
+                "    const char *const sce_refusal = sce_payload_value_text(sce_value, \
+                 sce_out->data, 8u);\n    if (sce_refusal != NULL) {\n        *sce_bound = \
+                 8u;\n    }\n    return sce_refusal;\n"
+            ) && readers.contains(
+                "const char *const sce_refusal = sce_payload_value_bytes(sce_value, \
+                 sce_out->data, 4u, &sce_out->len);\n    if (sce_refusal != NULL) {\n        \
+                 *sce_bound = 4u;"
+            ),
             "{readers}"
         );
         // An enum by the names its document declares.
@@ -1063,7 +1742,315 @@ mod tests {
         assert_eq!(len("record:Item"), 7);
         // `/items/2/tags/3`, the longest below a batch.
         assert_eq!(len("record:Batch"), 15);
+        // A field of a case stands at the union's place: `/radius`, longer than
+        // the tag's `/kind`.
+        assert_eq!(
+            c11_path_len(&ty("union:Shape"), None, &shapes()),
+            Ok(7),
+            "the longest place below a shape"
+        );
         assert!(c11_path_len(&ty("union:Shape"), None, &held).is_err());
+    }
+
+    /// The case of the shape union named `name`.
+    fn case<'s>(shapes: &'s Shapes, name: &str) -> &'s ScopedCase {
+        shapes
+            .union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == name)
+            .expect("a case")
+    }
+
+    /// A union is the machine's own struct at any depth, named by its document
+    /// (docs/adr/0092, section 7, the C11 row), its tag held in `tag` whatever
+    /// key it is written under, and a value built whole by the constructor of
+    /// its case.
+    #[test]
+    fn a_c11_machine_holds_a_union_in_its_own_struct() {
+        let shapes = shapes();
+        let kinds = kinds();
+        let spelling = c11();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &spelling),
+            Ok("m_union_shape_t".to_string())
+        );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &spelling
+            ),
+            Ok("sce_optional_record_m_union_shape_list_3_t".to_string())
+        );
+        assert!(
+            spelling
+                .take_declarations()
+                .join("\n")
+                .contains("SCE_OPTIONAL_DECLARE_RECORD(record_m_union_shape, m_union_shape_t)"),
+            "a union that may be absent is the runtime's struct over the union"
+        );
+        assert_eq!(spelling.union_tag_read("type"), Some("tag".to_string()));
+        assert_eq!(
+            spelling.union_value("m_union_shape_t", "type", "dot", None),
+            "m_union_shape_case_dot()"
+        );
+        assert_eq!(
+            spelling.union_value("m_union_shape_t", "type", "circle", Some("r")),
+            "m_union_shape_case_circle(r)"
+        );
+        assert_eq!(
+            spelling.copy_present_into("(p)", "m_union_shape_t"),
+            "sce_optional_record_m_union_shape_some((p))"
+        );
+    }
+
+    /// The declaration (section 7, the C11 row): a struct of the tag and a C
+    /// `union` of a member per case that holds a record, an empty case none; the
+    /// declared name of the case a value is in; a constructor per case that
+    /// zeroes the value first (section 7 item 3); and the place of `radius`,
+    /// which `circle` and `disc` share, ending the process in another case.
+    #[test]
+    fn a_c11_union_is_declared_with_its_tag_its_cases_and_its_constructors() {
+        let spelling = c11();
+        let def = union_definition(SHAPE_KEY, &shapes(), &kinds(), &spelling).expect("declared");
+        assert_eq!(def.ty, "m_union_shape_t");
+        assert_eq!(def.tag_method, "tag");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "proven_field_radius".to_string(),
+                ty: "uint16_t".to_string(),
+                cases: vec!["circle".to_string(), "disc".to_string()],
+            }]
+        );
+        let text = spelling.union_def(&def);
+        for fragment in [
+            "typedef struct {\n    MKindEnum tag;\n    union {\n        m_record_radius_t circle;\n        \
+             m_record_radius_t disc;\n    } as;\n} m_union_shape_t;\n",
+            "static inline const char *m_union_shape_variant(const m_union_shape_t *value) {\n    \
+             if (value->tag == Dot) {\n        return \"dot\";\n    }\n",
+            "static inline m_union_shape_t m_union_shape_case_dot(void) {\n    m_union_shape_t \
+             value;\n    memset(&value, 0, sizeof(value));\n    value.tag = Dot;\n    return \
+             value;\n}",
+            "static inline m_union_shape_t m_union_shape_case_circle(m_record_radius_t record) {\n    \
+             m_union_shape_t value;\n    memset(&value, 0, sizeof(value));\n    value.tag = \
+             Circle;\n    value.as.circle = record;\n    return value;\n}",
+            "static inline uint16_t *m_union_shape_proven_field_radius_place(m_union_shape_t \
+             *value) {\n    if (value->tag == Circle) {\n        return \
+             &value->as.circle.radius;\n    }\n    if (value->tag == Disc) {\n        return \
+             &value->as.disc.radius;\n    }\n    abort();\n}",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+        // An empty case holds no record and has no member.
+        assert!(!text.contains(" dot;"), "{text}");
+    }
+
+    /// A case is a member named as its variant, so a variant C reserves the
+    /// spelling of is refused by name before anything is declared.
+    #[test]
+    fn a_c11_case_spelled_as_a_word_c_reserves_is_refused() {
+        let spelling = c11();
+        assert_eq!(spelling.union_case_refused("circle"), None);
+        let refused = spelling
+            .union_case_refused("default")
+            .expect("`default` is a word C reserves");
+        assert!(refused.contains("`default`"), "{refused}");
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// member, a field of the one case left through that case's member of
+    /// `as`, and a field two cases share by a test of the tag over them; a
+    /// write goes through the member, or through the place the union's own
+    /// function answers, and the tag is never written alone.
+    #[test]
+    fn a_c11_proven_read_and_write_are_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let spelling = c11();
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        let disc = [case(&shapes, "disc")];
+        assert_eq!(c11_union_member(union, &all, "kind"), Ok("tag".into()));
+        assert_eq!(
+            spelling.union_member(union, &disc, "radius"),
+            Ok("as.disc.radius".into())
+        );
+        let shared = c11_union_member(union, &both, "radius").expect_err("no one member path");
+        assert!(shared.contains("test of the tag"), "{shared}");
+        let constant = |variant: &str| Some(format!("K_{variant}"));
+        assert_eq!(
+            c11_shared_union_read(union, &both, "radius", &constant),
+            Ok(Some(vec![
+                ("K_circle".to_string(), "as.circle.radius".to_string()),
+                ("K_disc".to_string(), "as.disc.radius".to_string()),
+            ]))
+        );
+        assert_eq!(
+            c11_shared_union_read(union, &disc, "radius", &constant),
+            Ok(None)
+        );
+        assert!(c11_union_member(union, &[case(&shapes, "dot")], "radius").is_err());
+        assert_eq!(
+            spelling.union_member_place("v_s", union, &disc, "radius"),
+            Ok("v_s.as.disc.radius".into())
+        );
+        assert_eq!(
+            spelling.union_member_place("v_s", union, &both, "radius"),
+            Ok("(*m_union_shape_proven_field_radius_place(&v_s))".into())
+        );
+        let tag = spelling
+            .union_member_place("v_s", union, &all, "kind")
+            .expect_err("the tag is never written alone");
+        assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// A union is read by a function of the machine (docs/adr/0092, section
+    /// 4): its tag first, against the names its enum declares, a refusal at the
+    /// tag naming its key in the path; then the record of the case it names
+    /// from the same object, by the reader of the record, defined before it.
+    #[test]
+    fn a_c11_union_is_read_by_its_tag_first() {
+        let shapes = shapes();
+        let spelling = c11();
+        assert_eq!(
+            reader(&ty("union:Shape"), None, &shapes, &kinds(), &spelling, "v"),
+            Ok(
+                "sce_composed_read_m_union_shape(v, sce_into, sce_path, sce_path_cap, sce_bound)"
+                    .to_string()
+            )
+        );
+        let readers = spelling.take_readers().join("\n");
+        for fragment in [
+            "static const char *const sce_names[] = { \"dot\", \"circle\", \"disc\", };",
+            "const char *sce_refusal = sce_payload_union_open(sce_value, \"kind\", sce_names, \
+             sizeof(sce_names) / sizeof(sce_names[0]), &sce_index, &sce_at_tag);",
+            "        if (sce_at_tag) {\n            (void)sce_payload_path_join(sce_path, \
+             sce_path_cap, sce_path, \"kind\");\n        }\n",
+            "    if (sce_index == 0u) {\n        *sce_out = m_union_shape_case_dot();\n        \
+             return NULL;\n    }\n",
+            "sce_refusal = sce_composed_read_m_record_radius(sce_at, sce_into, sce_path, \
+             sce_path_cap, sce_bound);",
+            "*sce_out = m_union_shape_case_disc(sce_case);",
+        ] {
+            assert!(
+                readers.contains(fragment),
+                "expected `{fragment}` in:\n{readers}"
+            );
+        }
+        let record = readers
+            .find("sce_composed_read_m_record_radius(const char *sce_value")
+            .expect("the record's reader");
+        let union = readers
+            .find("sce_composed_read_m_union_shape(const char *sce_value")
+            .expect("the union's reader");
+        assert!(record < union, "{readers}");
+    }
+
+    /// A union is written as one object, its tag among its case's fields, its
+    /// keys ascending, the case told by the declared name its union's function
+    /// answers, a value in no case refusing the object.
+    #[test]
+    fn a_c11_union_is_written_as_its_tag_beside_its_case() {
+        let shapes = shapes();
+        let spelling = c11();
+        let written = writer(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &spelling,
+            &Held::place("p"),
+        )
+        .expect("a writer");
+        for fragment in [
+            "__typeof__((p)) const *const sce_union = &(p);",
+            "const char *const sce_variant = m_union_shape_variant(sce_union);",
+            "if (sce_variant == NULL) {\n        sce_forge_wire_refuse(sce_wire);\n    }",
+            " else if (strcmp(sce_variant, \"disc\") == 0) {\n    __typeof__(sce_union->as.disc) \
+             const *const sce_next = &sce_union->as.disc;",
+            "sce_forge_wire_put_value(sce_wire, sce_forge_wire_string(sce_variant));",
+            "sce_forge_wire_uint((uint64_t)((*sce_item).radius))",
+        ] {
+            assert!(
+                written.contains(fragment),
+                "expected `{fragment}` in:\n{written}"
+            );
+        }
+        // The keys ascend: `kind` before `radius` in a case that holds both.
+        let disc = written.find("\"disc\") == 0").expect("the disc arm");
+        let kind = written[disc..]
+            .find("\"\\\"kind\\\":\"")
+            .expect("the tag's key");
+        let radius = written[disc..]
+            .find("\"\\\"radius\\\":\"")
+            .expect("the radius key");
+        assert!(kind < radius, "{written}");
+    }
+
+    /// The saved form (docs/adr/0092, section 6.1 item 7): one object, the tag
+    /// written first beside the members of its case's record, read back by its
+    /// tag first and built by the constructor of the case.
+    #[test]
+    fn a_c11_saved_union_is_its_tag_beside_its_case_and_is_read_back_by_its_tag() {
+        let shapes = shapes();
+        let spelling = c11();
+        let def = union_definition(SHAPE_KEY, &shapes, &kinds(), &spelling).expect("declared");
+        let saved = spelling
+            .saved_union_ext(&def, SHAPE_KEY, &shapes)
+            .expect("a saved form")
+            .expect("a C11 union carries its saved form");
+        for fragment in [
+            "static inline void m_union_shape_t_saved_write(sce_jw_t *w, const m_union_shape_t \
+             *value) {",
+            "sce_saved_write_union_tag(w, \"kind\", declared != NULL ? declared : \"\");",
+            "} else if (value->tag == Circle) {\n        \
+             m_record_radius_t_saved_write_members(w, &value->as.circle);\n",
+            "if (!sce_saved_read_union_tag(v, what, \"kind\", \"shape\", names, sizeof(names) / \
+             sizeof(names[0]), &index, err)) {",
+            "    if (index == 0u) {\n        value = m_union_shape_case_dot();\n",
+            "if (!m_record_radius_t_saved_read(v, what, at, &record, err)) {",
+            "value = m_union_shape_case_disc(record);",
+        ] {
+            assert!(
+                saved.contains(fragment),
+                "expected `{fragment}` in:\n{saved}"
+            );
+        }
+    }
+
+    /// A record that holds a composition carries its saved form (section 6.1
+    /// item 7), its members written by a function of their own a union writes
+    /// beside its tag, each list held to its bound and its lower count as it is
+    /// read back, element by element.
+    #[test]
+    fn a_c11_composed_record_carries_its_saved_form() {
+        let held = held();
+        let spelling = c11();
+        let saved = spelling
+            .saved_record_ext("Batch", &held, &c11_enums())
+            .expect("a saved form")
+            .expect("a C11 composed record carries its saved form");
+        for fragment in [
+            "static inline void m_record_batch_t_saved_write_members(sce_jw_t *w, const \
+             m_record_batch_t *value) {\n    sce_jw_key(w, \"items\");\n    \
+             sce_jw_begin_array(w);\n    for (size_t at_1 = 0u; at_1 < (value->items).len; \
+             ++at_1) {\n        sce_jw_element(w);\n        m_record_item_t_saved_write(w, \
+             &((value->items).data[at_1]));\n    }\n    sce_jw_end_array(w);\n",
+            "    m_record_batch_t_saved_write_members(w, value);\n",
+            "if (!sce_saved_list_within(member, member_what, 0u, 3u, &count_1, err)) {",
+            "            if (!m_record_item_t_saved_read(item_1, what_1, at, \
+             &((value.items).data[at_1]), err)) {",
+            "            (value.items).len = at_1 + 1u;\n",
+        ] {
+            assert!(
+                saved.contains(fragment),
+                "expected `{fragment}` in:\n{saved}"
+            );
+        }
     }
 
     /// A list sent where its field asks a lower count it does not prove is

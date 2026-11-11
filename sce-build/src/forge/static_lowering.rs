@@ -1881,6 +1881,15 @@ pub trait StaticTarget {
     fn record_view(&self, _ty: &str, _schema: &EntrySchema) -> Option<String> {
         None
     }
+    /// The type a host reads a published variable of the composed type `ty`
+    /// through (a union, docs/adr/0092, section 7, or one that may be absent):
+    /// `ty` itself, owned and compared whole, lent as a record that owns a
+    /// buffer is, for a target whose reader names the type it lends apart from
+    /// the field (see [`StaticField::view`]); `None` for a target whose reader
+    /// answers the field by value, as a C11 record of plain data is.
+    fn whole_value_view(&self, ty: &str) -> Option<String> {
+        Some(ty.to_string())
+    }
     /// A record `value` — a record variable or a loop's record item, named — as
     /// the copy a list or another variable holds: the name itself for a record
     /// that is plain data, and a clone of it for one that owns text.
@@ -5808,6 +5817,14 @@ fn union_variable_field(
     let union_type =
         composed::machine_type(&union_ty, None, &held, &enums, &*spelling).map_err(refused)?;
     let field_ty = composed::machine_type(&ty, None, &held, &enums, &*spelling).map_err(refused)?;
+    // A target that declares a type per shape of a composition (C11) declares
+    // the optional value of the union after the union, once however many
+    // variables hold one.
+    for def in spelling.take_declared() {
+        if !declarations.type_defs.contains(&def) {
+            declarations.type_defs.push(def);
+        }
+    }
     let init = match start {
         UnionStart::Absent => absent_value(target, &union_type, &what)?,
         UnionStart::Built => {
@@ -5878,7 +5895,7 @@ fn union_variable_field(
         published: var.direction == Some(crate::forge::model::Direction::Out),
         // Owned and compared whole: a host is lent it, and the snapshot clones
         // it, as a record that owns a buffer is.
-        view: Some(field_ty),
+        view: target.whole_value_view(&field_ty),
         read: None,
         bound: None,
         saved_kind: match start {
@@ -6612,6 +6629,7 @@ pub fn lower(
         held_enums: held_enums.clone(),
         type_scope: crate::forge::value_path::statechart_scope(model),
         lifts: std::cell::Cell::new(false),
+        composed_defs: Default::default(),
         logs_a_value: std::cell::Cell::new(false),
         text_templates,
         document: model.name.clone(),
@@ -7440,6 +7458,10 @@ pub fn lower(
     }
     let type_defs = declarations.type_defs;
     let mut adapter_defs = Vec::new();
+    // The types and the reader functions a lift of a value read whole reached,
+    // declared before any statement that calls them (docs/adr/0092, section 6.1
+    // item 5).
+    adapter_defs.extend(rewrites.composed_defs.take());
     let mut imports: BTreeSet<String> = imports.into_iter().collect();
     // A host operation that takes an argument that may be absent names the runtime's
     // optional type in the host interface, though the machine holds no variable of
@@ -9097,6 +9119,13 @@ struct Rewrites<'m> {
     /// runtime's reader of a text ([`StaticTarget::lift_import`]). Set by the
     /// walk where it meets one, read once it is done.
     lifts: std::cell::Cell<bool>,
+    /// What a statement's walk over a composed value reached that the machine
+    /// declares outside the statement, in the order it reached them: the
+    /// types and reader functions of a `<sce:lift>` that reads a value whole,
+    /// for a target whose reader of a part is a function of the machine
+    /// ([`crate::forge::composed_lowering::ComposedSpelling::take_functions`]).
+    /// Each is guarded by its name, so one reached twice is declared once.
+    composed_defs: std::cell::RefCell<Vec<String>>,
     /// Whether the walk has lowered a `<log>` that writes a value
     /// ([`StaticLowering::logs_a_value`]). Set by the walk where it meets
     /// one, read once it is done.
@@ -15176,6 +15205,13 @@ impl StaticTarget for CTarget {
             if value_type.record_alias().is_some() {
                 return false;
             }
+            // A union, built where it is declared, and one that may be absent
+            // (docs/adr/0092, amendment of 2026-11-07): the machine's own struct of
+            // its tag and its cases' records, which the walks over a composed value
+            // declare ([`crate::forge::composed_lowering::C11Composed`]).
+            if UnionStart::of_type(value_type).is_some() {
+                return false;
+            }
             // An optional record is the struct `sce/forge/optional.h` declares over
             // the machine's record type, whose schema is judged below
             // (docs/adr/0055, step 9).
@@ -15580,10 +15616,16 @@ impl StaticTarget for CTarget {
              /* A borrowed view of a list of them: what a host reads, and cannot grow past\n   \
              the bound the machine keeps. */\n\
              typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};\n\n\
+             /* The members of `value` as a saved state writes them, each keyed by its id, into\n   \
+             the object being written: what a union holding the record writes beside its tag\n   \
+             (docs/adr/0092, section 6.1 item 7). */\n\
+             static inline void {ty}_saved_write_members(sce_jw_t *w, const {ty} *value) {{\n\
+             {writes}}}\n\n\
              /* `value` as a saved state writes it: an object of the schema's fields keyed by\n   \
              their ids. */\n\
              static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *value) {{\n    \
-             sce_jw_begin_object(w);\n{writes}    sce_jw_end_object(w);\n}}\n\n\
+             sce_jw_begin_object(w);\n    {ty}_saved_write_members(w, value);\n    \
+             sce_jw_end_object(w);\n}}\n\n\
              /* The value a saved state holds, refused unless it is one. `at` is the revision of\n   \
              the schema it was saved at: a field a later revision added is taken at its default\n   \
              (docs/adr/0044). `out` may be NULL, which judges the value and keeps nothing. */\n\
@@ -15606,6 +15648,11 @@ impl StaticTarget for CTarget {
     fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
         let inits: Vec<String> = fields.iter().map(|(f, v)| format!(".{f} = {v}")).collect();
         format!("({ty}){{ {} }}", inits.join(", "))
+    }
+    // A union, and one that may be absent, is plain data copied by assignment,
+    // which its reader answers by value as a record's does.
+    fn whole_value_view(&self, _ty: &str) -> Option<String> {
+        None
     }
     // A list's type carries its bound, so it is named by [`Self::bounded_list`].
     fn list_type(&self, _elem: &SceType) -> String {
@@ -15996,7 +16043,11 @@ impl StaticTarget for CTarget {
     // type (`sce_payload_value_u8`, `sce_payload_value_text`, ...), the place of a
     // refusal joined below the whole text as a reader composes it
     // (`sce_payload_pointer_join`). The record replaces the variable only once every
-    // field read. A refusal's code is the machine's enum of it at the code's
+    // field read. A union is read whole: `sce_payload_lift_value` refuses what comes
+    // before it is read and hands its object to the composed walk's reader
+    // function, whose refused path `sce_payload_pointer_of_path` writes as the
+    // pointer (docs/adr/0092, section 6.1 item 5). A refusal's code is the
+    // machine's enum of it at the code's
     // number, which the type's constants carry. Both outcomes are written to
     // `stderr`, as `<log>` is on this backend; the text itself is not, since nothing
     // bounds what a sender writes in it.
@@ -16056,36 +16107,90 @@ impl StaticTarget for CTarget {
                 "sce_refusal = sce_payload_value_{reader}({value}, &{into});"
             ))
         };
-        let schema = lift.record()?;
-        let mut reads = String::new();
-        for field in &schema.fields {
-            let into = format!("sce_lifted.{}", self.record_field(&field.id));
-            // An optional field is absent at `null`, which the zeroed record already
-            // is, and otherwise its present value read as the element's.
-            let reader = match &field.sce_type {
-                EntryType::Scalar(ty) => read(ty, field.max_size, "sce_value", &into)?,
-                EntryType::Optional { elem } => format!(
-                    "if (!sce_payload_is_null(sce_value)) {{ {into}.present = true; {} }}",
-                    read(elem, field.max_size, "sce_value", &format!("{into}.value"))?
-                ),
-            };
-            reads.push_str(&format!(
-                "if (sce_refusal == NULL) {{ const char *sce_value = NULL; sce_refusal = \
-                 sce_payload_field(&sce_fields, \"{id}\", &sce_value); if (sce_refusal == NULL) {{ {reader} }} \
-                 if (sce_refusal != NULL) {{ (void)sce_payload_pointer_join(sce_path, sizeof(sce_path), \"\", \
-                 \"{id}\");{bound} }} }} ",
-                id = filters::escape_c(field.id.clone()),
-                bound = field
-                    .max_size
-                    .map_or_else(String::new, |max| format!(" sce_bound = {max}u;")),
-            ));
-        }
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "NULL".to_string(),
-            |json| format!("\"{}\"", filters::escape_c(json.clone())),
-        );
         let path_bound = lift.path_bound()?;
-        let record_ty = self.record_type(lift.machine, lift.alias);
+        let path_cap = u64::from(path_bound) + 1;
+        let (text, depth) = (lift.text, lift.depth);
+        // The statements that read the text into `sce_lifted`, leaving the refusal
+        // in `sce_refusal`, its pointer in the buffer named by the third, and the
+        // bound it broke in the place named by the fourth: a record field by field,
+        // or a value read whole (a union) by the reader a delivery's field of its
+        // type is read by (docs/adr/0092, section 6.1 item 5), whose refused place
+        // is the path that reader leaves, written as a pointer.
+        let (statements, lifted_ty, what, pointer, bound) = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let mut reads = String::new();
+                for field in &schema.fields {
+                    let into = format!("sce_lifted.{}", self.record_field(&field.id));
+                    // An optional field is absent at `null`, which the zeroed record
+                    // already is, and otherwise its present value read as the
+                    // element's.
+                    let reader = match &field.sce_type {
+                        EntryType::Scalar(ty) => read(ty, field.max_size, "sce_value", &into)?,
+                        EntryType::Optional { elem } => format!(
+                            "if (!sce_payload_is_null(sce_value)) {{ {into}.present = true; {} }}",
+                            read(elem, field.max_size, "sce_value", &format!("{into}.value"))?
+                        ),
+                    };
+                    reads.push_str(&format!(
+                        "if (sce_refusal == NULL) {{ const char *sce_value = NULL; sce_refusal = \
+                         sce_payload_field(&sce_fields, \"{id}\", &sce_value); if (sce_refusal == \
+                         NULL) {{ {reader} }} if (sce_refusal != NULL) {{ \
+                         (void)sce_payload_pointer_join(sce_path, sizeof(sce_path), \"\", \
+                         \"{id}\");{bound} }} }} ",
+                        id = filters::escape_c(field.id.clone()),
+                        bound = field
+                            .max_size
+                            .map_or_else(String::new, |max| format!(" sce_bound = {max}u;")),
+                    ));
+                }
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "NULL".to_string(),
+                    |json| format!("\"{}\"", filters::escape_c(json.clone())),
+                );
+                let record_ty = self.record_type(lift.machine, lift.alias);
+                (
+                    format!(
+                        "sce_payload_fields_t sce_fields; char sce_path[{path_cap}u]; {record_ty} \
+                         sce_lifted; memset(&sce_lifted, 0, sizeof(sce_lifted)); const char \
+                         *sce_refusal = sce_payload_lift({text}, {depth}u, {defaults}, &sce_fields, \
+                         sce_path, sizeof(sce_path)); uint32_t sce_bound = {depth}u; {reads}"
+                    ),
+                    record_ty,
+                    "record",
+                    "sce_path",
+                    "sce_bound",
+                )
+            }
+            // The walk's reader names the value it reads by its binding, the place
+            // it fills, the path it extends and the bound it writes, each declared
+            // here as the reader's own parameters are; a refusal before the value
+            // is read is the lift's, its pointer and its bound (the depth) already
+            // written.
+            Lifted::Whole { reader, ty } => {
+                use crate::forge::composed_lowering::{
+                    C11_BOUND, C11_INTO, C11_PATH, C11_PATH_CAP,
+                };
+                let binding = self.composed_spelling(lift.machine)?.read_binding();
+                (
+                    format!(
+                        "char sce_pointer[{path_cap}u]; char {C11_PATH}[{path_cap}u]; {ty} \
+                         sce_lifted; memset(&sce_lifted, 0, sizeof(sce_lifted)); uint32_t \
+                         sce_bound_at = {depth}u; uint32_t *const {C11_BOUND} = &sce_bound_at; \
+                         const char *{binding} = NULL; const char *sce_refusal = \
+                         sce_payload_lift_value({text}, {depth}u, &{binding}, sce_pointer, \
+                         sizeof(sce_pointer)); if (sce_refusal == NULL) {{ void *const {C11_INTO} = \
+                         &sce_lifted; const size_t {C11_PATH_CAP} = sizeof({C11_PATH}); \
+                         {C11_PATH}[0] = '\\0'; sce_refusal = {reader}; if (sce_refusal != NULL) {{ \
+                         (void)sce_payload_pointer_of_path(sce_pointer, sizeof(sce_pointer), \
+                         {C11_PATH}); }} }} "
+                    ),
+                    ty.clone(),
+                    "value",
+                    "sce_pointer",
+                    "sce_bound_at",
+                )
+            }
+        };
         // The refusal, as a record of the standard refusal document.
         let (code_alias, _) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
@@ -16094,33 +16199,27 @@ impl StaticTarget for CTarget {
         let members = lift.refusal_members(
             self,
             &format!("({code_ty})sce_code"),
-            &self.record_string_runtime(path_bound, "sce_path"),
+            &self.record_string_runtime(path_bound, pointer),
             &format!(
                 "sce_payload_code_has_bound(sce_code) ? {} : {}",
-                self.optional_some(&bound_present, "sce_bound")?,
+                self.optional_some(&bound_present, bound)?,
                 self.optional_none(&bound_present)?
             ),
         )?;
         let lifted = if lift.location_optional {
-            self.optional_some(&record_ty, "sce_lifted")?
+            self.optional_some(&lifted_ty, "sce_lifted")?
         } else {
             "sce_lifted".to_string()
         };
         let schema = filters::escape_c(lift.alias.to_string());
         Some(format!(
-            "{{ sce_payload_fields_t sce_fields; \
-             char sce_path[{path_cap}u]; {record_ty} sce_lifted; memset(&sce_lifted, 0, sizeof(sce_lifted)); \
-             const char *sce_refusal = sce_payload_lift({text}, {depth}u, {defaults}, \
-             &sce_fields, sce_path, sizeof(sce_path)); uint32_t sce_bound = {depth}u; {reads}\
-             if (sce_refusal == NULL) {{ (void)fprintf(stderr, \"<sce:lift>: the text is a record of %s\\n\", \
+            "{{ {statements}\
+             if (sce_refusal == NULL) {{ (void)fprintf(stderr, \"<sce:lift>: the text is a {what} of %s\\n\", \
              \"{schema}\"); {write} {absent} }} else {{ const uint8_t sce_code = \
-             sce_payload_refusal_code(sce_refusal); (void)fprintf(stderr, \"<sce:lift>: the text is no record \
-             of %s: %s at '%s', bound %lu (%s)\\n\", \"{schema}\", sce_payload_code_name(sce_code), sce_path, \
-             sce_payload_code_has_bound(sce_code) ? (unsigned long)sce_bound : 0ul, sce_refusal); \
+             sce_payload_refusal_code(sce_refusal); (void)fprintf(stderr, \"<sce:lift>: the text is no {what} \
+             of %s: %s at '%s', bound %lu (%s)\\n\", \"{schema}\", sce_payload_code_name(sce_code), {pointer}, \
+             sce_payload_code_has_bound(sce_code) ? (unsigned long){bound} : 0ul, sce_refusal); \
              {refusal_ty} sce_why = {why}; {refused} }} }}",
-            path_cap = u64::from(path_bound) + 1,
-            text = lift.text,
-            depth = lift.depth,
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             why = self.record_value(&refusal_ty, &members),
@@ -20008,6 +20107,13 @@ fn lower_action(
                         &*spelling,
                     )
                     .map_err(|why| unlowered(&why))?;
+                    // A target whose reader of a part is a function of the
+                    // machine declares the functions the reader names beside
+                    // the machine's statements.
+                    rewrites
+                        .composed_defs
+                        .borrow_mut()
+                        .extend(spelling.take_functions());
                     (
                         Lifted::Whole { reader, ty },
                         matches!(to.ty, ValueType::Optional { .. }),

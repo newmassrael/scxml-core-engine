@@ -6609,8 +6609,13 @@ fn c11_composed_payload(
             )
         })
         .expect("a lift emits its reasons, each a row of the table, before the slot is computed");
+    // The bound a refused value broke, which each reader writes where it refuses
+    // and a delivery's reason does not name.
+    let bound = composed::C11_BOUND;
     let mut field_reads = format!(
-        "    char sce_path[{}u];\n    const size_t sce_path_cap = sizeof(sce_path);\n",
+        "    char sce_path[{}u];\n    const size_t sce_path_cap = sizeof(sce_path);\n    \
+         uint32_t sce_bound_at = 0u;\n    uint32_t *const {bound} = &sce_bound_at;\n    \
+         (void){bound};\n",
         path_len + 1
     );
     for (id, read) in &readers {

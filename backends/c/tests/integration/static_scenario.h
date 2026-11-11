@@ -811,6 +811,23 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
         bad |= sce_scenario_expect_presence(c, d, step, where, name, index, field, &judged);
         if (judged) {
             // Read above: a `null`, or the value of a field that is absent.
+        } else if (*c->at == '[') {
+            // A list a record's field holds (a case of a union holds one, docs/adr/0092)
+            // is stated as its elements, compared as the compact text the record's text
+            // reader answers for it.
+            char want_list[128];
+            const char *from = c->at;
+            if (!sce_scenario_skip_value(c) || !sce_scenario_compact(from, c->at, want_list, sizeof(want_list))) {
+                return sce_scenario_fail(d, step, "a record field's list is not well formed");
+            }
+            const char *got_text = d->record_text == NULL ? NULL : d->record_text(d->sm, name, index, field);
+            if (got_text == NULL) {
+                (void)snprintf(message, sizeof(message), "the machine publishes no list field %s", where);
+                bad |= sce_scenario_fail(d, step, message);
+            } else if (strcmp(got_text, want_list) != 0) {
+                (void)snprintf(message, sizeof(message), "%s is %s, want %s", where, got_text, want_list);
+                bad |= sce_scenario_fail(d, step, message);
+            }
         } else if (*c->at == '"') {
             // An enum field is stated as the name its document declares.
             if (!sce_scenario_string(c, want_text, sizeof(want_text))) {

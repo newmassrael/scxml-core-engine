@@ -867,6 +867,7 @@ fn resolve_then_rename(
             | ExprTarget::Go
             | ExprTarget::Cpp
             | ExprTarget::Python
+            | ExprTarget::C
     ) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
     }
@@ -1177,8 +1178,8 @@ fn reject_unproven_union_reads(
 }
 
 /// Spell each read of a union's member as the machine of `target` reads it
-/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin, Go, C++
-/// and Python rows): the member a read names after the union's value becomes
+/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin, Go, C++,
+/// Python and C11 rows): the member a read names after the union's value becomes
 /// its tag's read, the field of the one case the facts leave read through that
 /// case's proven read, or the accessor of a field the cases left share
 /// ([`crate::forge::composed_lowering::rust_union_member`],
@@ -1186,7 +1187,11 @@ fn reject_unproven_union_reads(
 /// [`crate::forge::composed_lowering::kotlin_union_member`],
 /// [`crate::forge::composed_lowering::go_union_member`],
 /// [`crate::forge::composed_lowering::cpp_union_member`],
-/// [`crate::forge::composed_lowering::python_union_member`]). Each is a read
+/// [`crate::forge::composed_lowering::python_union_member`],
+/// [`crate::forge::composed_lowering::c11_union_member`]); C11, which has no
+/// accessor of a field the cases left share, reads one by a test of the tag
+/// over those cases ([`crate::forge::composed_lowering::c11_shared_union_read`]).
+/// Each is a read
 /// that cannot fail at run time: [`reject_unproven_union_reads`] admitted it
 /// only where the facts prove its cases, and the facts grow here by the same
 /// rule. A node is spelled before the nodes below it, so its object is still
@@ -1203,6 +1208,7 @@ fn lower_union_reads(
     use crate::forge::narrowing::proves;
     let mut spelled = None;
     let mut whole = None;
+    let mut shared: Option<Vec<(String, String)>> = None;
     if let ExprKind::Member { object, property } = &expr.kind {
         let place = place_path(object).and_then(|path| ctx.value_of(&path));
         let union = place
@@ -1307,6 +1313,30 @@ fn lower_union_reads(
                     )),
                 };
                 whole = Some(read.map_err(refused)?);
+            } else if let Some(arms) = match target {
+                // C has no member that names a field several cases share: it is
+                // read by a test of the tag over the cases left, each tag the
+                // constant the statechart's enum of it declares.
+                ExprTarget::C => {
+                    let tag_enum = ctx
+                        .value_scope
+                        .and_then(|base| crate::forge::value_path::tag_enum_alias(base, union));
+                    let constant = |variant: &str| {
+                        let held = ctx.enums.get(tag_enum.as_deref()?)?;
+                        Some(crate::forge::enum_naming::variant_ident(
+                            crate::generator::Language::C11,
+                            held.source_name,
+                            variant,
+                        ))
+                    };
+                    crate::forge::composed_lowering::c11_shared_union_read(
+                        union, &left, property, &constant,
+                    )
+                    .map_err(refused)?
+                }
+                _ => None,
+            } {
+                shared = Some(arms);
             } else {
                 let member = match target {
                     ExprTarget::Swift => {
@@ -1324,6 +1354,9 @@ fn lower_union_reads(
                     ExprTarget::Python => {
                         crate::forge::composed_lowering::python_union_member(union, &left, property)
                     }
+                    ExprTarget::C => {
+                        crate::forge::composed_lowering::c11_union_member(union, &left, property)
+                    }
                     _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
                 }
                 .map_err(refused)?;
@@ -1335,6 +1368,57 @@ fn lower_union_reads(
     // the read was spelled through.
     if let Some(read) = whole {
         expr.kind = ExprKind::Raw(read);
+        return Ok(());
+    }
+    // A field several cases share, read on C by a test of the tag over the
+    // cases left: the object is lowered first, then read once per case, the
+    // last case untested, the narrowing having proved the value is in one of
+    // them. The members read are no fields of the union, so nothing below the
+    // reads is lowered again.
+    if let Some(arms) = shared {
+        let ExprKind::Member { object, .. } = &mut expr.kind else {
+            unreachable!("a shared read is spelled for a member read alone")
+        };
+        lower_union_reads(object, ctx, facts, target)?;
+        let object = object.clone();
+        let (ty, span) = (expr.ty, expr.span.clone());
+        let read = |property: String, ty: InferredType| TypedExpr {
+            kind: ExprKind::Member {
+                object: object.clone(),
+                property,
+            },
+            ty,
+            span: span.clone(),
+        };
+        let mut arms = arms.into_iter().rev();
+        let Some((_, last)) = arms.next() else {
+            unreachable!("a field several cases share is read under two cases or more")
+        };
+        let mut built = read(last, ty);
+        for (tag, property) in arms {
+            let condition = TypedExpr {
+                kind: ExprKind::Binary {
+                    op: BinOp::StrictEq,
+                    left: Box::new(read(
+                        crate::forge::composed_lowering::C11_UNION_TAG.to_string(),
+                        InferredType::Unknown,
+                    )),
+                    right: Box::new(TypedExpr::new(ExprKind::Raw(tag))),
+                },
+                ty: InferredType::Bool,
+                span: span.clone(),
+            };
+            built = TypedExpr {
+                kind: ExprKind::Conditional {
+                    condition: Box::new(condition),
+                    consequent: Box::new(read(property, ty)),
+                    alternate: Box::new(built),
+                },
+                ty,
+                span: span.clone(),
+            };
+        }
+        *expr = built;
         return Ok(());
     }
     if let (Some(member), ExprKind::Member { property, .. }) = (spelled, &mut expr.kind) {
@@ -5606,8 +5690,10 @@ fn read_composed_texts_through_buffers(
 /// Whether the place `path` names is held by a composed value: a place below
 /// the payload with a composed value on the way to it, or the item of a loop
 /// over a list a place holds ([`TypeCtx::place_items`]) or a place below it,
-/// which no rename spells. No variable holds one: a variable whose type names
-/// a record that holds a composition is refused where it is declared.
+/// which no rename spells, or a place below a variable of a union, whose case's
+/// record the walks declare. No other variable holds one: a variable whose
+/// type names a record that holds a composition is refused where it is
+/// declared.
 fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&str, &str>) -> bool {
     if renames.contains_key(path) {
         return false;
@@ -5633,7 +5719,19 @@ fn held_by_a_composed_value(path: &str, ctx: &TypeCtx<'_>, renames: &HashMap<&st
         }
         _ => {
             let root = path.split(['.', '[']).next().unwrap_or(path);
-            ctx.place_items.contains(root)
+            // A variable of a union, or of one that may be absent, holds its
+            // case's record as the walks over a composed value declare it
+            // (docs/adr/0092, section 7), a text of it in the buffer of its bound.
+            let holds_a_union = || {
+                ctx.value_of(root).is_some_and(|place| {
+                    let held = match &place.ty {
+                        crate::forge::value_type::ValueType::Optional { elem } => &**elem,
+                        other => other,
+                    };
+                    matches!(held, crate::forge::value_type::ValueType::Union { .. })
+                })
+            };
+            ctx.place_items.contains(root) || (path != root && holds_a_union())
         }
     }
 }

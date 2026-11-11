@@ -216,6 +216,7 @@
 #include "static_string_literal_sm.h"
 #include "static_text_record_sm.h"
 #include "static_timers_sm.h"
+#include "static_union_sm.h"
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
 #include "static_wire_wide_sm.h"
@@ -2963,6 +2964,228 @@ static const record_variable_t lift_records[] = {
 STATIC_OPTIONAL_SCENARIO(static_lift, lift_states, lift_variables, static_lift_text, lift_records, NULL,
                          static_lift_presence)
 
+// static_union: a payload that holds a union, read by testing its tag (docs/adr/0092, sections 4
+// and 6.1), a union variable built where it is declared and one put in whole, a text lifted into a
+// union or why it is none, and the machine saved and restored, every union read back by its tag. A
+// union is the machine's struct of its tag and its case's record (section 7, the C11 row), stated
+// as the object of its tag and its case's fields: the tag the name the tag's enum declares, a
+// field read only in a case that holds it, a text as its buffer's text and a list as its elements.
+VARIABLE_READER(static_union, radius)
+VARIABLE_READER(static_union, width)
+VARIABLE_READER(static_union, height)
+VARIABLE_READER(static_union, labels)
+VARIABLE_READER(static_union, points)
+VARIABLE_READER(static_union, dots)
+VARIABLE_READER(static_union, many_radius)
+VARIABLE_READER(static_union, many_width)
+VARIABLE_READER(static_union, many_shapes)
+VARIABLE_READER(static_union, maybe_width)
+VARIABLE_READER(static_union, refusals)
+
+// The number the field `field` of `shape` holds, in a case that holds that field.
+static bool static_union_shape_number(const static_union_union_union_shape_t *shape, const char *field, int64_t *out) {
+    if (strcmp(field, "radius") == 0 && shape->tag == SHAPE_KIND_CIRCLE) {
+        *out = (int64_t)shape->as.circle.radius;
+        return true;
+    }
+    if (strcmp(field, "radius") == 0 && shape->tag == SHAPE_KIND_DISC) {
+        *out = (int64_t)shape->as.disc.radius;
+        return true;
+    }
+    if (strcmp(field, "width") == 0 && shape->tag == SHAPE_KIND_RECT) {
+        *out = (int64_t)shape->as.rect.width;
+        return true;
+    }
+    if (strcmp(field, "height") == 0 && shape->tag == SHAPE_KIND_RECT) {
+        *out = (int64_t)shape->as.rect.height;
+        return true;
+    }
+    return false;
+}
+
+// The text the field `field` of `shape` is stated as: its tag's declared name, a text of its case
+// as its buffer's text, and a list of its case as the compact text of its elements.
+static const char *static_union_shape_text(const static_union_union_union_shape_t *shape, const char *field) {
+    static char text[sizeof(((static_union_record_label_t *)NULL)->text.data)];
+    static char note[sizeof(((static_union_record_label_t *)NULL)->note.value.data)];
+    static char points[64];
+    if (strcmp(field, "kind") == 0) {
+        return shape_kind_declared_name(shape->tag);
+    }
+    if (strcmp(field, "text") == 0 && shape->tag == SHAPE_KIND_LABEL) {
+        memcpy(text, shape->as.label.text.data, sizeof(text));
+        return text;
+    }
+    if (strcmp(field, "note") == 0 && shape->tag == SHAPE_KIND_LABEL && shape->as.label.note.present) {
+        memcpy(note, shape->as.label.note.value.data, sizeof(note));
+        return note;
+    }
+    if (strcmp(field, "points") == 0 && shape->tag == SHAPE_KIND_PATH) {
+        size_t at = 0u;
+        points[at++] = '[';
+        for (size_t i = 0u; i < shape->as.path.points.len && at < sizeof(points); ++i) {
+            const int n = snprintf(points + at, sizeof(points) - at, i == 0u ? "%u" : ",%u",
+                                   (unsigned)shape->as.path.points.data[i]);
+            at += n > 0 ? (size_t)n : 0u;
+        }
+        if (at < sizeof(points)) {
+            (void)snprintf(points + at, sizeof(points) - at, "]");
+        }
+        return points;
+    }
+    return NULL;
+}
+
+// Whether the optional field `field` of `shape` is present: 1, 0, or -1 for a field its case
+// holds no optional value of.
+static int static_union_shape_presence(const static_union_union_union_shape_t *shape, const char *field) {
+    if (strcmp(field, "note") == 0 && shape->tag == SHAPE_KIND_LABEL) {
+        return shape->as.label.note.present ? 1 : 0;
+    }
+    return -1;
+}
+
+// The union a record row names: `built`, or the present value of `kept` or `lifted`. False for a
+// union that may be absent and is.
+static bool static_union_shape_of(const void *sm, const char *name, static_union_union_union_shape_t *out) {
+    const static_union_t *machine = (const static_union_t *)sm;
+    if (strcmp(name, "built") == 0) {
+        *out = static_union_get_built(machine);
+        return true;
+    }
+    const sce_optional_record_static_union_union_union_shape_t held =
+        strcmp(name, "kept") == 0 ? static_union_get_kept(machine) : static_union_get_lifted(machine);
+    if (!held.present) {
+        return false;
+    }
+    *out = held.value;
+    return true;
+}
+
+#define STATIC_UNION_SHAPE_READERS(VAR)                                                                                \
+    static bool static_union_read_record_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {        \
+        static_union_union_union_shape_t shape;                                                                        \
+        memset(&shape, 0, sizeof(shape));                                                                              \
+        (void)index;                                                                                                   \
+        return static_union_shape_of(sm, #VAR, &shape) && static_union_shape_number(&shape, field, out);               \
+    }                                                                                                                  \
+    static const char *static_union_text_record_##VAR(const void *sm, size_t index, const char *field) {               \
+        static_union_union_union_shape_t shape;                                                                        \
+        memset(&shape, 0, sizeof(shape));                                                                              \
+        (void)index;                                                                                                   \
+        return static_union_shape_of(sm, #VAR, &shape) ? static_union_shape_text(&shape, field) : NULL;                \
+    }
+STATIC_UNION_SHAPE_READERS(built)
+STATIC_UNION_SHAPE_READERS(kept)
+STATIC_UNION_SHAPE_READERS(lifted)
+
+static bool static_union_read_record_lift_why(const void *sm, size_t index, const char *field, int64_t *out) {
+    const sce_optional_record_static_union_record_lift_refusal_t held =
+        static_union_get_lift_why((const static_union_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return false;
+    }
+    if (strcmp(field, "bound") == 0 && held.value.bound.present) {
+        *out = (int64_t)held.value.bound.value;
+        return true;
+    }
+    return false;
+}
+
+static const char *static_union_text_record_lift_why(const void *sm, size_t index, const char *field) {
+    static char path[sizeof(((static_union_record_lift_refusal_t *)NULL)->path.data)];
+    const sce_optional_record_static_union_record_lift_refusal_t held =
+        static_union_get_lift_why((const static_union_t *)sm);
+    (void)index;
+    if (!held.present) {
+        return NULL;
+    }
+    if (strcmp(field, "code") == 0) {
+        return refusal_code_declared_name(held.value.code);
+    }
+    if (strcmp(field, "path") == 0) {
+        memcpy(path, held.value.path.data, sizeof(path));
+        return path;
+    }
+    return NULL;
+}
+
+static const char *static_union_text(void *sm, const char *name) {
+    if (strcmp(name, "last_kind") == 0) {
+        return shape_kind_declared_name(static_union_get_last_kind((const static_union_t *)sm));
+    }
+    return NULL;
+}
+
+// Whether the optional value a step names is present: 1, 0, or -1 for a place that holds none. A
+// field of a union that is absent is absent with it.
+static int static_union_presence(void *sm, const char *name, size_t index, const char *field) {
+    const static_union_t *machine = (const static_union_t *)sm;
+    static_union_union_union_shape_t shape;
+    memset(&shape, 0, sizeof(shape));
+    (void)index;
+    if (strcmp(name, "lift_why") == 0) {
+        const sce_optional_record_static_union_record_lift_refusal_t held = static_union_get_lift_why(machine);
+        if (field == NULL) {
+            return held.present ? 1 : 0;
+        }
+        return strcmp(field, "bound") == 0 ? (held.present && held.value.bound.present ? 1 : 0) : -1;
+    }
+    if (strcmp(name, "kept") == 0 || strcmp(name, "lifted") == 0) {
+        const bool present = static_union_shape_of(sm, name, &shape);
+        if (field == NULL) {
+            return present ? 1 : 0;
+        }
+        return present ? static_union_shape_presence(&shape, field) : -1;
+    }
+    if (strcmp(name, "built") == 0 && field != NULL) {
+        shape = static_union_get_built(machine);
+        return static_union_shape_presence(&shape, field);
+    }
+    return -1;
+}
+
+// Saved at a macrostep boundary and restored in the storage it stood in, with no delayed send to
+// carry, so the wall clock it is saved and restored at is one moment.
+#define UNION_SAVED_AT_MS INT64_C(1700000000000)
+
+static bool static_union_save_and_restore(void *sm) {
+    static char text[16384];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    if (!static_union_save((const static_union_t *)sm, UNION_SAVED_AT_MS, text, sizeof(text), &len, &err)) {
+        (void)fprintf(stderr, "static_union: the machine was not saved: %s\n", err.message);
+        return false;
+    }
+    static_union_destroy((static_union_t *)sm);
+    if (!static_union_restore((static_union_t *)sm, text, len, UNION_SAVED_AT_MS, &err)) {
+        (void)fprintf(stderr, "static_union: the machine was not restored: %s\n%s\n", err.message, text);
+        return false;
+    }
+    return true;
+}
+
+static const name_value_t union_states[] = {
+    {"idle", STATIC_UNION_STATE_IDLE},
+};
+static const variable_t union_variables[] = {
+    {"radius", static_union_read_radius},           {"width", static_union_read_width},
+    {"height", static_union_read_height},           {"labels", static_union_read_labels},
+    {"points", static_union_read_points},           {"dots", static_union_read_dots},
+    {"many_radius", static_union_read_many_radius}, {"many_width", static_union_read_many_width},
+    {"many_shapes", static_union_read_many_shapes}, {"maybe_width", static_union_read_maybe_width},
+    {"refusals", static_union_read_refusals},
+};
+static const record_variable_t union_records[] = {RECORD_ROW(static_union, built),
+                                                  RECORD_ROW(static_union, kept),
+                                                  RECORD_ROW(static_union, lifted),
+                                                  RECORD_ROW(static_union, lift_why),
+                                                  {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO_CORE_RESTORING(static_union, union_states, union_variables, static_union_text, no_lists, union_records,
+                               NULL, NULL, NULL, NULL, static_union_init(&sm), NULL, NULL, NULL, NULL, NULL,
+                               static_union_presence, static_union_save_and_restore)
+
 // todo_peer: replayed through the readers `todo_peer_scenario.h` declares, which
 // `test_static_large.c` replays it through at the bounds of a team.
 
@@ -3297,6 +3520,7 @@ int main(void) {
     bad |= static_state_algorithm_enum_scenario("static_state_algorithm_enum", 18);
     bad |= static_text_record_scenario("static_text_record", 12);
     bad |= static_lift_scenario("static_lift", 37);
+    bad |= static_union_scenario("static_union", 25);
     bad |= static_record_list_index_scenario("static_record_list_index", 19);
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);

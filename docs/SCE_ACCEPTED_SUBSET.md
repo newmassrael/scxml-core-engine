@@ -4848,7 +4848,13 @@ the wire's own object (or `null`), its tag's key holding the declared name of th
 variant beside the fields of the case's record (docs/adr/0092, section 7, the Interpreter
 row): a member is read by its own name, a value is copied and sent as it is, and a field
 of a case is written by an `<assign>` of the whole variable, written again with the field
-changed by the library's `set`, as a record's field is. A saved state holds the value as
+changed by the library's `set`, as a record's field is. The C11 machine holds either in
+its own struct (or the runtime's optional struct over it) of its tag and a C `union` `as`
+of one member per case that holds a record (docs/adr/0092, section 7, the C11 row), built
+only by the constructor of its case, which zeroes the rest of the value: its tag is read
+as `.tag`, a case's record as `.as.<case>`, a field several cases share by a test of the
+tag over them, and a field is written in place, a shared one through the place the
+union's own function answers. A saved state holds the value as
 one object, its tag beside its case's fields, read back by its tag first, and the
 saved shape names the union's document and each case's record. A backend whose row
 of "Which backend lowers a composed value" holds no union refuses the variable by
@@ -5583,7 +5589,7 @@ not lower.
 
 - `python` lowers reads, copies, unions, sends; refuses records
 
-- `c11` lowers reads, copies, sends; refuses unions, records
+- `c11` lowers reads, copies, unions, sends; refuses records
 
 - `swift` lowers reads, copies, unions, sends; refuses records
 

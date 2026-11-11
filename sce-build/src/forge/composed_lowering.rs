@@ -68,7 +68,10 @@ pub use python::{PythonCarrier, PythonComposed};
 pub use rust::{RustCarrier, RustComposed};
 pub use swift::{SwiftCarrier, SwiftComposed};
 
-pub(crate) use c11::{c11_pairs, c11_path_len, C11_WIRE};
+pub(crate) use c11::{
+    c11_pairs, c11_path_len, c11_shared_union_read, c11_union_member, C11_BOUND, C11_INTO,
+    C11_PATH, C11_PATH_CAP, C11_UNION_TAG, C11_WIRE,
+};
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_case_ident, cpp_case_read, cpp_raise_checks,
     cpp_text_type, cpp_union_member, cpp_unit_union_read, CPP_CASE_VALUE, CPP_FORGE,
@@ -535,6 +538,13 @@ pub trait ComposedSpelling {
     fn copy_union(&self, held: &Held) -> String {
         self.copy_whole(held, false)
     }
+    /// The copy `value`, of a value of the type held in `present`, lifted into
+    /// a place that may hold it absent: [`Self::copy_present`] for a backend
+    /// whose lifting names no type; a backend whose optional value of each
+    /// element is a type of its own names it by `present` (C11).
+    fn copy_present_into(&self, value: &str, _present: &str) -> String {
+        self.copy_present(value)
+    }
 
     /// The declaration that writes the composed record `alias` as a saved state
     /// does and reads it back (docs/adr/0092, section 6.1 item 7), for a backend
@@ -572,6 +582,24 @@ pub trait ComposedSpelling {
     fn saved_field_read(&self, _ty: &ValueType, _id: &str) -> Option<String> {
         None
     }
+    /// The declarations of the types the walks reached since the last call,
+    /// for a backend that declares a type per shape of a composition (C11),
+    /// each under the guard of its name; none for a backend whose library
+    /// names every shape. What a place outside a record's declaration that
+    /// holds a composed value (a variable of a union that may be absent)
+    /// declares beside it.
+    fn take_declared(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The declarations and the functions the walks reached since the last
+    /// call that the machine declares outside the expression a walk spelled,
+    /// each under the guard of its name: a backend whose reader of a part is a
+    /// function of the machine, as C has no closure (C11), answers the types
+    /// and the readers a statement's reader names; every other backend spells
+    /// its readers where they are read, and answers none.
+    fn take_functions(&self) -> Vec<String> {
+        Vec::new()
+    }
     /// Whether a record of this backend starts every member at its zero (a Swift
     /// record is `SceDefault`, which a checked read of an element not there
     /// answers), so a record that holds a member with no zero ([`holds_no_zero`])
@@ -585,6 +613,13 @@ pub trait ComposedSpelling {
     fn union_type(&self, name: &str) -> String;
     /// The identifier of the case of the variant `variant` in a union's type.
     fn union_case_ident(&self, variant: &str) -> String;
+    /// Why the case of the variant `variant` has no identifier in this
+    /// backend's union, or `None`: a backend whose case is a member named as
+    /// its variant (C11) refuses a variant spelled as a word its language
+    /// reserves, which [`union_definition`] names before anything is declared.
+    fn union_case_refused(&self, _variant: &str) -> Option<String> {
+        None
+    }
     /// The read of a union's tag under the key `tag`, `None` for a key this
     /// backend names no read by.
     fn union_tag_read(&self, tag: &str) -> Option<String>;
@@ -868,12 +903,14 @@ pub struct UnionRead<'a> {
 }
 
 /// One arm of a union's reader: the identifier of the variant in the tag's
-/// enum type, of the case in the union's type, and the reader of the case's
-/// record bound to [`ComposedSpelling::read_binding`] (`None` for an empty
-/// case).
+/// enum type, its declared name (what a backend that reads the tag against
+/// the names its enum declares reads it by), the identifier of the case in the
+/// union's type, and the reader of the case's record bound to
+/// [`ComposedSpelling::read_binding`] (`None` for an empty case).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnionReadArm {
     pub tag_ident: String,
+    pub variant: String,
     pub case_ident: String,
     pub record: Option<String>,
 }
@@ -982,7 +1019,7 @@ pub fn copier(
             Ok(spelling.copy_optional(held, &part(from, to, &element)?, &typed(to)?))
         }
         (from, ValueType::Optional { elem: to }) => {
-            Ok(spelling.copy_present(&part(from, to, held)?))
+            Ok(spelling.copy_present_into(&part(from, to, held)?, &typed(to)?))
         }
         (ValueType::List { elem: from, .. }, ValueType::List { elem: to_elem, .. }) => Ok(spelling
             .copy_list_into(
@@ -1180,6 +1217,7 @@ pub fn union_definition(
     methods.insert(tag_method.clone());
     let mut cases = Vec::with_capacity(union.cases.len());
     let mut case_records: BTreeMap<String, &str> = BTreeMap::new();
+    let mut idents: BTreeMap<String, &str> = BTreeMap::new();
     for case in &union.cases {
         let variant = case.variant.name.as_str();
         let (_, tag_ident) = tag
@@ -1192,6 +1230,18 @@ pub fn union_definition(
                     union.name, tag.ty
                 )
             })?;
+        if let Some(why) = spelling.union_case_refused(variant) {
+            return Err(format!("`union:{}`: {why}", union.name));
+        }
+        // Two variants whose spellings meet would be one case of the type.
+        let ident = spelling.union_case_ident(variant);
+        if let Some(other) = idents.insert(ident.clone(), variant) {
+            return Err(format!(
+                "`union:{}`: the cases `{other}` and `{variant}` are both spelled `{ident}`; rename \
+                 one of the variants",
+                union.name
+            ));
+        }
         let record = match &case.record {
             None => None,
             Some(record) => {
@@ -1213,7 +1263,7 @@ pub fn union_definition(
             }
         }
         cases.push(UnionCaseDef {
-            ident: spelling.union_case_ident(variant),
+            ident,
             variant: variant.to_string(),
             tag_ident: tag_ident.clone(),
             record,
@@ -1392,6 +1442,7 @@ pub fn reader(
                 };
                 arms.push(UnionReadArm {
                     tag_ident: tag_ident.clone(),
+                    variant: variant.to_string(),
                     case_ident: spelling.union_case_ident(variant),
                     record,
                 });

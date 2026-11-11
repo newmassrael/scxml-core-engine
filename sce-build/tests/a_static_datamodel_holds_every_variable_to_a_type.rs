@@ -6120,13 +6120,10 @@ const INTERPRETER: &str = "interpreter";
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
 /// Emptied once by step 5 of docs/adr/0055 and again by its step 9; the scenario of
-/// a union (docs/adr/0092, step 4) is replayed on Rust, Swift, Kotlin, Go, C++, Python and
-/// the Interpreter until each other engine's step lowers a statechart that holds one, and
-/// the scenario of a lift into a record that holds a list (docs/adr/0087, Landing order
-/// item 8) on Rust and Kotlin until each other engine's slice holds a variable of such a
-/// record.
+/// a union (docs/adr/0092, step 4) is replayed on every engine, and the scenario of a lift
+/// into a record that holds a list (docs/adr/0087, Landing order item 8) on Rust and Kotlin
+/// until each other engine's slice holds a variable of such a record.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("static_union", "c11", UNION_NOT_LOWERED),
     ("static_lift_list", "cpp", LIFT_LIST_NOT_LOWERED),
     ("static_lift_list", "go", LIFT_LIST_NOT_LOWERED),
     ("static_lift_list", "python", LIFT_LIST_NOT_LOWERED),
@@ -6134,10 +6131,6 @@ const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
     ("static_lift_list", "swift", LIFT_LIST_NOT_LOWERED),
     ("static_lift_list", INTERPRETER, LIFT_LIST_NOT_LOWERED),
 ];
-
-/// Why the scenario of a union is not replayed on an engine yet.
-const UNION_NOT_LOWERED: &str =
-    "a statechart that holds a union has no lowering on it yet (docs/adr/0092, step 4)";
 
 /// Why the scenario of a lift into a record that holds a list is not replayed on
 /// an engine yet: the engine holds no variable of such a record

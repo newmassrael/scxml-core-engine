@@ -36,8 +36,8 @@
 //! * A text a composed value holds, read as a value at any depth, read as the
 //!   text of the buffer C11 holds it in, as a text variable's is; a byte string
 //!   it holds read as the struct it is held in; and a payload that holds a
-//!   union, refused by name on C11, which holds no union yet (docs/adr/0092,
-//!   section 7).
+//!   union, read on C11, which holds a union in a struct of its own
+//!   (docs/adr/0092, section 7).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -217,13 +217,18 @@ fn the_lift_reads_each_field_by_the_function_of_its_type() {
             "        void *const sce_into = &out->items;\n",
             "_refusal = sce_payload_field(&_fields, \"items\", &sce_at);",
             "_refusal = sce_composed_read_batch_reader_record_item_list_3(sce_at, sce_into, \
-             sce_path, sce_path_cap);",
+             sce_path, sce_path_cap, sce_bound);",
+            // The bound a refused value broke, which a delivery's reason does not name.
+            "    uint32_t sce_bound_at = 0u;\n    uint32_t *const sce_bound = &sce_bound_at;\n",
             "snprintf(_message, _message_cap, \"`batch.sent` payload: '%.14s' %s\", sce_path, \
              _refusal);",
             "sce_payload_list_open_within(sce_value, 0u, 3u, &sce_cursor)",
-            "return sce_payload_value_text(sce_value, sce_out->data, 8u);",
-            "return sce_payload_value_text(sce_value, sce_out->data, 4u);",
-            "return sce_payload_value_bytes(sce_value, sce_out->data, 4u, &sce_out->len);",
+            "const char *const sce_refusal = sce_payload_value_text(sce_value, sce_out->data, \
+             8u);",
+            "const char *const sce_refusal = sce_payload_value_text(sce_value, sce_out->data, \
+             4u);",
+            "const char *const sce_refusal = sce_payload_value_bytes(sce_value, sce_out->data, \
+             4u, &sce_out->len);",
             "static const char *const sce_names[] = { \"low\", \"high\", \"critical\", };",
             "sce_refusal = sce_payload_field(&sce_fields, \"amount\", &sce_at);",
             "sce_refusal = sce_payload_value_i64(sce_at, sce_into);",
@@ -670,13 +675,14 @@ const SHAPES: [&str; 7] = [
     "event_shapes.scxml",
 ];
 
-/// Pinned by the union arm of the gate's read (`first_unlowered_composed_use`,
-/// `sce-build/src/forge/event_schema_check.rs`) and by `union_reached`
-/// (`sce-build/src/forge/composed_lowering.rs`): C11 reads a composed payload,
-/// holds no union, and so refuses a read of a payload that holds one by its
-/// own name, naming the field and the union.
+/// Pinned by the C11 row of the one table of what each backend lowers
+/// (`ComposedLowering::of`, `sce-build/src/forge/event_schema_check.rs`): C11
+/// holds a union (docs/adr/0092, section 7), so the gate's union arm
+/// (`first_unlowered_composed_use`) lets a read of a payload that holds one
+/// through, and the machine is generated
+/// (`a_c11_machine_reads_a_union_payload_by_its_tag.rs` holds what it is).
 #[test]
-fn a_payload_that_holds_a_union_stays_refused_by_name_on_c11() {
+fn a_payload_that_holds_a_union_is_read_on_c11() {
     let (ok, out) = run(
         &["check", "-l", "c11"],
         &fixtures(),
@@ -684,12 +690,9 @@ fn a_payload_that_holds_a_union_stays_refused_by_name_on_c11() {
         "shapes_reader.scxml",
         SHAPES_READER,
     );
-    assert!(!ok, "C11 holds no union yet:\n{out}");
-    for part in [
-        "generate/unsupported-feature",
-        "the field `one` holds `union:Shape`",
-        "a statechart's read of `_event.data` has no c11 lowering of its union",
-    ] {
-        assert!(out.contains(part), "expected `{part}` in:\n{out}");
-    }
+    assert!(ok, "C11 reads a payload that holds a union:\n{out}");
+    assert!(
+        !out.contains("generate/unsupported-feature"),
+        "nothing of the reader is refused on C11:\n{out}"
+    );
 }

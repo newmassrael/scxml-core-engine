@@ -2910,6 +2910,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_lift.scxml"
         STAGE_ALSO lift_given.scxml lift_kept.scxml lift_answer.scxml enum_lift_kind.scxml
     )
+    # A payload that holds a union, read by testing its tag, a union variable built where it
+    # is declared, a text lifted into one, and a machine saved and restored with every union
+    # read back by its tag (docs/adr/0092), so the staging carries the union, the enum of its
+    # tag and the record of each case beside the machine.
+    sce_generate_static_integration_c_test(static_union
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_union.scxml"
+        STAGE_ALSO enum_shape_kind.scxml event_shapes.scxml shape_radius.scxml shape_rect.scxml
+                   shape_label.scxml shape_path.scxml union_shape.scxml event_shape_said.scxml
+    )
     sce_generate_static_integration_c_test(sheet_peer
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml"
@@ -3193,6 +3203,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_text_record_SOURCES}
         ${_STATIC_TEXT_HEADERS}
         ${INTEGRATION_C_TEST_static_lift_SOURCES}
+        ${INTEGRATION_C_TEST_static_union_SOURCES}
     )
     sce_c_link_runtime(sce_c_integration_static_scalars EXCLUDES lua dom)
     target_include_directories(sce_c_integration_static_scalars PRIVATE
