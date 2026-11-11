@@ -17,6 +17,7 @@ use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use sce_build::forge::model::{ForgeDocument, ForgeKind, ParsedForge, RuntimeDep};
 use sce_build::forge::parser::parse_forge_with_imports;
+use sce_build::forge::union_check;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -361,6 +362,42 @@ fn a_case_whose_record_declares_the_tags_key_is_refused() {
     assert_eq!(line, Some(11));
 }
 
+/// `error` is the refusal of the union `union` by a backend that does not
+/// lower one: `generate/unsupported-feature`, naming the union and why.
+/// `by` names who refused, for the failure.
+fn refused_as_unlowered(error: ForgeError, union: &str, by: &str) {
+    assert!(
+        matches!(
+            error.to_diagnostics()[0].code,
+            DiagnosticCode::GenerateUnsupportedFeature
+        ),
+        "{by}: {error:?}"
+    );
+    match error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::UnsupportedFeature { detail, .. } => {
+                assert!(
+                    detail.contains(&format!("union '{union}'")),
+                    "{by}: {detail}"
+                );
+                assert!(
+                    detail.contains("this backend does not lower a union yet"),
+                    "{by}: {detail}"
+                );
+            }
+            other => panic!("{by}: {other:?}"),
+        },
+        other => panic!("{by}: {other:?}"),
+    }
+}
+
+/// Every backend either lowers a union, listed in
+/// `codegen_matrix::UNION_BACKENDS` and generating a valid one, or refuses it
+/// by the union's name (docs/adr/0092, section 7). Every backend lowers one
+/// today, so the refusing side is held twice over: through the dispatch, for a
+/// backend added to `Language::ALL` before its union lands, and through the
+/// refusal that dispatch gives (`union_check::document_unlowered`), which no
+/// backend reaches while the list is whole.
 #[test]
 fn a_valid_union_is_refused_by_name_on_every_backend_that_does_not_lower_one() {
     assert!(ForgeKind::Union.is_supported());
@@ -372,41 +409,40 @@ fn a_valid_union_is_refused_by_name_on_every_backend_that_does_not_lower_one() {
         codegen_matrix::kind_class(ForgeKind::Union),
         KindClass::Generic
     );
-    let refusing: Vec<Language> = Language::ALL
-        .iter()
-        .copied()
-        .filter(|language| !codegen_matrix::UNION_BACKENDS.contains(language))
-        .collect();
-    assert!(!refusing.is_empty(), "every backend lowers a union");
-    for language in refusing {
+    for language in Language::ALL.iter().copied() {
+        if codegen_matrix::UNION_BACKENDS.contains(&language) {
+            assert_eq!(
+                codegen_matrix::lookup(ForgeKind::Union, language),
+                EmitOutcome::Emit,
+                "{language:?}"
+            );
+            if let Err(refusal) = sce_build::compile_forge_file(
+                &fixture("union_shape_minimal.scxml"),
+                language,
+                &[],
+                &options(),
+            ) {
+                panic!("{language:?} lowers a union and refused one: {refusal:?}");
+            }
+            continue;
+        }
         assert_eq!(
             codegen_matrix::lookup(ForgeKind::Union, language),
             EmitOutcome::RuntimeMissing,
             "{language:?}"
         );
         let err = compiled("union_shape_minimal.scxml", language);
-        assert!(
-            matches!(
-                err.error.to_diagnostics()[0].code,
-                DiagnosticCode::GenerateUnsupportedFeature
-            ),
-            "{language:?}: {err:?}"
-        );
-        match err.error {
-            ForgeError::Generate(boxed) => match *boxed {
-                GenerateError::UnsupportedFeature { detail, .. } => {
-                    assert!(
-                        detail.contains("union 'union_shape_minimal'"),
-                        "{language:?}: {detail}"
-                    );
-                    assert!(
-                        detail.contains("this backend does not lower a union yet"),
-                        "{language:?}: {detail}"
-                    );
-                }
-                other => panic!("{language:?}: {other:?}"),
-            },
-            other => panic!("{language:?}: {other:?}"),
-        }
+        refused_as_unlowered(err.error, "union_shape_minimal", &format!("{language:?}"));
     }
+    let text =
+        std::fs::read_to_string(fixture("union_shape_minimal.scxml")).expect("the fixture reads");
+    let parsed = parse(&text);
+    let ForgeDocument::Union(union) = &parsed.document else {
+        panic!("a union document, got {:?}", parsed.document.kind());
+    };
+    refused_as_unlowered(
+        ForgeError::from(union_check::document_unlowered(union)),
+        "shape",
+        "the dispatch's refusal",
+    );
 }

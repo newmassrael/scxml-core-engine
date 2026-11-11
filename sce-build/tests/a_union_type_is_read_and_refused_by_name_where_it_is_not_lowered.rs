@@ -197,33 +197,40 @@ fn a_union_a_later_revision_adds_is_declared_optional() {
     .is_ok());
 }
 
-/// The refusal of `language` of the fixture event schema.
-fn compiled(language: Language) -> Located<ForgeError> {
+/// What `language` makes of the fixture event schema: its files, or its
+/// refusal.
+fn compiled(language: Language) -> Result<(), Located<ForgeError>> {
     let options = ForgeCompileOptions {
         go_module_prefix: Some("example.com/generated".to_string()),
         ..Default::default()
     };
-    match sce_build::compile_forge_file(
+    sce_build::compile_forge_file(
         &fixtures().join("event_shapes_minimal.scxml"),
         language,
         &[],
         &options,
-    ) {
-        Ok(_) => panic!("{language:?} generated a field of a union"),
-        Err(refusal) => refusal,
-    }
+    )
+    .map(|_| ())
 }
 
+/// Every backend either lowers a union, listed in `UNION_BACKENDS` and
+/// generating a schema whose fields hold one, or refuses a field of one by
+/// name (section 7). Every backend lowers one today; the refusing side holds
+/// a backend added to `Language::ALL` before its union lands, and the sentence
+/// it refuses with is `value_type::union_unlowered`'s, held where it is
+/// defined.
 #[test]
 fn every_backend_that_does_not_lower_a_union_refuses_a_field_of_one_by_name() {
-    let refusing: Vec<Language> = Language::ALL
-        .iter()
-        .copied()
-        .filter(|language| !UNION_BACKENDS.contains(language))
-        .collect();
-    assert!(!refusing.is_empty(), "every backend lowers a union");
-    for language in refusing {
-        let err = compiled(language);
+    for language in Language::ALL.iter().copied() {
+        if UNION_BACKENDS.contains(&language) {
+            if let Err(refusal) = compiled(language) {
+                panic!("{language:?} lowers a union and refused a field of one: {refusal:?}");
+            }
+            continue;
+        }
+        let Err(err) = compiled(language) else {
+            panic!("{language:?} generated a field of a union");
+        };
         assert!(
             matches!(
                 err.error.to_diagnostics()[0].code,
