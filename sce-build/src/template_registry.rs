@@ -164,10 +164,15 @@ mod tests {
             let names: std::collections::HashSet<&str> =
                 set.iter().map(|&(name, _)| name).collect();
             for &(name, content) in set.iter().filter(|&&(name, _)| owns(language, name)) {
+                let scope = harness_scope(name);
                 for reference in template_references(content) {
                     match reference {
                         Reference::Literal(target) => assert!(
-                            names.contains(target.as_str()),
+                            names.contains(
+                                scope
+                                    .map_or_else(|| target.clone(), |s| format!("{s}/{target}"))
+                                    .as_str()
+                            ),
                             "{language:?}: {name} references {target}, \
                              which is absent from that language's template set"
                         ),
@@ -180,6 +185,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The directory a numerical conformance harness template renders in,
+    /// when `name` is one: `render_harness` loads the templates of
+    /// `harness_layout(..).template_subdir` as its root, so a harness
+    /// fragment names its siblings (`values.c.jinja2`) relative to that
+    /// directory, not to the tree the language's set is keyed by.
+    fn harness_scope(name: &str) -> Option<&'static str> {
+        Language::ALL
+            .iter()
+            .map(|&l| crate::conformance::harness_layout(l).template_subdir)
+            .find(|subdir| name.starts_with(&format!("{subdir}/")))
     }
 
     /// Whether `name`, as it appears in `language`'s template set, is a
