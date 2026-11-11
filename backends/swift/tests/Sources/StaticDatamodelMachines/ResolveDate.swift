@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: b2575d48129e1acf0f70c09ad24f44255a7a62f71444c27101300757ede12222
-// SCE-MAP: resolve_date.scxml:52 :: _forge_body
+// source-hash: d5a1192f784ff99a5aa95877e35eef81f703dd6fbaf723312b776f25706b4354
+// SCE-MAP: resolve_date.scxml:56 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: sce_forge_runtime
@@ -15,12 +15,12 @@
 import SceForgeRuntime
 
 public enum ResolveDate {
-    public static func resolveDate(_ today: Int64, _ kind: DateKind, _ year: Int32?, _ month: UInt8?, _ day: UInt8?, _ weekday: UInt8?, _ count: Int32?) throws -> Int64? {
+    public static func resolveDate(_ today: Int64, _ expression: DateExpression) throws -> Int64? {
         // A failure a checked operation records, thrown once the statement is done
         // (SCE_FORGE.md §3.4.1).
         let sceFailure = Failure()
         do {
-            let sceCond2 = kind == DateKind.none
+            let sceCond2 = expression.kind == DateKind.none
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
@@ -31,36 +31,22 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.absolute
+            let sceCond2 = expression.kind == DateKind.absolute
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
-                    let sceCond4 = !(year != nil && month != nil && day != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
-                do {
-                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(SceOptional.proven(year), SceOptional.proven(month), SceOptional.proven(day)) })
+                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(expression.provenAbsolute.year, expression.provenAbsolute.month, expression.provenAbsolute.day) })
                     try sceFailure.throwIfFailed()
                     return sceReturned
                 }
             }
         }
         do {
-            let sceCond2 = kind == DateKind.monthDay
+            let sceCond2 = expression.kind == DateKind.monthDay
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
-                    let sceCond4 = !(month != nil && day != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
-                do {
-                    let sceCond4 = !(SceOptional.proven(day) >= 1 && SceOptional.proven(day) <= Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(2000, SceOptional.proven(month)) }))
+                    let sceCond4 = !(expression.provenMonthDay.day >= 1 && expression.provenMonthDay.day <= Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(2000, expression.provenMonthDay.month) }))
                     try sceFailure.throwIfFailed()
                     if sceCond4 {
                         throw AlgorithmError.precondition
@@ -70,13 +56,13 @@ public enum ResolveDate {
                 try sceFailure.throwIfFailed()
                 var landing: Int32 = dayToday.year
                 try sceFailure.throwIfFailed()
-                var landingLast: UInt8 = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, SceOptional.proven(month)) })
+                var landingLast: UInt8 = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, expression.provenMonthDay.month) })
                 try sceFailure.throwIfFailed()
                 do {
-                    let sceCond4 = SceOptional.proven(day) <= landingLast
+                    let sceCond4 = expression.provenMonthDay.day <= landingLast
                     try sceFailure.throwIfFailed()
                     if sceCond4 {
-                        let thisYear: Int64 = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(landing, SceOptional.proven(month), SceOptional.proven(day)) })
+                        let thisYear: Int64 = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(landing, expression.provenMonthDay.month, expression.provenMonthDay.day) })
                         try sceFailure.throwIfFailed()
                         do {
                             let sceCond6 = thisYear >= today
@@ -93,36 +79,29 @@ public enum ResolveDate {
                 }
                 landing = Checked.add(sceFailure, landing, 1)
                 try sceFailure.throwIfFailed()
-                landingLast = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, SceOptional.proven(month)) })
+                landingLast = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, expression.provenMonthDay.month) })
                 try sceFailure.throwIfFailed()
                 while true {
-                    let sceCond4 = SceOptional.proven(day) > landingLast
+                    let sceCond4 = expression.provenMonthDay.day > landingLast
                     try sceFailure.throwIfFailed()
                     if !sceCond4 { break }
                     landing = Checked.add(sceFailure, landing, 1)
                     try sceFailure.throwIfFailed()
-                    landingLast = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, SceOptional.proven(month)) })
+                    landingLast = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(landing, expression.provenMonthDay.month) })
                     try sceFailure.throwIfFailed()
                 }
                 do {
-                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(landing, SceOptional.proven(month), SceOptional.proven(day)) })
+                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(landing, expression.provenMonthDay.month, expression.provenMonthDay.day) })
                     try sceFailure.throwIfFailed()
                     return sceReturned
                 }
             }
         }
         do {
-            let sceCond2 = kind == DateKind.relativeDays
+            let sceCond2 = expression.kind == DateKind.relativeDays
             try sceFailure.throwIfFailed()
             if sceCond2 {
-                do {
-                    let sceCond4 = !(count != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
-                let dayShift: Int64 = Int64(SceOptional.proven(count))
+                let dayShift: Int64 = Int64(expression.provenRelativeDays.count)
                 try sceFailure.throwIfFailed()
                 do {
                     let sceReturned: Int64? = Checked.add(sceFailure, today, dayShift)
@@ -132,17 +111,10 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.relativeWeeks
+            let sceCond2 = expression.kind == DateKind.relativeWeeks
             try sceFailure.throwIfFailed()
             if sceCond2 {
-                do {
-                    let sceCond4 = !(count != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
-                let weekShift: Int64 = Int64(SceOptional.proven(count))
+                let weekShift: Int64 = Int64(expression.provenRelativeWeeks.count)
                 try sceFailure.throwIfFailed()
                 do {
                     let sceReturned: Int64? = Checked.add(sceFailure, today, Checked.mul(sceFailure, weekShift, 7))
@@ -152,19 +124,12 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.relativeMonths
+            let sceCond2 = expression.kind == DateKind.relativeMonths
             try sceFailure.throwIfFailed()
             if sceCond2 {
-                do {
-                    let sceCond4 = !(count != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
                 let monthFrom: CivilDatePayload = Checked.takeDefault(sceFailure, { try CivilFromDays.civilFromDays(today) })
                 try sceFailure.throwIfFailed()
-                let monthTo: CivilDatePayload = Checked.takeDefault(sceFailure, { try AddMonths.addMonths(monthFrom.year, monthFrom.month, monthFrom.day, SceOptional.proven(count)) })
+                let monthTo: CivilDatePayload = Checked.takeDefault(sceFailure, { try AddMonths.addMonths(monthFrom.year, monthFrom.month, monthFrom.day, expression.provenRelativeMonths.count) })
                 try sceFailure.throwIfFailed()
                 do {
                     let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(monthTo.year, monthTo.month, monthTo.day) })
@@ -174,19 +139,12 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.relativeYears
+            let sceCond2 = expression.kind == DateKind.relativeYears
             try sceFailure.throwIfFailed()
             if sceCond2 {
-                do {
-                    let sceCond4 = !(count != nil)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
-                }
                 let yearFrom: CivilDatePayload = Checked.takeDefault(sceFailure, { try CivilFromDays.civilFromDays(today) })
                 try sceFailure.throwIfFailed()
-                let yearTo: Int32 = Checked.add(sceFailure, yearFrom.year, SceOptional.proven(count))
+                let yearTo: Int32 = Checked.add(sceFailure, yearFrom.year, expression.provenRelativeYears.count)
                 try sceFailure.throwIfFailed()
                 let yearLast: UInt8 = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(yearTo, yearFrom.month) })
                 try sceFailure.throwIfFailed()
@@ -198,17 +156,17 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.comingWeekday
+            let sceCond2 = expression.kind == DateKind.comingWeekday
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
-                    let sceCond4 = !(weekday != nil && SceOptional.proven(weekday) <= 6)
+                    let sceCond4 = !(expression.provenComingWeekday.weekday <= 6)
                     try sceFailure.throwIfFailed()
                     if sceCond4 {
                         throw AlgorithmError.precondition
                     }
                 }
-                let comingWanted: Int64 = Int64(SceOptional.proven(weekday))
+                let comingWanted: Int64 = Int64(expression.provenComingWeekday.weekday)
                 try sceFailure.throwIfFailed()
                 let comingNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
                 try sceFailure.throwIfFailed()
@@ -222,17 +180,17 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.previousWeekday
+            let sceCond2 = expression.kind == DateKind.previousWeekday
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
-                    let sceCond4 = !(weekday != nil && SceOptional.proven(weekday) <= 6)
+                    let sceCond4 = !(expression.provenPreviousWeekday.weekday <= 6)
                     try sceFailure.throwIfFailed()
                     if sceCond4 {
                         throw AlgorithmError.precondition
                     }
                 }
-                let previousWanted: Int64 = Int64(SceOptional.proven(weekday))
+                let previousWanted: Int64 = Int64(expression.provenPreviousWeekday.weekday)
                 try sceFailure.throwIfFailed()
                 let previousNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
                 try sceFailure.throwIfFailed()
@@ -246,11 +204,11 @@ public enum ResolveDate {
             }
         }
         do {
-            let sceCond2 = kind == DateKind.dayOfMonthOffset
+            let sceCond2 = expression.kind == DateKind.dayOfMonthOffset
             try sceFailure.throwIfFailed()
             if sceCond2 {
                 do {
-                    let sceCond4 = !(day != nil && count != nil && SceOptional.proven(day) >= 1 && SceOptional.proven(day) <= 31)
+                    let sceCond4 = !(expression.provenDayOfMonthOffset.day >= 1 && expression.provenDayOfMonthOffset.day <= 31)
                     try sceFailure.throwIfFailed()
                     if sceCond4 {
                         throw AlgorithmError.precondition
@@ -258,39 +216,39 @@ public enum ResolveDate {
                 }
                 let offsetFrom: CivilDatePayload = Checked.takeDefault(sceFailure, { try CivilFromDays.civilFromDays(today) })
                 try sceFailure.throwIfFailed()
-                let offsetTo: CivilDatePayload = Checked.takeDefault(sceFailure, { try AddMonths.addMonths(offsetFrom.year, offsetFrom.month, 1, SceOptional.proven(count)) })
+                let offsetTo: CivilDatePayload = Checked.takeDefault(sceFailure, { try AddMonths.addMonths(offsetFrom.year, offsetFrom.month, 1, expression.provenDayOfMonthOffset.count) })
                 try sceFailure.throwIfFailed()
                 do {
-                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(offsetTo.year, offsetTo.month, SceOptional.proven(day)) })
+                    let sceReturned: Int64? = Checked.take(sceFailure, fallback: 0, { try DaysFromCivil.daysFromCivil(offsetTo.year, offsetTo.month, expression.provenDayOfMonthOffset.day) })
                     try sceFailure.throwIfFailed()
                     return sceReturned
                 }
             }
         }
         do {
-            let sceCond2 = !(kind == DateKind.weekdayOfWeek)
+            let sceCond2 = expression.kind == DateKind.weekdayOfWeek
             try sceFailure.throwIfFailed()
             if sceCond2 {
-                throw AlgorithmError.precondition
+                do {
+                    let sceCond4 = !(expression.provenWeekdayOfWeek.weekday <= 6)
+                    try sceFailure.throwIfFailed()
+                    if sceCond4 {
+                        throw AlgorithmError.precondition
+                    }
+                }
+                let isoWanted: Int64 = Int64(expression.provenWeekdayOfWeek.weekday)
+                try sceFailure.throwIfFailed()
+                let isoNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
+                try sceFailure.throwIfFailed()
+                let weeks: Int64 = Int64(expression.provenWeekdayOfWeek.count)
+                try sceFailure.throwIfFailed()
+                do {
+                    let sceReturned: Int64? = Checked.add(sceFailure, today, Checked.sub(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, weeks, 7), Checked.rem(sceFailure, Checked.add(sceFailure, isoWanted, 6), 7)), Checked.rem(sceFailure, Checked.add(sceFailure, isoNow, 6), 7)))
+                    try sceFailure.throwIfFailed()
+                    return sceReturned
+                }
             }
         }
-        do {
-            let sceCond2 = !(weekday != nil && count != nil && SceOptional.proven(weekday) <= 6)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
-        }
-        let isoWanted: Int64 = Int64(SceOptional.proven(weekday))
-        try sceFailure.throwIfFailed()
-        let isoNow: Int64 = Int64(WeekdayFromDays.weekdayFromDays(today))
-        try sceFailure.throwIfFailed()
-        let weeks: Int64 = Int64(SceOptional.proven(count))
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: Int64? = Checked.add(sceFailure, today, Checked.sub(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, weeks, 7), Checked.rem(sceFailure, Checked.add(sceFailure, isoWanted, 6), 7)), Checked.rem(sceFailure, Checked.add(sceFailure, isoNow, 6), 7)))
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        preconditionFailure("resolve_date: every case of its union returned before the end of its body")
     }
 }

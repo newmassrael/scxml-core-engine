@@ -4892,13 +4892,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     for testCase in try oracleCases("pure_functions", "resolve_date") {
         let args = try oracleArray(testCase.member("args"))
         let arg0 = try oracleInteger(args[0], as: Int64.self)
-        let arg1 = try { () throws -> DateKind in switch try oracleText(args[1]) { case "none": return DateKind.none; case "absolute": return DateKind.absolute; case "monthDay": return DateKind.monthDay; case "relativeDays": return DateKind.relativeDays; case "relativeWeeks": return DateKind.relativeWeeks; case "relativeMonths": return DateKind.relativeMonths; case "relativeYears": return DateKind.relativeYears; case "comingWeekday": return DateKind.comingWeekday; case "previousWeekday": return DateKind.previousWeekday; case "weekdayOfWeek": return DateKind.weekdayOfWeek; case "dayOfMonthOffset": return DateKind.dayOfMonthOffset; default: throw OracleError(description: "resolve_date arg1: no variant is declared as the name the case writes") } }()
-        let arg2 = try oracleOptional(args[2]) { try oracleInteger($0, as: Int32.self) }
-        let arg3 = try oracleOptional(args[3]) { try oracleInteger($0, as: UInt8.self) }
-        let arg4 = try oracleOptional(args[4]) { try oracleInteger($0, as: UInt8.self) }
-        let arg5 = try oracleOptional(args[5]) { try oracleInteger($0, as: UInt8.self) }
-        let arg6 = try oracleOptional(args[6]) { try oracleInteger($0, as: Int32.self) }
-        let outcome = Result { try ResolveDate.resolveDate(arg0, arg1, arg2, arg3, arg4, arg5, arg6) }
+        let arg1 = try { () throws -> DateExpression in switch try oracleText(args[1].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(args[1].member("year"), as: Int32.self), month: try oracleInteger(args[1].member("month"), as: UInt8.self), day: try oracleInteger(args[1].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(args[1].member("month"), as: UInt8.self), day: try oracleInteger(args[1].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(args[1].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(args[1].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(args[1].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(args[1].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(args[1].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(args[1].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(args[1].member("weekday"), as: UInt8.self), count: try oracleInteger(args[1].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(args[1].member("day"), as: UInt8.self), count: try oracleInteger(args[1].member("count"), as: Int32.self))); default: throw OracleError(description: "resolve_date arg1: no case is the variant the value's tag names") } }()
+        let outcome = Result { try ResolveDate.resolveDate(arg0, arg1) }
         if case .text(let fails)? = testCase.member("fails") {
             switch outcome {
             case .failure(let error as AlgorithmError):
@@ -7250,6 +7245,167 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(try oracleText(fields[2].member("name")) == "day", "civil_date field 2 name")
     let expected2 = try oracleNumberText(fields[2].member("value"))
     #expect(String(payload.day) == expected2, "civil_date.day")
+}
+
+// MARK: - event-schema: month_day
+
+@Test func monthDayMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "month_day")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "month_day: oracle field count")
+    #expect(MonthDay.eventName == "time.month_day", "month_day: event name")
+
+    let payload = MonthDayPayload(
+        month: 2,
+        day: 29
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "month", "month_day field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.month) == expected0, "month_day.month")
+    #expect(try oracleText(fields[1].member("name")) == "day", "month_day field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.day) == expected1, "month_day.day")
+}
+
+// MARK: - event-schema: date_shift
+
+@Test func dateShiftMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "date_shift")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 1, "date_shift: oracle field count")
+    #expect(DateShift.eventName == "time.date_shift", "date_shift: event name")
+
+    let payload = DateShiftPayload(
+        count: -2
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "count", "date_shift field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.count) == expected0, "date_shift.count")
+}
+
+// MARK: - event-schema: date_weekday
+
+@Test func dateWeekdayMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "date_weekday")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 1, "date_weekday: oracle field count")
+    #expect(DateWeekday.eventName == "time.date_weekday", "date_weekday: event name")
+
+    let payload = DateWeekdayPayload(
+        weekday: 5
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "weekday", "date_weekday field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.weekday) == expected0, "date_weekday.weekday")
+}
+
+// MARK: - event-schema: week_weekday
+
+@Test func weekWeekdayMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "week_weekday")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "week_weekday: oracle field count")
+    #expect(WeekWeekday.eventName == "time.week_weekday", "week_weekday: event name")
+
+    let payload = WeekWeekdayPayload(
+        weekday: 1,
+        count: 1
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "weekday", "week_weekday field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.weekday) == expected0, "week_weekday.weekday")
+    #expect(try oracleText(fields[1].member("name")) == "count", "week_weekday field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.count) == expected1, "week_weekday.count")
+}
+
+// MARK: - event-schema: month_offset_day
+
+@Test func monthOffsetDayMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "month_offset_day")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 2, "month_offset_day: oracle field count")
+    #expect(MonthOffsetDay.eventName == "time.month_offset_day", "month_offset_day: event name")
+
+    let payload = MonthOffsetDayPayload(
+        day: 5,
+        count: 1
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "day", "month_offset_day field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.day) == expected0, "month_offset_day.day")
+    #expect(try oracleText(fields[1].member("name")) == "count", "month_offset_day field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.count) == expected1, "month_offset_day.count")
+}
+
+// MARK: - union: date_expression
+
+@Test func dateExpressionMatchesReference() throws {
+
+    let cases = try oracleCases("unions", "date_expression")
+    #expect(cases.count == 11, "date_expression: one oracle value per case")
+    guard cases.count == 11 else {
+        return
+    }
+    #expect(try oracleText(cases[0].member("kind")) == "none", "date_expression: oracle value 0 is of the case none")
+    let value0 = try { () throws -> DateExpression in switch try oracleText(cases[0].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[0].member("year"), as: Int32.self), month: try oracleInteger(cases[0].member("month"), as: UInt8.self), day: try oracleInteger(cases[0].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[0].member("month"), as: UInt8.self), day: try oracleInteger(cases[0].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[0].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[0].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[0].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[0].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[0].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[0].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[0].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[0].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[0].member("day"), as: UInt8.self), count: try oracleInteger(cases[0].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value0.kind == DateKind.none, "date_expression: the case none answers its tag")
+    #expect(try oracleText(cases[1].member("kind")) == "absolute", "date_expression: oracle value 1 is of the case absolute")
+    let value1 = try { () throws -> DateExpression in switch try oracleText(cases[1].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[1].member("year"), as: Int32.self), month: try oracleInteger(cases[1].member("month"), as: UInt8.self), day: try oracleInteger(cases[1].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[1].member("month"), as: UInt8.self), day: try oracleInteger(cases[1].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[1].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[1].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[1].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[1].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[1].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[1].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[1].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[1].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[1].member("day"), as: UInt8.self), count: try oracleInteger(cases[1].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value1.kind == DateKind.absolute, "date_expression: the case absolute answers its tag")
+    #expect(try oracleText(cases[2].member("kind")) == "monthDay", "date_expression: oracle value 2 is of the case monthDay")
+    let value2 = try { () throws -> DateExpression in switch try oracleText(cases[2].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[2].member("year"), as: Int32.self), month: try oracleInteger(cases[2].member("month"), as: UInt8.self), day: try oracleInteger(cases[2].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[2].member("month"), as: UInt8.self), day: try oracleInteger(cases[2].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[2].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[2].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[2].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[2].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[2].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[2].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[2].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[2].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[2].member("day"), as: UInt8.self), count: try oracleInteger(cases[2].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value2.kind == DateKind.monthDay, "date_expression: the case monthDay answers its tag")
+    #expect(try oracleText(cases[3].member("kind")) == "relativeDays", "date_expression: oracle value 3 is of the case relativeDays")
+    let value3 = try { () throws -> DateExpression in switch try oracleText(cases[3].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[3].member("year"), as: Int32.self), month: try oracleInteger(cases[3].member("month"), as: UInt8.self), day: try oracleInteger(cases[3].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[3].member("month"), as: UInt8.self), day: try oracleInteger(cases[3].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[3].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[3].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[3].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[3].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[3].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[3].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[3].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[3].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[3].member("day"), as: UInt8.self), count: try oracleInteger(cases[3].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value3.kind == DateKind.relativeDays, "date_expression: the case relativeDays answers its tag")
+    #expect(try oracleText(cases[4].member("kind")) == "relativeWeeks", "date_expression: oracle value 4 is of the case relativeWeeks")
+    let value4 = try { () throws -> DateExpression in switch try oracleText(cases[4].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[4].member("year"), as: Int32.self), month: try oracleInteger(cases[4].member("month"), as: UInt8.self), day: try oracleInteger(cases[4].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[4].member("month"), as: UInt8.self), day: try oracleInteger(cases[4].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[4].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[4].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[4].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[4].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[4].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[4].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[4].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[4].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[4].member("day"), as: UInt8.self), count: try oracleInteger(cases[4].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value4.kind == DateKind.relativeWeeks, "date_expression: the case relativeWeeks answers its tag")
+    #expect(try oracleText(cases[5].member("kind")) == "relativeMonths", "date_expression: oracle value 5 is of the case relativeMonths")
+    let value5 = try { () throws -> DateExpression in switch try oracleText(cases[5].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[5].member("year"), as: Int32.self), month: try oracleInteger(cases[5].member("month"), as: UInt8.self), day: try oracleInteger(cases[5].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[5].member("month"), as: UInt8.self), day: try oracleInteger(cases[5].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[5].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[5].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[5].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[5].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[5].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[5].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[5].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[5].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[5].member("day"), as: UInt8.self), count: try oracleInteger(cases[5].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value5.kind == DateKind.relativeMonths, "date_expression: the case relativeMonths answers its tag")
+    #expect(try oracleText(cases[6].member("kind")) == "relativeYears", "date_expression: oracle value 6 is of the case relativeYears")
+    let value6 = try { () throws -> DateExpression in switch try oracleText(cases[6].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[6].member("year"), as: Int32.self), month: try oracleInteger(cases[6].member("month"), as: UInt8.self), day: try oracleInteger(cases[6].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[6].member("month"), as: UInt8.self), day: try oracleInteger(cases[6].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[6].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[6].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[6].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[6].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[6].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[6].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[6].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[6].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[6].member("day"), as: UInt8.self), count: try oracleInteger(cases[6].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value6.kind == DateKind.relativeYears, "date_expression: the case relativeYears answers its tag")
+    #expect(try oracleText(cases[7].member("kind")) == "comingWeekday", "date_expression: oracle value 7 is of the case comingWeekday")
+    let value7 = try { () throws -> DateExpression in switch try oracleText(cases[7].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[7].member("year"), as: Int32.self), month: try oracleInteger(cases[7].member("month"), as: UInt8.self), day: try oracleInteger(cases[7].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[7].member("month"), as: UInt8.self), day: try oracleInteger(cases[7].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[7].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[7].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[7].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[7].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[7].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[7].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[7].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[7].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[7].member("day"), as: UInt8.self), count: try oracleInteger(cases[7].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value7.kind == DateKind.comingWeekday, "date_expression: the case comingWeekday answers its tag")
+    #expect(try oracleText(cases[8].member("kind")) == "previousWeekday", "date_expression: oracle value 8 is of the case previousWeekday")
+    let value8 = try { () throws -> DateExpression in switch try oracleText(cases[8].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[8].member("year"), as: Int32.self), month: try oracleInteger(cases[8].member("month"), as: UInt8.self), day: try oracleInteger(cases[8].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[8].member("month"), as: UInt8.self), day: try oracleInteger(cases[8].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[8].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[8].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[8].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[8].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[8].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[8].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[8].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[8].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[8].member("day"), as: UInt8.self), count: try oracleInteger(cases[8].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value8.kind == DateKind.previousWeekday, "date_expression: the case previousWeekday answers its tag")
+    #expect(try oracleText(cases[9].member("kind")) == "weekdayOfWeek", "date_expression: oracle value 9 is of the case weekdayOfWeek")
+    let value9 = try { () throws -> DateExpression in switch try oracleText(cases[9].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[9].member("year"), as: Int32.self), month: try oracleInteger(cases[9].member("month"), as: UInt8.self), day: try oracleInteger(cases[9].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[9].member("month"), as: UInt8.self), day: try oracleInteger(cases[9].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[9].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[9].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[9].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[9].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[9].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[9].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[9].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[9].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[9].member("day"), as: UInt8.self), count: try oracleInteger(cases[9].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value9.kind == DateKind.weekdayOfWeek, "date_expression: the case weekdayOfWeek answers its tag")
+    #expect(try oracleText(cases[10].member("kind")) == "dayOfMonthOffset", "date_expression: oracle value 10 is of the case dayOfMonthOffset")
+    let value10 = try { () throws -> DateExpression in switch try oracleText(cases[10].member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(cases[10].member("year"), as: Int32.self), month: try oracleInteger(cases[10].member("month"), as: UInt8.self), day: try oracleInteger(cases[10].member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(cases[10].member("month"), as: UInt8.self), day: try oracleInteger(cases[10].member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(cases[10].member("weekday"), as: UInt8.self), count: try oracleInteger(cases[10].member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(cases[10].member("day"), as: UInt8.self), count: try oracleInteger(cases[10].member("count"), as: Int32.self))); default: throw OracleError(description: "date_expression: no case is the variant the value's tag names") } }()
+    #expect(value10.kind == DateKind.dayOfMonthOffset, "date_expression: the case dayOfMonthOffset answers its tag")
 }
 
 // MARK: - event-schema: merkle_node
