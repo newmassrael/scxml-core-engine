@@ -564,8 +564,34 @@ func LiftRecord[T any](text, schema string, depth, pathBound uint32, defaults st
 	if err == nil {
 		value, err = read(PayloadRecord{members: map[string]any(fields)})
 	}
+	return liftOutcome("record", schema, value, err)
+}
+
+// LiftValue is what a `<sce:lift>` reads into a value read whole (docs/adr/0092,
+// section 6.1 item 5): text as one value of the type named schema, the whole
+// object handed to read as a delivery's field of that type is read (a union's
+// tag first, then its case's record), or the refusal of the first place that is
+// not one. LiftText says what is refused before the value is read: a text that
+// is no object is notObject, as a record's is. A type read whole has no defaults
+// of its own, a union none and a record's inside its reader.
+func LiftValue[T any](text, schema string, depth, pathBound uint32,
+	read func(PayloadValue) (T, error)) (T, *PayloadRefusal) {
+	var zero T
+	fields, err := LiftText(text, depth, pathBound, "")
+	value := zero
 	if err == nil {
-		log.Printf("[sce] <sce:lift>: the text is a record of %s", schema)
+		value, err = read(PayloadValue{value: map[string]any(fields)})
+	}
+	return liftOutcome("value", schema, value, err)
+}
+
+// liftOutcome is a lift's answer, value or the refusal err is, logged with the
+// schema's name and what the text is read as, and, for a refusal, its code,
+// pointer and bound; the text itself is not, since nothing bounds what a sender
+// writes in it.
+func liftOutcome[T any](what, schema string, value T, err error) (T, *PayloadRefusal) {
+	if err == nil {
+		log.Printf("[sce] <sce:lift>: the text is a %s of %s", what, schema)
 		return value, nil
 	}
 	var refusal *PayloadRefusal
@@ -575,8 +601,9 @@ func LiftRecord[T any](text, schema string, depth, pathBound uint32, defaults st
 		refusal = refuseAt(RefusalNotJSON, "", err.Error())
 	}
 	bound, hasBound := refusal.Bound()
-	log.Printf("[sce] <sce:lift>: the text is no record of %s: %s at '%s', bound %d (%t) (%s)",
-		schema, refusal.Code().Name(), refusal.Pointer(), bound, hasBound, refusal.Error())
+	log.Printf("[sce] <sce:lift>: the text is no %s of %s: %s at '%s', bound %d (%t) (%s)",
+		what, schema, refusal.Code().Name(), refusal.Pointer(), bound, hasBound, refusal.Error())
+	var zero T
 	return zero, refusal
 }
 

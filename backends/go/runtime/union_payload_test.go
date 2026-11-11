@@ -122,3 +122,59 @@ func TestAUnionIsWrittenWithItsTagAmongTheFieldsOfItsCase(t *testing.T) {
 		}
 	}
 }
+
+// liftFigure is a text lifted into a figure whole, read as readFigure reads the
+// field `s`.
+func liftFigure(text string) (figure, *PayloadRefusal) {
+	return LiftValue(text, "shape", 2, 32, func(v PayloadValue) (figure, error) {
+		return ReadUnion(v, "kind", func(tag PayloadValue) (figureKind, error) {
+			name, err := tag.Name()
+			if err != nil {
+				return 0, err
+			}
+			switch name {
+			case "dot":
+				return figureDot, nil
+			case "circle":
+				return figureCircle, nil
+			}
+			return 0, tag.UnknownVariant(name, "ShapeKind")
+		}, func(kind figureKind, object PayloadValue) (figure, error) {
+			if kind == figureDot {
+				return figure{kind: kind}, nil
+			}
+			record, err := object.Record("")
+			if err != nil {
+				return figure{}, err
+			}
+			radius, err := LiftField(record, "radius", ValueUnsigned[uint16])
+			return figure{kind: kind, radius: radius}, err
+		})
+	})
+}
+
+// A text lifted into a union whole (docs/adr/0092, section 6.1 item 5) is read as
+// a delivery's field of the union is, its tag first; a text that is no object is
+// notObject, as a record's is, and every other refusal points into the text.
+func TestATextIsLiftedIntoAUnionWholeOrRefused(t *testing.T) {
+	if got, refusal := liftFigure(`{"radius":4,"kind":"circle"}`); refusal != nil || got != (figure{kind: figureCircle, radius: 4}) {
+		t.Errorf("lifted %+v, %v; want a circle of 4", got, refusal)
+	}
+	for _, c := range []struct {
+		text    string
+		code    RefusalCode
+		pointer string
+	}{
+		{`[1]`, RefusalNotObject, ""},
+		{``, RefusalNotJSON, ""},
+		{`{"kind":"oval"}`, RefusalUnknownVariant, "/kind"},
+		{`{"kind":3}`, RefusalWrongKind, "/kind"},
+		{`{"kind":"circle"}`, RefusalMissing, "/radius"},
+		{`{"kind":"circle","radius":[[1]]}`, RefusalTooDeep, "/radius/0"},
+	} {
+		_, refusal := liftFigure(c.text)
+		if refusal == nil || refusal.Code() != c.code || refusal.Pointer() != c.pointer {
+			t.Errorf("%s: refused %v, want %s at %q", c.text, refusal, c.code.Name(), c.pointer)
+		}
+	}
+}

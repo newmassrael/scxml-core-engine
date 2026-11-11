@@ -261,12 +261,27 @@ func SavedReadBytes(value any, what string, capacity int) ([]byte, error) {
 func SavedReadList[T any](
 	value any, what string, capacity int, element func(any, string) (T, error),
 ) ([]T, error) {
+	return SavedReadListWithin(value, what, 0, capacity, element)
+}
+
+// SavedReadListWithin is a list of a type that states a lower count
+// (docs/adr/0086, section 15) read back element by element, only if it holds at
+// least least and no more than capacity elements: a machine never holds fewer or
+// more, and a restored one must not be the first to. Both counts are held before
+// any element is read, as SavedReadList holds its bound; least is 0 for a list
+// that states none.
+func SavedReadListWithin[T any](
+	value any, what string, least, capacity int, element func(any, string) (T, error),
+) ([]T, error) {
 	items, ok := value.([]any)
 	if !ok {
 		return nil, notA(value, what, "an array")
 	}
 	if len(items) > capacity {
 		return nil, refuse("'%s' holds %d elements, past the %d it is bounded by", what, len(items), capacity)
+	}
+	if len(items) < least {
+		return nil, refuse("'%s' holds %d elements, fewer than the %d its type declares", what, len(items), least)
 	}
 	read := make([]T, len(items))
 	for at, item := range items {
@@ -316,6 +331,35 @@ func SavedBoundedBytes(capacity int) func(any, string) ([]byte, error) {
 	return func(value any, what string) ([]byte, error) {
 		return SavedReadBytes(value, what, capacity)
 	}
+}
+
+// SavedWriteUnion writes a union (docs/adr/0092, section 6.1 item 7): one object,
+// the tag under the key tag as the declared name variant, before the members of
+// record, the record of the case as it writes itself, or nothing for an empty
+// case (nil). What a generated union writes each case with.
+func SavedWriteUnion(tag, variant string, record any) any {
+	saved := NewJSONObject()
+	saved.Set(tag, variant)
+	if members, ok := record.(*JSONObject); ok {
+		for _, key := range members.Keys() {
+			member, _ := members.Get(key)
+			saved.Set(key, member)
+		}
+	}
+	return saved
+}
+
+// SavedReadUnionTag is the declared name of the case a saved union value is in:
+// the text under its tag's key tag, read before any field of the case, since the
+// tag says which fields follow (docs/adr/0092, section 4). A value that is no
+// object, that has no tag, or whose tag is not a text is refused naming what; a
+// name the union has no case for is the generated reader's to refuse.
+func SavedReadUnionTag(value any, what, tag string) (string, error) {
+	held, err := SavedField(value, what, tag)
+	if err != nil {
+		return "", err
+	}
+	return SavedReadString(held, what+"."+tag)
 }
 
 // SavedField is the field name of a saved record value: what a generated record
