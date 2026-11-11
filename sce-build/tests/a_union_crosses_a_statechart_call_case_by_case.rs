@@ -19,8 +19,9 @@
 //! * A lane not listed there refuses the statechart by the union's name; none
 //!   is today, and the refusal holds a lane added before its crossing.
 //!
-//! What the generated machine does at run time is not run here: no committed
-//! tree holds this statechart.
+//! What the generated machine does at run time is not run here; the Swift
+//! package's tree holds this statechart and runs it
+//! (`AUnionCrossesAStatechartCallTests.swift`).
 
 use std::path::{Path, PathBuf};
 
