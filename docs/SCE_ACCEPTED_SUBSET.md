@@ -544,7 +544,8 @@ union's unit, and its test profile matches no union yet
 generate a template too, one whose type reaches a union among them, a `union-match`
 holding where the union is in the case its `variant` names. Python generates a
 template too, and refuses one whose type reaches a union as C++ does. C11 generates a
-template too, refuses one whose type reaches a union as C++ does, and refuses with
+template too, refuses one whose type reaches a union as C++ does (it generates the
+union's unit, and its test profile matches no union yet), and refuses with
 `generate/unsupported-feature` one that references, inside a list, a template of an
 optional type; its event schema unit holds a byte string of one entry in the buffer of
 its bound beside its length, which a template compares, counts and builds. Swift generates a template
@@ -720,9 +721,9 @@ type is read only where a test proves one case on Rust. A `<foreach>` over a lis
 a proven case holds walks it there. An algorithm's parameter, return and local of
 `union:<alias>` (docs/adr/0092, Landing order step 5) are read by the same narrowing,
 its local built whole as the case its tag names, and its body judged for the point
-where every case returned before any backend is asked; Rust, C++, Kotlin, Go and Python
-lower it on the type the union's own unit declares, and every other backend refuses
-it by name
+where every case returned before any backend is asked; Rust, C++, Kotlin, Go, Python
+and C11 lower it on the type the union's own unit declares, and every other backend
+refuses it by name
 (SCE_FORGE.md section 4.12, "Unions"). A statechart hands such an algorithm a union
 and takes one back as it does a record (A union, under "State an algorithm takes and
 gives back", below).
@@ -5516,8 +5517,12 @@ and raise nothing (docs/adr/0086, section 5.4); the machine lifts the event from
 that JSON. A list a place holds is taken whole into a list variable whose type it
 fits by assignment, a C struct copying the array it holds, and into one of a larger
 bound by the constructor its type declares beside it (`<list type>_of`). A payload
-that holds a union, at any depth, is refused by name on C11, which holds no union
-yet (docs/adr/0092, section 7).
+that holds a union, at any depth, holds it in the machine's own struct of its tag and
+a C `union` of its cases' records (docs/adr/0092, section 7, the C11 row), the shape
+the union's own C11 unit has, read by a function of the machine that reads its tag
+first (`sce_payload_union_open`); a `<sce:lift>` reads a text into one by the same
+function, its refused path written as the refusal's pointer
+(`sce_payload_pointer_of_path`).
 
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
@@ -6104,10 +6109,13 @@ the machine's own sum into the type the union's unit declares, case by case, eac
 case's record copied field by field as a record argument is, and maps what returns
 back the same way: a `match` in Rust, a `when` in Kotlin and a `std::visit` with one
 call operator per alternative in C++ over every case, so a case either side gains does
-not build; Go's `switch` over every case, and Python's `dict` of one builder per case
-indexed by the tag's declared name, are held to the cases by the adapter's
-regeneration with the document, neither language holding one to every case. Rust,
-C++, Kotlin, Go and Python lower the call; every other backend
+not build; Go's `switch` over every case, Python's `dict` of one builder per case
+indexed by the tag's declared name, and C11's function of one test per case of the
+declared name the leaving value's tag answers, are held to the cases by the
+adapter's regeneration with the document, none of the three holding a case analysis
+to every case, and a value in no case ends the run in Go and C11 (a Go `panic`, a
+C11 `abort`). Rust, C++, Kotlin, Go, Python and C11 lower the call; every other
+backend
 refuses the statechart by name (`generate/unsupported-feature`, naming the call and
 the union) until it lowers an algorithm over a union.
 

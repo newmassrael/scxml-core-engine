@@ -15,25 +15,26 @@
   - step 3, the runtimes: ff8c45d2a9 (Rust), 07d8880036 (Go), 5bfc0a6a2a (Kotlin), f6dc8f133a (Python), 0ab2a3307d
     (C++), 9a863ded7d (Swift), b1ac3d69cd (C11), b93168cde0 (the Interpreter), held to one refusal per text by
     3646559436;
-  - step 4, on six of the eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed,
-    3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift; 1955e08e52
-    Go; the change that adds "Decided while landing ADR 0092 on C++" for C++; the change that adds "Decided while
-    landing ADR 0092 on Python" for Python) and the replay vocabulary (dd2d10284a); the statechart's payload read,
-    variable, write, lift and saved state on Rust (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on
-    Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on Kotlin (the change that adds "Amendment (2026-11-11)"), on Go
-    (43698d9e6e), on C++ (the change that adds "Decided while landing ADR 0092 on C++"), on Python (the change
-    that adds "Decided while landing ADR 0092 on Python") and on the Interpreter (the change that adds "Decided
-    while landing step 4 and the crossing on the Interpreter"). C11 still refuses a statechart that holds a union
-    by name (`generate/unsupported-feature`);
-  - step 5, on six of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
-    (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
-    Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the Go
-    lowering and crossing (ad4d2f5984, 5ad49544dd), the C++ lowering and crossing (the change that adds "Decided
+  - step 4, on all eight lanes: the narrowing and `expression/union-read-unproven` (cb1576c1ed, 3dfbb314df), the
+    union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift; 1955e08e52 Go; the change
+    that adds "Decided while landing ADR 0092 on C++" for C++; the change that adds "Decided while landing ADR 0092
+    on Python" for Python; the change that adds "Decided while landing ADR 0092 on C11" for C11) and the replay
+    vocabulary (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust
+    (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on
+    Kotlin (the change that adds "Amendment (2026-11-11)"), on Go (43698d9e6e), on C++ (the change that adds
+    "Decided while landing ADR 0092 on C++"), on Python (the change that adds "Decided while landing ADR 0092 on
+    Python"), on C11 (the change that adds "Decided while landing ADR 0092 on C11") and on the Interpreter (the
+    change that adds "Decided while landing step 4 and the crossing on the Interpreter");
+  - step 5, on all seven generated lanes and the Interpreter: the judge of a body that holds a union and the Rust
+    lowering (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one
+    back on Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the
+    Go lowering and crossing (ad4d2f5984, 5ad49544dd), the C++ lowering and crossing (the change that adds "Decided
     while landing ADR 0092 on C++"), the Swift lowering and crossing (the change that adds "Decided while landing
-    step 5 and the crossing on Swift") and the Python lowering and crossing (the change that adds "Decided while
-    landing ADR 0092 on Python"); and the Interpreter's lowering of such an algorithm (the change that adds
-    "Decided while landing step 5 on the Interpreter") and its crossing (the change that adds "Decided while
-    landing step 4 and the crossing on the Interpreter"). C11 refuses such an algorithm and such a call by name;
+    step 5 and the crossing on Swift"), the Python lowering and crossing (the change that adds "Decided while
+    landing ADR 0092 on Python") and the C11 lowering and crossing (the change that adds "Decided while landing
+    ADR 0092 on C11"); and the Interpreter's lowering of such an algorithm (the change that adds "Decided while
+    landing step 5 on the Interpreter") and its crossing (the change that adds "Decided while landing step 4 and
+    the crossing on the Interpreter");
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
@@ -1151,6 +1152,78 @@ is decided by a rule this record already states; none changes a document, a wire
    algorithm reads; so a union crosses such a call as it is, and the rule `ALGORITHM_UNION_BACKENDS` states for
    the generated backends, which map their sum into the unit's case by case ("Decided while landing step 5 on
    Kotlin, with the crossing" item 2), is unchanged.
+
+## Decided while landing ADR 0092 on C11 (2026-11-11)
+
+C11 now holds a union in a statechart (step 4), generates a union document
+(`codegen_matrix::UNION_BACKENDS`), lowers an algorithm over a union and hands one across a statechart's call
+(`ALGORITHM_UNION_BACKENDS`). Each question below is decided by a rule this record, ADR 0086 or ADR 0087
+already states; none changes a document, a wire or a diagnostic code.
+
+1. **A machine's union is its own struct of the tag and a C `union`** (section 7, the C11 row):
+   `<machine>_union_<document>_t`, the tag `tag`, a value of the machine's enum of it, and `as`, one member per
+   case that holds a record, named as the variant in snake case and holding the machine's record of the case;
+   an empty case has no member, since C11 has no empty struct. Its storage is the tag and the largest case's
+   record, the compiler's `sizeof`, which the slot of ADR 0086 section 8 holds as it holds any struct the machine
+   holds. A value is built only by the constructor of its case, `<stem>_case_<case>`, which zeroes the rest of
+   the value first (section 7 item 3). `<stem>_variant` answers the declared name of the case a value is in, and
+   NULL for a tag that names no case, which no constructor builds. A case spelled as a word C reserves, and two
+   variants of one snake spelling, are refused by name (`ComposedSpelling::union_case_refused` and the one check
+   of distinct identifiers in `union_definition`).
+2. **A read the narrowing proves is a member path, and a field several cases share is a test of the tag.** The
+   tag is read as `.tag` and a field of the one case left as `.as.<case>.<field>`. C has no method, no closure and
+   no expression that takes a case apart, so a field the cases left share is read by a conditional over the tag
+   whose last arm is the last case left (section 6.1 item 2: the narrowing proved the value is in one of them),
+   the tag's constants the statechart's enum declares; a statechart's place is a name or a path, so it is read
+   once per case. A field of a case is written in place, as its member; one the cases left share through the
+   place `<stem>_proven_field_<field>_place` answers, whose other cases end the process with `abort`, the one place
+   that is written. A text of a case is read as its buffer's text, as a text a composed value holds is.
+3. **A reader is a function of the machine under a guard of its name.** The tag is read first against the names
+   its enum declares by the runtime's `sce_payload_union_open`, which says whether a refusal stands at the tag, and
+   then the case's record from the same object by the reader of the record. Every reader takes, beside the path,
+   the place `sce_bound` it writes the bound a refused value broke into (a text's or a byte string's bound, a
+   list's bound or lower count), which a lift names in its refusal record (ADR 0087, section 2.4). A reader stands
+   under a guard of its name, so the payload's channel and a `<sce:lift>`, each of which reads one type through a
+   spelling of its own, define its reader once in one machine.
+4. **A lift reads a union whole** by the runtime's `sce_payload_lift_value`, which refuses what a lift refuses
+   before anything is read and hands the reader the object the text is; the path the reader leaves is written as
+   the refusal record's strict pointer by `sce_payload_pointer_of_path`. The reader functions and the types a lift
+   reaches are declared beside the machine's statements (`Rewrites::composed_defs`, through
+   `ComposedSpelling::take_functions`).
+5. **The saved form is two functions beside the type**, `<type>_saved_write` and `<type>_saved_read`, the names a
+   C11 record has: the object is opened, the tag written first by the runtime's `sce_saved_write_union_tag` as the
+   declared name `<stem>_variant` answers, and the members of the case's record written after it by the record's
+   `<type>_saved_write_members`, which a record of entries and a record that holds a composition now declare; it
+   is read by its tag first (`sce_saved_read_union_tag`), which names the case whose record is read from the same
+   object and whose constructor builds the value. A case's record that holds a list holds it to its bound and its
+   lower count (`sce_saved_list_within`, docs/adr/0086, section 15.6). A variable of a union is read by a host by
+   value, as a record of plain data is (`StaticTarget::whole_value_view`).
+6. **The unit's union has the machine's shape**, `<document>_t`, the typedef a C11 import names a stateful
+   document by, with `<document>_variant` and `<document>_case_<case>`, each case holding the payload struct of its
+   event schema's unit; it declares no read of a case and no place of a field, since an algorithm never writes a
+   union ("Decided while landing step 5" item 3). Its constants are an event schema unit's (`<PREFIX>_REVISION`,
+   `_DATA_MAX_LEN`, `_SCHEMA_ID`, `_JSON_SCHEMA`). A schema unit's union field names the unit's typedef, and a
+   composition over it is named by that type (`union_<document>`).
+7. **An algorithm reads its union on the unit's struct** as a statechart reads its own: the tag by `.tag`, a field
+   of the one case left as its member, and a field several cases leave by a conditional over the tag, the holder a
+   parameter or a local read once per case. A union local is `const`, built by the constructor of its case around
+   a compound literal of the case's payload struct. The end no path reaches is `abort();`, which returns nothing,
+   so the compiler asks the body for no value after it; the union's unit includes `<stdlib.h>` for it. A
+   `may-fail` body hands a failure on through `sce_failure_`, never by ending the process.
+8. **The crossing is a function per direction beside the adapter** ("Decided while landing step 5 on Kotlin" item
+   2): `<adapter>_union_in<n>` maps the machine's struct into the unit's and `<adapter>_union_out` the unit's back,
+   each testing the declared name the leaving value's `<stem>_variant` answers, one arm per case, its record bound
+   to `sce_case` and copied as a record argument is. C checks no case analysis for exhaustiveness, so, as on Go,
+   the property that a case either side gains is a build error is the adapter's regeneration with the document;
+   a value in no case ends the process rather than cross as the zeroed struct.
+9. **The test profile is a step of its own**, as on C++: C11 generates a union's unit, and its test-template walk
+   spells no case of a union and its runtime no canonical form of one yet, so a template and a component that
+   reach a union stay refused by the union's name; C11 is not in `TEST_PROFILE_UNION_BACKENDS`.
+
+Step 5 and its crossing are now on every generated lane and the Interpreter. Step 6 still needs, on every lane,
+C11's among them, the numerical conformance harness's argument of a union; then the standard library's change
+itself. C11's test profile matching
+a union (`TEST_PROFILE_UNION_BACKENDS`) is not on step 6's path.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 

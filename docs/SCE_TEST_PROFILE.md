@@ -1344,8 +1344,10 @@ forge unit is, and, since C has no namespace, each declaration carries the docum
 
 Every record, enum and referenced template the unit names is reached through the header of the document that
 declares it, which the unit includes, and a referenced template's functions are named by its document. C11 joins
-the tests as Rust, Kotlin, Go and Python do. C11 lowers no union, so a template whose type reaches a union at any
-depth is refused on C11 as on C++ (ADR 0092, section 7). The C11 unit of an event schema holds a byte string of one
+the tests as Rust, Kotlin, Go and Python do. A template whose type reaches a union at any depth is refused on C11 by
+the union's own refusal, as on C++ (ADR 0092, section 7): C11 generates the union's unit, a struct of its tag and a C
+`union` of its cases' records, and its walk spells no case of one and its runtime no canonical form of one yet
+(`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`). The C11 unit of an event schema holds a byte string of one
 entry in the buffer of its bound beside its length (`sce_static_bytes_<N>_t`), as a composition holds one inside a
 list, so a byte string is compared by its length and its octets, the other side read through the runtime's view of
 bytes, counted by its length and built by the initializer of its type. C11 refuses by name a reference, inside a
@@ -2168,8 +2170,9 @@ one set of bytes.
    the run with `error`, and so does a kill of a component whose machine is running. It has `sce_test_text_length`
    for a template's length restriction, since a C text is held as UTF-8 bytes, and the C11 host send request
    carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
-   §11.9 is lifted for C11 for `test-template`; C11 lowers no union, so a template whose type reaches one stays
-   refused there, as on C++, Go and Python. C11 generates test components next, through the doors of §12.3, each in
+   §11.9 is lifted for C11 for `test-template`; C11's test profile matches no union yet
+   (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so a template whose type reaches one stays refused there, as on
+   C++ and Python. C11 generates test components next, through the doors of §12.3, each in
    storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
    `test-component`, but for a component that declares `<sce:action>` and for one whose template reaches a union.
    C11 then
