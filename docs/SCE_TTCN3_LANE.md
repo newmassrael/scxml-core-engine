@@ -182,6 +182,8 @@ On Kotlin the program is the class of the suite's unit, `<package>.<Suite>Kt`, w
 `com.sce.runtime.test.runnerMain` (the tests module runs `runtime_suite`'s as `:sce-kotlin-tests:runRuntimeSuite`).
 On C++ it is `SCE::Generated::<Suite>::main(argc, argv)`, over `sce/include/test/Runner.h`, which a one-line `main`
 calls (`tests/integration/runtime_suite_runner.cpp`).
+On Go it is the `Main` of the suite's package, over `testprofile.RunnerMain`, which a one-line `package main` calls
+(`backends/go/tests/cmd/runtime_suite_runner`, run as `go run ./cmd/runtime_suite_runner` in `backends/go/tests`).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -356,6 +358,17 @@ On C++ the same is in place: `sce/include/test/` (`Trace.h`, `FromCanonical.h`, 
 `tests/integration/`), in the words of the Rust reader. Its configuration of every form,
 `trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place, since C++ lowers no
 union.
+
+On Go the same is in place: the readers of each form beside the writers in the package `testprofile/canonical`
+(`from_canonical.go`, each answering an error in the words of the Rust reader), `ParseTrace`, `TraceAdapter`,
+`RunSuiteWithTraces`, `RunRunner` and `RunnerMain` in `testprofile`, `GoReading` beside `GoCanonical`, and the Go twins
+of the Rust tests (`trace_test.go`, `runner_test.go` and `canonical/from_canonical_test.go` in the runtime;
+`a_test_suite_runs_through_its_runner_test.go` and `a_record_reads_back_the_form_it_writes_test.go` under
+`backends/go/tests/integration/static_datamodel/`), which replay the same trace to the same log byte for byte, in
+place and through the program as a process. A Go function literal names the types it answers, so each generated read
+is an expression of the value and an error, a record, a list and a value that may be absent a function literal called
+where it stands. Go lowers no union, so its configuration of every form is the one C++ reads,
+`trace_forms/unionless_forms_configuration.scxml`.
 
 The trace replay and the runner program are in place on Rust, Kotlin and C++. Go, Python, C11 and Swift follow the
 same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
