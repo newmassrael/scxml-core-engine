@@ -59,8 +59,9 @@ const CANONICAL: &str = "::SCE::Test::Canonical";
 
 /// The unit of the test template `m`, whose imports are `imports`. Refused by
 /// name where the template's type or a parameter's reaches a union at any
-/// depth, as a schema unit's union field is on C++
-/// ([`crate::forge::value_type::union_unlowered`]).
+/// depth: C++ generates a union's unit, and its test profile matches no union
+/// yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`,
+/// [`crate::forge::value_type::union_unlowered`]).
 pub(super) fn render_test_template_cpp(
     env: &minijinja::Environment,
     m: &TestTemplateModel,
@@ -162,8 +163,8 @@ pub(super) struct CppCanonicalAt {
 /// declared name and number are read by the free functions its unit declares
 /// beside it (`declared_name`, `to_underlying`), found by argument-dependent
 /// lookup through the enum's own namespace, whatever document declares it.
-/// C++ lowers no union, so the walk's refusal of one stands. The unit of a
-/// test configuration writes its records' forms with it too, beside their
+/// C++'s test profile matches no union yet, so the walk's refusal of one
+/// stands. The unit of a test configuration writes its records' forms with it too, beside their
 /// readers ([`CppReading`]).
 pub(super) struct CppCanonical;
 
@@ -335,8 +336,8 @@ impl CppReadingAt {
 /// integer, a text, a byte string and a list are read into the type the place
 /// they stand in holds, which the reader names as the schema unit declares it
 /// (`decltype` of the field, `value_type` of an optional or a list), since a
-/// C++ function infers no type from where its result goes. C++ lowers no
-/// union, so the walk's refusal of one stands.
+/// C++ function infers no type from where its result goes. C++'s test profile
+/// matches no union yet, so the walk's refusal of one stands.
 ///
 /// No read binds a reference to what a call returns: a record's object is
 /// bound as the view `record()` returns by value (`CanonicalRecord`), a list's

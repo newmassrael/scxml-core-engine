@@ -143,7 +143,8 @@ pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, Gener
     crate::host_processor_analyzer::declare_host_surfaces(&mut lowered, &send_types, &invoke_types)
         .map_err(|reserved| GenerateError::unsupported(reserved.to_string()))?;
 
-    let lowers_union = crate::forge::codegen_matrix::UNION_BACKENDS.contains(&language);
+    let lowers_union =
+        crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS.contains(&language);
     let template_ref = |used: &TemplateUse, site: &str| -> Result<TemplateRef, GenerateError> {
         let Some(alias) = used.template.as_deref() else {
             return Err(GenerateError::unsupported(format!(

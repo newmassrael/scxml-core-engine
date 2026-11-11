@@ -394,6 +394,25 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
 pub const UNION_BACKENDS: &[Language] = &[
     Language::Rust,
+    Language::Cpp,
+    Language::Kotlin,
+    Language::Go,
+    Language::Swift,
+];
+
+/// The backends of [`UNION_BACKENDS`] whose test profile (docs/SCE_TEST_PROFILE.md
+/// §11.9, §12.3) matches a union: a test template whose type reaches one,
+/// with its canonical form, and a test component that receives through such
+/// a template. A backend joins this list in the change that gives its
+/// template walk the spelling of a union's case
+/// (`generator::test_template_walk::TemplateSpelling::case`) and its runtime the
+/// canonical form of one, and only after it is in [`UNION_BACKENDS`], whose
+/// unit the template names. A backend of [`UNION_BACKENDS`] not listed here
+/// generates the union's unit and refuses such a template and such a
+/// component by the union's name (`generate/unsupported-feature`), as a step of
+/// the landing (docs/adr/0092, section 7, last paragraph).
+pub const TEST_PROFILE_UNION_BACKENDS: &[Language] = &[
+    Language::Rust,
     Language::Kotlin,
     Language::Go,
     Language::Swift,
@@ -412,7 +431,12 @@ pub const UNION_BACKENDS: &[Language] = &[
 /// (`generate/unsupported-feature`) where it renders it, and a statechart that
 /// calls one where it renders the statechart; the algorithm is judged alike on
 /// every backend before that.
-pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin, Language::Go];
+pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Cpp,
+    Language::Kotlin,
+    Language::Go,
+];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a
@@ -1240,8 +1264,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Rust, Kotlin, Go and Swift
-    /// emit one, in [`Language::ALL`]'s order.
+    /// dispatch that refuses the document by name. Rust, C++, Kotlin, Go and
+    /// Swift emit one, in [`Language::ALL`]'s order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1257,6 +1281,7 @@ mod tests {
             emitting(ForgeKind::Union).collect::<Vec<_>>(),
             [
                 Language::Rust,
+                Language::Cpp,
                 Language::Kotlin,
                 Language::Go,
                 Language::Swift
@@ -1268,9 +1293,27 @@ mod tests {
         }
     }
 
+    /// docs/adr/0092, section 7, last paragraph: a backend's test profile
+    /// matches a union only where the backend generates the union's unit the
+    /// template names, and names it once. C++ generates the unit and does not
+    /// match one in a template yet.
+    #[test]
+    fn a_test_profile_matches_a_union_only_where_its_unit_is_generated() {
+        for &lang in TEST_PROFILE_UNION_BACKENDS {
+            assert!(UNION_BACKENDS.contains(&lang), "{lang:?}");
+            let times = TEST_PROFILE_UNION_BACKENDS
+                .iter()
+                .filter(|l| **l == lang)
+                .count();
+            assert_eq!(times, 1, "{lang:?}");
+        }
+        assert!(UNION_BACKENDS.contains(&Language::Cpp));
+        assert!(!TEST_PROFILE_UNION_BACKENDS.contains(&Language::Cpp));
+    }
+
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a
     /// union only where it generates the union's unit the algorithm names, and
-    /// names it once. Rust, Kotlin and Go lower one.
+    /// names it once. Rust, C++, Kotlin and Go lower one.
     #[test]
     fn an_algorithm_over_a_union_is_lowered_where_its_unit_is_generated() {
         for &lang in ALGORITHM_UNION_BACKENDS {
@@ -1283,7 +1326,12 @@ mod tests {
         }
         assert_eq!(
             ALGORITHM_UNION_BACKENDS,
-            [Language::Rust, Language::Kotlin, Language::Go]
+            [
+                Language::Rust,
+                Language::Cpp,
+                Language::Kotlin,
+                Language::Go
+            ]
         );
     }
 

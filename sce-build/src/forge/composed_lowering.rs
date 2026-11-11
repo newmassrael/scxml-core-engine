@@ -70,8 +70,9 @@ pub use swift::{SwiftCarrier, SwiftComposed};
 
 pub(crate) use c11::{c11_pairs, c11_path_len, C11_WIRE};
 pub(crate) use cpp::{
-    cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, cpp_union_member,
-    cpp_unit_union_read, CPP_FORGE,
+    cpp_bounded_list, cpp_bytes_type, cpp_case_ident, cpp_case_read, cpp_raise_checks,
+    cpp_text_type, cpp_union_member, cpp_unit_union_read, CPP_CASE_VALUE, CPP_FORGE,
+    CPP_UNION_CASES, CPP_UNION_KIND, CPP_UNREACHED,
 };
 pub(crate) use go::{
     go_case_ident, go_case_member, go_case_read, go_raise_checks, go_union_member,

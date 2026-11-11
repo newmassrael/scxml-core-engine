@@ -368,11 +368,12 @@ pub(super) trait TemplateSpelling {
     /// The language the unit is written in.
     fn language(&self) -> Language;
 
-    /// Whether the backend lowers a union (`codegen_matrix::UNION_BACKENDS`):
-    /// a backend that does not refuses a template whose type reaches one, as
-    /// it refuses a schema unit's union field.
+    /// Whether the backend's test profile matches a union
+    /// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`): a backend that does not
+    /// refuses a template whose type reaches one by the union's name, as a
+    /// backend that lowers no union refuses a schema unit's union field.
     fn lowers_unions(&self) -> bool {
-        crate::forge::codegen_matrix::UNION_BACKENDS.contains(&self.language())
+        crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS.contains(&self.language())
     }
 
     /// The template's own value, which `match` is given.

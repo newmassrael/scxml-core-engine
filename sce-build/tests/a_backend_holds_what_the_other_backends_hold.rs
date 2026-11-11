@@ -295,9 +295,8 @@ enum Why {
 /// table in this file, and checked both ways against the derived rows.
 const ACCEPTED: &[(Language, &str, Why)] = &[
     // The union (docs/adr/0092, section 7, `codegen_matrix::UNION_BACKENDS`):
-    // its sum type lands one backend at a time, Kotlin, Rust, Swift and Go so
-    // far.
-    (Language::Cpp, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    // its sum type lands one backend at a time, Kotlin, Rust, Swift, Go and
+    // C++ so far.
     (Language::Python, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::C11, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).

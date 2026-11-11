@@ -2157,12 +2157,11 @@ pub fn generate_cpp_with_imports_and_externs(
         }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
-        // docs/adr/0092: a backend not in `codegen_matrix::UNION_BACKENDS`
-        // does not lower a union yet, so its document is refused by name, here
-        // and in each such dispatch below.
-        ForgeDocument::Union(m) => {
-            return Err(crate::forge::union_check::document_unlowered(m).into())
-        }
+        // docs/adr/0092, section 7, the C++ row: a union is a struct of one
+        // `std::variant`, an alternative per case. A backend not in
+        // `codegen_matrix::UNION_BACKENDS` refuses its document by name in its
+        // own dispatch below.
+        ForgeDocument::Union(m) => render_union_cpp(&env, m, imports, options)?,
         // docs/SCE_TEST_PROFILE.md §12.6, slice 3: a template's `match` and a
         // specific template's `value` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
         ForgeDocument::TestTemplate(m) => {
@@ -3765,9 +3764,11 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
     // The type the union's own unit declares, as the import line that brings
     // its unit into scope names it ([`forge_import_identity`]): Rust's
     // `use super::<snake>;` brings the sibling module, which names the enum
-    // (`<snake>::<Pascal>`, as an imported enum and record are named), Go's
-    // import binds the unit's package to its alias, which names the value
-    // struct (`sce_<snake>.<Pascal>`), and Kotlin's wildcard import brings the
+    // (`<snake>::<Pascal>`, as an imported enum and record are named), C++'s
+    // `#include` brings the unit's namespace, which names the struct
+    // (`SCE::Generated::<Pascal>::<Pascal>`), Go's import binds the unit's
+    // package to its alias, which names the value struct
+    // (`sce_<snake>.<Pascal>`), and Kotlin's wildcard import brings the
     // interface itself.
     fn union(&self, alias: &str) -> Option<String> {
         use crate::generator::Language;
@@ -3775,13 +3776,11 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
             .iter()
             .find(|i| i.kind == "union" && i.alias == alias)
             .map(|i| match self.l.lang {
-                Language::Rust => format!("{}::{}", i.namespace, i.type_name),
+                Language::Rust | Language::Cpp => format!("{}::{}", i.namespace, i.type_name),
                 Language::Go => format!("{}.{}", i.namespace, i.type_name),
-                Language::Cpp
-                | Language::Kotlin
-                | Language::Python
-                | Language::C11
-                | Language::Swift => i.type_name.clone(),
+                Language::Kotlin | Language::Python | Language::C11 | Language::Swift => {
+                    i.type_name.clone()
+                }
             })
     }
     fn enum_mangle(&self, alias: &str) -> String {
@@ -5083,6 +5082,109 @@ fn render_union_go(
     ctx.insert("kind_method".into(), GO_UNION_KIND.into());
     ctx.insert("tag_member".into(), GO_UNION_TAG.into());
     ctx.insert("go_type_imports".into(), serde_json::json!(uses));
+    ctx.insert("cases".into(), serde_json::json!(cases));
+    l.render(env, "union", ctx)
+}
+
+/// The C++ unit of a union document (docs/adr/0092, section 7, the C++ row,
+/// and its item 2): a struct named for the document in the unit's namespace,
+/// holding one `std::variant` of an alternative per case in the tag enum's
+/// order, each a struct of its own nested in the union's, holding the case's
+/// record as `value` or nothing for an empty case, so two cases that hold one
+/// record stay two types; `kind()`, the value of the tag's enum the case is
+/// for, from the alternative's index; and one `proven<Case>()` per case that
+/// holds a record, the read of a case a test of the tag proved, which ends the
+/// process in another case, the one place that is written. Beside it the
+/// constants of [`UnionUnit::context`], as an event schema's unit declares its
+/// own.
+///
+/// The struct is the shape a C++ machine holds its own union in
+/// ([`crate::forge::composed_lowering::CppComposed`]), named by the same
+/// spellings: the alternative of a case, its record's member, the tag's method
+/// and a case's proven read. The tag's enum and the cases' records are named
+/// from the global namespace, through the headers of their documents, which
+/// the unit includes, and only the documents the type names. Two variants of
+/// one alternative's name, and an alternative named as the union's own struct,
+/// which C++ refuses as a member, are refused by name rather than left to the
+/// compiler.
+fn render_union_cpp(
+    env: &minijinja::Environment,
+    m: &UnionModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::forge::composed_lowering::{
+        cpp_case_ident, cpp_case_read, CPP_CASE_VALUE, CPP_UNION_CASES, CPP_UNION_KIND,
+        CPP_UNREACHED,
+    };
+    use crate::generator::Language;
+    let unit = UnionUnit::read(m, imports)?;
+    let tag = unit.tag;
+    let union_type = filters::to_pascal_case(m.name.clone());
+    let kind_type = format!(
+        "::{}",
+        enum_qualified_type(&tag.document_name, Language::Cpp)
+    );
+    let mut alternatives: std::collections::BTreeMap<String, &str> =
+        std::collections::BTreeMap::new();
+    let mut cases = Vec::with_capacity(unit.cases.len());
+    let mut includes: Vec<String> = vec![tag.include_stmt.trim().to_string()];
+    for (variant, record) in &unit.cases {
+        let variant = variant.as_str();
+        let ident = cpp_case_ident(variant);
+        if ident == union_type {
+            return Err(union_refused(
+                m,
+                format!(
+                    "the case `{variant}` is the C++ struct `{ident}`, the name of the union's \
+                     own struct, which C++ refuses as a member of it"
+                ),
+            ));
+        }
+        if let Some(first) = alternatives.insert(ident.clone(), variant) {
+            return Err(union_refused(
+                m,
+                format!("the cases `{first}` and `{variant}` are both the C++ struct `{ident}`"),
+            ));
+        }
+        if let Some(import) = record {
+            let line = import.include_stmt.trim().to_string();
+            if !includes.contains(&line) {
+                includes.push(line);
+            }
+        }
+        cases.push(serde_json::json!({
+            "ident": ident,
+            "variant": variant,
+            "kind": format!(
+                "{kind_type}::{}",
+                crate::forge::enum_naming::variant_ident(
+                    Language::Cpp,
+                    &tag.document_name,
+                    variant
+                )
+            ),
+            "proven": cpp_case_read(variant),
+            "record": record.map(|import| {
+                format!("::{}", event_schema_payload_type(&import.document_name, Language::Cpp))
+            }),
+        }));
+    }
+    let l = LangCtx::new(Language::Cpp, imports);
+    let mut ctx = unit.context(&l, m, options);
+    if let Some(serde_json::Value::String(json_schema)) = ctx.get("json_schema").cloned() {
+        ctx.insert(
+            "json_schema_chars".into(),
+            c_text_initializer(&json_schema).into(),
+        );
+    }
+    ctx.insert("union_type".into(), union_type.into());
+    ctx.insert("kind_type".into(), kind_type.into());
+    ctx.insert("kind_method".into(), CPP_UNION_KIND.into());
+    ctx.insert("cases_member".into(), CPP_UNION_CASES.into());
+    ctx.insert("case_value".into(), CPP_CASE_VALUE.into());
+    ctx.insert("unreached".into(), CPP_UNREACHED.into());
+    ctx.insert("cpp_type_includes".into(), serde_json::json!(includes));
     ctx.insert("cases".into(), serde_json::json!(cases));
     l.render(env, "union", ctx)
 }
@@ -39412,11 +39514,12 @@ fn record_field_inits(
 
 /// The type the union `alias` an algorithm imports is spelled as on the
 /// backend of `l`: the type its own unit declares (docs/adr/0092, section 7, the
-/// Rust, Kotlin and Go rows), named as the import line brings it in, as an event
-/// schema's record is ([`event_schema_payload_type`]): Rust through the sibling
-/// module (`<snake>::<Pascal>`), Kotlin by the sealed interface the wildcard
-/// import of the unit's package brings in, Go by the value struct of the
-/// package its import binds, as a schema unit names it
+/// Rust, C++, Kotlin and Go rows), named as the import line brings it in, as an
+/// event schema's record is ([`event_schema_payload_type`]): Rust through the
+/// sibling module (`<snake>::<Pascal>`), C++ by the struct of the unit's
+/// namespace, Kotlin by the sealed interface the wildcard import of the unit's
+/// package brings in, Go by the value struct of the package its import binds,
+/// as a schema unit names it
 /// (`SchemaUnitNames::union`). A backend that does not lower an algorithm's
 /// union refuses the algorithm by name before its body is rendered
 /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]), so asked of one
@@ -39449,9 +39552,10 @@ fn algorithm_union_type(
 /// `lang` that imports it names it (docs/adr/0092, section 7): Rust through the
 /// sibling module its `use super::<snake>;` brings in (`<snake>::<Pascal>`),
 /// Kotlin by the sealed interface the wildcard import of the unit's package
-/// brings in (`<Pascal>`), and Go by the value struct of the package its import
-/// binds to [`go_package_alias`] (`sce_<snake>.<Pascal>`), as an imported
-/// record's payload type is named ([`event_schema_payload_type`]). What an
+/// brings in (`<Pascal>`), Go by the value struct of the package its import
+/// binds to [`go_package_alias`] (`sce_<snake>.<Pascal>`), and C++ by the struct
+/// of the namespace its `#include` brings in (`SCE::Generated::<Pascal>::<Pascal>`),
+/// as an imported record's payload type is named ([`event_schema_payload_type`]). What an
 /// algorithm's union is spelled as ([`algorithm_union_type`]), what a Go test
 /// template names a union by, and what a statechart's adapter maps the
 /// machine's own sum into (`crate::forge::static_lowering`). `None` on a backend
@@ -39464,7 +39568,10 @@ pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) 
         Language::Rust => Some(format!("{snake}::{pascal}")),
         Language::Kotlin => Some(pascal),
         Language::Go => Some(format!("{}.{pascal}", go_package_alias(&snake))),
-        Language::Cpp | Language::Python | Language::C11 | Language::Swift => None,
+        // The struct of the unit's namespace its `#include` brings in, as an
+        // imported record's payload type is named.
+        Language::Cpp => Some(format!("SCE::Generated::{pascal}::{pascal}")),
+        Language::Python | Language::C11 | Language::Swift => None,
     }
 }
 
@@ -39503,7 +39610,16 @@ pub(crate) fn algorithm_union_case(
                 record.unwrap_or_default()
             ))
         }
-        Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
+        // The union's struct of the case's alternative, nested in it, holding
+        // the record or nothing, as a machine's union is built.
+        Language::Cpp => {
+            return Ok(format!(
+                "{union_type}{{{union_type}::{}{{{}}}}}",
+                crate::forge::composed_lowering::cpp_case_ident(variant),
+                record.unwrap_or_default()
+            ))
+        }
+        Language::Python | Language::C11 | Language::Swift => {
             return Err(GenerateError::InvalidConfig(format!(
                 "an algorithm's union local reached the renderer of {}, which lowers none in an \
                  algorithm (docs/adr/0092, Landing order step 5)",
@@ -39550,7 +39666,17 @@ fn unreached_end(
             filters::escape_kotlin(why)
         )),
         Language::Go => Ok(format!("{pad}panic(\"{}\")", filters::escape_go(why))),
-        Language::Cpp | Language::Python | Language::C11 | Language::Swift => {
+        // `std::abort`, which ends the process, what the unit's own proven
+        // reads do in a case the narrowing proved the value is not in
+        // (`forge/cpp/union.h.jinja2`); a `may-fail` body hands a failure on as
+        // its `AlgorithmResult`, never by ending the process. `[[noreturn]]`, so
+        // the compiler asks the body for no value after it.
+        Language::Cpp => Ok(format!(
+            "{pad}{} // {}",
+            crate::forge::composed_lowering::CPP_UNREACHED,
+            why
+        )),
+        Language::Python | Language::C11 | Language::Swift => {
             Err(GenerateError::InvalidConfig(format!(
                 "algorithm '{name}' ends where every case of a union returned, which the \
                  renderer of {} does not close, as it lowers no union in an algorithm \
@@ -41692,6 +41818,9 @@ fn lower_algorithm_stmt(
                     Some(match lang {
                         Language::Kotlin => format!("{ty}({})", joined(" = ")),
                         Language::Go => format!("{ty}{{{}}}", joined(": ")),
+                        // By position in the schema's order, as a record local
+                        // is (docs/adr/0059, section 5).
+                        Language::Cpp => format!("{ty}{{{}}}", cpp_positional_init(&inits)),
                         _ => format!("{ty} {{ {} }}", joined(": ")),
                     })
                 }
@@ -41703,13 +41832,15 @@ fn lower_algorithm_stmt(
                 record.as_deref(),
             )?;
             let local = l.local_id(name);
-            // `algorithm_union_type` has refused every backend but Rust, Kotlin
-            // and Go. The local is never written, so Kotlin declares it `val`,
-            // at the union's type rather than the case's class, so a test of
-            // its case reads it as a value of the union; Go's constructor
-            // answers the union's type, which the short declaration takes.
+            // `algorithm_union_type` has refused every backend but Rust, C++,
+            // Kotlin and Go. The local is never written, so Kotlin declares it
+            // `val`, at the union's type rather than the case's class, so a
+            // test of its case reads it as a value of the union, and C++
+            // `const`; Go's constructor answers the union's type, which the
+            // short declaration takes.
             let line = match lang {
                 Language::Kotlin => format!("{pad}val {local}: {union_type} = {value}\n"),
+                Language::Cpp => format!("{pad}const {union_type} {local} = {value};\n"),
                 Language::Go => format!("{pad}{local} := {value}\n"),
                 _ => format!("{pad}let {local} = {value};\n"),
             };

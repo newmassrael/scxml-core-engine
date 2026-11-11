@@ -25,8 +25,9 @@
 //! unit declares, named as the import names the union's unit: on Rust the enum
 //! through its sibling module (`union_shape::UnionShape`), on Kotlin the sealed
 //! interface, on Go the value struct through the package its import binds
-//! (`sce_union_shape.UnionShape`), on Swift the enum bare in the module. Every
-//! other backend refuses it by name.
+//! (`sce_union_shape.UnionShape`), on C++ the struct through its namespace
+//! (`SCE::Generated::UnionShape::UnionShape`), on Swift the enum bare in the
+//! module. Every other backend refuses it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -141,7 +142,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { max } => crate::forge::composed_lowering::cpp_bytes_type(max.max),
             ValueType::Optional { elem } => format!("std::optional<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, max } => {
                 crate::forge::composed_lowering::cpp_bounded_list(&inner(elem, c11)?, max.max)
             }
@@ -372,6 +373,13 @@ mod tests {
         )
         .expect_err("no import names the union");
         assert!(unnamed.contains("`union:Other`"), "{unnamed}");
+        // C++ names its struct inside its bounded list and `std::optional`
+        // (docs/adr/0092, section 7, the C++ row).
+        assert_eq!(spelled(Language::Cpp, "union:Shape"), "UnionShape");
+        assert_eq!(
+            spelled(Language::Cpp, "list<optional<union:Shape>>[3]"),
+            "::SCE::Forge::OwnedList<std::optional<UnionShape>, 3>"
+        );
         for lang in Language::ALL.iter().copied() {
             if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {
                 continue;

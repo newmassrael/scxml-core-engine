@@ -6,7 +6,8 @@
 //! `match` that takes the template's formal parameters in order, and, for a
 //! specific template alone, a `value`; each matching mechanism is spelled over
 //! the record types the event schema's unit declares. A template whose type
-//! reaches a union is refused on C++ as a schema unit's union field is, and
+//! reaches a union is refused on C++, whose test profile matches no union yet
+//! though it generates the union's unit, and
 //! every backend that generates no template refuses one by name.
 //!
 //! What the generated headers do when they run is held by
@@ -312,8 +313,9 @@ fn unsupported(name: &str, language: Language, err: Located<ForgeError>) -> Stri
 }
 
 /// A template whose type reaches a union, in itself or below a field, is
-/// refused on C++ by the union's own refusal, which a schema unit's union
-/// field is refused by.
+/// refused on C++ by the union's own refusal: C++ generates the union's unit,
+/// and its test profile matches no union yet
+/// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 #[test]
 fn a_template_that_reaches_a_union_is_refused_on_cpp() {
     for (path, alias) in [

@@ -269,16 +269,15 @@ fn a_union_is_taken_whole_only_by_a_return_of_its_type() {
 /// after the body was judged as it is on every backend.
 #[test]
 fn a_backend_that_lowers_no_union_in_an_algorithm_refuses_one_by_name() {
-    for language in [Language::Cpp, Language::Python] {
-        let result = generated(&fixtures().join("algorithm_shape_extent.scxml"), language);
-        let (code, why) = refused_code(result);
-        assert!(
-            matches!(code, DiagnosticCode::GenerateUnsupportedFeature),
-            "{code:?}: {why}"
-        );
-        assert!(
-            why.contains("does not lower a union in an algorithm yet"),
-            "{language:?}: {why}"
-        );
-    }
+    let language = Language::Python;
+    let result = generated(&fixtures().join("algorithm_shape_extent.scxml"), language);
+    let (code, why) = refused_code(result);
+    assert!(
+        matches!(code, DiagnosticCode::GenerateUnsupportedFeature),
+        "{code:?}: {why}"
+    );
+    assert!(
+        why.contains("does not lower a union in an algorithm yet"),
+        "{language:?}: {why}"
+    );
 }

@@ -1,0 +1,89 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+{# docs/adr/0092, section 7, the C++ row, and its item 2. The tag's enum and each
+   case's record through the header of its document, and only the documents the
+   type names. `std_includes` is read off the text by the render door. #}
+#include <cstdint>
+#include <cstdlib>
+#include <variant>
+{% for header in std_includes %}
+#include <{{ header }}>
+{% endfor %}
+{% for line in cpp_type_includes %}
+{{ line }}
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// The revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own).
+inline constexpr std::uint32_t REVISION = {{ schema_revision }};
+/// The most bytes a value's JSON text takes: its largest case, every list full, every text at its bound,
+/// every number at its longest spelling.
+inline constexpr std::uint64_t DATA_MAX_LEN = {{ data_max_len }}u;
+/// The id of the union's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of `JSON_SCHEMA`.
+inline constexpr const char *SCHEMA_ID = "{{ schema_id }}";
+{% if payload_grammar %}
+/// A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `{{ tag }}` beside the fields
+/// of its record, every bound as this build resolved it. Held as its characters, since no string literal
+/// holds a text of any length.
+inline constexpr char JSON_SCHEMA[] = {{ json_schema_chars }};
+{% else %}
+// No JSON_SCHEMA: {{ payload_grammar_absent }}.
+{% endif %}
+
+/// A value of `{{ union_name }}`: exactly one case, told apart by its tag `{{ tag }}`, a value of
+/// `{{ kind_type }}`. Each case is the alternative of its own struct, so two cases that hold one record
+/// stay two types, and a value is built only whole, from the alternative of its case.
+struct {{ union_type }} {
+{% for c in cases %}
+{% if c.record %}
+    /// The case `{{ c.variant }}`, holding its record.
+    struct {{ c.ident }} {
+        {{ c.record }} {{ case_value }};
+    };
+{% else %}
+    /// The case `{{ c.variant }}`, its tag alone.
+    struct {{ c.ident }} {};
+{% endif %}
+{% endfor %}
+
+    ::std::variant<{% for c in cases %}{{ c.ident }}{{ ", " if not loop.last }}{% endfor %}> {{ cases_member }};
+
+    /// The case this value is in: the tag its text writes under `{{ tag }}`.
+    {{ kind_type }} {{ kind_method }}() const {
+        switch ({{ cases_member }}.index()) {
+{% for c in cases %}
+        case {{ loop.index0 }}:
+            return {{ c.kind }};
+{% endfor %}
+        }
+        {{ unreached }}
+    }
+{% for c in cases if c.record %}
+
+    /// The record of the case `{{ c.variant }}`, read where a test of the tag proved the value is in it.
+    const {{ c.record }} &{{ c.proven }}() const {
+        const {{ c.ident }} *held = ::std::get_if<{{ c.ident }}>(&{{ cases_member }});
+        if (held == nullptr) {
+            {{ unreached }}
+        }
+        return held->{{ case_value }};
+    }
+{% endfor %}
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}
