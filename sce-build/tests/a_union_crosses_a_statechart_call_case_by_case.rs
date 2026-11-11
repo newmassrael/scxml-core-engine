@@ -7,7 +7,7 @@
 //! its `union:Shape` variable to `algorithm_shape_grown.scxml` and
 //! `algorithm_shape_extent.scxml` and takes the grown shape back:
 //!
-//! * Kotlin, Rust, Go, C++, Swift and Python, the lanes that lower an algorithm over a union
+//! * Kotlin, Rust, Go, C++, Swift, Python and C11, the lanes that lower an algorithm over a union
 //!   (`ALGORITHM_UNION_BACKENDS`), map the machine's own sum into the type the
 //!   union's unit declares in the call's adapter, case by case, each case's
 //!   record copied as a record argument is, and map what the algorithm returns
@@ -16,13 +16,15 @@
 //!   over, since what it takes back is read through its methods).
 //! * A union is handed over by the name of a variable of the same union; one
 //!   that may be absent is refused by name.
-//! * Every other lane refuses the statechart.
+//! * A lane not listed there refuses the statechart by the union's name; none
+//!   is today, and the refusal holds a lane added before its crossing.
 //!
 //! What the generated machine does at run time is not run here: no committed
 //! tree holds this statechart.
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS;
 use sce_build::generator::Language;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 
@@ -231,6 +233,45 @@ fn swift_maps_the_machines_union_into_the_units_and_back() {
     );
 }
 
+/// Pinned by `CTarget::state_adapter`, `AdapterSpec::union_crossing` and
+/// `c11_union_crossing` (`sce-build/src/forge/static_lowering.rs`): a function
+/// beside the adapter maps the machine's struct into the unit's by the declared
+/// name of the case each answers, the record bound to `sce_case` and copied as
+/// a record argument is, and another maps what the algorithm returns back; a
+/// value in no case ends the process.
+#[test]
+fn c11_maps_the_machines_union_into_the_units_and_back() {
+    let code = machine(Language::C11, &|name| {
+        name == "statechart_shape_crossing_sm.c"
+    });
+    let machine_union = "statechart_shape_crossing_union_union_shape_minimal_t";
+    let unit = "union_shape_minimal_t";
+    holds(
+        &code,
+        &[
+            // The union handed over.
+            &format!("static inline {unit} call_Extent__v_union_in0({machine_union} value) {{\n"),
+            "    const char *const variant = \
+             statechart_shape_crossing_union_union_shape_minimal_variant(&value);\n    if (variant \
+             == NULL) {\n        abort();\n    }\n",
+            "    if (strcmp(variant, \"dot\") == 0) {\n        return \
+             union_shape_minimal_case_dot();\n    }\n",
+            "    if (strcmp(variant, \"circle\") == 0) {\n        const __typeof__(value.as.circle) \
+             sce_case = value.as.circle;\n        return \
+             union_shape_minimal_case_circle((ShapeRadiusMinimalPayload_t){ .radius = \
+             sce_case.radius });\n    }\n",
+            "call_Extent__v_union_in0(p0)",
+            // The union taken back.
+            &format!(
+                "static inline {machine_union} call_Grown__v_union_out({unit} value) {{\n"
+            ),
+            "return statechart_shape_crossing_union_union_shape_minimal_case_circle(\
+             (statechart_shape_crossing_record_radius_t){ .radius = sce_case.radius });",
+            "return call_Grown__v_union_out(r);",
+        ],
+    );
+}
+
 /// The module path a Go machine imports the generated packages under.
 const GO_PREFIX: &str = "example.com/generated";
 
@@ -398,17 +439,26 @@ fn python_maps_the_machines_union_into_the_units_and_back() {
     );
 }
 
-/// A lane that does not lower an algorithm over a union refuses a statechart
-/// that hands one a union, rather than write a call no unit answers.
+/// Every lane either lowers an algorithm over a union, listed in
+/// `ALGORITHM_UNION_BACKENDS` and generating the statechart that hands one a
+/// union, or refuses that statechart by the union's name, rather than write a
+/// call no unit answers. Every generated lane lowers the crossing today, so the
+/// refusing side holds a backend added to `Language::ALL` before its crossing
+/// lands.
 #[test]
 fn a_lane_that_lowers_no_union_crossing_refuses_the_statechart() {
-    let language = Language::C11;
-    assert!(
-        generated(
-            &fixtures().join("statechart_shape_crossing.scxml"),
-            language
-        )
-        .is_err(),
-        "{language:?} generated a statechart that hands an algorithm a union"
-    );
+    let path = fixtures().join("statechart_shape_crossing.scxml");
+    for language in Language::ALL.iter().copied() {
+        let result = generated(&path, language);
+        if ALGORITHM_UNION_BACKENDS.contains(&language) {
+            if let Err(refusal) = result {
+                panic!("{language:?} lowers a union crossing and refused one: {refusal}");
+            }
+            continue;
+        }
+        let Err(refusal) = result else {
+            panic!("{language:?} generated a statechart that hands an algorithm a union");
+        };
+        assert!(refusal.contains("union:Shape"), "{language:?}: {refusal}");
+    }
 }

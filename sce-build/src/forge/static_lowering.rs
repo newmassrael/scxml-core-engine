@@ -14879,9 +14879,41 @@ impl StaticTarget for CTarget {
         let mut declarations = Vec::new();
         let mut prelude = String::new();
         let mut arguments = Vec::new();
+        // The functions that map a union across the call, case by case, declared
+        // before the adapter that calls them ([`c11_union_crossing`]).
+        let mut helpers: Vec<String> = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
             let p = format!("p{index}");
             match param {
+                // A union is the machine's own struct, mapped case by case into the
+                // one the union's unit declares, each case's record copied as a
+                // record argument is (docs/adr/0092, section 6.1 item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        C11_CROSSED_CASE,
+                        &|alias, from| {
+                            record_of(alias, algorithm_record(alias)?, from, Crossing::ToAlgorithm)
+                        },
+                    )?;
+                    let unit =
+                        crate::forge::generator::union_unit_type(&union.document, Language::C11)?;
+                    let map = format!("{name}_union_in{index}");
+                    helpers.push(c11_union_crossing(
+                        &map,
+                        &machine,
+                        &unit,
+                        &union.document,
+                        &cases,
+                    ));
+                    declarations.push(format!("{machine} {p}"));
+                    arguments.push(format!("{map}({p})"));
+                }
                 AdapterParam::Scalar(SceType::Enum(reference)) => {
                     declarations.push(format!(
                         "{} {p}",
@@ -15036,7 +15068,46 @@ impl StaticTarget for CTarget {
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => Shape::List(self.scalar_type(ty)),
             StaticSlot::RecordList(alias) => Shape::List(machine_record(alias)),
+            // The machine's own struct, which the adapter builds case by case.
+            StaticSlot::Union(union) => {
+                use crate::forge::composed_lowering::ComposedSpelling;
+                Shape::Value(
+                    crate::forge::composed_lowering::C11Composed::new(
+                        spec.machine,
+                        std::collections::BTreeMap::new(),
+                    )
+                    .union_type(&union.document),
+                )
+            }
             _ => return None,
+        };
+        // The function that builds the machine's own struct case by case from the one
+        // the union's unit declares, which the algorithm gave back (docs/adr/0092,
+        // section 6.1 item 7).
+        let union_out = match value.ret.as_ref()? {
+            StaticSlot::Union(union) => {
+                let (machine, cases) = spec.union_crossing(
+                    self,
+                    union,
+                    Crossing::FromAlgorithm,
+                    C11_CROSSED_CASE,
+                    &|alias, held| {
+                        record_of(alias, machine_record(alias), held, Crossing::FromAlgorithm)
+                    },
+                )?;
+                let unit =
+                    crate::forge::generator::union_unit_type(&union.document, Language::C11)?;
+                let map = format!("{name}_union_out");
+                helpers.push(c11_union_crossing(
+                    &map,
+                    &unit,
+                    &machine,
+                    &union.document,
+                    &cases,
+                ));
+                Some(map)
+            }
+            _ => None,
         };
         // From the algorithm's result `r`: the machine's value; or, from the list it
         // wrote into the storage `s`, the statement that fills the machine's list `into`.
@@ -15045,6 +15116,7 @@ impl StaticTarget for CTarget {
                 StaticSlot::Scalar(SceType::Enum(reference)) => {
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
                 }
+                StaticSlot::Union(_) => format!("{}({from})", union_out.as_deref()?),
                 StaticSlot::Scalar(_) | StaticSlot::Optional(_) => from.to_string(),
                 // The optional value of the algorithm's record is the optional value
                 // of the machine's, its record copied field by field where it is
@@ -15097,7 +15169,7 @@ impl StaticTarget for CTarget {
                 .collect::<Vec<_>>()
                 .join(", ")
         );
-        Some(match (spec.callee.may_fail, &shape) {
+        let adapter = match (spec.callee.may_fail, &shape) {
             (true, Shape::Value(ty)) => format!(
                 "typedef struct {{\n    {ty} value;\n    bool ok;\n    sce_forge_algorithm_error_t why;\n}} {result_type};\n\n\
                  static inline {ty} {name}_take(sce_forge_algorithm_failure_t *failure, {result_type} result) {{\n    if (!result.ok) {{\n        sce_forge_algorithm_fail(failure, result.why);\n        return ({ty}){{0}};\n    }}\n    return result.value;\n}}\n\n\
@@ -15125,6 +15197,9 @@ impl StaticTarget for CTarget {
                     StaticSlot::OptionalRecord(alias) => {
                         c11_optional_type(&algorithm_record(alias)?)?
                     }
+                    StaticSlot::Union(union) => {
+                        crate::forge::generator::union_unit_type(&union.document, Language::C11)?
+                    }
                     _ => ty.clone(),
                 };
                 format!(
@@ -15134,6 +15209,11 @@ impl StaticTarget for CTarget {
                 )
             }
             (false, Shape::List(..)) => return None,
+        };
+        Some(if helpers.is_empty() {
+            adapter
+        } else {
+            format!("{}\n\n{adapter}", helpers.join("\n\n"))
         })
     }
     // A buffer of the algorithm's records for each list of the machine's records the
@@ -16991,6 +17071,58 @@ fn c11_direct_storage(symbol: &str) -> String {
 /// header beside the machine.
 fn c11_adapter_storage_type(machine: &str, adapter: &str) -> String {
     format!("{machine}_{adapter}_storage_t")
+}
+
+/// The record of the case a C11 adapter's arm is handed while it maps a union
+/// across a call ([`c11_union_crossing`]), which each case's record is copied
+/// from.
+const C11_CROSSED_CASE: &str = "sce_case";
+
+/// The C11 function `name` that maps a value of the union `from_ty` across a
+/// call into a value of `to_ty` (docs/adr/0092, section 6.1 item 7): the
+/// machine's own struct and the one the union's unit declares, each of which
+/// answers the declared name of the case a value is in (`<stem>_variant`), the
+/// name its tag is written as. One arm per case, which binds the case's record
+/// of the leaving value to [`C11_CROSSED_CASE`] where the case holds one and
+/// answers the case the value arrives as, its record copied as a record
+/// argument is. C checks no case analysis for exhaustiveness, so the property
+/// that a case either side gains is a build error is the adapter's
+/// regeneration with the document, which writes one arm per case of the
+/// union as the statechart imports it; a value in no case, which no
+/// constructor builds, ends the process rather than cross as the zeroed
+/// struct, as Go's adapter panics.
+fn c11_union_crossing(
+    name: &str,
+    from_ty: &str,
+    to_ty: &str,
+    document: &str,
+    cases: &[CrossedCase],
+) -> String {
+    use crate::forge::composed_lowering::{c11_case_ident, C11_UNION_CASES};
+    let arms: String = cases
+        .iter()
+        .map(|case| {
+            let bound = if case.holds_record {
+                let member = format!("value.{C11_UNION_CASES}.{}", c11_case_ident(&case.variant));
+                format!("        const __typeof__({member}) {C11_CROSSED_CASE} = {member};\n")
+            } else {
+                String::new()
+            };
+            format!(
+                "    if (strcmp(variant, \"{}\") == 0) {{\n{bound}        return {};\n    }}\n",
+                filters::escape_c(case.variant.clone()),
+                case.to
+            )
+        })
+        .collect();
+    format!(
+        "/* docs/adr/0092, section 6.1 item 7: a value of `{document}` mapped across the call \
+         case by case. */\n\
+         static inline {to_ty} {name}({from_ty} value) {{\n    \
+         const char *const variant = {}_variant(&value);\n    \
+         if (variant == NULL) {{\n        abort();\n    }}\n{arms}    abort();\n}}",
+        from_ty.trim_end_matches("_t")
+    )
 }
 
 /// The bound of the buffer a C11 adapter copies a list of the records `alias` into: the
