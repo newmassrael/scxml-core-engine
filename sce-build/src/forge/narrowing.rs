@@ -656,14 +656,17 @@ pub fn after_algorithm_statement(before: &Facts, statement: &AlgorithmStmt) -> F
 /// its facts at the start of each turn. `imports` are the algorithm's own,
 /// enriched. Judged once, before any backend renders the body, so the verdict
 /// does not depend on the backend; a body that holds no optional value, returns
-/// none and holds no union has nothing to judge here.
+/// none, holds no union and imports no algorithm that takes one has nothing to
+/// judge here.
 ///
 /// A body that holds a union is held, besides, to the rules of a union
 /// (docs/adr/0092, section 6.1 and Landing order step 5): a case's field is
 /// read where a test of the tag proves its case, a union local is built whole
 /// and not written, a union is taken whole only by a `<sce:return>` of its
-/// type, and a path that reaches the end of the body passes a point where a
-/// subject of a union has no case left, or the body is refused with
+/// type and by a parameter of a called algorithm that takes its union, by its
+/// name ("Decided while handing a union from one algorithm to another"), and a
+/// path that reaches the end of the body passes a point where a subject of a
+/// union has no case left, or the body is refused with
 /// `algorithm/return-missing` ([`crate::forge::algorithm_union::reaches_end`]).
 pub(crate) fn check_algorithm(
     m: &crate::forge::model::AlgorithmModel,
@@ -676,7 +679,17 @@ pub(crate) fn check_algorithm(
         .return_type
         .as_ref()
         .is_some_and(|ty| ty.optional_elem().is_some());
-    if !types.holds_optional() && !returns_optional && !m.holds_union() {
+    // An algorithm whose parameter takes a union is called with the name of a
+    // union, which a body that holds none cannot give: its call is judged here
+    // too, so every backend refuses it with one verdict.
+    let calls_a_union_parameter = imports.iter().any(|import| {
+        import
+            .record_slots
+            .as_ref()
+            .is_some_and(|slots| slots.params.iter().any(|slot| slot.union().is_some()))
+    });
+    if !types.holds_optional() && !returns_optional && !m.holds_union() && !calls_a_union_parameter
+    {
         return Ok(());
     }
     let ctx = types.type_ctx(m, imports);
@@ -1064,9 +1077,37 @@ impl AlgorithmWalk<'_, '_> {
                 )
             }
             AlgorithmStmt::Return { expr: None, .. } => Ok(()),
-            AlgorithmStmt::Call { args, .. } => {
-                for arg in args {
-                    self.judge(&arg.expr, arg.spelling.as_ref(), hint, proven)?;
+            // An argument of a parameter that takes a union whole is the name
+            // of a union of the parameter's document, judged as the expression
+            // form's argument is (docs/adr/0092, "Decided while handing a union
+            // from one algorithm to another"); every other argument as any
+            // value is.
+            AlgorithmStmt::Call { target, args, .. } => {
+                let target = target.trim();
+                let alias = target.split_once('.').map_or(target, |(alias, _)| alias);
+                let signature = self.ctx.lookup_func(alias);
+                // A callee only a host calls is refused by its target where the
+                // call is lowered, naming the slot no algorithm fills; its
+                // arguments stand in no slot to be judged against.
+                if signature.is_some_and(|signature| signature.host_only.is_some()) {
+                    return Ok(());
+                }
+                let unions = signature
+                    .map(|signature| signature.unions.as_slice())
+                    .unwrap_or_default();
+                for (index, arg) in args.iter().enumerate() {
+                    match unions.get(index).and_then(Option::as_ref) {
+                        Some(param) => {
+                            let ctx = self.ctx.proving(proven.clone());
+                            crate::forge::expr::judge_union_argument_written(
+                                &arg.expr, target, param, &ctx,
+                            )
+                            .map_err(|refusal| {
+                                ExpressionSite::new(&arg.expr, arg.spelling.as_ref()).place(refusal)
+                            })?;
+                        }
+                        None => self.judge(&arg.expr, arg.spelling.as_ref(), hint, proven)?,
+                    }
                 }
                 Ok(())
             }
@@ -1092,14 +1133,18 @@ impl AlgorithmWalk<'_, '_> {
     ) -> Result<(), crate::forge::error::ForgeError> {
         // A union is read through its tag and its cases' fields, and is taken
         // whole only by a `<sce:return>` of its type (docs/adr/0092, Landing
-        // order step 5): nowhere else does a value of one stand by its name.
+        // order step 5) and by a parameter of a called algorithm that takes its
+        // union, as an argument of the call ("Decided while handing a union
+        // from one algorithm to another"): nowhere else does a value of one
+        // stand by its name.
         if self.unions.holds(expr.trim()) {
             return Err(Self::refuse_whole(
                 expr,
                 spelling,
                 format!(
                     "`{}`, a union, as a value (a union is read through its tag and the fields \
-                     of its cases, and is taken whole only by a <sce:return> of its type)",
+                     of its cases, and is taken whole only by a <sce:return> of its type and by \
+                     a parameter of a called algorithm that takes its union)",
                     expr.trim()
                 ),
             ));

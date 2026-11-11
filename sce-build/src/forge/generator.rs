@@ -1041,10 +1041,17 @@ pub enum CalleeSlot {
     OptionalRecord {
         id: crate::forge::types::RecordId,
     },
+    /// A parameter of `union:<alias>` (docs/adr/0092, "Decided while handing a
+    /// union from one algorithm to another"): the caller hands it the name of a
+    /// union it holds of the document the slot names. A return is never one: no
+    /// place of an algorithm takes whole a union a call answers.
+    Union(crate::forge::types::UnionParam),
 }
 
 impl CalleeSlot {
-    /// The type a value in this slot has in the expression pipeline.
+    /// The type a value in this slot has in the expression pipeline. A union
+    /// has none, as a value of an enum has none: which union the slot takes is
+    /// [`Self::union`], held where its argument stands.
     pub fn inferred(&self) -> crate::forge::types::InferredType {
         use crate::forge::types::{InferredType, OptionalElem};
         match self {
@@ -1052,11 +1059,24 @@ impl CalleeSlot {
             Self::Record { id, .. } => InferredType::Record(*id),
             Self::Optional(elem) => InferredType::Optional(OptionalElem::of(elem)),
             Self::OptionalRecord { .. } => InferredType::Optional(OptionalElem::Record),
+            Self::Union(_) => InferredType::Unknown,
+        }
+    }
+
+    /// The union this slot takes whole, when it is a union parameter.
+    pub fn union(&self) -> Option<&crate::forge::types::UnionParam> {
+        match self {
+            Self::Union(param) => Some(param),
+            Self::Scalar(_)
+            | Self::Record { .. }
+            | Self::Optional(_)
+            | Self::OptionalRecord { .. } => None,
         }
     }
 }
 
-/// The signature of an imported algorithm with a record or an optional slot.
+/// The signature of an imported algorithm with a record, an optional or a
+/// union slot.
 #[derive(Debug, Clone, Default)]
 pub struct AlgorithmSlots {
     pub params: Vec<CalleeSlot>,
@@ -43446,13 +43466,25 @@ fn lower_algorithm_stmt(
                 .enumerate()
                 .map(|(i, arg)| {
                     let site = ExpressionSite::new(&arg.expr, arg.spelling.as_ref());
-                    expr::transpile_expecting(
-                        &arg.expr,
-                        l.expr_target(),
-                        type_ctx,
-                        renames,
-                        callee.parameter(i),
-                    )
+                    // A union is handed by the name that holds it, as the
+                    // expression form hands it (docs/adr/0092, "Decided while
+                    // handing a union from one algorithm to another").
+                    match callee.union_parameter(i) {
+                        Some(param) => expr::transpile_union_argument(
+                            &arg.expr,
+                            l.expr_target(),
+                            type_ctx,
+                            target.trim(),
+                            param,
+                        ),
+                        None => expr::transpile_expecting(
+                            &arg.expr,
+                            l.expr_target(),
+                            type_ctx,
+                            renames,
+                            callee.parameter(i),
+                        ),
+                    }
                     .map_err(|refusal| site.place(refusal))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -43538,6 +43570,16 @@ impl CallTarget<'_> {
                     }),
             },
             Self::CollectionMethod { .. } => expr::Expected::Hint(InferredType::Unknown),
+        }
+    }
+
+    /// The union argument `i` is handed to whole, when the call reaches an
+    /// imported algorithm whose parameter `i` takes one (docs/adr/0092,
+    /// "Decided while handing a union from one algorithm to another").
+    fn union_parameter(&self, i: usize) -> Option<&crate::forge::types::UnionParam> {
+        match self {
+            Self::Algorithm(imp) => imp.record_slots.as_ref()?.params.get(i)?.union(),
+            Self::CollectionMethod { .. } => None,
         }
     }
 }
@@ -45873,12 +45915,20 @@ impl<'a> AlgorithmTypes<'a> {
                 // A callee with a record slot is callable from here, the
                 // record slots typed by the schema the callee names — a call
                 // passes only a record of that very schema (SCE_FORGE.md
-                // §4.12).
+                // §4.12) — and a union slot by the union document it names,
+                // which the argument's union is held to where it stands
+                // (docs/adr/0092, "Decided while handing a union from one
+                // algorithm to another").
                 if let Some(slots) = &imp.record_slots {
                     type_ctx.insert_func(
                         imp.alias.as_str(),
                         FuncSig {
                             may_fail: imp.may_fail,
+                            unions: slots
+                                .params
+                                .iter()
+                                .map(|slot| slot.union().cloned())
+                                .collect(),
                             ..FuncSig::new(
                                 slots.params.iter().map(CalleeSlot::inferred).collect(),
                                 slots

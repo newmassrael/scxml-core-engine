@@ -1190,6 +1190,19 @@ impl EnumScope<'_> {
     }
 }
 
+/// The union a parameter of an imported algorithm takes whole (docs/adr/0092,
+/// "Decided while handing a union from one algorithm to another"): the identity
+/// of the union's document, which the union an argument names is held to, as a
+/// record is held to its schema's document (SCE_FORGE.md §4.12), and the
+/// document's name, which a refusal names. A union is typed `Unknown` in the
+/// expression pipeline, so which union a parameter takes is said here, beside
+/// the parameter's type ([`FuncSig::unions`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionParam {
+    pub identity: String,
+    pub document: String,
+}
+
 /// Signature of a function that may appear in a SCXML expression as
 /// `callee(args...)`. Used to type `Call` nodes where the callee is a
 /// cross-file import or a built-in intrinsic.
@@ -1234,6 +1247,12 @@ pub struct FuncSig {
     /// (docs/adr/0086, section 8.6 (c)); `None` for a return of no length and
     /// for one whose bound nothing states, which leaves the call unbounded.
     pub ret_bound: Option<u64>,
+    /// The union each parameter takes whole, by position, `None` at a parameter
+    /// that takes none: an imported algorithm's parameter of `union:<alias>`
+    /// ([`UnionParam`]). Its argument is the name of a union the caller holds of
+    /// the same document, judged and spelled where the call is lowered
+    /// ([`crate::forge::expr`]). Empty for a function that takes no union.
+    pub unions: Vec<Option<UnionParam>>,
 }
 
 /// How the value of a call is read from what the called function answers, where
@@ -1272,6 +1291,7 @@ impl FuncSig {
             reading: CallReading::Value,
             storage: None,
             ret_bound: None,
+            unions: Vec::new(),
         }
     }
 

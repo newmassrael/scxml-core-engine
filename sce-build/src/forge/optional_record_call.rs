@@ -315,7 +315,10 @@ impl Walk<'_> {
 fn optional_record_id(slot: &CalleeSlot) -> Option<RecordId> {
     match slot {
         CalleeSlot::OptionalRecord { id } => Some(*id),
-        CalleeSlot::Scalar(_) | CalleeSlot::Record { .. } | CalleeSlot::Optional(_) => None,
+        CalleeSlot::Scalar(_)
+        | CalleeSlot::Record { .. }
+        | CalleeSlot::Optional(_)
+        | CalleeSlot::Union(_) => None,
     }
 }
 

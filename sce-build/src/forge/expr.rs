@@ -853,6 +853,10 @@ fn resolve_then_rename(
         lower_stateful_import_calls(ast, lowerings);
     }
     lower_enum_conversions(ast, ctx, target);
+    // docs/adr/0092, "Decided while handing a union from one algorithm to
+    // another": a union handed whole to another algorithm's parameter, judged
+    // above, spelled as the target hands a value it keeps.
+    lower_union_arguments(ast, ctx, target);
     lower_call_crossings(ast, ctx, target);
     lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
@@ -917,6 +921,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_unproven_union_reads(ast, ctx, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     reject_ill_typed_total_operations(ast, source)?;
+    reject_union_arguments(ast, ctx, source)?;
     reject_composed_operands(ast, ctx, source, ReadThrough::Whole)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
@@ -979,6 +984,21 @@ fn reject_composed_operands(
     let null_test = |subject: &TypedExpr, other: &TypedExpr| {
         matches!(other.kind, ExprKind::NullLit) && subject.ty.is_optional()
     };
+    // An argument of a parameter that takes a union whole stands as the union
+    // the caller hands by name, judged by the rule of a union argument
+    // ([`reject_union_arguments`]) and by no rule of an operand.
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
+        if let Some(unions) = union_parameters(callee, ctx) {
+            reject_composed_operands(callee, ctx, source, ReadThrough::Operand)?;
+            for (index, arg) in args.iter().enumerate() {
+                if unions.get(index).is_some_and(Option::is_some) {
+                    continue;
+                }
+                reject_composed_operands(arg, ctx, source, ReadThrough::Operand)?;
+            }
+            return Ok(());
+        }
+    }
     match &expr.kind {
         ExprKind::Member { object, .. } => {
             reject_composed_operands(object, ctx, source, ReadThrough::Part)
@@ -1008,6 +1028,195 @@ fn reject_composed_operands(
         _ => expr.children().into_iter().try_for_each(|child| {
             reject_composed_operands(child, ctx, source, ReadThrough::Operand)
         }),
+    }
+}
+
+/// The union each parameter of the function `callee` names takes whole
+/// ([`crate::forge::types::FuncSig::unions`]), when `callee` is the name of a
+/// function that takes one: an imported algorithm with a parameter of
+/// `union:<alias>`
+/// (docs/adr/0092, "Decided while handing a union from one algorithm to
+/// another"). `None` for every other callee.
+fn union_parameters<'c>(
+    callee: &TypedExpr,
+    ctx: &'c TypeCtx<'_>,
+) -> Option<&'c [Option<crate::forge::types::UnionParam>]> {
+    let ExprKind::Ident(name) = &callee.kind else {
+        return None;
+    };
+    let signature = ctx.lookup_func(name)?;
+    signature
+        .unions
+        .iter()
+        .any(Option::is_some)
+        .then_some(signature.unions.as_slice())
+}
+
+/// Refuse every argument handed to a parameter that takes a union whole which
+/// is not the name of a union the caller holds of the parameter's document
+/// ([`judge_union_argument`]), at any depth of `expr`. The one rule of a union
+/// argument, read by the judge of an algorithm's body before any backend
+/// ([`judge_narrowed_use`]) and by every lowering ([`resolve_names`]).
+fn reject_union_arguments(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
+        if let (ExprKind::Ident(name), Some(unions)) = (&callee.kind, union_parameters(callee, ctx))
+        {
+            for (arg, param) in args.iter().zip(unions) {
+                if let Some(param) = param {
+                    judge_union_argument(arg, name, param, ctx, source)?;
+                }
+            }
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_union_arguments(child, ctx, source))
+}
+
+/// The name of the union `arg` hands to the parameter of `callee` that takes
+/// the union `param` whole (docs/adr/0092, "Decided while handing a union from
+/// one algorithm to another"), or its refusal. A union stands whole there by
+/// the name of the parameter or the local of the caller that holds it, and only
+/// a union of the parameter's own document, by its identity, as a record
+/// argument is held to its schema's document (SCE_FORGE.md §4.12): a union of
+/// another document, and anything that is not such a name (a call that answers
+/// a union, a conditional, a number), is refused naming the document the
+/// parameter takes.
+fn judge_union_argument<'e>(
+    arg: &'e TypedExpr,
+    callee: &str,
+    param: &crate::forge::types::UnionParam,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<&'e str, Refusal> {
+    let observed = arg
+        .span
+        .clone()
+        .and_then(|span| source.get(span))
+        .unwrap_or(source)
+        .trim()
+        .to_string();
+    let construct = match &arg.kind {
+        ExprKind::Ident(name) => {
+            let held = ctx.value_of(name).and_then(|place| {
+                crate::forge::value_path::union_of(ctx.value_scope, &place)
+                    .map(|(union, alias)| (union.identity.clone(), union.name.clone(), alias))
+            });
+            match held {
+                Some((identity, _, _)) if identity == param.identity => return Ok(name.as_str()),
+                Some((_, document, alias)) => format!(
+                    "`{observed}`, a value of union:{alias} of the union document \
+                     `{document}`, handed to `{callee}`, whose parameter takes a union of the \
+                     document `{}` (a union is handed only to a parameter of its own document)",
+                    param.document
+                ),
+                None => union_argument_unnamed(&observed, callee, param),
+            }
+        }
+        _ => union_argument_unnamed(&observed, callee, param),
+    };
+    Err(ExprError::UnsupportedConstruct {
+        construct,
+        observed: Some(observed),
+    }
+    .at(arg.span.clone()))
+}
+
+/// What a refusal of `observed`, no name of a union, handed to the parameter of
+/// `callee` that takes the union `param` whole, says ([`judge_union_argument`]).
+fn union_argument_unnamed(
+    observed: &str,
+    callee: &str,
+    param: &crate::forge::types::UnionParam,
+) -> String {
+    format!(
+        "`{observed}` handed to `{callee}`, whose parameter takes a union of the document `{}` \
+         whole (an algorithm hands a union by the name of the parameter or the local that \
+         holds it)",
+        param.document
+    )
+}
+
+/// [`judge_union_argument`] of the argument written `written`, as a
+/// `<sce:call args>` lists it, where `ctx` holds: what the judge of an
+/// algorithm's body holds each argument of a `<sce:call>` to whose parameter
+/// takes a union, before any backend.
+pub(crate) fn judge_union_argument_written(
+    written: &str,
+    callee: &str,
+    param: &crate::forge::types::UnionParam,
+    ctx: &TypeCtx<'_>,
+) -> Result<(), Refusal> {
+    let written = written.trim();
+    let ast = parse_to_ast(written)?;
+    judge_union_argument(&ast, callee, param, ctx, written).map(|_| ())
+}
+
+/// The argument written `written`, as a `<sce:call args>` lists it, handed to
+/// the parameter of `callee` that takes the union `param` whole, judged as an
+/// expression's argument is ([`judge_union_argument`]) and spelled as `target`
+/// hands a union it keeps ([`handed_union`]).
+pub(crate) fn transpile_union_argument(
+    written: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    callee: &str,
+    param: &crate::forge::types::UnionParam,
+) -> Result<String, Refusal> {
+    let written = written.trim();
+    let ast = parse_to_ast(written)?;
+    let name = judge_union_argument(&ast, callee, param, ctx, written)?;
+    Ok(handed_union(target, name))
+}
+
+/// How `target` hands the union a caller holds as `name` to a parameter of
+/// another algorithm (docs/adr/0092, "Decided while handing a union from one
+/// algorithm to another"). Every backend takes it by value, the type the
+/// union's own unit declares on both sides. Rust's union is no `Copy` type and
+/// the caller may read its own after the call, so it hands a clone; C, C++, Go
+/// and Swift copy the value they pass, and Kotlin, Python and the Interpreter
+/// hand the very object, which no algorithm writes ("Decided while landing step
+/// 5" item 3), so each hands the name as it is.
+fn handed_union(target: ExprTarget, name: &str) -> String {
+    let held = target.local_spelling(name);
+    match target {
+        ExprTarget::Rust => format!("{held}.clone()"),
+        ExprTarget::Cpp
+        | ExprTarget::Kotlin
+        | ExprTarget::Go
+        | ExprTarget::Python
+        | ExprTarget::C
+        | ExprTarget::Swift
+        | ExprTarget::Js => held,
+    }
+}
+
+/// Each union an expression hands whole to a parameter that takes one
+/// ([`reject_union_arguments`] admitted it: the name of a union the caller
+/// holds), spelled as `target` hands it ([`handed_union`]).
+fn lower_union_arguments(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+    for child in expr.children_mut() {
+        lower_union_arguments(child, ctx, target);
+    }
+    let ExprKind::Call { callee, args, .. } = &mut expr.kind else {
+        return;
+    };
+    let Some(unions) = union_parameters(callee, ctx) else {
+        return;
+    };
+    for (arg, param) in args.iter_mut().zip(unions) {
+        if param.is_none() {
+            continue;
+        }
+        let handed = match &arg.kind {
+            ExprKind::Ident(name) => handed_union(target, name),
+            _ => continue,
+        };
+        arg.kind = ExprKind::Raw(handed);
     }
 }
 
@@ -2294,18 +2503,21 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
 }
 
 /// The refusal of a call to an imported algorithm whose signature has a
-/// `list<T>` or record slot (`slot` names it: "returns list<int64>",
-/// "takes record:Hlc `a`"), under either form — an expression's `days(n)` or
-/// a `<sce:call target="days">`, from where no such call is admitted. A list
-/// crosses only the host boundary; a record the host boundary and an
-/// algorithm's call of another algorithm (SCE_FORGE.md §4.12). One text for
-/// both forms, so the two read alike.
+/// slot the caller cannot fill (`slot` names it: "returns list<int64>",
+/// "takes record:Hlc `a`", "returns union:Shape"), under either form — an
+/// expression's `days(n)` or a `<sce:call target="days">`, from where no such
+/// call is admitted. A list crosses only the host boundary; a record the host
+/// boundary and an algorithm's call of another algorithm (SCE_FORGE.md
+/// §4.12); a union the host boundary and an algorithm's call that hands one
+/// by name to a parameter, since no place of an algorithm takes whole a union
+/// a call answers (docs/adr/0092, "Decided while handing a union from one
+/// algorithm to another"). One text for both forms, so the two read alike.
 pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>) -> ExprError {
     ExprError::UnsupportedConstruct {
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
-             (v1: a host calls such an algorithm, and another algorithm when \
-             its slots are records rather than lists)"
+             (a host calls such an algorithm, and another algorithm when no \
+             slot of it is a list and its return is no union)"
         ),
         observed,
     }
@@ -2727,9 +2939,11 @@ pub(crate) fn judge_into(
 /// present, an optional value where it has no answer
 /// ([`reject_optional_misuse`], docs/adr/0055), a case's field read where no
 /// test proves its case ([`reject_unproven_union_reads`], docs/adr/0092,
-/// section 6.1), and an optional value or `null` where a place that is never
-/// absent is declared. For a body judged before any backend renders it, whose
-/// other refusals are the renderer's.
+/// section 6.1), an argument of a parameter that takes a union whole which is
+/// no name of a union of its document ([`reject_union_arguments`]), and an
+/// optional value or `null` where a place that is never absent is declared.
+/// For a body judged before any backend renders it, whose other refusals are
+/// the renderer's.
 pub(crate) fn judge_narrowed_use(
     expr: &str,
     ctx: &TypeCtx<'_>,
@@ -2743,6 +2957,7 @@ pub(crate) fn judge_narrowed_use(
     infer_types(&mut ast, ctx);
     reject_optional_misuse(&ast, &ctx.proven, expr)?;
     reject_unproven_union_reads(&ast, ctx, &ctx.proven, expr)?;
+    reject_union_arguments(&ast, ctx, expr)?;
     if let Expected::Slot(slot) = expected {
         let may_be_absent = ast.ty.is_optional() || ast.ty == InferredType::Null;
         if may_be_absent && !slot_admits(slot, ast.ty) {

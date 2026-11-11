@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The extent of a shape, and 1 for a dot, whose extent is 0: an algorithm
+     that hands the union it takes, by its name, to algorithm_shape_extent.scxml,
+     whose parameter takes the same union document (docs/adr/0092, "Decided while
+     handing a union from one algorithm to another"), and reads its own tag after
+     the call, so the union it handed is still its own. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_shape_extent_at_least_one" version="1.0">
+  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:import kind="algorithm" src="algorithm_shape_extent.scxml" as="Extent"/>
+  <sce:signature>
+    <sce:param name="shape" type="union:Shape"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="extent" type="uint16" init="Extent(shape)"/>
+    <sce:if cond="shape.kind === ShapeKind.dot">
+      <sce:return expr="1"/>
+    </sce:if>
+    <sce:return expr="extent"/>
+  </sce:body>
+</scxml>

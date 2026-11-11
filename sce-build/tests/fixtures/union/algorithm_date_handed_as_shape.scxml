@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A date expression handed to algorithm_shape_extent.scxml, whose parameter
+     takes the shape union: a union is handed only to a parameter of its own
+     union document (docs/adr/0092, "Decided while handing a union from one
+     algorithm to another"), so the call is refused, naming both documents. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="algorithm_date_handed_as_shape" version="1.0">
+  <sce:import kind="union" src="sce:std/time/date_expression.scxml" as="DateExpression"/>
+  <sce:import kind="algorithm" src="algorithm_shape_extent.scxml" as="Extent"/>
+  <sce:signature>
+    <sce:param name="expression" type="union:DateExpression"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="Extent(expression)"/>
+  </sce:body>
+</scxml>

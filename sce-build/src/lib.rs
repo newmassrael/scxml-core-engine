@@ -7672,18 +7672,27 @@ fn validate_and_enrich_imports(
                     ),
                 });
             }
-            // An algorithm with a record slot (and no list slot) is callable
-            // from another algorithm's body, so its whole signature rides
-            // along, each record slot named by the schema the CALLEE
-            // imported — resolved from the callee's own directory, the way
-            // the callee itself resolves it.
+            // An algorithm with a record, an optional or a union slot (and no
+            // list slot, and no union return) is callable from another
+            // algorithm's body, so its whole signature rides along, each record
+            // slot named by the schema the CALLEE imported and each union slot
+            // by the union document — resolved from the callee's own directory,
+            // the way the callee itself resolves it. One another algorithm
+            // cannot call is refused there by the slot it cannot fill, named
+            // here, where the slots are read (`call_refusal`).
+            let mut call_refusal: Option<String> = None;
             if let forge::model::ForgeDocument::Algorithm(am) = &doc {
                 let callee_base = source
                     .path
                     .parent()
                     .map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
-                ctx.record_slots =
-                    algorithm_record_slots(am, &parsed.imports, &callee_base, *language);
+                match algorithm_record_slots(am, &parsed.imports, &callee_base, *language) {
+                    Ok(slots) => ctx.record_slots = slots,
+                    Err(slot) => {
+                        ctx.record_slots = None;
+                        call_refusal = Some(slot);
+                    }
+                }
                 ctx.enum_slots =
                     algorithm_enum_slots(am, &parsed.imports, &callee_base, &own_enums);
                 // A Swift caller names the unit the callee is written as, which is
@@ -7774,7 +7783,10 @@ fn validate_and_enrich_imports(
                 let sig = discover_stateless_signature(&doc);
                 ctx.param_types = sig.params;
                 ctx.ret_type = sig.ret;
-                ctx.host_only = sig.host_only;
+                // An algorithm another algorithm cannot call is refused by the
+                // slot it cannot fill, which may not be the first slot that is
+                // no scalar (a union parameter is filled, a union return is not).
+                ctx.host_only = call_refusal.or(sig.host_only);
                 ctx.may_fail = sig.may_fail;
             } else {
                 // Qualify every discovered field key with the import's alias
@@ -9249,18 +9261,24 @@ fn validate_worker_inbox_queue(
     Ok(())
 }
 
-/// The whole signature of an imported algorithm that has a record slot or an
-/// optional slot (docs/adr/0055) and no list slot — what another algorithm's
-/// body calls it through (SCE_FORGE.md §4.12). `None` for an algorithm with
-/// neither, with a list slot (only a host calls one), or with a record slot
-/// whose schema import the callee cannot resolve (the callee's own compilation
-/// reports that; its callers keep the host-only refusal meanwhile).
+/// The whole signature of an imported algorithm whose slots are not all
+/// scalars — what another algorithm's body calls it through (SCE_FORGE.md
+/// §4.12): a record slot, an optional slot (docs/adr/0055) and a union
+/// parameter (docs/adr/0092, "Decided while handing a union from one algorithm
+/// to another"). `Ok(None)` for an algorithm of scalar slots alone, which its
+/// scalar signature carries. `Err` names the first slot another algorithm
+/// cannot fill, in the words of [`discover_stateless_signature`]'s host-only
+/// reason ("takes list<int64> `xs`", "returns union:Shape"), which then
+/// refuses its call: a list slot, which only a host fills; a union return,
+/// which no place of an algorithm takes whole; and a record or a union whose
+/// document the callee cannot resolve (the callee's own compilation reports
+/// that).
 fn algorithm_record_slots(
     am: &forge::model::AlgorithmModel,
     callee_imports: &[forge::model::ForgeImport],
     callee_base: &Path,
     language: generator::Language,
-) -> Option<forge::generator::AlgorithmSlots> {
+) -> Result<Option<forge::generator::AlgorithmSlots>, String> {
     use forge::generator::{AlgorithmSlots, CalleeSlot};
     use forge::model::AlgorithmValueType;
     // The schema the callee's import `alias` names, and the payload type it is
@@ -9279,7 +9297,25 @@ fn algorithm_record_slots(
             forge::generator::event_schema_payload_type(&sm.name, language),
         ))
     };
-    let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
+    // The union document the callee's import `alias` names, by its identity, read
+    // from where the callee reads it: what a union argument is held to.
+    let union = |alias: &str| -> Option<forge::types::UnionParam> {
+        let imp = callee_imports
+            .iter()
+            .find(|i| i.alias == alias && matches!(i.kind, forge::model::ForgeKind::Union))?;
+        let source = forge::import_source::ImportSource::read(callee_base, imp).ok()?;
+        let parsed = source.parse().ok()??;
+        let forge::model::ForgeDocument::Union(um) = &parsed.document else {
+            return None;
+        };
+        Some(forge::types::UnionParam {
+            identity: forge::stdlib::identity(&source.path),
+            document: um.name.clone(),
+        })
+    };
+    // The slot `ty` is to another algorithm's call, a parameter when `param`;
+    // `None` for one no such call fills.
+    let slot = |ty: &AlgorithmValueType, param: bool| -> Option<CalleeSlot> {
         match ty {
             AlgorithmValueType::Scalar(_)
             | AlgorithmValueType::Text { .. }
@@ -9294,9 +9330,12 @@ fn algorithm_record_slots(
                 }
                 (None, None) => None,
             },
-            // A union slot (docs/adr/0092, Landing order step 5) is not handed
-            // over by another algorithm's call yet: the callee is called by a
-            // host alone, for the reason `host_only` names.
+            // A union parameter is handed the name of a union the caller holds of
+            // the document the callee names (docs/adr/0092, "Decided while
+            // handing a union from one algorithm to another"). A union return is
+            // no slot of such a call: no place of an algorithm takes whole a
+            // union a call answers, so the callee is called by a host alone.
+            AlgorithmValueType::Union { alias } if param => union(alias).map(CalleeSlot::Union),
             AlgorithmValueType::List { .. } | AlgorithmValueType::Union { .. } => None,
             AlgorithmValueType::Record { alias } => {
                 schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })
@@ -9304,25 +9343,33 @@ fn algorithm_record_slots(
         }
     };
     let sig = &am.signature;
-    // A slot no scalar signature says: a record, or a value that may be absent.
-    let beyond_scalars =
-        |t: &AlgorithmValueType| t.record_alias().is_some() || t.optional_elem().is_some();
-    let has_record = sig.params.iter().any(|p| beyond_scalars(&p.sce_type))
+    // A slot no scalar signature says: a record, a value that may be absent, a
+    // union and a list.
+    let beyond_scalars = |t: &AlgorithmValueType| {
+        t.record_alias().is_some()
+            || t.optional_elem().is_some()
+            || t.union_alias().is_some()
+            || t.list_elem().is_some()
+    };
+    let beyond = sig.params.iter().any(|p| beyond_scalars(&p.sce_type))
         || sig.return_type.as_ref().is_some_and(beyond_scalars);
-    if !has_record {
-        return None;
+    if !beyond {
+        return Ok(None);
     }
-    Some(AlgorithmSlots {
-        params: sig
-            .params
-            .iter()
-            .map(|p| slot(&p.sce_type))
-            .collect::<Option<Vec<_>>>()?,
-        ret: match &sig.return_type {
-            Some(t) => Some(slot(t)?),
-            None => None,
-        },
-    })
+    let params = sig
+        .params
+        .iter()
+        .map(|p| {
+            slot(&p.sce_type, true)
+                .ok_or_else(|| format!("takes {} `{}`", p.sce_type.as_attr(), p.name))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ret = sig
+        .return_type
+        .as_ref()
+        .map(|t| slot(t, false).ok_or_else(|| format!("returns {}", t.as_attr())))
+        .transpose()?;
+    Ok(Some(AlgorithmSlots { params, ret }))
 }
 
 /// The enum each slot of the imported algorithm `am` holds, named as the importing
