@@ -752,6 +752,26 @@ old encode, the old encode and its templates are removed in the same landing.
    stays out of the catalog: its body is a variant whose caller hands its tag, one of the Rust arm's
    caller-tag fixtures (`forge_source_round_trip`) that neither the model nor a case reads, and the family
    enters the catalog together with that reading.
+
+   *The fortieth C++ landing, 2026-11-11:* the C++ backend prints every codec from its plan or refuses it by name,
+   and the template's encode is removed (§6). No codec of the repository uses a form the printer lacks, so the
+   landing moves none; what is left is refused as Swift refuses what it does not lower, as
+   `generate/unsupported-feature` with the clause `cpp_source::unlowered` names (`codec 'x': field 'f': ...`): a
+   float or a bool, which no C++ value has a type for yet; a list on one side of a gate held to the law its entries
+   say their inputs by, whose start no arm of a C++ group holds; a chain of slots whose entries are held to an
+   input, which the Rust printer does not determine either; and a body, a list or an arm of a codec the C++
+   backend refuses, by that codec's own clause. The import carries the clause (`ImportContext::cpp_unlowered`,
+   read as the codec is generated, its own imports resolved), so a codec that holds a refused codec is refused
+   at the field that holds it, and a document of another kind that imports one is refused for it. The template's
+   C++ encode, its value's public members and its `tag()`, the CBOR template's struct, the encode blocks the
+   generator wrote for C++ (whose helpers now refuse C++ by name, as they refuse Rust), and the checks a template
+   parent held a printed codec's said input to are gone; a C++ encode refuses no bound in a prologue, since its
+   value holds each bound in a type. The census is renamed
+   `a_cpp_codec_is_printed_from_its_plan_or_refused_by_name`: it pins the printed codecs of the resources and
+   each refused codec of the repository with its clause (none), and holds the refusal of a float, of a codec that
+   embeds one, and of a validator that imports one. Two tests that still read the template's C++ text of a parent
+   that derives a variant's tag, and of a variant with a gated arm, read the printed text: the switch over the
+   alternative the body holds, each case at its index counted per build.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

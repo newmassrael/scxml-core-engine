@@ -1552,6 +1552,22 @@ codec (5 more of the resources, 144 in all: `codec_content_line_enums`, `codec_c
 - `SCE::Forge::ContentLine::Writer` takes views: `param` and `string` a `std::string_view`, `strings` any range
   of elements that convert to one. A braced list no longer deduces a range; name its type.
 
+## A C++ codec is printed from its plan or refused by name (ADR 0081 step 4)
+
+Landing: the commits that add this section; every committed tree whose template hash covers the C++ codec
+templates is regenerated after it. No codec of the repository changes: each was printed already.
+
+- The C++ backend has no other encode of a codec: a codec whose plan uses a form the printer does not lower is
+  refused at generation with `generate/unsupported-feature`, `codec '<name>': <form>`, and nothing is written for
+  it. The forms are a `float32`, `float64` or `bool` field, which no C++ value has a type for yet, a list on one
+  side of a gate held to the law its entries say their inputs by, and a chain of slots whose entries are held to
+  an input. Generate such a codec for another backend, or declare the field as an integer of the width the wire
+  carries.
+- A codec that embeds, lists or holds as an arm a codec the C++ backend refuses is refused for it, at the field or
+  the arm that holds it, with that codec's clause; a validator, a procedure or another document that imports such a
+  codec is refused for it too, naming the alias it imports the codec under.
+- A C++ CBOR map's struct is the printed class, as it already was for every map: nothing changes for a consumer.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
