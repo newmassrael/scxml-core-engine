@@ -354,7 +354,10 @@ impl UnitNames for PythonNames<'_> {
             event_schema_payload_type(&record.name, Language::Python)
         })
     }
-    // Python lowers no union: `unit_type` refuses one by name before it asks.
+    // Never asked: Python's test profile matches no union yet
+    // (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so the walk refuses one by
+    // name (`TemplateWalk::refuse_unlowered_unions`) before `unit_type` is asked
+    // to spell a type.
     fn union(&self, _alias: &str) -> Option<String> {
         None
     }
@@ -493,9 +496,9 @@ impl JoinSpelling for PythonSpelling {
         }
     }
 
-    /// Never asked: Python lowers no union, and the walk refuses a
-    /// `union-match` on a backend that lowers none before it builds the test of
-    /// a case (`TemplateWalk::union_case`).
+    /// Never asked: Python's test profile matches no union yet, and the walk
+    /// refuses a `union-match` on a backend whose profile matches none before it
+    /// builds the test of a case (`TemplateWalk::union_case`).
     fn case_test(
         &self,
         _at: &PythonAt,
