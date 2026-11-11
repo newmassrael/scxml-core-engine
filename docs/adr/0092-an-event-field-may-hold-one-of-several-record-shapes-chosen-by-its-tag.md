@@ -6,8 +6,8 @@
   because 0090 is taken on `main` and 0091 on a branch. Amended 2026-11-07: a union variable has no default value
   ("Amendment (2026-11-07)"); amended 2026-11-11: what the Kotlin lane decided where this record is silent
   ("Amendment (2026-11-11)"); what landing step 5 decided is in "Decided while landing step 5 (2026-11-11)" and
-  "Decided while landing step 5 on Kotlin, with the crossing (2026-11-11)". Landed on `main` ("Landing order"
-  numbers the steps):
+  "Decided while landing step 5 on Kotlin, with the crossing (2026-11-11)", and what landing step 6 decided in
+  "Decided while landing step 6 (2026-11-12)". Landed on `main` ("Landing order" numbers the steps):
   - step 1, the type and its document: f3786292f6 (the kind), 40d50d4506 (the type and its size), a1fcd00872 (the
     revision rule);
   - step 2, the grammar: 62b22223c2 (`S` and `G`), 07f662da90 (the unit's payload schema), 9ec6bdef31
@@ -35,8 +35,10 @@
     ADR 0092 on C11"); and the Interpreter's lowering of such an algorithm (the change that adds "Decided while
     landing step 5 on the Interpreter") and its crossing (the change that adds "Decided while landing step 4 and
     the crossing on the Interpreter");
-  - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
-    8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
+  - step 6, the standard library's `date_expression` and `resolve_date`, with the numerical conformance harness's
+    argument of a union on all seven generated lanes and the Interpreter (the change that adds "Decided while landing
+    step 6");
+  - steps 7 (the deterministic CBOR encoder) and 8 (the census) have not landed.
 - Date: 2026-11-06
 - Amends:
   - ADR 0086 section 1.1 (the type grammar gains `union:<alias>`), section 2.1 (the size calculus gains its row),
@@ -1224,6 +1226,71 @@ Step 5 and its crossing are now on every generated lane and the Interpreter. Ste
 C11's among them, the numerical conformance harness's argument of a union; then the standard library's change
 itself. C11's test profile matching
 a union (`TEST_PROFILE_UNION_BACKENDS`) is not on step 6's path.
+
+## Decided while landing step 6 (2026-11-12)
+
+`sce:std/time/date_expression.scxml` is now the union of section 10.1 and `resolve_date.scxml` takes it (section
+10.2); the numerical conformance harness hands the union on all seven generated lanes and the Interpreter. Each
+question below is decided by a rule this record, ADR 0087 or SCE_FORGE.md already states; none changes a wire, a
+diagnostic code or a rule of the language.
+
+1. **The case records are the table's, one document each.** Section 10.1 names the five new records and their fields;
+   each is an event schema of `stdlib/time` beside `civil_date.scxml`, named by its document (`month_day`,
+   `date_shift`, `date_weekday`, `week_weekday`, `month_offset_day`), its event name `time.<document>` as
+   `civil_date`'s is, its fields in the order the flat record declared them. A record is a type of its own wherever
+   it is held (section 1.1, "Two cases may hold one record"), so it states no case and no kind: which kinds hold it
+   is the union's to say. The union's revision is `DateKind`'s, 2, so its `SCHEMA_ID` is
+   `urn:sce:schema:date_expression:2` and the id moves as section 10.4 says, with no declaration of its own.
+2. **The resolver is the flat one, case by case.** Its parameter is named `expression`, the word section 10.2 writes.
+   Each kind is one `<sce:if>` that tests the tag and returns, in the order the flat body tested them, the last kind
+   (`weekdayOfWeek`) in an `<sce:if>` of its own where the flat body read it after its last test; a field is read as
+   `expression.<field>` where the flat body read `<field>.value`, so the arithmetic is the flat body's statement for
+   statement. The ten preconditions that asked for a number and the trailing `kind === DateKind.weekdayOfWeek` go;
+   every other precondition stays as it was written, a number's range being no fact of its type. After the eleven
+   tests no case is left, so the body ends there (section 6.1 item 4), and each backend closes it with its statement
+   of an end no path reaches.
+3. **A union the harness hands an algorithm is a fixture of its own, and so is each case's record.** Each lane's unit
+   of the union names the tag's enum and every case's record as siblings (section 7: Rust's `use super::<record>;`,
+   C++'s and C11's `#include`, Go's and Python's imports of the sibling package or module), and every lane's harness
+   build generates exactly the documents the catalog lists (`sce-codegen list-fixtures`), as it already does for an
+   algorithm's records and enums. So the catalog gains a fixture kind `union` (`FixtureSpec::Union`), whose
+   document is the union's, and an event-schema fixture for each new record, each with its oracle entry. Generating an
+   algorithm's imports transitively instead was rejected: every lane's build would gain a second statement of which
+   documents a fixture needs, beside the catalog every lane already reads.
+4. **What the harness knows of a union is derived, never written**, as a record's fields and an enum's variants are:
+   the manifest writes `{"union": "<union fixture>"}` for an argument and nothing for the union fixture, and
+   `conformance::read_union_shape` reads the document with the parse the generator reads, the cases in the tag
+   enum's order. A case's identifier and the member a value answers its tag by are each lane's own, asked of the
+   helpers its union renderer spells them by (`rust_case_ident`, `kotlin_case_ident`, `swift_case_ident`,
+   `go_case_ident`, `cpp_case_ident`, `python_case_ident`, `c11_case_ident`, and the tag members beside them in
+   `forge::composed_lowering`), so a harness names no case its unit does not declare. A manifest that writes the
+   shape is refused, as one that writes a record's fields is.
+5. **One builder per lane.** A value of a union is built from the oracle's wire object, the case its tag names
+   holding that case's record built field by field, in a module beside each lane's scaffold
+   (`tools/codegen/templates/forge/<language>/conformance/values.*.jinja2`), which the algorithm fragment and the
+   union fixture's fragment both import; the builders of a record's field and of an enum's value it needs moved there
+   from the algorithm fragments, so each is spelled once per lane. A union fixture's test builds one oracle value of
+   each case and reads its tag back by the unit's own member, after holding the count of values to the count of
+   cases, so a case the union gains without a value, or a value built as another case, fails.
+6. **C11 bakes a union value as a designated initializer.** Its case table is a `static const` aggregate, which a
+   call of the case's constructor cannot initialise; the designated initializer names the tag and the case's member
+   of `as`, and leaves every other byte zero, which is the value the constructor builds (section 7 item 3). The union
+   fixture's test reads the declared name of each value back through the unit's `<stem>_variant`.
+7. **The oracle writes a union value as the wire writes it and nothing else.** An argument is the object of section
+   2.1, the tag first and then the case's fields in the order its record declares them, with no key of another
+   case: the Interpreter hands the object to its lowered algorithm as it is, and its union holds no other key
+   ("Decided while landing step 4 and the crossing on the Interpreter" item 1). The calendar table of
+   `tests/forge/conformance/gen_cases.py` writes each row as such a value; its 23 rows the union has no spelling
+   for left the table, which says so: 15 that left out a number a kind reads, which a lift now refuses as `missing`
+   before the resolver is called (section 10.3), and 8 that wrote numbers a kind does not read. The model and its
+   `datetime` twin read the union, and both refuse a value that is not one. The hand cases keep their dates and
+   answers; the one that wrote numbers beside `none` now writes `none` alone.
+8. **The Interpreter's harness is unchanged.** It spells each argument as the script source of its JSON value
+   (`tests/integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp`), which for a union is the wire object the
+   Interpreter's union is ("Decided while landing step 5 on the Interpreter").
+9. **A consumer's migration** is a section of docs/SCE_CODEC_CONSUMER_MIGRATION.md (section 10.4, ADR 0078).
+
+Steps 7 and 8 have not landed.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 

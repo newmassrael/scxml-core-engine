@@ -635,16 +635,21 @@ an evaluation depend on a setting the document does not show.
 
 #### 5.1 Rule
 
-1. **The expression** is `sce:std/time/date_expression.scxml`, an event schema used as a record type: `kind`
-   (`enum:DateKind`, `sce:std/time/date_kind.scxml`), and `year` `optional<int32>`, `month` `optional<uint8>`, `day`
-   `optional<uint8>`, `weekday` `optional<uint8>` (0 for Sunday to 6 for Saturday, as `weekday_from_days`) and
-   `count` `optional<int32>`. Each kind reads the fields it names and no other; a field it does not read is written
-   `null`.
-2. **The resolver** is `sce:std/time/resolve_date.scxml`, an algorithm `(today int64, kind enum:DateKind, year, month,
-   day, weekday, count) -> optional<int64>`, `may-fail`, `today` and the result days since 1970-01-01 in the user's
+1. **The expression** is `sce:std/time/date_expression.scxml`, a union (ADR 0092, section 10): its tag `kind`
+   (`enum:DateKind`, `sce:std/time/date_kind.scxml`), and one case per kind holding a record of exactly the numbers
+   that kind reads, each present: `year` `int32`, `month` `uint8`, `day` `uint8`, `weekday` `uint8` (0 for Sunday to
+   6 for Saturday, as `weekday_from_days`) and `count` `int32`, as the table below names them. On the wire a value is
+   one object, the tag beside its case's numbers (`{"kind":"relativeWeeks","count":2}`); a number another kind reads
+   is no key of it. (Until ADR 0092 step 6 the expression was a record of `kind` and five `optional` numbers, a number
+   the kind does not read written `null`; a text of that record whose kind's numbers are present is read as the
+   union's value of that kind, ADR 0092 section 2.1 item 3.)
+2. **The resolver** is `sce:std/time/resolve_date.scxml`, an algorithm `(today int64, expression
+   union:DateExpression) -> optional<int64>`, `may-fail`, `today` and the result days since 1970-01-01 in the user's
    zone (a statechart takes `today` from `sce-host-clock-now` and `sce-host-clock-zone` through
    `days_from_epoch_seconds`). It composes `days_from_civil`, `civil_from_days`, `weekday_from_days` and
-   `add_months`; it takes scalars, so it is called from a statechart with the fields of a lifted record.
+   `add_months`, and resolves each kind under a test of the expression's tag, where that kind's numbers are read; a
+   statechart hands it the union it lifted from a text, by the name of a variable of that union (ADR 0092, section
+   6.1 item 7).
 
    | `kind` | Reads | Resolves to |
    |---|---|---|
@@ -660,8 +665,9 @@ an evaluation depend on a setting the document does not show.
    | `weekdayOfWeek` | `weekday`, `count` | the day with that weekday in the ISO 8601 week (Monday first) `count` weeks from `today`'s: 0 this week, 1 the next |
    | `dayOfMonthOffset` (revision 2) | `day`, `count` | day `day` of the month `count` months from `today`'s month (`add_months` of its 1st by `count`): 0 this month, a negative `count` an earlier one; before or after `today` as the month falls |
 
-3. **Failures**: `precondition` when a field the kind reads is absent, a month is outside 1 to 12, a day the month
-   does not have, or a weekday past 6; `overflow` when a result leaves `int64` or its year leaves `int32`. A statechart
+3. **Failures**: `precondition` when a month is outside 1 to 12, a day the month does not have, or a weekday past 6
+   (a number the kind reads is present by its case's type, and a text that lacks one is refused by the lift as
+   `missing`, with its pointer); `overflow` when a result leaves `int64` or its year leaves `int32`. A statechart
    receives either as any `may-fail` call's failure, and a harness turns it into a repair (section 6). Every
    precondition is judged before `today` is read but one: a `dayOfMonthOffset` day within 1 to 31 that the month it
    lands in does not have (30 February, 31 April, 29 February of a common year) is judged once that month is known,
@@ -670,8 +676,10 @@ an evaluation depend on a setting the document does not show.
    an answer the text did not give.
 4. **The set grows by revision** (ADR 0044, "An enum that grows"); a revision adds kinds and never changes what an
    existing one resolves to. A revision declares `sce:revision` on `date_kind.scxml`'s root and `sce:since` on each
-   kind it adds, takes the next unused number, and lands with its arm in `resolve_date.scxml` and its rows in the
-   calendar table (`tests/forge/conformance/gen_cases.py`), so no build holds a kind the resolver refuses.
+   kind it adds, takes the next unused number, and lands with its case in `date_expression.scxml`, its arm in
+   `resolve_date.scxml` and its rows in the calendar table (`tests/forge/conformance/gen_cases.py`), so no build holds
+   a kind the resolver refuses: the union refuses a variant with no case (`validation/union-cases`), and the resolver
+   a kind it does not return (`algorithm/return-missing`, ADR 0092 section 6.1 item 4).
    - Revision 2 (2026-11-05) adds `dayOfMonthOffset`. Measured: "the 5th of next month" could be written only as
      `absolute` with the month and year worked out by the caller, or as `monthDay` with next month's number, which
      is the date arithmetic this section moves out of the model and its caller. The kind reads a day and a count
@@ -694,7 +702,9 @@ so an ambiguity is a choice the model makes in the open, not an arithmetic error
 - **The model writes the date, code checks it.** Checking a date against the text requires resolving the text's
   expression, which is the resolver; the check would be the resolver run a second time.
 - **A record argument** (`resolve(today, expr)`). An algorithm over a record holding optional fields is ADR 0086
-  step 5; scalars let the resolver land without it, and a record overload can follow it.
+  step 5; scalars let the resolver land without it, and a record overload can follow it. Superseded by ADR 0092
+  step 6: the resolver takes the expression whole, as a union, once an algorithm's slot may hold one, and the
+  scalar form is not kept beside it.
 
 ### 6. The harness is a statechart, not an engine feature
 
