@@ -18,8 +18,8 @@
 //! built, as on Rust, C++ and Kotlin. Go holds a text, a byte string and an
 //! enum of a received message where the record's unit holds them, so it copies
 //! a message the content reads that Rust refuses, as Kotlin does. What Go
-//! refuses is held here too: a component that declares `<sce:action>`, and one
-//! whose template reaches a union, which Go does not lower.
+//! refuses is held here too: a component that declares `<sce:action>`. A
+//! component whose template reaches a union is generated, since Go lowers one.
 //!
 //! What the generated components do when they run is held by
 //! `backends/go/tests/integration/static_datamodel/a_test_component_runs_through_its_doors_test.go`,
@@ -29,8 +29,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 
 /// The module path the generated packages are imported under.
 const PREFIX: &str = "example.com/generated";
@@ -962,11 +960,12 @@ fn a_component_that_declares_a_host_action_is_refused_on_go() {
     }
 }
 
-/// docs/adr/0092, section 7: a component whose template reaches a union is
-/// refused on Go, which generates no unit of that template, by the union's
-/// own refusal, as on C++.
+/// docs/adr/0092, section 7, the Go row: a component whose template reaches a
+/// union is generated on Go, which generates the unit of that template, and
+/// its receive branch matches a message through the template's `Matches`, as
+/// any other template's.
 #[test]
-fn a_component_whose_template_reaches_a_union_is_refused_on_go() {
+fn a_component_whose_template_reaches_a_union_is_generated_on_go() {
     let dir = tempfile::tempdir().expect("a directory");
     let imports = imports_dir();
     let port = format!(
@@ -1002,7 +1001,11 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_go() {
     std::fs::write(dir.path().join("order_port.scxml"), port).expect("the port type is written");
     let path = dir.path().join("order_watcher.scxml");
     std::fs::write(&path, component).expect("the component is written");
-    let diagnostics = refused(&path);
-    assert!(diagnostics.contains("`union:Payment`: "), "{diagnostics}");
-    assert!(diagnostics.contains(NOT_LOWERED_YET), "{diagnostics}");
+    let code = text_at(&path);
+    let matched = "func(sceMessage sce_order_placed_match.Value) bool { return \
+                   sce_order_placed_match.Matches(sceMessage, p.vLimit) })";
+    assert!(
+        code.contains(matched),
+        "order_watcher holds `{matched}`:\n{code}"
+    );
 }

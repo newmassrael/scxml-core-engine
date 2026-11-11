@@ -68,25 +68,34 @@ const GO_ELEMENT_BINDING: &str = "sceElement";
 /// The method a Go union answers the value of its tag's enum by, whatever key
 /// the tag is written under (docs/adr/0092, section 7, the Go row: `Kind() E`),
 /// on a machine's union as on a unit's.
-const GO_UNION_KIND: &str = "Kind";
+pub(crate) const GO_UNION_KIND: &str = "Kind";
 
-/// The member of a machine's Go union that holds its tag.
-const GO_UNION_TAG: &str = "tag";
+/// The member of a Go union that holds its tag, on a machine's union as on a
+/// unit's.
+pub(crate) const GO_UNION_TAG: &str = "tag";
 
 /// The name a Go writer binds the union it writes to, in the function literal
 /// that tells its cases apart.
 const GO_UNION_BINDING: &str = "sceUnion";
 
-/// The member of a machine's Go union that holds the record of the case whose
-/// identifier is `case` ([`ComposedSpelling::union_case_ident`]): unexported,
-/// and never the tag's member, since every one begins `case`.
-fn go_case_member(case: &str) -> String {
+/// The identifier of the case `variant` of a Go union: the variant in Pascal
+/// case, which follows the union's type in the name of the case's constructor
+/// (docs/adr/0092, section 7 item 1: Go has no nesting), on a machine's union
+/// as on a unit's.
+pub(crate) fn go_case_ident(variant: &str) -> String {
+    crate::filters::to_pascal_case(variant.to_string())
+}
+
+/// The member of a Go union that holds the record of the case whose identifier
+/// is `case` ([`go_case_ident`]): unexported, and never the tag's member, since
+/// every one begins `case`; on a machine's union as on a unit's.
+pub(crate) fn go_case_member(case: &str) -> String {
     format!("case{case}")
 }
 
 /// The read of the record of the case `variant` where a test proved it, on a
 /// machine's union as on a unit's.
-fn go_case_read(variant: &str) -> String {
+pub(crate) fn go_case_read(variant: &str) -> String {
     format!(
         "Proven{}",
         crate::filters::to_pascal_case(variant.to_string())
@@ -866,7 +875,7 @@ impl ComposedSpelling for GoComposed<'_> {
     // The variant in Pascal case, which follows the union's type in the name of
     // the case's constructor (section 7 item 1: Go has no nesting).
     fn union_case_ident(&self, variant: &str) -> String {
-        crate::filters::to_pascal_case(variant.to_string())
+        go_case_ident(variant)
     }
     // The tag is read by the one method every union of a Go unit and of a Go
     // machine answers it by, whatever key it is written under.

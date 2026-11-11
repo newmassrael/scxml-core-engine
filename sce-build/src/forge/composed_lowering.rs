@@ -72,7 +72,10 @@ pub(crate) use c11::{c11_pairs, c11_path_len, C11_WIRE};
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
 };
-pub(crate) use go::{go_raise_checks, go_union_member};
+pub(crate) use go::{
+    go_case_ident, go_case_member, go_case_read, go_raise_checks, go_union_member, GO_UNION_KIND,
+    GO_UNION_TAG,
+};
 pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member, kotlin_unit_union_read};
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};
 pub(crate) use rust::{

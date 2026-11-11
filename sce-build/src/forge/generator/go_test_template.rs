@@ -34,16 +34,19 @@
 //! compared by its octets (`bytes.Equal`), since Go's `==` does not compare
 //! slices, and a value built from a byte string a parameter gives holds a copy
 //! of it. A length restriction on a text counts its characters through the
-//! profile's runtime ([`TEXT_LENGTH`]). Go lowers no union
-//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so a template whose type
-//! reaches one is refused by the walk before anything is spelled.
+//! profile's runtime ([`TEXT_LENGTH`]). A union (docs/adr/0092, section 7, the
+//! Go row) is the value struct its unit declares, matched by comparing its
+//! `Kind()` with the variant of its tag's enum, the record of the case read
+//! through the unit's `Proven<Case>()` after that comparison in the same
+//! conjunction, which Go evaluates first, and built by the constructor of its
+//! case.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalSpelling, CaseTest, Held, JoinSpelling, Op,
-    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
+    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -166,7 +169,9 @@ struct GoCanonicalAt {
 /// (`CanonicalSpelling::list_element`), and an optional field through a
 /// closure of no parameter that reads the field's value where it is present
 /// (`CanonicalSpelling::optional_value`), which the runtime calls only there,
-/// since what an absent field holds is no value of its type.
+/// since what an absent field holds is no value of its type. A union is
+/// written by a closure of no parameter whose `switch` binds the record of
+/// each case where its case is the value's (`CanonicalSpelling::union`).
 struct GoCanonical;
 
 impl CanonicalSpelling for GoCanonical {
@@ -284,6 +289,45 @@ impl CanonicalSpelling for GoCanonical {
             .collect();
         format!("{CANONICAL}.Record({})", fields.join(", "))
     }
+
+    /// A function literal of no parameter, called where it is written, whose
+    /// `switch` tells the cases apart by the declared name of the union's tag,
+    /// which the unit's `Kind()` answers through its enum's `DeclaredName`, so
+    /// the unit names no package of the tag's enum; an arm of a case that holds
+    /// a record binds it through the unit's `Proven<Case>()`. A value is built
+    /// only by the constructor of a case, so the end after the `switch` is not
+    /// reached, and says so.
+    fn union(
+        &self,
+        at: &GoCanonicalAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        use crate::forge::composed_lowering::{go_case_read, GO_UNION_KIND};
+        let arms: String = cases
+            .into_iter()
+            .map(|(variant, held)| {
+                let name = filters::escape_go(variant.clone());
+                match held {
+                    Some((binding, written)) => format!(
+                        "case \"{name}\": {binding} := {}.{}(); return \
+                         {CANONICAL}.UnionCase(\"{name}\", {written}); ",
+                        at.expr,
+                        go_case_read(&variant)
+                    ),
+                    None => {
+                        format!("case \"{name}\": return {CANONICAL}.UnionCase(\"{name}\", nil); ")
+                    }
+                }
+            })
+            .collect();
+        Ok(format!(
+            "func() any {{ switch {}.{GO_UNION_KIND}().DeclaredName().Proven() {{ {arms}}}; \
+             panic(\"a value of {} is in no case of its tag\") }}()",
+            at.expr,
+            filters::escape_go(union.name.clone())
+        ))
+    }
 }
 
 /// The name the generated `Matches` and `Specific` take the formal parameter
@@ -325,9 +369,13 @@ impl UnitNames for GoNames<'_> {
             event_schema_payload_type(&record.name, Language::Go)
         })
     }
-    // Go lowers no union: `unit_type` refuses one by name before it asks.
-    fn union(&self, _alias: &str) -> Option<String> {
-        None
+    // The value struct the union's unit declares, through its document's
+    // package.
+    fn union(&self, alias: &str) -> Option<String> {
+        self.scope.unions.get(alias).and_then(|union| {
+            self.spelling.names_document(&union.name);
+            union_unit_type(&union.name, Language::Go)
+        })
     }
     // No Go type is named by a mangled composition.
     fn enum_mangle(&self, alias: &str) -> String {
@@ -366,6 +414,33 @@ impl GoSpelling {
         if kept.is_none() {
             *kept = Some(why);
         }
+    }
+
+    /// The variant of the tag's enum of `union` that its case `variant` is
+    /// for, through the package of the enum's document; empty, with the
+    /// refusal kept, where the union's scope does not read its tag's enum.
+    fn case_kind(&self, union: &ScopedUnion, variant: &str) -> String {
+        let Some(declared) = union.scope.enums.get(&union.tag_enum) else {
+            self.refuse(format!(
+                "the tag's enum `{}` of `union:{}` was not read",
+                union.tag_enum, union.name
+            ));
+            return String::new();
+        };
+        self.names_document(&declared.name);
+        crate::forge::enum_naming::variant_ref(
+            Language::Go,
+            &enum_qualified_type(&declared.name, Language::Go),
+            &declared.name,
+            variant,
+        )
+    }
+
+    /// The value struct the unit of `union` declares, through its document's
+    /// package.
+    fn union_type(&self, union: &ScopedUnion) -> String {
+        self.names_document(&union.name);
+        union_unit_type(&union.name, Language::Go).unwrap_or_default()
     }
 
     /// The Go type of a value of `ty`, read in `scope`; empty, with the
@@ -489,21 +564,36 @@ impl JoinSpelling for GoSpelling {
         }
     }
 
-    /// Never asked: Go lowers no union, and the walk refuses a `union-match`
-    /// on a backend that lowers none before it builds the test of a case
-    /// (`TemplateWalk::union_case`).
+    /// The union's `Kind()` compared with the variant of its case (`!=` where
+    /// `negated`), and, where the case's matcher reads its record, joined in
+    /// one conjunction with the test of the record, which reads it through the
+    /// unit's `Proven<Case>()` ([`TemplateSpelling::case`]): Go evaluates the
+    /// comparison first and reads the record only where it holds. The
+    /// conjunction is in parentheses, so `!` before it negates it whole.
     fn case_test(
         &self,
-        _at: &GoAt,
+        at: &GoAt,
         union: &ScopedUnion,
-        _variant: &str,
-        _record: CaseTest<'_, '_, GoAt>,
-        _negated: bool,
+        variant: &str,
+        record: CaseTest<'_, '_, GoAt>,
+        negated: bool,
     ) -> String {
-        unreachable!(
-            "the walk refuses the union `{}` on Go before it asks for the test of a case",
-            union.name
-        )
+        use crate::forge::composed_lowering::GO_UNION_KIND;
+        let kind = self.case_kind(union, variant);
+        let tag = format!("{}.{GO_UNION_KIND}()", at.expr);
+        match record {
+            CaseTest::Empty | CaseTest::AnyRecord => {
+                let operator = if negated { "!=" } else { "==" };
+                format!("{tag} {operator} {kind}")
+            }
+            CaseTest::Holds { then, .. } => negate(
+                format!(
+                    "({tag} == {kind} && {})",
+                    self.join(then, false, Stands::Conjunct)
+                ),
+                negated,
+            ),
+        }
     }
 }
 
@@ -538,6 +628,19 @@ impl TemplateSpelling for GoSpelling {
         GoAt {
             expr: format!("{}.{}", at.expr, event_schema_field_ident(id, Language::Go)),
         }
+    }
+
+    /// The record of the case, read through the unit's `Proven<Case>()`,
+    /// which [`JoinSpelling::case_test`] calls only after the comparison of
+    /// the union's `Kind()` that proves the case.
+    fn case(&self, at: &GoAt, _union: &ScopedUnion, variant: &str) -> Result<GoAt, String> {
+        Ok(GoAt {
+            expr: format!(
+                "{}.{}()",
+                at.expr,
+                crate::forge::composed_lowering::go_case_read(variant)
+            ),
+        })
     }
 
     /// The parameter as it is, but for a byte string a value is built with,
@@ -681,5 +784,22 @@ impl TemplateSpelling for GoSpelling {
             self.type_of(&at.ty, at.scope),
             elements.join(", ")
         )
+    }
+
+    /// The constructor of the case, given its record, or nothing for a case
+    /// that holds none: the only way the unit builds a value.
+    fn case_value(
+        &self,
+        _at: &Position<'_, GoAt>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        Ok(format!(
+            "{}{}({})",
+            self.union_type(union),
+            crate::forge::composed_lowering::go_case_ident(variant),
+            record.unwrap_or_default()
+        ))
     }
 }

@@ -3765,8 +3765,10 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
     // The type the union's own unit declares, as the import line that brings
     // its unit into scope names it ([`forge_import_identity`]): Rust's
     // `use super::<snake>;` brings the sibling module, which names the enum
-    // (`<snake>::<Pascal>`, as an imported enum and record are named), and
-    // Kotlin's wildcard import brings the interface itself.
+    // (`<snake>::<Pascal>`, as an imported enum and record are named), Go's
+    // import binds the unit's package to its alias, which names the value
+    // struct (`sce_<snake>.<Pascal>`), and Kotlin's wildcard import brings the
+    // interface itself.
     fn union(&self, alias: &str) -> Option<String> {
         use crate::generator::Language;
         self.imports
@@ -3774,9 +3776,9 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
             .find(|i| i.kind == "union" && i.alias == alias)
             .map(|i| match self.l.lang {
                 Language::Rust => format!("{}::{}", i.namespace, i.type_name),
+                Language::Go => format!("{}.{}", i.namespace, i.type_name),
                 Language::Cpp
                 | Language::Kotlin
-                | Language::Go
                 | Language::Python
                 | Language::C11
                 | Language::Swift => i.type_name.clone(),
@@ -4982,6 +4984,105 @@ fn render_union_rust(
             .derives_attr()
             .into(),
     );
+    ctx.insert("cases".into(), serde_json::json!(cases));
+    l.render(env, "union", ctx)
+}
+
+/// The package-level names a Go union's unit declares beside its type and the
+/// constructors of its cases: a constructor named as one would declare it
+/// twice.
+const GO_UNION_CONSTANTS: &[&str] = &["Revision", "DataMaxLen", "SchemaID", "JSONSchema"];
+
+/// The Go unit of a union document (docs/adr/0092, section 7, the Go row, and
+/// its item 4): a value struct named for the document, holding an unexported
+/// tag, a value of the tag's enum, and one unexported member per case that
+/// holds a record, in the tag enum's order; one constructor per case,
+/// `<Union><Case>(r R)` or `<Union><Case>()` for an empty case, the only way a
+/// value is built; `Kind()`, the case the value is in; and one
+/// `Proven<Case>()` per case that holds a record, the read of a case a test of
+/// the tag proved, whose other cases panic, the one place they are written.
+/// Beside it the constants of [`UnionUnit::context`].
+///
+/// The struct is the shape a Go machine holds its own union in
+/// ([`crate::forge::composed_lowering::GoComposed`]), named by the same
+/// spellings: the tag's member and method, a case's identifier, its member
+/// and its proven read. A case is named by its variant in Pascal case after
+/// the union's type, since Go has no nesting (section 7 item 1). The tag's
+/// enum and the cases' records are named through the packages the unit's
+/// imports bring in, the lines every Go unit names a sibling package by, and
+/// only the documents the type names are imported, since Go refuses a package
+/// a file never names. Two variants of one Pascal spelling, and a
+/// constructor spelled as one of the unit's constants, are refused by name
+/// rather than left to the compiler.
+fn render_union_go(
+    env: &minijinja::Environment,
+    m: &UnionModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::forge::composed_lowering::{
+        go_case_ident, go_case_member, go_case_read, GO_UNION_KIND, GO_UNION_TAG,
+    };
+    use crate::generator::Language;
+    let unit = UnionUnit::read(m, imports)?;
+    let tag = unit.tag;
+    let union_type = filters::to_pascal_case(m.name.clone());
+    let kind_type = enum_qualified_type(&tag.document_name, Language::Go);
+    let mut constructors: std::collections::BTreeMap<String, &str> =
+        std::collections::BTreeMap::new();
+    let mut cases = Vec::with_capacity(unit.cases.len());
+    let mut uses: Vec<String> = vec![tag.include_stmt.trim().to_string()];
+    for (variant, record) in &unit.cases {
+        let variant = variant.as_str();
+        let ident = go_case_ident(variant);
+        let constructor = format!("{union_type}{ident}");
+        if GO_UNION_CONSTANTS.contains(&constructor.as_str()) {
+            return Err(union_refused(
+                m,
+                format!(
+                    "the case `{variant}` is built by `{constructor}`, the name of a constant \
+                     the unit declares"
+                ),
+            ));
+        }
+        if let Some(first) = constructors.insert(constructor.clone(), variant) {
+            return Err(union_refused(
+                m,
+                format!(
+                    "the cases `{first}` and `{variant}` are both built by the Go function \
+                     `{constructor}`"
+                ),
+            ));
+        }
+        if let Some(import) = record {
+            let line = import.include_stmt.trim().to_string();
+            if !uses.contains(&line) {
+                uses.push(line);
+            }
+        }
+        cases.push(serde_json::json!({
+            "variant": variant,
+            "constructor": constructor,
+            "member": go_case_member(&ident),
+            "kind": crate::forge::enum_naming::variant_ref(
+                Language::Go,
+                &kind_type,
+                &tag.document_name,
+                variant
+            ),
+            "proven": go_case_read(variant),
+            "record": record.map(|import| {
+                event_schema_payload_type(&import.document_name, Language::Go)
+            }),
+        }));
+    }
+    let l = LangCtx::new(Language::Go, imports);
+    let mut ctx = unit.context(&l, m, options);
+    ctx.insert("union_type".into(), union_type.into());
+    ctx.insert("kind_type".into(), kind_type.into());
+    ctx.insert("kind_method".into(), GO_UNION_KIND.into());
+    ctx.insert("tag_member".into(), GO_UNION_TAG.into());
+    ctx.insert("go_type_imports".into(), serde_json::json!(uses));
     ctx.insert("cases".into(), serde_json::json!(cases));
     l.render(env, "union", ctx)
 }
@@ -32253,14 +32354,12 @@ pub fn generate_go_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
-        // Union: see cpp dispatch.
-        ForgeDocument::Union(m) => {
-            return Err(crate::forge::union_check::document_unlowered(m).into())
-        }
+        // docs/adr/0092, section 7, the Go row: a union is a value struct of
+        // its tag and one member per case that holds a record.
+        ForgeDocument::Union(m) => render_union_go(&env, m, imports, options)?,
         // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `Matches`
-        // and a specific template's `Specific` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`);
-        // Go lowers no union, so one whose type reaches a union is refused by
-        // the union's own refusal.
+        // and a specific template's `Specific` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`),
+        // a union matched by its case through the unit's `Kind()`.
         ForgeDocument::TestTemplate(m) => {
             go_test_template::render_test_template_go(&env, m, imports, options)?
         }
@@ -39347,24 +39446,24 @@ fn algorithm_union_type(
 
 /// The type the unit of the union document `document` declares, as a unit of
 /// `lang` that imports it names it (docs/adr/0092, section 7): Rust through the
-/// sibling module its `use super::<snake>;` brings in (`<snake>::<Pascal>`), and
+/// sibling module its `use super::<snake>;` brings in (`<snake>::<Pascal>`),
 /// Kotlin by the sealed interface the wildcard import of the unit's package
-/// brings in (`<Pascal>`), as an imported record's payload type is named
-/// ([`event_schema_payload_type`]). What an algorithm's union is spelled as
-/// ([`algorithm_union_type`]), and what a statechart's adapter maps the
+/// brings in (`<Pascal>`), and Go by the value struct of the package its import
+/// binds to [`go_package_alias`] (`sce_<snake>.<Pascal>`), as an imported
+/// record's payload type is named ([`event_schema_payload_type`]). What an
+/// algorithm's union is spelled as ([`algorithm_union_type`]), what a Go test
+/// template names a union by, and what a statechart's adapter maps the
 /// machine's own sum into (`crate::forge::static_lowering`). `None` on a backend
-/// that names no unit's union outside the unit yet
-/// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]).
+/// that names no unit's union outside the unit yet.
 pub(crate) fn union_unit_type(document: &str, lang: crate::generator::Language) -> Option<String> {
     use crate::generator::Language;
     let pascal = filters::to_pascal_case(document.to_string());
+    let snake = filters::to_snake_case(document.to_string());
     match lang {
-        Language::Rust => Some(format!(
-            "{}::{pascal}",
-            filters::to_snake_case(document.to_string())
-        )),
+        Language::Rust => Some(format!("{snake}::{pascal}")),
         Language::Kotlin => Some(pascal),
-        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => None,
+        Language::Go => Some(format!("{}.{pascal}", go_package_alias(&snake))),
+        Language::Cpp | Language::Python | Language::C11 | Language::Swift => None,
     }
 }
 

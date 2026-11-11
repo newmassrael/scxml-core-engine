@@ -8,12 +8,11 @@
 // suite's `a_test_template_matches_its_values.rs` and of the Kotlin
 // `ATestTemplateMatchesItsValuesTest.kt`, which hold the same templates to the
 // same values, each test named `TestATestTemplateMatchesItsValues_<Case>` after
-// the Rust case in Pascal case. Go lowers no union, so the two templates over
-// one, and their cases, have no twin here: the generator refuses them on Go
-// (sce-build/tests/a_test_template_is_generated_in_go.rs). The committed units
-// beside this file are generated from the fixtures under
-// `sce-build/tests/fixtures/test_profile/` (regen:
-// `scripts/regen_static_datamodel_go.sh`).
+// the Rust case in Pascal case. A union (docs/adr/0092, section 7, the Go row)
+// is the value struct its unit declares, built by the constructor of its case.
+// The committed units beside this file are generated from the fixtures under
+// `sce-build/tests/fixtures/test_profile/` and the unions they match from
+// `sce-build/tests/fixtures/union/` (regen: `scripts/regen_static_datamodel_go.sh`).
 
 package static_datamodel
 
@@ -33,11 +32,19 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_report"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_report_of"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_status"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_customer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line_bounded"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line_exact"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_payment"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_placed"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_placed_match"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/paint_color"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/report_within"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/shape_is_circle"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/shape_radius_minimal"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/shape_rect_minimal"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/union_shape_minimal"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/voucher_is"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/voucher_payment"
 )
@@ -317,14 +324,79 @@ func TestATestTemplateMatchesItsValues_AByteStringLiteralIsItsOctets(t *testing.
 	}
 }
 
+// union-match (§11.4): a union matches in the case its matcher names, and in no
+// other, whatever the case holds.
+func TestATestTemplateMatchesItsValues_AUnionMatchesInTheCaseItsMatcherNames(t *testing.T) {
+	circle := union_shape_minimal.UnionShapeMinimalCircle(shape_radius_minimal.ShapeRadiusMinimalPayload{Radius: 3})
+	if !shape_is_circle.Matches(circle) {
+		t.Error("a circle does not match")
+	}
+	if shape_is_circle.Matches(union_shape_minimal.UnionShapeMinimalDot()) {
+		t.Error("a dot matches")
+	}
+	rect := union_shape_minimal.UnionShapeMinimalRect(shape_rect_minimal.ShapeRectMinimalPayload{Width: 1, Height: 2})
+	if shape_is_circle.Matches(rect) {
+		t.Error("a rect matches")
+	}
+}
+
+// profileQuantityLimit is the quantity limit order_placed_match is given.
+const profileQuantityLimit uint16 = 5
+
+// profileOrder is an order order_placed_match matches with the quantity limit 5:
+// two lines, the second the exact one, no note and no priority, a VIP customer,
+// paid by a card of four characters.
+func profileOrder() order_placed.OrderPlacedPayload {
+	return order_placed.OrderPlacedPayload{
+		OrderId: 7,
+		Lines: []order_line.OrderLinePayload{
+			{Sku: "A-1", Quantity: 5, Color: paint_color.PaintColorGreen},
+			order_line_exact.Specific(),
+		},
+		Note:     optional.None[string](),
+		Priority: optional.None[uint8](),
+		Customer: order_customer.OrderCustomerPayload{FullName: "Ada", Vip: true},
+		Payment:  order_payment.OrderPaymentCard(card_payment.CardPaymentPayload{Last4: "1234", Amount: 1}),
+	}
+}
+
+// A value list of two union matches: a card whose record the case's matcher
+// holds, and the case that holds no record; any other case, or a card its
+// matcher does not hold, matches neither.
+func TestATestTemplateMatchesItsValues_AUnionFieldMatchesOneOfTheCasesItsValueListNames(t *testing.T) {
+	if !order_placed_match.Matches(profileOrder(), profileQuantityLimit) {
+		t.Fatal("the order paid by a card does not match")
+	}
+	cash := profileOrder()
+	cash.Payment = order_payment.OrderPaymentCash()
+	if !order_placed_match.Matches(cash, profileQuantityLimit) {
+		t.Error("the order paid in cash does not match")
+	}
+	voucher := profileOrder()
+	voucher.Payment = order_payment.OrderPaymentVoucher(voucher_is.Specific())
+	if order_placed_match.Matches(voucher, profileQuantityLimit) {
+		t.Error("the order paid by a voucher matches")
+	}
+	for _, c := range []struct {
+		last4  string
+		amount uint32
+	}{{"123", 1}, {"1234", 0}} {
+		card := profileOrder()
+		card.Payment = order_payment.OrderPaymentCard(card_payment.CardPaymentPayload{Last4: c.last4, Amount: c.amount})
+		if order_placed_match.Matches(card, profileQuantityLimit) {
+			t.Errorf("a card of %q and %d matches", c.last4, c.amount)
+		}
+	}
+}
+
 // docs/SCE_TEST_PROFILE.md §12.5: a unit's Canonical writes a value by the
 // types its documents declare, in the JSON Canonicalization Scheme: every
 // integer as the text of its digits, a closed enum by its declared name, a byte
 // string in upper-case hex, a list in order, an absent field omitted and a
-// present one written. TYPE is the unit name of the record's event schema. The
-// Kotlin twin, anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare,
-// writes an order, which holds a union that Go does not lower, so this one
-// writes the records of the templates Go generates.
+// present one written, a union's case by its declared name and a case that
+// holds no record as the empty object. TYPE is the unit name of the record's
+// event schema. The order is the Kotlin twin's,
+// anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare.
 func TestATestTemplateMatchesItsValues_AValuesCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare(t *testing.T) {
 	jcs := func(value any) string {
 		t.Helper()
@@ -336,6 +408,14 @@ func TestATestTemplateMatchesItsValues_AValuesCanonicalFormIsWrittenByTheTypesIt
 	}
 	tagged := profileMatching()
 	tagged.Tag = optional.Some[uint8](4)
+	lines := `"lines":[{"color":"green","quantity":"5","sku":"A-1"},` +
+		`{"color":"red","quantity":"2","sku":"A-1"}]`
+	noted := profileOrder()
+	noted.Note = optional.Some("late")
+	noted.Priority = optional.Some[uint8](3)
+	noted.Payment = order_payment.OrderPaymentVoucher(voucher_is.Specific())
+	cash := profileOrder()
+	cash.Payment = order_payment.OrderPaymentCash()
 	for _, c := range []struct {
 		name, typeName, wantType, got, want string
 	}{
@@ -358,6 +438,24 @@ func TestATestTemplateMatchesItsValues_AValuesCanonicalFormIsWrittenByTheTypesIt
 			"voucher_is", voucher_is.TYPE, "voucher_payment",
 			jcs(voucher_is.Canonical(voucher_is.Specific())),
 			`{"voucher_code":"00FF10A0"}`,
+		},
+		{
+			"order_placed_match", order_placed_match.TYPE, "order_placed",
+			jcs(order_placed_match.Canonical(profileOrder())),
+			`{"customer":{"full_name":"Ada","vip":true},` + lines + `,"order_id":"7",` +
+				`"payment":{"card":{"amount":"1","last4":"1234"}}}`,
+		},
+		{
+			"order_placed_match noted", order_placed_match.TYPE, "order_placed",
+			jcs(order_placed_match.Canonical(noted)),
+			`{"customer":{"full_name":"Ada","vip":true},` + lines + `,"note":"late",` +
+				`"order_id":"7","payment":{"voucher":{"voucher_code":"00FF10A0"}},"priority":"3"}`,
+		},
+		{
+			"order_placed_match cash", order_placed_match.TYPE, "order_placed",
+			jcs(order_placed_match.Canonical(cash)),
+			`{"customer":{"full_name":"Ada","vip":true},` + lines + `,"order_id":"7",` +
+				`"payment":{"cash":{}}}`,
 		},
 	} {
 		if c.typeName != c.wantType {

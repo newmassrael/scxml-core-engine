@@ -1,0 +1,90 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+{# docs/adr/0092, section 7, the Go row, and its item 4. The tag's enum and each
+   case's record through the package of its document, imported under the alias
+   every Go unit names a sibling package by, and only the documents the type
+   names. `std_imports` and `uses_optional` are read off the text by the render
+   door, which names none here; they are listed so the door's check holds. #}
+
+import (
+{% for pkg in std_imports %}
+	"{{ pkg }}"
+{% endfor %}
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
+{% for imp in go_type_imports %}
+	{{ imp }}
+{% endfor %}
+)
+
+// Revision is the revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own).
+const Revision uint32 = {{ schema_revision }}
+
+// DataMaxLen is the most bytes a value's JSON text takes: its largest case, every list full,
+// every text at its bound, every number at its longest spelling.
+const DataMaxLen uint64 = {{ data_max_len }}
+
+// SchemaID is the id of the union's schema, `urn:sce:schema:<document>:<revision>`: the
+// `$id` of JSONSchema.
+const SchemaID string = "{{ schema_id }}"
+{% if payload_grammar %}
+
+// JSONSchema is a value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag
+// `{{ tag }}` beside the fields of its record, every bound as this build resolved it.
+const JSONSchema string = "{{ json_schema }}"
+{% else %}
+
+// No JSONSchema: {{ payload_grammar_absent }}.
+{% endif %}
+
+// {{ union_type }} is a value of `{{ union_name }}`: exactly one case, told apart by its tag
+// `{{ tag }}`, a value of {{ kind_type }}. It is built only by the constructor of its case and
+// holds a member for the record of each case, so it is copied by value and shares nothing
+// with the record it was built from.
+type {{ union_type }} struct {
+	{{ tag_member }} {{ kind_type }}
+{% for c in cases if c.record %}
+	{{ c.member }} {{ c.record }}
+{% endfor %}
+}
+
+// {{ kind_method }} is the case this value is in: the tag its text writes under `{{ tag }}`.
+func (u {{ union_type }}) {{ kind_method }}() {{ kind_type }} {
+	return u.{{ tag_member }}
+}
+{% for c in cases %}
+{% if c.record %}
+
+// {{ c.constructor }} is the case `{{ c.variant }}`, holding its record.
+func {{ c.constructor }}(r {{ c.record }}) {{ union_type }} {
+	return {{ union_type }}{ {{- tag_member }}: {{ c.kind }}, {{ c.member }}: r}
+}
+{% else %}
+
+// {{ c.constructor }} is the case `{{ c.variant }}`, its tag alone.
+func {{ c.constructor }}() {{ union_type }} {
+	return {{ union_type }}{ {{- tag_member }}: {{ c.kind }}}
+}
+{% endif %}
+{% endfor %}
+{% for c in cases if c.record %}
+
+// {{ c.proven }} is the record of the case `{{ c.variant }}`, read where a test of the tag
+// proved the value is in it.
+func (u {{ union_type }}) {{ c.proven }}() {{ c.record }} {
+	if u.{{ tag_member }} != {{ c.kind }} {
+		panic("a value of {{ union_name | escape_go }} read as {{ c.variant | escape_go }} is in another case")
+	}
+	return u.{{ c.member }}
+}
+{% endfor %}

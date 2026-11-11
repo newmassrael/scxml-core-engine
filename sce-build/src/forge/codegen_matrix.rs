@@ -392,7 +392,12 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// statechart's variable, a read of a payload that holds one and a send of
 /// that payload are composed values, which a backend lowers where its composed
 /// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
-pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin, Language::Swift];
+pub const UNION_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Kotlin,
+    Language::Go,
+    Language::Swift,
+];
 
 /// The backends that lower an algorithm over a union (docs/adr/0092, Landing
 /// order step 5): a parameter, a local and a return of `union:U`, each the
@@ -1235,8 +1240,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Rust, Kotlin and Swift emit
-    /// one, in [`Language::ALL`]'s order.
+    /// dispatch that refuses the document by name. Rust, Kotlin, Go and Swift
+    /// emit one, in [`Language::ALL`]'s order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1250,7 +1255,12 @@ mod tests {
         }
         assert_eq!(
             emitting(ForgeKind::Union).collect::<Vec<_>>(),
-            [Language::Rust, Language::Kotlin, Language::Swift]
+            [
+                Language::Rust,
+                Language::Kotlin,
+                Language::Go,
+                Language::Swift
+            ]
         );
         for &lang in UNION_BACKENDS {
             let times = UNION_BACKENDS.iter().filter(|l| **l == lang).count();

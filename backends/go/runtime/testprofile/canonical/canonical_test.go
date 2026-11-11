@@ -139,3 +139,11 @@ func TestAnAbsentElementOfAListIsNull(t *testing.T) {
 		t.Errorf("the elements were read %d times, once for the present one alone", read)
 	}
 }
+
+// A union is one member named by its case's variant: the case's record, or the
+// empty object for a case that holds none.
+func TestAUnionIsOneMemberNamedByItsVariant(t *testing.T) {
+	card := UnionCase("card", Record(Field("amount", Integer(uint32(1)))))
+	expect(t, card, `{"card":{"amount":"1"}}`)
+	expect(t, UnionCase("cash", nil), `{"cash":{}}`)
+}

@@ -18,7 +18,10 @@
 //   - a record is an object of its fields by their declared ids, a field that
 //     is absent omitted, as TTCN-3's `omit` leaves it out;
 //   - a list is an array of its elements in order, an element of `optional<T>`
-//     that is absent null, the one value no other form takes.
+//     that is absent null, the one value no other form takes;
+//   - a value of a union is an object of one member, named by the variant of
+//     its case, holding the case's record, or the empty object for a case that
+//     holds none.
 //
 // A value is held as the JSON value model of the runtime's JSON writers: a
 // string, a bool, a []any or a *sce.JSONObject, and nil for null.
@@ -27,7 +30,7 @@
 // with these, by the types its document declares
 // (`forge/go/test_template.go.jinja2`): a Go type alone does not say which
 // form a value takes, since a byte string and a list of `uint8` are one Go
-// type. Go lowers no union, so no form of one is written here.
+// type.
 //
 // Cross-language siblings: `sce_rust_runtime::test::canonical` (Rust),
 // `SCE::Test::Canonical` (C++), `com.sce.runtime.test.Canonical` (Kotlin).
@@ -170,4 +173,16 @@ func List(count int, element func(index int) any) []any {
 		items = append(items, element(index))
 	}
 	return items
+}
+
+// UnionCase is a value of a union (docs/adr/0092): one member, named by the
+// variant of its case, holding the case's record, or the empty object for a
+// case that holds none, given as nil.
+func UnionCase(variant string, record any) *sce.JSONObject {
+	if record == nil {
+		record = sce.NewJSONObject()
+	}
+	members := sce.NewJSONObject()
+	members.Set(variant, record)
+	return members
 }

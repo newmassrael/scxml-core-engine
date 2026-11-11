@@ -194,11 +194,14 @@ fi
 # units name through their packages; a_test_template_matches_its_values_test.go matches
 # them against values. The Rust and Kotlin trees generate the same templates
 # (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh),
-# and the two over a union besides, which Go, lowering no union, refuses by name.
+# the two over a union among them, beside the unions their units name by package.
 TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
-TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within shape_is_circle)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
+# ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
+UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 # The test components a_test_component_runs_through_its_doors_test.go runs through the
 # profile's runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine and the
 # component beside it, generated into a package of its own as a fixture's machine is,
@@ -253,6 +256,9 @@ done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l go -o "$TMP/profile_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
+for document in "${UNIONS[@]}"; do
+    "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l go -o "$TMP/union_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
 for document in "${TEST_PROFILE_RUNTIME[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l go -o "$TMP/runtime_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
@@ -299,6 +305,14 @@ for i in "${!ENUMS[@]}"; do
 done
 for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
     for generated in "$TMP/profile_$document"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
+for document in "${UNIONS[@]}"; do
+    for generated in "$TMP/union_$document"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
         cp "$generated" "$GENERATED_DIR/$package/"

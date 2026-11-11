@@ -1291,8 +1291,10 @@ is, which declares:
 Every enum, record and referenced template the unit names is named through the package of the document that
 declares it, under the alias `sce_<document>` every Go unit imports a sibling package by, so an enum a record of
 another document holds is named by its one declaration; the unit imports exactly the packages its text names, as
-Go requires. Go joins the tests as Rust and Kotlin do. Go lowers no union, so a template whose type reaches a union
-at any depth is refused on Go as on C++ (ADR 0092, section 7).
+Go requires. Go joins the tests as Rust and Kotlin do. A union is the value struct its unit declares (ADR 0092,
+section 7, the Go row): a case is matched by comparing the union's `Kind()` with the variant of its tag's enum,
+the case's record read through the unit's `Proven<Case>()` after that comparison in the same conjunction, and a
+case's value built by the constructor of its case.
 
 Python generates `test-template` (§12.6, slice 6). The unit is a module `<name>.py`, a sibling of the modules of
 the documents it names, named by the document's file as every forge unit is, which declares:
@@ -2131,10 +2133,9 @@ one set of bytes.
    is not Go's `test`, which the toolchain gives its own files and packages; it has `TextLength` for a template's
    length restriction, since a Go text is held as bytes, and the Go host send request carries a test-port send's
    value (`HostSendRequest.Value`). Go generates templates, and the refusal of §11.9 is lifted for Go for
-   `test-template`; Go lowers no union, so a template whose type reaches one stays refused there, as on C++. Go
+   `test-template`, a template whose type reaches a union among them once Go lowers a union (ADR 0092). Go
    generates test components next, through the doors of §12.3, and runs them through `testprofile.TestCaseRun`; the
-   refusal is lifted for Go for `test-component`, but for a component that declares `<sce:action>` and for one
-   whose template reaches a union. Go then generates the configuration, case and suite tables over the same rows,
+   refusal is lifted for Go for `test-component`, but for a component that declares `<sce:action>`. Go then generates the configuration, case and suite tables over the same rows,
    each importing what it reads below the run's module path, and runs the examples end to end through
    `testprofile.RunSuite`; the refusal is lifted for Go for the remaining kinds, and for a component's module
    parameter. Python's runtime library of §12.2 is the package `sce_runtime.testprofile`, the Rust one ported type

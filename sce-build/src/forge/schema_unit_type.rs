@@ -24,8 +24,9 @@
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]) as the sum type its own
 //! unit declares, named as the import names the union's unit: on Rust the enum
 //! through its sibling module (`union_shape::UnionShape`), on Kotlin the sealed
-//! interface, on Swift the enum bare in the module. Every other backend refuses
-//! it by name.
+//! interface, on Go the value struct through the package its import binds
+//! (`sce_union_shape.UnionShape`), on Swift the enum bare in the module. Every
+//! other backend refuses it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -151,7 +152,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { .. } => "[]byte".to_string(),
             ValueType::Optional { elem } => format!("optional.Of[{}]", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, .. } => format!("[]{}", inner(elem, c11)?),
         },
         Language::Python => match ty {
@@ -331,10 +332,10 @@ mod tests {
         .is_err());
     }
 
-    /// Kotlin names a union by the sealed interface its unit declares and Rust
-    /// by its enum, at any depth; a union no import names is refused, and a
-    /// backend that does not lower a union refuses it by name (docs/adr/0092,
-    /// section 7).
+    /// Kotlin names a union by the sealed interface its unit declares, Rust by
+    /// its enum and Go by its value struct, at any depth; a union no import
+    /// names is refused, and a backend that does not lower a union refuses it
+    /// by name (docs/adr/0092, section 7).
     #[test]
     fn kotlin_names_a_union_by_its_units_sum_and_the_rest_refuse_it() {
         assert_eq!(spelled(Language::Kotlin, "union:Shape"), "UnionShape");
@@ -356,6 +357,21 @@ mod tests {
             spelled(Language::Rust, "list<optional<union:Shape>>[3]"),
             "::sce_portable_bytes::BoundedList<Option<UnionShape>, 3>"
         );
+        // Go names its value struct inside its slice and the runtime's
+        // optional (docs/adr/0092, section 7 item 4).
+        assert_eq!(spelled(Language::Go, "union:Shape"), "UnionShape");
+        assert_eq!(
+            spelled(Language::Go, "list<optional<union:Shape>>[3]"),
+            "[]optional.Of[UnionShape]"
+        );
+        let unnamed = unit_type(
+            Language::Go,
+            &read("union:Other"),
+            &Names,
+            &mut C11Declarations::default(),
+        )
+        .expect_err("no import names the union");
+        assert!(unnamed.contains("`union:Other`"), "{unnamed}");
         for lang in Language::ALL.iter().copied() {
             if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {
                 continue;

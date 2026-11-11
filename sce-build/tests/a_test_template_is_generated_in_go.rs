@@ -11,8 +11,10 @@
 //! which the unit imports exactly where its text names it. A value that may
 //! be absent is tested by `IsPresent` and read by `Proven`, and built with its
 //! type named; a byte string is compared by its octets, since Go's `==` does
-//! not compare slices. Go lowers no union (docs/adr/0092), so a template whose
-//! type reaches one is refused as C++ refuses it.
+//! not compare slices. A union (docs/adr/0092, section 7, the Go row) is the
+//! value struct its unit declares, matched by its `Kind()` and read through
+//! the unit's `Proven<Case>()` where the comparison before it in the same
+//! conjunction proved the case.
 //!
 //! What the generated units do when they run is held by
 //! `backends/go/tests/integration/test_profile/a_test_template_matches_its_values_test.go`,
@@ -20,9 +22,6 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::ForgeCompileOptions;
 
@@ -79,16 +78,25 @@ fn imported(snake: &str) -> String {
     format!("\tsce_{snake} \"{PREFIX}/{snake}\"\n")
 }
 
-/// Every accepted template the profile's fixtures hold that Go generates: its
-/// document, its name, and whether it is specific (docs/SCE_TEST_PROFILE.md
-/// §6.2). The two over a union are refused
-/// ([`a_template_that_reaches_a_union_is_refused_on_go`]).
+/// Every accepted template the profile's fixtures hold, the two over a union
+/// among them: its document, its name, and whether it is specific
+/// (docs/SCE_TEST_PROFILE.md §6.2).
 fn templates() -> Vec<(PathBuf, &'static str, bool)> {
     let at = |dir: PathBuf, name: &'static str| dir.join(format!("{name}.scxml"));
     vec![
         (
             at(profile_dir(), "elapsed_at_most"),
             "elapsed_at_most",
+            false,
+        ),
+        (
+            at(profile_dir(), "shape_is_circle"),
+            "shape_is_circle",
+            false,
+        ),
+        (
+            at(imports_dir(), "order_placed_match"),
+            "order_placed_match",
             false,
         ),
         (at(profile_dir(), "every_matcher"), "every_matcher", false),
@@ -305,44 +313,65 @@ fn a_range_bound_at_the_limit_is_left_out_and_a_text_length_counts_characters() 
     assert!(!at_most.contains("\nimport "), "{at_most}");
 }
 
-/// The detail of a `generate/unsupported-feature` refusal.
-fn unsupported(name: &str, err: Located<ForgeError>) -> String {
-    assert!(
-        matches!(
-            err.error.to_diagnostics()[0].code,
-            DiagnosticCode::GenerateUnsupportedFeature
-        ),
-        "{name} on Go: {err:?}"
+/// A template over a union matches the union's case by comparing its
+/// `Kind()` with the variant of its tag's enum, named through that enum's
+/// package, which the template imports though it does not import the enum
+/// itself; a case whose matcher reads its record joins the comparison with the
+/// record's tests, which read it through the unit's `Proven<Case>()`, in one
+/// conjunction; a case its matcher reads nothing of, and a case that holds no
+/// record, are matched by the comparison alone. Pinned by
+/// `GoSpelling::case_test` and `GoSpelling::case`
+/// (`sce-build/src/forge/generator/go_test_template.rs`).
+#[test]
+fn a_union_is_matched_by_its_kind_and_read_through_its_proven_case() {
+    let circle = unit_of(&profile_dir(), "shape_is_circle");
+    let union = imported("union_shape_minimal");
+    let kind = imported("shape_kind");
+    holds_each(
+        &circle,
+        &[
+            "type Value = sce_union_shape_minimal.UnionShapeMinimal\n",
+            "\treturn value.Kind() == sce_shape_kind.ShapeKindCircle\n",
+            union.as_str(),
+            kind.as_str(),
+        ],
     );
-    match err.error {
-        ForgeError::Generate(boxed) => match *boxed {
-            GenerateError::UnsupportedFeature { detail, .. } => detail,
-            other => panic!("{name} on Go: {other:?}"),
-        },
-        other => panic!("{name} on Go: {other:?}"),
-    }
+    let placed = unit_of(&imports_dir(), "order_placed_match");
+    holds_each(
+        &placed,
+        &[
+            "func Matches(value Value, param_limit uint16) bool {\n",
+            "(value.Payment.Kind() == sce_payment_kind.PaymentKindCard \
+             && testprofile.TextLength(value.Payment.ProvenCard().Last4) >= 4 \
+             && value.Payment.ProvenCard().Amount >= 1)",
+            " || value.Payment.Kind() == sce_payment_kind.PaymentKindCash",
+            imported("payment_kind").as_str(),
+        ],
+    );
 }
 
-/// A template whose type reaches a union, in itself or below a field, is
-/// refused on Go by the union's own refusal, which a schema unit's union
-/// field is refused by: Go lowers no union.
+/// The canonical form of a union is the declared name of its case beside the
+/// case's record, told apart by a `switch` over the declared name the unit's
+/// `Kind()` answers, so the unit names no package for it; a case that holds no
+/// record is written with none. Pinned by `GoCanonical::union`
+/// (`sce-build/src/forge/generator/go_test_template.rs`) and the runtime's
+/// `canonical.UnionCase`.
 #[test]
-fn a_template_that_reaches_a_union_is_refused_on_go() {
-    for (path, alias) in [
-        (profile_dir().join("shape_is_circle.scxml"), "Shape"),
-        (imports_dir().join("order_placed_match.scxml"), "Payment"),
-    ] {
-        let name = path.file_stem().and_then(|s| s.to_str()).expect("a stem");
-        let Err(err) = sce_build::compile_forge_file(&path, Language::Go, &[], &options()) else {
-            panic!("{name} generated on Go");
-        };
-        let detail = unsupported(name, err);
-        assert!(
-            detail.starts_with(&format!("test-template '{name}': `union:{alias}`: ")),
-            "{detail}"
-        );
-        assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
-    }
+fn a_unions_canonical_form_is_its_case_beside_its_record() {
+    let placed = unit_of(&imports_dir(), "order_placed_match");
+    holds_each(
+        &placed,
+        &["canonical.Field(\"payment\", func() any { switch \
+             value.Payment.Kind().DeclaredName().Proven() { case \"card\": case_0 := \
+             value.Payment.ProvenCard(); return canonical.UnionCase(\"card\", \
+             canonical.Record(canonical.Field(\"last4\", canonical.Text(case_0.Last4)), \
+             canonical.Field(\"amount\", canonical.Integer(case_0.Amount)))); case \"cash\": \
+             return canonical.UnionCase(\"cash\", nil); case \"voucher\": case_0 := \
+             value.Payment.ProvenVoucher(); return canonical.UnionCase(\"voucher\", \
+             canonical.Record(canonical.Field(\"voucher_code\", \
+             canonical.Bytes(case_0.VoucherCode)))); }; panic(\"a value of order_payment is in \
+             no case of its tag\") }())"],
+    );
 }
 
 /// A byte string a parameter names, present or that may be absent, is
@@ -433,7 +462,7 @@ fn a_template_over_a_record_writes_its_values_canonical_form() {
         let text = unit(&path, name);
         let over_record = !matches!(
             name,
-            "elapsed_at_most" | "quantity_at_most" | "quantity_two"
+            "elapsed_at_most" | "shape_is_circle" | "quantity_at_most" | "quantity_two"
         );
         assert_eq!(
             text.contains("\nfunc Canonical(value Value) any {\n"),
@@ -461,6 +490,7 @@ fn a_template_over_a_record_writes_its_values_canonical_form() {
             "order_line_exact" | "order_line_bounded" => Some("order_line"),
             "card_within" => Some("card_payment"),
             "voucher_is" => Some("voucher_payment"),
+            "order_placed_match" => Some("order_placed"),
             // The kind example's schema is the file `event-schema.scxml`.
             "test_template" => Some("event_schema"),
             _ => None,
