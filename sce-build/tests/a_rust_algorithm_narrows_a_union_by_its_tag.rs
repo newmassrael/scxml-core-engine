@@ -266,10 +266,17 @@ fn a_union_is_taken_whole_only_by_a_return_of_its_type() {
 }
 
 /// A backend that does not lower an algorithm's union yet refuses one by name,
-/// after the body was judged as it is on every backend.
+/// after the body was judged as it is on every backend. Swift is the one
+/// generated backend left out of `ALGORITHM_UNION_BACKENDS`, and it names the
+/// union it does not lower among the constructs it has no lowering of
+/// (`forge::generator::swift_algorithm_unlowered`), before the body is rendered.
 #[test]
 fn a_backend_that_lowers_no_union_in_an_algorithm_refuses_one_by_name() {
-    let language = Language::C11;
+    let language = Language::Swift;
+    assert!(
+        !sce_build::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS.contains(&language),
+        "{language:?} lowers an algorithm over a union"
+    );
     let result = generated(&fixtures().join("algorithm_shape_extent.scxml"), language);
     let (code, why) = refused_code(result);
     assert!(
@@ -277,7 +284,8 @@ fn a_backend_that_lowers_no_union_in_an_algorithm_refuses_one_by_name() {
         "{code:?}: {why}"
     );
     assert!(
-        why.contains("does not lower a union in an algorithm yet"),
+        why.contains("has no Swift lowering yet")
+            && (why.contains("<sce:import as=\"Shape\">") || why.contains("union:Shape")),
         "{language:?}: {why}"
     );
 }
