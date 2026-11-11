@@ -12,13 +12,18 @@ package {{ package }}
 {# docs/adr/0092, section 7, the Go row, and its item 4. The tag's enum and each
    case's record through the package of its document, imported under the alias
    every Go unit names a sibling package by, and only the documents the type
-   names. `std_imports` and `uses_optional` are read off the text by the render
-   door, which names none here; they are listed so the door's check holds. #}
+   names. `std_imports`, `uses_scealgorithm` and `uses_optional` are read off
+   the text by the render door, which names none here; all three are listed so
+   the door's check holds, the way every Go template that lists one lists the
+   others (`std_imports::tests`). #}
 
 import (
 {% for pkg in std_imports %}
 	"{{ pkg }}"
 {% endfor %}
+{% if uses_scealgorithm %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 {% if uses_optional %}
 	"github.com/newmassrael/sce-forge-runtime/optional"
 {% endif %}
