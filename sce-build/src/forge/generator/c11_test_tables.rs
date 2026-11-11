@@ -6,7 +6,10 @@
 //! and factory of its components' machines and the module parameters they
 //! read; a test case's `<name>_test_case`; and a test suite's
 //! `<name>_suite`, each the data the profile's runtime and its runner read
-//! (`sce/test/test_case_run.h`, `sce/test/suite.h`).
+//! (`sce/test/test_case_run.h`, `sce/test/suite.h`). A configuration's unit also
+//! reads the inputs of a recorded trace (`<name>_input`, docs/SCE_TTCN3_LANE.md
+//! §10.5), and a suite's declares the `main` of its runner program and the reader
+//! of its module parameters' values (§4, `sce/test/runner.h`).
 //!
 //! Which rows each unit holds, and what is refused, is decided by the rows
 //! every backend shares ([`super::test_tables`]); this file spells them in
@@ -25,19 +28,17 @@
 //! units of the other C11 kinds do, and a unit reaches what it reads through
 //! the header of the unit that declares it.
 
+use super::c11_test_template::{c_literal as literal, indented, C11Canonical, C11Reading};
 use super::test_tables::{
     configuration_rows, execute_rows, module_parameter_defaults, selection_body,
-    test_case_configuration, EndpointRow,
+    test_case_configuration, trace_records, EndpointRow,
 };
-use super::test_template_walk::hex_octets;
+use super::test_template_walk::{
+    canonical_form, canonical_value, hex_octets, CanonicalForm, CanonicalSpelling,
+};
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
 use crate::generator::Language;
-
-/// `text` as a C string literal.
-fn literal(text: &str) -> String {
-    format!("\"{}\"", filters::escape_c(text.to_string()))
-}
 
 /// The prefix every declaration of the unit of the document named `name`
 /// carries, the one an importer reaches it by
@@ -135,10 +136,14 @@ pub(super) fn render_test_configuration_c11(
         .collect();
     headers.sort();
     headers.dedup();
+    let (system_ports, inputs, readers) = trace_inputs(m, imports)?;
 
     let l = LangCtx::new(Language::C11, imports);
     let mut ctx = l.base_context(&m.name);
     ctx.insert("prefix".into(), prefix(&m.name).into());
+    ctx.insert("system_ports".into(), serde_json::json!(system_ports));
+    ctx.insert("inputs".into(), serde_json::Value::Array(inputs));
+    ctx.insert("readers".into(), serde_json::Value::Array(readers));
     ctx.insert("configuration_name".into(), m.name.clone().into());
     ctx.insert("mtc_type".into(), literal(&rows.mtc.machine).into());
     ctx.insert("ptcs".into(), serde_json::json!(ptcs));
@@ -157,6 +162,100 @@ pub(super) fn render_test_configuration_c11(
     );
     ctx.insert("machine_headers".into(), serde_json::json!(headers));
     l.render(env, "test_configuration", ctx)
+}
+
+/// What the unit of a configuration writes of the inputs a recorded trace may
+/// carry ([`trace_inputs`]): each system port's id as a literal, an arm of
+/// `<name>_input` per port and record, and each record's reader and writer once.
+type TraceInputs = (Vec<String>, Vec<serde_json::Value>, Vec<serde_json::Value>);
+
+/// The name of the unit's function that does `verb` with the record whose type
+/// in the test log is `type_name`: `<configuration>_read_<record>`,
+/// `<configuration>_canonical_<record>`.
+fn record_function(m: &TestConfigurationModel, verb: &str, type_name: &str) -> String {
+    format!(
+        "{}_{verb}_{}",
+        prefix(&m.name),
+        filters::to_snake_case(type_name.to_string())
+    )
+}
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5), as every backend
+/// reads them ([`trace_records`]): each system port's id; an arm of the unit's
+/// `<name>_input` per port and record its type's `in` list names, in document
+/// order; and each record's reader and writer of its canonical form and its
+/// record type in the test log, once, the reader and the writer over the one
+/// walk of the form ([`canonical_form`]), so the value a trace hands the run and
+/// the value the test log writes of it are the same bytes. Each record is named
+/// by its type in the test log, which names its functions, and its unit is
+/// included, through which the enums and records it holds are.
+fn trace_inputs(
+    m: &TestConfigurationModel,
+    imports: &[ImportContext],
+) -> Result<TraceInputs, ForgeError> {
+    let refused = |why: String| {
+        super::test_tables::refused(
+            ForgeKind::TestConfiguration,
+            &m.name,
+            m.source_location.as_ref(),
+            why,
+        )
+    };
+    let traced = trace_records(m, imports)?;
+    let readers = traced
+        .records
+        .iter()
+        .map(|record| {
+            let row = &record.row;
+            let reading = C11Reading {
+                what: record.type_name.clone(),
+            };
+            let read_body = canonical_form(&reading, &row.record_type, &reading.root(), row.scope)
+                .map_err(refused)?;
+            let canonical_body = canonical_value(
+                &C11Canonical,
+                &row.record_type,
+                &C11Canonical.root(),
+                row.scope,
+            )
+            .map_err(refused)?;
+            let include = forge_import_identity(
+                &row.record.name,
+                &Language::C11,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt;
+            Ok(serde_json::json!({
+                "type": record.type_name,
+                "type_literal": literal(&record.type_name),
+                "read": record_function(m, "read", &record.type_name),
+                "canonical": record_function(m, "canonical", &record.type_name),
+                "record_type": record_function(m, "record_type_of", &record.type_name),
+                "payload": event_schema_payload_type(&row.record.name, Language::C11),
+                "read_body": indented(&read_body),
+                "canonical_body": indented(&canonical_body),
+                "include": include,
+            }))
+        })
+        .collect::<Result<Vec<_>, ForgeError>>()?;
+    let inputs = traced
+        .arms
+        .iter()
+        .map(|arm| {
+            serde_json::json!({
+                "port": literal(arm.port),
+                "type": literal(&arm.type_name),
+                "event": format!("{}_EVENT_NAME", to_upper_snake(&arm.record.name)),
+                "payload": event_schema_payload_type(&arm.record.name, Language::C11),
+                "read": record_function(m, "read", &arm.type_name),
+                "record_type": record_function(m, "record_type_of", &arm.type_name),
+            })
+        })
+        .collect();
+    let system_ports = traced.system_ports.iter().map(|id| literal(id)).collect();
+    Ok((system_ports, inputs, readers))
 }
 
 // ── §11.7: the test case ───────────────────────────────────────
@@ -201,13 +300,26 @@ pub(super) fn render_test_suite_c11(
 ) -> Result<String, ForgeError> {
     let parameters: Vec<serde_json::Value> = module_parameter_defaults(m, "C11", saved_default)?
         .into_iter()
-        .map(|(id, value)| {
-            serde_json::json!({
+        .zip(&m.module_parameters)
+        .map(|((id, value), parameter)| {
+            let reader = parameter_reader(&parameter.parameter_type).ok_or_else(|| {
+                super::test_tables::refused(
+                    ForgeKind::TestSuite,
+                    &m.name,
+                    m.source_location.as_ref(),
+                    format!(
+                        "the module parameter '{id}' of type {} has no C11 reader of its value",
+                        parameter.parameter_type
+                    ),
+                )
+            })?;
+            Ok(serde_json::json!({
                 "id": literal(id),
                 "value": value,
-            })
+                "reader": reader,
+            }))
         })
-        .collect();
+        .collect::<Result<_, ForgeError>>()?;
     let suite = prefix(&m.name);
     let mut includes: Vec<String> = Vec::new();
     // The storage of the machines of each test case, once however many
@@ -257,6 +369,52 @@ pub(super) fn render_test_suite_c11(
     ctx.insert("cases".into(), serde_json::json!(cases));
     ctx.insert("case_includes".into(), serde_json::json!(includes));
     l.render(env, "test_suite", ctx)
+}
+
+/// The runner's reader of a value of a module parameter of type `ty`, given on
+/// its command line as a literal of docs/SCE_TEST_PROFILE.md §11.4
+/// (docs/SCE_TTCN3_LANE.md §4): a call of a reader of `sce/test/runner.h` that
+/// writes the saved value of `ty` the literal `literal` is, for the module
+/// parameter `id`, into the `cap` bytes at `out`, as [`saved_default`] writes a
+/// default, and refuses, naming why in `*err`, a literal that is none. An
+/// integer is held to the range of its type, and one of 64 bits saved as the
+/// text of its digits. `None` for the types [`saved_default`] has no value of, of
+/// which no suite declares a module parameter.
+fn parameter_reader(ty: &ValueType) -> Option<String> {
+    Some(match ty {
+        TypeOf::Scalar(SceType::Bool) => {
+            "sce_test_runner_bool_parameter(id, literal, out, cap, err)".to_string()
+        }
+        TypeOf::Scalar(SceType::Enum(_)) => {
+            "sce_test_runner_enum_parameter(id, literal, out, cap, err)".to_string()
+        }
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
+            let limit = c_type(scalar).trim_end_matches("_t").to_uppercase();
+            let wide = scalar.int_bit_width() == Some(64);
+            if scalar.is_signed() {
+                format!(
+                    "sce_test_runner_signed_parameter(id, literal, {limit}_MIN, {limit}_MAX, \
+                     {wide}, out, cap, err)"
+                )
+            } else {
+                format!(
+                    "sce_test_runner_unsigned_parameter(id, literal, {limit}_MAX, {wide}, out, \
+                     cap, err)"
+                )
+            }
+        }
+        TypeOf::Text { .. } => {
+            "sce_test_runner_text_parameter(id, literal, out, cap, err)".to_string()
+        }
+        TypeOf::Bytes { .. } => {
+            "sce_test_runner_bytes_parameter(id, literal, out, cap, err)".to_string()
+        }
+        TypeOf::Scalar(_)
+        | TypeOf::Optional { .. }
+        | TypeOf::Record { .. }
+        | TypeOf::Union { .. }
+        | TypeOf::List { .. } => return None,
+    })
 }
 
 /// The default `value` of a module parameter of type `ty`, a literal of

@@ -17,6 +17,8 @@
 #include <string.h>
 
 #include "sce/portability.h"
+#include "sce/saved_json.h"
+#include "sce/test/runner.h"
 #include "sce/test/suite.h"
 {% for inc in case_includes %}
 {{ inc }}
@@ -74,6 +76,36 @@ static inline const sce_test_suite_t *{{ prefix }}_suite({{ prefix }}_storage_t 
 {% endif %}
     storage->suite.execute_count = {{ executes | length }}u;
     return &storage->suite;
+}
+
+/* The value the runner is given for the module parameter `id` (docs/SCE_TTCN3_LANE.md §4,
+ * `--module-parameter id=value`), a literal of its declared type as the `value` of a `<sce:module-parameter>`
+ * writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the JSON text of the saved value of that type into the
+ * `cap` bytes at `out` (`sce_test_parameter_reader_fn`); false, `*err` naming why, where the suite declares no
+ * such parameter or the literal is no value of its type. */
+static inline bool {{ prefix }}_module_parameter(const char *id, const char *literal, char *out, size_t cap,
+                                                 sce_saved_error_t *err) {
+{% for parameter in parameters %}
+    if (strcmp(id, {{ parameter.id }}) == 0) {
+        return {{ parameter.reader }};
+    }
+{% endfor %}
+{% if not parameters %}
+    (void)literal;
+    (void)out;
+    (void)cap;
+{% endif %}
+    return sce_test_runner_undeclared_parameter(id, err);
+}
+
+/* The runner program of the suite `{{ suite_name }}` (docs/SCE_TTCN3_LANE.md §4): every test case the world of
+ * `--world` selects, run against its recorded input trace from `--trace-dir`, its canonical test log written to
+ * `--log-dir` (`sce_test_runner_main`), over storage of static duration. A build makes it a program with a `main`
+ * that calls it, linked with the `sce_directory_make` of its platform tier (sce/directory.h). */
+static inline int {{ prefix }}_main(int argc, char **argv) {
+    static {{ prefix }}_storage_t storage;
+    static sce_test_runner_t runner;
+    return sce_test_runner_main(&runner, {{ prefix }}_suite(&storage), {{ prefix }}_module_parameter, argc, argv);
 }
 
 #endif  /* {{ guard }} */

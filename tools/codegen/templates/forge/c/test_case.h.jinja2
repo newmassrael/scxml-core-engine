@@ -22,8 +22,9 @@
 typedef {{ configuration }}_machines_t {{ prefix }}_machines_t;
 
 /* The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it: its name, its
- * configuration and the machines of its components, made from `*machines`, and the module
- * parameters those components read. */
+ * configuration and the machines of its components, made from `*machines`, the module
+ * parameters those components read, and the reader of the inputs a recorded trace of it
+ * carries (docs/SCE_TTCN3_LANE.md §10.5). */
 static inline sce_test_case_t {{ prefix }}_test_case({{ prefix }}_machines_t *machines) {
     sce_test_case_t test_case;
     test_case.name = {{ name_macro }};
@@ -31,6 +32,7 @@ static inline sce_test_case_t {{ prefix }}_test_case({{ prefix }}_machines_t *ma
     test_case.machines = {{ configuration }}_machines(machines);
     test_case.module_parameters = {{ configuration }}_module_parameters();
     test_case.module_parameter_count = {{ configuration }}_module_parameter_count();
+    test_case.inputs = {{ configuration }}_input;
     return test_case;
 }
 

@@ -11,12 +11,26 @@
 #ifndef {{ guard }}
 #define {{ guard }}
 
+#include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
+#include "sce/saved_json.h"
+{% if readers %}
+#include "sce/test/canonical.h"
+#include "sce/test/from_canonical.h"
+{% endif %}
+#include "sce/test/input_trace.h"
+#include "sce/test/port.h"
 #include "sce/test/test_case_run.h"
 {% for header in machine_headers %}
 #include "{{ header }}"
+{% endfor %}
+{# Each record a system port takes, whose unit includes the enums and the records it
+   holds. #}
+{% for reader in readers %}
+{{ reader.include }}
 {% endfor %}
 
 /* The test configuration `{{ configuration_name }}` (docs/SCE_TEST_PROFILE.md §11.6) as the run reads it:
@@ -101,6 +115,70 @@ static inline const char *const *{{ prefix }}_module_parameters(void) {
     return ids;
 {% else %}
     return NULL;
+{% endif %}
+}
+{# Each record a system port takes is read back from the canonical form and written in it
+   by the one walk of the form both directions share, so the value a recorded trace hands the
+   run and the value the test log writes of it are the same bytes. The readers are part of
+   the unit's interface, so a host reads and writes a record's form with them as the runner
+   does. #}
+{% for reader in readers %}
+
+/* The record `{{ reader.type }}` read from the canonical form of the test log (docs/SCE_TEST_PROFILE.md
+ * §12.5), as a recorded input trace holds it (docs/SCE_TTCN3_LANE.md §10.3): `value`, a value of a judged text,
+ * read into `*out`; false, `*err` naming where its value does not belong to its type, otherwise. The inverse of
+ * `{{ reader.canonical }}`. */
+static inline bool {{ reader.read }}(sce_jv_t value, {{ reader.payload }} *out, sce_saved_error_t *err) {
+    memset(out, 0, sizeof(*out));
+{{ reader.read_body }}
+    return true;
+}
+
+/* `*value`, the record `{{ reader.type }}`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
+ * §12.5), through `jcs`. */
+static inline void {{ reader.canonical }}(sce_jcs_t *jcs, const {{ reader.payload }} *value) {
+{{ reader.canonical_body }}
+}
+
+/* `{{ reader.canonical }}` of a value lent as it is lent to a record type's writer. */
+static inline void {{ reader.canonical }}_lent(sce_jcs_t *jcs, const void *value) {
+    {{ reader.canonical }}(jcs, (const {{ reader.payload }} *)value);
+}
+
+/* The record type of `{{ reader.type }}` in the test log (docs/SCE_TEST_PROFILE.md §12.5): its name and
+ * `{{ reader.canonical }}`, which a message of it a trace hands the run carries. */
+static inline const sce_test_record_type_t *{{ reader.record_type }}(void) {
+    static const sce_test_record_type_t record_type = { {{- reader.type_literal }}, {{ reader.canonical }}_lent};
+    return &record_type;
+}
+{% endfor %}
+
+/* The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2, `sce_test_input_reader_fn`): the
+ * message an input of the record type `type_name` on the system port `system_port` carries, its value read from
+ * the canonical form `value`, into `*message`; false, `*err` naming why, where the configuration has no such
+ * system port, the `in` list of its type does not name the type, or the value does not belong to it. */
+static inline bool {{ prefix }}_input(const char *system_port, const char *type_name, sce_jv_t value,
+                                      sce_test_message_t *message, sce_saved_error_t *err) {
+{% for input in inputs %}
+    if (strcmp(system_port, {{ input.port }}) == 0 && strcmp(type_name, {{ input.type }}) == 0) {
+        {{ input.payload }} held;
+        if (!{{ input.read }}(value, &held, err)) {
+            return false;
+        }
+        return sce_test_input_message(
+            message, {{ input.event }},
+            sce_test_message_value(SCE_HOST_VALUE({{ input.payload }}, &held), {{ input.record_type }}()), err);
+    }
+{% endfor %}
+{% if not inputs %}
+    (void)value;
+    (void)message;
+{% endif %}
+{% if system_ports %}
+    static const char *const system_ports[] = { {{- system_ports | join(", ") -}} };
+    return sce_test_not_an_input(system_port, type_name, system_ports, {{ system_ports | length }}u, err);
+{% else %}
+    return sce_test_not_an_input(system_port, type_name, NULL, 0u, err);
 {% endif %}
 }
 

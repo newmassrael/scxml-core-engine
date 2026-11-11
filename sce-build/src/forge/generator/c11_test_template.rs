@@ -45,7 +45,12 @@
 //! `<name>_record_type`, the canonical form of a message of it in the test log
 //! and the record type a send carries it by (§12.5), whose walk is shared
 //! ([`super::test_template_walk::canonical_value`]); [`C11Canonical`] spells it
-//! as the statements that write it through the runtime's `sce_jcs_t`.
+//! as the statements that write it through the runtime's `sce_jcs_t`. Its
+//! inverse, [`C11Reading`], reads a value back from that form with the readers
+//! of `sce/test/from_canonical.h`, over the same walk
+//! ([`super::test_template_walk::canonical_form`]): the unit of a test
+//! configuration reads the values of a recorded input trace with it
+//! (docs/SCE_TTCN3_LANE.md §10.5).
 //!
 //! What C11 refuses by name: a union, which its test profile matches nowhere
 //! yet ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), by the walk before
@@ -57,8 +62,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalSpelling, CaseTest, Held, JoinSpelling, Op,
-    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
+    Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk,
+    Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -66,7 +72,7 @@ use crate::forge::static_lowering::{
     c_bytes_storage_def, c_bytes_storage_type, c_string_storage_def, c_string_storage_of,
     c_string_storage_type,
 };
-use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
+use crate::forge::value_type::{Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
 
 /// The header of the test profile's C11 runtime that declares the length of a
@@ -687,7 +693,7 @@ impl TemplateSpelling for CSpelling {
 }
 
 /// `text`, each line of it one level further in, as the statements of a block.
-fn indented(text: &str) -> String {
+pub(super) fn indented(text: &str) -> String {
     text.lines()
         .map(|line| {
             if line.is_empty() {
@@ -701,7 +707,7 @@ fn indented(text: &str) -> String {
 }
 
 /// A value `<name>_canonical` writes, in C11.
-struct C11CanonicalAt {
+pub(super) struct C11CanonicalAt {
     /// The C expression of the value: `(*value)`, which the function is lent,
     /// an element of a list by its index, or a field of either.
     expr: String,
@@ -729,8 +735,9 @@ struct C11CanonicalAt {
 /// overload by the width and signedness of a field. A byte string, of one entry or inside a
 /// list, holds its octets in `data` and their count in `len`, which its form
 /// reads alike. C11's test profile matches no union yet, so the walk's refusal
-/// of one stands.
-struct C11Canonical;
+/// of one stands. The unit of a test configuration writes its records' forms
+/// with it too, beside their readers ([`C11Reading`]).
+pub(super) struct C11Canonical;
 
 impl CanonicalSpelling for C11Canonical {
     type At = C11CanonicalAt;
@@ -875,5 +882,423 @@ impl CanonicalSpelling for C11Canonical {
         }
         written.push_str(&format!("sce_jcs_end_object({C_JCS});"));
         written
+    }
+}
+
+/// `text` as a C string literal.
+pub(super) fn c_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_c(text.to_string()))
+}
+
+/// The statement that calls `call`, a reader of `sce/test/from_canonical.h` that
+/// answers whether it read its value, and returns false from the generated
+/// reader where it did not: the reader's refusal is the generated reader's.
+fn c_read(call: &str) -> String {
+    format!("if (!{call}) {{\n    return false;\n}}")
+}
+
+/// A value the canonical reader reads, in C11: the JSON it is read from and the
+/// place it is read into.
+pub(super) struct C11ReadingAt {
+    /// The `sce_jv_t` variable that holds the value's JSON where it is present:
+    /// `value`, the reader's parameter, or a variable a statement of the reader
+    /// binds.
+    json: String,
+    /// The C place the value is read into: `(*out)`, a field of it, an element
+    /// of a list by the list's `len`, or an optional's `value`.
+    place: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the number every variable the
+    /// reader binds inside it carries, so no variable shadows another
+    /// (`-Wshadow`).
+    depth: usize,
+    /// Whether the value stands inside a list, whose elements a composition
+    /// holds in its own types: there a byte string's count is a `uint32_t`, and
+    /// a byte string of one entry's a `size_t`.
+    composed: bool,
+    /// For a field, the variable of the record it stands in: what an optional
+    /// field is looked up in. Empty for any other value.
+    record: String,
+    /// For a field, its id. Empty for any other value.
+    id: String,
+}
+
+/// The C11 reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the statements that read the record a
+/// configuration's `<configuration>_read_<record>` reads from its parameter
+/// `value`, a span of a judged text (`sce_jv_t`), into `*out`, with the readers
+/// of `sce/test/from_canonical.h`, each of which refuses, naming where the value
+/// stands, a value that does not belong to its type. Which form each SCE type
+/// takes is the walk its writer's is
+/// ([`super::test_template_walk::canonical_form`]), so the reader reads exactly
+/// what [`C11Canonical`] writes.
+///
+/// C has no closure and no exception, so each read is a block of statements that
+/// returns false from the reader where a value is refused; the record is zeroed
+/// first, so a field, an element or a `present` no statement writes holds what
+/// an absent one holds. A record checks its object holds no field it does not
+/// declare and binds each field it reads, a list walks its array within its
+/// bounds and counts each element into its `len`, and a value that may be absent
+/// is read behind the test of its presence, which sets its `present`. An integer
+/// is read through the runtime's widest integer of its signedness, held to its
+/// type's range and narrowed to it; a value of an enum by the names its document
+/// declares, beside the constants or the numbers they stand for. C11 lowers no
+/// union, so the walk's refusal of one stands.
+pub(super) struct C11Reading {
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+impl CanonicalForm for C11Reading {
+    type At = C11ReadingAt;
+
+    /// The reader's parameter `value`, read into `*out`.
+    fn root(&self) -> C11ReadingAt {
+        C11ReadingAt {
+            json: "value".to_string(),
+            place: "(*out)".to_string(),
+            what: self.what.clone(),
+            depth: 0,
+            composed: false,
+            record: String::new(),
+            id: String::new(),
+        }
+    }
+
+    /// The field `id` of the record at `at`, which its record's unit holds as
+    /// it holds a field of its type, wherever the record stands: bound by
+    /// [`Self::record`] where its type is not optional, and by
+    /// [`Self::optional_field`] where it is.
+    fn field(&self, at: &C11ReadingAt, id: &str) -> C11ReadingAt {
+        let ident = event_schema_field_ident(id, Language::C11);
+        C11ReadingAt {
+            json: format!("sce_field_{}_{ident}", at.depth),
+            place: format!("{}.{ident}", at.place),
+            what: format!("{}.{id}", at.what),
+            depth: at.depth + 1,
+            composed: false,
+            record: at.json.clone(),
+            id: id.to_string(),
+        }
+    }
+
+    /// The variable an element of a list, or a present value, is bound to,
+    /// numbered by the bindings it stands inside.
+    fn bound(&self, at: &C11ReadingAt, prefix: &str) -> (String, C11ReadingAt) {
+        let name = format!("sce_{prefix}_{}", at.depth);
+        let bound = C11ReadingAt {
+            json: name.clone(),
+            place: at.place.clone(),
+            what: at.what.clone(),
+            depth: at.depth + 1,
+            composed: at.composed,
+            record: String::new(),
+            id: String::new(),
+        };
+        (name, bound)
+    }
+
+    fn case_record(&self, bound: C11ReadingAt) -> C11ReadingAt {
+        bound
+    }
+
+    /// The element the loop over the list binds, read into the place its
+    /// `len` names, which counts the elements read before it.
+    fn list_element(&self, list: &C11ReadingAt, bound: C11ReadingAt) -> C11ReadingAt {
+        C11ReadingAt {
+            place: format!("{0}.items[{0}.len]", list.place),
+            what: format!("{}[]", list.what),
+            composed: true,
+            ..bound
+        }
+    }
+
+    /// The value an optional holds, read into its `value`.
+    fn optional_value(&self, field: &C11ReadingAt, bound: C11ReadingAt) -> C11ReadingAt {
+        C11ReadingAt {
+            place: format!("{}.value", field.place),
+            what: field.what.clone(),
+            composed: field.composed,
+            ..bound
+        }
+    }
+
+    fn boolean(&self, at: &C11ReadingAt) -> String {
+        c_read(&format!(
+            "sce_test_from_canonical_boolean({}, {}, &{}, err)",
+            at.json,
+            c_literal(&at.what),
+            at.place
+        ))
+    }
+
+    /// The variant whose declared name the text is: a closed enum's constant by
+    /// the index of its name, and an open enum's number, declared or not, made a
+    /// value of the enum's type as its unit's `from_underlying` makes one.
+    fn enumerated(&self, at: &C11ReadingAt, declared: &ScopedEnum) -> String {
+        let names: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| c_literal(&variant.name))
+            .collect();
+        let count = names.len();
+        let what = c_literal(&at.what);
+        let ty = enum_qualified_type(&declared.name, Language::C11);
+        if declared.strict {
+            let values: Vec<String> = declared
+                .variants
+                .iter()
+                .map(|variant| {
+                    crate::forge::enum_naming::variant_ident(
+                        Language::C11,
+                        &declared.name,
+                        &variant.name,
+                    )
+                })
+                .collect();
+            let read = c_read(&format!(
+                "sce_test_from_canonical_enumerated({}, sce_names, {count}u, {what}, &sce_index, \
+                 err)",
+                at.json
+            ));
+            return format!(
+                "{{\n    static const char *const sce_names[] = {{{}}};\n    static const {ty} \
+                 sce_values[] = {{{}}};\n    size_t sce_index = 0u;\n{}\n    {} = \
+                 sce_values[sce_index];\n}}",
+                names.join(", "),
+                values.join(", "),
+                indented(&read),
+                at.place
+            );
+        }
+        let limit = c_type(&declared.underlying)
+            .trim_end_matches("_t")
+            .to_uppercase();
+        let (numbers, held, read) = if declared.underlying.is_signed() {
+            let numbers: Vec<String> = declared
+                .variants
+                .iter()
+                .map(|variant| {
+                    if variant.value == i128::from(i64::MIN) {
+                        "INT64_MIN".to_string()
+                    } else {
+                        format!("INT64_C({})", variant.value)
+                    }
+                })
+                .collect();
+            (
+                format!(
+                    "static const int64_t sce_numbers[] = {{{}}};",
+                    numbers.join(", ")
+                ),
+                "int64_t sce_held = 0;",
+                format!(
+                    "sce_test_from_canonical_open_signed({}, sce_names, sce_numbers, {count}u, \
+                     {limit}_MIN, {limit}_MAX, {what}, &sce_held, err)",
+                    at.json
+                ),
+            )
+        } else {
+            let numbers: Vec<String> = declared
+                .variants
+                .iter()
+                .map(|variant| format!("UINT64_C({})", variant.value))
+                .collect();
+            (
+                format!(
+                    "static const uint64_t sce_numbers[] = {{{}}};",
+                    numbers.join(", ")
+                ),
+                "uint64_t sce_held = 0u;",
+                format!(
+                    "sce_test_from_canonical_open_unsigned({}, sce_names, sce_numbers, {count}u, \
+                     {limit}_MAX, {what}, &sce_held, err)",
+                    at.json
+                ),
+            )
+        };
+        format!(
+            "{{\n    static const char *const sce_names[] = {{{}}};\n    {numbers}\n    {held}\n{}\n    \
+             {} = ({ty})sce_held;\n}}",
+            names.join(", "),
+            indented(&c_read(&read)),
+            at.place
+        )
+    }
+
+    /// Read through the widest integer of its signedness, held to the range of
+    /// its type `width`, and narrowed to it.
+    fn integer(&self, at: &C11ReadingAt, width: &SceType) -> String {
+        let ty = c_type(width);
+        let limit = ty.trim_end_matches("_t").to_uppercase();
+        let what = c_literal(&at.what);
+        let (held, read) = if width.is_signed() {
+            (
+                "int64_t sce_held = 0;",
+                format!(
+                    "sce_test_from_canonical_signed({}, {limit}_MIN, {limit}_MAX, {what}, \
+                     &sce_held, err)",
+                    at.json
+                ),
+            )
+        } else {
+            (
+                "uint64_t sce_held = 0u;",
+                format!(
+                    "sce_test_from_canonical_unsigned({}, {limit}_MAX, {what}, &sce_held, err)",
+                    at.json
+                ),
+            )
+        };
+        format!(
+            "{{\n    {held}\n{}\n    {} = ({ty})sce_held;\n}}",
+            indented(&c_read(&read)),
+            at.place
+        )
+    }
+
+    /// Into the buffer of its bound, terminated.
+    fn text(&self, at: &C11ReadingAt, max: &Bound) -> String {
+        c_read(&format!(
+            "sce_test_from_canonical_text({}, {}u, {}, {place}.data, sizeof({place}.data), err)",
+            at.json,
+            max.max,
+            c_literal(&at.what),
+            place = at.place
+        ))
+    }
+
+    /// Into the buffer of its bound, its count into its `len`, which a
+    /// composition holds as a `uint32_t` and a byte string of one entry as a
+    /// `size_t`.
+    fn bytes(&self, at: &C11ReadingAt, max: &Bound) -> String {
+        let cast = if at.composed { "(uint32_t)" } else { "" };
+        let read = c_read(&format!(
+            "sce_test_from_canonical_bytes({}, {}u, {}, {place}.data, sizeof({place}.data), \
+             &sce_length, err)",
+            at.json,
+            max.max,
+            c_literal(&at.what),
+            place = at.place
+        ));
+        format!(
+            "{{\n    size_t sce_length = 0u;\n{}\n    {}.len = {cast}sce_length;\n}}",
+            indented(&read),
+            at.place
+        )
+    }
+
+    /// A loop over the elements of its array, held to the list's bounds, each
+    /// read into the place the list's `len` names and counted.
+    fn list(&self, at: &C11ReadingAt, max: &Bound, binding: &str, element: String) -> String {
+        let items = format!("sce_items_{}", at.depth);
+        let read = c_read(&format!(
+            "sce_test_from_canonical_elements({}, {}u, {}u, {}, &{items}, err)",
+            at.json,
+            max.min,
+            max.max,
+            c_literal(&at.what)
+        ));
+        format!(
+            "{{\n    sce_jiter_t {items};\n    sce_jv_t {binding};\n{}\n    while \
+             (sce_jiter_element(&{items}, &{binding})) {{\n{}\n        {}.len++;\n    }}\n}}",
+            indented(&read),
+            indented(&indented(&element)),
+            at.place
+        )
+    }
+
+    /// As it is: the record binds the field before it ([`Self::record`]).
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read where the record's object names it, which sets its
+    /// `present`, and nothing where it does not, which leaves it absent.
+    fn optional_field(&self, field: &C11ReadingAt, binding: &str, written: String) -> String {
+        format!(
+            "{{\n    sce_jv_t {binding};\n    if (sce_test_from_canonical_optional_field({}, {}, \
+             &{binding})) {{\n        {}.present = true;\n{}\n    }}\n}}",
+            field.record,
+            c_literal(&field.id),
+            field.place,
+            indented(&indented(&written))
+        )
+    }
+
+    /// The element read where it is not `null`, which sets its `present`, and
+    /// left absent where it is.
+    fn optional_element(&self, element: &C11ReadingAt, binding: &str, written: String) -> String {
+        format!(
+            "if (sce_test_from_canonical_present({json})) {{\n    const sce_jv_t {binding} = \
+             {json};\n    {}.present = true;\n{}\n}}",
+            element.place,
+            indented(&written),
+            json = element.json
+        )
+    }
+
+    /// The record's object held to the fields it declares, then each field: one
+    /// whose type is not optional bound to its variable, refused where it is
+    /// absent, and read; one whose type is optional as
+    /// [`Self::optional_field`] spelled it.
+    fn record(
+        &self,
+        at: &C11ReadingAt,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let what = c_literal(&at.what);
+        let mut read = if fields.is_empty() {
+            c_read(&format!(
+                "sce_test_from_canonical_record({}, NULL, 0u, {what}, err)",
+                at.json
+            ))
+        } else {
+            let ids: Vec<String> = fields.iter().map(|(id, _)| c_literal(id)).collect();
+            let names = format!("sce_fields_{}", at.depth);
+            format!(
+                "{{\n    static const char *const {names}[] = {{{}}};\n{}\n}}",
+                ids.join(", "),
+                indented(&c_read(&format!(
+                    "sce_test_from_canonical_record({}, {names}, {}u, {what}, err)",
+                    at.json,
+                    ids.len()
+                )))
+            )
+        };
+        for ((id, written), (_, ty)) in fields.into_iter().zip(&record.fields) {
+            read.push('\n');
+            if matches!(ty, TypeOf::Optional { .. }) {
+                read.push_str(&written);
+                continue;
+            }
+            let field = self.field(at, &id);
+            let bind = c_read(&format!(
+                "sce_test_from_canonical_field({}, {}, {}, &{}, err)",
+                at.json,
+                c_literal(&id),
+                c_literal(&field.what),
+                field.json
+            ));
+            read.push_str(&format!(
+                "{{\n    sce_jv_t {};\n{}\n{}\n}}",
+                field.json,
+                indented(&bind),
+                indented(&written)
+            ));
+        }
+        read
+    }
+
+    fn union(
+        &self,
+        _at: &C11ReadingAt,
+        union: &ScopedUnion,
+        _cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        Err(crate::forge::value_type::union_unlowered(&union.name))
     }
 }
