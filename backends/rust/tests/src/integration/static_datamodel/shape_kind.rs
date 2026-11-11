@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d1761e5ce3c848ac60422dc2a65a21127a26aba980f944059bcd0ab0b5050c1f
+// source-hash: db4336c6a9bf789bb8f0ab985d2bf7ad97273b841d99ca0c54e9bd1050729ae4
 #![doc = "SCE-MAP: shape_kind.scxml:4 :: _forge_body"]
 // SCE-MAP: shape_kind.scxml:4 :: _forge_body
 
