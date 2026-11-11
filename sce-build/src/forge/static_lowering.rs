@@ -1004,6 +1004,7 @@ impl AdapterSpec<'_> {
                     ),
                 };
                 Some(CrossedCase {
+                    variant: case.variant.clone(),
                     from,
                     holds_record: case.record.is_some(),
                     to,
@@ -1017,6 +1018,10 @@ impl AdapterSpec<'_> {
 /// One case of a union a call hands over or takes back, as an adapter maps it
 /// ([`AdapterSpec::union_crossing`]).
 pub struct CrossedCase {
+    /// The declared name of the tag's variant the case is for: what a target
+    /// that takes no case apart by a pattern (Go) tests the leaving value's tag
+    /// against, by the name its tag answers.
+    pub variant: String,
     /// The case as the side the value leaves names it, holding nothing: what a
     /// test of the case, or a pattern of it, is written by.
     pub from: String,
@@ -11119,6 +11124,56 @@ fn go_enum_by_declared_name(ty: &str, what: &str, value: &str) -> String {
     )
 }
 
+/// The record a case of a union holds, as a Go adapter binds it while it maps
+/// the union across a call ([`go_union_crossing`]): the leaving value's proven
+/// read of the case its arm tested.
+const GO_CROSSED_RECORD: &str = "sceCase";
+
+/// The Go map of the union `value` across a call (docs/adr/0092, section 6.1
+/// item 7) into `out`, a variable of `ty`, the type of the side the value
+/// arrives at, declared here: a `switch` over the declared name of the leaving
+/// value's tag, which a machine's enum answers by `String()` and the enum of a
+/// union's unit by `DeclaredName()`, one arm per case, a case that holds a
+/// record binding it to [`GO_CROSSED_RECORD`] through the leaving value's
+/// `Proven<Case>()`, each arm assigning the case the value arrives as, its
+/// record built from the one bound. Go's `switch` is held to no case by its
+/// compiler, so every case is an arm and a value in none, which no
+/// constructor of `document`'s union builds, panics rather than cross as the
+/// zero struct.
+fn go_union_crossing(
+    out: &str,
+    ty: &str,
+    value: &str,
+    crossing: Crossing,
+    document: &str,
+    cases: &[CrossedCase],
+) -> String {
+    use crate::forge::composed_lowering::{go_case_read, GO_UNION_KIND};
+    let tag = match crossing {
+        Crossing::ToAlgorithm => format!("{value}.{GO_UNION_KIND}().String()"),
+        Crossing::FromAlgorithm => format!("{value}.{GO_UNION_KIND}().DeclaredName().Proven()"),
+    };
+    let arms: String = cases
+        .iter()
+        .map(|case| {
+            let variant = go_text(&case.variant);
+            if case.holds_record {
+                format!(
+                    "\tcase {variant}:\n\t\t{GO_CROSSED_RECORD} := {value}.{}()\n\t\t{out} = {}\n",
+                    go_case_read(&case.variant),
+                    case.to
+                )
+            } else {
+                format!("\tcase {variant}:\n\t\t{out} = {}\n", case.to)
+            }
+        })
+        .collect();
+    format!(
+        "\tvar {out} {ty}\n\tswitch {tag} {{\n{arms}\tdefault:\n\t\tpanic({})\n\t}}\n",
+        go_text(&format!("a value of {document} is in no case of its tag"))
+    )
+}
+
 impl StaticTarget for GoTarget<'_> {
     // The start site holds the id it generates in the `string` local
     // `generatedInvokeID` (`ExecuteEntryActions`), which it goes on to start the
@@ -11493,6 +11548,34 @@ impl StaticTarget for GoTarget<'_> {
                     ));
                     arguments.push(format!("a{index}"));
                 }
+                // A union is the machine's own value struct, mapped case by case
+                // into the one the union's unit declares, each case's record
+                // copied as a record argument is (docs/adr/0092, section 6.1
+                // item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (machine, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        GO_CROSSED_RECORD,
+                        &to_algorithm,
+                    )?;
+                    let unit =
+                        crate::forge::generator::union_unit_type(&union.document, Language::Go)?;
+                    declarations.push(format!("{name} {machine}"));
+                    prelude.push_str(&go_union_crossing(
+                        &format!("a{index}"),
+                        &unit,
+                        &name,
+                        Crossing::ToAlgorithm,
+                        &union.document,
+                        &cases,
+                    ));
+                    arguments.push(format!("a{index}"));
+                }
                 _ => return None,
             }
         }
@@ -11520,6 +11603,28 @@ impl StaticTarget for GoTarget<'_> {
             ))
         };
         let (returned_type, converted) = match value.ret.as_ref()? {
+            // The machine's own value struct, built case by case from the one the
+            // union's unit declares, which the algorithm gave back; read through
+            // its methods, so the unit's package is no import a return alone
+            // needs ([`Self::adapter_names_returned_schema`]).
+            StaticSlot::Union(union) => {
+                let (machine, cases) = spec.union_crossing(
+                    self,
+                    union,
+                    Crossing::FromAlgorithm,
+                    GO_CROSSED_RECORD,
+                    &from_algorithm,
+                )?;
+                let converted = go_union_crossing(
+                    "out",
+                    &machine,
+                    "r",
+                    Crossing::FromAlgorithm,
+                    &union.document,
+                    &cases,
+                );
+                (machine, converted)
+            }
             // The value the machine holds is a statement's, as a record's is.
             StaticSlot::Scalar(SceType::Enum(reference)) => (
                 self.enum_type(spec.machine, &reference.alias)?,

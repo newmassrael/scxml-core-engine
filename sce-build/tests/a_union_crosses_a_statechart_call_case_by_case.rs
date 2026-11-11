@@ -7,12 +7,13 @@
 //! its `union:Shape` variable to `algorithm_shape_grown.scxml` and
 //! `algorithm_shape_extent.scxml` and takes the grown shape back:
 //!
-//! * Kotlin and Rust, the lanes that lower an algorithm over a union
+//! * Kotlin, Rust and Go, the lanes that lower an algorithm over a union
 //!   (`ALGORITHM_UNION_BACKENDS`), map the machine's own sum into the type the
 //!   union's unit declares in the call's adapter, case by case, each case's
 //!   record copied as a record argument is, and map what the algorithm returns
 //!   back the same way; the machine imports the union's unit and each case's
-//!   record unit.
+//!   record unit (Go only where the adapter names them: for what it hands
+//!   over, since what it takes back is read through its methods).
 //! * A union is handed over by the name of a variable of the same union; one
 //!   that may be absent is refused by name.
 //! * Every other lane refuses the statechart.
@@ -148,6 +149,86 @@ fn rust_maps_the_machines_union_into_the_units_and_back() {
             // Each call made through its adapter, the variable lent.
             "call_Grown__v(&self.shape, ",
             "call_Extent__v(&self.shape)",
+        ],
+    );
+}
+
+/// The module path a Go machine imports the generated packages under.
+const GO_PREFIX: &str = "example.com/generated";
+
+/// The Go machine of the fixture, generated through `sce-codegen generate`,
+/// the entry that takes the module path a Go statechart that calls an
+/// algorithm needs (`--go-module-prefix`).
+fn go_machine() -> String {
+    let out = tempfile::tempdir().expect("a directory");
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf();
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .arg("--workspace-root")
+        .arg(&repo_root)
+        .args(["generate", "-l", "go", "--go-module-prefix", GO_PREFIX])
+        .arg(fixtures().join("statechart_shape_crossing.scxml"))
+        .arg("-o")
+        .arg(out.path())
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        run.status.success(),
+        "Go hands a union to an algorithm:\n{}\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    std::fs::read_to_string(out.path().join("statechart_shape_crossing_sm.go"))
+        .expect("the Go machine")
+}
+
+/// Pinned by `GoTarget::state_adapter`, `AdapterSpec::union_crossing` and
+/// `go_union_crossing` (`sce-build/src/forge/static_lowering.rs`): a `switch`
+/// over the declared name of the machine's tag builds the unit's case of each
+/// by its constructor, the record from the machine's proven read of the case,
+/// and a `switch` over the declared name of the unit's tag builds the
+/// machine's back; a value in no case panics.
+#[test]
+fn go_maps_the_machines_union_into_the_units_and_back() {
+    let code = go_machine();
+    let unit = "sce_union_shape_minimal.UnionShapeMinimal";
+    holds(
+        &code,
+        &[
+            &format!("\tsce_union_shape_minimal \"{GO_PREFIX}/union_shape_minimal\"\n"),
+            &format!("\tsce_shape_radius_minimal \"{GO_PREFIX}/shape_radius_minimal\"\n"),
+            &format!("\tsce_shape_rect_minimal \"{GO_PREFIX}/shape_rect_minimal\"\n"),
+            // The union handed over.
+            &format!(
+                "func sceAdapt_StatechartShapeCrossing_Extent__v(p0 {MACHINE_UNION}) uint16 {{"
+            ),
+            &format!("\tvar a0 {unit}\n\tswitch p0.Kind().String() {{\n"),
+            &format!("\tcase \"dot\":\n\t\ta0 = {unit}Dot()\n"),
+            &format!(
+                "\tcase \"circle\":\n\t\tsceCase := p0.ProvenCircle()\n\t\ta0 = {unit}Circle(\
+                 sce_shape_radius_minimal.ShapeRadiusMinimalPayload{{Radius: sceCase.radius}})\n"
+            ),
+            &format!(
+                "\tcase \"rect\":\n\t\tsceCase := p0.ProvenRect()\n\t\ta0 = {unit}Rect(\
+                 sce_shape_rect_minimal.ShapeRectMinimalPayload{{Width: sceCase.width, Height: \
+                 sceCase.height}})\n"
+            ),
+            "\tdefault:\n\t\tpanic(\"a value of union_shape_minimal is in no case of its tag\")\n",
+            "\treturn sce_algorithm_shape_extent.AlgorithmShapeExtent(a0)\n",
+            // The union taken back.
+            &format!(") {MACHINE_UNION} {{"),
+            &format!("\tvar out {MACHINE_UNION}\n\tswitch r.Kind().DeclaredName().Proven() {{\n"),
+            &format!("\tcase \"dot\":\n\t\tout = {MACHINE_UNION}Dot()\n"),
+            &format!(
+                "\tcase \"circle\":\n\t\tsceCase := r.ProvenCircle()\n\t\tout = \
+                 {MACHINE_UNION}Circle(StatechartShapeCrossingRadiusRecord{{radius: \
+                 sceCase.Radius}})\n"
+            ),
+            // Each call made through its adapter, by the variable's name.
+            "sceAdapt_StatechartShapeCrossing_Grown__v(p.vShape, ",
+            "sceAdapt_StatechartShapeCrossing_Extent__v(p.vShape)",
         ],
     );
 }
