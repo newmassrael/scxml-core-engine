@@ -88,6 +88,10 @@ on:
       # outcome classes, which the Swift lane's host-feature tests replay and run
       # (`HostFeaturesTests.swift`, the reference harness's among them).
       - 'tests/host_features/**'
+      # The recorded input trace's wire schema, whose status the test profile runtime's
+      # `TraceTests.swift` holds the runtime's to, read at run time; the traces it replays are
+      # under `sce-build/tests/fixtures/test_profile/**` above.
+      - 'schemas/sce-test-trace.v1.schema.json'
       - 'scripts/regen_swift_ecma262_lowered.sh'
       - 'tools/generate_lowered_ecma262_fixture.py'
       - 'tests/ecmascript/**'

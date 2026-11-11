@@ -9,9 +9,12 @@
 // The tables are generated from the `test-case` and `test-suite` documents (a case's configuration from
 // its `test-configuration`). They are data: what a case does is its components' machines, which the run
 // drives (`TestCaseRun`). The runner is a library function, with no `main`: a generated or hand-written
-// test calls it with the system adapters that play the SUT.
+// test calls it with the system adapters that play the SUT (`runSuite`), or with the recorded input
+// trace of each test case (`runSuiteWithTraces`), which the program of a generated suite does
+// (`runRunner`).
 //
-// Cross-language siblings: `sce_rust_runtime::test::run_suite` (Rust), `SCE::Test::runSuite` (C++),
+// Cross-language siblings: `sce_rust_runtime::test::run_suite` and `run_suite_with_traces` (Rust),
+// `SCE::Test::runSuite` and `runSuiteWithTraces` (C++), `com.sce.runtime.test.runSuiteWithTraces` (Kotlin),
 // `com.sce.runtime.test.runSuite` (Kotlin), `testprofile.RunSuite` (Go),
 // `sce_runtime.testprofile.run_suite` (Python), `sce_test_run_suite` (C11).
 
@@ -37,15 +40,21 @@ public struct TestCase {
     public var machines: MachineFactory
     /// The ids of the module parameters its components read.
     public var moduleParameters: [String]
+    /// The reader of its configuration's inputs, which a trace replayed for it is read with
+    /// (`runSuiteWithTraces`): which records each system port takes, and each record's value from its
+    /// canonical form. A test case built by hand whose configuration has no system port reads none
+    /// (`noInputs`).
+    public var inputs: InputReader
 
     public init(
         name: String, configuration: Configuration, machines: @escaping MachineFactory,
-        moduleParameters: [String] = []
+        moduleParameters: [String] = [], inputs: @escaping InputReader = noInputs
     ) {
         self.name = name
         self.configuration = configuration
         self.machines = machines
         self.moduleParameters = moduleParameters
+        self.inputs = inputs
     }
 }
 
@@ -145,6 +154,61 @@ public func runSuite(
     _ suite: Suite, world: Features, adapters: (_ testCase: String) -> (any SystemAdapter)?,
     overrides: ModuleParameters = ModuleParameters()
 ) throws(OverrideRefusal) -> [CaseResult] {
+    try runSelected(suite, world, overrides) { testCase in
+        guard let adapter = adapters(testCase.name) else {
+            return .refused("no system adapter is given for the test case")
+        }
+        return .ready(adapter)
+    }
+}
+
+/// Runs the test cases of `suite` that `world` selects, each against its recorded input trace
+/// (docs/SCE_TTCN3_LANE.md §10.5): `runSuite`, with the adapter of each test case a `TraceAdapter` that
+/// plays the trace `traces` gives for its name, read by the test case's configuration
+/// (`TestCase.inputs`). `traces` throws a `TraceRefusal` for a trace it does not have or does not
+/// read.
+///
+/// A test case whose trace is not given, is of another suite or test case, or does not fit its
+/// configuration (a port that is no system port of it, a type its port does not take, a value that does
+/// not belong to its type) ends with `error` (P13) before any component is created, its log line naming
+/// why. So does one whose components read a module parameter the run has no value for, as under
+/// `runSuite`, before its trace is asked for.
+///
+/// - Throws: `OverrideRefusal` when `overrides` gives a module parameter the suite does not declare,
+///   before any case runs.
+public func runSuiteWithTraces(
+    _ suite: Suite, world: Features, traces: (_ testCase: String) throws(TraceRefusal) -> Trace,
+    overrides: ModuleParameters = ModuleParameters()
+) throws(OverrideRefusal) -> [CaseResult] {
+    try runSelected(suite, world, overrides) { testCase in
+        do throws(TraceRefusal) {
+            let trace = try traces(testCase.name)
+            // A name is the same name only where its bytes are (`FromCanonical`).
+            let ofSuite = FromCanonical.same(trace.suite, suite.name)
+            guard ofSuite, FromCanonical.same(trace.testCase, testCase.name) else {
+                return .refused("the trace is of the test case '\(trace.testCase)' of the suite '\(trace.suite)'")
+            }
+            let player = try TraceAdapter.replaying(trace, testCase.inputs)
+            return .ready(player)
+        } catch {
+            return .refused("the trace is refused: \(error.reason)")
+        }
+    }
+}
+
+/// The adapter a test case runs against, or why it is given none.
+private enum Adapted {
+    /// The adapter.
+    case ready(any SystemAdapter)
+    /// Why there is none, which the test case ends with `error` for (P13).
+    case refused(String)
+}
+
+/// The runner of `runSuite` and `runSuiteWithTraces`: the test cases `world` selects, each against the
+/// adapter `adapterOf` builds for it, or ended with `error` for the reason it gives where it builds none.
+private func runSelected(
+    _ suite: Suite, _ world: Features, _ overrides: ModuleParameters, _ adapterOf: (TestCase) -> Adapted
+) throws(OverrideRefusal) -> [CaseResult] {
     var parameters = suite.moduleParameters
     for (id, value) in overrides.values {
         guard parameters.has(id) else {
@@ -166,8 +230,12 @@ public func runSuite(
                     "the test case reads the module parameter '\(missing)', which is given no value"))
             continue
         }
-        guard let adapter = adapters(testCase.name) else {
-            results.append(refused(testCase.name, "no system adapter is given for the test case"))
+        let adapter: any SystemAdapter
+        switch adapterOf(testCase) {
+        case .ready(let built):
+            adapter = built
+        case .refused(let why):
+            results.append(refused(testCase.name, why))
             continue
         }
         let run = TestCaseRun(

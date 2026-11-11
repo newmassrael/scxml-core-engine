@@ -1369,6 +1369,13 @@ GATES: dict[str, dict] = {
                    "that says nothing about the tree. swift-backend.yml "
                    "installs the pin by its digest.",
         "cost_s": 38,
+        # The suite's committed traces, which `ATestSuiteRunsThroughItsRunnerTests.swift`
+        # replays through the function and the runner program, and the trace's wire schema,
+        # whose status `TraceTests.swift` holds the runtime's to, both read at run time. The
+        # workflow's `paths:` names both, as a `ci_only` gate's triggers must be
+        # (`ci-only-coverage`).
+        "extra": ["sce-build/tests/fixtures/test_profile/runtime/traces/**",
+                  "schemas/sce-test-trace.v1.schema.json"],
         "summary": "Swift backend: runtime, host features and generated machines",
         # The toolchain is a pinned tool of the platform, so its version is in
         # the key, and a machine without it fails the gate loudly.

@@ -101,8 +101,10 @@ private struct Input: Equatable {
     let event: String
 }
 
-/// A system adapter that replays a trace and records what was sent to it.
-private final class TraceAdapter: SystemAdapter {
+/// A system adapter that replays a scripted list of inputs and records what was sent to it: the run's
+/// own double, apart from the runtime's `TraceAdapter`, which plays a recorded trace file read by a
+/// configuration.
+private final class ScriptedAdapter: SystemAdapter {
     private let trace: [Input]
     private var next = 0
     private(set) var sent: [Input] = []
@@ -318,7 +320,7 @@ struct TestCaseRunTests {
                     }
                 }
             ))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .pass)
         #expect(result.endedAt == 0)
         #expect(logged(result, "echo", .kill), "the MTC's end removes the PTC (P10)")
@@ -327,7 +329,7 @@ struct TestCaseRunTests {
     /// P7, §3.3: with nothing to receive, time advances to the timer's instant.
     @Test func anUnansweredRequestFailsWhenItsTimerExpires() {
         let machines = Machines().with("Tester", tester()).with("Echo", (idle(), idle()))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .fail)
         #expect(result.endedAt == second)
     }
@@ -336,7 +338,7 @@ struct TestCaseRunTests {
     /// ends it with error.
     @Test func aTestCaseThatCanNeverEndIsAnError() {
         let machines = Machines().with("Waiter", (idle(), idle()))
-        let result = runCase(mapped("Waiter"), machines, TraceAdapter())
+        let result = runCase(mapped("Waiter"), machines, ScriptedAdapter())
         #expect(result.verdict == .error)
         #expect(logged(result, "mtc", .error))
     }
@@ -344,7 +346,7 @@ struct TestCaseRunTests {
     /// P11: the guard instant ends a test case that has not ended, with error.
     @Test func theGuardEndsATestCaseWithError() {
         let machines = Machines().with("Waiter", ({ context, _ in context.setverdict(.pass) }, idle()))
-        let result = runCase(mapped("Waiter"), machines, TraceAdapter(), guardAt: 5 * second)
+        let result = runCase(mapped("Waiter"), machines, ScriptedAdapter(), guardAt: 5 * second)
         #expect(result.verdict == .error)
         #expect(result.endedAt == 5 * second)
     }
@@ -363,7 +365,7 @@ struct TestCaseRunTests {
                 },
                 repliesInTime()
             ))
-        let adapter = TraceAdapter([Input(at: 500, systemPort: "sut", event: "pong")])
+        let adapter = ScriptedAdapter([Input(at: 500, systemPort: "sut", event: "pong")])
         let result = runCase(configuration, machines, adapter)
         #expect(result.verdict == .pass)
         #expect(result.endedAt == 500)
@@ -390,7 +392,7 @@ struct TestCaseRunTests {
                     }
                 ))
             .with("Echo", ({ context, _ in context.setverdict(.fail) }, idle()))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .fail)
     }
 
@@ -426,7 +428,7 @@ struct TestCaseRunTests {
                         }
                     }
                 ))
-        let result = runCase(configuration, machines, TraceAdapter())
+        let result = runCase(configuration, machines, ScriptedAdapter())
         #expect(result.verdict == .pass)
         #expect(!logged(result, "echo", .timeout))
     }
@@ -456,7 +458,7 @@ struct TestCaseRunTests {
                     },
                     idle()
                 ))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .pass)
         #expect(logged(result, "echo", .done))
     }
@@ -498,7 +500,7 @@ struct TestCaseRunTests {
         let machines = Machines().with("Reader", readsJob(job))
         var parameters = ModuleParameters()
         parameters.set("job", saved(7))
-        let result = runCase(lone("Reader"), machines, TraceAdapter(), parameters: parameters)
+        let result = runCase(lone("Reader"), machines, ScriptedAdapter(), parameters: parameters)
         #expect(job.value == 7)
         #expect(result.verdict == .pass)
     }
@@ -508,7 +510,7 @@ struct TestCaseRunTests {
     @Test func aModuleParameterTheRunIsNotGivenIsAnError() throws {
         let job = Slot()
         let machines = Machines().with("Reader", readsJob(job))
-        let result = runCase(lone("Reader"), machines, TraceAdapter())
+        let result = runCase(lone("Reader"), machines, ScriptedAdapter())
         #expect(result.verdict == .error)
         #expect(job.value == nil)
         let last = try #require(result.log.last, "the run logged its error")
@@ -523,7 +525,7 @@ struct TestCaseRunTests {
         let machines = Machines().with("Reader", readsJob(job))
         var parameters = ModuleParameters()
         parameters.set("job", SavedValues.of("seven"))
-        let result = runCase(lone("Reader"), machines, TraceAdapter(), parameters: parameters)
+        let result = runCase(lone("Reader"), machines, ScriptedAdapter(), parameters: parameters)
         #expect(result.verdict == .error)
         #expect(job.value == nil)
         #expect(logged(result, "mtc", .error))
@@ -532,7 +534,7 @@ struct TestCaseRunTests {
     /// P13: a component type the factory of machines makes no machine for ends the run with error where
     /// a component of it is created.
     @Test func aComponentTypeWithNoMachineIsAnError() {
-        let result = TestCaseRun(lone("Ghost"), { _ in nil }, TraceAdapter()).run()
+        let result = TestCaseRun(lone("Ghost"), { _ in nil }, ScriptedAdapter()).run()
         #expect(result.verdict == .error)
         #expect(logged(result, "mtc", .error))
         #expect(!logged(result, "mtc", .start), "no component of the type was created")
@@ -541,7 +543,7 @@ struct TestCaseRunTests {
     /// P6, P13: a send on a port whose peer is not present is a dynamic error.
     @Test func aSendToAnAbsentPeerIsAnError() {
         let machines = Machines().with("Tester", ({ context, _ in context.send("p", message("ping")) }, idle()))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .error)
         #expect(result.endedAt == 0)
     }
@@ -561,12 +563,12 @@ private func endsWith(_ name: String, _ componentType: String, _ verdict: Verdic
     return TestCase(name: name, configuration: lone(componentType), machines: machines.factory())
 }
 
-/// The adapters of a suite's run, each a fresh `TraceAdapter`, recording the test case each was built
+/// The adapters of a suite's run, each a fresh `ScriptedAdapter`, recording the test case each was built
 /// for.
 private func tracing(_ built: Recorded) -> (String) -> (any SystemAdapter)? {
     { testCase in
         built.names.append(testCase)
-        return TraceAdapter()
+        return ScriptedAdapter()
     }
 }
 
@@ -683,7 +685,7 @@ struct TheSharedHandleTests {
             let machines = Machines().with(
                 "Reader",
                 ({ context, _ in context.withSnapshot("p") { _ in context.log("inside the reader") } }, idle()))
-            _ = runCase(mapped("Reader"), machines, TraceAdapter())
+            _ = runCase(mapped("Reader"), machines, ScriptedAdapter())
         }
         #expect(standardError(result).contains("re-entrant access to the test run from mtc"))
     }
@@ -702,7 +704,7 @@ struct TheSharedHandleTests {
                     idle()
                 ))
             .with("Echo", ({ context, _ in context.kill("mtc") }, idle()))
-        let result = runCase(mtcAndEcho(), machines, TraceAdapter())
+        let result = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         #expect(result.verdict == .error)
         #expect(logged(result, "echo", .error))
         #expect(!logged(result, "mtc", .kill), "the MTC was not removed")
@@ -732,7 +734,7 @@ struct TheSharedHandleTests {
                         idle()
                     ))
                 .with("Echo", ({ context, _ in kept.context = context }, idle()))
-            _ = runCase(mtcAndEcho(), machines, TraceAdapter())
+            _ = runCase(mtcAndEcho(), machines, ScriptedAdapter())
         }
         #expect(standardError(result).contains("the component echo was removed, and its context outlived it"))
     }
@@ -848,7 +850,7 @@ struct TheDoorsTests {
             default: return nil
             }
         }
-        let result = TestCaseRun(mtcAndEcho(), factory, TraceAdapter()).run()
+        let result = TestCaseRun(mtcAndEcho(), factory, ScriptedAdapter()).run()
         #expect(result.verdict == .pass, "\(result.log)")
         let created = try position(result, "echo", .create)
         let sent = try position(result, "mtc", .send)
@@ -953,7 +955,7 @@ struct TheTestLogTests {
     /// that no longer runs, and the removal of the terminated echo when the MTC ends, write no record.
     @Test func aRunWritesEachRecordWhereItsEventHappens() throws {
         let suite = suiteOf(pingsTheEcho("pings_the_echo"))
-        let results = try runSuite(suite, world: [], adapters: { _ in TraceAdapter() })
+        let results = try runSuite(suite, world: [], adapters: { _ in ScriptedAdapter() })
         #expect(results.count == 1)
         let expected = [
             "{\"records\":[",
@@ -989,7 +991,7 @@ struct TheTestLogTests {
     /// runtime would not write alike.
     @Test func anErrorTheRuntimeSetsIsLoggedWithoutItsCause() {
         let machines = Machines().with("Waiter", (idle(), idle()))
-        let result = runCase(lone("Waiter"), machines, TraceAdapter(), guardAt: 7)
+        let result = runCase(lone("Waiter"), machines, ScriptedAdapter(), guardAt: 7)
         #expect(result.verdict == .error)
         let expected = [
             "{\"records\":[",
