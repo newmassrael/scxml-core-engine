@@ -82,7 +82,9 @@ pub(crate) use go::{
     go_case_ident, go_case_member, go_case_read, go_raise_checks, go_union_member,
     go_unit_union_read, GO_UNION_KIND, GO_UNION_TAG,
 };
-pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member, kotlin_unit_union_read};
+pub(crate) use kotlin::{
+    kotlin_init_block, kotlin_union_member, kotlin_unit_union_read, KOTLIN_UNION_KIND,
+};
 pub(crate) use python::{
     python_case_ident, python_case_read, python_post_init, python_union_member,
     python_unit_union_read, PYTHON_CASE_VALUE, PYTHON_PAYLOAD, PYTHON_UNION_KIND,

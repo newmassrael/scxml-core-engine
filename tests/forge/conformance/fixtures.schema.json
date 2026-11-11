@@ -26,7 +26,7 @@
   },
   "definitions": {
     "AlgorithmArg": {
-      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), a read-only `list<T>` (`{\"list_of\": \"i64\"}`) — SCE_FORGE.md §4.12 — a value of an enum (`{\"enum\": \"<enum fixture>\"}`), or a scalar that may be absent (`{\"optional\": \"i32\"}`, docs/adr/0055). Untagged so a scalar argument keeps its bare-string spelling.",
+      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`), a read-only `list<T>` (`{\"list_of\": \"i64\"}`) — SCE_FORGE.md §4.12 — a value of an enum (`{\"enum\": \"<enum fixture>\"}`), a scalar that may be absent (`{\"optional\": \"i32\"}`, docs/adr/0055), or a value of a union (`{\"union\": \"<union fixture>\"}`, docs/adr/0092). Untagged so a scalar argument keeps its bare-string spelling.",
       "anyOf": [
         {
           "$ref": "#/definitions/CanonicalType"
@@ -42,6 +42,9 @@
         },
         {
           "$ref": "#/definitions/OptionalArg"
+        },
+        {
+          "$ref": "#/definitions/UnionArg"
         }
       ]
     },
@@ -682,6 +685,32 @@
               "$ref": "#/definitions/AlgorithmOutput"
             }
           }
+        },
+        {
+          "description": "A union document (`sce:kind=\"union\"`, docs/adr/0092). The kind emits a sum type and no behaviour, so the oracle states one value of each case as its wire object, and each fragment builds it and reads its tag back. A union an algorithm takes is generated as a fixture of its own, as the records of its cases are, since its unit names theirs as siblings.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "union"
+              ]
+            },
+            "shape": {
+              "description": "Derived at harness-rendering time from the union's document (see [`UnionArg`]). Never present in fixtures.json.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/UnionShape"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
         }
       ],
       "required": [
@@ -1025,6 +1054,112 @@
         },
         "update": {
           "description": "One activation.",
+          "type": "string"
+        }
+      }
+    },
+    "UnionArg": {
+      "description": "A value of a union as an argument (docs/adr/0092): the oracle writes it as its wire object, the tag beside the fields of its case (section 2), and each fragment builds the union fixture's own type from it, case by case.\n\n⚠ `shape` is DERIVED, never written: it is read at harness-render time from the union fixture's document, so the harness cannot name a case the unit does not declare. A manifest that carries it is refused.",
+      "type": "object",
+      "required": [
+        "union"
+      ],
+      "properties": {
+        "shape": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UnionShape"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "union": {
+          "description": "The union fixture of this manifest that generates the type.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "UnionCaseSpec": {
+      "description": "One case of a union, as the rendering language spells it.",
+      "type": "object",
+      "required": [
+        "ident",
+        "kind",
+        "variant"
+      ],
+      "properties": {
+        "ident": {
+          "description": "The case's identifier as the union's unit declares it.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "The member of the tag's enum the case is for, as this language's declaration emits it (`forge::enum_naming::variant_ident`).",
+          "type": "string"
+        },
+        "record": {
+          "description": "The record the case holds, its fields derived as a record argument's are; `None` for an empty case, the tag alone.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RecordRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "variant": {
+          "description": "The name the tag's enum document declares for the case's variant, which the oracle writes the tag as.",
+          "type": "string"
+        }
+      }
+    },
+    "UnionShape": {
+      "description": "A union as the rendering language spells it (docs/adr/0092, sections 1.1 and 7), read from its document with the parse the generator reads: what a fragment builds a value of the union from, and reads its tag by.",
+      "type": "object",
+      "required": [
+        "cases",
+        "document",
+        "tag",
+        "tag_enum",
+        "tag_member",
+        "type_name"
+      ],
+      "properties": {
+        "cases": {
+          "description": "One case per variant of the tag's enum, in the enum's declaration order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/UnionCaseSpec"
+          }
+        },
+        "cases_member": {
+          "description": "The member a C11 value holds the record of its case in; no other language names one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "document": {
+          "description": "The union fixture, whose module, package or header holds the type.",
+          "type": "string"
+        },
+        "tag": {
+          "description": "The key the tag is written under on the wire.",
+          "type": "string"
+        },
+        "tag_enum": {
+          "description": "The enum fixture of this manifest the tag is a value of.",
+          "type": "string"
+        },
+        "tag_member": {
+          "description": "The member every value of the unit answers its tag by.",
+          "type": "string"
+        },
+        "type_name": {
+          "description": "The type the union's unit declares: its document's name in Pascal case, qualified by the fragment as any type of the fixture's unit is, and on C11 the typedef the unit's header declares.",
           "type": "string"
         }
       }

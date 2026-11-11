@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/month_day.scxml — a day of a month in no named year: the
+  record the `monthDay` case of date_expression.scxml holds
+  (docs/adr/0092, section 10.1). Which year it falls in is resolve_date's
+  to work out, from today.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="month_day"
+       sce:event-name="time.month_day">
+  <datamodel>
+    <data id="month" sce:type="uint8" sce:direction="in"/>
+    <data id="day" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

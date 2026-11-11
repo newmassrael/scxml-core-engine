@@ -179,9 +179,10 @@ pub struct OptionalOutput {
 /// One argument of an algorithm fixture: a canonical scalar (`"i64"`), a
 /// record typed by an event-schema fixture (`{"record": "<fixture>"}`), a
 /// read-only `list<T>` (`{"list_of": "i64"}`) — SCE_FORGE.md §4.12 — a value
-/// of an enum (`{"enum": "<enum fixture>"}`), or a scalar that may be absent
-/// (`{"optional": "i32"}`, docs/adr/0055). Untagged so a scalar argument keeps
-/// its bare-string spelling.
+/// of an enum (`{"enum": "<enum fixture>"}`), a scalar that may be absent
+/// (`{"optional": "i32"}`, docs/adr/0055), or a value of a union
+/// (`{"union": "<union fixture>"}`, docs/adr/0092). Untagged so a scalar
+/// argument keeps its bare-string spelling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
@@ -191,6 +192,7 @@ pub enum AlgorithmArg {
     List(ListArg),
     Enum(EnumArg),
     Optional(OptionalArg),
+    Union(UnionArg),
 }
 
 /// A value of an enum as an argument: the oracle writes it as the name its
@@ -221,6 +223,68 @@ pub struct EnumArg {
 #[serde(deny_unknown_fields)]
 pub struct OptionalArg {
     pub optional: CanonicalType,
+}
+
+/// A value of a union as an argument (docs/adr/0092): the oracle writes it as
+/// its wire object, the tag beside the fields of its case (section 2), and each
+/// fragment builds the union fixture's own type from it, case by case.
+///
+/// ⚠ `shape` is DERIVED, never written: it is read at harness-render time from
+/// the union fixture's document, so the harness cannot name a case the unit
+/// does not declare. A manifest that carries it is refused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct UnionArg {
+    /// The union fixture of this manifest that generates the type.
+    #[serde(rename = "union")]
+    pub union_document: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<UnionShape>,
+}
+
+/// A union as the rendering language spells it (docs/adr/0092, sections 1.1
+/// and 7), read from its document with the parse the generator reads: what a
+/// fragment builds a value of the union from, and reads its tag by.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct UnionShape {
+    /// The union fixture, whose module, package or header holds the type.
+    pub document: String,
+    /// The type the union's unit declares: its document's name in Pascal case,
+    /// qualified by the fragment as any type of the fixture's unit is, and on
+    /// C11 the typedef the unit's header declares.
+    pub type_name: String,
+    /// The key the tag is written under on the wire.
+    pub tag: String,
+    /// The member every value of the unit answers its tag by.
+    pub tag_member: String,
+    /// The enum fixture of this manifest the tag is a value of.
+    pub tag_enum: String,
+    /// The member a C11 value holds the record of its case in; no other
+    /// language names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cases_member: Option<String>,
+    /// One case per variant of the tag's enum, in the enum's declaration order.
+    pub cases: Vec<UnionCaseSpec>,
+}
+
+/// One case of a union, as the rendering language spells it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct UnionCaseSpec {
+    /// The name the tag's enum document declares for the case's variant, which
+    /// the oracle writes the tag as.
+    pub variant: String,
+    /// The case's identifier as the union's unit declares it.
+    pub ident: String,
+    /// The member of the tag's enum the case is for, as this language's
+    /// declaration emits it (`forge::enum_naming::variant_ident`).
+    pub kind: String,
+    /// The record the case holds, its fields derived as a record argument's
+    /// are; `None` for an empty case, the tag alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<RecordRef>,
 }
 
 /// A `list<T>` argument: the oracle writes it as a JSON array of `list_of`
@@ -935,6 +999,17 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         may_fail: bool,
     },
+    /// A union document (`sce:kind="union"`, docs/adr/0092). The kind emits a
+    /// sum type and no behaviour, so the oracle states one value of each case
+    /// as its wire object, and each fragment builds it and reads its tag back.
+    /// A union an algorithm takes is generated as a fixture of its own, as the
+    /// records of its cases are, since its unit names theirs as siblings.
+    Union {
+        /// Derived at harness-rendering time from the union's document (see
+        /// [`UnionArg`]). Never present in fixtures.json.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        shape: Option<UnionShape>,
+    },
 }
 
 impl FixtureSpec {
@@ -962,6 +1037,7 @@ impl FixtureSpec {
             // after searching for `eventschema`.
             FixtureSpec::EventSchema { .. } => "event-schema",
             FixtureSpec::Algorithm { .. } => "algorithm",
+            FixtureSpec::Union { .. } => "union",
         }
     }
 
@@ -1830,7 +1906,8 @@ impl Manifest {
                             AlgorithmArg::List(list) => list.list_of.record(),
                             AlgorithmArg::Scalar(_)
                             | AlgorithmArg::Enum(_)
-                            | AlgorithmArg::Optional(_) => None,
+                            | AlgorithmArg::Optional(_)
+                            | AlgorithmArg::Union(_) => None,
                         })
                         .chain(match output {
                             AlgorithmOutput::Record(r) => Some(r),
@@ -1857,6 +1934,30 @@ impl Manifest {
                                 "fixture {}: enum `{}` carries `variants`, which are \
                                  derived from the enum document; remove them",
                                 f.name, e.enum_document
+                            ));
+                        }
+                    }
+                    // A value of a union names a union fixture of this manifest,
+                    // whose cases are derived when the harness renders.
+                    for u in args.iter().filter_map(|a| match a {
+                        AlgorithmArg::Union(u) => Some(u),
+                        _ => None,
+                    }) {
+                        let names_a_union = self.fixtures.iter().any(|g| {
+                            g.name == u.union_document
+                                && matches!(g.spec, FixtureSpec::Union { .. })
+                        });
+                        if !names_a_union {
+                            return Err(format!(
+                                "fixture {}: union `{}` names no union fixture in this manifest",
+                                f.name, u.union_document
+                            ));
+                        }
+                        if u.shape.is_some() {
+                            return Err(format!(
+                                "fixture {}: union `{}` carries `shape`, which is derived \
+                                 from the union document; remove it",
+                                f.name, u.union_document
                             ));
                         }
                     }
@@ -1932,6 +2033,18 @@ impl Manifest {
                             "fixture {}: algorithm `has_test_vectors` is \
                              derived from the SCXML (presence of \
                              <sce:test-vector>); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                }
+                FixtureSpec::Union { shape } => {
+                    // The cases are the document's, read when the harness
+                    // renders; a manifest that wrote them would be a second
+                    // statement of the union that could disagree with it.
+                    if shape.is_some() {
+                        return Err(format!(
+                            "fixture {}: union `shape` is derived from the union \
+                             document; remove it from fixtures.json",
                             f.name
                         ));
                     }
@@ -2263,6 +2376,10 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // conformance harness. `bytes` arg lowers to `sce_forge_bytes_t`
         // value-type per the A5 `algorithm_param_type` arm.
         FixtureSpec::Algorithm { .. } => true,
+        // Union: `c/union.h.jinja2` emits the struct of the tag and a C
+        // `union` of the cases' records (docs/adr/0092, section 7), which the
+        // fragment bakes each value of and reads the tag of.
+        FixtureSpec::Union { .. } => true,
     }
 }
 
@@ -3066,6 +3183,168 @@ fn read_enum_arg_variants(
             path.display()
         )),
     }
+}
+
+/// The union the union fixture `union_fixture` of `manifest` generates, as
+/// `language` spells it (docs/adr/0092, sections 1.1 and 7): the key its tag is
+/// written under and the member a value answers it by, and one case per variant
+/// of the tag's enum, in the enum's declaration order, each by the identifier
+/// its unit declares, the member of the tag's enum it is for and the record it
+/// holds, whose fields are derived as a record argument's are. Read from the
+/// union's document with the parse the generator reads, so a fragment names no
+/// case, enum or record the units do not declare; the tag's enum and every
+/// case's record are fixtures of the manifest, generated beside the union's unit,
+/// which names them as siblings.
+fn read_union_shape(
+    manifest: &Manifest,
+    resource_dir: &Path,
+    union_fixture: &str,
+    language: Language,
+) -> Result<UnionShape, String> {
+    use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge};
+    let path = manifest
+        .fixtures
+        .iter()
+        .find(|g| g.name == union_fixture && matches!(g.spec, FixtureSpec::Union { .. }))
+        .ok_or_else(|| format!("union `{union_fixture}` names no union fixture in this manifest"))?
+        .document_path(resource_dir);
+    let text = crate::load_forge_source(&path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .positions
+        .expanded;
+    let parsed = crate::forge::parser::parse_forge_with_imports(
+        &text,
+        crate::DocumentLabel::symmetric(union_fixture),
+    )
+    .map_err(|e| format!("{}: {e}", path.display()))?;
+    let Some(ParsedForge {
+        document: ForgeDocument::Union(model),
+        imports,
+        ..
+    }) = parsed
+    else {
+        return Err(format!(
+            "union `{union_fixture}`: {} is not a union document",
+            path.display()
+        ));
+    };
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let tag_enum = crate::forge::import_source::enum_model_in(&imports, base_dir, &model.tag_enum)
+        .ok_or_else(|| {
+            format!(
+                "union `{union_fixture}`: the tag's enum `{}` is no readable enum the document \
+                 imports",
+                model.tag_enum
+            )
+        })?;
+    let generated = manifest
+        .fixtures
+        .iter()
+        .any(|g| g.name == tag_enum.name && matches!(g.spec, FixtureSpec::Enum { .. }));
+    if !generated {
+        return Err(format!(
+            "union `{union_fixture}`: the tag's enum `{}` names no enum fixture in this manifest",
+            tag_enum.name
+        ));
+    }
+    let mut cases = Vec::with_capacity(tag_enum.variants.len());
+    for variant in &tag_enum.variants {
+        let case = model.case(&variant.name).ok_or_else(|| {
+            format!(
+                "union `{union_fixture}`: the variant `{}` of its tag has no case",
+                variant.name
+            )
+        })?;
+        let record = match &case.record {
+            None => None,
+            Some(alias) => {
+                let import = imports
+                    .iter()
+                    .find(|i| i.kind == ForgeKind::EventSchema && i.alias == *alias)
+                    .ok_or_else(|| {
+                        format!(
+                            "union `{union_fixture}`: the case `{}` holds `{alias}`, which names \
+                             no event schema the document imports",
+                            variant.name
+                        )
+                    })?;
+                let Some(ForgeDocument::EventSchema(schema)) =
+                    crate::forge::import_source::parse_quietly(base_dir, import)
+                        .map(|p| p.document)
+                else {
+                    return Err(format!(
+                        "union `{union_fixture}`: the case `{}` holds `{alias}`, whose document \
+                         is no readable event schema",
+                        variant.name
+                    ));
+                };
+                Some(RecordRef {
+                    fields: read_record_fields(manifest, resource_dir, &schema.name, language)?,
+                    record: schema.name,
+                })
+            }
+        };
+        cases.push(UnionCaseSpec {
+            ident: union_case_ident(language, &tag_enum.name, &variant.name),
+            kind: crate::forge::enum_naming::variant_ident(language, &tag_enum.name, &variant.name),
+            variant: variant.name.clone(),
+            record,
+        });
+    }
+    Ok(UnionShape {
+        document: union_fixture.to_string(),
+        // C11 names a union's unit by the typedef its header declares; every
+        // other language by the type its module, package or header declares,
+        // which the fragment qualifies as it qualifies any type of a fixture.
+        type_name: match language {
+            Language::C11 => crate::forge::generator::union_unit_type(&model.name, language),
+            _ => crate::filters::to_pascal_case(model.name.clone()),
+        },
+        tag_member: union_tag_member(language, &model.tag)
+            .map_err(|why| format!("union `{union_fixture}`: {why}"))?,
+        tag: model.tag,
+        tag_enum: tag_enum.name,
+        cases_member: matches!(language, Language::C11)
+            .then(|| crate::forge::composed_lowering::C11_UNION_CASES.to_string()),
+        cases,
+    })
+}
+
+/// The identifier of the case `variant` of a union whose tag is a value of the
+/// enum `tag_document`, as `language`'s unit of the union declares the case
+/// (docs/adr/0092, section 7 item 1): the one helper each union renderer spells
+/// it by. Go and Python name a case's constructor and class after the union's
+/// type, which the fragment writes before it, as their units do.
+fn union_case_ident(language: Language, tag_document: &str, variant: &str) -> String {
+    use crate::forge::composed_lowering as spelling;
+    match language {
+        Language::Rust => spelling::rust_case_ident(variant),
+        Language::Kotlin => crate::forge::generator::kotlin_case_ident(variant),
+        Language::Swift => spelling::swift_case_ident(tag_document, variant),
+        Language::Go => spelling::go_case_ident(variant),
+        Language::Cpp => spelling::cpp_case_ident(variant),
+        Language::Python => spelling::python_case_ident(variant),
+        Language::C11 => spelling::c11_case_ident(variant),
+    }
+}
+
+/// The member every value of `language`'s unit of a union answers its tag by,
+/// whatever key `tag` the tag is written under (docs/adr/0092, section 7): a
+/// method on Rust, Go and C++, a property on Kotlin and Swift, a class
+/// attribute on Python and the struct's member on C11.
+fn union_tag_member(language: Language, tag: &str) -> Result<String, String> {
+    use crate::forge::composed_lowering as spelling;
+    Ok(match language {
+        Language::Rust => spelling::rust_union_tag_method(tag).ok_or_else(|| {
+            format!("the tag's key `{tag}` names no Rust method its value can be read by")
+        })?,
+        Language::Kotlin => spelling::KOTLIN_UNION_KIND.to_string(),
+        Language::Swift => spelling::SWIFT_UNION_KIND.to_string(),
+        Language::Go => spelling::GO_UNION_KIND.to_string(),
+        Language::Cpp => spelling::CPP_UNION_KIND.to_string(),
+        Language::Python => spelling::PYTHON_UNION_KIND.to_string(),
+        Language::C11 => spelling::C11_UNION_TAG.to_string(),
+    })
 }
 
 /// An event-schema document, and each enum it imports by the alias it imports it
@@ -4208,9 +4487,10 @@ pub fn render_harness(
                 let arg_records = args.iter_mut().filter_map(|arg| match arg {
                     AlgorithmArg::Record(r) => Some(r),
                     AlgorithmArg::List(list) => list.list_of.record_mut(),
-                    AlgorithmArg::Scalar(_) | AlgorithmArg::Enum(_) | AlgorithmArg::Optional(_) => {
-                        None
-                    }
+                    AlgorithmArg::Scalar(_)
+                    | AlgorithmArg::Enum(_)
+                    | AlgorithmArg::Optional(_)
+                    | AlgorithmArg::Union(_) => None,
                 });
                 let output_record = match output {
                     AlgorithmOutput::Record(r) => Some(r),
@@ -4222,14 +4502,30 @@ pub fn render_harness(
                 }
                 // A value of an enum is built from the name its variant
                 // declares, into the member this language emits for it.
+                // A value of a union is built from its wire object, case by
+                // case, into the type the union's unit declares.
                 for arg in args.iter_mut() {
-                    if let AlgorithmArg::Enum(e) = arg {
-                        e.variants = read_enum_arg_variants(
-                            manifest,
-                            resource_dir,
-                            &e.enum_document,
-                            language,
-                        )?;
+                    match arg {
+                        AlgorithmArg::Enum(e) => {
+                            e.variants = read_enum_arg_variants(
+                                manifest,
+                                resource_dir,
+                                &e.enum_document,
+                                language,
+                            )?;
+                        }
+                        AlgorithmArg::Union(u) => {
+                            u.shape = Some(read_union_shape(
+                                manifest,
+                                resource_dir,
+                                &u.union_document,
+                                language,
+                            )?);
+                        }
+                        AlgorithmArg::Scalar(_)
+                        | AlgorithmArg::Record(_)
+                        | AlgorithmArg::List(_)
+                        | AlgorithmArg::Optional(_) => {}
                     }
                 }
                 // Symbol-name SSOT: lower the manifest's `function` to the
@@ -4302,6 +4598,14 @@ pub fn render_harness(
                     &base,
                     language,
                 ));
+            }
+            FixtureSpec::Union { shape } => {
+                *shape = Some(read_union_shape(
+                    manifest,
+                    resource_dir,
+                    &fixture_name,
+                    language,
+                )?);
             }
             _ => {}
         }
@@ -5146,13 +5450,18 @@ mod tests {
 
     /// The untagged forms of an algorithm's slots read each spelling as what it
     /// is: a value of an enum by `enum`, a value that may be absent by
-    /// `optional`, and an answer that may be absent by `optional` beside its
-    /// `compare`, which a scalar output, whose `type` is required, does not take.
+    /// `optional`, a value of a union by `union`, and an answer that may be
+    /// absent by `optional` beside its `compare`, which a scalar output, whose
+    /// `type` is required, does not take.
     #[test]
     fn an_enum_and_an_optional_slot_are_read_as_themselves() {
-        let args: Vec<AlgorithmArg> =
-            serde_json::from_str(r#"["i64", {"enum": "date_kind"}, {"optional": "u8"}]"#)
-                .expect("the arguments parse");
+        let args: Vec<AlgorithmArg> = serde_json::from_str(
+            r#"["i64", {"enum": "date_kind"}, {"optional": "u8"}, {"union": "date_expression"}]"#,
+        )
+        .expect("the arguments parse");
+        assert!(
+            matches!(&args[3], AlgorithmArg::Union(u) if u.union_document == "date_expression" && u.shape.is_none())
+        );
         assert!(matches!(args[0], AlgorithmArg::Scalar(CanonicalType::I64)));
         assert!(
             matches!(&args[1], AlgorithmArg::Enum(e) if e.enum_document == "date_kind" && e.variants.is_empty())
@@ -5249,14 +5558,22 @@ mod tests {
         assert!(refused.contains("compared for equality"), "{refused}");
     }
 
-    /// `sce:std/time/resolve_date`, which takes a value of an enum and values
-    /// that may be absent and answers one that may be absent, is scheduled and
-    /// rendered on every backend's harness: the library promises it to every
-    /// generator, and a backend that refused it would drop it from its harness
-    /// without a word. The enum argument is built from the member each
-    /// declaration emits, and the C11 slots are the struct the generator names.
-    #[test]
-    fn an_algorithm_of_enum_and_optional_slots_reaches_every_harness() {
+    /// The documents of the standard date expression the harness generates: the
+    /// resolver, the union it takes, the tag's enum and the record of each case.
+    const DATE_EXPRESSION_FIXTURES: [&str; 9] = [
+        "resolve_date",
+        "date_expression",
+        "date_kind",
+        "civil_date",
+        "month_day",
+        "date_shift",
+        "date_weekday",
+        "week_weekday",
+        "month_offset_day",
+    ];
+
+    /// The catalog's fixtures named in `names`, alone.
+    fn catalog_of(names: &[&str]) -> Manifest {
         let manifest_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
         let catalog = Manifest::load(&manifest_path).expect("manifest must load and validate");
@@ -5266,14 +5583,27 @@ mod tests {
             fixtures: catalog
                 .fixtures
                 .into_iter()
-                .filter(|f| f.name == "date_kind" || f.name == "resolve_date")
+                .filter(|f| names.contains(&f.name.as_str()))
                 .collect(),
         };
         assert_eq!(
             manifest.fixtures.len(),
-            2,
-            "the catalog holds date_kind and resolve_date"
+            names.len(),
+            "the catalog holds each of {names:?}"
         );
+        manifest
+    }
+
+    /// `sce:std/time/resolve_date`, which takes a value of a union and answers
+    /// one that may be absent, is scheduled and rendered on every backend's
+    /// harness: the library promises it to every generator, and a backend that
+    /// refused it would drop it from its harness without a word. The union is
+    /// built case by case, each case by the identifier its unit declares, and
+    /// the C11 slots are the struct the generator names (docs/adr/0092, Landing
+    /// order step 6).
+    #[test]
+    fn an_algorithm_of_a_union_slot_reaches_every_harness() {
+        let manifest = catalog_of(&DATE_EXPRESSION_FIXTURES);
         let template_base =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
         let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
@@ -5289,16 +5619,145 @@ mod tests {
                 "{lang:?}: the harness does not call `{symbol}`, so resolve_date was not \
                  scheduled for it"
             );
+            let shape = read_union_shape(&manifest, &resource_dir, "date_expression", lang)
+                .unwrap_or_else(|e| panic!("{lang:?}: the union's shape is not read: {e}"));
+            for case in &shape.cases {
+                assert!(
+                    rendered.source.contains(&case.ident),
+                    "{lang:?}: the harness does not name `{}`, the case {} of the union's unit",
+                    case.ident,
+                    case.variant
+                );
+            }
             if lang == Language::C11 {
                 assert!(
-                    rendered.source.contains("sce_optional_int32_t input_arg2;")
-                        && rendered.source.contains("sce_optional_int64_t expected;")
-                        && rendered.source.contains("DateKind_t input_arg1;"),
+                    rendered.source.contains("date_expression_t input_arg1;")
+                        && rendered.source.contains("sce_optional_int64_t expected;"),
                     "C11: the case table does not hold the slots in the types the \
                      algorithm declares"
                 );
             }
         }
+    }
+
+    /// A union's shape is its document's: one case per variant of the tag's
+    /// enum, in the enum's order, each holding the record its document names
+    /// with that record's fields, an empty case holding none, and the tag read
+    /// by the member each unit declares (docs/adr/0092, sections 1.1, 7 and
+    /// 10.1).
+    #[test]
+    fn a_union_shape_is_read_from_its_document_in_the_order_of_its_tag() {
+        let manifest = catalog_of(&DATE_EXPRESSION_FIXTURES);
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let shape = read_union_shape(&manifest, &resource_dir, "date_expression", Language::Rust)
+            .expect("the standard date expression is a union");
+        assert_eq!(shape.tag, "kind");
+        assert_eq!(shape.tag_member, "kind");
+        assert_eq!(shape.tag_enum, "date_kind");
+        assert_eq!(shape.type_name, "DateExpression");
+        assert_eq!(shape.cases_member, None);
+        let cases: Vec<(&str, Option<&str>, Vec<&str>)> = shape
+            .cases
+            .iter()
+            .map(|c| {
+                (
+                    c.variant.as_str(),
+                    c.record.as_ref().map(|r| r.record.as_str()),
+                    c.record
+                        .iter()
+                        .flat_map(|r| r.fields.iter().map(|f| f.name.as_str()))
+                        .collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            cases,
+            vec![
+                ("none", None, vec![]),
+                ("absolute", Some("civil_date"), vec!["year", "month", "day"]),
+                ("monthDay", Some("month_day"), vec!["month", "day"]),
+                ("relativeDays", Some("date_shift"), vec!["count"]),
+                ("relativeWeeks", Some("date_shift"), vec!["count"]),
+                ("relativeMonths", Some("date_shift"), vec!["count"]),
+                ("relativeYears", Some("date_shift"), vec!["count"]),
+                ("comingWeekday", Some("date_weekday"), vec!["weekday"]),
+                ("previousWeekday", Some("date_weekday"), vec!["weekday"]),
+                (
+                    "weekdayOfWeek",
+                    Some("week_weekday"),
+                    vec!["weekday", "count"]
+                ),
+                (
+                    "dayOfMonthOffset",
+                    Some("month_offset_day"),
+                    vec!["day", "count"]
+                ),
+            ]
+        );
+        assert_eq!(shape.cases[1].ident, "Absolute");
+        assert_eq!(shape.cases[1].kind, "Absolute");
+        let c11 = read_union_shape(&manifest, &resource_dir, "date_expression", Language::C11)
+            .expect("the standard date expression is a union on C11");
+        assert_eq!(c11.type_name, "date_expression_t");
+        assert_eq!(c11.tag_member, "tag");
+        assert_eq!(c11.cases_member.as_deref(), Some("as"));
+        assert_eq!(c11.cases[2].ident, "month_day");
+    }
+
+    /// One algorithm over `args`, beside the enum fixture `date_kind` and the
+    /// union fixture `date_expression`, as [`Manifest::validate`] judges it.
+    fn validated_union_algorithm(args: &str, union_fixture: &str) -> Result<(), String> {
+        let manifest: Manifest = serde_json::from_str(&format!(
+            r#"{{"version": 1, "fixtures": [
+                {{"name": "date_kind", "kind": "enum", "ref_section": "enums",
+                  "variants": [{{"name": "none", "value": 0}}]}},
+                {union_fixture},
+                {{"name": "resolve", "kind": "algorithm", "ref_section": "pure_functions",
+                  "function": "resolve", "args": {args}, "output": {OPTIONAL_DAY}}}]}}"#
+        ))
+        .expect("the manifest parses");
+        manifest.validate()
+    }
+
+    const DATE_EXPRESSION_UNION: &str =
+        r#"{"name": "date_expression", "kind": "union", "ref_section": "unions"}"#;
+
+    /// A value of a union names a union fixture of the manifest, the one its
+    /// cases are derived from; an enum fixture of that name is not one.
+    #[test]
+    fn a_union_argument_names_a_union_fixture_of_the_manifest() {
+        validated_union_algorithm(
+            r#"["i64", {"union": "date_expression"}]"#,
+            DATE_EXPRESSION_UNION,
+        )
+        .expect("a union fixture of the manifest is admitted");
+        let refused =
+            validated_union_algorithm(r#"["i64", {"union": "date_kind"}]"#, DATE_EXPRESSION_UNION)
+                .expect_err("an enum fixture is no union");
+        assert!(refused.contains("names no union fixture"), "{refused}");
+    }
+
+    /// The cases of a union are its document's, so a manifest that writes them,
+    /// on the union fixture or on an argument, is refused.
+    #[test]
+    fn a_union_whose_shape_is_written_is_refused() {
+        let written = r#"{"document": "date_expression", "type_name": "DateExpression",
+            "tag": "kind", "tag_member": "kind", "tag_enum": "date_kind", "cases": []}"#;
+        let argument = validated_union_algorithm(
+            &format!(r#"["i64", {{"union": "date_expression", "shape": {written}}}]"#),
+            DATE_EXPRESSION_UNION,
+        )
+        .expect_err("a written shape on an argument is refused");
+        assert!(argument.contains("carries `shape`"), "{argument}");
+        let fixture = validated_union_algorithm(
+            r#"["i64", {"union": "date_expression"}]"#,
+            &format!(
+                r#"{{"name": "date_expression", "kind": "union", "ref_section": "unions",
+                    "shape": {written}}}"#
+            ),
+        )
+        .expect_err("a written shape on the union fixture is refused");
+        assert!(fixture.contains("union `shape` is derived"), "{fixture}");
     }
 
     /// Oracle cross-check: verify structural integrity between fixtures.json

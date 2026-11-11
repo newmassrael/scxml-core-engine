@@ -5,34 +5,56 @@
   sce:std/time/date_expression.scxml — a date as a text names it, written as
   which kind of date it is and the numbers that kind reads, so that the
   arithmetic is done by resolve_date.scxml and never by whoever read the
-  text (docs/adr/0087, section 5). A record type, read from a text by a
-  lift, and a schema of its own events.
+  text (docs/adr/0087, section 5). A union (docs/adr/0092, section 10): its
+  tag `kind` is a value of date_kind.scxml, and each kind is a case holding
+  a record of exactly the numbers it reads, every one of them present.
 
-  `kind` says which fields are read (date_kind.scxml); a field the kind does
-  not read is written `null`. `weekday` counts from 0 for Sunday to 6 for
-  Saturday, as weekday_from_days.scxml does; `count` is signed, a negative
-  one counting back from today.
+  On the wire a value is one object, the tag beside the case's fields
+  (docs/adr/0092, section 2): `{"kind":"none"}`,
+  `{"kind":"relativeWeeks","count":2}`. A key the case does not hold is
+  stepped over by a reader, so a text that writes another kind's numbers,
+  or `null` under them, is read as the case its tag names.
 
-  "the 3rd of March 2027"       → absolute, 2027, 3, 3
-  "on 29 February"              → monthDay, null, 2, 29
-  "in two weeks"                → relativeWeeks, count 2
+  `weekday` counts from 0 for Sunday to 6 for Saturday, as
+  weekday_from_days.scxml does; `count` is signed, a negative one counting
+  back from today.
+
+  "the 3rd of March 2027"        → absolute, year 2027, month 3, day 3
+  "on 29 February"               → monthDay, month 2, day 29
+  "in two weeks"                 → relativeWeeks, count 2
   "next Friday" (the coming one) → comingWeekday, weekday 5
-  "Friday next week"            → weekdayOfWeek, weekday 5, count 1
-  "the 5th of next month"       → dayOfMonthOffset, day 5, count 1
+  "Friday next week"             → weekdayOfWeek, weekday 5, count 1
+  "the 5th of next month"        → dayOfMonthOffset, day 5, count 1
+
+  The cases are date_kind.scxml's variants one to one, so a kind a revision
+  of that enum adds has its case here in the same change, and the union's
+  revision is the enum's.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
-       sce:kind="event-schema"
-       name="date_expression"
-       sce:event-name="time.date_expression">
+       sce:kind="union"
+       name="date_expression">
   <sce:import kind="enum" src="date_kind.scxml" as="DateKind"/>
+  <sce:import kind="event-schema" src="civil_date.scxml" as="CivilDate"/>
+  <sce:import kind="event-schema" src="month_day.scxml" as="MonthDay"/>
+  <sce:import kind="event-schema" src="date_shift.scxml" as="DateShift"/>
+  <sce:import kind="event-schema" src="date_weekday.scxml" as="DateWeekday"/>
+  <sce:import kind="event-schema" src="week_weekday.scxml" as="WeekWeekday"/>
+  <sce:import kind="event-schema" src="month_offset_day.scxml" as="MonthOffsetDay"/>
   <datamodel>
-    <data id="kind" sce:type="enum:DateKind" sce:direction="in"/>
-    <data id="year" sce:type="optional&lt;int32&gt;" sce:direction="in"/>
-    <data id="month" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
-    <data id="day" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
-    <data id="weekday" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
-    <data id="count" sce:type="optional&lt;int32&gt;" sce:direction="in"/>
+    <data id="kind" sce:type="enum:DateKind">
+      <sce:case variant="none"/>
+      <sce:case variant="absolute" record="CivilDate"/>
+      <sce:case variant="monthDay" record="MonthDay"/>
+      <sce:case variant="relativeDays" record="DateShift"/>
+      <sce:case variant="relativeWeeks" record="DateShift"/>
+      <sce:case variant="relativeMonths" record="DateShift"/>
+      <sce:case variant="relativeYears" record="DateShift"/>
+      <sce:case variant="comingWeekday" record="DateWeekday"/>
+      <sce:case variant="previousWeekday" record="DateWeekday"/>
+      <sce:case variant="weekdayOfWeek" record="WeekWeekday"/>
+      <sce:case variant="dayOfMonthOffset" record="MonthOffsetDay"/>
+    </data>
   </datamodel>
 </scxml>

@@ -4,7 +4,9 @@
 # `scripts/mutate sce-build/tests/mutations/a_date_expression_resolves_each_kind_as_its_table_says.cases`.
 #
 # `sce:std/time/resolve_date` resolves a date expression from today, one arm per
-# kind of date_kind.scxml (docs/adr/0087, section 5). Each case takes one rule
+# kind of date_kind.scxml (docs/adr/0087, section 5), each arm a test of the
+# union's tag that reads its case's numbers (docs/adr/0092, section 10.2), so
+# every anchor names a number as `expression.<field>`. Each case takes one rule
 # of one arm away: the week a coming or a previous weekday of today's own
 # weekday is, the Monday an ISO week starts on, the step of a weekly shift, the
 # day a month or a year lands on, the next year that has a 29 February, the
@@ -24,22 +26,22 @@ mutation_oracles tests/forge/conformance/numerical_reference.json
 
 mutation_case "none answers today instead of no date" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''    <sce:if cond="kind === DateKind.none">
+     r'''    <sce:if cond="expression.kind === DateKind.none">
       <sce:return expr="null"/>''',
-     r'''    <sce:if cond="kind === DateKind.none">
+     r'''    <sce:if cond="expression.kind === DateKind.none">
       <sce:return expr="today"/>''')
 PY
 
 mutation_case "absolute reads the first of the month for any day" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''<sce:return expr="daysOf(year.value, month.value, day.value)"/>''',
-     r'''<sce:return expr="daysOf(year.value, month.value, 1)"/>''')
+     r'''<sce:return expr="daysOf(expression.year, expression.month, expression.day)"/>''',
+     r'''<sce:return expr="daysOf(expression.year, expression.month, 1)"/>''')
 PY
 
 mutation_case "a month day is admitted against a common year, so 29 February is refused" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''day.value &lt;= monthLength(2000, month.value)''',
-     r'''day.value &lt;= monthLength(2001, month.value)''')
+     r'''expression.day &lt;= monthLength(2000, expression.month)''',
+     r'''expression.day &lt;= monthLength(2001, expression.month)''')
 PY
 
 mutation_case "a month day already past this year is answered in this year" <<'PY'
@@ -50,8 +52,8 @@ PY
 
 mutation_case "a 29 February is looked for only in the next year" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''<sce:while cond="day.value &gt; landingLast">''',
-     r'''<sce:while cond="day.value &gt; landingLast &amp;&amp; false">''')
+     r'''<sce:while cond="expression.day &gt; landingLast">''',
+     r'''<sce:while cond="expression.day &gt; landingLast &amp;&amp; false">''')
 PY
 
 mutation_case "relativeDays counts back" <<'PY'
@@ -68,8 +70,8 @@ PY
 
 mutation_case "relativeMonths shifts by years" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''addMonths(monthFrom.year, monthFrom.month, monthFrom.day, count.value)''',
-     r'''addMonths(monthFrom.year + count.value, monthFrom.month, monthFrom.day, 0)''')
+     r'''addMonths(monthFrom.year, monthFrom.month, monthFrom.day, expression.count)''',
+     r'''addMonths(monthFrom.year + expression.count, monthFrom.month, monthFrom.day, 0)''')
 PY
 
 mutation_case "relativeYears keeps 29 February in a year that has none" <<'PY'
@@ -92,10 +94,10 @@ PY
 
 mutation_case "a weekday past Saturday is admitted as a coming weekday" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''<sce:require cond="weekday !== null &amp;&amp; weekday.value &lt;= 6"/>
-      <sce:var name="comingWanted" type="int64" init="weekday.value"/>''',
-     r'''<sce:require cond="weekday !== null &amp;&amp; weekday.value &lt;= 7"/>
-      <sce:var name="comingWanted" type="int64" init="weekday.value"/>''')
+     r'''<sce:require cond="expression.weekday &lt;= 6"/>
+      <sce:var name="comingWanted" type="int64" init="expression.weekday"/>''',
+     r'''<sce:require cond="expression.weekday &lt;= 7"/>
+      <sce:var name="comingWanted" type="int64" init="expression.weekday"/>''')
 PY
 
 mutation_case "the week of a weekday starts on Sunday, not on the ISO Monday" <<'PY'
@@ -106,24 +108,24 @@ PY
 
 mutation_case "a day of a month offset ignores the count and stays in today's month" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''addMonths(offsetFrom.year, offsetFrom.month, 1, count.value)''',
+     r'''addMonths(offsetFrom.year, offsetFrom.month, 1, expression.count)''',
      r'''addMonths(offsetFrom.year, offsetFrom.month, 1, 0)''')
 PY
 
 mutation_case "a day of a month offset answers today's day instead of the one asked for" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>''',
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, expression.day)"/>''',
      r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, offsetFrom.day)"/>''')
 PY
 
 mutation_case "a day the landing month lacks is held to its last day instead of refused" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>''',
-     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value &lt; monthLength(offsetTo.year, offsetTo.month) ? day.value : monthLength(offsetTo.year, offsetTo.month))"/>''')
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, expression.day)"/>''',
+     r'''<sce:return expr="daysOf(offsetTo.year, offsetTo.month, expression.day &lt; monthLength(offsetTo.year, offsetTo.month) ? expression.day : monthLength(offsetTo.year, offsetTo.month))"/>''')
 PY
 
 mutation_case "a day past 31 is judged only after today is read" <<'PY'
 edit("stdlib/time/resolve_date.scxml",
-     r'''day.value &gt;= 1 &amp;&amp; day.value &lt;= 31"/>''',
-     r'''day.value &gt;= 1"/>''')
+     r'''expression.day &gt;= 1 &amp;&amp; expression.day &lt;= 31"/>''',
+     r'''expression.day &gt;= 1"/>''')
 PY

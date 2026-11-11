@@ -78,6 +78,7 @@ type reference struct {
 	Enums           map[string]enumSpec             `json:"enums"`
 	EventSchemas    map[string]eventSchemaSpec      `json:"event_schemas"`
 	StringLookups   map[string]stringLookupSpec    `json:"string_lookups"`
+	Unions          map[string]unionSpec           `json:"unions"`
 }
 
 // pureSpec / pureCase cover non-procedure pure-function kinds (interpolation,
@@ -192,6 +193,13 @@ type enumSpec struct {
 type enumVariantSpec struct {
 	Name  string `json:"name"`
 	Value int64  `json:"value"`
+}
+
+// unionSpec — one value of each case of a union (docs/adr/0092), each the
+// wire's object, kept raw so the fragment reads the tag first and then the
+// record of the case the tag names.
+type unionSpec struct {
+	Cases []json.RawMessage `json:"cases"`
 }
 
 // eventSchemaSpec — a payload SHAPE. The kind emits a struct and no
@@ -461,6 +469,19 @@ func (r *reference) eventSchemaEntry(t *testing.T, section, fixture string) even
 		t.Fatalf("fixture %q: missing entry in event_schemas", fixture)
 	}
 	return spec
+}
+
+// unionCases — see filterSteps for the drift-detection contract.
+func (r *reference) unionCases(t *testing.T, section, fixture string) []json.RawMessage {
+	t.Helper()
+	if section != "unions" {
+		t.Fatalf("fixture %q: union kind requires ref_section=unions, got %q", fixture, section)
+	}
+	spec, ok := r.Unions[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in unions", fixture)
+	}
+	return spec.Cases
 }
 
 // stringLookupCases looks up cases for string-output lookups from the

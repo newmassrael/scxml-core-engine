@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092) — a sum type and no behaviour; pre-baked oracle, as
+   every C11 fragment's is. The oracle holds one value of each case, in the
+   order of the tag's enum, as the wire writes it; each is baked as the case its
+   tag names, by the builder an algorithm's union argument is baked by, beside
+   the constant of the case the union's document gives that place in its tag's
+   order. The value's tag is compared with that constant, and the name the
+   unit's `<stem>_variant` answers for the value with the tag the oracle wrote,
+   so a value baked as another case, or a unit that names a case by another
+   name, fails. The function is named by the typedef's stem, the name its `_t`
+   follows, as the unit names the functions of its type. #}
+{% import "values.c.jinja2" as values %}
+{% set u = f.shape %}
+static void test_{{ f.name }}(void) {
+    static const struct {
+        {{ u.type_name }} value;
+        const char *variant;
+    } cases[] = {
+{% for c in f.cases %}
+        { .value = {{ values.union_value(u, c) }}, .variant = "{{ c[u.tag] }}" },
+{% endfor %}
+    };
+    static const {{ u.tag_enum | to_pascal_case }}_t kinds[] = {
+{% for c in u.cases %}
+        {{ c.kind }},
+{% endfor %}
+    };
+    const size_t n = sizeof(cases) / sizeof(cases[0]);
+    /* Count first: a case the union gained without a value in the oracle
+     * would otherwise satisfy every comparison below. */
+    if (n != sizeof(kinds) / sizeof(kinds[0])) {
+        fprintf(stderr, "FAIL: {{ f.name }}: oracle has %zu values, the union has {{ u.cases | length }} cases\n", n);
+        ++g_failures;
+        return;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        if (cases[i].value.{{ u.tag_member }} != kinds[i]) {
+            fprintf(stderr, "FAIL: {{ f.name }} value %zu (%s) is not of the case at its place\n", i,
+                    cases[i].variant);
+            ++g_failures;
+        }
+        const char *declared = {{ u.type_name[:-2] }}_variant(&cases[i].value);
+        if (declared == NULL || strcmp(declared, cases[i].variant) != 0) {
+            fprintf(stderr, "FAIL: {{ f.name }} value %zu answers the case %s, not %s\n", i,
+                    declared != NULL ? declared : "(none)", cases[i].variant);
+            ++g_failures;
+        }
+    }
+}

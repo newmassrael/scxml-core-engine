@@ -1628,3 +1628,29 @@ regenerated after it.
   bound as any text written to it is: one past it is refused whole, raises `error.execution`, and the send sends
   nothing or the invocation does not start.
 
+## The standard date expression is a union, and `resolve_date` takes it (ADR 0092 step 6)
+
+Landing: the commit that adds this section; every committed generated tree whose source hash reads the standard
+library is regenerated after it, the Swift static_datamodel tree's `DateExpression.swift` and `ResolveDate.swift`
+among them.
+
+- `sce:std/time/date_expression.scxml` is a union over `DateKind` (ADR 0092 section 10), no longer a record of
+  `kind` and five optional numbers. The generated `DateExpression` is each backend's sum (ADR 0092 section 7): a
+  Rust and a Swift `enum`, a Kotlin `sealed interface`, a C++ struct of one `std::variant`, a Go value struct, a
+  Python class every case's dataclass derives from, a C11 struct of the tag and a `union`. Build a value by its
+  case's constructor around the case's record, `DateExpression::Absolute(CivilDatePayload { year, month, day })` on
+  Rust, `DateExpression.none` for the case that holds nothing; read the kind by the unit's tag member (`kind()`,
+  `kind`, `Kind()`, `.tag` on C11) and a case's numbers by its proven read where the kind is known.
+- Five records hold the cases' numbers beside `civil_date`: `month_day` (`month`, `day`), `date_shift` (`count`),
+  `date_weekday` (`weekday`), `week_weekday` (`weekday`, `count`) and `month_offset_day` (`day`, `count`), every
+  field present. A host that built the flat record builds the case of its kind instead; a number another kind
+  reads has no place in it.
+- `resolve_date(today, kind, year, month, day, weekday, count)` is `resolve_date(today, expression)`, and no longer
+  fails `precondition` for a number its kind reads being absent: the type holds it. Every other failure is the one
+  it was. A statechart hands it the union variable it lifted the answer into.
+- The schema id moves from `urn:sce:schema:date_expression:1` to `urn:sce:schema:date_expression:2`, the revision of
+  `DateKind`, and `JSON_SCHEMA` is a `oneOf` of one object per kind. Stored texts need nothing: a flat text whose
+  kind's numbers are present reads as the union's value of that kind, the `null`s under the other keys stepped
+  over; a flat text that lacked a number its kind reads, which the resolver refused, is now refused by the lift as
+  `missing`, with its pointer.
+

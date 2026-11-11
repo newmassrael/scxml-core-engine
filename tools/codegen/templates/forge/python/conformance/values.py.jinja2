@@ -1,0 +1,23 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The values a fragment builds from the oracle's JSON, shared by the fragments
+   that build one: an algorithm's arguments and answers, and a union fixture's
+   values. Imported as a module (`{% import "values.py.jinja2" as values %}`),
+   so each is spelled once. #}
+{# A value of the enum fixture `document`, read from `read`, which holds the name a
+   variant declares: the member of the enum's `IntEnum` that name maps to. #}
+{% macro enum_value(document, variants, read) %}{ {% for v in variants %}"{{ v.name }}": {{ document }}.{{ document | to_pascal_case }}.{{ v.ident }}, {% endfor %}}[{{ read }}]{% endmacro %}
+{# A field that holds a value of an enum is the enum fixture's own `IntEnum`,
+   which the oracle writes as the name a variant declares: the value is the
+   member that name maps to, and what comes back is compared by the name it
+   declares. #}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}{% endif %}{% endmacro %}
+{% macro field_read(fld, read) %}{% if fld.enum_document is defined %}{{ read }}.declared_name(){% else %}{{ read }}{% endif %}{% endmacro %}
+{# A value of the union `u` (docs/adr/0092), read from `read`, which holds the
+   wire's object: the tag under its key, beside the fields of its case (section
+   2). The value is the class of the case the tag names, named after the union's
+   class as the unit names it, holding the record of that case built by keyword,
+   or holding nothing where the case holds none. A tag that names no case is a
+   `KeyError`, which fails the test. #}
+{% macro union_value(u, read) %}{ {% for c in u.cases %}"{{ c.variant }}": lambda value: {{ u.document }}.{{ u.type_name }}{{ c.ident }}({% if c.record %}{{ c.record.record }}.{{ c.record.record | to_pascal_case }}Payload({% for fld in c.record.fields %}{{ fld.ident }}={{ field_value(fld, "value[\"" ~ fld.name ~ "\"]") }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}), {% endfor %}}[{{ read }}["{{ u.tag }}"]]({{ read }}){% endmacro %}

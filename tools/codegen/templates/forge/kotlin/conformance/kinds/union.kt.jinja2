@@ -1,0 +1,34 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092) — see the Rust fragment: one oracle value of each
+   case, built as the case its tag names by the builder an algorithm's union
+   argument is built by, and its tag read back by the unit's `kind`. #}
+{% import "values.kt.jinja2" as values %}
+{% set u = f.shape %}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        val cases = spec["cases"]!!.jsonArray
+
+        // Count first: a case the union gained without a value in the oracle
+        // would otherwise satisfy every assertion below.
+        assertEquals(
+            {{ u.cases | length }},
+            cases.size,
+            "{{ f.name }}: one oracle value per case",
+        )
+{% for c in u.cases %}
+        run {
+            val case = cases[{{ loop.index0 }}]
+            assertEquals(
+                "{{ c.variant }}",
+                case.jsonObject["{{ u.tag }}"]!!.jsonPrimitive.content,
+                "{{ f.name }}: oracle value {{ loop.index0 }} is of the case {{ c.variant }}",
+            )
+            val value: {{ u.document | kotlin_forge_package }}.{{ u.type_name }} = {{ values.union_value(u, "case", f.name) }}
+            assertEquals(
+                {{ u.tag_enum | kotlin_forge_package }}.{{ u.tag_enum | to_pascal_case }}.{{ c.kind }},
+                value.{{ u.tag_member }},
+                "{{ f.name }}: the case {{ c.variant }} answers its tag",
+            )
+        }
+{% endfor %}

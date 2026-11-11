@@ -2717,12 +2717,7 @@
       "function": "resolve_date",
       "args": [
         "i64",
-        { "enum": "date_kind" },
-        { "optional": "i32" },
-        { "optional": "u8" },
-        { "optional": "u8" },
-        { "optional": "u8" },
-        { "optional": "i32" }
+        { "union": "date_expression" }
       ],
       "output": {
         "optional": "i64",
@@ -3885,6 +3880,65 @@
         { "name": "month", "value": 9, "sce_type": "uint8" },
         { "name": "day", "value": 23, "sce_type": "uint8" }
       ]
+    },
+    {
+      "name": "month_day",
+      "document": "sce:std/time/month_day.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.month_day",
+      "fields": [
+        { "name": "month", "value": 2, "sce_type": "uint8" },
+        { "name": "day", "value": 29, "sce_type": "uint8" }
+      ]
+    },
+    {
+      "name": "date_shift",
+      "document": "sce:std/time/date_shift.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.date_shift",
+      "fields": [
+        { "name": "count", "value": -2, "sce_type": "int32" }
+      ]
+    },
+    {
+      "name": "date_weekday",
+      "document": "sce:std/time/date_weekday.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.date_weekday",
+      "fields": [
+        { "name": "weekday", "value": 5, "sce_type": "uint8" }
+      ]
+    },
+    {
+      "name": "week_weekday",
+      "document": "sce:std/time/week_weekday.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.week_weekday",
+      "fields": [
+        { "name": "weekday", "value": 1, "sce_type": "uint8" },
+        { "name": "count", "value": 1, "sce_type": "int32" }
+      ]
+    },
+    {
+      "name": "month_offset_day",
+      "document": "sce:std/time/month_offset_day.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "time.month_offset_day",
+      "fields": [
+        { "name": "day", "value": 5, "sce_type": "uint8" },
+        { "name": "count", "value": 1, "sce_type": "int32" }
+      ]
+    },
+    {
+      "name": "date_expression",
+      "document": "sce:std/time/date_expression.scxml",
+      "kind": "union",
+      "ref_section": "unions"
     },
     {
       "name": "merkle_node",

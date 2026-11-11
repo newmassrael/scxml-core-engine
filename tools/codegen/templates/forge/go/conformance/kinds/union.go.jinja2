@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092) — see the Rust fragment: one oracle value of each
+   case, built as the case its tag names by the builder an algorithm's union
+   argument is built by, and its tag read back by the unit's `Kind()`. #}
+{% import "values.go.jinja2" as values %}
+{% set u = f.shape %}
+	cases := ref.unionCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+
+	// Count first: a case the union gained without a value in the oracle
+	// would otherwise satisfy every assertion below.
+	if len(cases) != {{ u.cases | length }} {
+		t.Fatalf("{{ f.name }}: oracle has %d values, the union has {{ u.cases | length }} cases", len(cases))
+	}
+{% for c in u.cases %}
+	{
+		var oracleTag struct {
+			Tag string `json:"{{ u.tag }}"`
+		}
+		unmarshalOrFatal(t, cases[{{ loop.index0 }}], &oracleTag, "{{ f.name }} value {{ loop.index0 }}")
+		if oracleTag.Tag != "{{ c.variant }}" {
+			t.Errorf("{{ f.name }}: oracle value {{ loop.index0 }} is of the case %q, not {{ c.variant }}", oracleTag.Tag)
+		}
+{{ values.union_value(u, "value", "cases[" ~ loop.index0 ~ "]", f.name) }}
+		if value.{{ u.tag_member }}() != {{ u.tag_enum }}.{{ c.kind }} {
+			t.Errorf("{{ f.name }}: the case {{ c.variant }} answers the tag %v", value.{{ u.tag_member }}())
+		}
+	}
+{% endfor %}

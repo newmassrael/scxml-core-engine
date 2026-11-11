@@ -18,21 +18,16 @@
    it is judged by the error's contract name before anything reads
    `expected`, and every other case unwraps the value. #}
 {% set call %}{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
-{# A record's field, read from the JSON `raw` as the data class holds it. A
-   field that holds a value of an enum is the enum fixture's own class, which
-   the oracle writes as the name a variant declares: the value is the variant
-   of that name, built the same way for an expected value and compared as the
-   enum. #}
-{# A value of the enum fixture `document`, read from the JSON `raw`, which holds the
-   name a variant declares: the variant of that name. `label` names the value in a
-   failure. #}
-{% macro enum_value(document, variants, raw, label) %}when ({{ raw }}.jsonPrimitive.content) { {% for v in variants %}"{{ v.name }}" -> {{ document | kotlin_forge_package }}.{{ document | to_pascal_case }}.{{ v.ident }}; {% endfor %}else -> throw AssertionError("{{ label }}: no variant is declared as the name the case writes") }{% endmacro %}
+{# The values of a record's field, of an enum and of a union (docs/adr/0092:
+   the unit's sealed interface, built from the wire's object the oracle writes
+   as the case its tag names) are built by `values.kt.jinja2`, which a union
+   fixture's fragment builds its values by too. #}
+{% import "values.kt.jinja2" as values %}
 {# A value that may be absent (docs/adr/0055), read from the JSON `raw`: the
    nullable type the generated algorithm's slot is, `null` where the oracle
    writes `null`. An optional answer is compared whole, so an absent answer
    equals only an absent one. #}
 {% macro optional_value(raw, ty) %}{{ raw }}.let { if (it is kotlinx.serialization.json.JsonNull) null else {{ "it" | kt_unmarshal(ty) }} }{% endmacro %}
-{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, raw, fixture ~ "." ~ fld.name) }}{% else %}{{ raw | kt_unmarshal(fld.type) }}{% endif %}{% endmacro %}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -45,7 +40,7 @@
 {% if arg_ty.record is defined %}
             val arg{{ i }} = {{ arg_ty.record | kotlin_forge_package }}.{{ arg_ty.record | to_pascal_case }}Payload(
 {% for fld in arg_ty.fields %}
-                {{ fld.ident }} = {{ field_value(fld, "args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
+                {{ fld.ident }} = {{ values.field_value(fld, "args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}
             )
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
@@ -54,7 +49,7 @@
             val arg{{ i }} = args[{{ i }}].jsonArray.map { e ->
                 {{ r.record | kotlin_forge_package }}.{{ r.record | to_pascal_case }}Payload(
 {% for fld in r.fields %}
-                    {{ fld.ident }} = {{ field_value(fld, "e.jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
+                    {{ fld.ident }} = {{ values.field_value(fld, "e.jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}
                 )
             }
@@ -65,7 +60,9 @@
 {% set to_array = {"i8": "toByteArray", "u8": "toUByteArray", "i16": "toShortArray", "u16": "toUShortArray", "i32": "toIntArray", "u32": "toUIntArray", "i64": "toLongArray", "u64": "toULongArray", "f32": "toFloatArray", "f64": "toDoubleArray", "bool": "toBooleanArray"} %}
             val arg{{ i }} = args[{{ i }}].jsonArray.map { {{ "it" | kt_unmarshal(arg_ty.list_of) }} }.{{ to_array[arg_ty.list_of] }}()
 {% elif arg_ty.enum is defined %}
-            val arg{{ i }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
+            val arg{{ i }} = {{ values.enum_value(arg_ty.enum, arg_ty.variants, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
+{% elif arg_ty.union is defined %}
+            val arg{{ i }}: {{ arg_ty.shape.document | kotlin_forge_package }}.{{ arg_ty.shape.type_name }} = {{ values.union_value(arg_ty.shape, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
 {% elif arg_ty.optional is defined %}
             val arg{{ i }} = {{ optional_value("args[" ~ i ~ "]", arg_ty.optional) }}
 {% else %}
@@ -95,7 +92,7 @@
 
             val expected = case.jsonObject["expected"]!!.jsonObject
 {% for fld in f.output.fields %}
-            assertEquals({{ field_value(fld, "expected[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+            assertEquals({{ values.field_value(fld, "expected[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
 {# A list of records is a `List` of the schema's data class: compared by
@@ -107,7 +104,7 @@
             for (k in expected.indices) {
                 val e = expected[k].jsonObject
 {% for fld in f.output.list_of.fields %}
-                assertEquals({{ field_value(fld, "e[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual[k].{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+                assertEquals({{ values.field_value(fld, "e[\"" ~ fld.name ~ "\"]!!", f.name) }}, actual[k].{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
             }
 {% elif f.output.list_of is defined %}

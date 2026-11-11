@@ -165,8 +165,12 @@ node, so a list is drawn with registers whose dots share one or two of the three
 names from today, is held to a calendar table before any drawn case: every kind from
 each day of five weeks (`CALENDAR_WEEKS`: across a month end, a year end and a 29
 February, and the 1900 and 2000 century rules), so each weekday is today in each, and
-then each input a kind refuses and fields a kind does not read — 2319 rows — followed
-by 400 drawn inputs that reach the ends of int64 and of the int32 years. A table is
+then each input a kind refuses — 2296 rows — followed by 400 drawn inputs that reach
+the ends of int64 and of the int32 years. Each input is a value of the union
+`date_expression` (docs/adr/0092, section 10), the tag beside exactly the numbers
+its case holds; the 23 rows of the flat record that left out a number a kind reads,
+or wrote one it does not, have no spelling in the union and left the table with it
+(2319 rows were written before). A table is
 listed in `TABLES` and written whole, in its order, before the fixture's draws. The
 model is first held to a second statement of the rule written with `datetime` alone,
 over the whole table and 4000 inputs inside datetime's years
@@ -504,19 +508,25 @@ def validate_calendar() -> None:
 # `datetime.date`, and `validate_resolve_date` holds the two to each other
 # wherever datetime's years reach.
 
-DATE_KINDS = (
-    "none",
-    "absolute",
-    "monthDay",
-    "relativeDays",
-    "relativeWeeks",
-    "relativeMonths",
-    "relativeYears",
-    "comingWeekday",
-    "previousWeekday",
-    "weekdayOfWeek",
-    "dayOfMonthOffset",
-)
+#: The cases of the union `sce:std/time/date_expression` (docs/adr/0092, section
+#: 10.1), in the order of its tag's enum, each with the fields of the record it
+#: holds, in the order that record declares them. A value of the union is the
+#: wire's object: the tag under `kind`, beside exactly those fields, every one of
+#: them present (`date_expression`).
+DATE_CASE_FIELDS = {
+    "none": (),
+    "absolute": ("year", "month", "day"),
+    "monthDay": ("month", "day"),
+    "relativeDays": ("count",),
+    "relativeWeeks": ("count",),
+    "relativeMonths": ("count",),
+    "relativeYears": ("count",),
+    "comingWeekday": ("weekday",),
+    "previousWeekday": ("weekday",),
+    "weekdayOfWeek": ("weekday", "count"),
+    "dayOfMonthOffset": ("day", "count"),
+}
+DATE_KINDS = tuple(DATE_CASE_FIELDS)
 DATE_PRECONDITION = ("fails", "precondition")
 DATE_OVERFLOW = ("fails", "overflow")
 EPOCH_DATE = datetime.date(1970, 1, 1)
@@ -537,28 +547,52 @@ def a_day(days: int):
     return ("ok", days) if fits(days, I64_MIN, I64_MAX) else DATE_OVERFLOW
 
 
-def resolve_date(today: int, kind: str, year, month, day, weekday, count):
-    """sce:std/time/resolve_date — the day a date expression names, counted from
-    1970-01-01 as `today` is, or None for `none`.
+def date_expression(kind: str, **fields) -> dict:
+    """A value of the union `date_expression` in the case `kind`, as the wire
+    writes it: the tag first, then the fields of the case's record in the order
+    that record declares them. Exactly the fields the case holds are given, so a
+    value no case holds is refused here, never written into a case."""
+    wanted = DATE_CASE_FIELDS[kind]
+    if set(fields) != set(wanted) or any(fields[name] is None for name in wanted):
+        raise ValueError(f"date_expression: the case {kind!r} holds {wanted}, not {fields}")
+    return {"kind": kind, **{name: fields[name] for name in wanted}}
 
-    An absent field the kind reads, a month outside 1 to 12, a day its month
-    does not have (in that year for `absolute`, in any year for `monthDay`, past
-    31 for `dayOfMonthOffset`) or a weekday past 6 fails `precondition`, before
-    anything is computed. The answer fails `overflow` where it leaves int64, and
-    where the year of a date the kind works out leaves int32: today's own date
-    for the kinds that read it, and the date it lands on. Each shift is exact, so
-    a day fails only where the day itself leaves the range. A `dayOfMonthOffset`
-    day the month it lands in lacks fails `precondition` once that month is
-    known, after both years are judged."""
+
+def date_case(expression: dict):
+    """The case of the union value `expression` and its fields by name, held to
+    the union: a tag the union declares, beside exactly its case's fields."""
+    kind = expression["kind"]
+    fields = {name: value for name, value in expression.items() if name != "kind"}
+    if expression != date_expression(kind, **fields):
+        raise ValueError(f"date_expression: {expression} is not written as its case writes it")
+    return kind, fields
+
+
+def resolve_date(today: int, expression: dict):
+    """sce:std/time/resolve_date — the day a date expression names, counted from
+    1970-01-01 as `today` is, or None for `none`. The expression is a value of
+    the union `date_expression`, so every number its kind reads is present.
+
+    A month outside 1 to 12, a day its month does not have (in that year for
+    `absolute`, in any year for `monthDay`, past 31 for `dayOfMonthOffset`) or a
+    weekday past 6 fails `precondition`, before anything is computed. The answer
+    fails `overflow` where it leaves int64, and where the year of a date the kind
+    works out leaves int32: today's own date for the kinds that read it, and the
+    date it lands on. Each shift is exact, so a day fails only where the day
+    itself leaves the range. A `dayOfMonthOffset` day the month it lands in lacks
+    fails `precondition` once that month is known, after both years are judged."""
+    kind, fields = date_case(expression)
     if kind == "none":
         return ("ok", None)
     if kind == "absolute":
-        if None in (year, month, day) or not exists(year, month, day):
+        year, month, day = fields["year"], fields["month"], fields["day"]
+        if not exists(year, month, day):
             return DATE_PRECONDITION
         return ("ok", days_of_date(year, month, day))
     if kind == "monthDay":
+        month, day = fields["month"], fields["day"]
         # A month's longest is its length in a leap year and in a common one.
-        if None in (month, day) or not 1 <= month <= 12:
+        if not 1 <= month <= 12:
             return DATE_PRECONDITION
         if not 1 <= day <= max(days_in_month_of(2023, month), days_in_month_of(2024, month)):
             return DATE_PRECONDITION
@@ -571,13 +605,12 @@ def resolve_date(today: int, kind: str, year, month, day, weekday, count):
             return DATE_OVERFLOW
         return ("ok", days_of_date(landing, month, day))
     if kind in ("relativeDays", "relativeWeeks"):
-        if count is None:
-            return DATE_PRECONDITION
+        count = fields["count"]
         return a_day(today + count * (7 if kind == "relativeWeeks" else 1))
     if kind in ("relativeMonths", "relativeYears", "dayOfMonthOffset"):
-        if count is None:
-            return DATE_PRECONDITION
-        if kind == "dayOfMonthOffset" and (day is None or not 1 <= day <= 31):
+        count = fields["count"]
+        day = fields.get("day")
+        if kind == "dayOfMonthOffset" and not 1 <= day <= 31:
             return DATE_PRECONDITION
         start_year, start_month, start_day = date_of_days(today)
         if not fits(start_year, I32_MIN, I32_MAX):
@@ -595,7 +628,8 @@ def resolve_date(today: int, kind: str, year, month, day, weekday, count):
         landing_day = min(start_day, days_in_month_of(landing_year, landing_month))
         return a_day(days_of_date(landing_year, landing_month, landing_day))
     if kind in ("comingWeekday", "previousWeekday", "weekdayOfWeek"):
-        if weekday is None or weekday > 6 or (kind == "weekdayOfWeek" and count is None):
+        weekday = fields["weekday"]
+        if weekday > 6:
             return DATE_PRECONDITION
         now = weekday_from_days(today)[1]
         if kind == "comingWeekday":
@@ -604,16 +638,19 @@ def resolve_date(today: int, kind: str, year, month, day, weekday, count):
             return a_day(today - ((now - weekday) % 7 or 7))
         # The ISO 8601 week starts on Monday (1); Sunday (0) is its seventh day.
         monday = today - (now - 1) % 7
-        return a_day(monday + 7 * count + (weekday - 1) % 7)
+        return a_day(monday + 7 * fields["count"] + (weekday - 1) % 7)
     raise ValueError(f"resolve_date: no kind {kind!r}")
 
 
-def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, count):
+def resolve_date_on_datetime(today: int, expression: dict):
     """`resolve_date` said with `datetime.date` alone: a shift is a `timedelta`, a
     month's end is the last day `replace` does not refuse, a weekday is what
     `isoweekday` says and a week is the one `isocalendar` names. It answers only
     where every date it touches is in datetime's years, where nothing overflows,
     and `validate_resolve_date` asks it of nothing else."""
+    kind, fields = date_case(expression)
+    year, month, day = fields.get("year"), fields.get("month"), fields.get("day")
+    weekday, count = fields.get("weekday"), fields.get("count")
     now = EPOCH_DATE + datetime.timedelta(days=today)
 
     def days(date):
@@ -622,15 +659,11 @@ def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, c
     if kind == "none":
         return ("ok", None)
     if kind == "absolute":
-        if None in (year, month, day):
-            return DATE_PRECONDITION
         try:
             return days(datetime.date(year, month, day))
         except ValueError:
             return DATE_PRECONDITION
     if kind == "monthDay":
-        if None in (month, day):
-            return DATE_PRECONDITION
         try:
             # 2000 has every day any year's month has, 29 February among them.
             datetime.date(2000, month, day)
@@ -644,13 +677,9 @@ def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, c
             if candidate >= now:
                 return days(candidate)
     if kind in ("relativeDays", "relativeWeeks"):
-        if count is None:
-            return DATE_PRECONDITION
         shift = datetime.timedelta(weeks=count) if kind == "relativeWeeks" else datetime.timedelta(days=count)
         return days(now + shift)
     if kind == "relativeMonths":
-        if count is None:
-            return DATE_PRECONDITION
         index = now.month - 1 + count
         landing_year, landing_month = now.year + index // 12, index % 12 + 1
         # Every month has a 28th, so a refusal past it is the month's end, and one
@@ -664,15 +693,13 @@ def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, c
                     raise
                 landing_day -= 1
     if kind == "relativeYears":
-        if count is None:
-            return DATE_PRECONDITION
         try:
             return days(now.replace(year=now.year + count))
         except ValueError:
             # 29 February is the one day a year can lack.
             return days(now.replace(year=now.year + count, day=28))
     if kind in ("comingWeekday", "previousWeekday"):
-        if weekday is None or weekday > 6:
+        if weekday > 6:
             return DATE_PRECONDITION
         step = 1 if kind == "comingWeekday" else -1
         for k in range(1, 8):
@@ -680,13 +707,13 @@ def resolve_date_on_datetime(today: int, kind: str, year, month, day, weekday, c
             if candidate.isoweekday() % 7 == weekday:
                 return days(candidate)
     if kind == "weekdayOfWeek":
-        if weekday is None or count is None or weekday > 6:
+        if weekday > 6:
             return DATE_PRECONDITION
         iso_year, iso_week, _ = now.isocalendar()
         monday = datetime.date.fromisocalendar(iso_year, iso_week, 1)
         return days(monday + datetime.timedelta(weeks=count, days=(weekday + 6) % 7))
     if kind == "dayOfMonthOffset":
-        if day is None or count is None or not 1 <= day <= 31:
+        if not 1 <= day <= 31:
             return DATE_PRECONDITION
         index = now.month - 1 + count
         # The 1st of the landing month exists in every year datetime holds, so a
@@ -1018,13 +1045,20 @@ def resolve_date_table():
     from each day of `CALENDAR_WEEKS` — a month day across the year's turn and a
     29 February, shifts forward and back by days, weeks, months and years, each
     weekday coming, previous and in this, the next and the last ISO week, a day
-    of a month counted from today's — and then each input a kind refuses, and fields a kind does not read. Every date
-    it touches is one datetime holds, so `validate_resolve_date` holds the whole
-    table to the second formulation as well."""
+    of a month counted from today's — and then each input a kind refuses. Every
+    date it touches is one datetime holds, so `validate_resolve_date` holds the
+    whole table to the second formulation as well.
+
+    Each row is a value of the union `date_expression` (docs/adr/0092, section
+    10), whose every case holds exactly the numbers its kind reads, each one
+    present. The 23 rows of the flat record the union has no spelling for left
+    the table with it: 15 that left out a number a kind reads, which a lift now
+    refuses as `missing` before the resolver is called, and 8 that wrote numbers
+    a kind does not read, which no value of the union holds."""
     rows = []
 
-    def row(today, kind, year=None, month=None, day=None, weekday=None, count=None):
-        rows.append([today, kind, year, month, day, weekday, count])
+    def row(today, kind, **fields):
+        rows.append([today, date_expression(kind, **fields)])
 
     for first in CALENDAR_WEEKS:
         start = days_of_date(*first)
@@ -1062,21 +1096,8 @@ def resolve_date_table():
         (1970, 1, 1), (1969, 12, 31), (2026, 4, 30), (2026, 4, 31), (2026, 12, 31),
         (2026, 1, 0), (2026, 1, 32), (2026, 0, 1), (2026, 13, 1), (1, 1, 1), (9999, 12, 31),
     ):
-        row(today, "absolute", *date)
-    # Each field a kind reads, absent.
-    row(today, "absolute", month=1, day=1)
-    row(today, "absolute", year=2026, day=1)
-    row(today, "absolute", year=2026, month=1)
-    row(today, "monthDay", day=29)
-    row(today, "monthDay", month=2)
-    for kind in ("relativeDays", "relativeWeeks", "relativeMonths", "relativeYears"):
-        row(today, kind)
-    for kind in ("comingWeekday", "previousWeekday"):
-        row(today, kind)
-    row(today, "weekdayOfWeek", count=1)
-    row(today, "weekdayOfWeek", weekday=1)
-    row(today, "dayOfMonthOffset", count=1)
-    row(today, "dayOfMonthOffset", day=5)
+        year, month, day = date
+        row(today, "absolute", year=year, month=month, day=day)
     # A month or a day no year has, and a weekday past Saturday.
     for month, day in ((2, 30), (4, 31), (1, 32), (1, 0), (0, 1), (13, 1), (255, 1), (2, 255)):
         row(today, "monthDay", month=month, day=day)
@@ -1086,21 +1107,14 @@ def resolve_date_table():
     row(today, "weekdayOfWeek", weekday=7, count=0)
     for day in (0, 32, 255):
         row(today, "dayOfMonthOffset", day=day, count=0)
-    # Fields a kind does not read change nothing, whatever they hold.
-    row(today, "none", 2026, 2, 30, 9, 5)
-    row(today, "absolute", 2026, 3, 3, 255, I32_MIN)
-    row(today, "monthDay", 1, 3, 3, 255, -5)
-    row(today, "relativeDays", 1, 13, 40, 9, 3)
-    row(today, "relativeMonths", 0, 0, 0, 0, 2)
-    row(today, "comingWeekday", None, 13, None, 5, I32_MAX)
-    row(today, "weekdayOfWeek", 9999, 13, 0, 3, 2)
-    row(today, "dayOfMonthOffset", 9999, 13, 5, 9, 1)
     return rows
 
 
-def resolve_date_field(rng: SplitMix64, values):
-    """A field of a date expression: absent now and then, else drawn by `values`."""
-    return None if rng.below(8) == 0 else values(rng)
+def drawn_expression(rng: SplitMix64, kind: str, draws):
+    """A value of `date_expression` in the case `kind`, each number the case
+    holds drawn by `draws`, which maps a field's name to its draw: every number
+    present, as the union holds it."""
+    return date_expression(kind, **{name: draws[name](rng) for name in DATE_CASE_FIELDS[kind]})
 
 
 def resolve_date_count(rng: SplitMix64) -> int:
@@ -1130,22 +1144,36 @@ def resolve_date_today(rng: SplitMix64) -> int:
     return rng.pick([I64_MIN, I64_MAX]) + (rng.between(0, 20) if rng.below(2) else -rng.between(0, 20))
 
 
+#: The draw of each number a date expression holds, for `resolve_date_args`: a
+#: month or day a year lacks, a weekday past Saturday, and a count that carries
+#: a date out of the int32 years now and then.
+RESOLVE_DATE_DRAWS = {
+    "year": year_value,
+    "month": lambda r: r.between(1, 12) if r.below(10) < 8 else r.pick([0, 13, 255]),
+    "day": lambda r: r.between(1, 31) if r.below(10) < 7 else r.pick([0, 28, 29, 30, 31, 32, 255]),
+    "weekday": lambda r: r.between(0, 6) if r.below(10) < 8 else r.pick([7, 255]),
+    "count": resolve_date_count,
+}
+
+
 def resolve_date_args(rng: SplitMix64):
-    """A date expression from today, of any kind, its fields drawn whether the kind
-    reads them or not: a month or day a year lacks, a weekday past Saturday, and a
-    count that carries a date out of the int32 years now and then."""
+    """A date expression from today, of any kind, each number its case holds
+    drawn by `RESOLVE_DATE_DRAWS`."""
     today = clamp(resolve_date_today(rng), I64_MIN, I64_MAX)
-    kind = rng.pick(DATE_KINDS)
-    year = resolve_date_field(rng, year_value)
-    month = resolve_date_field(
-        rng, lambda r: r.between(1, 12) if r.below(10) < 8 else r.pick([0, 13, 255])
-    )
-    day = resolve_date_field(
-        rng, lambda r: r.between(1, 31) if r.below(10) < 7 else r.pick([0, 28, 29, 30, 31, 32, 255])
-    )
-    weekday = resolve_date_field(rng, lambda r: r.between(0, 6) if r.below(10) < 8 else r.pick([7, 255]))
-    count = resolve_date_field(rng, resolve_date_count)
-    return [today, kind, year, month, day, weekday, count]
+    return [today, drawn_expression(rng, rng.pick(DATE_KINDS), RESOLVE_DATE_DRAWS)]
+
+
+#: How far each kind may shift a date in `resolve_date_datetime_args`, so that
+#: no kind carries today past datetime's years; a kind that reads no count has
+#: the bound of the rest.
+DATETIME_COUNT_BOUNDS = {
+    "relativeDays": 100_000,
+    "relativeWeeks": 10_000,
+    "relativeMonths": 3000,
+    "relativeYears": 500,
+    "weekdayOfWeek": 5000,
+    "dayOfMonthOffset": 3000,
+}
 
 
 def resolve_date_datetime_args(rng: SplitMix64):
@@ -1153,20 +1181,15 @@ def resolve_date_datetime_args(rng: SplitMix64):
     1600 and 9000, and a count no kind carries past them."""
     today = rng.between(days_of_date(1600, 1, 1), days_of_date(9000, 12, 31))
     kind = rng.pick(DATE_KINDS)
-    bound = {
-        "relativeDays": 100_000,
-        "relativeWeeks": 10_000,
-        "relativeMonths": 3000,
-        "relativeYears": 500,
-        "weekdayOfWeek": 5000,
-        "dayOfMonthOffset": 3000,
-    }.get(kind, 1000)
-    year = resolve_date_field(rng, lambda r: r.between(1, 9999))
-    month = resolve_date_field(rng, lambda r: r.between(1, 12) if r.below(10) < 9 else r.pick([0, 13]))
-    day = resolve_date_field(rng, lambda r: r.between(1, 31) if r.below(10) < 9 else r.pick([0, 32]))
-    weekday = resolve_date_field(rng, lambda r: r.between(0, 6) if r.below(10) < 9 else 7)
-    count = resolve_date_field(rng, lambda r: r.between(-bound, bound))
-    return [today, kind, year, month, day, weekday, count]
+    bound = DATETIME_COUNT_BOUNDS.get(kind, 1000)
+    draws = {
+        "year": lambda r: r.between(1, 9999),
+        "month": lambda r: r.between(1, 12) if r.below(10) < 9 else r.pick([0, 13]),
+        "day": lambda r: r.between(1, 31) if r.below(10) < 9 else r.pick([0, 32]),
+        "weekday": lambda r: r.between(0, 6) if r.below(10) < 9 else 7,
+        "count": lambda r: r.between(-bound, bound),
+    }
+    return [today, drawn_expression(rng, kind, draws)]
 
 
 def validate_resolve_date() -> None:

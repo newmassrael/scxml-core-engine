@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/week_weekday.scxml — a day of the week in a week counted
+  from today's: the record the `weekdayOfWeek` case of date_expression.scxml
+  holds (docs/adr/0092, section 10.1). `weekday` counts from 0 for Sunday to
+  6 for Saturday, as weekday_from_days.scxml does; `count` is the number of
+  ISO 8601 weeks from today's, 0 this week and a negative one an earlier
+  week.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="week_weekday"
+       sce:event-name="time.week_weekday">
+  <datamodel>
+    <data id="weekday" sce:type="uint8" sce:direction="in"/>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

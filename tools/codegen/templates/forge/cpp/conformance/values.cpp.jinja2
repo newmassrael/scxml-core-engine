@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The values a fragment builds from the oracle's JSON, shared by the fragments
+   that build one: an algorithm's arguments and answers, and a union fixture's
+   values. Imported as a module (`{% import "values.cpp.jinja2" as values %}`),
+   so each is spelled once. #}
+{# A value of the enum fixture `document`, read from the JSON `read`, which holds
+   the name a variant declares: the variant of that name, a scoped enumeration
+   of the enum's unit. #}
+{% macro enum_value(document, variants, read) %}[&] { const std::string name = {{ read }}.get<std::string>(); {% for v in variants %}if (name == "{{ v.name }}") { return SCE::Generated::{{ document | to_pascal_case }}::{{ document | to_pascal_case }}::{{ v.ident }}; } {% endfor %}std::abort(); }(){% endmacro %}
+{# A record's field read from the JSON `read`, as the payload struct holds it at
+   `place`. A field that holds a value of an enum is the enum fixture's own
+   scoped enumeration, which the oracle writes as the name a variant declares:
+   the value is the variant of that name, built the same way for an expected
+   value, compared as the enum and reported by the name it declares. A text is
+   the type the payload struct holds it in at `place`: a `std::string`, or the
+   `OwnedText<N>` of a bounded field (docs/adr/0086, section 7.4), made by the
+   harness's `text_of`. #}
+{% macro field_value(fld, read, place) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% elif fld.type == "string" %}text_of<decltype({{ place }})>({{ read }}.get<std::string>()){% else %}{{ read }}.get<{{ fld.type | cpp_type }}>(){% endif %}{% endmacro %}
+{# A value of the union `u` (docs/adr/0092), read from the JSON `read`, which
+   holds the wire's object: the tag under its key, beside the fields of its case
+   (section 2). The value is the union's struct holding the alternative of the
+   case the tag names, which holds the record of that case filled field by
+   field, or holds nothing where the case holds none: `U{U::Case{record}}`, the
+   only way a value is built. A tag that names no case ends the process. #}
+{% macro union_value(u, read) %}[&] { const std::string tag = {{ read }}["{{ u.tag }}"].get<std::string>(); {% for c in u.cases %}if (tag == "{{ c.variant }}") { {% if c.record %}SCE::Generated::{{ c.record.record | to_pascal_case }}::{{ c.record.record | to_pascal_case }}Payload record{}; {% for fld in c.record.fields %}record.{{ fld.ident }} = {{ field_value(fld, read ~ "[\"" ~ fld.name ~ "\"]", "record." ~ fld.ident) }}; {% endfor %}return SCE::Generated::{{ u.document | to_pascal_case }}::{{ u.type_name }}{SCE::Generated::{{ u.document | to_pascal_case }}::{{ u.type_name }}::{{ c.ident }}{record}};{% else %}return SCE::Generated::{{ u.document | to_pascal_case }}::{{ u.type_name }}{SCE::Generated::{{ u.document | to_pascal_case }}::{{ u.type_name }}::{{ c.ident }}{}};{% endif %} } {% endfor %}std::abort(); }(){% endmacro %}

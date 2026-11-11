@@ -24,7 +24,7 @@ use super::*;
 /// the tag's enum its case is for, whatever key the tag is written under
 /// (docs/adr/0092, section 7, the Kotlin row; the unit's interface names it so
 /// too).
-const KOTLIN_UNION_KIND: &str = "kind";
+pub(crate) const KOTLIN_UNION_KIND: &str = "kind";
 
 /// The read of the record of the case `variant` where a test proved it, on a
 /// machine's union: a function of the interface, as the unit's is

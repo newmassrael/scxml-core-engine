@@ -1,0 +1,53 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The values a fragment builds from the oracle's JSON, shared by the fragments
+   that build one: an algorithm's arguments and answers, and a union fixture's
+   values. Imported as a module (`{% import "values.go.jinja2" as values %}`),
+   so each is spelled once. #}
+{# A value of the enum fixture `document`, read from the `string` `read` holds, the
+   name a variant declares: the variant that name maps to. #}
+{% macro enum_value(document, variants, read) %}(map[string]{{ document }}.{{ document | to_pascal_case }}{ {% for v in variants %}"{{ v.name }}": {{ document }}.{{ v.ident }}, {% endfor %}})[{{ read }}]{% endmacro %}
+{# A field that holds a value of an enum is the enum fixture's own type, which
+   the oracle writes as the name a variant declares: the JSON unmarshals into a
+   `string`, and the value is the variant that name maps to, built the same way
+   for an expected value and compared as the enum. #}
+{% macro source_type(fld) %}{% if fld.enum_document is defined %}string{% else %}{{ fld.type | go_type }}{% endif %}{% endmacro %}
+{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}{% endif %}{% endmacro %}
+{# The statements that declare `target`, a value of the union `u` (docs/adr/0092),
+   read from the JSON `raw`, which holds the wire's object: the tag under its key,
+   beside the fields of its case (section 2). The tag is read first; the object is
+   then read again as the record of the case the tag names, into an anonymous
+   struct whose tags are the record's field ids, and the value is built by the
+   constructor of that case the unit declares, `<Union><Case>(r)` or
+   `<Union><Case>()`, the only way a value is built. A tag that names no case
+   fails the test. #}
+{% macro union_value(u, target, raw, label) %}
+		var {{ target }}_tag struct {
+			Tag string `json:"{{ u.tag }}"`
+		}
+		unmarshalOrFatal(t, {{ raw }}, &{{ target }}_tag, "{{ label }}")
+		var {{ target }} {{ u.document }}.{{ u.type_name }}
+		switch {{ target }}_tag.Tag {
+{% for c in u.cases %}
+		case "{{ c.variant }}":
+{% if c.record %}
+			var src struct {
+{% for fld in c.record.fields %}
+				{{ fld.ident }} {{ source_type(fld) }} `json:"{{ fld.name }}"`
+{% endfor %}
+			}
+			unmarshalOrFatal(t, {{ raw }}, &src, "{{ label }}")
+			{{ target }} = {{ u.document }}.{{ u.type_name }}{{ c.ident }}({{ c.record.record }}.{{ c.record.record | to_pascal_case }}Payload{
+{% for fld in c.record.fields %}
+				{{ fld.ident }}: {{ field_value(fld, "src." ~ fld.ident) }},
+{% endfor %}
+			})
+{% else %}
+			{{ target }} = {{ u.document }}.{{ u.type_name }}{{ c.ident }}()
+{% endif %}
+{% endfor %}
+		default:
+			t.Fatalf("{{ label }}: no case is the variant %q", {{ target }}_tag.Tag)
+		}
+{% endmacro %}

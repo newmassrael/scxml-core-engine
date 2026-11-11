@@ -11,15 +11,19 @@
   already has, days_from_civil, civil_from_days, weekday_from_days,
   add_months and days_in_month, and computes no date of its own.
 
-  The expression is taken as its fields, one argument each, so a statechart
-  hands over the fields of a record it lifted from a text; a field the kind
-  does not read is not looked at, whatever it holds.
+  The expression is taken whole, as the union a statechart lifted from a
+  text, and each kind is resolved under a test of its tag, where its case's
+  numbers are read (docs/adr/0092, section 10.2). Every number a kind reads
+  is present by the type of its case, so no precondition asks for one. Every
+  kind is tested and returned, so no kind is left after the last test; a
+  kind a revision of date_kind.scxml adds is left there, and this document
+  is refused at build (`algorithm/return-missing`) until it resolves it.
 
   Failures (SCE_FORGE.md §3.4.1):
-  - `precondition`: a field the kind reads is absent; a month outside 1 to
-    12; a day the month does not have (for `absolute` in that year, for
-    `monthDay` in any year, so 29 February is a day February has, for
-    `dayOfMonthOffset` in the month it lands in); a weekday past 6;
+  - `precondition`: a month outside 1 to 12; a day the month does not have
+    (for `absolute` in that year, for `monthDay` in any year, so 29 February
+    is a day February has, for `dayOfMonthOffset` in the month it lands in);
+    a weekday past 6;
   - `overflow`: the day leaves int64, or the year of a date the kind works
     out leaves int32. The kinds that read today's date (`monthDay`,
     `relativeMonths`, `relativeYears`, `dayOfMonthOffset`) read it first, so
@@ -53,6 +57,7 @@
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" name="resolve_date" version="1.0">
   <sce:import kind="enum" src="date_kind.scxml" as="DateKind"/>
+  <sce:import kind="union" src="date_expression.scxml" as="DateExpression"/>
   <sce:import kind="event-schema" src="civil_date.scxml" as="CivilDate"/>
   <sce:import kind="algorithm" src="days_from_civil.scxml" as="daysOf"/>
   <sce:import kind="algorithm" src="civil_from_days.scxml" as="civil"/>
@@ -61,36 +66,29 @@
   <sce:import kind="algorithm" src="days_in_month.scxml" as="monthLength"/>
   <sce:signature>
     <sce:param name="today" type="int64"/>
-    <sce:param name="kind" type="enum:DateKind"/>
-    <sce:param name="year" type="optional&lt;int32&gt;"/>
-    <sce:param name="month" type="optional&lt;uint8&gt;"/>
-    <sce:param name="day" type="optional&lt;uint8&gt;"/>
-    <sce:param name="weekday" type="optional&lt;uint8&gt;"/>
-    <sce:param name="count" type="optional&lt;int32&gt;"/>
+    <sce:param name="expression" type="union:DateExpression"/>
     <sce:return type="optional&lt;int64&gt;" may-fail="true"/>
   </sce:signature>
   <sce:body>
-    <sce:if cond="kind === DateKind.none">
+    <sce:if cond="expression.kind === DateKind.none">
       <sce:return expr="null"/>
     </sce:if>
     <!-- days_from_civil refuses a month outside 1 to 12 and a day its month
          does not have in that year. -->
-    <sce:if cond="kind === DateKind.absolute">
-      <sce:require cond="year !== null &amp;&amp; month !== null &amp;&amp; day !== null"/>
-      <sce:return expr="daysOf(year.value, month.value, day.value)"/>
+    <sce:if cond="expression.kind === DateKind.absolute">
+      <sce:return expr="daysOf(expression.year, expression.month, expression.day)"/>
     </sce:if>
-    <sce:if cond="kind === DateKind.monthDay">
-      <sce:require cond="month !== null &amp;&amp; day !== null"/>
+    <sce:if cond="expression.kind === DateKind.monthDay">
       <!-- 2000 is a leap year, so its month is as long as the month ever is:
            29 February is a day February has. days_in_month refuses a month
            outside 1 to 12. -->
-      <sce:require cond="day.value &gt;= 1 &amp;&amp; day.value &lt;= monthLength(2000, month.value)"/>
+      <sce:require cond="expression.day &gt;= 1 &amp;&amp; expression.day &lt;= monthLength(2000, expression.month)"/>
       <sce:var name="dayToday" type="record:CivilDate" init="civil(today)"/>
       <sce:var name="landing" type="int32" init="dayToday.year"/>
-      <sce:var name="landingLast" type="uint8" init="monthLength(landing, month.value)"/>
+      <sce:var name="landingLast" type="uint8" init="monthLength(landing, expression.month)"/>
       <!-- This year's, where the year has the day and it is not before today. -->
-      <sce:if cond="day.value &lt;= landingLast">
-        <sce:var name="thisYear" type="int64" init="daysOf(landing, month.value, day.value)"/>
+      <sce:if cond="expression.day &lt;= landingLast">
+        <sce:var name="thisYear" type="int64" init="daysOf(landing, expression.month, expression.day)"/>
         <sce:if cond="thisYear &gt;= today">
           <sce:return expr="thisYear"/>
         </sce:if>
@@ -99,52 +97,48 @@
            for a 29 February (2096 to 2104). Each step is checked at the int32
            a year is held in, so a year past the largest fails `overflow`. -->
       <sce:assign target="landing" expr="landing + 1"/>
-      <sce:assign target="landingLast" expr="monthLength(landing, month.value)"/>
-      <sce:while cond="day.value &gt; landingLast">
+      <sce:assign target="landingLast" expr="monthLength(landing, expression.month)"/>
+      <sce:while cond="expression.day &gt; landingLast">
         <sce:assign target="landing" expr="landing + 1"/>
-        <sce:assign target="landingLast" expr="monthLength(landing, month.value)"/>
+        <sce:assign target="landingLast" expr="monthLength(landing, expression.month)"/>
       </sce:while>
-      <sce:return expr="daysOf(landing, month.value, day.value)"/>
+      <sce:return expr="daysOf(landing, expression.month, expression.day)"/>
     </sce:if>
-    <sce:if cond="kind === DateKind.relativeDays">
-      <sce:require cond="count !== null"/>
-      <sce:var name="dayShift" type="int64" init="count.value"/>
+    <sce:if cond="expression.kind === DateKind.relativeDays">
+      <sce:var name="dayShift" type="int64" init="expression.count"/>
       <sce:return expr="today + dayShift"/>
     </sce:if>
-    <sce:if cond="kind === DateKind.relativeWeeks">
-      <sce:require cond="count !== null"/>
-      <sce:var name="weekShift" type="int64" init="count.value"/>
+    <sce:if cond="expression.kind === DateKind.relativeWeeks">
+      <sce:var name="weekShift" type="int64" init="expression.count"/>
       <sce:return expr="today + weekShift * 7"/>
     </sce:if>
     <!-- add_months holds the day to the length of the month it lands in. -->
-    <sce:if cond="kind === DateKind.relativeMonths">
-      <sce:require cond="count !== null"/>
+    <sce:if cond="expression.kind === DateKind.relativeMonths">
       <sce:var name="monthFrom" type="record:CivilDate" init="civil(today)"/>
-      <sce:var name="monthTo" type="record:CivilDate" init="addMonths(monthFrom.year, monthFrom.month, monthFrom.day, count.value)"/>
+      <sce:var name="monthTo" type="record:CivilDate" init="addMonths(monthFrom.year, monthFrom.month, monthFrom.day, expression.count)"/>
       <sce:return expr="daysOf(monthTo.year, monthTo.month, monthTo.day)"/>
     </sce:if>
     <!-- The year moved at the int32 it is held in, and the day held to the
          month it lands in, as add_months holds it: only 29 February moves, to
          the 28th. -->
-    <sce:if cond="kind === DateKind.relativeYears">
-      <sce:require cond="count !== null"/>
+    <sce:if cond="expression.kind === DateKind.relativeYears">
       <sce:var name="yearFrom" type="record:CivilDate" init="civil(today)"/>
-      <sce:var name="yearTo" type="int32" init="yearFrom.year + count.value"/>
+      <sce:var name="yearTo" type="int32" init="yearFrom.year + expression.count"/>
       <sce:var name="yearLast" type="uint8" init="monthLength(yearTo, yearFrom.month)"/>
       <sce:return expr="daysOf(yearTo, yearFrom.month, yearFrom.day &lt; yearLast ? yearFrom.day : yearLast)"/>
     </sce:if>
     <!-- The days from today's weekday forward to the one asked for, 0 to 6; a
          0 is today's own weekday, which is a week ahead. -->
-    <sce:if cond="kind === DateKind.comingWeekday">
-      <sce:require cond="weekday !== null &amp;&amp; weekday.value &lt;= 6"/>
-      <sce:var name="comingWanted" type="int64" init="weekday.value"/>
+    <sce:if cond="expression.kind === DateKind.comingWeekday">
+      <sce:require cond="expression.weekday &lt;= 6"/>
+      <sce:var name="comingWanted" type="int64" init="expression.weekday"/>
       <sce:var name="comingNow" type="int64" init="weekdayOf(today)"/>
       <sce:var name="comingGap" type="int64" init="(comingWanted - comingNow + 7) % 7"/>
       <sce:return expr="today + (comingGap === 0 ? 7 : comingGap)"/>
     </sce:if>
-    <sce:if cond="kind === DateKind.previousWeekday">
-      <sce:require cond="weekday !== null &amp;&amp; weekday.value &lt;= 6"/>
-      <sce:var name="previousWanted" type="int64" init="weekday.value"/>
+    <sce:if cond="expression.kind === DateKind.previousWeekday">
+      <sce:require cond="expression.weekday &lt;= 6"/>
+      <sce:var name="previousWanted" type="int64" init="expression.weekday"/>
       <sce:var name="previousNow" type="int64" init="weekdayOf(today)"/>
       <sce:var name="previousGap" type="int64" init="(previousNow - previousWanted + 7) % 7"/>
       <sce:return expr="today - (previousGap === 0 ? 7 : previousGap)"/>
@@ -154,21 +148,20 @@
          days_from_civil then refuses a day that month does not have, where
          add_months would have held it to the month's last day. A day past 31
          is no month's, so it is refused before today is read. -->
-    <sce:if cond="kind === DateKind.dayOfMonthOffset">
-      <sce:require cond="day !== null &amp;&amp; count !== null &amp;&amp; day.value &gt;= 1 &amp;&amp; day.value &lt;= 31"/>
+    <sce:if cond="expression.kind === DateKind.dayOfMonthOffset">
+      <sce:require cond="expression.day &gt;= 1 &amp;&amp; expression.day &lt;= 31"/>
       <sce:var name="offsetFrom" type="record:CivilDate" init="civil(today)"/>
-      <sce:var name="offsetTo" type="record:CivilDate" init="addMonths(offsetFrom.year, offsetFrom.month, 1, count.value)"/>
-      <sce:return expr="daysOf(offsetTo.year, offsetTo.month, day.value)"/>
+      <sce:var name="offsetTo" type="record:CivilDate" init="addMonths(offsetFrom.year, offsetFrom.month, 1, expression.count)"/>
+      <sce:return expr="daysOf(offsetTo.year, offsetTo.month, expression.day)"/>
     </sce:if>
-    <!-- The last kind. A closed set has no other, and a kind a later revision
-         adds fails here until this document resolves it. -->
-    <sce:require cond="kind === DateKind.weekdayOfWeek"/>
-    <sce:require cond="weekday !== null &amp;&amp; count !== null &amp;&amp; weekday.value &lt;= 6"/>
     <!-- ISO 8601 counts a week's days from Monday, so Sunday, 0 here, is its
          last: the day's place in its week is (weekday + 6) % 7. -->
-    <sce:var name="isoWanted" type="int64" init="weekday.value"/>
-    <sce:var name="isoNow" type="int64" init="weekdayOf(today)"/>
-    <sce:var name="weeks" type="int64" init="count.value"/>
-    <sce:return expr="today + (weeks * 7 + (isoWanted + 6) % 7 - (isoNow + 6) % 7)"/>
+    <sce:if cond="expression.kind === DateKind.weekdayOfWeek">
+      <sce:require cond="expression.weekday &lt;= 6"/>
+      <sce:var name="isoWanted" type="int64" init="expression.weekday"/>
+      <sce:var name="isoNow" type="int64" init="weekdayOf(today)"/>
+      <sce:var name="weeks" type="int64" init="expression.count"/>
+      <sce:return expr="today + (weeks * 7 + (isoWanted + 6) % 7 - (isoNow + 6) % 7)"/>
+    </sce:if>
   </sce:body>
 </scxml>

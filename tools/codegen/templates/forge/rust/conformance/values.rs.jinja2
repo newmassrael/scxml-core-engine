@@ -1,0 +1,24 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# The values a fragment builds from the oracle's JSON, shared by the fragments
+   that build one: an algorithm's arguments and answers, and a union fixture's
+   values. Imported as a module (`{% import "values.rs.jinja2" as values %}`),
+   so each is spelled once. #}
+{# A value of the enum fixture `document`, read from the oracle's JSON `raw`, which
+   holds the name a variant declares: the variant of that name. `label` names the
+   value in a panic. #}
+{% macro enum_value(document, variants, raw, label) %}match {{ raw }}.as_str().expect("{{ label }}: a value of an enum is the name a variant declares") { {% for v in variants %}"{{ v.name }}" => fixtures::{{ document }}::{{ document | to_pascal_case }}::{{ v.ident }}, {% endfor %}other => panic!("{{ label }}: no variant is declared as {other}") }{% endmacro %}
+{# A record's `string` field is the runtime's bounded text, `SceString<N>` with
+   the schema's `max-size`; the oracle's text is built into it with the fallible
+   copy a host uses, and read back as the `&str` it compares as. A field that
+   holds a value of an enum is the enum fixture's own type, which the oracle
+   writes as the name a variant declares: the value is the variant of that name,
+   and an expected value is built the same way and compared as the enum. #}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, raw, fixture ~ "." ~ fld.name) }}{% elif fld.type == "string" %}::sce_portable_bytes::SceString::<{{ fld.max_size }}>::from_text({{ raw | rust_unmarshal("string") }}).expect("{{ fixture }}.{{ fld.name }}: the case text fits the schema's bound"){% else %}{{ raw | rust_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{# A value of the union `u` (docs/adr/0092), read from the oracle's JSON `raw`,
+   which holds the wire's object: the tag under its key, beside the fields of
+   its case (section 2). The value is the case the tag names, holding the
+   record of that case built field by field, or the case alone where it holds
+   none. #}
+{% macro union_value(u, raw, label) %}match {{ raw }}["{{ u.tag }}"].as_str().expect("{{ label }}: a union's tag is the name a variant declares") { {% for c in u.cases %}"{{ c.variant }}" => fixtures::{{ u.document }}::{{ u.type_name }}::{{ c.ident }}{% if c.record %}(fixtures::{{ c.record.record }}::{{ c.record.record | to_pascal_case }}Payload { {% for fld in c.record.fields %}{{ fld.ident }}: {{ field_value(fld, raw ~ "[\"" ~ fld.name ~ "\"]", label) }}, {% endfor %}}){% endif %}, {% endfor %}other => panic!("{{ label }}: no case is the variant {other}") }{% endmacro %}

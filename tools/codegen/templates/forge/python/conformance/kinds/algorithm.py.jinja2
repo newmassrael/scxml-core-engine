@@ -22,15 +22,11 @@
    optional answer is compared with `expected` as any scalar is, an absent
    answer equal only to `None`. #}
 {% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
-{# A value of the enum fixture `document`, read from `read`, which holds the name a
-   variant declares: the member of the enum's `IntEnum` that name maps to. #}
-{% macro enum_value(document, variants, read) %}{ {% for v in variants %}"{{ v.name }}": {{ document }}.{{ document | to_pascal_case }}.{{ v.ident }}, {% endfor %}}[{{ read }}]{% endmacro %}
-{# A field that holds a value of an enum is the enum fixture's own `IntEnum`,
-   which the oracle writes as the name a variant declares: the value is the
-   member that name maps to, and what comes back is compared by the name it
-   declares. #}
-{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}{% endif %}{% endmacro %}
-{% macro field_read(fld, read) %}{% if fld.enum_document is defined %}{{ read }}.declared_name(){% else %}{{ read }}{% endif %}{% endmacro %}
+{# The values of a record's field, of an enum and of a union (docs/adr/0092:
+   the class of the case the wire's object names by its tag, built from that
+   object) are built and read by `values.py.jinja2`, which a union fixture's
+   fragment builds its values by too. #}
+{% import "values.py.jinja2" as values %}
         for case in spec["cases"]:
 {# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    dataclass, built by keyword from a JSON object keyed by the schema's
@@ -42,7 +38,7 @@
 {% if arg_ty.record is defined %}
             arg{{ ai }} = {{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload(
 {% for fld in arg_ty.fields %}
-                {{ fld.ident }}={{ field_value(fld, "case[\"args\"][" ~ ai ~ "][\"" ~ fld.name ~ "\"]") }},
+                {{ fld.ident }}={{ values.field_value(fld, "case[\"args\"][" ~ ai ~ "][\"" ~ fld.name ~ "\"]") }},
 {% endfor %}
             )
 {% elif arg_ty == "bytes" %}
@@ -52,7 +48,7 @@
             arg{{ ai }} = [
                 {{ r.record }}.{{ r.record | to_pascal_case }}Payload(
 {% for fld in r.fields %}
-                    {{ fld.ident }}={{ field_value(fld, "e[\"" ~ fld.name ~ "\"]") }},
+                    {{ fld.ident }}={{ values.field_value(fld, "e[\"" ~ fld.name ~ "\"]") }},
 {% endfor %}
                 )
                 for e in case["args"][{{ ai }}]
@@ -60,7 +56,9 @@
 {% elif arg_ty.list_of is defined %}
             arg{{ ai }} = list(case["args"][{{ ai }}])
 {% elif arg_ty.enum is defined %}
-            arg{{ ai }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "case[\"args\"][" ~ ai ~ "]") }}
+            arg{{ ai }} = {{ values.enum_value(arg_ty.enum, arg_ty.variants, "case[\"args\"][" ~ ai ~ "]") }}
+{% elif arg_ty.union is defined %}
+            arg{{ ai }} = {{ values.union_value(arg_ty.shape, "case[\"args\"][" ~ ai ~ "]") }}
 {% else %}
             arg{{ ai }} = case["args"][{{ ai }}]
 {% endif %}
@@ -77,14 +75,14 @@
             actual = {{ call }}
 {% if f.output.record is defined %}
 {% for fld in f.output.fields %}
-            self.assertEqual({{ field_read(fld, "actual." ~ fld.ident) }}, expected["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
+            self.assertEqual({{ values.field_read(fld, "actual." ~ fld.ident) }}, expected["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
 {# A list of records: compared by length, then field by field. #}
             self.assertEqual(len(actual), len(expected), "{{ f.name }} length")
             for a, e in zip(actual, expected):
 {% for fld in f.output.list_of.fields %}
-                self.assertEqual({{ field_read(fld, "a." ~ fld.ident) }}, e["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
+                self.assertEqual({{ values.field_read(fld, "a." ~ fld.ident) }}, e["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `list`: compared by length,

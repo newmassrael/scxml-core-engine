@@ -1,0 +1,20 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092): one oracle value of each case, in the order of the
+   tag's enum, built as the case its tag names by the builder an algorithm's union
+   argument is built by, and its tag read back by the unit's `kind`. The count
+   comes first: a case the union gained without a value in the oracle would
+   otherwise pass every expectation below. #}
+{% import "values.swift.jinja2" as values %}
+{% set u = f.shape %}
+    let cases = try oracleCases("{{ f.ref_section }}", "{{ f.name }}")
+    #expect(cases.count == {{ u.cases | length }}, "{{ f.name }}: one oracle value per case")
+    guard cases.count == {{ u.cases | length }} else {
+        return
+    }
+{% for c in u.cases %}
+    #expect(try oracleText(cases[{{ loop.index0 }}].member("{{ u.tag }}")) == "{{ c.variant }}", "{{ f.name }}: oracle value {{ loop.index0 }} is of the case {{ c.variant }}")
+    let value{{ loop.index0 }} = {{ values.union_value(u, "cases[" ~ loop.index0 ~ "]", f.name) }}
+    #expect(value{{ loop.index0 }}.{{ u.tag_member }} == {{ u.tag_enum | to_pascal_case }}.{{ c.kind }}, "{{ f.name }}: the case {{ c.variant }} answers its tag")
+{% endfor %}

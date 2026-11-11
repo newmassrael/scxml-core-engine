@@ -14,12 +14,11 @@
    (`"fails": "overflow"`) carries no `expected`; it is judged by the error's contract name
    before anything reads `expected`, and every other case needs a value. #}
 {% set call %}{{ f.name | to_pascal_case }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
-{# A record's field, read from the oracle as the struct holds it. A field that holds a value
-   of an enum is the enum fixture's own type, which the oracle writes as the name a variant
-   declares: the value is the variant of that name, built the same way for an expected value
-   and compared as the enum. #}
-{% macro enum_value(document, variants, raw, label) %}try { () throws -> {{ document | to_pascal_case }} in switch try oracleText({{ raw }}) { {% for v in variants %}case "{{ v.name }}": return {{ document | to_pascal_case }}.{{ v.ident }}; {% endfor %}default: throw OracleError(description: "{{ label }}: no variant is declared as the name the case writes") } }(){% endmacro %}
-{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, raw, fixture ~ "." ~ fld.name) }}{% else %}{{ raw | swift_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{# The values of a record's field, of an enum and of a union (docs/adr/0092: the
+   unit's enum, built from the wire's object the oracle writes as the case its tag
+   names) are built by `values.swift.jinja2`, which a union fixture's fragment
+   builds its values by too. #}
+{% import "values.swift.jinja2" as values %}
 {# A value that may be absent (docs/adr/0055) is the `T?` the generated algorithm's
    slot is, `nil` where the oracle writes `null`; an optional answer is compared
    whole, so an absent answer equals only an absent one. #}
@@ -31,7 +30,7 @@
 {% if arg_ty.record is defined %}
         let arg{{ i }} = {{ arg_ty.record | to_pascal_case }}Payload(
 {% for fld in arg_ty.fields %}
-            {{ fld.ident }}: {{ field_value(fld, "args[" ~ i ~ "].member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
+            {{ fld.ident }}: {{ values.field_value(fld, "args[" ~ i ~ "].member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
 {% endfor %}
         )
 {% elif arg_ty.list_of is defined and arg_ty.list_of.record is defined %}
@@ -40,14 +39,16 @@
         let arg{{ i }} = try oracleArray(args[{{ i }}]).map { element in
             {{ r.record | to_pascal_case }}Payload(
 {% for fld in r.fields %}
-                {{ fld.ident }}: {{ field_value(fld, "element.member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
+                {{ fld.ident }}: {{ values.field_value(fld, "element.member(\"" ~ fld.name ~ "\")", f.name) }}{{ "," if not loop.last }}
 {% endfor %}
             )
         }
 {% elif arg_ty.list_of is defined %}
         let arg{{ i }} = try oracleArray(args[{{ i }}]).map { {{ "$0" | swift_unmarshal(arg_ty.list_of) }} }
 {% elif arg_ty.enum is defined %}
-        let arg{{ i }} = {{ enum_value(arg_ty.enum, arg_ty.variants, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
+        let arg{{ i }} = {{ values.enum_value(arg_ty.enum, arg_ty.variants, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
+{% elif arg_ty.union is defined %}
+        let arg{{ i }} = {{ values.union_value(arg_ty.shape, "args[" ~ i ~ "]", f.name ~ " arg" ~ i) }}
 {% elif arg_ty.optional is defined %}
         let arg{{ i }} = {{ optional_value("args[" ~ i ~ "]", arg_ty.optional) }}
 {% else %}
@@ -78,7 +79,7 @@
         let expected = testCase.member("expected")
 {# `try` cannot stand to the right of `==`, so each expected field is read first. #}
 {% for fld in f.output.fields %}
-        let expected{{ fld.name | to_pascal_case }} = {{ field_value(fld, "expected?.member(\"" ~ fld.name ~ "\")", f.name) }}
+        let expected{{ fld.name | to_pascal_case }} = {{ values.field_value(fld, "expected?.member(\"" ~ fld.name ~ "\")", f.name) }}
         #expect(returned.{{ fld.ident }} == expected{{ fld.name | to_pascal_case }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
 {% elif f.output.list_of is defined and f.output.list_of.record is defined %}
@@ -89,7 +90,7 @@
         for k in expected.indices where k < returned.count {
             let e = expected[k]
 {% for fld in f.output.list_of.fields %}
-            let expected{{ fld.name | to_pascal_case }} = {{ field_value(fld, "e.member(\"" ~ fld.name ~ "\")", f.name) }}
+            let expected{{ fld.name | to_pascal_case }} = {{ values.field_value(fld, "e.member(\"" ~ fld.name ~ "\")", f.name) }}
             #expect(returned[k].{{ fld.ident }} == expected{{ fld.name | to_pascal_case }}, "{{ f.name }}.{{ fld.name }}")
 {% endfor %}
         }

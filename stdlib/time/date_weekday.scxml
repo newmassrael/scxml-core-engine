@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/date_weekday.scxml — a day of the week: the record the
+  `comingWeekday` and `previousWeekday` cases of date_expression.scxml hold
+  (docs/adr/0092, section 10.1). `weekday` counts from 0 for Sunday to 6
+  for Saturday, as weekday_from_days.scxml does.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="date_weekday"
+       sce:event-name="time.date_weekday">
+  <datamodel>
+    <data id="weekday" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

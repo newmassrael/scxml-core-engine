@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/month_offset_day.scxml — a day of a month counted from
+  today's month: the record the `dayOfMonthOffset` case of
+  date_expression.scxml holds (docs/adr/0092, section 10.1). `count` is the
+  number of months from today's, 0 this month and a negative one an earlier
+  month; `day` is the day of that month.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="month_offset_day"
+       sce:event-name="time.month_offset_day">
+  <datamodel>
+    <data id="day" sce:type="uint8" sce:direction="in"/>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

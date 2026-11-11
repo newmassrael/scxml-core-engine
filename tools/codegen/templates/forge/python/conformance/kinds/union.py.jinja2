@@ -1,0 +1,26 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092) — see the Rust fragment: one oracle value of each
+   case, built as the case its tag names by the builder an algorithm's union
+   argument is built by, and its tag read back by the attribute every case's
+   class holds. `spec` is bound by the harness. #}
+{% import "values.py.jinja2" as values %}
+{% set u = f.shape %}
+        cases = spec["cases"]
+
+        # Count first: a case the union gained without a value in the oracle
+        # would otherwise satisfy every assertion below.
+        self.assertEqual(len(cases), {{ u.cases | length }}, "{{ f.name }}: one oracle value per case")
+{% for c in u.cases %}
+        self.assertEqual(
+            cases[{{ loop.index0 }}]["{{ u.tag }}"],
+            "{{ c.variant }}",
+            "{{ f.name }}: oracle value {{ loop.index0 }} is of the case {{ c.variant }}",
+        )
+        self.assertEqual(
+            {{ values.union_value(u, "cases[" ~ loop.index0 ~ "]") }}.{{ u.tag_member }},
+            {{ u.tag_enum }}.{{ u.tag_enum | to_pascal_case }}.{{ c.kind }},
+            "{{ f.name }}: the case {{ c.variant }} answers its tag",
+        )
+{% endfor %}

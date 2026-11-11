@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# Union kind (docs/adr/0092) — a sum type and no behaviour. The oracle holds one
+   value of each case, in the order of the tag's enum, as the wire writes it;
+   each is built as the case its tag names, by the builder an algorithm's union
+   argument is built by, and its tag is read back by the unit's `kind()`, which
+   answers it from the alternative the value holds. The count comes first: a
+   case the union gained without a value in the oracle would otherwise pass
+   every assertion below. #}
+{% import "values.cpp.jinja2" as values %}
+{% set u = f.shape %}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    const auto &cases = spec["cases"];
+    CHECK(cases.size() == {{ u.cases | length }},
+          "{{ f.name }}: oracle has %zu values, the union has {{ u.cases | length }} cases",
+          static_cast<std::size_t>(cases.size()));
+    if (cases.size() == {{ u.cases | length }}) {
+{% for c in u.cases %}
+        {
+            const auto &value_json = cases[{{ loop.index0 }}];
+            CHECK(value_json["{{ u.tag }}"].get<std::string>() == "{{ c.variant }}",
+                  "{{ f.name }}: oracle value {{ loop.index0 }} is of the case '%s', not {{ c.variant }}",
+                  value_json["{{ u.tag }}"].get<std::string>().c_str());
+            const auto value = {{ values.union_value(u, "value_json") }};
+            CHECK(value.{{ u.tag_member }}() == SCE::Generated::{{ u.tag_enum | to_pascal_case }}::{{ u.tag_enum | to_pascal_case }}::{{ c.kind }},
+                  "{{ f.name }}: the case {{ c.variant }} answers another tag");
+        }
+{% endfor %}
+    }
