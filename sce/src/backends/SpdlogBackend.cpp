@@ -24,15 +24,16 @@ namespace SCE {
 
 SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
     if (logDir.empty() && !logToFile) {
-        // Default: console only
-        logger_ = spdlog::stdout_color_mt("SCE");
+        // Default: console only. The console is the standard error: a library's
+        // diagnostics belong there, and the host's standard output is its own.
+        logger_ = spdlog::stderr_color_mt("SCE");
         logger_->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
     } else {
         // Console + file logging
         std::vector<spdlog::sink_ptr> sinks;
 
-        // Console sink
-        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        // Console sink, on the standard error as above
+        auto console_sink = std::make_shared<spdlog::sinks::stderr_color_sink_mt>();
         console_sink->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
         sinks.push_back(console_sink);
 

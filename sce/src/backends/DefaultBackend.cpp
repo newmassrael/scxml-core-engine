@@ -67,7 +67,7 @@ void DefaultBackend::log(LogLevel level, const std::string &message, [[maybe_unu
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Format: [HH:MM:SS.mmm] [LEVEL] message
-    std::cout << "[" << getTimestamp() << "] "
+    std::clog << "[" << getTimestamp() << "] "
               << "[" << levelToColor(level) << levelToString(level) << Colors::RESET << "] " << message << "\n";
 }
 
@@ -82,7 +82,7 @@ bool DefaultBackend::shouldLog(LogLevel level) const {
 
 void DefaultBackend::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::cout.flush();
+    std::clog.flush();
 }
 
 const char *DefaultBackend::levelToString(LogLevel level) {

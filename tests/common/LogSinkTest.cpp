@@ -3,15 +3,22 @@
 //
 // The one definition of SCE_LOG_* (docs/adr/0060): a call asks the program's installed
 // sink whether its level is wanted, formats only then, and SCE::Logger is a sink a
-// program installs by configuring it. The formatter's grammar is held here too.
+// program installs by configuring it. The formatter's grammar is held here too, and
+// so is the stream the default backends write to.
 
 #include "common/LogSink.h"
+#include "backends/DefaultBackend.h"
 #include "common/ILoggerBackend.h"
 #include "common/LogFormat.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
 
 #include <gtest/gtest.h>
+
+#ifdef SCE_USE_SPDLOG
+#include "backends/SpdlogBackend.h"
+#include <spdlog/spdlog.h>
+#endif
 
 #include <cstdint>
 #include <memory>
@@ -218,3 +225,38 @@ TEST(LogFormat, AFloatingPointValueIsItsShortestTextThatReadsBack) {
     EXPECT_EQ(SCE::detail::formatLog("{}", 3.141592653589793), "3.141592653589793");
     EXPECT_EQ(SCE::detail::formatLog("{}", 2.5f), "2.5");
 }
+
+// A library's diagnostics go to the standard error; the host's standard output is
+// its own (a runner program's is its verdict lines, docs/SCE_TTCN3_LANE.md §4).
+// Each default backend is held to that: a message it writes is on the standard
+// error and nothing is on the standard output.
+namespace {
+
+void expectOnTheStandardErrorAlone(SCE::ILoggerBackend &backend, const std::string &message) {
+    testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
+    backend.log(SCE::LogLevel::Error, message, SCE::source_location::current());
+    backend.flush();
+    const std::string err = testing::internal::GetCapturedStderr();
+    const std::string out = testing::internal::GetCapturedStdout();
+    EXPECT_EQ(out, "");
+    EXPECT_NE(err.find(message), std::string::npos) << err;
+}
+
+}  // namespace
+
+TEST(DefaultBackend, WritesToTheStandardErrorAndNothingToTheStandardOutput) {
+    SCE::DefaultBackend backend;
+    expectOnTheStandardErrorAlone(backend, "the default backend's diagnostic");
+}
+
+#ifdef SCE_USE_SPDLOG
+TEST(SpdlogBackend, WritesToTheStandardErrorAndNothingToTheStandardOutput) {
+    // The backend registers its logger by the one name "SCE"; a logger an earlier
+    // test registered under it is dropped from the registry first.
+    spdlog::drop("SCE");
+    SCE::SpdlogBackend backend;
+    expectOnTheStandardErrorAlone(backend, "the spdlog backend's diagnostic");
+    spdlog::drop("SCE");
+}
+#endif

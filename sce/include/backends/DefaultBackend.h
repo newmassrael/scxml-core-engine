@@ -23,10 +23,12 @@
 namespace SCE {
 
 /**
- * @brief Simple stdout logger with no external dependencies
+ * @brief Simple standard error logger with no external dependencies
  *
  * Used when SCE is built without spdlog (SCE_USE_SPDLOG=OFF).
- * Provides basic logging to stdout with:
+ * Writes to the standard log stream (std::clog, the standard error), since a
+ * library's diagnostics belong there and the host's standard output is its own.
+ * Provides basic logging with:
  * - Thread-safe output (std::mutex)
  * - Timestamp (HH:MM:SS.mmm)
  * - Log level coloring (ANSI codes)
