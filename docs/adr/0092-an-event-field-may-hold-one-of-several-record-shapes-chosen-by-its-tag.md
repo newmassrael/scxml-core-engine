@@ -30,7 +30,9 @@
     lowering and crossing (ad4d2f5984, 5ad49544dd), the C++ lowering and crossing (the change that adds "Decided
     while landing ADR 0092 on C++"), the Swift lowering and crossing (the change that adds "Decided while landing
     step 5 and the crossing on Swift") and the Python lowering and crossing (the change that adds "Decided while
-    landing ADR 0092 on Python"). C11 and the Interpreter refuse such an algorithm and such a call by name;
+    landing ADR 0092 on Python"); and the Interpreter's lowering of such an algorithm, without the crossing (the
+    change that adds "Decided while landing step 5 on the Interpreter"). C11 refuses such an algorithm and such a
+    call by name, and the Interpreter such a call;
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
@@ -1079,6 +1081,45 @@ union's unit), the Interpreter's lowering of an algorithm over a union and of th
 call, and on every lane, Python's among them, the numerical conformance harness's argument of a union; then the
 standard library's change itself. Python's test profile matching a union (`TEST_PROFILE_UNION_BACKENDS`) is not on
 step 6's path.
+
+## Decided while landing step 5 on the Interpreter (2026-11-11)
+
+The Interpreter's lowering now lowers an algorithm over a union (`sce-build/src/forge/static_js_algorithm.rs`),
+which `sce-codegen lower-algorithm` reaches, as does a statechart's call of an algorithm whose union is a local
+of its own. The Interpreter holds no union in a statechart (step 4 has not landed on it:
+`event_schema_check::ComposedLowering::ECMASCRIPT` holds none), so a statechart that hands an algorithm a union or
+takes one back is still refused by name, where its union variable stands. Each question below is decided by a
+rule this record already states; none changes a document, a wire or a diagnostic code.
+
+1. **A union is the plain object of its wire form** (section 7, the Interpreter row, and section 2.1): the tag's
+   key holding the declared name of the case's variant, which is what the Interpreter holds a value of an enum
+   as, beside the fields of the case's record. The tag is read as `u.kind` and a field as `u.f`, under one case
+   left or several: the object holds a field under its own name in every case that declares it, so no case
+   analysis is written, and the narrowing's verdict is the one admission a read needs. The lowering is no member
+   of `ALGORITHM_UNION_BACKENDS`, which lists generated backends; its answer is the types it holds
+   (`static_js_algorithm::holds`), as for every other slot.
+2. **The judge runs before the lowering.** A backend's route judges a body before the backend renders it
+   ("Decided while landing step 5" item 1). The Interpreter's lowering reads an algorithm through a route of its
+   own, which judged no body, and the lowering of a union relies on the judge for the reads it admits, the local
+   it builds and the end it closes. So a body that holds a union is judged there by the same judge
+   (`forge::narrowing::check_algorithm`, through `static_js_algorithm::judge`), its refusal located in the
+   algorithm's own document, whether the algorithm is lowered on its own or for a statechart that calls it. A
+   body that holds none reaches the lowering as before; judging every body on that route is a change of its own.
+3. **A union local is the object built whole** as the case its tag names (section 6.1 item 5,
+   `AlgorithmUnions::built`): the tag's key first, then the fields in the record's order, each value lowered as
+   a record local's field is. It is never written, and a union parameter or local is returned by name.
+4. **The end no path reaches throws** ("Decided while landing step 5" item 6). A function that runs past its
+   last statement answers `undefined`, which a caller would take as its value, so the body is closed by
+   `throw new Error(...)` with the sentence every backend's closing statement carries
+   (`algorithm_union::unreached_end_reason`), where every backend writes one (`algorithm_union::ends_unreached`).
+   It names no `sceFailure`: it is no failure an algorithm reports.
+
+Step 6 needs no more of the Interpreter's algorithm: its numerical conformance check
+(`tests/integration/AnAlgorithmRunsLoweredUnderTheInterpreterTest.cpp`) hands an argument as the script source
+of its JSON value, which for a union is its wire object. A statechart that hands `resolve_date` a lifted
+`date_expression` needs step 4 on the Interpreter first; its crossing then copies nothing, since the machine's
+union and the algorithm's are one object, and the refusal of the crossing in `forge::static_lowering`, which
+admits only `ALGORITHM_UNION_BACKENDS`, is lifted for the Interpreter in that change.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
