@@ -299,6 +299,73 @@ TEST(EventPayloadRefusal, ALiftReadsARecordOrAnswersItsRefusal) {
     }
 }
 
+// A lift reads a text into a value read whole, a union's tag first and then its case's record,
+// from the root of the text, or answers its refusal as data (docs/adr/0092, section 6.1 item 5).
+TEST(EventPayloadRefusal, ALiftReadsAUnionWholeOrAnswersItsRefusal) {
+    enum class Kind { Dot, Circle };
+
+    struct Shape {
+        Kind kind = Kind::Dot;
+        uint16_t radius = 0;
+    };
+
+    const auto read = [](const EventPayloadValue &value, Shape &out) -> Refusal {
+        return value.readUnion<Kind>(
+            "kind",
+            [](const EventPayloadValue &tag, Kind &kind) -> Refusal {
+                std::string name;
+                Refusal named = tag.readName(name);
+                if (!named.empty()) {
+                    return named;
+                }
+                if (name == "dot") {
+                    kind = Kind::Dot;
+                } else if (name == "circle") {
+                    kind = Kind::Circle;
+                } else {
+                    return tag.unknownVariant(name, "Kind");
+                }
+                return Refusal{};
+            },
+            [&](const Kind &kind, const EventPayloadValue &object) -> Refusal {
+                out = Shape{kind, 0};
+                if (kind == Kind::Dot) {
+                    return Refusal{};
+                }
+                return object.readRecord(nullptr, [&](const EventPayloadFields &record) {
+                    return record.readInteger("radius", out.radius);
+                });
+            });
+    };
+    Shape lifted;
+    ASSERT_TRUE(
+        EventPayloadFields::liftValue(R"({"radius":4,"kind":"circle"})", "Shape", 1, 256, lifted, read).empty());
+    EXPECT_EQ(lifted.kind, Kind::Circle);
+    EXPECT_EQ(lifted.radius, 4);
+    ASSERT_TRUE(EventPayloadFields::liftValue(R"({"kind":"dot"})", "Shape", 1, 256, lifted, read).empty());
+    EXPECT_EQ(lifted.kind, Kind::Dot);
+
+    const struct {
+        const char *text;
+        RefusalCode code;
+        const char *pointer;
+    } refused[] = {
+        {" ", RefusalCode::NotJson, ""},
+        {"[1]", RefusalCode::NotObject, ""},
+        {R"({"radius":4})", RefusalCode::Missing, "/kind"},
+        {R"({"kind":"oval"})", RefusalCode::UnknownVariant, "/kind"},
+        {R"({"kind":"circle","radius":70000})", RefusalCode::OutOfRange, "/radius"},
+    };
+
+    for (const auto &c : refused) {
+        Shape untouched{Kind::Circle, 9};
+        const Refusal refusal = EventPayloadFields::liftValue(c.text, "Shape", 1, 256, untouched, read);
+        EXPECT_EQ(refusal.code(), c.code) << c.text << ": " << refusal.reason();
+        EXPECT_EQ(refusal.pointer(), c.pointer) << c.text << ": " << refusal.reason();
+        EXPECT_EQ(untouched.radius, 9) << c.text << ": a refused lift writes nothing";
+    }
+}
+
 // What a reader of an enum field answers for a name its enum does not declare: the
 // sentence the generated reader writes, and the code and pointer beside it.
 TEST(EventPayloadRefusal, ANameNoVariantDeclaresIsRefusedAsUnknownVariant) {

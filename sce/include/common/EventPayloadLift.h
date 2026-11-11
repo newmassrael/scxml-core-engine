@@ -1425,6 +1425,22 @@ private:
         return pointer;
     }
 
+    /**
+     * A lift's outcome logged with the schema's name and `what` the text is read as (a record, a
+     * value read whole), and, for a refusal, its code, pointer and bound; the text itself is not,
+     * since nothing bounds what a sender writes in it.
+     */
+    static void logLift(const char *what, const char *schema, const EventPayloadRefusal &refusal) {
+        if (refusal.empty()) {
+            SCE_LOG_INFO("<sce:lift>: the text is a {} of {}", what, schema);
+        } else {
+            SCE_LOG_INFO("<sce:lift>: the text is no {} of {}: {} at '{}', bound {} ({})", what, schema,
+                         EventPayloadRefusal::codeName(refusal.code()), refusal.pointer(),
+                         refusal.bound().has_value() ? std::to_string(*refusal.bound()) : std::string("none"),
+                         refusal.reason());
+        }
+    }
+
 public:
     /**
      * @brief What a `<sce:lift>` reads (docs/adr/0087, section 2.1): `text` as a record of the
@@ -1445,14 +1461,38 @@ public:
         if (refusal.empty()) {
             refusal = read(static_cast<const EventPayloadFields &>(fields), lifted);
         }
+        logLift("record", schema, refusal);
         if (refusal.empty()) {
-            SCE_LOG_INFO("<sce:lift>: the text is a record of {}", schema);
             out = std::move(lifted);
-        } else {
-            SCE_LOG_INFO("<sce:lift>: the text is no record of {}: {} at '{}', bound {} ({})", schema,
-                         EventPayloadRefusal::codeName(refusal.code()), refusal.pointer(),
-                         refusal.bound().has_value() ? std::to_string(*refusal.bound()) : std::string("none"),
-                         refusal.reason());
+        }
+        return refusal;
+    }
+
+    /**
+     * @brief What a `<sce:lift>` reads into a value read whole (docs/adr/0092, section 6.1
+     * item 5): `text` as one value of the type named `schema`, the whole object handed to
+     * `read(value, out)` as a delivery's field of that type is read (a union's tag first, then
+     * its case's record), or the refusal of the first place that is not one
+     *
+     * `lift` says what is refused before the value is read: a text that is no object is
+     * `NotObject`, as a record's is. A type read whole has no defaults of its own, a union none
+     * and a record's inside its reader. The value stands at the root, so a refusal inside it
+     * points below it as a field of a record lifted whole does. Logged as `liftRecord` logs;
+     * `out` is filled only when no refusal is answered.
+     */
+    template <typename T, typename Read>
+    static EventPayloadRefusal liftValue(const std::string &text, const char *schema, uint32_t depth,
+                                         uint32_t pathBound, T &out, Read read) {
+        EventPayloadFields fields;
+        EventPayloadRefusal refusal = lift(text, depth, pathBound, nullptr, fields);
+        T lifted{};
+        if (refusal.empty()) {
+            const EventPayloadValue whole(fields.object_, std::string(), std::string());
+            refusal = read(whole, lifted);
+        }
+        logLift("value", schema, refusal);
+        if (refusal.empty()) {
+            out = std::move(lifted);
         }
         return refusal;
     }
