@@ -1026,7 +1026,21 @@ def lift_record(text: str, depth: int, path_bound: int,
     statechart keeps as a record. ``lift_text`` says what is refused before the
     fields are read. Answers ``(value, None)`` or ``(None, refusal)``. This
     runtime keeps no log, so neither outcome is written to one."""
+    return lift_value(text, depth, path_bound, record)
+
+
+def lift_value(text: str, depth: int, path_bound: int,
+               declared: Any) -> Tuple[Any, Optional[TypedPayloadError]]:
+    """What a `<sce:lift>` reads into a value read whole (docs/adr/0092,
+    section 6.1 item 5): ``text`` as one value of ``declared``, the whole
+    object handed to the reader a delivery's field of that type is read by (a
+    union's tag first, then the record of its case), or the refusal of the
+    first place that is not one. ``lift_text`` says what is refused before the
+    value is read: a text that is no object is `notObject`, as a record's is.
+    A type read whole has no defaults of its own, a union none and a record's
+    inside its own ``RecordOf``. Answers ``(value, None)`` or ``(None,
+    refusal)``, as ``lift_record`` does."""
     try:
-        return read_value("", record, lift_text(text, depth, path_bound), ""), None
+        return read_value("", declared, lift_text(text, depth, path_bound), ""), None
     except TypedPayloadError as refusal:
         return None, refusal

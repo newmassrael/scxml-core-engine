@@ -278,10 +278,24 @@ def saved_read_list(
     """A list read back element by element, only if it holds no more than the
     ``capacity`` the machine bounds it by: a machine never holds more, and a
     restored one must not be the first to."""
+    return saved_read_list_within(value, what, 0, capacity, element)
+
+
+def saved_read_list_within(
+    value: Any, what: str, least: int, capacity: int, element: Callable[[Any, str], T]
+) -> List[T]:
+    """A list of a type that states a lower count (docs/adr/0086, section 15)
+    read back element by element, only if it holds at least ``least`` and no
+    more than ``capacity`` elements: a machine never holds fewer or more, and a
+    restored one must not be the first to. Both counts are held before any
+    element is read, as :func:`saved_read_list` holds its bound; ``least`` is 0
+    for a list that states none."""
     if not isinstance(value, list):
         raise _not_a(value, what, "an array")
     if len(value) > capacity:
         raise StateRefusal(f"'{what}' holds {len(value)} elements, past the {capacity} it is bounded by")
+    if len(value) < least:
+        raise StateRefusal(f"'{what}' holds {len(value)} elements, fewer than the {least} its type declares")
     return [element(item, f"{what}[{at}]") for at, item in enumerate(value)]
 
 
@@ -318,6 +332,41 @@ def saved_bounded_bytes(capacity: int) -> Callable[[Any, str], bytes]:
     """The reader of a byte string held to ``capacity`` bytes, for a place that
     reads through a function value (:func:`saved_read_optional`)."""
     return lambda value, what: saved_read_bytes(value, what, capacity)
+
+
+def saved_write_union(tag: str, variant: str, record: Optional[Dict[str, Any]]) -> Any:
+    """A union's saved form (docs/adr/0092, section 6.1 item 7): one object, the
+    tag under the key ``tag`` as the declared name ``variant``, before the
+    members of ``record``, the record of the case as it writes itself, or
+    nothing for an empty case (``None``). What a generated union writes each
+    case with."""
+    saved: Dict[str, Any] = {tag: variant}
+    if record is not None:
+        saved.update(record)
+    return saved
+
+
+def saved_read_union_tag(value: Any, what: str, tag: str) -> str:
+    """The declared name of the case a saved union value is in: the text under
+    its tag's key ``tag``, read before any field of the case, since the tag says
+    which fields follow (docs/adr/0092, section 4). A value that is no object,
+    that has no tag, or whose tag is not a text is refused naming ``what``."""
+    return saved_read_string(saved_field(value, what, tag), f"{what}.{tag}")
+
+
+def saved_read_union(
+    value: Any, what: str, tag: str, alias: str, cases: Dict[str, Callable[[], T]]
+) -> T:
+    """A union value read back by its tag first (:func:`saved_read_union_tag`),
+    then by ``cases[name]``, which reads the rest of the object as the record of
+    the case the tag names, or builds an empty case: refused unless the tag
+    names one of ``cases``, by the declared name of each variant of the tag's
+    enum. ``alias`` is the union, as the document names it, which a refusal
+    names. What a generated union reads itself back with."""
+    name = saved_read_union_tag(value, what, tag)
+    if name not in cases:
+        raise StateRefusal(f"'{what}' ({name}) is not a case of {alias}")
+    return cases[name]()
 
 
 def saved_field(value: Any, record: str, name: str) -> Any:

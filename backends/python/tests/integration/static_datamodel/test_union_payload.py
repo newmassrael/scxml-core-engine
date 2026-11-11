@@ -22,6 +22,7 @@ from sce_runtime.event_payload import (
     UnionOf,
     Whole,
     lift,
+    lift_value,
     union_json,
 )
 
@@ -109,3 +110,22 @@ def test_a_union_is_written_with_its_tag_among_the_fields_of_its_case() -> None:
     assert union_json("kind", "relativeWeeks", {"count": 2}) == '{"count":2,"kind":"relativeWeeks"}'
     assert (union_json("kind", "absolute", {"year": 2027, "month": 3, "day": 3})
             == '{"day":3,"kind":"absolute","month":3,"year":2027}')
+
+
+def test_a_lift_reads_a_text_into_a_union_whole_or_answers_its_refusal() -> None:
+    """A `<sce:lift>` into a union reads the text's object at its root as a
+    delivery's field of the union is read, tag first (docs/adr/0092, section
+    6.1 item 5), and points a refusal inside it below the root."""
+    assert lift_value('{"radius":3,"kind":"disc"}', 1, 256, _SHAPE) == (_Disc(3), None)
+    assert lift_value('{"kind":"dot"}', 1, 256, _SHAPE) == (_Dot(), None)
+    for text, code, pointer in [
+        (" ", RefusalCode.NOT_JSON, ""),
+        ("[1]", RefusalCode.NOT_OBJECT, ""),
+        ('{"radius":3}', RefusalCode.MISSING, "/kind"),
+        ('{"kind":"oval"}', RefusalCode.UNKNOWN_VARIANT, "/kind"),
+        ('{"kind":"circle"}', RefusalCode.MISSING, "/radius"),
+        ('{"kind":"circle","radius":{"r":1}}', RefusalCode.TOO_DEEP, "/radius"),
+    ]:
+        value, refusal = lift_value(text, 1, 256, _SHAPE)
+        assert value is None and refusal is not None, text
+        assert (refusal.code, refusal.pointer) == (code, pointer), text
