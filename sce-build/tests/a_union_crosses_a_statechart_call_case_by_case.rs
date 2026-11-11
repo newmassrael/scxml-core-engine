@@ -7,7 +7,7 @@
 //! its `union:Shape` variable to `algorithm_shape_grown.scxml` and
 //! `algorithm_shape_extent.scxml` and takes the grown shape back:
 //!
-//! * Kotlin, Rust, Go and C++, the lanes that lower an algorithm over a union
+//! * Kotlin, Rust, Go, C++, Swift and Python, the lanes that lower an algorithm over a union
 //!   (`ALGORITHM_UNION_BACKENDS`), map the machine's own sum into the type the
 //!   union's unit declares in the call's adapter, case by case, each case's
 //!   record copied as a record argument is, and map what the algorithm returns
@@ -357,18 +357,58 @@ fn a_union_that_may_be_absent_is_refused_as_an_argument_by_name() {
     );
 }
 
+/// Pinned by `PythonTarget::state_adapter`, `AdapterSpec::union_crossing` and
+/// `python_union_crossing` (`sce-build/src/forge/static_lowering.rs`): a `dict`
+/// of one builder per case, indexed by the declared name of the machine's tag,
+/// builds the unit's case of each by its class, the record from the leaving
+/// case's `value`, and one indexed by the declared name of the unit's tag
+/// builds the machine's back.
+#[test]
+fn python_maps_the_machines_union_into_the_units_and_back() {
+    let code = machine(Language::Python, &|name| {
+        name == "statechart_shape_crossing_sm.py"
+    });
+    let unit = "sce_union_shape_minimal.UnionShapeMinimal";
+    holds(
+        &code,
+        &[
+            "from . import union_shape_minimal as sce_union_shape_minimal\n",
+            "from . import shape_radius_minimal as sce_shape_radius_minimal\n",
+            "from . import shape_rect_minimal as sce_shape_rect_minimal\n",
+            // The union handed over.
+            "def _call_Extent__v(p0):\n",
+            &format!(
+                "(lambda sce_case: {{\"dot\": lambda sce_case: {unit}Dot(), \"circle\": lambda \
+                 sce_case: {unit}Circle(sce_shape_radius_minimal.ShapeRadiusMinimalPayload(\
+                 radius=sce_case.value.radius)), \"rect\": lambda sce_case: {unit}Rect(\
+                 sce_shape_rect_minimal.ShapeRectMinimalPayload(width=sce_case.value.width, \
+                 height=sce_case.value.height))}}[sce_case.kind.sce_name](sce_case))(p0)"
+            ),
+            // The union taken back.
+            &format!(
+                "    return (lambda sce_case: {{\"dot\": lambda sce_case: {MACHINE_UNION}Dot(), \
+                 \"circle\": lambda sce_case: {MACHINE_UNION}Circle(\
+                 StatechartShapeCrossingRadiusRecord(radius=sce_case.value.radius)), "
+            ),
+            "}[sce_case.kind.declared_name()](sce_case))(r)",
+            // Each call made through its adapter, by the variable's name.
+            "_call_Grown__v(self.v_shape, ",
+            "_call_Extent__v(self.v_shape)",
+        ],
+    );
+}
+
 /// A lane that does not lower an algorithm over a union refuses a statechart
 /// that hands one a union, rather than write a call no unit answers.
 #[test]
 fn a_lane_that_lowers_no_union_crossing_refuses_the_statechart() {
-    for language in [Language::Python] {
-        assert!(
-            generated(
-                &fixtures().join("statechart_shape_crossing.scxml"),
-                language
-            )
-            .is_err(),
-            "{language:?} generated a statechart that hands an algorithm a union"
-        );
-    }
+    let language = Language::C11;
+    assert!(
+        generated(
+            &fixtures().join("statechart_shape_crossing.scxml"),
+            language
+        )
+        .is_err(),
+        "{language:?} generated a statechart that hands an algorithm a union"
+    );
 }

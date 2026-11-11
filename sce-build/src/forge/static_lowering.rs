@@ -12827,6 +12827,43 @@ pub fn lower_go(
 /// past those is refused by name ([`StaticTarget::unsupported`]) until its
 /// spelling is written, rather than left as an undefined name in generated
 /// code.
+/// The record a case of a union holds, as a Python adapter binds it while it
+/// maps the union across a call ([`python_union_crossing`]): the `value` of
+/// the leaving case its builder is handed.
+const PYTHON_CROSSED_RECORD: &str = "sce_case.value";
+
+/// The Python map of the union `value` across a call (docs/adr/0092, section
+/// 6.1 item 7): a `dict` of one builder per case, keyed by the declared name of
+/// the case's variant, indexed by the declared name of the leaving value's tag,
+/// which a machine's enum answers by `sce_name` and the enum of a union's unit
+/// by `declared_name()`, the name the tag is written as (section 2.1), so the
+/// map names neither enum. Each builder is handed the leaving case, bound to
+/// the name [`PYTHON_CROSSED_RECORD`] reads its record through, and answers the
+/// case the value arrives as, its record built from that one. Python holds a
+/// `dict` to no case, so every case is a key by the adapter's regeneration with
+/// the document, as Go's `switch` is, and a value whose tag names none raises
+/// rather than cross as another case.
+fn python_union_crossing(value: &str, crossing: Crossing, cases: &[CrossedCase]) -> String {
+    let tag = match crossing {
+        Crossing::ToAlgorithm => "sce_case.kind.sce_name",
+        Crossing::FromAlgorithm => "sce_case.kind.declared_name()",
+    };
+    let arms: Vec<String> = cases
+        .iter()
+        .map(|case| {
+            format!(
+                "{}: lambda sce_case: {}",
+                filters::py_string_literal(case.variant.clone()),
+                case.to
+            )
+        })
+        .collect();
+    format!(
+        "(lambda sce_case: {{{}}}[{tag}](sce_case))({value})",
+        arms.join(", ")
+    )
+}
+
 pub struct PythonTarget;
 
 impl PythonTarget {
@@ -13188,6 +13225,22 @@ impl StaticTarget for PythonTarget {
                     slot: StaticSlot::RecordList(alias),
                     ..
                 } => arguments.push(format!("[{} for e in {name}]", to_algorithm(alias, "e")?)),
+                // A union is the machine's own class, mapped case by case into the
+                // one the union's unit declares, each case's record copied as a
+                // record argument is (docs/adr/0092, section 6.1 item 7).
+                AdapterParam::State {
+                    slot: StaticSlot::Union(union),
+                    ..
+                } => {
+                    let (_, cases) = spec.union_crossing(
+                        self,
+                        union,
+                        Crossing::ToAlgorithm,
+                        PYTHON_CROSSED_RECORD,
+                        &to_algorithm,
+                    )?;
+                    arguments.push(python_union_crossing(&name, Crossing::ToAlgorithm, &cases));
+                }
                 _ => return None,
             }
             declarations.push(name);
@@ -13212,6 +13265,18 @@ impl StaticTarget for PythonTarget {
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => "list(r)".to_string(),
             StaticSlot::RecordList(alias) => {
                 format!("[{} for e in r]", from_algorithm(alias, "e")?)
+            }
+            // The machine's own class, built case by case from the one the
+            // union's unit declares, which the algorithm gave back.
+            StaticSlot::Union(union) => {
+                let (_, cases) = spec.union_crossing(
+                    self,
+                    union,
+                    Crossing::FromAlgorithm,
+                    PYTHON_CROSSED_RECORD,
+                    &from_algorithm,
+                )?;
+                python_union_crossing("r", Crossing::FromAlgorithm, &cases)
             }
             _ => return None,
         };
