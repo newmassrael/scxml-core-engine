@@ -538,10 +538,10 @@ do not bind the template's formal parameters one to one, each by a parameter of 
 the profile only once its runtime lands there for the document's kind, and until then
 generation refuses one by name (`generate/unsupported-feature`). C++ generates a template
 (`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
-depth by the union's own refusal (`generate/unsupported-feature`). Rust and Kotlin
+depth by the union's own refusal (`generate/unsupported-feature`). Rust, Kotlin and Go
 generate a template too, one whose type reaches a union among them, a `union-match`
-holding where the union is in the case its `variant` names. Go and Python generate a
-template too, and refuse one whose type reaches a union as C++ does. C11 generates a
+holding where the union is in the case its `variant` names. Python generates a
+template too, and refuses one whose type reaches a union as C++ does. C11 generates a
 template too, refuses one whose type reaches a union as C++ does, and refuses with
 `generate/unsupported-feature` one that references, inside a list, a template of an
 optional type; its event schema unit holds a byte string of one entry in the buffer of
@@ -5419,8 +5419,8 @@ and raises nothing; within every bound it writes the payload as the JSON a lift
 reads back. A list a place holds is taken whole into a list variable whose type it
 fits, as a slice of its own: no Go type carries a bound, so the two places are one
 type, and the variable is appended to and emptied in place. A payload that holds a
-union, at any depth, is refused by name on Go, which holds no union yet
-(docs/adr/0092, section 7).
+union, at any depth, holds it in the machine's own value struct (docs/adr/0092,
+section 7, the Go row, and its item 4), the shape the union's own Go unit has.
 
 The Python backend reads a composed payload as the Rust and Kotlin backends do
 (docs/adr/0086, section 7.1, the Python row): its payload class holds each field in

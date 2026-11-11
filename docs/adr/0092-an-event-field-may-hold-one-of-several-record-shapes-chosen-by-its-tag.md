@@ -871,6 +871,57 @@ a diagnostic code.
    first by `SavedReadUnionTag`; a case's record that holds a composition carries its saved form too, a
    list's lower count held by `SavedReadListWithin` (docs/adr/0086, section 15.6).
 
+## Decided while landing the union's unit, step 5 and the crossing on Go (2026-11-11)
+
+Go now generates a union document (`codegen_matrix::UNION_BACKENDS`), lowers an algorithm over a union and
+hands one across a statechart's call (`ALGORITHM_UNION_BACKENDS`), which lifts the refusals the section above
+names. Each question below is decided by a rule this record already states; none changes a document, a wire or
+a diagnostic code.
+
+1. **The unit's union has the machine's shape** (section 7 item 4, and item 1 of the section above): a value
+   struct `<Union>` of the package of the union's document, an unexported `tag` of the tag's enum and one
+   unexported member `case<Case>` per case that holds a record, built only by `<Union><Case>(r R)` or
+   `<Union><Case>()`, `Kind()` and `Proven<Case>()`, each named by the one spelling the machine's union is
+   named by (`composed_lowering::go`), so a reader of one reads the other. The two stay two types, each over
+   its own records ("Amendment (2026-11-11)" item 1). The unit declares no `ProvenField<Field>()` and no
+   place of a field: an algorithm never writes a union ("Decided while landing step 5" item 3) and reads a
+   shared field by a case analysis (item 3 below), as Rust's and Kotlin's units declare no accessor for it.
+   The unit's constants are an event schema unit's Go names (`Revision`, `DataMaxLen`, `SchemaID`,
+   `JSONSchema`); a constructor spelled as one of them, or two variants of one Pascal spelling, is refused by
+   name (`generate/unsupported-feature`), as Kotlin refuses two cases of one class.
+2. **A tag is told apart by its declared name where no package of its enum is imported.** A test template's
+   canonical form, an algorithm's shared read and a call's adapter switch over the declared name the tag
+   answers (`Kind().DeclaredName().Proven()` on a unit, `Kind().String()` on a machine), the name the tag is
+   written as (section 2.1) and the one a Go machine's writer already switches on (item 3 of the section
+   above), so none of them imports the enum's package only to name its variants. A test template's matcher,
+   which imports what its text names, compares `Kind()` with the variant itself.
+3. **A field several cases leave is read by a function literal of the read's type** (section 6.1 item 2, and
+   "Decided while landing step 5 on Kotlin" item 4): Go has no expression that takes a case apart, so the read
+   is a function literal called where it is written, whose `switch` returns the field from each case left and
+   whose end panics, the one statement no path reaches. Go spells the result of a function literal, which is
+   the type the expression names the read's value by, as Go's conditional names its own; a field of a type the
+   expression does not name (a value of an enum) is refused by name there, naming the repair (test one case),
+   as a Go conditional over such values is refused where its arms are not plain reads. A field read under one
+   case left needs no literal.
+4. **The end no path reaches is a `panic`** (section 6.1 item 4, "Decided while landing step 5" item 6), the
+   terminating statement a Go function with a result may end in and what the unit's proven reads do in a case
+   the narrowing proved the value is not in. A `may-fail` body hands a failure on as an `error`, never as a
+   panic, so the two are not confused. A union local is a short declaration of the constructor's value, whose
+   type is the union's.
+5. **The crossing is a total `switch` that the compiler does not hold to every case** ("Decided while landing
+   step 5 on Kotlin" item 2). Go checks no `switch` for exhaustiveness, so the property that a case either side
+   gains is a build error is the adapter's regeneration with the document, which writes one arm per case of the
+   union as the statechart imports it; the arm of a value in no case, which no constructor builds, panics rather
+   than cross as the zero struct. The adapter declares the arriving value and assigns it in each arm, since a Go
+   `switch` is a statement; what it hands over names the unit's package and each case's record's, what it takes
+   back is read through the unit's methods and names neither, as a returned record is
+   (`StaticTarget::adapter_names_returned_schema`).
+
+Step 6 still needs, lane by lane, step 5 with its crossing on C++, Python, C11 and Swift (each but Swift first
+holding a union in a statechart, step 4, and C++, Python and C11 the union's unit), the Interpreter's lowering of
+an algorithm over a union and of the call, and on every lane the numerical conformance harness's argument of a
+union; then the standard library's change itself.
+
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
 Step 4 on Kotlin met four questions sections 6 and 7 leave open. Each is decided by a rule this record already
