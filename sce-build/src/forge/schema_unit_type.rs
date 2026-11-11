@@ -106,9 +106,8 @@ pub(crate) fn unit_type(
             .record(alias)
             .ok_or_else(|| format!("`record:{alias}` names no event schema the document imports"))
     };
-    // A backend that does not lower a union refuses one by name (docs/adr/0092,
-    // section 7); one that does names the sum type of the union's unit.
-    let unlowered = crate::forge::value_type::union_unlowered;
+    // Every backend lowers a union (docs/adr/0092, section 7,
+    // `codegen_matrix::UNION_BACKENDS`) and names the sum type of its unit.
     let union_type = |alias: &str| {
         names
             .union(alias)
