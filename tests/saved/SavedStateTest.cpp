@@ -690,6 +690,51 @@ TEST(SavedState, ATextAByteStringAndAListAreReadIntoTheTypeThatHoldsTheirBound) 
     EXPECT_FALSE(savedReadOptional(JsonValue(), "o", savedOwnedBytes<2>()).has_value());
 }
 
+// A list whose type states a lower count is read back only if it holds that many (docs/adr/0086,
+// section 15.6), the count held before any element is read, beside the bound its type holds.
+TEST(SavedState, AListIsHeldToTheLowerCountItsTypeStates) {
+    const auto message = [](const auto &read) {
+        try {
+            read();
+        } catch (const StateRefusal &err) {
+            return std::string(err.what());
+        }
+        return std::string();
+    };
+    const auto uint8Of = [](const JsonValue &v, const std::string &w) { return savedReadUint8(v, w); };
+    EXPECT_EQ(savedReadOwnedListWithin<3>(parseJson("[1,2]"), "l", 2, uint8Of).inner(),
+              (std::vector<std::uint8_t>{1, 2}));
+    EXPECT_EQ(message([&] { savedReadOwnedListWithin<3>(parseJson("[1]"), "l", 2, uint8Of); }),
+              "'l' holds 1 elements, fewer than the 2 its type declares");
+    EXPECT_EQ(message([&] { savedReadOwnedListWithin<3>(parseJson("[1,2,3,4]"), "l", 2, uint8Of); }),
+              "'l' holds 4 elements, past the 3 it is bounded by");
+}
+
+// A union is saved as one object, its tag first beside the fields of its case, and read back by
+// its tag first (docs/adr/0092, section 6.1 item 7); a value with no tag, or a tag that is no
+// text, is refused naming where it stands.
+TEST(SavedState, AUnionIsSavedAsItsTagBesideItsCaseAndReadBackByItsTag) {
+    const auto message = [](const auto &read) {
+        try {
+            read();
+        } catch (const StateRefusal &err) {
+            return std::string(err.what());
+        }
+        return std::string();
+    };
+    JsonObject radius;
+    radius.set("radius", savedWriteUint16(3));
+    EXPECT_EQ(writeJson(savedWriteUnion("kind", "circle", JsonValue(std::move(radius)))),
+              R"({"kind":"circle","radius":3})");
+    EXPECT_EQ(writeJson(savedWriteUnion("kind", "dot", std::nullopt)), R"({"kind":"dot"})");
+    const JsonValue circle = parseJson(R"({"radius":3,"kind":"circle"})");
+    EXPECT_EQ(savedReadUnionTag(circle, "s", "kind"), "circle");
+    EXPECT_EQ(savedReadUint16(savedField(circle, "s", "radius"), "s.radius"), 3);
+    EXPECT_EQ(message([] { savedReadUnionTag(parseJson(R"({"radius":3})"), "s", "kind"); }), "'s' has no field 'kind'");
+    EXPECT_EQ(message([] { savedReadUnionTag(parseJson(R"({"kind":2})"), "s", "kind"); }), "'s.kind' is not a text");
+    EXPECT_EQ(message([] { savedReadUnionTag(parseJson("[]"), "s", "kind"); }), "'s' is not an object");
+}
+
 TEST(SavedState, AnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded) {
     const std::string digest(64, 'a');
     SavedShape shape;

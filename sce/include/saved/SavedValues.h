@@ -441,6 +441,20 @@ auto savedReadOwnedList(const JsonValue &value, const std::string &what, Element
     return std::move(*held);
 }
 
+/// A list of a type that states a lower count (docs/adr/0086, section 15) read back into the
+/// `OwnedList<T, Max>` a machine holds it in, only if it holds at least `least` elements, a
+/// count no type holds: a machine never holds fewer, and a restored one must not be the first
+/// to. Both counts are held before any element is read, as `savedReadOwnedList` holds its
+/// bound.
+template <std::size_t Max, typename Element>
+auto savedReadOwnedListWithin(const JsonValue &value, const std::string &what, std::size_t least, Element element) {
+    if (value.isArray() && value.asArray().size() < least) {
+        detail::refuse("'" + what + "' holds " + std::to_string(value.asArray().size()) + " elements, fewer than the " +
+                       std::to_string(least) + " its type declares");
+    }
+    return savedReadOwnedList<Max>(value, what, element);
+}
+
 /// The reader of a text held in `OwnedText<Max>`, for a place that reads through a function
 /// value (savedReadOptional, a record's field).
 template <std::size_t Max> auto savedOwnedText() {
@@ -467,6 +481,22 @@ T savedReadVariant(const JsonValue &value, const std::string &what, const std::s
     return found->second;
 }
 
+/// A union (docs/adr/0092, section 6.1 item 7): one object, the tag under the key `tag` as
+/// the declared name `variant`, before the members of `record`, the record of the case as it
+/// writes itself, or none for an empty case. What a generated union writes each case with.
+inline JsonValue savedWriteUnion(const std::string &tag, const std::string &variant,
+                                 const std::optional<JsonValue> &record) {
+    JsonObject saved;
+    saved.set(tag, JsonValue(variant));
+    if (record.has_value() && record->isObject()) {
+        const JsonObject &members = record->asObject();
+        for (std::size_t at = 0; at < members.size(); ++at) {
+            saved.set(members.keys()[at], members.valueAt(at));
+        }
+    }
+    return JsonValue(std::move(saved));
+}
+
 /// The field `name` of a saved record value: what a generated record reads each field with.
 inline const JsonValue &savedField(const JsonValue &value, const std::string &record, const std::string &name) {
     if (!value.isObject()) {
@@ -477,6 +507,15 @@ inline const JsonValue &savedField(const JsonValue &value, const std::string &re
         detail::refuse("'" + record + "' has no field '" + name + "'");
     }
     return *field;
+}
+
+/// The declared name of the case a saved union value is in: the text under its tag's key
+/// `tag`, read before any field of the case, since the tag says which fields follow
+/// (docs/adr/0092, section 4). A value that is no object, that has no tag, or whose tag is not
+/// a text is refused naming `what`; a name the union has no case for is the generated
+/// reader's to refuse.
+inline std::string savedReadUnionTag(const JsonValue &value, const std::string &what, const std::string &tag) {
+    return savedReadString(savedField(value, what, tag), what + "." + tag);
 }
 
 }  // namespace SCE::Saved
