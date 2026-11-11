@@ -1015,23 +1015,18 @@ fn holds_optional(elem: &AlgorithmValueType) -> bool {
     }
 }
 
-/// The judge of a body that holds a union, run before [`lower`] reads it, as
-/// every backend's route runs it before the backend renders the body
-/// (docs/adr/0092, "Decided while landing step 5" item 1;
-/// [`crate::forge::narrowing::check_algorithm`]): a field read where no test
-/// proves its case, a write of a union, a union where it does not stand whole,
-/// a local built as no case, and an end a path reaches without a return are
-/// refused with the judge's own diagnostic, in the document. A body that holds
-/// no union reaches the lowering as it always has.
+/// The judges of the body, run before [`lower`] reads it, as every backend's
+/// route runs them before the backend renders the body
+/// ([`crate::judge_algorithm_body`]; docs/adr/0092, "Decided while landing step
+/// 5" item 1): a value that may be absent read where no test proves it present,
+/// a field of a union read where no test proves its case, a write of a union, a
+/// local built as no case, an end a path reaches without a return, an integer
+/// operation the range analysis cannot prove safe in a body that does not
+/// declare `may-fail`, a number where an enum value is declared, and an
+/// optional record of another schema are each refused with the judge's own
+/// diagnostic, in the document. The lowering reads the body as they admitted it.
 pub(crate) fn judge(m: &AlgorithmModel, imports: &Imports) -> Result<(), ForgeError> {
-    if !m.holds_union() {
-        return Ok(());
-    }
-    crate::forge::narrowing::check_algorithm(
-        m,
-        &imports.contexts,
-        &crate::ForgeCompileOptions::default(),
-    )
+    crate::judge_algorithm_body(m, &imports.contexts, &crate::ForgeCompileOptions::default())
 }
 
 /// The ECMAScript function `m` lowers to, as an expression —
@@ -1041,10 +1036,10 @@ pub(crate) fn judge(m: &AlgorithmModel, imports: &Imports) -> Result<(), ForgeEr
 /// built once, when the algorithm is installed, and not on every call.
 ///
 /// Refused by name, never passed on half lowered: a parameter or a return of a
-/// type with no form here, and every statement it does not spell. A body that
-/// holds a union is one [`judge`] has admitted: the lowering reads its fields
-/// where the judge proved their cases, and closes its end where the judge
-/// proved it unreached.
+/// type with no form here, and every statement it does not spell. The body is
+/// one [`judge`] has admitted: the lowering reads a union's fields where the
+/// judge proved their cases, and closes its end where the judge proved it
+/// unreached.
 pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, ForgeError> {
     let mut params = Vec::new();
     let mut iterable: HashSet<&str> = HashSet::new();

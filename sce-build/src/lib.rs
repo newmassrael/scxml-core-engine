@@ -4982,22 +4982,7 @@ pub fn compile_forge_from_parsed(
     // for the reason the transform check above gives: the verdict must not
     // depend on which backend was asked for.
     if let forge::model::ForgeDocument::Algorithm(m) = &parsed.document {
-        // A value that may be absent is read only where a test proves it
-        // present (docs/adr/0055): the narrowing a statechart's judge keeps,
-        // over the body, before its operations are judged by the values they
-        // read.
-        forge::narrowing::check_algorithm(m, &import_ctx, options)
-            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
-        forge::int_ranges::check(m, &import_ctx, options)
-            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
-        // An enum value stands where a value of its enum is declared, and a number
-        // never does: the rule a statechart's expressions keep, held here once for
-        // the same reason.
-        forge::static_enum::check_algorithm(m, &import_ctx, options)
-            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
-        // An optional record stands only where an optional record of its own schema
-        // is declared: the identity its type does not carry, held here once.
-        forge::optional_record_call::check_algorithm(m, &import_ctx, options)
+        judge_algorithm_body(m, &import_ctx, options)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }
 
@@ -5338,6 +5323,31 @@ pub fn compile_forge_from_parsed(
     let mut output = output;
     output.deps = import_sources;
     Ok(output)
+}
+
+/// The judges of an algorithm's body, run once before any language renders it,
+/// so the verdict does not depend on which backend was asked for; `imports` are
+/// the algorithm's own, enriched. The one sequence every route that renders a
+/// body asks: a backend's ([`compile_forge_from_parsed`]) and the Interpreter's
+/// lowering of an imported algorithm
+/// ([`forge::static_js_algorithm::judge`]).
+pub(crate) fn judge_algorithm_body(
+    m: &forge::model::AlgorithmModel,
+    imports: &[forge::generator::ImportContext],
+    options: &ForgeCompileOptions,
+) -> Result<(), forge::error::ForgeError> {
+    // A value that may be absent is read only where a test proves it present
+    // (docs/adr/0055): the narrowing a statechart's judge keeps, over the body,
+    // before its operations are judged by the values they read.
+    forge::narrowing::check_algorithm(m, imports, options)?;
+    // The integer arithmetic contract (SCE_FORGE.md §3.4.1).
+    forge::int_ranges::check(m, imports, options)?;
+    // An enum value stands where a value of its enum is declared, and a number
+    // never does: the rule a statechart's expressions keep.
+    forge::static_enum::check_algorithm(m, imports, options)?;
+    // An optional record stands only where an optional record of its own schema
+    // is declared: the identity its type does not carry.
+    forge::optional_record_call::check_algorithm(m, imports, options)
 }
 
 /// Multi-doc compile entry point — SCE Protocol-Synthesis RFC §synth-5-D worker

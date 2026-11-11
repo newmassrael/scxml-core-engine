@@ -2086,7 +2086,7 @@ struct LoweredCallees {
 /// cannot be read, one that is not an algorithm, one that calls itself, and
 /// every construct of a body that has no lowering yet, each located in the
 /// statechart, `label`; and, with the judge's own diagnostic located in the
-/// algorithm's document, a body that holds a union the judge refuses
+/// algorithm's document, a body the judges every backend's route runs refuse
 /// ([`static_js_algorithm::judge`]).
 fn lowered_algorithms(
     model: &SCXMLModel,
