@@ -17,11 +17,20 @@
 //! and a configuration each component's machine, which is the module the
 //! component's statechart is generated as, `<machine>_sm`, beside it.
 //!
+//! A configuration's unit also reads and writes each record its system ports
+//! take, and reads an input of a recorded trace (`input`), which a test case's
+//! unit hands the runner; a suite's unit reads each module parameter's value
+//! from the runner's command line and is the runner program's `main`
+//! (docs/SCE_TTCN3_LANE.md §4, §10.5). The twin of
+//! `a_test_suite_is_generated_in_kotlin.rs` for those.
+//!
 //! What the generated tables do when they run is held by
-//! `backends/python/tests/integration/static_datamodel/test_a_test_suite_runs_through_its_runner.py`,
-//! which imports them from the same fixtures (regen:
-//! `scripts/regen_static_datamodel_python.sh`) and runs the suite through
-//! `sce_runtime.testprofile.run_suite`.
+//! `backends/python/tests/integration/static_datamodel/test_a_test_suite_runs_through_its_runner.py`
+//! and `test_a_record_reads_back_the_form_it_writes.py` beside it, which
+//! import them from the same fixtures (regen:
+//! `scripts/regen_static_datamodel_python.sh`) and run the suite through
+//! `sce_runtime.testprofile.run_suite`, `run_suite_with_traces` and the
+//! suite's runner program.
 
 use std::path::{Path, PathBuf};
 
@@ -113,7 +122,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     for needle in [
         RUNTIME_IMPORT.to_string(),
         imported("param_asker_sm"),
-        "\nfrom typing import List, Optional\n".to_string(),
+        "\nfrom typing import Any, List, Optional\n".to_string(),
         "def configuration() -> _sce_testprofile.Configuration:".to_string(),
         "    return _sce_testprofile.Configuration(\n".to_string(),
         "        mtc_type=\"param_asker\",\n".to_string(),
@@ -135,11 +144,14 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
             "asking_configuration holds `{needle}`:\n{asking}"
         );
     }
-    // The last statement of the unit: a render ends without the newline the
-    // write adds (`generator::with_trailing_newline`).
     assert!(
-        asking.ends_with("    return [\"job\"]"),
-        "asking_configuration ends with its module parameters:\n{asking}"
+        between(
+            &asking,
+            "def module_parameters() -> List[str]:",
+            "\ndef read_job_reply("
+        )
+        .contains("\n    return [\"job\"]\n"),
+        "asking_configuration gives its module parameters:\n{asking}"
     );
     let ports = between(&asking, "ports_of_type=", "timers_of_type=");
     assert!(
@@ -175,7 +187,12 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
         );
     }
     assert!(
-        serving.ends_with("    return []"),
+        between(
+            &serving,
+            "def module_parameters() -> List[str]:",
+            "\ndef input("
+        )
+        .contains("\n    return []\n"),
         "serving_configuration reads no module parameter:\n{serving}"
     );
     assert!(
@@ -200,6 +217,361 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     assert!(
         !ports.contains("\"ptc_keeper\""),
         "a type that declares no port has no entry: {ports}"
+    );
+}
+
+/// The import of the profile runtime's module `module` under `alias`.
+fn runtime_module(module: &str, alias: &str) -> String {
+    format!("\nfrom sce_runtime.testprofile import {module} as {alias}\n")
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.2, §10.5: a configuration reads the inputs of a
+/// recorded trace. Each record on the `in` list of a system port's type is read
+/// back from its canonical form and written in it, once, through the module of
+/// its event schema; an input on a port the configuration does not have, or of
+/// a type its port does not take, is refused by name, and a record only sent to
+/// the system under test is not read. The twin of the Rust and Kotlin cases of
+/// the same name.
+#[test]
+fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
+    let asking = unit("asking_configuration");
+    for needle in [
+        runtime_module("canonical", "_sce_canonical"),
+        runtime_module("from_canonical", "_sce_from_canonical"),
+        imported("job_reply"),
+        "\n\n\ndef read_job_reply(value: Any) -> sce_job_reply.JobReplyPayload:\n".to_string(),
+        "    return (lambda record_0: sce_job_reply.JobReplyPayload(job=_sce_from_canonical.integer(\
+         _sce_from_canonical.field(record_0, \"job\", \"job_reply.job\"), _sce_from_canonical.UINT32, \
+         \"job_reply.job\"), code=_sce_from_canonical.integer(_sce_from_canonical.field(record_0, \
+         \"code\", \"job_reply.code\"), _sce_from_canonical.UINT32, \"job_reply.code\")))\
+         (_sce_from_canonical.record(value, [\"job\", \"code\"], \"job_reply\"))\n"
+            .to_string(),
+        "\n\n\ndef canonical_job_reply(value: sce_job_reply.JobReplyPayload) -> \
+         _sce_canonical.CanonicalValue:\n"
+            .to_string(),
+        "_sce_canonical.integer(value.code)".to_string(),
+        "\n\n\ndef input(system_port: str, type_name: str, value: Any) -> \
+         _sce_testprofile.Message:  # noqa: A001 -- the profile's word\n"
+            .to_string(),
+        "    if system_port == \"sut\" and type_name == \"job_reply\":\n        return \
+         _sce_testprofile.Message.of(sce_job_reply.EVENT_NAME, read_job_reply(value), \
+         \"job_reply\", canonical_job_reply)\n"
+            .to_string(),
+    ] {
+        assert!(
+            asking.contains(&needle),
+            "asking_configuration holds `{needle}`:\n{asking}"
+        );
+    }
+    // The last statement of the unit: a render ends without the newline the
+    // write adds (`generator::with_trailing_newline`).
+    assert!(
+        asking.ends_with(
+            "    raise _sce_testprofile.TraceRefusal.not_an_input(system_port, type_name, \
+             [\"sut\"])"
+        ),
+        "{asking}"
+    );
+    assert!(
+        !asking.contains("read_job_request") && !asking.contains(&imported("job_request")),
+        "a record the components only send is not read: {asking}"
+    );
+    assert_eq!(
+        asking.matches("def read_job_reply(").count(),
+        1,
+        "a record is read by one function"
+    );
+
+    let keeping = unit("keeping_configuration");
+    assert!(
+        keeping.contains("    if system_port == \"quiet\" and type_name == \"job_reply\":\n"),
+        "{keeping}"
+    );
+    assert_eq!(
+        keeping.matches("def read_job_reply(").count(),
+        1,
+        "{keeping}"
+    );
+
+    let serving = unit("serving_configuration");
+    assert!(
+        serving.ends_with(
+            "    raise _sce_testprofile.TraceRefusal.not_an_input(system_port, type_name, [])"
+        ),
+        "a configuration with no system port refuses every input: {serving}"
+    );
+    assert!(!serving.contains("def read_"), "{serving}");
+    assert!(
+        !serving.contains("_sce_canonical") && !serving.contains("_sce_from_canonical"),
+        "a configuration that reads no record imports neither form: {serving}"
+    );
+}
+
+/// The directory of the configurations whose system port takes a record of
+/// every form of the canonical value.
+fn trace_forms_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile/trace_forms")
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
+/// record of every form of the canonical value Python holds generates a public
+/// reader and writer of each, which
+/// `backends/python/tests/integration/static_datamodel/test_a_record_reads_back_the_form_it_writes.py`
+/// imports and round-trips: an open enum read through its class's
+/// `from_underlying`, a list of optional elements and an optional field each by
+/// its runtime reader with the read as a lambda, a list of records by a
+/// comprehension whose record binds its own object, a byte string by its hex.
+/// Python lowers no union, so the configuration whose record holds one is
+/// refused by the union's name.
+#[test]
+fn a_configuration_reads_a_record_of_every_form() {
+    let forms = file_at(
+        &trace_forms_dir().join("unionless_forms_configuration.scxml"),
+        "unionless_forms_configuration",
+    );
+    for record in ["order_taken", "job_status", "form_extras"] {
+        for needle in [
+            format!("\ndef read_{record}(value: Any) -> sce_{record}."),
+            format!("\ndef canonical_{record}(value: sce_{record}."),
+            format!("    if system_port == \"sut\" and type_name == \"{record}\":\n"),
+            imported(record),
+        ] {
+            assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+        }
+    }
+    for needle in [
+        "_sce_from_canonical.open_enumerated(".to_string(),
+        "_sce_from_canonical.UINT8, sce_shape_kind_open.ShapeKindOpen.from_underlying, \
+         \"form_extras.shape\")"
+            .to_string(),
+        "(\"green\", sce_paint_color.PaintColor.GREEN)".to_string(),
+        "_sce_from_canonical.nullable(item_0, lambda present_1: \
+         _sce_from_canonical.integer(present_1, _sce_from_canonical.UINT16, \"form_extras.slots[]\"))"
+            .to_string(),
+        "_sce_from_canonical.optional_field(record_0, \"note\", lambda present_0: \
+         _sce_from_canonical.text(present_0, 32, \"order_taken.note\"))"
+            .to_string(),
+        "_sce_from_canonical.byte_string(_sce_from_canonical.field(record_0, \"voucher_code\", \
+         \"order_taken.voucher_code\"), 4, \"order_taken.voucher_code\")"
+            .to_string(),
+        "_sce_from_canonical.elements(_sce_from_canonical.field(record_0, \"flags\", \
+         \"form_extras.flags\"), 1, 2, \"form_extras.flags\")"
+            .to_string(),
+        imported("order_line"),
+        imported("order_customer"),
+        imported("paint_color"),
+        imported("shape_kind_open"),
+        imported("unionless_forms_listener_sm"),
+    ] {
+        assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
+    }
+    // A record of a list of records names the object of each element apart from
+    // the object of the record that holds the list.
+    let readers = between(
+        &forms,
+        "def read_order_taken(",
+        "def canonical_order_taken(",
+    );
+    assert!(
+        readers.contains(
+            "[(lambda record_1: sce_order_line.OrderLinePayload(sku=_sce_from_canonical.text(\
+             _sce_from_canonical.field(record_1, \"sku\", \"order_taken.lines[].sku\"), 16, \
+             \"order_taken.lines[].sku\")"
+        ),
+        "{readers}"
+    );
+    assert!(
+        readers.contains(
+            "(_sce_from_canonical.record(item_0, [\"sku\", \"quantity\", \"color\"], \
+             \"order_taken.lines[]\")) for item_0 in _sce_from_canonical.elements("
+        ),
+        "{readers}"
+    );
+
+    let Err(err) = generate(&trace_forms_dir().join("forms_configuration.scxml")) else {
+        panic!("a configuration whose record holds a union generated on Python");
+    };
+    assert!(format!("{err:?}").contains("union"), "{err:?}");
+}
+
+/// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports
+/// take that the export would name alike, the stems of their files, are
+/// refused by name, since one reader and one type of the test log would hold
+/// both. The twin of the Rust, Kotlin and C++ cases of the same name.
+#[test]
+fn two_records_named_alike_are_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let record = |name: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="{name}" sce:event-name="{name}.event">
+  <datamodel>
+    <data id="n" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#
+        )
+    };
+    for (folder, name) in [("a", "twin_a"), ("b", "twin_b")] {
+        let folder = dir.path().join(folder);
+        std::fs::create_dir(&folder).expect("a folder");
+        std::fs::write(folder.join("twin.scxml"), record(name)).expect("the record is written");
+    }
+    let documents = [
+        (
+            "twins_port.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="twins_port">
+  <sce:import kind="event-schema" src="a/twin.scxml" as="TwinA"/>
+  <sce:import kind="event-schema" src="b/twin.scxml" as="TwinB"/>
+  <sce:message type="TwinA" direction="in"/>
+  <sce:message type="TwinB" direction="in"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_listener.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="twins_listener"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:test-port id="sut" type="TwinsPort"/>
+  <state id="waiting">
+    <transition sce:receive="sut" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        ),
+        (
+            "twins_configuration.scxml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="twins_configuration">
+  <sce:import kind="test-component" src="twins_listener.scxml" as="TwinsListener"/>
+  <sce:import kind="test-port-type" src="twins_port.scxml" as="TwinsPort"/>
+  <sce:mtc type="TwinsListener"/>
+  <sce:system-port id="sut" type="TwinsPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>
+"#,
+        ),
+    ];
+    for (file, text) in documents {
+        std::fs::write(dir.path().join(file), text).expect("the document is written");
+    }
+    let Err(err) = generate(&dir.path().join("twins_configuration.scxml")) else {
+        panic!("two records named alike generated on Python");
+    };
+    let ForgeError::Generate(boxed) = err.error else {
+        panic!("not a generation refusal: {err:?}");
+    };
+    let GenerateError::UnsupportedFeature { detail, .. } = *boxed else {
+        panic!("not an unsupported feature");
+    };
+    assert!(
+        detail.starts_with("test-configuration 'twins_configuration': "),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("two records its system ports take are named 'twin': "),
+        "{detail}"
+    );
+}
+
+/// docs/SCE_TTCN3_LANE.md §4: a suite's unit is the runner program's: its
+/// `main` hands the runner the suite and the reader of each module parameter's
+/// value, a literal of its type, which an undeclared parameter is refused by,
+/// and runs when the unit is run as a module. The twin of the Rust and Kotlin
+/// cases of the same name.
+#[test]
+fn a_suite_is_the_runner_program_of_its_traces() {
+    let suite = unit("runtime_suite");
+    for needle in [
+        "\n\n\ndef module_parameter(parameter_id: str, literal: str) -> \
+         _sce_testprofile.ModuleParameterValue:\n",
+        "    if parameter_id == \"job\":\n        return _sce_saved.saved_write_uint32(\
+         _sce_testprofile.integer_parameter(parameter_id, literal, \
+         _sce_testprofile.from_canonical.UINT32))\n",
+        "    raise _sce_testprofile.undeclared_parameter(parameter_id)\n",
+        "\n\n\ndef main() -> int:\n",
+        "``python -m <package>.runtime_suite``",
+        "    return _sce_testprofile.runner_main(suite(), module_parameter)\n",
+    ] {
+        assert!(
+            suite.contains(needle),
+            "runtime_suite holds `{needle}`:\n{suite}"
+        );
+    }
+    assert!(
+        suite.ends_with("\n\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())"),
+        "the unit runs its program when it is run as a module:\n{suite}"
+    );
+}
+
+/// §4: the reader of each type of module parameter the runner is given a
+/// literal of, by the runtime's readers, an integer at its width and saved by
+/// the writer of its type, as its default is.
+#[test]
+fn a_module_parameter_is_read_by_the_reader_of_its_type() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let suite = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="typed_readers">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Paint"/>
+  <sce:import kind="test-case" src="{runtime}/answers_the_job.scxml" as="AnswersTheJob"/>
+  <sce:module-parameter id="job" type="uint32" value="7"/>
+  <sce:module-parameter id="armed" type="bool" value="true"/>
+  <sce:module-parameter id="offset" type="int8" value="-5"/>
+  <sce:module-parameter id="label" type="string[8]" value="nightly"/>
+  <sce:module-parameter id="key" type="bytes[2]" value="0aff"/>
+  <sce:module-parameter id="color" type="enum:Paint" value="green"/>
+  <sce:execute test-case="AnswersTheJob"/>
+</scxml>
+"#,
+        imports = imports_dir().display(),
+        runtime = runtime_dir().display()
+    );
+    let path = dir.path().join("typed_readers.scxml");
+    std::fs::write(&path, suite).expect("the suite is written");
+    let text = file_at(&path, "typed_readers");
+    for needle in [
+        "    if parameter_id == \"armed\":\n        return \
+         _sce_testprofile.bool_parameter(parameter_id, literal)\n",
+        "    if parameter_id == \"offset\":\n        return _sce_saved.saved_write_int8(\
+         _sce_testprofile.integer_parameter(parameter_id, literal, \
+         _sce_testprofile.from_canonical.INT8))\n",
+        "    if parameter_id == \"label\":\n        return \
+         _sce_testprofile.text_parameter(literal)\n",
+        "    if parameter_id == \"key\":\n        return \
+         _sce_testprofile.bytes_parameter(parameter_id, literal)\n",
+        "    if parameter_id == \"color\":\n        return \
+         _sce_testprofile.enum_parameter(literal)\n",
+    ] {
+        assert!(
+            text.contains(needle),
+            "typed_readers holds `{needle}`:\n{text}"
+        );
+    }
+    let empty = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="no_parameters">
+</scxml>
+"#;
+    let path = dir.path().join("no_parameters.scxml");
+    std::fs::write(&path, empty).expect("the suite is written");
+    let text = file_at(&path, "no_parameters");
+    let reader = between(&text, "def module_parameter(", "\ndef main(");
+    assert!(
+        reader.contains("\"\"\"\n    raise _sce_testprofile.undeclared_parameter(parameter_id)\n")
+            && !reader.contains("if parameter_id =="),
+        "a suite that declares no module parameter refuses every one: {reader}"
     );
 }
 
@@ -240,6 +612,7 @@ fn a_test_case_names_its_configurations_tables() {
         "        configuration=sce_asking_configuration.configuration(),\n".to_string(),
         "        machines=sce_asking_configuration.machine,\n".to_string(),
         "        module_parameters=sce_asking_configuration.module_parameters(),\n".to_string(),
+        "        inputs=sce_asking_configuration.input,\n".to_string(),
         "\ntest_case.__test__ = False".to_string(),
     ] {
         assert!(
@@ -550,7 +923,12 @@ fn the_kind_examples_generate_their_tables() {
         "test_configuration",
     );
     assert!(
-        configuration.ends_with("    return [\"elapsed_limit\"]"),
+        between(
+            &configuration,
+            "def module_parameters() -> List[str]:",
+            "\ndef read_"
+        )
+        .contains("\n    return [\"elapsed_limit\"]\n"),
         "{configuration}"
     );
     let component = machine_files(&examples.join("test-component.scxml"));

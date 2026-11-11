@@ -36,17 +36,28 @@
 //! ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so a
 //! template whose type reaches one is refused by the walk before anything is
 //! spelled.
+//!
+//! A template over a record also writes `TYPE` and `canonical`, the name and
+//! the canonical form of a message of it in the test log (§12.5), spelled by
+//! [`PythonCanonical`]. Its inverse, [`PythonReading`], reads a value back
+//! from that form with the readers of `sce_runtime.testprofile.from_canonical`,
+//! over the same walk ([`super::test_template_walk::canonical_form`]): the
+//! unit of a test configuration reads the values of a recorded input trace
+//! with it (docs/SCE_TTCN3_LANE.md §10.5).
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, CanonicalSpelling, CaseTest, Connectives, Held, JoinSpelling, Op,
-    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
+    Connectives, Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling,
+    TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 
 /// The function of the test profile's Python runtime that counts the
@@ -162,11 +173,11 @@ pub(super) fn render_test_template_python(
 /// leading underscore, so it can never be the alias `sce_<document>` a sibling
 /// module is imported under ([`python_module_alias`]), and no formal parameter
 /// (`param_<id>`) or binding of the form (`item_<n>`, `present_<n>`) is it.
-const PYTHON_CANONICAL: &str = "_sce_canonical";
+pub(super) const PYTHON_CANONICAL: &str = "_sce_canonical";
 
 /// The import that brings the writers of [`PYTHON_CANONICAL`] into the unit,
 /// from the profile's runtime ([`crate::std_imports::PYTHON_TEST_RUNTIME_PATH`]).
-fn canonical_import() -> String {
+pub(super) fn canonical_import() -> String {
     format!(
         "from {} import canonical as {PYTHON_CANONICAL}",
         crate::std_imports::PYTHON_TEST_RUNTIME_PATH
@@ -174,7 +185,7 @@ fn canonical_import() -> String {
 }
 
 /// A value the canonical writer reads, in Python.
-struct CanonicalAt {
+pub(super) struct CanonicalAt {
     /// What names the value: `value`, a name a binding holds it under, or a
     /// field of either.
     expr: String,
@@ -194,8 +205,9 @@ struct CanonicalAt {
 /// where it holds none. Python's test profile matches no union yet
 /// ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]), so the walk
 /// refuses one before it asks for its form, and the trait's refusal stands for
-/// it.
-struct PythonCanonical;
+/// it. The unit of a test configuration writes its records' forms with it too,
+/// beside their readers ([`PythonReading`]).
+pub(super) struct PythonCanonical;
 
 impl CanonicalSpelling for PythonCanonical {
     type At = CanonicalAt;
@@ -297,6 +309,312 @@ impl CanonicalSpelling for PythonCanonical {
             .map(|(id, value)| format!("({}, {value})", filters::py_string_literal(id)))
             .collect();
         format!("{PYTHON_CANONICAL}.record({})", fields.join(", "))
+    }
+}
+
+/// The name the unit of a test configuration imports the readers of the
+/// canonical form under, from the profile's runtime
+/// (`backends/python/runtime/sce_runtime/testprofile/from_canonical.py`): with
+/// a leading underscore, for the reason [`PYTHON_CANONICAL`] has one.
+pub(super) const PYTHON_FROM_CANONICAL: &str = "_sce_from_canonical";
+
+/// The import that brings the readers of [`PYTHON_FROM_CANONICAL`] into the
+/// unit, from the profile's runtime
+/// ([`crate::std_imports::PYTHON_TEST_RUNTIME_PATH`]).
+pub(super) fn from_canonical_import() -> String {
+    format!(
+        "from {} import from_canonical as {PYTHON_FROM_CANONICAL}",
+        crate::std_imports::PYTHON_TEST_RUNTIME_PATH
+    )
+}
+
+/// `text` as a Python string literal.
+fn python_literal(text: &str) -> String {
+    filters::py_string_literal(text.to_string())
+}
+
+/// The integer type of [`PYTHON_FROM_CANONICAL`] a value of `width` is read
+/// as: `_sce_from_canonical.UINT16` for a `uint16`, named as the profile names
+/// the type.
+fn python_integer_type(width: &SceType) -> String {
+    format!("{PYTHON_FROM_CANONICAL}.{}", width.as_attr().to_uppercase())
+}
+
+/// A value the canonical reader reads, in Python: the JSON it is read from.
+pub(super) struct PythonReadAt {
+    /// An expression of the JSON value the value is read from, where it is
+    /// present.
+    json: String,
+    /// The call that reads the value where it may be absent, up to the read
+    /// it is given as its last argument, a lambda: a field's, which is absent
+    /// where its record's object omits it, or any other value's, which is
+    /// absent where it is `null`.
+    optional: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+impl PythonReadAt {
+    /// The value `json` names, where it stands at `what`, inside `depth`
+    /// bindings and `records` records: absent where it is `null`, as an
+    /// element of a list of `optional<T>` is.
+    fn of(json: String, what: String, depth: usize, records: usize) -> Self {
+        PythonReadAt {
+            optional: format!("{PYTHON_FROM_CANONICAL}.nullable({json}"),
+            json,
+            what,
+            depth,
+            records,
+        }
+    }
+}
+
+/// The Python reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from the runtime's JSON value by the readers
+/// of [`PYTHON_FROM_CANONICAL`], which raise a `TraceRefusal` naming where it
+/// stands where it does not belong to its type. Which form each SCE type takes
+/// is the walk its writer's is ([`super::test_template_walk::canonical_form`]),
+/// so the reader reads exactly what [`PythonCanonical`] writes.
+///
+/// Each read is one expression of the value: a record a lambda over its
+/// object, called on it, that builds its payload class by the fields'
+/// keywords; a list a comprehension over its elements; a value that may be
+/// absent the runtime's `optional_field` or `nullable` with its read as a
+/// lambda. Every name a lambda or a comprehension binds is numbered by how
+/// deep it stands, so none hides another. Python's test profile matches no
+/// union yet ([`crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS`]),
+/// so a union is refused by name, as its writer refuses it.
+///
+/// The reader names the payload class of each record and the class of each
+/// enum through the module of its document, which it notes ([`Self::named`]),
+/// so the unit imports each.
+pub(super) struct PythonReading {
+    /// What the value read is named in a refusal: its record's type name.
+    what: String,
+    /// Every document whose declaration the reader named: the modules the
+    /// unit imports.
+    named: RefCell<BTreeSet<String>>,
+}
+
+impl PythonReading {
+    /// The reader of the record whose type in the test log is `what`.
+    pub(super) fn of(what: &str) -> Self {
+        PythonReading {
+            what: what.to_string(),
+            named: RefCell::default(),
+        }
+    }
+
+    /// Every document whose declaration the reader named.
+    pub(super) fn named(&self) -> BTreeSet<String> {
+        self.named.borrow().clone()
+    }
+
+    fn names_document(&self, document: &str) {
+        self.named.borrow_mut().insert(document.to_string());
+    }
+}
+
+impl CanonicalForm for PythonReading {
+    type At = PythonReadAt;
+
+    /// The reader's parameter `value`.
+    fn root(&self) -> PythonReadAt {
+        PythonReadAt::of("value".to_string(), self.what.clone(), 0, 0)
+    }
+
+    /// The member `id` of the object its record bound: present where the
+    /// field's type is not optional, and absent where it is omitted otherwise.
+    fn field(&self, at: &PythonReadAt, id: &str) -> PythonReadAt {
+        let object = format!("record_{}", at.records);
+        let what = format!("{}.{id}", at.what);
+        PythonReadAt {
+            json: format!(
+                "{PYTHON_FROM_CANONICAL}.field({object}, {}, {})",
+                python_literal(id),
+                python_literal(&what)
+            ),
+            optional: format!(
+                "{PYTHON_FROM_CANONICAL}.optional_field({object}, {}",
+                python_literal(id)
+            ),
+            what,
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &PythonReadAt, prefix: &str) -> (String, PythonReadAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = PythonReadAt::of(name.clone(), at.what.clone(), at.depth + 1, at.records);
+        (name, value)
+    }
+
+    /// The case's binding stands for its record. Python's test profile matches
+    /// no union yet, which [`Self::union`] refuses once the walk has read its
+    /// cases.
+    fn case_record(&self, bound: PythonReadAt) -> PythonReadAt {
+        bound
+    }
+
+    fn list_element(&self, list: &PythonReadAt, bound: PythonReadAt) -> PythonReadAt {
+        PythonReadAt {
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    fn optional_value(&self, _field: &PythonReadAt, bound: PythonReadAt) -> PythonReadAt {
+        bound
+    }
+
+    fn boolean(&self, at: &PythonReadAt) -> String {
+        format!(
+            "{PYTHON_FROM_CANONICAL}.boolean({}, {})",
+            at.json,
+            python_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, through the module of the
+    /// enum's document: a closed enum's members, or an open enum's named
+    /// members and the value its class makes of a number no member is named
+    /// for (`from_underlying`).
+    fn enumerated(&self, at: &PythonReadAt, declared: &ScopedEnum) -> String {
+        self.names_document(&declared.name);
+        let enum_type = enum_qualified_type(&declared.name, Language::Python);
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "({}, {})",
+                    python_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ref(
+                        Language::Python,
+                        &enum_type,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        if declared.strict {
+            format!(
+                "{PYTHON_FROM_CANONICAL}.enumerated({}, [{}], {})",
+                at.json,
+                variants.join(", "),
+                python_literal(&at.what)
+            )
+        } else {
+            format!(
+                "{PYTHON_FROM_CANONICAL}.open_enumerated({}, [{}], {}, \
+                 {enum_type}.from_underlying, {})",
+                at.json,
+                variants.join(", "),
+                python_integer_type(&declared.underlying),
+                python_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read as the integer type of its width, which bounds it.
+    fn integer(&self, at: &PythonReadAt, width: &SceType) -> String {
+        format!(
+            "{PYTHON_FROM_CANONICAL}.integer({}, {}, {})",
+            at.json,
+            python_integer_type(width),
+            python_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &PythonReadAt, max: &Bound) -> String {
+        format!(
+            "{PYTHON_FROM_CANONICAL}.text({}, {}, {})",
+            at.json,
+            max.max,
+            python_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &PythonReadAt, max: &Bound) -> String {
+        format!(
+            "{PYTHON_FROM_CANONICAL}.byte_string({}, {}, {})",
+            at.json,
+            max.max,
+            python_literal(&at.what)
+        )
+    }
+
+    /// The elements within the list's bounds, each read by a comprehension.
+    fn list(&self, at: &PythonReadAt, max: &Bound, binding: &str, element: String) -> String {
+        format!(
+            "[{element} for {binding} in {PYTHON_FROM_CANONICAL}.elements({}, {}, {}, {})]",
+            at.json,
+            max.min,
+            max.max,
+            python_literal(&at.what)
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read where the record's object names it.
+    fn optional_field(&self, field: &PythonReadAt, binding: &str, written: String) -> String {
+        format!("{}, lambda {binding}: {written})", field.optional)
+    }
+
+    /// The element read where it is not `null`.
+    fn optional_element(&self, element: &PythonReadAt, binding: &str, written: String) -> String {
+        format!("{}, lambda {binding}: {written})", element.optional)
+    }
+
+    /// A lambda that binds the record's object, refused where it names a field
+    /// the record does not declare, called on it, which builds the record's
+    /// payload class of its fields by their keywords.
+    fn record(
+        &self,
+        at: &PythonReadAt,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        self.names_document(&record.name);
+        let ids: Vec<String> = fields.iter().map(|(id, _)| python_literal(id)).collect();
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| {
+                format!("{}={value}", event_schema_field_ident(id, Language::Python))
+            })
+            .collect();
+        format!(
+            "(lambda record_{}: {}({}))({PYTHON_FROM_CANONICAL}.record({}, [{}], {}))",
+            at.records,
+            event_schema_payload_type(&record.name, Language::Python),
+            members.join(", "),
+            at.json,
+            ids.join(", "),
+            python_literal(&at.what)
+        )
+    }
+
+    /// Python's test profile matches no union yet: refused by name, as
+    /// [`PythonCanonical`] refuses to write one.
+    fn union(
+        &self,
+        _at: &PythonReadAt,
+        union: &ScopedUnion,
+        _cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        Err(crate::forge::value_type::union_unlowered(&union.name))
     }
 }
 

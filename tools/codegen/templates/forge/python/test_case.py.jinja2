@@ -23,13 +23,15 @@ NAME = {{ name_literal }}
 
 def test_case() -> {{ runtime }}.TestCase:
     """The test case ``{{ case_name }}`` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads
-    it: its name, its configuration and the machines of its components, and the module
-    parameters those components read."""
+    it: its name, its configuration and the machines of its components, the module parameters
+    those components read, and the reader of the inputs a recorded trace of it carries
+    (docs/SCE_TTCN3_LANE.md §10.5)."""
     return {{ runtime }}.TestCase(
         name=NAME,
         configuration={{ configuration }}(),
         machines={{ machine }},
         module_parameters={{ module_parameters }}(),
+        inputs={{ input }},
     )
 
 

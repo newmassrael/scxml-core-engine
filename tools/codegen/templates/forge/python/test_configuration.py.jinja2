@@ -8,13 +8,19 @@
 # Runtime: {{ runtime_dep }}
 # Do not edit — regenerate from the source SCXML file.
 {# `python_imports` are the modules of the components' machines, each the
-   `<machine>_sm` module its statechart is generated as, beside this one, under
-   the alias every Python unit imports a sibling by; the profile's runtime is
-   imported under the name a component's machine imports it by. #}
+   `<machine>_sm` module its statechart is generated as, and of each document
+   whose record or enum a reader or a writer of a trace's records names, each
+   beside this one, under the alias every Python unit imports a sibling by; the
+   profile's runtime is imported under the name a component's machine imports it
+   by, and its writers and readers of the canonical form, where a record is read,
+   as the unit of a template imports its writers. #}
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import {{ runtime_path }} as {{ runtime }}
+{% for imp in form_imports %}
+{{ imp }}
+{% endfor %}
 
 {% for imp in python_imports %}
 {{ imp }}
@@ -94,3 +100,37 @@ def module_parameters() -> List[str]:
     """The module parameters the components of the configuration read
     (docs/SCE_TEST_PROFILE.md §11.5), each of which a suite that runs it gives a value."""
     return {{ module_parameters }}
+{# Each record a system port takes is read back from the canonical form and written in it
+   by the one walk of the form both directions share, so the value a recorded trace hands the
+   run and the value the test log writes of it are the same bytes. The readers are public,
+   so a host reads and writes a record's form with them as the runner does. #}
+{% for reader in readers %}
+
+
+def {{ reader.read }}(value: Any) -> {{ reader.payload }}:
+    """The record ``{{ reader.type }}`` read from the canonical form of the test log
+    (docs/SCE_TEST_PROFILE.md §12.5), as a recorded input trace holds it
+    (docs/SCE_TTCN3_LANE.md §10.3): the inverse of ``{{ reader.canonical }}``. Raises a
+    ``{{ runtime_path }}.TraceRefusal`` naming where its value does not belong to its type."""
+    return {{ reader.read_expr }}
+
+
+def {{ reader.canonical }}(value: {{ reader.payload }}) -> {{ canonical_writers }}.CanonicalValue:
+    """The record ``{{ reader.type }}`` in the canonical form of the test log
+    (docs/SCE_TEST_PROFILE.md §12.5), which a message of it a trace hands the run carries."""
+    return {{ reader.canonical_expr }}
+{% endfor %}
+
+
+def input(system_port: str, type_name: str, value: Any) -> {{ runtime }}.Message:  # noqa: A001 -- the profile's word
+    """The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2, a
+    ``{{ runtime_path }}.InputReader``): the message an input of the record type ``type_name``
+    on the system port ``system_port`` carries, its value read from the canonical form. Raises
+    a ``{{ runtime_path }}.TraceRefusal`` naming why, where the configuration has no such
+    system port, the ``in`` list of its type does not name the type, or the value does not
+    belong to it."""
+{% for input in inputs %}
+    if system_port == {{ input.port }} and type_name == {{ input.type }}:
+        return {{ runtime }}.Message.of({{ input.event }}, {{ input.read }}(value), {{ input.type }}, {{ input.canonical }})
+{% endfor %}
+    raise {{ runtime }}.TraceRefusal.not_an_input(system_port, type_name, {{ system_ports }})

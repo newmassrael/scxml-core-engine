@@ -51,3 +51,31 @@ def suite() -> {{ runtime }}.Suite:
         executes=[],
 {% endif %}
     )
+
+
+def module_parameter(parameter_id: str, literal: str) -> {{ runtime }}.ModuleParameterValue:
+    """The value the runner is given for the module parameter ``parameter_id``
+    (docs/SCE_TTCN3_LANE.md §4, ``--module-parameter <id>=<value>``), a literal of its declared
+    type as the ``value`` of a ``<sce:module-parameter>`` writes one (docs/SCE_TEST_PROFILE.md
+    §11.4), read as the saved value of that type. Raises a ``{{ runtime_path }}.OverrideRefusal``
+    naming why, where the suite declares no such parameter or the literal is no value of its
+    type. It is a ``{{ runtime_path }}.ParameterReader``."""
+{% for parameter in parameters %}
+    if parameter_id == {{ parameter.id }}:
+        return {{ parameter.reader }}
+{% endfor %}
+    raise {{ runtime }}.undeclared_parameter(parameter_id)
+
+
+def main() -> int:
+    """The runner program of the suite ``{{ suite_name }}`` (docs/SCE_TTCN3_LANE.md §4): every
+    test case the world of ``--world`` selects, run against its recorded input trace from
+    ``--trace-dir``, its canonical test log written to ``--log-dir``
+    (``{{ runtime_path }}.runner_main``). Answers the exit status. The unit imports its siblings
+    relative to its package, so the program is the unit run as a module:
+    ``python -m <package>.{{ module_name }}``."""
+    return {{ runtime }}.runner_main(suite(), module_parameter)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

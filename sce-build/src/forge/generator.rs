@@ -32478,7 +32478,7 @@ pub fn generate_python_with_imports(
         // modules it reads as siblings.
         ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
         ForgeDocument::TestConfiguration(m) => {
-            python_test_tables::render_test_configuration_python(&env, m, imports)?
+            python_test_tables::render_test_configuration_python(&env, m, imports, options)?
         }
         ForgeDocument::TestCase(m) => {
             python_test_tables::render_test_case_python(&env, m, imports, options)?
