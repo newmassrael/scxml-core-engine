@@ -59,7 +59,7 @@ typedef struct {
 static inline const char *{{ union_stem }}_variant(const {{ union_type }} *value) {
 {% for c in cases %}
     if (value->{{ tag_member }} == {{ c.kind }}) {
-        return "{{ c.variant | escape_c }}";
+        return "{{ c.variant }}";
     }
 {% endfor %}
     return NULL;
