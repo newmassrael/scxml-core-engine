@@ -62,6 +62,66 @@ pub(crate) fn kotlin_union_member(
     })
 }
 
+/// The Kotlin read of `member` of the union value `holder`, a parameter or a
+/// local of an algorithm spelled as Kotlin names it, whose type is the union's
+/// own unit, the sealed interface `ty` (docs/adr/0092, section 7, the Kotlin
+/// row, and Landing order step 5), where the value may be in the cases `left`,
+/// as [`unit_union_member_of`] classifies it: the tag's property, which the
+/// unit's interface answers under one name whatever key the tag is written
+/// under; the field of the one case left, through that case's proven read; or
+/// the field the cases left each declare, read by a `when` over them that takes
+/// each case's record apart, whose `else` the narrowing proved is never taken.
+/// The `when` tests `holder` itself, a parameter or a local the body never
+/// writes, so each arm reads the case it tested. A case is the class the unit
+/// nests in the interface ([`crate::forge::generator::kotlin_case_ident`]), and
+/// its record is the payload class its event schema's unit declares, whose
+/// fields are named as the schema writes them
+/// ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
+/// [`unit_union_member_of`]'s.
+pub(crate) fn kotlin_unit_union_read(
+    holder: &str,
+    ty: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    let field = crate::forge::generator::event_schema_field_ident(
+        member,
+        crate::generator::Language::Kotlin,
+    );
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{KOTLIN_UNION_KIND}"),
+        UnionMember::Case(case) => {
+            format!(
+                "{holder}.{}().{field}",
+                kotlin_case_read(&case.variant.name)
+            )
+        }
+        UnionMember::Shared => {
+            let arms: Vec<String> = left
+                .iter()
+                .map(|case| {
+                    format!(
+                        "is {ty}.{} -> {holder}.value.{field}",
+                        crate::forge::generator::kotlin_case_ident(&case.variant.name)
+                    )
+                })
+                .collect();
+            // A `when` over every case of a sealed interface is exhaustive, and
+            // an `else` beside it is one Kotlin warns is redundant.
+            let rest = if unit_union_leaves_others(union, left) {
+                format!(
+                    "; else -> throw IllegalStateException(\"{}\")",
+                    crate::filters::escape_kotlin(unit_union_other_case(union, left))
+                )
+            } else {
+                String::new()
+            };
+            format!("(when ({holder}) {{ {}{rest} }})", arms.join("; "))
+        }
+    })
+}
+
 /// A Kotlin string literal of `text`.
 fn kotlin_literal(text: &str) -> String {
     format!("\"{}\"", crate::filters::escape_kotlin(text.to_string()))
@@ -1624,6 +1684,57 @@ mod tests {
             kotlin_saved_write(&ty("list<union:Shape>[2]"), "x", 0),
             Ok("SavedValues.list(x) { sceSaved0 -> sceSaved0.toSaved() }".to_string())
         );
+    }
+
+    /// An algorithm's union is its unit's sealed interface (docs/adr/0092,
+    /// Landing order step 5): the tag by the property the interface answers it
+    /// by, the field of the one case left by that case's proven read, a field
+    /// several cases declare by a `when` over them whose `else` is never taken
+    /// and is written only where a case is not left, and no read where no case
+    /// left declares the field.
+    #[test]
+    fn an_algorithms_union_is_read_on_its_units_sealed_interface() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|c| c.variant.name == name)
+                .expect("a case")
+        };
+        let read = |left: &[&ScopedCase], member: &str| {
+            kotlin_unit_union_read("shape", "Shape", union, left, member)
+        };
+        assert_eq!(read(&[], "kind"), Ok("shape.kind".to_string()));
+        assert_eq!(
+            read(&[case("circle")], "radius"),
+            Ok("shape.provenCircle().radius".to_string())
+        );
+        assert_eq!(
+            read(&[case("circle"), case("disc")], "radius"),
+            Ok(
+                "(when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
+                 shape.value.radius; else -> throw IllegalStateException(\"a value of shape \
+                 read as one of its cases circle, disc is in another case\") })"
+                    .to_string()
+            )
+        );
+        // Where every case of the union is left, each is an arm and there is
+        // no other.
+        let mut both = union.clone();
+        both.cases.retain(|c| c.variant.name != "dot");
+        let every: Vec<&ScopedCase> = both.cases.iter().collect();
+        assert_eq!(
+            kotlin_unit_union_read("shape", "Shape", &both, &every, "radius"),
+            Ok(
+                "(when (shape) { is Shape.Circle -> shape.value.radius; is Shape.Disc -> \
+                 shape.value.radius })"
+                    .to_string()
+            )
+        );
+        assert!(read(&[], "radius").is_err());
+        assert!(read(&[case("dot"), case("circle")], "radius").is_err());
     }
 
     /// A list sent where its field asks a lower count it does not prove is

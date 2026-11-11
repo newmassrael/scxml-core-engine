@@ -404,7 +404,7 @@ pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin, Lang
 /// algorithm names. A backend not listed refuses such an algorithm by name
 /// (`generate/unsupported-feature`) where it renders it; the algorithm is judged
 /// alike on every backend before that.
-pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[Language::Rust];
+pub const ALGORITHM_UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
 
 /// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): a unit that declares the template's `match` and, for a
@@ -1257,7 +1257,7 @@ mod tests {
 
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a
     /// union only where it generates the union's unit the algorithm names, and
-    /// names it once. Rust lowers one.
+    /// names it once. Rust and Kotlin lower one.
     #[test]
     fn an_algorithm_over_a_union_is_lowered_where_its_unit_is_generated() {
         for &lang in ALGORITHM_UNION_BACKENDS {
@@ -1268,7 +1268,7 @@ mod tests {
                 .count();
             assert_eq!(times, 1, "{lang:?}");
         }
-        assert_eq!(ALGORITHM_UNION_BACKENDS, [Language::Rust]);
+        assert_eq!(ALGORITHM_UNION_BACKENDS, [Language::Rust, Language::Kotlin]);
     }
 
     /// A sweep over every backend asks the ones that emit something and write

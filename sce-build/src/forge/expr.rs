@@ -1237,6 +1237,16 @@ fn lower_union_reads(
                         &left,
                         property,
                     ),
+                    ExprTarget::Kotlin => crate::forge::composed_lowering::kotlin_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Kotlin,
+                        ),
+                        unit,
+                        union,
+                        &left,
+                        property,
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"

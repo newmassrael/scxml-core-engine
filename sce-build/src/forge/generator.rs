@@ -39313,10 +39313,12 @@ fn record_field_inits(
 
 /// The type the union `alias` an algorithm imports is spelled as on the
 /// backend of `l`: the type its own unit declares (docs/adr/0092, section 7, the
-/// Rust row), named through the module the algorithm's import line brings in,
-/// as an event schema's record is ([`event_schema_payload_type`]). A backend
-/// that does not lower an algorithm's union refuses the algorithm by name
-/// before its body is rendered
+/// Rust and Kotlin rows), named as the import line brings it in, as an event
+/// schema's record is ([`event_schema_payload_type`]): Rust through the sibling
+/// module (`<snake>::<Pascal>`), Kotlin by the sealed interface the wildcard
+/// import of the unit's package brings in, as a schema unit names it
+/// (`SchemaUnitNames::union`). A backend that does not lower an algorithm's
+/// union refuses the algorithm by name before its body is rendered
 /// ([`crate::forge::codegen_matrix::ALGORITHM_UNION_BACKENDS`]), so asked of one
 /// it is a fault of the pipeline, not of the document.
 fn algorithm_union_type(
@@ -39336,18 +39338,53 @@ fn algorithm_union_type(
         })?;
     match l.lang {
         Language::Rust => Ok(format!("{}::{}", import.namespace, import.type_name)),
-        Language::Cpp
-        | Language::Kotlin
-        | Language::Go
-        | Language::Python
-        | Language::C11
-        | Language::Swift => Err(GenerateError::InvalidConfig(format!(
-            "an algorithm's union reached the renderer of {}, which lowers none in an \
-             algorithm (docs/adr/0092, Landing order step 5)",
-            l.lang.canonical_name()
-        ))
-        .into()),
+        Language::Kotlin => Ok(import.type_name.clone()),
+        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+            Err(GenerateError::InvalidConfig(format!(
+                "an algorithm's union reached the renderer of {}, which lowers none in an \
+                 algorithm (docs/adr/0092, Landing order step 5)",
+                l.lang.canonical_name()
+            ))
+            .into())
+        }
     }
+}
+
+/// The value of the union whose unit's type is `union_type` in the case
+/// `variant`, holding `record` (the case's record, built) or nothing for an
+/// empty case, as the backend `lang` builds a case of its unit (docs/adr/0092,
+/// section 7 item 3: built only whole): Rust's enum variant
+/// ([`crate::forge::composed_lowering::rust_case_ident`]) and Kotlin's class
+/// nested in the sealed interface, or its `data object`
+/// ([`kotlin_case_ident`]). A backend that lowers no union in an algorithm
+/// refused the algorithm before its body was rendered
+/// ([`algorithm_union_type`]), so asked of one it is a fault of the pipeline.
+fn algorithm_union_case(
+    lang: crate::generator::Language,
+    union_type: &str,
+    variant: &str,
+    record: Option<&str>,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let case = match lang {
+        Language::Rust => format!(
+            "{union_type}::{}",
+            crate::forge::composed_lowering::rust_case_ident(variant)
+        ),
+        Language::Kotlin => format!("{union_type}.{}", kotlin_case_ident(variant)),
+        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+            return Err(GenerateError::InvalidConfig(format!(
+                "an algorithm's union local reached the renderer of {}, which lowers none in an \
+                 algorithm (docs/adr/0092, Landing order step 5)",
+                lang.canonical_name()
+            ))
+            .into())
+        }
+    };
+    Ok(match record {
+        Some(record) => format!("{case}({record})"),
+        None => case,
+    })
 }
 
 /// The statement that closes the body of the algorithm `name` on `lang` at a
@@ -39355,29 +39392,37 @@ fn algorithm_union_type(
 /// returned on every case (docs/adr/0092, section 6.1 item 4). The judge proved
 /// the point unreached before any backend was asked; the target's compiler
 /// cannot see that it is, and asks the body for a value there. Rust's
-/// `unreachable!` is the expression of the function's type that says so. Only a
-/// body that holds a union ends this way, and a backend that does not lower one
-/// refused the algorithm before its body was rendered, so asked of one it is a
-/// fault of the pipeline, not of the document.
-fn unreached_end(lang: crate::generator::Language, name: &str) -> Result<String, ForgeError> {
+/// `unreachable!` is the expression of the function's type that says so;
+/// Kotlin's is a `throw` of `IllegalStateException`, the exception the unit's
+/// own proven reads throw where a read stands in a case the narrowing proved
+/// the value is not in (`forge/kotlin/union.kt.jinja2`), and which a `may-fail`
+/// body's `try` does not catch, since it catches only `AlgorithmFailure`. The
+/// statement stands at `pad`, the body's own indentation. Only a body that
+/// holds a union ends this way, and a backend that does not lower one refused
+/// the algorithm before its body was rendered, so asked of one it is a fault of
+/// the pipeline, not of the document.
+fn unreached_end(
+    lang: crate::generator::Language,
+    name: &str,
+    pad: &str,
+) -> Result<String, ForgeError> {
     use crate::generator::Language;
+    let why = format!("{name}: every case of its union returned before the end of its body");
     match lang {
-        Language::Rust => Ok(format!(
-            "    unreachable!(\"{name}: every case of its union returned before the end of its \
-             body\")"
+        Language::Rust => Ok(format!("{pad}unreachable!(\"{why}\")")),
+        Language::Kotlin => Ok(format!(
+            "{pad}throw IllegalStateException(\"{}\")",
+            filters::escape_kotlin(why)
         )),
-        Language::Cpp
-        | Language::Kotlin
-        | Language::Go
-        | Language::Python
-        | Language::C11
-        | Language::Swift => Err(GenerateError::InvalidConfig(format!(
-            "algorithm '{name}' ends where every case of a union returned, which the renderer \
-             of {} does not close, as it lowers no union in an algorithm (docs/adr/0092, \
-             Landing order step 5)",
-            lang.canonical_name()
-        ))
-        .into()),
+        Language::Cpp | Language::Go | Language::Python | Language::C11 | Language::Swift => {
+            Err(GenerateError::InvalidConfig(format!(
+                "algorithm '{name}' ends where every case of a union returned, which the \
+                 renderer of {} does not close, as it lowers no union in an algorithm \
+                 (docs/adr/0092, Landing order step 5)",
+                lang.canonical_name()
+            ))
+            .into())
+        }
     }
 }
 
@@ -41492,25 +41537,43 @@ fn lower_algorithm_stmt(
             let element = format!("<sce:var name=\"{name}\">");
             let built = unions.built(name, name_spelling.as_ref(), alias, fields)?;
             let union_type = algorithm_union_type(l, imports, alias)?;
-            let case = crate::forge::composed_lowering::rust_case_ident(&built.case.variant.name);
-            let value = match built.record.as_deref() {
-                None => format!("{union_type}::{case}"),
+            // The case's record, built as a record local is: Rust's struct
+            // literal of its fields, Kotlin's data class by named arguments.
+            let record = match built.record.as_deref() {
+                None => None,
                 Some(record_alias) => {
                     let record = resolve_record(imports, record_alias, None, &element)?;
                     let inits = record_field_inits(record, &built.fields, ctx, type_ctx)?;
-                    let joined = inits
-                        .iter()
-                        .map(|(field, value)| format!("{field}: {value}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(
-                        "{union_type}::{case}({} {{ {joined} }})",
-                        record.qualified_type
-                    )
+                    let joined = |sep: &str| {
+                        inits
+                            .iter()
+                            .map(|(field, value)| format!("{field}{sep}{value}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    let ty = &record.qualified_type;
+                    Some(match lang {
+                        Language::Kotlin => format!("{ty}({})", joined(" = ")),
+                        _ => format!("{ty} {{ {} }}", joined(": ")),
+                    })
                 }
             };
-            // `algorithm_union_type` has refused every backend but Rust.
-            out.push_str(&format!("{pad}let {} = {value};\n", l.local_id(name)));
+            let value = algorithm_union_case(
+                lang,
+                &union_type,
+                &built.case.variant.name,
+                record.as_deref(),
+            )?;
+            let local = l.local_id(name);
+            // `algorithm_union_type` has refused every backend but Rust and
+            // Kotlin. The local is never written, so Kotlin declares it `val`,
+            // at the union's type rather than the case's class, so a test of
+            // its case reads it as a value of the union.
+            let line = match lang {
+                Language::Kotlin => format!("{pad}val {local}: {union_type} = {value}\n"),
+                _ => format!("{pad}let {local} = {value};\n"),
+            };
+            out.push_str(&line);
         }
         AlgorithmStmt::Assign {
             target,
@@ -46004,6 +46067,14 @@ fn render_algorithm(
     let absences = TypedAbsences::of(m, &l, imports)?;
     let optional_records: std::collections::HashMap<String, String> =
         types.optional_record_aliases().into_iter().collect();
+    // A `may-fail` Kotlin body sits inside the `try` that turns a failure into
+    // `AlgorithmResult.Failed` (`algorithm.kt.jinja2`), and a Swift one inside
+    // the function its caseless enum declares (`algorithm.swift.jinja2`).
+    let body_indent = if (may_fail && lang == Language::Kotlin) || lang == Language::Swift {
+        2
+    } else {
+        1
+    };
     let body = lower_algorithm_body(
         &m.body,
         &AlgorithmBodyCfg {
@@ -46021,14 +46092,7 @@ fn render_algorithm(
             channel,
             unions: &unions,
         },
-        // A `may-fail` Kotlin body sits inside the `try` that turns a failure
-        // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`), and a Swift one
-        // inside the function its caseless enum declares (`algorithm.swift.jinja2`).
-        if (may_fail && lang == Language::Kotlin) || lang == Language::Swift {
-            2
-        } else {
-            1
-        },
+        body_indent,
     )?;
     // docs/adr/0092, section 6.1 item 4: a body that holds a union may end where
     // its tag's tests have returned on every case, a point the judge proved no
@@ -46037,7 +46101,10 @@ fn render_algorithm(
     // that the point is not reached; a body whose last statement returns on
     // every path the compiler sees needs none.
     let body = if declared_return.is_some() && !crate::forge::narrowing::always_returns(&m.body) {
-        format!("{body}\n{}", unreached_end(lang, &m.name)?)
+        format!(
+            "{body}\n{}",
+            unreached_end(lang, &m.name, &"    ".repeat(body_indent))?
+        )
     } else {
         body
     };

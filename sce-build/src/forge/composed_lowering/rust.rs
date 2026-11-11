@@ -140,14 +140,14 @@ pub(crate) fn rust_union_member_place(
 /// The Rust read of `member` of the union value `holder`, a parameter or a
 /// local of an algorithm spelled as Rust names it, whose type is the union's
 /// own unit, `ty` (docs/adr/0092, section 7, the Rust row, and Landing order
-/// step 5), where the value may be in the cases `left`: the tag's method; the
-/// field of the one case left, through that case's proven read; or the field
-/// the cases left each declare, read by a `match` over them whose other arm the
-/// narrowing proved is never taken. A case's record is the payload type its
-/// event schema's unit declares, whose fields are named in snake case
-/// ([`crate::forge::generator::event_schema_field_ident`]). A field is copied
-/// out as it is read, so one whose value is not copied as it is read (a text,
-/// a byte string) is refused, naming it, as is a read where no case is left.
+/// step 5), where the value may be in the cases `left`, as
+/// [`unit_union_member_of`] classifies it: the tag's method; the field of the
+/// one case left, through that case's proven read; or the field the cases left
+/// each declare, read by a `match` over them whose other arm the narrowing
+/// proved is never taken. A case's record is the payload type its event
+/// schema's unit declares, whose fields are named in snake case
+/// ([`crate::forge::generator::event_schema_field_ident`]). `Err` as
+/// [`unit_union_member_of`]'s, and for a tag's key no Rust method is named by.
 pub(crate) fn rust_unit_union_read(
     holder: &str,
     ty: &str,
@@ -155,54 +155,18 @@ pub(crate) fn rust_unit_union_read(
     left: &[&ScopedCase],
     member: &str,
 ) -> Result<String, String> {
-    if member == union.tag {
-        return rust_union_tag_method(member)
+    let field =
+        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Rust);
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => rust_union_tag_method(member)
             .map(|method| format!("{holder}.{method}()"))
             .ok_or_else(|| {
                 format!("the tag's key `{member}` names no Rust method its value can be read by")
-            });
-    }
-    // The type the record of `case` declares `member` with, if it declares it.
-    fn declared<'u>(
-        union: &'u ScopedUnion,
-        case: &ScopedCase,
-        member: &str,
-    ) -> Option<&'u ValueType> {
-        case.record
-            .as_deref()
-            .and_then(|record| union.scope.records.get(record))
-            .and_then(|record| record.fields.iter().find(|(id, _)| id == member))
-            .map(|(_, ty)| ty)
-    }
-    let refused = |why: &str| {
-        format!(
-            "`{member}` of `union:{}`, read where it may be in the cases {}, {why} \
-             (docs/adr/0092, section 6.1)",
-            union.name,
-            left.iter()
-                .map(|case| format!("`{}`", case.variant.name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    let mut types = left.iter().map(|case| declared(union, case, member));
-    let Some(Some(first)) = types.next() else {
-        return Err(refused("is read where no case left declares it"));
-    };
-    if !types.all(|ty| ty == Some(first)) {
-        return Err(refused("is not declared with one type by every case left"));
-    }
-    if !plain(first) {
-        return Err(refused(
-            "is a value an algorithm does not copy out of a union yet: a text or a byte string \
-             of a case is read in a statechart",
-        ));
-    }
-    let field =
-        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Rust);
-    Ok(match left {
-        [case] => format!("{holder}.{}().{field}", rust_case_read(&case.variant.name)),
-        _ => {
+            })?,
+        UnionMember::Case(case) => {
+            format!("{holder}.{}().{field}", rust_case_read(&case.variant.name))
+        }
+        UnionMember::Shared => {
             let arms: String = left
                 .iter()
                 .map(|case| {
@@ -214,15 +178,10 @@ pub(crate) fn rust_unit_union_read(
                 .collect();
             // Every case is an arm where every case is left; otherwise the
             // narrowing proved the value is in none of the others.
-            let rest = if left.len() < union.cases.len() {
+            let rest = if unit_union_leaves_others(union, left) {
                 format!(
-                    "_ => unreachable!(\"a value of {} read as one of its cases {} is in another \
-                     case\"), ",
-                    union.name,
-                    left.iter()
-                        .map(|case| case.variant.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    "_ => unreachable!(\"{}\"), ",
+                    unit_union_other_case(union, left)
                 )
             } else {
                 String::new()

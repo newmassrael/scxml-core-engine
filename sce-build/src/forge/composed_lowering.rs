@@ -73,7 +73,7 @@ pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
 };
 pub(crate) use go::go_raise_checks;
-pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member};
+pub(crate) use kotlin::{kotlin_init_block, kotlin_union_member, kotlin_unit_union_read};
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};
 pub(crate) use rust::{
     rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
@@ -660,9 +660,34 @@ pub enum UnionMember<'u> {
     /// A field of the one case left, which declares it, read through that
     /// case's proven read.
     Case(&'u ScopedCase),
-    /// A field every case left declares with one type, copied as it is read
-    /// ([`shared_plain_field`]), read through its one accessor over the cases.
+    /// A field every case left declares with one type, copied as it is read:
+    /// on a machine's union through its one accessor over the cases
+    /// ([`shared_plain_field`]), on a unit's by a test of the case over the
+    /// cases left ([`unit_union_member_of`]).
     Shared,
+}
+
+/// The type the record of `case`, a case of `union`, declares `member` with,
+/// if it declares it.
+fn case_field<'u>(
+    union: &'u ScopedUnion,
+    case: &ScopedCase,
+    member: &str,
+) -> Option<&'u ValueType> {
+    case.record
+        .as_deref()
+        .and_then(|record| union.scope.records.get(record))
+        .and_then(|record| record.fields.iter().find(|(id, _)| id == member))
+        .map(|(_, ty)| ty)
+}
+
+/// The cases `left`, each named in backquotes, for a sentence that says where
+/// a read stands.
+fn cases_named(left: &[&ScopedCase]) -> String {
+    left.iter()
+        .map(|case| format!("`{}`", case.variant.name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// What a read of `member` of a value of `union` that may be in the cases
@@ -679,12 +704,7 @@ pub fn union_member_of<'u>(
     if member == union.tag {
         return Ok(UnionMember::Tag);
     }
-    let declares = |case: &ScopedCase| -> bool {
-        case.record
-            .as_deref()
-            .and_then(|record| union.scope.records.get(record))
-            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
-    };
+    let declares = |case: &ScopedCase| -> bool { case_field(union, case, member).is_some() };
     match left {
         [case] if declares(case) => Ok(UnionMember::Case(case)),
         _ if !left.is_empty()
@@ -698,12 +718,79 @@ pub fn union_member_of<'u>(
              cases share whose value is not copied as it is read, and a machine reads such a \
              field only where a test proves one case (docs/adr/0092, section 6.1)",
             union.name,
-            left.iter()
-                .map(|case| format!("`{}`", case.variant.name))
-                .collect::<Vec<_>>()
-                .join(", ")
+            cases_named(left)
         )),
     }
+}
+
+/// What a read of `member` of a value of `union` held in the type the union's
+/// own unit declares reads, where the value may be in the cases `left`
+/// ([`UnionMember`]; docs/adr/0092, section 6.1 item 2, and "Decided while
+/// landing step 5" item 7): the read of an algorithm's parameter or local. Its
+/// tag; the field of the one case left; or a field every case left declares
+/// with one type, which the backend reads by a test of the case over the cases
+/// left alone, so the unit needs no accessor of it and a case outside `left`
+/// need not declare it alike, as a machine's one accessor needs
+/// ([`union_member_of`]). A field is copied out as it is read, so `Err` for one
+/// whose value is not ([`plain`]: a text, a byte string), for one no case left
+/// declares, and for one the cases left declare with two types. One
+/// classification for every backend that reads a unit's union.
+pub fn unit_union_member_of<'u>(
+    union: &ScopedUnion,
+    left: &[&'u ScopedCase],
+    member: &str,
+) -> Result<UnionMember<'u>, String> {
+    if member == union.tag {
+        return Ok(UnionMember::Tag);
+    }
+    let refused = |why: &str| {
+        format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, {why} \
+             (docs/adr/0092, section 6.1)",
+            union.name,
+            cases_named(left)
+        )
+    };
+    let mut types = left.iter().map(|case| case_field(union, case, member));
+    let Some(Some(first)) = types.next() else {
+        return Err(refused("is read where no case left declares it"));
+    };
+    if !types.all(|ty| ty == Some(first)) {
+        return Err(refused("is not declared with one type by every case left"));
+    }
+    if !plain(first) {
+        return Err(refused(
+            "is a value an algorithm does not copy out of a union yet: a text or a byte string \
+             of a case is read in a statechart",
+        ));
+    }
+    Ok(match left {
+        [case] => UnionMember::Case(case),
+        _ => UnionMember::Shared,
+    })
+}
+
+/// Whether a test of the case over the cases `left` of `union` needs an arm
+/// for the others: it does where some case is not left, which the narrowing
+/// proved the value is not in, and it must not where every case is left, since
+/// a backend that holds its tests to every case warns of an arm none reaches.
+pub(crate) fn unit_union_leaves_others(union: &ScopedUnion, left: &[&ScopedCase]) -> bool {
+    left.len() < union.cases.len()
+}
+
+/// The sentence of the arm a test of the case over the cases `left` of `union`
+/// takes for any other case, which the narrowing proved the value is not in
+/// ([`unit_union_leaves_others`]): what the backend's statement that the arm is
+/// never taken says.
+pub(crate) fn unit_union_other_case(union: &ScopedUnion, left: &[&ScopedCase]) -> String {
+    format!(
+        "a value of {} read as one of its cases {} is in another case",
+        union.name,
+        left.iter()
+            .map(|case| case.variant.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 /// One case of a union's declaration ([`UnionDef`]).
