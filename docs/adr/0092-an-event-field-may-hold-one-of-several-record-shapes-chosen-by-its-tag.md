@@ -19,8 +19,9 @@
     3dfbb314df), the union's unit (049d239b73 Rust; cda35b42f7 and e3c33224b5 Kotlin; fb6c5e760b Swift) and the
     replay vocabulary (dd2d10284a); the statechart's payload read, variable, write, lift and saved state on Rust
     (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on Swift (ab6cf2535b, 908c2f7511, ce24a056f8)
-    and on Kotlin (the change that adds "Amendment (2026-11-11)"). C++, Go, Python, C11 and the Interpreter still
-    refuse a statechart that holds a union by name (`generate/unsupported-feature`);
+    and on Kotlin (the change that adds "Amendment (2026-11-11)"); the statechart's part on Go (the change that
+    adds "Decided while landing step 4 on Go (2026-11-11)"), whose union's unit has not landed. C++, Python,
+    C11 and the Interpreter still refuse a statechart that holds a union by name (`generate/unsupported-feature`);
   - step 5, on two of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
     (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
     Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"). C++, Go,
@@ -834,6 +835,41 @@ would move with the enum's order. So:
    then the tag narrowing of section 6.1.
 3. A `union:U` variable with no `<sce:set>` is refused (`scxml/static-datamodel-rule`, on its `sce:type`, naming
    both repairs), and so is one with an `expr`. No diagnostic code is added.
+
+## Decided while landing step 4 on Go (2026-11-11)
+
+Step 4 on Go lands the statechart's part: a payload that holds a union, a union variable, its narrowing, its
+writes, a lift into one and its saved state. The union's own unit (`codegen_matrix::UNION_BACKENDS`) has not
+landed on Go, so a union document and a schema unit's union field are still refused there by name, and so,
+by "Decided while landing step 5" item 1, is an algorithm over a union and a statechart's call that crosses
+one. Each question below is decided by a rule this record already states; none changes a document, a wire or
+a diagnostic code.
+
+1. **A machine's union is a value struct of the machine** (section 7 item 4, open question 7), as the
+   machine's records are its own ("Amendment (2026-11-11)" item 1): `<Machine><Document>Union`, an unexported
+   `tag` of the machine's enum and one unexported member `case<Case>` per case that holds a record, built only
+   by `<Union><Case>(r R)` or `<Union><Case>()`; `Kind()` answers the tag whatever key it is written under, as
+   Kotlin's `kind` does, and `Proven<Case>()` and `ProvenField<Field>()` the reads the narrowing proves, whose
+   other cases panic, the one place they are written.
+2. **A field of a case is written in place.** A Go struct is written through a pointer to it, as a Rust and
+   a Swift union are, so the write of section 6.1 item 6 goes through the pointer an unexported
+   `proven<Case>Place()` or `provenField<Field>Place()` answers (`ComposedSpelling::union_member_place`). The
+   accessor is unexported, so a host that holds a union builds a new one by a constructor rather than writing
+   into a case, which keeps item 3 of section 7.
+3. **The writer tells a case by its tag's declared name.** The walk that writes a value names no enum
+   (`composed_lowering::writer`), and the declared name of the tag's variant is what the machine's enum
+   answers (`String()`) and what the tag is written as (section 2.1), so the JSON writer switches on it.
+4. **A union is copied by value**, as a record is (`ComposedSpelling::copy_union`, which every other backend
+   spells as its copy of a value not copied as it is read): the machine changes a case by a whole assignment
+   and writes a field through its place, never into a list a case holds, so the copy shares nothing the
+   machine writes into.
+5. **An index read of a list of unions is read**, as on Kotlin ("Amendment (2026-11-11)" item 3): Go's
+   checked read fails the statement for an index outside the list, and the zero it answers beside the failure
+   is the struct's, which no statement reads.
+6. **The saved form is carried by the type**, `ToSaved` and `<Type>FromSaved`, the names a Go record of
+   entries and a Go enum have, the tag beside the case's fields by the runtime's `SavedWriteUnion` and read
+   first by `SavedReadUnionTag`; a case's record that holds a composition carries its saved form too, a
+   list's lower count held by `SavedReadListWithin` (docs/adr/0086, section 15.6).
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
