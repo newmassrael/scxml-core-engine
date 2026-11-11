@@ -186,6 +186,9 @@ On Go it is the `Main` of the suite's package, over `testprofile.RunnerMain`, wh
 (`backends/go/tests/cmd/runtime_suite_runner`, run as `go run ./cmd/runtime_suite_runner` in `backends/go/tests`).
 On Swift it is `<Suite>.main()`, over `SceTestProfile.runnerMain`, which the `main.swift` of an executable target calls
 (`runtime_suite`'s is the target `RuntimeSuiteRunner` of `backends/swift/tests`, run as `swift run RuntimeSuiteRunner`).
+On Python it is the suite's unit run as a module of its package, `python -m <package>.<suite>`, whose `main` calls
+`sce_runtime.testprofile.runner_main` (the unit imports its siblings relative to its package, so it is run by its
+module's name, never by its file's path).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -386,7 +389,20 @@ configuration whose system port takes a record Swift writes no unit of is refuse
 form, `trace_forms/closed_enum_forms_configuration.scxml`, takes `closed_enum_form_extras` in `form_extras`' place,
 since a Swift record holds no value of an enum of an open set.
 
-The trace replay and the runner program are in place on Rust, Kotlin, C++, Go and Swift. Python and C11 follow the
+On Python the same is in place: `sce_runtime.testprofile` (`from_canonical`, `trace`, `run_suite_with_traces` of
+`suite`, `runner`) in the runtime, `PythonReading` beside `PythonCanonical`, and the Python twins of the Rust tests
+(`backends/python/tests/testprofile/test_a_recorded_trace_is_read_and_replayed.py` and
+`test_a_value_is_read_back_from_its_canonical_form.py`, and
+`test_a_test_suite_runs_through_its_runner.py` and `test_a_record_reads_back_the_form_it_writes.py` under
+`backends/python/tests/integration/static_datamodel/`), in the words of the Rust reader; a reader raises a
+`TraceRefusal`. A trace is read by the runtime's own JSON reader, which keeps a number's text and refuses `NaN`,
+`Infinity` and a member named twice, where Python's `json` would read them, and a trace file is read as its bytes, so
+a `\r\n` is not read as the line feed a file may end in. Python's test profile matches no union yet
+(`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so its configuration of every form is C++'s,
+`trace_forms/unionless_forms_configuration.scxml`. The program keeps `sys.stdout` for the contract's lines and hands
+it to the standard error while the cases run, where a generated statechart's `<log>` prints.
+
+The trace replay and the runner program are in place on Rust, Kotlin, C++, Go, Swift and Python. C11 follows the
 same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
 unit of a configuration over the same walk, a player behind the system adapter, the runner function and the program
 of §4.
