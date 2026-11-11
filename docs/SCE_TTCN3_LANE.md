@@ -189,6 +189,8 @@ On Swift it is `<Suite>.main()`, over `SceTestProfile.runnerMain`, which the `ma
 On Python it is the suite's unit run as a module of its package, `python -m <package>.<suite>`, whose `main` calls
 `sce_runtime.testprofile.runner_main` (the unit imports its siblings relative to its package, so it is run by its
 module's name, never by its file's path).
+On C11 it is `<suite>_main(argc, argv)`, over `sce/test/runner.h`, which a one-line `main` calls
+(`backends/c/tests/integration/runtime_suite_runner.c`) and which links the `sce_directory_make` of its platform tier.
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -402,8 +404,20 @@ a `\r\n` is not read as the line feed a file may end in. Python's test profile m
 `trace_forms/unionless_forms_configuration.scxml`. The program keeps `sys.stdout` for the contract's lines and hands
 it to the standard error while the cases run, where a generated statechart's `<log>` prints.
 
-The trace replay and the runner program are in place on Rust, Kotlin, C++, Go, Swift and Python. C11 follows the
-same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
+On C11 the same is in place: `sce/test/input_trace.h` (the trace, its canonical text and its player),
+`sce/test/from_canonical.h`, `sce_test_run_suite_with_traces` of `sce/test/suite.h` and `sce/test/runner.h` in the
+runtime, `C11Reading` beside `C11Canonical`, and the C11 twins of the C++ tests
+(`backends/c/tests/unit/input_trace_test.c`, `runner_test.c`, and `test_a_test_suite_runs_through_its_runner.c`,
+`test_a_record_reads_back_the_form_it_writes.c` and `test_a_runner_program_writes_the_log_of_each_trace.c` under
+`backends/c/tests/integration/`), in the words of the Rust reader. Its trace is the input trace,
+`sce_test_input_trace_t`, since the test log already holds the name `sce_test_trace_t`; a value is read from the JSON
+reader the saved state is read with (`sce/saved_json.h`), every refusal is a sentence in a `sce_saved_error_t`, and
+every table is bounded, a trace past a bound refused by name. The runner makes its log directory through
+`sce_directory_make` (`sce/directory.h`), whose POSIX implementation is in the runtime's platform tier. It reads the
+same configuration of every form as C++, since C11 lowers no union either.
+
+The trace replay and the runner program are in place on all seven backends, Rust, Kotlin, C++, Go, Swift, Python and
+C11, each over the same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
 unit of a configuration over the same walk, a player behind the system adapter, the runner function and the program
 of §4.
 
