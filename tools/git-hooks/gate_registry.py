@@ -2175,7 +2175,13 @@ GATES: dict[str, dict] = {
                   # at run time, and the wire schema whose status
                   # `test_case_run_test.c` holds the runtime's to.
                   "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
-                  "schemas/sce-test-log.v1.schema.json"],
+                  "schemas/sce-test-log.v1.schema.json",
+                  # The suite's committed traces, which the same test and the
+                  # runner program's replay, and the trace's wire schema,
+                  # whose status `input_trace_test.c` holds the runtime's to,
+                  # all read at run time.
+                  "sce-build/tests/fixtures/test_profile/runtime/traces/**",
+                  "schemas/sce-test-trace.v1.schema.json"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "

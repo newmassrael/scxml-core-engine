@@ -7,7 +7,10 @@
 // the tables sce-codegen writes at build time from the fixtures under
 // sce-build/tests/fixtures/test_profile/runtime/, and the components are the
 // machines it writes from the components there. Only the system adapter, which
-// plays the system under test, is written here.
+// plays the system under test, is written here; and the suite is replayed from
+// its committed recorded input traces too, through
+// `sce_test_run_suite_with_traces` and the configuration's `_input`
+// (docs/SCE_TTCN3_LANE.md §10.5).
 //
 // Each case is the twin of the C++ test of the same name in
 // tests/integration/ATestSuiteRunsEndToEndTest.cpp, written `test_<case>`,
@@ -26,8 +29,12 @@
 #include <string.h>
 
 #include <sce/host_processor.h>
+#include <sce/saved_json.h>
+#include <sce/test/input_trace.h>
+#include <sce/test/runner.h>
 #include <sce/test/suite.h>
 
+#include "answers_the_job.h"
 #include "asking_configuration.h"
 #include "job_reply.h"
 #include "job_request.h"
@@ -185,6 +192,9 @@ typedef struct case_result_s {
     sce_test_instant_t ended_at;
     bool logged_error;
     bool logged_timeout;
+    // The first line of its log, which names why a test case that cannot start
+    // ends in error.
+    char first_line[SCE_TEST_MAX_LOG_DETAIL];
     sce_test_trace_written_t written;
     char test_log[MAX_TEST_LOG];
     size_t test_log_len;
@@ -218,6 +228,10 @@ static void keep(void *user_data, const char *test_case, const sce_test_case_res
     kept->ended_at = result->ended_at;
     kept->logged_error = logged(result, SCE_TEST_LOG_ERROR);
     kept->logged_timeout = logged(result, SCE_TEST_LOG_TIMEOUT);
+    kept->first_line[0] = '\0';
+    if (result->log_count > 0u) {
+        (void)snprintf(kept->first_line, sizeof(kept->first_line), "%s", result->log[0].detail);
+    }
     kept->written = sce_test_case_result_canonical_log(result, results->suite, test_case, kept->test_log,
                                                        sizeof(kept->test_log), &kept->test_log_len);
 }
@@ -389,6 +403,120 @@ static void test_a_generated_test_case_writes_its_test_log(void) {
           "the test log is the shared one:\n  wrote %s\n  want  %s", answered->test_log, want);
 }
 
+// ── The suite replayed from its recorded input traces ─────────────────────
+
+// What a run of the suite against traces holds: the trace of the case running
+// and its player, and the text of the trace read last.
+static sce_test_traces_t the_traces;
+static sce_test_trace_directory_t the_trace_directory;
+
+// The directory of the suite's committed traces (docs/SCE_TTCN3_LANE.md
+// §10.2), `<test case>.json` each.
+static const char *traces_dir(void) {
+    static char dir[1024];
+    (void)snprintf(dir, sizeof(dir), "%s/sce-build/tests/fixtures/test_profile/runtime/traces", SCE_PROJECT_ROOT);
+    return dir;
+}
+
+// Runs the suite in a world with no feature against the traces `traces` gives,
+// its results in `*results`. Whether the runner ran it.
+static bool run_suite_with_traces(sce_test_trace_source_t traces, results_t *results) {
+    sce_test_features_t world;
+    world.names = NULL;
+    world.count = 0u;
+    memset(results, 0, sizeof(*results));
+    const sce_test_suite_t *suite = runtime_suite_suite(&suite_storage);
+    results->suite = suite->name;
+    return sce_test_run_suite_with_traces(suite, &world, traces, NULL, &the_run, &the_traces, keep, results, NULL);
+}
+
+// docs/SCE_TTCN3_LANE.md §10.5: the generated suite replayed from the committed
+// trace of `answers_the_job` writes the test log every runtime writes of it, byte
+// for byte: the configuration's header reads the reply from its canonical form
+// and writes it back the same, and the clock advances to the trace's instant as
+// it did to the responder's. The twin of the C++
+// `ARecordedTraceReplaysToTheTestLogEveryRuntimeWrites` and the Rust
+// `a_recorded_trace_replays_to_the_test_log_every_runtime_writes`.
+static void test_a_recorded_trace_replays_to_the_test_log_every_runtime_writes(void) {
+    static results_t results;
+    CHECK(run_suite_with_traces(sce_test_trace_directory(&the_trace_directory, traces_dir()), &results),
+          "the suite runs");
+    static const char *const ONLY[] = {"answers_the_job"};
+    CHECK(reported(&results, ONLY, 1u), "a world with no feature runs the unguarded case alone");
+    if (results.count != 1u) {
+        return;
+    }
+    CHECK(results.of[0].verdict == SCE_TEST_VERDICT_PASS, "verdict %s: %s",
+          sce_test_verdict_name(results.of[0].verdict), results.of[0].first_line);
+    static char want[MAX_TEST_LOG];
+    size_t want_len = 0u;
+    if (!shared_log("answers_the_job", want, sizeof(want), &want_len)) {
+        CHECK(false, "the shared test log is readable under %s and ends in one newline", SCE_PROJECT_ROOT);
+        return;
+    }
+    const case_result_t *replayed = &results.of[0];
+    CHECK(replayed->written == SCE_TEST_TRACE_WRITTEN, "the test log is written: %d", (int)replayed->written);
+    CHECK(replayed->test_log_len == want_len && memcmp(replayed->test_log, want, want_len) == 0,
+          "the test log is the shared one:\n  wrote %s\n  want  %s", replayed->test_log, want);
+}
+
+// The one text a fixed source gives every test case.
+typedef struct fixed_trace_s {
+    const char *text;
+} fixed_trace_t;
+
+static bool fixed_trace_read(void *user_data, const char *test_case, const char **text, size_t *len,
+                             sce_saved_error_t *err) {
+    const fixed_trace_t *fixed = (const fixed_trace_t *)user_data;
+    (void)test_case;
+    (void)err;
+    *text = fixed->text;
+    *len = strlen(fixed->text);
+    return true;
+}
+
+// The source that gives every test case the trace `*fixed` holds.
+static sce_test_trace_source_t fixed_trace(fixed_trace_t *fixed) {
+    sce_test_trace_source_t source;
+    source.read = fixed_trace_read;
+    source.user_data = fixed;
+    return source;
+}
+
+// §10.2, P13: a trace one of whose inputs the configuration does not take, or a
+// trace of another test case, ends the test case in error before any component
+// is created, naming why; the test case reads its trace through its
+// configuration's `_input`. The twin of the C++ `EndsInErrorWhenItsTraceDoesNotFit`.
+static void test_ends_in_error_when_its_trace_does_not_fit(void) {
+    static answers_the_job_machines_t machines;
+    CHECK(answers_the_job_test_case(&machines).inputs == asking_configuration_input,
+          "the test case reads its trace through its configuration's input");
+    static results_t results;
+    static fixed_trace_t unmapped = {"{\"inputs\":[{\"at\":\"500\",\"port\":\"oracle\",\"type\":\"job_reply\","
+                                     "\"value\":{\"code\":\"0\",\"job\":\"7\"}}],\"schema\":\"sce-test-trace.v1\","
+                                     "\"suite\":\"runtime_suite\",\"test_case\":\"answers_the_job\"}"};
+    CHECK(run_suite_with_traces(fixed_trace(&unmapped), &results), "the suite runs");
+    CHECK(results.count == 1u, "one test case runs, not %lu", (unsigned long)results.count);
+    if (results.count == 1u) {
+        CHECK(results.of[0].verdict == SCE_TEST_VERDICT_ERROR, "verdict %s",
+              sce_test_verdict_name(results.of[0].verdict));
+        CHECK(strcmp(results.of[0].first_line, "the trace is refused: input 0, at 500: 'oracle' is not a system port "
+                                               "of the test case's configuration") == 0,
+              "%s", results.of[0].first_line);
+    }
+    static fixed_trace_t other = {"{\"inputs\":[],\"schema\":\"sce-test-trace.v1\",\"suite\":\"runtime_suite\","
+                                  "\"test_case\":\"serves_a_ptc\"}"};
+    CHECK(run_suite_with_traces(fixed_trace(&other), &results), "the suite runs");
+    CHECK(results.count == 1u, "one test case runs, not %lu", (unsigned long)results.count);
+    if (results.count == 1u) {
+        CHECK(results.of[0].verdict == SCE_TEST_VERDICT_ERROR, "verdict %s",
+              sce_test_verdict_name(results.of[0].verdict));
+        CHECK(strcmp(results.of[0].first_line,
+                     "the trace is of the test case 'serves_a_ptc' of the suite 'runtime_suite'") == 0,
+              "%s", results.of[0].first_line);
+    }
+}
+
 // §11.8: a world runs the test cases whose selection it satisfies, in the
 // suite's order: `ptcs` alone selects the served PTC and not the removed one,
 // and `guard` selects the guarded case.
@@ -470,6 +598,10 @@ int main(void) {
     test_fails_a_job_the_system_under_test_answers_with_a_failure();
     every_component_is_handed_back();
     test_a_generated_test_case_writes_its_test_log();
+    every_component_is_handed_back();
+    test_a_recorded_trace_replays_to_the_test_log_every_runtime_writes();
+    every_component_is_handed_back();
+    test_ends_in_error_when_its_trace_does_not_fit();
     every_component_is_handed_back();
     test_runs_the_test_cases_a_world_selects();
     every_component_is_handed_back();
