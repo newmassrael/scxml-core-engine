@@ -1848,6 +1848,14 @@ name = "a_schema_unit_declares_a_field_of_any_type"
 path = "tests/a_schema_unit_declares_a_field_of_any_type.rs"
 required-features = ["cli"]
 
+# A union crosses a statechart's call into an algorithm case by case on every lane
+# (docs/adr/0092, section 6.1 item 7). Its Go machine is generated through
+# `sce-codegen --go-module-prefix`, so it carries the `cli` gate.
+[[test]]
+name = "a_union_crosses_a_statechart_call_case_by_case"
+path = "tests/a_union_crosses_a_statechart_call_case_by_case.rs"
+required-features = ["cli"]
+
 # A backend or position that does not lower a composition refuses it by name
 # (docs/adr/0086, section 7.3). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]
