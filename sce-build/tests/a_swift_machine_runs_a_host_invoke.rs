@@ -263,16 +263,19 @@ fn an_invoke_of_a_type_nobody_runs_is_deferred_and_raises_error_execution() {
     );
 }
 
-/// An invoke whose request is not lowered yet is named in a refusal and not written wrong.
+/// An invoke's request a script data model computes is read by the engine, as the invocation
+/// starts, and one that cannot be read is `error.execution` (W3C SCXML 6.4), not a request the
+/// build refuses: the same machine was refused by name before the engine read a host invoke's
+/// request in Swift (`eaec0e0a6e`).
 #[test]
-fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
+fn a_srcexpr_a_script_engine_computes_is_read_by_the_engine_when_the_invoke_starts() {
     // A Mesh request of a script data model whose peer a `srcexpr` computes: `sce-static`
     // validation refuses an `idlocation` and a `namelist` on a host-run invoke before the Swift
     // backend is asked, and a `srcexpr` is a string of the machine's fields only for a
     // `sce-static` document, so what reaches the backend is the script data model's.
     let with_src = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
-       datamodel="ecmascript" name="host_refused">
+       datamodel="ecmascript" name="host_computed">
   <datamodel><data id="x" expr="'#peer'"/></datamodel>
   <state id="idle"><transition event="go" target="asking"/></state>
   <state id="asking">
@@ -285,24 +288,25 @@ fn what_a_host_invoke_carries_that_is_not_lowered_is_refused_by_name() {
 </scxml>
 "##
     .to_string();
-    let construct =
-        "an <invoke type=\"sce:mesh-rpc\"> a host runs with a srcexpr a script engine computes";
     let (status, files, said) =
-        generate("host_refused.scxml", &[("host_refused.scxml", &with_src)]);
+        generate("host_computed.scxml", &[("host_computed.scxml", &with_src)]);
     assert_eq!(
         status,
-        Some(7),
-        "{construct} is refused, not written: {said}"
+        Some(0),
+        "a host invoke whose srcexpr the engine reads is written: {said}"
     );
-    // The message arrives as JSON, which escapes the quotes of the type.
-    assert!(
-        said.replace("\\\"", "\"").contains(construct),
-        "the refusal names {construct}: {said}"
-    );
-    assert!(
-        files.iter().all(|(name, _)| !name.ends_with("_sm.swift")),
-        "a refused document writes no machine: {:?}",
-        files.iter().map(|f| &f.0).collect::<Vec<_>>()
+    let code = &files
+        .iter()
+        .find(|(name, _)| name == "host_computed_sm.swift")
+        .expect("the machine is a file of the run")
+        .1;
+    holds_each(
+        code,
+        &[
+            "guard let hostSrc = evaluateText(\"x\") else {",
+            "raiseExecutionError(\"<invoke> srcexpr failed to evaluate\", engine: engine)",
+            "src: hostSrc,",
+        ],
     );
 }
 
