@@ -10503,32 +10503,60 @@ impl StaticTarget for CppTarget {
                 _ => format!("{value}.readInteger({into})"),
             })
         };
-        let schema = lift.record()?;
-        let record_ty = self.record_type(lift.machine, lift.alias);
-        let mut reads = String::new();
-        for field in &schema.fields {
-            let into = format!("out.{}", self.record_field(&field.id));
-            let reader = match &field.sce_type {
-                EntryType::Scalar(ty) => read(ty, field.max_size, "v", &into)?,
-                // The present value is read into the place the runtime hands the
-                // lambda, by the reader of its type.
-                EntryType::Optional { elem } => format!(
-                    "v.readOptional({into}, [&](const {COMMON}::EventPayloadValue &present, auto &held) -> \
-                     {COMMON}::EventPayloadRefusal {{ return {}; }})",
-                    read(elem, field.max_size, "present", "held")?
-                ),
-            };
-            reads.push_str(&format!(
-                "refused = r.value(\"{}\", v); if (!refused.empty()) {{ return refused; }} refused = {reader}; \
-                 if (!refused.empty()) {{ return refused; }} ",
-                field.id
-            ));
-        }
         let path_bound = lift.path_bound()?;
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "nullptr".to_string(),
-            |json| format!("\"{}\"", filters::escape_cpp(json.clone())),
-        );
+        let (text, depth) = (lift.text, lift.depth);
+        let schema_name = filters::escape_cpp(lift.alias.to_string());
+        // The call that reads the text into `sceLifted`, and the type it is held
+        // in: a record field by field through `liftRecord`, or a union whole
+        // through `liftValue`, by the reader a delivery's field of the union is
+        // read by (docs/adr/0092, section 6.1 item 5), which has no defaults to
+        // read.
+        let (call, lifted_ty) = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let record_ty = self.record_type(lift.machine, lift.alias);
+                let mut reads = String::new();
+                for field in &schema.fields {
+                    let into = format!("out.{}", self.record_field(&field.id));
+                    let reader = match &field.sce_type {
+                        EntryType::Scalar(ty) => read(ty, field.max_size, "v", &into)?,
+                        // The present value is read into the place the runtime hands
+                        // the lambda, by the reader of its type.
+                        EntryType::Optional { elem } => format!(
+                            "v.readOptional({into}, [&](const {COMMON}::EventPayloadValue \
+                             &present, auto &held) -> {COMMON}::EventPayloadRefusal {{ return \
+                             {}; }})",
+                            read(elem, field.max_size, "present", "held")?
+                        ),
+                    };
+                    reads.push_str(&format!(
+                        "refused = r.value(\"{}\", v); if (!refused.empty()) {{ return refused; }} \
+                         refused = {reader}; if (!refused.empty()) {{ return refused; }} ",
+                        field.id
+                    ));
+                }
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "nullptr".to_string(),
+                    |json| format!("\"{}\"", filters::escape_cpp(json.clone())),
+                );
+                let call = format!(
+                    "{COMMON}::EventPayloadFields::liftRecord({text}, \"{schema_name}\", {depth}u, \
+                     {path_bound}u, {defaults}, sceLifted, [](const {COMMON}::EventPayloadFields \
+                     &r, {record_ty} &out) -> {COMMON}::EventPayloadRefusal {{ \
+                     {COMMON}::EventPayloadValue v; {COMMON}::EventPayloadRefusal refused; \
+                     {reads}return {{}}; }})"
+                );
+                (call, record_ty)
+            }
+            // The composed walk's reader is a lambda of the value and the place
+            // it fills, which `liftValue` hands the whole object and `sceLifted`.
+            Lifted::Whole { reader, ty } => (
+                format!(
+                    "{COMMON}::EventPayloadFields::liftValue({text}, \"{schema_name}\", {depth}u, \
+                     {path_bound}u, sceLifted, {reader})"
+                ),
+                ty.clone(),
+            ),
+        };
         // The refusal, as a record of the standard refusal document.
         let (code_alias, _) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
@@ -10546,20 +10574,13 @@ impl StaticTarget for CppTarget {
         )?;
         let refusal_record = self.record_value(&refusal_ty, &members);
         let lifted = if lift.location_optional {
-            self.optional_some(&record_ty, "sceLifted")?
+            self.optional_some(&lifted_ty, "sceLifted")?
         } else {
             "sceLifted".to_string()
         };
         Some(format!(
-            "{{ {record_ty} sceLifted{{}}; const {COMMON}::EventPayloadRefusal sceRefusal = \
-             {COMMON}::EventPayloadFields::liftRecord({text}, \"{schema}\", {depth}u, {path_bound}u, \
-             {defaults}, sceLifted, [](const {COMMON}::EventPayloadFields &r, {record_ty} &out) -> \
-             {COMMON}::EventPayloadRefusal {{ {COMMON}::EventPayloadValue v; {COMMON}::EventPayloadRefusal \
-             refused; {reads}return {{}}; }}); if (sceRefusal.empty()) {{ {write} {absent} }} else {{ \
-             {refused} }} }}",
-            text = lift.text,
-            schema = filters::escape_cpp(lift.alias.to_string()),
-            depth = lift.depth,
+            "{{ {lifted_ty} sceLifted{{}}; const {COMMON}::EventPayloadRefusal sceRefusal = {call}; \
+             if (sceRefusal.empty()) {{ {write} {absent} }} else {{ {refused} }} }}",
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none(&refusal_ty)?),
             refused = self.assign(

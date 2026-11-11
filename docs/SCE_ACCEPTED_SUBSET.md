@@ -4829,7 +4829,12 @@ its own value struct (or `optional.Of` of it), an unexported tag and one unexpor
 member per case that holds a record, built only by the constructor of its case
 (docs/adr/0092, section 7 item 4): its tag is read by `Kind()`, a case's record by
 `Proven<Case>()`, and a field of a case is written in place through the pointer the
-unexported `proven<Case>Place()` beside it answers. A saved state holds the value as
+unexported `proven<Case>Place()` beside it answers. The C++ machine holds either in
+its own struct (or `std::optional` of it) of one `std::variant`, an alternative struct
+per case holding its record as `value` (docs/adr/0092, section 7 item 2): its tag is
+read by `kind()`, from the alternative's index, a case's record by `proven<Case>()`,
+and a field of a case is written in place through the reference `proven<Case>Place()`
+beside it answers. A saved state holds the value as
 one object, its tag beside its case's fields, read back by its tag first, and the
 saved shape names the union's document and each case's record. A backend whose row
 of "Which backend lowers a composed value" holds no union refuses the variable by
@@ -5554,7 +5559,7 @@ not lower.
 <!-- composed-lowering-rows: begin -->
 - `rust` lowers reads, copies, unions, records, sends; refuses none
 
-- `cpp` lowers reads, copies, sends; refuses unions, records
+- `cpp` lowers reads, copies, unions, sends; refuses records
 
 - `kotlin` lowers reads, copies, unions, records, sends; refuses none
 

@@ -40,6 +40,13 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+{# docs/adr/0092, section 7, the C++ row: a union the machine holds is a struct of
+   one `std::variant`, whose reads end the process in a case the narrowing proved
+   the value is not in. #}
+{% if static_type_defs and "::std::variant<" in static_type_defs %}
+#include <cstdlib>
+#include <variant>
+{% endif %}
 {% if static_format2_shape and not model.emitted_transition_table %}
 #include <array>
 {% endif %}

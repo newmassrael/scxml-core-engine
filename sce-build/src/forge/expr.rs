@@ -861,7 +861,11 @@ fn resolve_then_rename(
     // backend whose machine holds a union.
     if matches!(
         target,
-        ExprTarget::Rust | ExprTarget::Swift | ExprTarget::Kotlin | ExprTarget::Go
+        ExprTarget::Rust
+            | ExprTarget::Swift
+            | ExprTarget::Kotlin
+            | ExprTarget::Go
+            | ExprTarget::Cpp
     ) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
     }
@@ -1172,14 +1176,15 @@ fn reject_unproven_union_reads(
 }
 
 /// Spell each read of a union's member as the machine of `target` reads it
-/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin and Go
-/// rows): the member a read names after the union's value becomes its tag's
-/// read, the field of the one case the facts leave read through that case's
-/// proven read, or the accessor of a field the cases left share
+/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin, Go and
+/// C++ rows): the member a read names after the union's value becomes its
+/// tag's read, the field of the one case the facts leave read through that
+/// case's proven read, or the accessor of a field the cases left share
 /// ([`crate::forge::composed_lowering::rust_union_member`],
 /// [`crate::forge::composed_lowering::swift_union_member`],
 /// [`crate::forge::composed_lowering::kotlin_union_member`],
-/// [`crate::forge::composed_lowering::go_union_member`]). Each is a read
+/// [`crate::forge::composed_lowering::go_union_member`],
+/// [`crate::forge::composed_lowering::cpp_union_member`]). Each is a read
 /// that cannot fail at run time: [`reject_unproven_union_reads`] admitted it
 /// only where the facts prove its cases, and the facts grow here by the same
 /// rule. A node is spelled before the nodes below it, so its object is still
@@ -1262,6 +1267,18 @@ fn lower_union_reads(
                         property,
                         go_nameable_type(expr.ty).as_deref(),
                     ),
+                    // C++ takes a field several cases share apart by the
+                    // alternative of each, which names the unit's struct.
+                    ExprTarget::Cpp => crate::forge::composed_lowering::cpp_unit_union_read(
+                        &crate::forge::generator::forge_local_id(
+                            holder,
+                            crate::generator::Language::Cpp,
+                        ),
+                        unit,
+                        union,
+                        &left,
+                        property,
+                    ),
                     _ => Err(format!(
                         "`{holder}.{property}`, a read of an algorithm's `union:{alias}` on a \
                          backend that does not lower one yet (docs/adr/0092, Landing order step 5)"
@@ -1278,6 +1295,9 @@ fn lower_union_reads(
                     }
                     ExprTarget::Go => {
                         crate::forge::composed_lowering::go_union_member(union, &left, property)
+                    }
+                    ExprTarget::Cpp => {
+                        crate::forge::composed_lowering::cpp_union_member(union, &left, property)
                     }
                     _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
                 }

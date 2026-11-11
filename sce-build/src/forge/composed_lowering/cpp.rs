@@ -97,11 +97,124 @@ const CPP_ELEMENT_BINDING: &str = "sceElement";
 /// The name a C++ copy binds an element or a present value to.
 const CPP_COPY_BINDING: &str = "sceCopied";
 
-/// Why a C++ walk meets no union: the one decision of what is lowered refuses
-/// a union on C++ before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const CPP_HOLDS_NO_UNION: &str = "a C++ machine holds no union yet (docs/adr/0092, section 7): \
-     the one decision of what is lowered refuses a union on C++ before any walk reaches one";
+/// The method a C++ union answers the value of its tag's enum by, whatever key
+/// the tag is written under (docs/adr/0092, section 7, the C++ row: `kind()`
+/// from the alternative's index), on a machine's union as on a unit's.
+pub(crate) const CPP_UNION_KIND: &str = "kind";
+
+/// The member of a C++ union that holds its `std::variant` of one alternative
+/// per case, on a machine's union as on a unit's.
+pub(crate) const CPP_UNION_CASES: &str = "cases";
+
+/// The member of a C++ union's alternative that holds the case's record, on a
+/// machine's union as on a unit's.
+pub(crate) const CPP_CASE_VALUE: &str = "value";
+
+/// The statement a C++ union's reads end in where the narrowing proved the
+/// value is in none of the cases the read takes apart: the one statement no
+/// path reaches, which ends the process rather than read another case's
+/// storage, as Rust's `unreachable!()` and Go's `panic` do.
+pub(crate) const CPP_UNREACHED: &str = "::std::abort();";
+
+/// The identifier of the case `variant` of a C++ union: the struct of its
+/// alternative, nested in the union's struct and named as the tag's enum
+/// names the variant (docs/adr/0092, section 7 items 1 and 2), on a machine's
+/// union as on a unit's.
+pub(crate) fn cpp_case_ident(variant: &str) -> String {
+    crate::forge::enum_naming::variant_ident(crate::generator::Language::Cpp, "", variant)
+}
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// machine's union as on a unit's.
+pub(crate) fn cpp_case_read(variant: &str) -> String {
+    format!(
+        "proven{}",
+        crate::filters::to_pascal_case(variant.to_string())
+    )
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+fn cpp_shared_read(field: &str) -> String {
+    format!(
+        "provenField{}",
+        crate::filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The accessor of the reference a write of what the read `read` answers (a
+/// case's record, a shared field) goes through (docs/adr/0092, section 6.1
+/// item 6).
+fn cpp_place_of(read: &str) -> String {
+    format!("{read}Place")
+}
+
+/// A C++ string literal of `text`.
+fn cpp_literal(text: &str) -> String {
+    format!("\"{}\"", crate::filters::escape_cpp(text.to_string()))
+}
+
+/// The C++ spelling of what follows a union's value to read `member` where it
+/// may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's method; the field of the one case
+/// left, through that case's proven read; or the accessor of a field several
+/// cases share. `Err` as [`union_member_of`]'s.
+pub(crate) fn cpp_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    Ok(match union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{CPP_UNION_KIND}()"),
+        UnionMember::Case(case) => format!("{}().{member}", cpp_case_read(&case.variant.name)),
+        UnionMember::Shared => format!("{}()", cpp_shared_read(member)),
+    })
+}
+
+/// The C++ read of `member` of the union value `holder`, a parameter or a local
+/// of an algorithm spelled as C++ names it, whose type `ty` is the struct the
+/// union's own unit declares (docs/adr/0092, section 7, the C++ row, and
+/// Landing order step 5), where the value may be in the cases `left`, as
+/// [`unit_union_member_of`] classifies it: the tag by `kind()`, which the
+/// unit's struct answers whatever key the tag is written under; the field of
+/// the one case left, through that case's proven read; or the field the cases
+/// left each declare, read by a lambda called where it is written, which takes
+/// each case left apart by `std::get_if` on its alternative and returns the
+/// field, and whose end the narrowing proved is never reached
+/// ([`CPP_UNREACHED`]). The lambda's result is deduced from its returns, which
+/// [`unit_union_member_of`] proved are of one type. A case's record is the
+/// payload struct its event schema's unit declares, whose fields are named as
+/// the schema writes them ([`crate::forge::generator::event_schema_field_ident`]).
+/// `Err` as [`unit_union_member_of`]'s.
+pub(crate) fn cpp_unit_union_read(
+    holder: &str,
+    ty: &str,
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    let field =
+        crate::forge::generator::event_schema_field_ident(member, crate::generator::Language::Cpp);
+    Ok(match unit_union_member_of(union, left, member)? {
+        UnionMember::Tag => format!("{holder}.{CPP_UNION_KIND}()"),
+        UnionMember::Case(case) => {
+            format!("{holder}.{}().{field}", cpp_case_read(&case.variant.name))
+        }
+        UnionMember::Shared => {
+            let arms: String = left
+                .iter()
+                .map(|case| {
+                    format!(
+                        "if (const auto *sceCase = ::std::get_if<{ty}::{}>(&{holder}.\
+                         {CPP_UNION_CASES})) {{ return sceCase->{CPP_CASE_VALUE}.{field}; }} ",
+                        cpp_case_ident(&case.variant.name)
+                    )
+                })
+                .collect();
+            format!("[&]() {{ {arms}{CPP_UNREACHED} }}()")
+        }
+    })
+}
 
 /// The check of a C++ value of `ty`, written in the scope `within` names, at
 /// `value`, named `path` (an expression of a `std::string`): an expression of
@@ -222,7 +335,38 @@ fn cpp_bound_check(
             }
         }
         ValueType::Scalar(_) => None,
-        ValueType::Union { .. } => return Err(CPP_HOLDS_NO_UNION.to_string()),
+        // The record of the case the value is in, checked as a record is, at
+        // the union's own path: a field of a case stands at the union's place
+        // (docs/adr/0092, section 2.1). The case is told by its alternative,
+        // which the union's `std::variant` holds in the tag enum's order, so
+        // the check names no type. A case whose record holds no lower count,
+        // and an empty case, check nothing.
+        ValueType::Union { alias } => {
+            let held = records.union(within, alias)?;
+            let case_value = format!("sceCase{depth}");
+            let mut arms = String::new();
+            for (index, case) in held.union.cases.iter().enumerate() {
+                let Some(record) = &case.record else {
+                    continue;
+                };
+                if let Some(check) = cpp_bound_check(
+                    &ValueType::Record {
+                        alias: record.clone(),
+                    },
+                    Some(held.key.as_str()),
+                    path,
+                    &format!("{case_value}->{CPP_CASE_VALUE}"),
+                    depth + 1,
+                    records,
+                )? {
+                    arms.push_str(&format!(
+                        "if (const auto *{case_value} = ::std::get_if<{index}>(&({value}).\
+                         {CPP_UNION_CASES})) {{ return {check}; }} "
+                    ));
+                }
+            }
+            (!arms.is_empty()).then(|| format!("[&]() -> ::std::string {{ {arms}return {{}}; }}()"))
+        }
     })
 }
 
@@ -606,9 +750,117 @@ impl ComposedSpelling for CppComposed<'_> {
         )
     }
 
-    // A C++ machine holds no union yet: the gate refuses one by name before a
-    // walk reaches it, so each spelling below either names what it would be or
-    // says why there is none.
+    // A record that holds a composition carries its saved form in two
+    // functions beside its struct, the names a record of entries' saved form
+    // has (`<Type>ToSaved`, `<Type>FromSaved`, `StaticTarget::record_def`), so a
+    // union's saved form reads one spelling for either: an object of its
+    // fields keyed by their ids in the schema's order, each written and read
+    // as its type says ([`cpp_saved_writer`], [`cpp_saved_reader`]), a list
+    // held to its bound and to the lower count its type states.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for field in &held.schema.fields {
+            let key = cpp_literal(&field.id);
+            let refused =
+                |why: String| format!("the field `{}` of `{}`: {why}", field.id, held.schema.name);
+            // The fields of the record name their types in its own document's scope.
+            let within = Some(held.alias);
+            let write = cpp_saved_writer(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            let read = cpp_saved_reader(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            writes.push_str(&format!(
+                "    members.set({key}, ({write})(value.{}));\n",
+                field.id
+            ));
+            reads.push_str(&format!(
+                "        {},\n",
+                crate::forge::generator::cpp_positional_member(
+                    &field.id,
+                    &format!(
+                        "({read})(::SCE::Saved::savedField(value, what, {key}), what + \".{}\")",
+                        crate::filters::escape_cpp(field.id.clone())
+                    )
+                )
+            ));
+        }
+        Ok(Some(format!(
+            "/// `value` as a saved state writes it.\ninline ::SCE::Saved::JsonValue {ty}ToSaved(const \
+             {ty} &value) {{\n    ::SCE::Saved::JsonObject members;\n{writes}    return \
+             ::SCE::Saved::JsonValue(std::move(members));\n}}\n\n/// The value a saved state \
+             holds, refused unless it is one.\ninline {ty} {ty}FromSaved(const \
+             ::SCE::Saved::JsonValue &value, const std::string &what) {{\n    return \
+             {ty}{{\n{reads}    }};\n}}"
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its
+    // case (docs/adr/0092, section 6.1 item 7): written by the runtime's
+    // `savedWriteUnion` over the record's own `<Record>ToSaved`, and read by
+    // its tag first, which names the record the rest of the object is read
+    // as; a tag the union has no case for is refused naming the union.
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = cpp_literal(&records.union_of_key(key)?.union.tag);
+        let ty = &def.ty;
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let variant = cpp_literal(&case.variant);
+            let alternative = format!("{ty}::{}", case.ident);
+            match &case.record {
+                Some(record) => {
+                    writes.push_str(&format!(
+                        "    if (const auto *held = ::std::get_if<{alternative}>(&value.\
+                         {CPP_UNION_CASES})) {{\n        return \
+                         ::SCE::Saved::savedWriteUnion({tag}, {variant}, \
+                         {record}ToSaved(held->{CPP_CASE_VALUE}));\n    }}\n"
+                    ));
+                    reads.push_str(&format!(
+                        "    if (tag == {variant}) {{\n        return \
+                         {ty}{{{alternative}{{{record}FromSaved(value, what)}}}};\n    }}\n"
+                    ));
+                }
+                None => {
+                    writes.push_str(&format!(
+                        "    if (::std::holds_alternative<{alternative}>(value.{CPP_UNION_CASES})) \
+                         {{\n        return ::SCE::Saved::savedWriteUnion({tag}, {variant}, \
+                         ::std::nullopt);\n    }}\n"
+                    ));
+                    reads.push_str(&format!(
+                        "    if (tag == {variant}) {{\n        return {ty}{{{alternative}{{}}}};\n    \
+                         }}\n"
+                    ));
+                }
+            }
+        }
+        let name = crate::filters::escape_cpp(def.name.clone());
+        Ok(Some(format!(
+            "/// `value` as a saved state writes it: its tag beside the fields of its case.\ninline \
+             ::SCE::Saved::JsonValue {ty}ToSaved(const {ty} &value) {{\n{writes}    \
+             {CPP_UNREACHED}\n}}\n\n/// The value a saved state holds, read by its tag first, \
+             refused unless it is one of the\n/// cases of {name}.\ninline {ty} {ty}FromSaved(const \
+             ::SCE::Saved::JsonValue &value, const std::string &what) {{\n    const std::string tag \
+             = ::SCE::Saved::savedReadUnionTag(value, what, {tag});\n{reads}    \
+             ::SCE::Saved::detail::refuse(\"'\" + what + \"' (\" + tag + \") is not a case of \
+             {name}\");\n}}"
+        )))
+    }
+
+    // The machine's own struct, beside its records (docs/adr/0092, section 7,
+    // the C++ row): named by the union's document, so one union is one type of
+    // the machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}{}Union",
@@ -616,56 +868,347 @@ impl ComposedSpelling for CppComposed<'_> {
             crate::filters::to_pascal_case(name.to_string())
         )
     }
+    // The struct of the case's alternative, nested in the union's (section 7
+    // items 1 and 2).
     fn union_case_ident(&self, variant: &str) -> String {
-        crate::forge::enum_naming::variant_ident(crate::generator::Language::Cpp, "", variant)
+        cpp_case_ident(variant)
     }
+    // The tag is read by the one method every union of a C++ unit and of a C++
+    // machine answers it by, whatever key it is written under.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(CPP_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "proven{}",
-            crate::filters::to_pascal_case(variant.to_string())
-        )
+        cpp_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        cpp_shared_read(field)
+    }
+    // A struct of one `std::variant`, an alternative per case in the tag enum's
+    // order, each a struct of its own holding the case's record, or empty (section
+    // 7 item 2: a `std::variant` names an alternative by its type, and two cases
+    // may hold one record). Its tag is the alternative's index, so the two
+    // cannot disagree. Every read the narrowing proves is a method of it, beside
+    // the method of the reference a write goes through
+    // ([`Self::union_member_place`]), whose other cases end the process, the one
+    // place they are written ([`CPP_UNREACHED`]).
+    fn union_def(&self, def: &UnionDef) -> String {
+        let name = crate::filters::escape_cpp(def.name.clone());
+        let ty = &def.ty;
+        let mut alternatives = String::new();
+        let mut kinds = String::new();
+        let mut reads = String::new();
+        for (index, case) in def.cases.iter().enumerate() {
+            let (ident, variant) = (&case.ident, &case.variant);
+            kinds.push_str(&format!(
+                "        case {index}:\n            return {}::{};\n",
+                def.tag_ty, case.tag_ident
+            ));
+            let Some(record) = &case.record else {
+                alternatives.push_str(&format!(
+                    "    /// The case `{variant}`, its tag alone.\n    struct {ident} {{}};\n"
+                ));
+                continue;
+            };
+            alternatives.push_str(&format!(
+                "    /// The case `{variant}`, holding its record.\n    struct {ident} {{\n        \
+                 {record} {CPP_CASE_VALUE};\n    }};\n"
+            ));
+            let (read, place) = (&case.proven, cpp_place_of(&case.proven));
+            reads.push_str(&format!(
+                "\n    /// The record of the case `{variant}`, read where a test of the tag proved \
+                 the value is in it.\n    const {record} &{read}() const {{\n        const {ident} \
+                 *held = ::std::get_if<{ident}>(&{CPP_UNION_CASES});\n        if (held == nullptr) \
+                 {{\n            {CPP_UNREACHED}\n        }}\n        return \
+                 held->{CPP_CASE_VALUE};\n    }}\n\n    /// The record of the case `{variant}`, \
+                 written where a test of the tag proved the value is in it.\n    {record} \
+                 &{place}() {{\n        {ident} *held = ::std::get_if<{ident}>(&{CPP_UNION_CASES});\n\
+                 \x20       if (held == nullptr) {{\n            {CPP_UNREACHED}\n        }}\n        \
+                 return held->{CPP_CASE_VALUE};\n    }}\n"
+            ));
+        }
+        for field in &def.shared {
+            let arms = |constant: &str| -> String {
+                field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!(
+                            "        if ({constant}auto *held = ::std::get_if<{ident}>(&\
+                             {CPP_UNION_CASES})) {{\n            return \
+                             held->{CPP_CASE_VALUE}.{};\n        }}\n",
+                            field.field
+                        )
+                    })
+                    .collect()
+            };
+            let (id, accessor, fty) = (&field.field, &field.accessor, &field.ty);
+            let place = cpp_place_of(accessor);
+            reads.push_str(&format!(
+                "\n    /// The field `{id}` the cases that declare it share, read where a test of \
+                 the tag proved\n    /// the value is in one of them.\n    {fty} {accessor}() \
+                 const {{\n{}        {CPP_UNREACHED}\n    }}\n\n    /// The field `{id}` the cases \
+                 that declare it share, written where a test of the tag\n    /// proved the value \
+                 is in one of them.\n    {fty} &{place}() {{\n{}        {CPP_UNREACHED}\n    }}\n",
+                arms("const "),
+                arms(""),
+            ));
+        }
+        let listed: Vec<&str> = def.cases.iter().map(|case| case.ident.as_str()).collect();
         format!(
-            "provenField{}",
-            crate::filters::to_pascal_case(field.to_string())
+            "/// SCE Accepted Subset §2.15: a `union:{name}` value (docs/adr/0092): exactly one \
+             case, held\n/// as the alternative of its own struct, built only whole from it \
+             (section 7 items 2 and 3).\nstruct {ty} {{\n{alternatives}\n    ::std::variant<{}> \
+             {CPP_UNION_CASES};\n\n    /// The case this value is in, as its tag names it.\n    \
+             {} {}() const {{\n        switch ({CPP_UNION_CASES}.index()) {{\n{kinds}        \
+             }}\n        {CPP_UNREACHED}\n    }}\n{reads}}};",
+            listed.join(", "),
+            def.tag_ty,
+            def.tag_method,
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{CPP_HOLDS_NO_UNION}")
+    // The case's alternative, handed the record or nothing, as the one member
+    // of the union's struct.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        format!("{ty}{{{ty}::{case}{{{}}}}}", record.unwrap_or_default())
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{CPP_HOLDS_NO_UNION}")
+    // The tag first, by the enum's reader, in the runtime's `readUnion`, which
+    // refuses a value that is no object before it; then the record of the case
+    // the tag names, read from the same value into the case's alternative by
+    // the arm of a `switch` over the tag's enum (docs/adr/0092, section 4). The
+    // tag's reader answers only a variant the enum declares, so the `switch`
+    // ends in no case left.
+    fn read_union(&self, _value: &str, read: &UnionRead<'_>) -> String {
+        let ty = &read.ty;
+        let arms: String = read
+            .arms
+            .iter()
+            .map(|arm| {
+                let alternative = format!("{ty}::{}", arm.case_ident);
+                match &arm.record {
+                    Some(record) => format!(
+                        "case {tag_ty}::{tag}: {{ {alternative} sceCase{{}}; \
+                         {CPP_COMMON}::EventPayloadRefusal sceRefused = ({record})(sceValue, \
+                         sceCase.{CPP_CASE_VALUE}); if (!sceRefused.empty()) {{ return sceRefused; \
+                         }} sceInto = {ty}{{::std::move(sceCase)}}; return {{}}; }} ",
+                        tag_ty = read.tag_ty,
+                        tag = arm.tag_ident
+                    ),
+                    None => format!(
+                        "case {}::{}: sceInto = {ty}{{{alternative}{{}}}}; return {{}}; ",
+                        read.tag_ty, arm.tag_ident
+                    ),
+                }
+            })
+            .collect();
+        format!(
+            "{CPP_READER} {{ return sceValue.readUnion<{tag_ty}>({}, {}, [&](const {tag_ty} \
+             &sceTag, const {CPP_COMMON}::EventPayloadValue &sceValue) -> \
+             {CPP_COMMON}::EventPayloadRefusal {{ switch (sceTag) {{ {arms}}} {CPP_UNREACHED} \
+             }}); }}",
+            cpp_literal(read.tag),
+            read.tag_reader,
+            tag_ty = read.tag_ty,
+        )
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{CPP_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{CPP_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case (docs/adr/0092, section
+    // 2.1): the runtime's `EventPayloadFields::unionCase`, which orders the keys
+    // as `record` does, or the `ScriptObject` a `<send>` holds a record in with
+    // the tag beside its fields, whose keys the writer orders. The case is told
+    // by its alternative, its record bound in its arm as a record's writer
+    // reads it.
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let result = match self.carrier {
+            CppCarrier::Json => "::std::string",
+            CppCarrier::Wire => "ScriptValue",
+        };
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let fields = arm.fields.clone().unwrap_or_default();
+                let written = match self.carrier {
+                    CppCarrier::Json => {
+                        let pairs: Vec<String> = fields
+                            .iter()
+                            .map(|(id, json)| format!("{{{}, {json}}}", cpp_literal(id)))
+                            .collect();
+                        format!(
+                            "{CPP_COMMON}::EventPayloadFields::unionCase({}, {}, {{{}}})",
+                            cpp_literal(tag),
+                            cpp_literal(&arm.variant),
+                            pairs.join(", ")
+                        )
+                    }
+                    CppCarrier::Wire => {
+                        let mut members = vec![(
+                            tag.to_string(),
+                            format!(
+                                "ScriptValue(std::in_place_type<std::string>, \
+                                 ::std::string({}))",
+                                cpp_literal(&arm.variant)
+                            ),
+                        )];
+                        members.extend(fields);
+                        self.write_record(&members)
+                    }
+                };
+                let alternative = format!("{ty}::{}", arm.case_ident);
+                match &arm.fields {
+                    Some(_) => format!(
+                        "if (const auto *sceCase = ::std::get_if<{alternative}>(&sceUnion.\
+                         {CPP_UNION_CASES})) {{ const auto &{CPP_ELEMENT_BINDING} = \
+                         sceCase->{CPP_CASE_VALUE}; return {written}; }} "
+                    ),
+                    None => format!(
+                        "if (::std::holds_alternative<{alternative}>(sceUnion.{CPP_UNION_CASES})) \
+                         {{ return {written}; }} "
+                    ),
+                }
+            })
+            .collect();
+        format!(
+            "[&](const auto &sceUnion) -> {result} {{ {arms}{CPP_UNREACHED} }}({})",
+            held.text
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(CPP_HOLDS_NO_UNION.to_string())
+        cpp_union_member(union, left, member)
     }
     fn union_place_of(&self, read: &str) -> String {
-        format!("{read}Place")
+        cpp_place_of(read)
     }
+    // A field is written in place, through the reference the method beside its
+    // proven read answers: the field of the one case left, or the field the
+    // cases left share.
     fn union_member_place(
         &self,
-        _holder: &str,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(CPP_HOLDS_NO_UNION.to_string())
+        if member == union.tag {
+            return Err(format!(
+                "the tag `{member}` of `union:{}` is never written alone: the case changes by a \
+                 whole assignment (docs/adr/0092, section 6.1 item 6)",
+                union.name
+            ));
+        }
+        // The read stands exactly where the write does: one case left that
+        // declares the field, or several that share it.
+        cpp_union_member(union, left, member)?;
+        Ok(match left {
+            [case] => format!(
+                "{holder}.{}().{member}",
+                cpp_place_of(&cpp_case_read(&case.variant.name))
+            ),
+            _ => format!("{holder}.{}()", cpp_place_of(&cpp_shared_read(member))),
+        })
     }
+}
+
+/// The C++ function value that writes a value of `ty` as a saved state does (a
+/// callable of the value answering `::SCE::Saved::JsonValue`): a number, a
+/// truth value, a text and a byte string by the runtime's writer of its type,
+/// an enum, a record and a union by their own `<Type>ToSaved`, a value that may
+/// be absent as null or as its present value, and a list element by element.
+/// `within` is the scope the type is written in, `depth` names the parameter of
+/// each nested lambda, so none hides its holder's. `Err` for a byte string
+/// inside a list, which a saved state would write as an array where it writes a
+/// byte string as its text.
+fn cpp_saved_writer(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &CppComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let element = format!("sceSaved{depth}");
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!(
+                "{}ToSaved",
+                machine_type(ty, within, records, enums, spelling)?
+            )
+        }
+        ValueType::Scalar(scalar) => format!(
+            "::SCE::Saved::savedWrite{}",
+            crate::filters::to_pascal_case(scalar.as_attr())
+        ),
+        ValueType::Text { .. } => "::SCE::Saved::savedWriteString".to_string(),
+        ValueType::Bytes { .. } => "::SCE::Saved::savedWriteBytes".to_string(),
+        ValueType::Optional { elem } => format!(
+            "[](const auto &{element}) {{ return ::SCE::Saved::savedWriteOptional({element}, {}); \
+             }}",
+            cpp_saved_writer(elem, within, names, spelling, depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            format!(
+                "[](const auto &{element}) {{ return ::SCE::Saved::savedWriteList({element}, {}); \
+                 }}",
+                cpp_saved_writer(elem, within, names, spelling, depth + 1)?
+            )
+        }
+    })
+}
+
+/// The C++ function value that reads a saved value back as a value of `ty`, as
+/// [`cpp_saved_writer`] writes it (a callable of the value and the name a
+/// refusal gives it): a text and a byte string into the type that holds the
+/// bound the type states, a list to its bound and to the lower count its type
+/// states, an enum, a record and a union by their own `<Type>FromSaved`, a
+/// value that may be absent read absent from null. Each refusal is the
+/// runtime's `StateRefusal`. `within` and `depth` as [`cpp_saved_writer`]'s.
+fn cpp_saved_reader(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &CppComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let (saved, what) = (format!("sceSaved{depth}"), format!("sceWhat{depth}"));
+    let head = format!("[](const ::SCE::Saved::JsonValue &{saved}, const std::string &{what})");
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!(
+                "{}FromSaved",
+                machine_type(ty, within, records, enums, spelling)?
+            )
+        }
+        ValueType::Scalar(scalar) => format!(
+            "::SCE::Saved::savedRead{}",
+            crate::filters::to_pascal_case(scalar.as_attr())
+        ),
+        ValueType::Text { max } => format!("::SCE::Saved::savedOwnedText<{}>()", max.max),
+        ValueType::Bytes { max } => format!("::SCE::Saved::savedOwnedBytes<{}>()", max.max),
+        ValueType::Optional { elem } => format!(
+            "{head} {{ return ::SCE::Saved::savedReadOptional({saved}, {what}, {}); }}",
+            cpp_saved_reader(elem, within, names, spelling, depth + 1)?
+        ),
+        ValueType::List { elem, max } => format!(
+            "{head} {{ return ::SCE::Saved::savedReadOwnedListWithin<{}>({saved}, {what}, {}u, \
+             {}); }}",
+            max.max,
+            max.min,
+            cpp_saved_reader(elem, within, names, spelling, depth + 1)?
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -680,10 +1223,11 @@ mod tests {
 
     /// The C++ row of the one table of what each backend lowers of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
-    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
-    /// (docs/adr/0092, section 7).
+    /// value sent (docs/adr/0086, sections 5 and 6), and a union held, read by
+    /// its tag, lifted and saved (docs/adr/0092, section 7); no variable of a
+    /// record that holds a composition yet.
     #[test]
-    fn the_cpp_row_lowers_every_composed_position_but_a_union() {
+    fn the_cpp_row_lowers_every_composed_position_but_a_composed_record_variable() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Cpp),
@@ -691,7 +1235,7 @@ mod tests {
                 name: "cpp",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: false,
                 sends: true,
             }
@@ -1094,22 +1638,323 @@ mod tests {
         );
     }
 
-    /// A C++ walk names no union: the one decision of what is lowered refuses
-    /// one on C++ first, and the walk that would declare or check one says why
-    /// there is none.
+    /// The case of the shape union named `name`.
+    fn case<'s>(shapes: &'s Shapes, name: &str) -> &'s ScopedCase {
+        shapes
+            .union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == name)
+            .expect("a case")
+    }
+
+    /// A union is the machine's own struct at any depth, named by its document
+    /// (docs/adr/0092, section 7, the C++ row), its tag read by `kind()`
+    /// whatever key it is written under, and a value built whole from the
+    /// alternative of its case.
     #[test]
-    fn a_cpp_walk_reads_no_union() {
+    fn a_cpp_machine_holds_a_union_in_its_own_struct() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &CPP).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
-        assert!(CPP
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
-        assert!(
-            cpp_bound_check(&ty("union:Shape"), None, "path", "one", 0, &shapes)
-                .unwrap_err()
-                .contains("holds no union")
+        let kinds = kinds();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &CPP),
+            Ok("MShapeUnion".to_string())
         );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &CPP
+            ),
+            Ok("::SCE::Forge::OwnedList<std::optional<MShapeUnion>, 3>".to_string())
+        );
+        assert_eq!(CPP.union_tag_read("type"), Some("kind".to_string()));
+        assert_eq!(
+            CPP.union_value("MShapeUnion", "Dot", None),
+            "MShapeUnion{MShapeUnion::Dot{}}"
+        );
+        assert_eq!(
+            CPP.union_value("MShapeUnion", "Circle", Some("r")),
+            "MShapeUnion{MShapeUnion::Circle{r}}"
+        );
+    }
+
+    /// The declaration: one alternative struct per case in the tag enum's
+    /// order, the record of a case its `value`, an empty case empty; the
+    /// `std::variant` of them; `kind()` from the alternative's index; a proven
+    /// read per case that holds a record beside the reference a write goes
+    /// through, each ending the process in another case; and one accessor for
+    /// `radius`, which `circle` and `disc` share.
+    #[test]
+    fn a_cpp_union_is_declared_with_its_alternatives_and_its_proven_reads() {
+        let def = union_definition(SHAPE_KEY, &shapes(), &kinds(), &CPP).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "provenFieldRadius".to_string(),
+                ty: "uint16_t".to_string(),
+                cases: vec!["Circle".to_string(), "Disc".to_string()],
+            }]
+        );
+        let text = CPP.union_def(&def);
+        for fragment in [
+            "struct MShapeUnion {\n    /// The case `dot`, its tag alone.\n    struct Dot {};\n",
+            "    struct Circle {\n        MRadiusRecord value;\n    };\n",
+            "\n    ::std::variant<Dot, Circle, Disc> cases;\n",
+            "    MKindEnum kind() const {\n        switch (cases.index()) {\n        case 0:\n            \
+             return MKindEnum::Dot;\n        case 1:\n            return MKindEnum::Circle;\n",
+            "    const MRadiusRecord &provenCircle() const {\n        const Circle *held = \
+             ::std::get_if<Circle>(&cases);\n        if (held == nullptr) {\n            \
+             ::std::abort();\n        }\n        return held->value;\n    }\n",
+            "    MRadiusRecord &provenCirclePlace() {\n        Circle *held = \
+             ::std::get_if<Circle>(&cases);\n        if (held == nullptr) {\n",
+            "    uint16_t provenFieldRadius() const {\n        if (const auto *held = \
+             ::std::get_if<Circle>(&cases)) {\n            return held->value.radius;\n        }\n",
+            "    uint16_t &provenFieldRadiusPlace() {\n        if (auto *held = \
+             ::std::get_if<Circle>(&cases)) {\n            return held->value.radius;\n        }\n",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+        // An empty case holds no record and has nothing to read.
+        assert!(!text.contains("provenDot"), "{text}");
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// method, a field of the one case left through that case's proven read,
+    /// and a field two cases share through its accessor; a write goes through
+    /// the reference the method beside each answers, and the tag is never
+    /// written alone.
+    #[test]
+    fn a_cpp_proven_read_and_write_are_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(cpp_union_member(union, &all, "kind"), Ok("kind()".into()));
+        assert_eq!(
+            cpp_union_member(union, &[case(&shapes, "disc")], "radius"),
+            Ok("provenDisc().radius".into())
+        );
+        assert_eq!(
+            CPP.union_member(union, &both, "radius"),
+            Ok("provenFieldRadius()".into())
+        );
+        assert!(cpp_union_member(union, &[case(&shapes, "dot")], "radius").is_err());
+        assert_eq!(
+            CPP.union_member_place("v_s", union, &[case(&shapes, "disc")], "radius"),
+            Ok("v_s.provenDiscPlace().radius".into())
+        );
+        assert_eq!(
+            CPP.union_member_place("v_s", union, &both, "radius"),
+            Ok("v_s.provenFieldRadiusPlace()".into())
+        );
+        let tag = CPP
+            .union_member_place("v_s", union, &all, "kind")
+            .expect_err("the tag is never written alone");
+        assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// An algorithm's union is its unit's struct (docs/adr/0092, Landing order
+    /// step 5): the tag by `kind()`, the field of the one case left by that
+    /// case's proven read, a field several cases declare by a lambda that takes
+    /// each case left apart by its alternative and ends the process past them,
+    /// and no read where no case left declares the field.
+    #[test]
+    fn an_algorithms_union_is_read_on_its_units_struct() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let read = |left: &[&ScopedCase], member: &str| {
+            cpp_unit_union_read("shape", "U", union, left, member)
+        };
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(read(&[], "kind"), Ok("shape.kind()".to_string()));
+        assert_eq!(
+            read(&[case(&shapes, "circle")], "radius"),
+            Ok("shape.provenCircle().radius".to_string())
+        );
+        assert_eq!(
+            read(&both, "radius"),
+            Ok(
+                "[&]() { if (const auto *sceCase = ::std::get_if<U::Circle>(&shape.cases)) { \
+                 return sceCase->value.radius; } if (const auto *sceCase = \
+                 ::std::get_if<U::Disc>(&shape.cases)) { return sceCase->value.radius; } \
+                 ::std::abort(); }()"
+                    .to_string()
+            )
+        );
+        assert!(read(&[], "radius").is_err());
+        assert!(read(&[case(&shapes, "dot"), case(&shapes, "circle")], "radius").is_err());
+    }
+
+    /// The reader reads the tag by the enum's reader inside the runtime's
+    /// `readUnion`, and then the record of the case it names from the same
+    /// value into the case's alternative, each case an arm of a `switch` over
+    /// the tag's enum; the writer tells the case by its alternative and writes
+    /// the tag among the case's fields, as the JSON text and as the value a
+    /// `<send>` holds; a union is copied by the assignment.
+    #[test]
+    fn a_cpp_union_is_read_tag_first_written_by_its_case_and_copied_by_value() {
+        let shapes = shapes();
+        let kinds = kinds();
+        let read = reader(&ty("union:Shape"), None, &shapes, &kinds, &CPP, "v").expect("read");
+        for fragment in [
+            format!("{R} {{ return sceValue.readUnion<MKindEnum>(\"kind\", {R} {{ "),
+            "[&](const MKindEnum &sceTag, const ::SCE::Common::EventPayloadValue &sceValue) -> \
+             ::SCE::Common::EventPayloadRefusal { switch (sceTag) { case MKindEnum::Dot: sceInto \
+             = MShapeUnion{MShapeUnion::Dot{}}; return {}; case MKindEnum::Circle: { \
+             MShapeUnion::Circle sceCase{}; ::SCE::Common::EventPayloadRefusal sceRefused = "
+                .to_string(),
+            "(sceValue, sceCase.value); if (!sceRefused.empty()) { return sceRefused; } sceInto = \
+             MShapeUnion{::std::move(sceCase)}; return {}; } "
+                .to_string(),
+            "} ::std::abort(); }); }".to_string(),
+        ] {
+            assert!(
+                read.contains(&fragment),
+                "expected `{fragment}` in:\n{read}"
+            );
+        }
+        let json =
+            writer(&ty("union:Shape"), None, &shapes, &CPP, &Held::place("x.s")).expect("write");
+        assert_eq!(
+            json,
+            "[&](const auto &sceUnion) -> ::std::string { if \
+             (::std::holds_alternative<MShapeUnion::Dot>(sceUnion.cases)) { return \
+             ::SCE::Common::EventPayloadFields::unionCase(\"kind\", \"dot\", {}); } if (const auto \
+             *sceCase = ::std::get_if<MShapeUnion::Circle>(&sceUnion.cases)) { const auto \
+             &sceElement = sceCase->value; return \
+             ::SCE::Common::EventPayloadFields::unionCase(\"kind\", \"circle\", {{\"radius\", \
+             ::SCE::Common::EventPayloadFields::json(sceElement.radius)}}); } if (const auto \
+             *sceCase = ::std::get_if<MShapeUnion::Disc>(&sceUnion.cases)) { const auto \
+             &sceElement = sceCase->value; return \
+             ::SCE::Common::EventPayloadFields::unionCase(\"kind\", \"disc\", {{\"radius\", \
+             ::SCE::Common::EventPayloadFields::json(sceElement.radius)}}); } ::std::abort(); \
+             }(x.s)"
+        );
+        let wire = CppComposed {
+            machine: "M",
+            carrier: CppCarrier::Wire,
+        };
+        let sent = writer(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &wire,
+            &Held::place("x.s"),
+        )
+        .expect("write");
+        assert!(
+            sent.contains(
+                "ScriptObject{{\"kind\", ScriptValue(std::in_place_type<std::string>, \
+                 ::std::string(\"circle\"))}, {\"radius\", \
+                 ScriptValue(std::in_place_type<int64_t>, \
+                 static_cast<int64_t>(sceElement.radius))}}"
+            ),
+            "{sent}"
+        );
+        let copy = |from: &str, to: &str| {
+            copier(
+                &ty(from),
+                None,
+                &ty(to),
+                None,
+                &shapes,
+                &kinds,
+                &CPP,
+                &Held::place("x"),
+            )
+        };
+        assert_eq!(copy("union:Shape", "union:Shape"), Ok("x".to_string()));
+        assert_eq!(
+            copy("optional<union:Shape>", "optional<union:Shape>"),
+            Ok("x".to_string())
+        );
+        assert_eq!(
+            copy("union:Shape", "optional<union:Shape>"),
+            Ok("x".to_string())
+        );
+    }
+
+    /// A union is saved as its tag beside the fields of its case, written by
+    /// the runtime's `savedWriteUnion` over the record's own `ToSaved`, and
+    /// read back by its tag first (docs/adr/0092, section 6.1 item 7); a tag no
+    /// case names is refused naming the union.
+    #[test]
+    fn a_cpp_union_is_saved_by_its_tag_beside_its_case() {
+        let shapes = shapes();
+        let def = union_definition(SHAPE_KEY, &shapes, &kinds(), &CPP).expect("declared");
+        let text = CPP
+            .saved_union_ext(&def, SHAPE_KEY, &shapes)
+            .expect("spelled")
+            .expect("a C++ union carries its saved form");
+        for fragment in [
+            "inline ::SCE::Saved::JsonValue MShapeUnionToSaved(const MShapeUnion &value) {\n    if \
+             (::std::holds_alternative<MShapeUnion::Dot>(value.cases)) {\n        return \
+             ::SCE::Saved::savedWriteUnion(\"kind\", \"dot\", ::std::nullopt);\n    }\n    if \
+             (const auto *held = ::std::get_if<MShapeUnion::Circle>(&value.cases)) {\n        \
+             return ::SCE::Saved::savedWriteUnion(\"kind\", \"circle\", \
+             MRadiusRecordToSaved(held->value));\n    }\n",
+            "inline MShapeUnion MShapeUnionFromSaved(const ::SCE::Saved::JsonValue &value, const \
+             std::string &what) {\n    const std::string tag = \
+             ::SCE::Saved::savedReadUnionTag(value, what, \"kind\");\n",
+            "    if (tag == \"dot\") {\n        return MShapeUnion{MShapeUnion::Dot{}};\n    }\n",
+            "    if (tag == \"circle\") {\n        return \
+             MShapeUnion{MShapeUnion::Circle{MRadiusRecordFromSaved(value, what)}};\n    }\n",
+            "::SCE::Saved::detail::refuse(\"'\" + what + \"' (\" + tag + \") is not a case of \
+             shape\");",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+    }
+
+    /// A composed record's saved form: each field written by the runtime's
+    /// writer of its type and read back into the type that holds every bound
+    /// its type states, a list's lower count included (docs/adr/0086, section
+    /// 15.6), by position in the schema's order.
+    #[test]
+    fn a_cpp_composed_record_is_saved_field_by_field_by_its_types() {
+        let held = held();
+        let enums = enums();
+        let text = CPP
+            .saved_record_ext("Item", &held, &enums)
+            .expect("spelled")
+            .expect("a C++ composed record carries its saved form");
+        for fragment in [
+            "inline ::SCE::Saved::JsonValue MItemRecordToSaved(const MItemRecord &value) {\n    \
+             ::SCE::Saved::JsonObject members;\n",
+            "    members.set(\"id\", (::SCE::Saved::savedWriteUint32)(value.id));\n",
+            "    members.set(\"level\", (MLevelEnumToSaved)(value.level));\n",
+            "    members.set(\"due\", ([](const auto &sceSaved0) { return \
+             ::SCE::Saved::savedWriteOptional(sceSaved0, ::SCE::Saved::savedWriteInt64); \
+             })(value.due));\n",
+            "inline MItemRecord MItemRecordFromSaved(const ::SCE::Saved::JsonValue &value, const \
+             std::string &what) {\n    return MItemRecord{\n",
+            "        /*blob=*/(::SCE::Saved::savedOwnedBytes<4>())(::SCE::Saved::savedField(value, \
+             what, \"blob\"), what + \".blob\"),\n",
+            "        /*tags=*/([](const ::SCE::Saved::JsonValue &sceSaved0, const std::string \
+             &sceWhat0) { return ::SCE::Saved::savedReadOwnedListWithin<4>(sceSaved0, sceWhat0, \
+             0u, ::SCE::Saved::savedOwnedText<8>()); })(::SCE::Saved::savedField(value, what, \
+             \"tags\"), what + \".tags\"),\n",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+    }
+
+    /// A union a raise seam is handed is checked by the record of the case it
+    /// is in, at the union's own path; one whose cases hold no lower count
+    /// checks nothing, and a union the statechart does not hold is refused.
+    #[test]
+    fn a_cpp_raise_seam_checks_a_union_by_its_case() {
+        let shapes = shapes();
+        assert_eq!(
+            cpp_bound_check(&ty("union:Shape"), None, "path", "one", 0, &shapes),
+            Ok(None)
+        );
+        assert!(cpp_bound_check(&ty("union:Other"), None, "path", "one", 0, &shapes).is_err());
     }
 }
