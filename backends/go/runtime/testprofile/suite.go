@@ -15,7 +15,10 @@ import "fmt"
 // case's configuration from its `test-configuration`). They are data: what a
 // case does is its components' machines, which the run drives (TestCaseRun).
 // The runner is a library function, with no `main`: a generated or
-// hand-written test calls it with the system adapters that play the SUT.
+// hand-written test calls it with the system adapters that play the SUT
+// (RunSuite), or with the recorded input trace of each test case
+// (RunSuiteWithTraces), which the program of a generated suite does
+// (RunnerMain).
 //
 // Cross-language siblings: `sce_rust_runtime::test::run_suite` (Rust),
 // `SCE::Test::runSuite` (C++), `com.sce.runtime.test.runSuite` (Kotlin).
@@ -55,6 +58,11 @@ type TestCase struct {
 	// ModuleParameters are the ids of the module parameters its components
 	// read.
 	ModuleParameters []string
+	// Inputs is the reader of its configuration's inputs, which a trace
+	// replayed for it is read with (RunSuiteWithTraces): which records each
+	// system port takes, and each record's value from its canonical form. Nil
+	// is NoInputs, the reader of a configuration with no system port.
+	Inputs InputReader
 }
 
 // Selection is a selection (§11.8): whether a world of the suite's features
@@ -143,6 +151,58 @@ func RunSuite(
 	adapters func(testCase string) SystemAdapter,
 	overrides *ModuleParameters,
 ) ([]CaseResult, error) {
+	return runSelected(suite, world, overrides, func(testCase TestCase) (SystemAdapter, string) {
+		adapter := adapters(testCase.Name)
+		if adapter == nil {
+			return nil, "no system adapter is given for the test case"
+		}
+		return adapter, ""
+	})
+}
+
+// RunSuiteWithTraces runs the test cases of suite that world selects, each
+// against its recorded input trace (docs/SCE_TTCN3_LANE.md §10.5): RunSuite,
+// with the adapter of each test case a TraceAdapter that plays the trace traces
+// gives for its name, read by the test case's configuration (TestCase.Inputs).
+//
+// A test case whose trace is not given, is of another suite or test case, or
+// does not fit its configuration (a port that is no system port of it, a type
+// its port does not take, a value that does not belong to its type) ends with
+// `error` (P13) before any component is created, its log line naming why. So
+// does one whose components read a module parameter the run has no value for,
+// as under RunSuite, before its trace is asked for.
+func RunSuiteWithTraces(
+	suite Suite,
+	world Features,
+	traces func(testCase string) (Trace, error),
+	overrides *ModuleParameters,
+) ([]CaseResult, error) {
+	return runSelected(suite, world, overrides, func(testCase TestCase) (SystemAdapter, string) {
+		trace, err := traces(testCase.Name)
+		if err != nil {
+			return nil, "the trace is refused: " + err.Error()
+		}
+		if trace.Suite != suite.Name || trace.TestCase != testCase.Name {
+			return nil, fmt.Sprintf("the trace is of the test case '%s' of the suite '%s'",
+				trace.TestCase, trace.Suite)
+		}
+		adapter, err := NewTraceAdapter(trace, testCase.Inputs)
+		if err != nil {
+			return nil, "the trace is refused: " + err.Error()
+		}
+		return adapter, ""
+	})
+}
+
+// runSelected is the runner of RunSuite and RunSuiteWithTraces: the test cases
+// world selects, each against the adapter adapterOf builds for it, or ended
+// with `error` for the reason it gives where it builds none.
+func runSelected(
+	suite Suite,
+	world Features,
+	overrides *ModuleParameters,
+	adapterOf func(testCase TestCase) (SystemAdapter, string),
+) ([]CaseResult, error) {
 	parameters := suite.ModuleParameters.Copy()
 	for _, id := range overrides.IDs() {
 		if !parameters.Has(id) {
@@ -170,9 +230,9 @@ func RunSuite(
 				"the test case reads the module parameter '%s', which is given no value", missing)))
 			continue
 		}
-		adapter := adapters(testCase.Name)
+		adapter, why := adapterOf(testCase)
 		if adapter == nil {
-			results = append(results, refused(testCase.Name, "no system adapter is given for the test case"))
+			results = append(results, refused(testCase.Name, why))
 			continue
 		}
 		run := NewTestCaseRun(testCase.Configuration, testCase.Machines, adapter, execute.Guard, parameters)

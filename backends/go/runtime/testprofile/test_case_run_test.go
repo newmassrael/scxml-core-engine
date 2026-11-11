@@ -113,25 +113,27 @@ type input struct {
 	event      string
 }
 
-// traceAdapter replays a trace and records what was sent to it.
-type traceAdapter struct {
+// scriptedAdapter plays a script of inputs and records what was sent to it:
+// the run's own test adapter, apart from the runtime's TraceAdapter, which
+// trace_test.go holds.
+type scriptedAdapter struct {
 	trace []input
 	next  int
 	sent  []input
 }
 
-func (a *traceAdapter) Send(systemPort string, message Message, now Instant) {
+func (a *scriptedAdapter) Send(systemPort string, message Message, now Instant) {
 	a.sent = append(a.sent, input{at: now, systemPort: systemPort, event: message.Event})
 }
 
-func (a *traceAdapter) NextInput() (Instant, bool) {
+func (a *scriptedAdapter) NextInput() (Instant, bool) {
 	if a.next < len(a.trace) {
 		return a.trace[a.next].at, true
 	}
 	return 0, false
 }
 
-func (a *traceAdapter) TakeInputsDue(now Instant) []SystemInput {
+func (a *scriptedAdapter) TakeInputsDue(now Instant) []SystemInput {
 	var due []SystemInput
 	for a.next < len(a.trace) && a.trace[a.next].at <= now {
 		in := a.trace[a.next]
@@ -431,7 +433,7 @@ func TestTestCaseRunTest_AnAnsweredRequestPassesWithoutTimeMoving(t *testing.T) 
 			}
 		},
 	})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictPass {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -446,7 +448,7 @@ func TestTestCaseRunTest_AnAnsweredRequestPassesWithoutTimeMoving(t *testing.T) 
 // P7, §3.3: with nothing to receive, time advances to the timer's instant.
 func TestTestCaseRunTest_AnUnansweredRequestFailsWhenItsTimerExpires(t *testing.T) {
 	m := machines{}.with("Tester", tester(t)).with("Echo", steps{onStart: idle(), onSnapshot: idle()})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictFail {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -459,7 +461,7 @@ func TestTestCaseRunTest_AnUnansweredRequestFailsWhenItsTimerExpires(t *testing.
 // never end; the runtime ends it with error.
 func TestTestCaseRunTest_ATestCaseThatCanNeverEndIsAnError(t *testing.T) {
 	m := machines{}.with("Waiter", steps{onStart: idle(), onSnapshot: idle()})
-	result := runCase(mapped("Waiter"), m, &traceAdapter{}, NoGuard)
+	result := runCase(mapped("Waiter"), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -474,7 +476,7 @@ func TestTestCaseRunTest_TheGuardEndsATestCaseWithError(t *testing.T) {
 		onStart:    func(context *ComponentContext, _ *scripted) { context.Setverdict(VerdictPass, "") },
 		onSnapshot: idle(),
 	})
-	result := runCase(mapped("Waiter"), m, &traceAdapter{}, GuardOf(5*second))
+	result := runCase(mapped("Waiter"), m, &scriptedAdapter{}, GuardOf(5*second))
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -495,7 +497,7 @@ func TestTestCaseRunTest_AMappedPortTalksToTheSystemAdapterOnTheLogicalClock(t *
 		},
 		onSnapshot: repliesInTime(t),
 	})
-	adapter := &traceAdapter{trace: []input{{at: 500, systemPort: "sut", event: "pong"}}}
+	adapter := &scriptedAdapter{trace: []input{{at: 500, systemPort: "sut", event: "pong"}}}
 	result := runCase(configuration, m, adapter, NoGuard)
 	if result.Verdict != VerdictPass {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
@@ -528,7 +530,7 @@ func TestTestCaseRunTest_ARemovedPtcsVerdictStillCounts(t *testing.T) {
 		onStart:    func(context *ComponentContext, _ *scripted) { context.Setverdict(VerdictFail, "") },
 		onSnapshot: idle(),
 	})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictFail {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -561,7 +563,7 @@ func TestTestCaseRunTest_NothingSelectsAfterTheMtcTerminatesInTheRound(t *testin
 			}
 		},
 	})
-	result := runCase(configuration, m, &traceAdapter{}, NoGuard)
+	result := runCase(configuration, m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictPass {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -589,7 +591,7 @@ func TestTestCaseRunTest_ADoneBranchSeesAPtcThatTerminated(t *testing.T) {
 		},
 		onSnapshot: idle(),
 	})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictPass {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -641,7 +643,7 @@ func TestTestCaseRunTest_AComponentReadsTheModuleParameterItsRunIsGiven(t *testi
 	m := machines{}.with("Reader", readsJob(job))
 	parameters := &ModuleParameters{}
 	parameters.Set("job", saved(7))
-	result := runCaseWith(lone("Reader"), m, &traceAdapter{}, NoGuard, parameters)
+	result := runCaseWith(lone("Reader"), m, &scriptedAdapter{}, NoGuard, parameters)
 	if job.value == nil || *job.value != 7 {
 		t.Fatalf("read %v", job.value)
 	}
@@ -655,7 +657,7 @@ func TestTestCaseRunTest_AComponentReadsTheModuleParameterItsRunIsGiven(t *testi
 func TestTestCaseRunTest_AModuleParameterTheRunIsNotGivenIsAnError(t *testing.T) {
 	job := &slot{}
 	m := machines{}.with("Reader", readsJob(job))
-	result := runCase(lone("Reader"), m, &traceAdapter{}, NoGuard)
+	result := runCase(lone("Reader"), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -678,7 +680,7 @@ func TestTestCaseRunTest_AModuleParameterOfAnotherTypeIsAnError(t *testing.T) {
 	m := machines{}.with("Reader", readsJob(job))
 	parameters := &ModuleParameters{}
 	parameters.Set("job", sce.SavedWriteString("seven"))
-	result := runCaseWith(lone("Reader"), m, &traceAdapter{}, NoGuard, parameters)
+	result := runCaseWith(lone("Reader"), m, &scriptedAdapter{}, NoGuard, parameters)
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -694,7 +696,7 @@ func TestTestCaseRunTest_AModuleParameterOfAnotherTypeIsAnError(t *testing.T) {
 // run with error where a component of it is created.
 func TestTestCaseRunTest_AComponentTypeWithNoMachineIsAnError(t *testing.T) {
 	none := func(string) ComponentMachine { return nil }
-	result := NewTestCaseRun(lone("Ghost"), none, &traceAdapter{}, NoGuard, nil).Run()
+	result := NewTestCaseRun(lone("Ghost"), none, &scriptedAdapter{}, NoGuard, nil).Run()
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -712,7 +714,7 @@ func TestTestCaseRunTest_ASendToAnAbsentPeerIsAnError(t *testing.T) {
 		onStart:    func(context *ComponentContext, _ *scripted) { context.Send("p", message("ping")) },
 		onSnapshot: idle(),
 	})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -736,12 +738,12 @@ func endsWith(name, componentType string, verdict Verdict) TestCase {
 	return TestCase{Name: name, Configuration: lone(componentType), Machines: m.factory()}
 }
 
-// tracing is the adapters of a suite's run, each a fresh traceAdapter,
+// tracing is the adapters of a suite's run, each a fresh scriptedAdapter,
 // recording the test case each was built for.
 func tracing(built *[]string) func(string) SystemAdapter {
 	return func(testCase string) SystemAdapter {
 		*built = append(*built, testCase)
-		return &traceAdapter{}
+		return &scriptedAdapter{}
 	}
 }
 
@@ -910,7 +912,7 @@ func TestTheSharedHandle_ACallIntoTheContextFromASnapshotReaderPanics(t *testing
 		},
 		onSnapshot: idle(),
 	})
-	got, panicked := panicOf(func() { runCase(mapped("Reader"), m, &traceAdapter{}, NoGuard) })
+	got, panicked := panicOf(func() { runCase(mapped("Reader"), m, &scriptedAdapter{}, NoGuard) })
 	if !panicked || got != "re-entrant access to the test run from mtc" {
 		t.Fatalf("panicked %v with %q", panicked, got)
 	}
@@ -930,7 +932,7 @@ func TestTheSharedHandle_AKillOfAComponentWhoseMachineRunsIsAnError(t *testing.T
 		onStart:    func(context *ComponentContext, _ *scripted) { context.Kill("mtc") },
 		onSnapshot: idle(),
 	})
-	result := runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard)
+	result := runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard)
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v", result.Verdict)
 	}
@@ -964,7 +966,7 @@ func TestTheSharedHandle_AContextDoesNotOutliveItsComponent(t *testing.T) {
 		onStart:    func(context *ComponentContext, _ *scripted) { kept = context },
 		onSnapshot: idle(),
 	})
-	got, panicked := panicOf(func() { runCase(mtcAndEcho(), m, &traceAdapter{}, NoGuard) })
+	got, panicked := panicOf(func() { runCase(mtcAndEcho(), m, &scriptedAdapter{}, NoGuard) })
 	if !panicked || got != "the component echo was removed, and its context outlived it" {
 		t.Fatalf("panicked %v with %q", panicked, got)
 	}
@@ -982,7 +984,7 @@ func TestTheRunIsRunOnce_ARunThatHasRunIsNotRunAgain(t *testing.T) {
 		},
 		onSnapshot: idle(),
 	})
-	run := NewTestCaseRun(lone("Tester"), m.factory(), &traceAdapter{}, NoGuard, nil)
+	run := NewTestCaseRun(lone("Tester"), m.factory(), &scriptedAdapter{}, NoGuard, nil)
 	if verdict := run.Run().Verdict; verdict != VerdictPass {
 		t.Fatalf("verdict %v", verdict)
 	}
@@ -1115,7 +1117,7 @@ func TestTheDoors_ASendAndAPtcGoThroughTheHostProcessors(t *testing.T) {
 		}
 		return nil
 	}
-	result := NewTestCaseRun(mtcAndEcho(), factory, &traceAdapter{}, NoGuard, nil).Run()
+	result := NewTestCaseRun(mtcAndEcho(), factory, &scriptedAdapter{}, NoGuard, nil).Run()
 	if result.Verdict != VerdictPass {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
@@ -1237,7 +1239,7 @@ func expectLog(t *testing.T, got string, want ...string) {
 // the removal of the terminated echo when the MTC ends, write no record.
 func TestTheTestLog_ARunWritesEachRecordWhereItsEventHappens(t *testing.T) {
 	suite := loggedSuite(TestCase{Name: "pings_the_echo", Configuration: pinging(), Machines: pingingMachines().factory()})
-	results, err := RunSuite(suite, FeaturesOf(), func(string) SystemAdapter { return &traceAdapter{} }, nil)
+	results, err := RunSuite(suite, FeaturesOf(), func(string) SystemAdapter { return &scriptedAdapter{} }, nil)
 	if err != nil || len(results) != 1 {
 		t.Fatalf("the suite runs its one case: %v %v", results, err)
 	}
@@ -1272,7 +1274,7 @@ func TestTheTestLog_ARunWritesEachRecordWhereItsEventHappens(t *testing.T) {
 // reason, which another runtime would not write alike.
 func TestTheTestLog_AnErrorTheRuntimeSetsIsLoggedWithoutItsCause(t *testing.T) {
 	m := machines{}.with("Waiter", steps{onStart: idle(), onSnapshot: idle()})
-	result := runCase(lone("Waiter"), m, &traceAdapter{}, GuardOf(7))
+	result := runCase(lone("Waiter"), m, &scriptedAdapter{}, GuardOf(7))
 	if result.Verdict != VerdictError {
 		t.Fatalf("verdict %v: %v", result.Verdict, result.Log)
 	}
