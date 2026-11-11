@@ -2984,19 +2984,19 @@ VARIABLE_READER(static_union, refusals)
 
 // The number the field `field` of `shape` holds, in a case that holds that field.
 static bool static_union_shape_number(const static_union_union_union_shape_t *shape, const char *field, int64_t *out) {
-    if (strcmp(field, "radius") == 0 && shape->tag == SHAPE_KIND_CIRCLE) {
+    if (strcmp(field, "radius") == 0 && shape->tag == ENUM_SHAPE_KIND_CIRCLE) {
         *out = (int64_t)shape->as.circle.radius;
         return true;
     }
-    if (strcmp(field, "radius") == 0 && shape->tag == SHAPE_KIND_DISC) {
+    if (strcmp(field, "radius") == 0 && shape->tag == ENUM_SHAPE_KIND_DISC) {
         *out = (int64_t)shape->as.disc.radius;
         return true;
     }
-    if (strcmp(field, "width") == 0 && shape->tag == SHAPE_KIND_RECT) {
+    if (strcmp(field, "width") == 0 && shape->tag == ENUM_SHAPE_KIND_RECT) {
         *out = (int64_t)shape->as.rect.width;
         return true;
     }
-    if (strcmp(field, "height") == 0 && shape->tag == SHAPE_KIND_RECT) {
+    if (strcmp(field, "height") == 0 && shape->tag == ENUM_SHAPE_KIND_RECT) {
         *out = (int64_t)shape->as.rect.height;
         return true;
     }
@@ -3010,17 +3010,17 @@ static const char *static_union_shape_text(const static_union_union_union_shape_
     static char note[sizeof(((static_union_record_label_t *)NULL)->note.value.data)];
     static char points[64];
     if (strcmp(field, "kind") == 0) {
-        return shape_kind_declared_name(shape->tag);
+        return enum_shape_kind_declared_name(shape->tag);
     }
-    if (strcmp(field, "text") == 0 && shape->tag == SHAPE_KIND_LABEL) {
+    if (strcmp(field, "text") == 0 && shape->tag == ENUM_SHAPE_KIND_LABEL) {
         memcpy(text, shape->as.label.text.data, sizeof(text));
         return text;
     }
-    if (strcmp(field, "note") == 0 && shape->tag == SHAPE_KIND_LABEL && shape->as.label.note.present) {
+    if (strcmp(field, "note") == 0 && shape->tag == ENUM_SHAPE_KIND_LABEL && shape->as.label.note.present) {
         memcpy(note, shape->as.label.note.value.data, sizeof(note));
         return note;
     }
-    if (strcmp(field, "points") == 0 && shape->tag == SHAPE_KIND_PATH) {
+    if (strcmp(field, "points") == 0 && shape->tag == ENUM_SHAPE_KIND_PATH) {
         size_t at = 0u;
         points[at++] = '[';
         for (size_t i = 0u; i < shape->as.path.points.len && at < sizeof(points); ++i) {
@@ -3039,7 +3039,7 @@ static const char *static_union_shape_text(const static_union_union_union_shape_
 // Whether the optional field `field` of `shape` is present: 1, 0, or -1 for a field its case
 // holds no optional value of.
 static int static_union_shape_presence(const static_union_union_union_shape_t *shape, const char *field) {
-    if (strcmp(field, "note") == 0 && shape->tag == SHAPE_KIND_LABEL) {
+    if (strcmp(field, "note") == 0 && shape->tag == ENUM_SHAPE_KIND_LABEL) {
         return shape->as.label.note.present ? 1 : 0;
     }
     return -1;
@@ -3113,7 +3113,7 @@ static const char *static_union_text_record_lift_why(const void *sm, size_t inde
 
 static const char *static_union_text(void *sm, const char *name) {
     if (strcmp(name, "last_kind") == 0) {
-        return shape_kind_declared_name(static_union_get_last_kind((const static_union_t *)sm));
+        return enum_shape_kind_declared_name(static_union_get_last_kind((const static_union_t *)sm));
     }
     return NULL;
 }

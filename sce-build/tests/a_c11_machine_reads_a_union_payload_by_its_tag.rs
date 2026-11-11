@@ -69,7 +69,10 @@ fn holds(code: &str, lines: &[&str]) {
 const UNION: &str = "static_union_union_union_shape_t";
 
 /// Pinned by `C11Composed::union_type` and `C11Composed::union_def`
-/// (`sce-build/src/forge/composed_lowering/c11.rs`).
+/// (`sce-build/src/forge/composed_lowering/c11.rs`). The tag is held in the
+/// machine's own type of the tag's enum, the one every variable of the enum is
+/// held in: named by the enum's document, `enum_shape_kind.scxml`
+/// (`CTarget::enum_type`, `sce-build/src/forge/static_lowering.rs`).
 #[test]
 fn the_payload_holds_the_union_in_the_machines_own_struct() {
     let code = machine();
@@ -77,7 +80,7 @@ fn the_payload_holds_the_union_in_the_machines_own_struct() {
         &code,
         &[
             &format!(
-                "typedef struct {{\n    shape_kind_enum_t tag;\n    union {{\n        \
+                "typedef struct {{\n    enum_shape_kind_enum_t tag;\n    union {{\n        \
                  static_union_record_radius_t circle;\n        static_union_record_radius_t \
                  disc;\n        static_union_record_rect_t rect;\n        \
                  static_union_record_label_t label;\n        static_union_record_path_t \
@@ -141,12 +144,12 @@ fn each_read_and_write_is_spelled_by_the_cases_the_tests_leave() {
     holds(
         &code,
         &[
-            // The tag as its member.
-            ".one.tag == SHAPE_KIND_DOT",
+            // The tag as its member, against the constants of the machine's enum.
+            ".one.tag == ENUM_SHAPE_KIND_DOT",
             // A field of the one case left, as that case's member.
             ".one.as.rect.width",
             // A field two cases share, by a test of the tag over them.
-            ".one.tag == SHAPE_KIND_CIRCLE ? ",
+            ".one.tag == ENUM_SHAPE_KIND_CIRCLE ? ",
             ".one.as.circle.radius : ",
             ".one.as.disc.radius",
             // A list a case holds, walked where its case is proven.
