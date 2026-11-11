@@ -1322,7 +1322,8 @@ mod tests {
 
     /// docs/adr/0092, Landing order step 5: a backend lowers an algorithm over a
     /// union only where it generates the union's unit the algorithm names, and
-    /// names it once. Rust, C++, Kotlin, Go, Python and C11 lower one.
+    /// names it once. Every generated backend lowers one, in the order each
+    /// landed.
     #[test]
     fn an_algorithm_over_a_union_is_lowered_where_its_unit_is_generated() {
         for &lang in ALGORITHM_UNION_BACKENDS {
