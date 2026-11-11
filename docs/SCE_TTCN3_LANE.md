@@ -184,6 +184,8 @@ On C++ it is `SCE::Generated::<Suite>::main(argc, argv)`, over `sce/include/test
 calls (`tests/integration/runtime_suite_runner.cpp`).
 On Go it is the `Main` of the suite's package, over `testprofile.RunnerMain`, which a one-line `package main` calls
 (`backends/go/tests/cmd/runtime_suite_runner`, run as `go run ./cmd/runtime_suite_runner` in `backends/go/tests`).
+On Swift it is `<Suite>.main()`, over `SceTestProfile.runnerMain`, which the `main.swift` of an executable target calls
+(`runtime_suite`'s is the target `RuntimeSuiteRunner` of `backends/swift/tests`, run as `swift run RuntimeSuiteRunner`).
 
 While every surface above is `pre-release`, SCE may change one in a way that is not additive, under the policy of
 `SCE_WIRE_CONTRACTS.md`. The downstream's `SCE_PIN` is what keeps it working across such a change: it moves to a new
@@ -373,7 +375,18 @@ in the union's own scope, or the empty object of a case that holds none (`canoni
 value by the constructor of its case. Its configuration of every form is the one Rust and Kotlin read,
 `trace_forms/forms_configuration.scxml`.
 
-The trace replay and the runner program are in place on Rust, Kotlin, C++ and Go. Python, C11 and Swift follow the
+On Swift the same is in place: `SceTestProfile` (`FromCanonical.swift`, `Trace.swift` with `TraceAdapter`,
+`runSuiteWithTraces` of `Suite.swift`, `runRunner` of `Runner.swift` and `runnerMain` of `RunnerMain.swift`) in the
+runtime, `SwiftReading` beside `SwiftCanonical`, and the Swift twins of the Rust tests
+(`backends/swift/runtime/Tests/SceTestProfileTests/TraceTests.swift`, and `ATestSuiteRunsThroughItsRunnerTests.swift`
+and `ARecordReadsBackTheFormItWritesTests.swift` of `backends/swift/tests`), which replay the same trace to the same log
+byte for byte, through the function, the program run in place and the program run as a process; a reader throws a
+`TraceRefusal` in the words of the Rust one, and a name is read by its bytes, never by Swift's comparison of texts. A
+configuration whose system port takes a record Swift writes no unit of is refused by name. Its configuration of every
+form, `trace_forms/closed_enum_forms_configuration.scxml`, takes `closed_enum_form_extras` in `form_extras`' place,
+since a Swift record holds no value of an enum of an open set.
+
+The trace replay and the runner program are in place on Rust, Kotlin, C++, Go and Swift. Python and C11 follow the
 same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
 unit of a configuration over the same walk, a player behind the system adapter, the runner function and the program
 of §4.
