@@ -21,18 +21,19 @@
     landing ADR 0092 on Python" for Python) and the replay vocabulary (dd2d10284a); the statechart's payload read,
     variable, write, lift and saved state on Rust (f357451c13, 9b0c344640, f91e3c1d5a, 64e63e4f51, 656fd9b7f8), on
     Swift (ab6cf2535b, 908c2f7511, ce24a056f8), on Kotlin (the change that adds "Amendment (2026-11-11)"), on Go
-    (43698d9e6e), on C++ (the change that adds "Decided while landing ADR 0092 on C++") and on Python (the change
-    that adds "Decided while landing ADR 0092 on Python"). C11 and the Interpreter still refuse a statechart that
-    holds a union by name (`generate/unsupported-feature`);
+    (43698d9e6e), on C++ (the change that adds "Decided while landing ADR 0092 on C++"), on Python (the change
+    that adds "Decided while landing ADR 0092 on Python") and on the Interpreter (the change that adds "Decided
+    while landing step 4 and the crossing on the Interpreter"). C11 still refuses a statechart that holds a union
+    by name (`generate/unsupported-feature`);
   - step 5, on six of the seven generated lanes: the judge of a body that holds a union and the Rust lowering
     (2b7a12c0de), and the Kotlin lowering with a statechart's call that hands a union over or takes one back on
     Rust and Kotlin (the change that adds "Decided while landing step 5 on Kotlin, with the crossing"), the Go
     lowering and crossing (ad4d2f5984, 5ad49544dd), the C++ lowering and crossing (the change that adds "Decided
     while landing ADR 0092 on C++"), the Swift lowering and crossing (the change that adds "Decided while landing
     step 5 and the crossing on Swift") and the Python lowering and crossing (the change that adds "Decided while
-    landing ADR 0092 on Python"); and the Interpreter's lowering of such an algorithm, without the crossing (the
-    change that adds "Decided while landing step 5 on the Interpreter"). C11 refuses such an algorithm and such a
-    call by name, and the Interpreter such a call;
+    landing ADR 0092 on Python"); and the Interpreter's lowering of such an algorithm (the change that adds
+    "Decided while landing step 5 on the Interpreter") and its crossing (the change that adds "Decided while
+    landing step 4 and the crossing on the Interpreter"). C11 refuses such an algorithm and such a call by name;
   - steps 6 (the standard library's `date_expression` and `resolve_date`), 7 (the deterministic CBOR encoder) and
     8 (the census) have not landed: `stdlib/time/date_expression.scxml` is still the flat record.
 - Date: 2026-11-06
@@ -1120,6 +1121,36 @@ of its JSON value, which for a union is its wire object. A statechart that hands
 `date_expression` needs step 4 on the Interpreter first; its crossing then copies nothing, since the machine's
 union and the algorithm's are one object, and the refusal of the crossing in `forge::static_lowering`, which
 admits only `ALGORITHM_UNION_BACKENDS`, is lifted for the Interpreter in that change.
+
+## Decided while landing step 4 and the crossing on the Interpreter (2026-11-11)
+
+The Interpreter's lowering now holds a union in a statechart (`ComposedLowering::ECMASCRIPT.unions`): a payload
+that holds one, a variable of one built or starting absent, its narrowing, a write of a field of its case, a send
+of it, a lift into one; and a statechart's call hands an algorithm a union and takes one back. Each question below
+is decided by a rule this record already states; none changes a document, a wire or a diagnostic code.
+
+1. **A machine's union is the wire's own object**, as an algorithm's is ("Decided while landing step 5 on the
+   Interpreter" item 1): the tag's key holding the declared name of the case's variant beside the fields of the
+   case's record, and no other key, since every value of one is read by the library's reader (`readValue`), built
+   whole or lifted. A member is read by its own name wherever the narrowing admits it, and a value is copied and
+   sent as it is; a send writes the case by its arm only where a field of it changes as it crosses (a 64-bit
+   integer, as the text of its digits).
+2. **A union value is built with its tag's key.** A generated backend's sum names its case by a constructor, and
+   the Interpreter's object names it by the key the tag is written under, so the spelling of a union's value
+   (`ComposedSpelling::union_value`) is handed that key, which no generated backend reads. A built variable
+   is the record its `<sce:set>`s build, with the key set to the case's declared name by the library's `set`.
+3. **A field of a case is written by writing the variable whole**, as a record's field is on the Interpreter and
+   as a Kotlin union is ("Amendment (2026-11-11)" item 2): the `<assign>` is rewritten to the whole variable,
+   written again with the field changed by the library's `set`, so a copy of the state taken earlier keeps what it
+   saw. The tag alone is never written (section 6.1 item 6).
+4. **The Interpreter keeps no saved state**, so nothing is written for one, and the scenario's step that restores
+   the machine is the generated backends' to hold (section 6.1 item 7); its replay on the Interpreter carries that
+   step on with the same machine (`AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`).
+5. **The crossing copies nothing.** A target whose calls need no adapter (`StaticTarget::has_state_adapters`,
+   false for the Interpreter alone) hands an algorithm the very value the machine holds, which is the type the
+   algorithm reads; so a union crosses such a call as it is, and the rule `ALGORITHM_UNION_BACKENDS` states for
+   the generated backends, which map their sum into the unit's case by case ("Decided while landing step 5 on
+   Kotlin, with the crossing" item 2), is unchanged.
 
 ## Amendment (2026-11-11): the Kotlin lane where this record is silent
 
