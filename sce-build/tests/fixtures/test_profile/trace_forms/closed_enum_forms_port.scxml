@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3, docs/SCE_TTCN3_LANE.md §10.2: a port that
+     takes a record of every form of the canonical value a backend that holds
+     no value of an enum of an open set in a record holds: order_placed (a list
+     of records with a closed enum, an optional text and integer, a record, and
+     a union of a case with a text, one with nothing and one with a byte
+     string), job_status (a list of integers, optional integers) and
+     closed_enum_form_extras (a list of optional elements, a 64-bit integer, a
+     list with a lower count, an optional list and a list of lists).
+     forms_port takes form_extras in closed_enum_form_extras' place, whose
+     value of an open enum Swift does not hold in a record. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="closed_enum_forms_port">
+  <sce:import kind="event-schema" src="../imports/order_placed.scxml" as="OrderPlaced"/>
+  <sce:import kind="event-schema" src="../job_status.scxml" as="JobStatus"/>
+  <sce:import kind="event-schema" src="closed_enum_form_extras.scxml" as="FormExtras"/>
+  <sce:message type="OrderPlaced" direction="in"/>
+  <sce:message type="JobStatus" direction="in"/>
+  <sce:message type="FormExtras" direction="in"/>
+</scxml>

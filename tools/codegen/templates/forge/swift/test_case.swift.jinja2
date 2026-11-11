@@ -20,12 +20,14 @@ public enum {{ struct_name }} {
     public static let name: String = {{ name_literal }}
 
     /// The entry the runner reads: the test case's name, its configuration and the machines of its
-    /// components, and the module parameters those components read.
+    /// components, the module parameters those components read, and the reader of the inputs a
+    /// recorded trace of it carries (docs/SCE_TTCN3_LANE.md §10.5).
     public static func testCase() -> {{ runtime }}.TestCase {
         {{ runtime }}.TestCase(
             name: Self.name,
             configuration: {{ configuration }}.configuration(),
             machines: { componentType in {{ configuration }}.machine(componentType) },
-            moduleParameters: {{ configuration }}.moduleParameters())
+            moduleParameters: {{ configuration }}.moduleParameters(),
+            inputs: {{ configuration }}.input(systemPort:typeName:value:))
     }
 }

@@ -55,16 +55,23 @@
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`], which
 //! `TemplateSpelling::lowers_unions` reads), so the walk spells a template
 //! whose type reaches one rather than refusing it.
+//!
+//! The inverse of [`SwiftCanonical`], [`SwiftReading`], reads a value back
+//! from the canonical form with the readers of `SceTestProfile.FromCanonical`,
+//! over the same walk ([`super::test_template_walk::canonical_form`]): the
+//! unit of a test configuration reads the values of a recorded input trace
+//! with it (docs/SCE_TTCN3_LANE.md §10.5).
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CanonicalCase, CanonicalSpelling, CaseTest, Held,
-    JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalCase, CanonicalForm, CanonicalSpelling, CaseTest,
+    Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk,
+    Use,
 };
 use super::*;
 use crate::forge::composed_lowering::{swift_case_ident, swift_case_read, SWIFT_UNION_KIND};
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
 use crate::forge::value_type::{
-    ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+    Bound, ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
 };
 use crate::generator::Language;
 use crate::std_imports::SWIFT_TEST_RUNTIME_MODULE;
@@ -178,7 +185,7 @@ const CANONICAL_VALUE: &str = "SceRuntime.JSONValue";
 const CANONICAL: &str = "SceTestProfile.Canonical";
 
 /// A value the canonical writer reads, in Swift.
-struct CanonicalAt {
+pub(super) struct CanonicalAt {
     /// What names the value: `value`, a closure's parameter, the record a
     /// union's case pattern bound, or a field of any of them.
     expr: String,
@@ -198,8 +205,10 @@ struct CanonicalAt {
 /// is one expression wherever a value is. Each closure states its result, as a
 /// matcher's does, so the type checker reads no more than the closure to type
 /// it. Since the pattern binds the record itself, the default
-/// [`CanonicalSpelling::case_record`] names it.
-struct SwiftCanonical;
+/// [`CanonicalSpelling::case_record`] names it. The unit of a test
+/// configuration writes its records' forms with it too, beside their readers
+/// ([`SwiftReading`]).
+pub(super) struct SwiftCanonical;
 
 impl CanonicalSpelling for SwiftCanonical {
     type At = CanonicalAt;
@@ -342,6 +351,354 @@ impl CanonicalSpelling for SwiftCanonical {
     }
 }
 
+/// The enum of the profile's Swift runtime whose functions read a value back
+/// from its canonical form
+/// (`backends/swift/runtime/Sources/SceTestProfile/FromCanonical.swift`), named
+/// by its module as [`CANONICAL`] is.
+const FROM_CANONICAL: &str = "SceTestProfile.FromCanonical";
+
+/// The type a reader's closures throw, named by its module.
+const REFUSAL: &str = "SceTestProfile.TraceRefusal";
+
+/// A value the canonical reader reads, in Swift: the JSON it is read from.
+pub(super) struct SwiftReadAt {
+    /// An expression of the `SceRuntime.JSONValue` the value is read from,
+    /// where it is present.
+    json: String,
+    /// The call that reads the value where it may be absent, its read given as
+    /// the trailing closure after it: a field's, which is absent where its
+    /// record's object omits it, or any other value's, which is absent where it
+    /// is `null`.
+    optional: String,
+    /// Where the value stands, as a refusal names it: the record's type name,
+    /// then each field by its id, `[]` for an element of a list.
+    what: String,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+    /// How many records the value stands inside: the number of the next
+    /// record's object.
+    records: usize,
+}
+
+impl SwiftReadAt {
+    /// The value `json` names, where it stands at `what`, inside `depth`
+    /// bindings and `records` records: absent where it is `null`, as an
+    /// element of a list of `optional<T>` is.
+    fn of(json: String, what: String, depth: usize, records: usize) -> Self {
+        SwiftReadAt {
+            optional: format!("{FROM_CANONICAL}.nullable({json})"),
+            json,
+            what,
+            depth,
+            records,
+        }
+    }
+}
+
+/// The closure a reader hands the value it binds as `binding`, whose body
+/// reads it as `read`: its thrown type stated, as every closure a Swift unit
+/// passes a throwing read to states it, since a closure that does not is
+/// taken to throw any error. The body is a `try` of the read, which throws
+/// wherever it stands, since every read is a call of a reader that refuses.
+fn swift_read_closure(binding: &str, read: &str) -> String {
+    format!("{{ {binding} throws({REFUSAL}) in try {read} }}")
+}
+
+/// The Swift reader of the canonical form of a value (docs/SCE_TEST_PROFILE.md
+/// §12.5; docs/SCE_TTCN3_LANE.md §10.3): the value of the type the event
+/// schema's unit declares, read from a `SceRuntime.JSONValue` by the readers of
+/// [`FROM_CANONICAL`], which throw a `TraceRefusal` naming where it stands
+/// where it does not belong to its type. Which form each SCE type takes is the
+/// walk its writer's is ([`super::test_template_walk::canonical_form`]), so
+/// the reader reads exactly what [`SwiftCanonical`] writes.
+///
+/// Each read is one throwing expression of the value, which its caller
+/// prefixes with one `try`: a record the runtime's `record` with a closure that
+/// binds its object and builds its payload struct by its initialiser's labels,
+/// a list `elements` with the read of an element as its closure, a value that
+/// may be absent `optionalField` or `nullable` with its read as the closure
+/// after it, a union a closure called where it stands that binds its case and
+/// `switch`es on its variant, whose `default` is its last case. Every closure
+/// states the error it throws, `TraceRefusal`, and the closure of a record and
+/// of a union the type it answers, so the type checker reads each apart; every
+/// name a closure binds is numbered by how deep it stands, so none hides
+/// another.
+pub(super) struct SwiftReading {
+    /// What the value read is named in a refusal: its record's type name.
+    pub(super) what: String,
+}
+
+impl CanonicalForm for SwiftReading {
+    type At = SwiftReadAt;
+
+    /// The reader's parameter `value`, a `SceRuntime.JSONValue`.
+    fn root(&self) -> SwiftReadAt {
+        SwiftReadAt::of("value".to_string(), self.what.clone(), 0, 0)
+    }
+
+    /// The member `id` of the object its record bound: present where the
+    /// field's type is not optional, and absent where it is omitted otherwise.
+    fn field(&self, at: &SwiftReadAt, id: &str) -> SwiftReadAt {
+        let object = format!("record_{}", at.records);
+        let what = format!("{}.{id}", at.what);
+        SwiftReadAt {
+            json: format!(
+                "{FROM_CANONICAL}.field({object}, {}, {})",
+                swift_text_literal(id),
+                swift_text_literal(&what)
+            ),
+            optional: format!(
+                "{FROM_CANONICAL}.optionalField({object}, {})",
+                swift_text_literal(id)
+            ),
+            what,
+            depth: at.depth,
+            records: at.records + 1,
+        }
+    }
+
+    fn bound(&self, at: &SwiftReadAt, prefix: &str) -> (String, SwiftReadAt) {
+        let name = format!("{prefix}_{}", at.depth);
+        let value = SwiftReadAt::of(name.clone(), at.what.clone(), at.depth + 1, at.records);
+        (name, value)
+    }
+
+    /// The union's case is bound as the runtime's `UnionCase`, whose `value` is
+    /// the case's record.
+    fn case_record(&self, bound: SwiftReadAt) -> SwiftReadAt {
+        SwiftReadAt::of(
+            format!("{}.value", bound.json),
+            bound.what,
+            bound.depth,
+            bound.records,
+        )
+    }
+
+    fn list_element(&self, list: &SwiftReadAt, bound: SwiftReadAt) -> SwiftReadAt {
+        SwiftReadAt {
+            what: format!("{}[]", list.what),
+            ..bound
+        }
+    }
+
+    fn optional_value(&self, _field: &SwiftReadAt, bound: SwiftReadAt) -> SwiftReadAt {
+        bound
+    }
+
+    fn boolean(&self, at: &SwiftReadAt) -> String {
+        format!(
+            "{FROM_CANONICAL}.boolean({}, {})",
+            at.json,
+            swift_text_literal(&at.what)
+        )
+    }
+
+    /// The variant whose declared name the text is, from each variant's name
+    /// and its value through the enum's type, as every enum literal is written
+    /// ([`crate::forge::enum_naming::variant_ref`]): a closed enum's cases, or
+    /// an open enum's constants and the value its `fromUnderlying` makes of a
+    /// number no constant is named for.
+    fn enumerated(&self, at: &SwiftReadAt, declared: &ScopedEnum) -> String {
+        let enum_type = enum_qualified_type(&declared.name, Language::Swift);
+        let variants: Vec<String> = declared
+            .variants
+            .iter()
+            .map(|variant| {
+                format!(
+                    "({}, {})",
+                    swift_text_literal(&variant.name),
+                    crate::forge::enum_naming::variant_ref(
+                        Language::Swift,
+                        &enum_type,
+                        &declared.name,
+                        &variant.name
+                    )
+                )
+            })
+            .collect();
+        if declared.strict {
+            format!(
+                "{FROM_CANONICAL}.enumerated({}, [{}], {})",
+                at.json,
+                variants.join(", "),
+                swift_text_literal(&at.what)
+            )
+        } else {
+            format!(
+                "{FROM_CANONICAL}.openEnumerated({}, [{}], {}.self, {}, {enum_type}.fromUnderlying)",
+                at.json,
+                variants.join(", "),
+                swift_type(&declared.underlying),
+                swift_text_literal(&at.what)
+            )
+        }
+    }
+
+    /// Read as the integer type of its width, which bounds it.
+    fn integer(&self, at: &SwiftReadAt, width: &SceType) -> String {
+        format!(
+            "{FROM_CANONICAL}.integer({}, {}.self, {})",
+            at.json,
+            swift_type(width),
+            swift_text_literal(&at.what)
+        )
+    }
+
+    fn text(&self, at: &SwiftReadAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}.text({}, {}, {})",
+            at.json,
+            max.max,
+            swift_text_literal(&at.what)
+        )
+    }
+
+    fn bytes(&self, at: &SwiftReadAt, max: &Bound) -> String {
+        format!(
+            "{FROM_CANONICAL}.bytes({}, {}, {})",
+            at.json,
+            max.max,
+            swift_text_literal(&at.what)
+        )
+    }
+
+    /// The elements within the list's bounds, each read by the closure after
+    /// them.
+    fn list(&self, at: &SwiftReadAt, max: &Bound, binding: &str, element: String) -> String {
+        format!(
+            "{FROM_CANONICAL}.elements({}, {}, {}, {}) {}",
+            at.json,
+            max.min,
+            max.max,
+            swift_text_literal(&at.what),
+            swift_read_closure(binding, &element)
+        )
+    }
+
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The field read where the record's object names it.
+    fn optional_field(&self, field: &SwiftReadAt, binding: &str, written: String) -> String {
+        format!(
+            "{} {}",
+            field.optional,
+            swift_read_closure(binding, &written)
+        )
+    }
+
+    /// The element read where it is not `null`.
+    fn optional_element(&self, element: &SwiftReadAt, binding: &str, written: String) -> String {
+        format!(
+            "{} {}",
+            element.optional,
+            swift_read_closure(binding, &written)
+        )
+    }
+
+    /// The runtime's `record`, refused where the object names a field the
+    /// record does not declare or one twice, with the closure that binds the
+    /// object and builds the record's payload struct by its initialiser, each
+    /// field by its label in the schema's order. A record of no field binds no
+    /// object and builds the struct of none.
+    fn record(
+        &self,
+        at: &SwiftReadAt,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let payload = event_schema_payload_type(&record.name, Language::Swift);
+        let ids: Vec<String> = fields
+            .iter()
+            .map(|(id, _)| swift_text_literal(id))
+            .collect();
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| {
+                format!("{}: {value}", event_schema_field_ident(id, Language::Swift))
+            })
+            .collect();
+        let call = format!(
+            "{FROM_CANONICAL}.record({}, [{}], {})",
+            at.json,
+            ids.join(", "),
+            swift_text_literal(&at.what)
+        );
+        if fields.is_empty() {
+            // No field reads the object, so it is not bound.
+            format!(
+                "{call} {{ (_: {CANONICAL_VALUE}) throws({REFUSAL}) -> {payload} in {payload}() }}"
+            )
+        } else {
+            format!(
+                "{call} {{ (record_{}: {CANONICAL_VALUE}) throws({REFUSAL}) -> {payload} in \
+                 try {payload}({}) }}",
+                at.records,
+                members.join(", ")
+            )
+        }
+    }
+
+    /// A closure called where it stands, which binds the case, whose variant
+    /// the runtime has held to the declared ones, and `switch`es on its
+    /// variant, so each case has a branch and the last is the `default`; each
+    /// branch reads the case's record or, for a case that holds none, the
+    /// empty object it is, and answers the case through the union's enum. A
+    /// union of one case is that case's read alone.
+    fn union(
+        &self,
+        at: &SwiftReadAt,
+        union: &ScopedUnion,
+        cases: Vec<CanonicalCase>,
+    ) -> Result<String, String> {
+        let union_type = swift_union_type(union);
+        let case = format!("case_{}", at.depth);
+        let names: Vec<String> = cases
+            .iter()
+            .map(|(name, _)| swift_text_literal(name))
+            .collect();
+        let reads: Vec<(String, String)> = cases
+            .into_iter()
+            .map(|(name, held)| {
+                let built = format!("{union_type}.{}", swift_union_case(union, &name));
+                let read = match held {
+                    Some((_, written)) => format!("return try {built}({written})"),
+                    None => format!(
+                        "return try {FROM_CANONICAL}.noRecord({case}.value, {}, {built})",
+                        swift_text_literal(&format!("{}.{name}", at.what))
+                    ),
+                };
+                (swift_text_literal(&name), read)
+            })
+            .collect();
+        let read_case = format!(
+            "let {case} = try {FROM_CANONICAL}.unionCase({}, [{}], {})",
+            at.json,
+            names.join(", "),
+            swift_text_literal(&at.what)
+        );
+        let Some(((_, last), arms)) = reads.split_last() else {
+            return Err(format!("the union '{}' declares no case", union.name));
+        };
+        let body = if arms.is_empty() {
+            last.clone()
+        } else {
+            let arms: Vec<String> = arms
+                .iter()
+                .map(|(name, read)| format!("case {name}: {read}"))
+                .collect();
+            format!(
+                "switch {case}.variant {{ {}; default: {last} }}",
+                arms.join("; ")
+            )
+        };
+        Ok(format!(
+            "{{ () throws({REFUSAL}) -> {union_type} in {read_case}; {body} }}()"
+        ))
+    }
+}
+
 /// The text `text` as a Swift string literal. The default a suite gives a
 /// module parameter of `string[N]` is written by it too (`swift_test_tables`).
 pub(super) fn swift_text_literal(text: &str) -> String {
@@ -434,8 +791,10 @@ fn refuse_unwritten_types(
 /// What of the type `ty`, read in `scope`, names a record or an enum the Swift
 /// backend writes no unit of, described for a refusal; `None` where every one
 /// it names is written. A record is read through its own fields, each in its
-/// own document's scope, as its schema's unit is.
-fn unwritten(ty: &ValueType, scope: &TypeScope) -> Option<String> {
+/// own document's scope, as its schema's unit is. The unit of a test
+/// configuration asks it of each record a system port takes
+/// (`swift_test_tables`), which it reads and writes the same way.
+pub(super) fn unwritten(ty: &ValueType, scope: &TypeScope) -> Option<String> {
     match ty {
         TypeOf::Scalar(SceType::Enum(reference)) => scope
             .enums

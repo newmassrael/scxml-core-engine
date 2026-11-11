@@ -343,6 +343,19 @@ TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # (scripts/regen_static_datamodel_rust.sh and its siblings).
 TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
 TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
+# The configuration whose system port takes a record of every form of the canonical value Swift
+# holds (docs/SCE_TTCN3_LANE.md §10.5), the test case that runs it and the record of the forms the
+# two records above do not hold, which ARecordReadsBackTheFormItWritesTests.swift reads and writes
+# through the configuration's unit; order_placed and job_status, with the union and the records
+# they hold, are generated above. Its listener is a component, of which only the machine's file is
+# kept, as of the components above; the port type writes no file. The Rust and Kotlin trees generate
+# forms_configuration, whose form_extras holds a value of an enum of an open set, which a Swift
+# record does not hold yet, so Swift's is closed_enum_forms_configuration
+# (scripts/regen_static_datamodel_rust.sh and _kotlin.sh).
+TRACE_FORMS_DIR="$TEST_PROFILE_DIR/trace_forms"
+TRACE_FORMS_RECORDS=(closed_enum_form_extras)
+TRACE_FORMS_COMPONENTS=(closed_enum_forms_listener)
+TRACE_FORMS_TABLES=(closed_enum_forms_configuration replays_every_closed_enum_form)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -399,6 +412,12 @@ for component in "${TEST_COMPONENTS[@]}"; do
 done
 for document in "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l swift -o "$TMP/table_$document/"
+done
+for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$document.scxml" -l swift -o "$TMP/forms_$document/"
+done
+for component in "${TRACE_FORMS_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TRACE_FORMS_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -550,10 +569,23 @@ for document in "${TEST_TABLES[@]}"; do
         TEST_PROFILE_UNITS+=("$unit")
     done
 done
+# The documents of every form a trace carries: a unit each, of a name no unit above may take.
+for document in "${TRACE_FORMS_RECORDS[@]}" "${TRACE_FORMS_TABLES[@]}"; do
+    for generated in "$TMP/forms_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the test profile fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$TRACE_FORMS_DIR/$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.swift` alone. A fixture's machine of
 # the same name would be one file holding whichever was copied last, the defect two units of one
 # name are above.
-for component in "${TEST_COMPONENTS[@]}"; do
+for component in "${TEST_COMPONENTS[@]}" "${TRACE_FORMS_COMPONENTS[@]}"; do
     for generated in "$TMP/component_$component"/*_sm.swift; do
         if [ -e "$GENERATED_DIR/$(basename "$generated")" ]; then
             echo "error: a machine and the test component $component are both written as $(basename "$generated"); one of them needs another name" >&2
