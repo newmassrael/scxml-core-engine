@@ -13602,9 +13602,12 @@ impl StaticTarget for PythonTarget {
     // The runtime's `lift_record` reads the text as the `RecordOf` of the schema's
     // fields, each named by the type name a delivery's value of its type is read
     // by (`Whole`, `Text`, the machine's enum, ...), and builds the machine's record
-    // from them in the schema's order. A refusal is the record of the standard
-    // refusal document, its code the machine's `IntEnum` member of the code's
-    // number, which the enum document declares for every code the runtime has.
+    // from them in the schema's order; its `lift_value` hands the whole object to
+    // the runtime's name of a union's type, which reads it as a delivery's field
+    // of that type is read (`PythonComposed`). A refusal is the record of the
+    // standard refusal document, its code the machine's `IntEnum` member of the
+    // code's number, which the enum document declares for every code the runtime
+    // has.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
         const PAYLOAD: &str = "sce_event_payload";
         let whole = |ty: &SceType| -> Option<(i128, i128)> {
@@ -13639,27 +13642,43 @@ impl StaticTarget for PythonTarget {
                 }
             })
         };
-        let schema = lift.record()?;
-        let mut fields = Vec::with_capacity(schema.fields.len());
-        for field in &schema.fields {
-            let declared = match &field.sce_type {
-                EntryType::Scalar(ty) => declared_type(ty, field.max_size)?,
-                EntryType::Optional { elem } => format!(
-                    "{PAYLOAD}.OptionalOf({})",
-                    declared_type(elem, field.max_size)?
-                ),
-            };
-            fields.push(format!(
-                "({}, {declared})",
-                filters::py_string_literal(field.id.clone())
-            ));
-        }
-        let record_ty = self.record_type(lift.machine, lift.alias);
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "None".to_string(),
-            |json| filters::py_string_literal(json.clone()),
-        );
         let path_bound = lift.path_bound()?;
+        let (text, depth) = (lift.text, lift.depth);
+        // The call that reads the text: a record field by field through
+        // `lift_record`, or a union whole through `lift_value`, by the runtime's
+        // name of the type a delivery's field of the union is read by
+        // (docs/adr/0092, section 6.1 item 5), which has no defaults to read.
+        let call = match &lift.lifted {
+            Lifted::Record(schema) => {
+                let mut fields = Vec::with_capacity(schema.fields.len());
+                for field in &schema.fields {
+                    let declared = match &field.sce_type {
+                        EntryType::Scalar(ty) => declared_type(ty, field.max_size)?,
+                        EntryType::Optional { elem } => format!(
+                            "{PAYLOAD}.OptionalOf({})",
+                            declared_type(elem, field.max_size)?
+                        ),
+                    };
+                    fields.push(format!(
+                        "({}, {declared})",
+                        filters::py_string_literal(field.id.clone())
+                    ));
+                }
+                let record_ty = self.record_type(lift.machine, lift.alias);
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "None".to_string(),
+                    |json| filters::py_string_literal(json.clone()),
+                );
+                format!(
+                    "{PAYLOAD}.lift_record({text}, {depth}, {path_bound}, {PAYLOAD}.RecordOf([{}], \
+                     {defaults}, {record_ty}))",
+                    fields.join(", ")
+                )
+            }
+            Lifted::Whole { reader, .. } => {
+                format!("{PAYLOAD}.lift_value({text}, {depth}, {path_bound}, {reader})")
+            }
+        };
         let (code_alias, _) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
         let members = lift.refusal_members(
@@ -13675,13 +13694,7 @@ impl StaticTarget for PythonTarget {
         Some(
             [
                 format!("import sce_runtime.event_payload as {PAYLOAD}"),
-                format!(
-                    "sce_lifted, sce_refusal = {PAYLOAD}.lift_record({text}, {depth}, \
-                     {path_bound}, {PAYLOAD}.RecordOf([{fields}], {defaults}, {record_ty}))",
-                    text = lift.text,
-                    depth = lift.depth,
-                    fields = fields.join(", "),
-                ),
+                format!("sce_lifted, sce_refusal = {call}"),
                 "if sce_refusal is None:".to_string(),
                 format!("    {}", self.assign(lift.location, "sce_lifted")),
                 format!(

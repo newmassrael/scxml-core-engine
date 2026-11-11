@@ -4,16 +4,187 @@
 //! The Python spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the Python row).
 //!
-//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
-//! |---|---|---|---|
-//! | `list[T]` | `str` / `bytes` | `Optional[T]` | the machine's record class |
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record | `union:U` |
+//! |---|---|---|---|---|
+//! | `list[T]` | `str` / `bytes` | `Optional[T]` | the machine's record class | the machine's union class |
 //!
 //! No Python type carries a bound (section 7.4, last paragraph), so two places
 //! whose types differ only in their bounds are one type, and a value that fits
 //! is copied as it is, into a copy that shares no list with the place it was
 //! taken from, since the variable it is copied into is written into in place.
+//!
+//! A union (docs/adr/0092, section 7, the Python row) is a class of the
+//! machine and one frozen dataclass per case derived from it, named by the
+//! union's class and the variant in Pascal case, since Python spells no
+//! nesting a case is named by (section 7 item 1): a case that holds a record
+//! holds it as `value`, an empty case holds nothing, and each answers its tag
+//! by a `kind` its class holds. Its values are immutable, as a record's are,
+//! so a field of a case is written by assigning the holder the next value
+//! whole, as Kotlin's is.
 
 use super::*;
+
+/// The attribute a case of a Python union answers the value of its tag's enum
+/// by, whatever key the tag is written under (docs/adr/0092, section 7, the
+/// Python row: a `kind` class attribute of each case class), on a machine's
+/// union as on a unit's.
+pub(crate) const PYTHON_UNION_KIND: &str = "kind";
+
+/// The attribute a case of a Python union holds its record in, on a machine's
+/// union as on a unit's.
+pub(crate) const PYTHON_CASE_VALUE: &str = "value";
+
+/// The identifier of the case `variant` of a Python union: the variant in
+/// Pascal case, which follows the union's class in the name of the case's own
+/// class (docs/adr/0092, section 7 item 1), on a machine's union as on a
+/// unit's.
+pub(crate) fn python_case_ident(variant: &str) -> String {
+    crate::filters::to_pascal_case(variant.to_string())
+}
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// machine's union: a method of the union's class, written once.
+fn python_case_read(variant: &str) -> String {
+    format!(
+        "proven_{}",
+        crate::filters::to_snake_case(variant.to_string())
+    )
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+fn python_shared_read(field: &str) -> String {
+    format!(
+        "proven_field_{}",
+        crate::filters::to_snake_case(field.to_string())
+    )
+}
+
+/// The Python spelling of what follows a union's value to read `member` where
+/// it may be in the cases `left` ([`ComposedSpelling::union_member`]), as
+/// [`union_member_of`] reads it: the tag's attribute; the field of the one case
+/// left, through that case's proven read; or the accessor of a field several
+/// cases share. `Err` as [`union_member_of`]'s.
+pub(crate) fn python_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    Ok(match union_member_of(union, left, member)? {
+        UnionMember::Tag => PYTHON_UNION_KIND.to_string(),
+        UnionMember::Case(case) => format!("{}().{member}", python_case_read(&case.variant.name)),
+        UnionMember::Shared => format!("{}()", python_shared_read(member)),
+    })
+}
+
+/// A Python string literal of `text`.
+fn python_literal(text: &str) -> String {
+    crate::filters::py_string_literal(text.to_string())
+}
+
+/// The Python function value that writes a value of `ty` as a saved state does
+/// (`sce_saved.saved_write_*`, a function of the value): a number, a truth
+/// value, a text and a byte string by the runtime's writer of its type, an
+/// enum, a record and a union by their own `to_saved`, a value that may be
+/// absent as `None` or as its present value, and a list element by element.
+/// `within` is the scope the type is written in, `depth` names the parameter of
+/// each nested `lambda`, so none hides its holder's. `Err` for a byte string
+/// inside a list, which a saved state would write as an array where it writes
+/// a byte string as its text.
+fn python_saved_writer(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &PythonComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let element = format!("sce_saved{depth}");
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!(
+                "{}.to_saved",
+                machine_type(ty, within, records, enums, spelling)?
+            )
+        }
+        ValueType::Scalar(scalar) => format!("sce_saved.saved_write_{}", scalar.as_attr()),
+        ValueType::Text { .. } => "sce_saved.saved_write_string".to_string(),
+        ValueType::Bytes { .. } => "sce_saved.saved_write_bytes".to_string(),
+        ValueType::Optional { elem } => format!(
+            "lambda {element}: sce_saved.saved_write_optional({element}, {})",
+            python_saved_writer(elem, within, names, spelling, depth + 1)?
+        ),
+        ValueType::List { elem, .. } => {
+            if matches!(**elem, ValueType::Bytes { .. }) {
+                return Err(
+                    "a byte string inside a list, which a saved state has no text for".to_string(),
+                );
+            }
+            format!(
+                "lambda {element}: sce_saved.saved_write_list({element}, {})",
+                python_saved_writer(elem, within, names, spelling, depth + 1)?
+            )
+        }
+    })
+}
+
+/// The Python function value that reads a saved value back as a value of `ty`,
+/// as [`python_saved_writer`] writes it (a function of the value and the name a
+/// refusal gives it): a text and a byte string held to the bound the type
+/// states, a list to its bound and to the lower count its type states, an
+/// enum, a record and a union by their own `from_saved`, a value that may be
+/// absent read absent from `null`. Each refusal is the runtime's
+/// `StateRefusal`. `within` and `depth` as [`python_saved_writer`]'s.
+fn python_saved_reader(
+    ty: &ValueType,
+    within: Option<&str>,
+    names: (&dyn RecordEnv, &BTreeMap<String, MachineEnum>),
+    spelling: &PythonComposed<'_>,
+    depth: usize,
+) -> Result<String, String> {
+    let (records, enums) = names;
+    let (saved, what) = (format!("sce_saved{depth}"), format!("sce_what{depth}"));
+    Ok(match ty {
+        ValueType::Scalar(SceType::Enum(_))
+        | ValueType::Record { .. }
+        | ValueType::Union { .. } => {
+            format!(
+                "{}.from_saved",
+                machine_type(ty, within, records, enums, spelling)?
+            )
+        }
+        ValueType::Scalar(scalar) => format!("sce_saved.saved_read_{}", scalar.as_attr()),
+        ValueType::Text { max } => format!("sce_saved.saved_bounded_string({})", max.max),
+        ValueType::Bytes { max } => format!("sce_saved.saved_bounded_bytes({})", max.max),
+        ValueType::Optional { elem } => format!(
+            "lambda {saved}, {what}: sce_saved.saved_read_optional({saved}, {what}, {})",
+            python_saved_reader(elem, within, names, spelling, depth + 1)?
+        ),
+        ValueType::List { elem, max } => format!(
+            "lambda {saved}, {what}: sce_saved.saved_read_list_within({saved}, {what}, {}, {}, \
+             {})",
+            max.min,
+            max.max,
+            python_saved_reader(elem, within, names, spelling, depth + 1)?
+        ),
+    })
+}
+
+/// The lines that give the class `ty` its saved form: `to_saved` and the
+/// class method `from_saved`, defined as the functions `writes` and `reads` are
+/// the bodies of, and set on the class once it is declared, as a Kotlin
+/// extension is written beside its type. `about` says what the reading
+/// refuses.
+fn python_saved_methods(ty: &str, writes: &str, about: &str, reads: &str) -> String {
+    format!(
+        "def _{ty}_to_saved(self):\n    \"\"\"This value as a saved state writes it{about}.\"\"\"\n\
+         {writes}\n\n\ndef _{ty}_from_saved(cls, value, what):\n    \"\"\"The value a saved \
+         state holds, refused unless it is one.\"\"\"\n{reads}\n\n\n{ty}.to_saved = \
+         _{ty}_to_saved\n{ty}.from_saved = classmethod(_{ty}_from_saved)"
+    )
+}
 
 /// The Python spellings of the walks, for the machine `machine` (section 7.1,
 /// the Python row): a reader is the runtime's name of the value's type
@@ -116,13 +287,6 @@ pub(crate) fn python_post_init(checks: &[String]) -> String {
         .collect();
     format!("\n    def __post_init__(self) -> None:\n{body}")
 }
-
-/// Why a Python walk meets no union: the one decision of what is lowered
-/// refuses a union on Python before any walk reaches one
-/// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
-const PYTHON_HOLDS_NO_UNION: &str =
-    "a Python machine holds no union yet (docs/adr/0092, section 7): \
-     the one decision of what is lowered refuses a union on Python before any walk reaches one";
 
 impl ComposedSpelling for PythonComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
@@ -400,9 +564,94 @@ impl ComposedSpelling for PythonComposed<'_> {
         format!("[{elem} for sce_copied in {}]", held.text)
     }
 
-    // A Python machine holds no union yet: the gate refuses one by name
-    // before a walk reaches it, so each spelling below either names what it
-    // would be or says why there is none.
+    // The record's saved form, a `dict` of its fields keyed by their ids in the
+    // schema's order, each written and read as its type says
+    // ([`python_saved_writer`], [`python_saved_reader`]): the names a record of
+    // entries' saved form has (`to_saved`, `from_saved`), so the machine's
+    // saving reads one spelling for either. Set on the class beside it, as a
+    // Kotlin extension is written, since the class is declared before the
+    // machine knows a variable holds it.
+    fn saved_record_ext(
+        &self,
+        alias: &str,
+        records: &dyn RecordEnv,
+        enums: &BTreeMap<String, MachineEnum>,
+    ) -> Result<Option<String>, String> {
+        let held = records.record(None, alias)?;
+        let ty = self.record_type(alias);
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for field in &held.schema.fields {
+            let key = python_literal(&field.id);
+            let refused =
+                |why: String| format!("the field `{}` of `{}`: {why}", field.id, held.schema.name);
+            // The fields of the record name its types in its own document's scope.
+            let within = Some(held.alias);
+            let write = python_saved_writer(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            let read = python_saved_reader(&field.sce_type, within, (records, enums), self, 0)
+                .map_err(refused)?;
+            writes.push_str(&format!("        {key}: ({write})(self.{}),\n", field.id));
+            reads.push_str(&format!(
+                "        {}=({read})(sce_saved.saved_field(value, what, {key}), what + {}),\n",
+                field.id,
+                python_literal(&format!(".{}", field.id))
+            ));
+        }
+        Ok(Some(python_saved_methods(
+            &ty,
+            &format!("    return {{\n{writes}    }}"),
+            "",
+            &format!("    return cls(\n{reads}    )"),
+        )))
+    }
+    // The union's saved form is one object, its tag beside the fields of its
+    // case (docs/adr/0092, section 6.1 item 7): written by the runtime's
+    // `saved_write_union` over the record's own `to_saved`, and read by the
+    // runtime's `saved_read_union`, its tag first, which names the record the
+    // rest of the object is read as and refuses a name no case has.
+    fn saved_union_ext(
+        &self,
+        def: &UnionDef,
+        key: &str,
+        records: &dyn RecordEnv,
+    ) -> Result<Option<String>, String> {
+        let tag = python_literal(&records.union_of_key(key)?.union.tag);
+        let ty = &def.ty;
+        let mut writes = String::new();
+        let mut reads = String::new();
+        for case in &def.cases {
+            let (class, variant) = (format!("{ty}{}", case.ident), python_literal(&case.variant));
+            let (written, built) = match &case.record {
+                Some(record) => (
+                    format!("self.{PYTHON_CASE_VALUE}.to_saved()"),
+                    format!("{class}({record}.from_saved(value, what))"),
+                ),
+                None => ("None".to_string(), format!("{class}()")),
+            };
+            writes.push_str(&format!(
+                "    if isinstance(self, {class}):\n        return \
+                 sce_saved.saved_write_union({tag}, {variant}, {written})\n"
+            ));
+            reads.push_str(&format!("        {variant}: lambda: {built},\n"));
+        }
+        let name = python_literal(&def.name);
+        Ok(Some(python_saved_methods(
+            ty,
+            &format!(
+                "{writes}    raise AssertionError({})",
+                python_literal(&format!("a value of {} is in no case of its tag", def.name))
+            ),
+            ": its tag beside the fields of its case",
+            &format!(
+                "    return sce_saved.saved_read_union(value, what, {tag}, {name}, {{\n{reads}    }})"
+            ),
+        )))
+    }
+
+    // The machine's own class, beside its records (docs/adr/0092, section 7,
+    // the Python row): named by the union's document, so one union is one type
+    // of the machine whichever alias names it.
     fn union_type(&self, name: &str) -> String {
         format!(
             "{}{}Union",
@@ -410,55 +659,258 @@ impl ComposedSpelling for PythonComposed<'_> {
             crate::filters::to_pascal_case(name.to_string())
         )
     }
+    // The variant in Pascal case, which follows the union's class in the name of
+    // the case's class (section 7 item 1).
     fn union_case_ident(&self, variant: &str) -> String {
-        crate::forge::enum_naming::variant_ident(crate::generator::Language::Python, "", variant)
+        python_case_ident(variant)
     }
+    // The tag is read by the one attribute every case of a Python unit and of a
+    // Python machine answers it by, whatever key it is written under.
     fn union_tag_read(&self, _tag: &str) -> Option<String> {
-        None
+        Some(PYTHON_UNION_KIND.to_string())
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "proven_{}",
-            crate::filters::to_snake_case(variant.to_string())
-        )
+        python_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
+        python_shared_read(field)
+    }
+    // A class of the machine and a frozen dataclass per case derived from it,
+    // in the tag enum's order, compared whole as a record is. Every read the
+    // narrowing proves is a method of the union's class, which tests the case
+    // the value is in and raises `AssertionError` in any other (the one place
+    // that is written, as a proven optional is read through the runtime's one
+    // `proven`, docs/adr/0055, section 5); a field several cases share has
+    // beside its read the method that answers this value with that field
+    // replaced, which a write assigns the holder ([`Self::union_member_write`]).
+    // A case reads its tag from its class, so its tag and its case cannot
+    // disagree.
+    fn union_def(&self, def: &UnionDef) -> String {
+        let ty = &def.ty;
+        let raised = |read: &str| {
+            format!(
+                "raise AssertionError({})",
+                python_literal(&format!(
+                    "a value of {} read as {read} is in another case",
+                    def.name
+                ))
+            )
+        };
+        let mut reads = String::new();
+        let mut cases = String::new();
+        for case in &def.cases {
+            let class = format!("{ty}{}", case.ident);
+            let kind = format!(
+                "    {PYTHON_UNION_KIND} = {}.{}\n",
+                def.tag_ty, case.tag_ident
+            );
+            match &case.record {
+                Some(record) => {
+                    cases.push_str(&format!(
+                        "\n\n@sce_dataclasses.dataclass(frozen=True)\nclass {class}({ty}):\n    \
+                         \"\"\"The case `{variant}`, holding its record.\"\"\"\n\n    \
+                         {PYTHON_CASE_VALUE}: {record}\n{kind}",
+                        variant = case.variant,
+                    ));
+                    reads.push_str(&format!(
+                        "\n    def {read}(self) -> {record}:\n        \"\"\"The record of the \
+                         case `{variant}`, read where a test of the tag proved the value is in \
+                         it.\"\"\"\n        if isinstance(self, {class}):\n            return \
+                         self.{PYTHON_CASE_VALUE}\n        {raised}\n",
+                        read = case.proven,
+                        variant = case.variant,
+                        raised = raised(&case.variant),
+                    ));
+                }
+                None => cases.push_str(&format!(
+                    "\n\n@sce_dataclasses.dataclass(frozen=True)\nclass {class}({ty}):\n    \
+                     \"\"\"The case `{variant}`, its tag alone.\"\"\"\n\n{kind}",
+                    variant = case.variant,
+                )),
+            }
+        }
+        for field in &def.shared {
+            let classes: Vec<String> = field
+                .cases
+                .iter()
+                .map(|ident| format!("{ty}{ident}"))
+                .collect();
+            let held = format!("({},)", classes.join(", "));
+            reads.push_str(&format!(
+                "\n    def {read}(self) -> {fty}:\n        \"\"\"The field `{id}` the cases that \
+                 declare it share, read where a test of the tag proved the value is in one of \
+                 them.\"\"\"\n        if isinstance(self, {held}):\n            return \
+                 self.{PYTHON_CASE_VALUE}.{id}\n        {raised}\n\n    def {place}(self, \
+                 sce_value: {fty}) -> {ty}:\n        \"\"\"This value with the field `{id}` of its \
+                 case replaced by `sce_value`, where a test of the tag proved the value is in a \
+                 case that declares it.\"\"\"\n        if isinstance(self, {held}):\n            \
+                 return type(self)(sce_dataclasses.replace(self.{PYTHON_CASE_VALUE}, \
+                 {id}=sce_value))\n        {raised}\n",
+                read = field.accessor,
+                place = self.union_place_of(&field.accessor),
+                fty = field.ty,
+                id = field.field,
+                raised = raised(&field.field),
+            ));
+        }
         format!(
-            "proven_field_{}",
-            crate::filters::to_snake_case(field.to_string())
+            "class {ty}:\n    \"\"\"SCE Accepted Subset §2.15: a `union:{name}` value \
+             (docs/adr/0092): exactly one of the cases below, each a frozen dataclass that holds \
+             its case's record as `{PYTHON_CASE_VALUE}` and answers its tag by \
+             `{PYTHON_UNION_KIND}`.\"\"\"\n{reads}{cases}",
+            name = def.name,
         )
     }
-    fn union_def(&self, _def: &UnionDef) -> String {
-        unreachable!("{PYTHON_HOLDS_NO_UNION}")
+    // The case's class, handed the record or nothing.
+    fn union_value(&self, ty: &str, case: &str, record: Option<&str>) -> String {
+        format!("{ty}{case}({})", record.unwrap_or_default())
     }
-    fn union_value(&self, _ty: &str, _case: &str, _record: Option<&str>) -> String {
-        unreachable!("{PYTHON_HOLDS_NO_UNION}")
+    // The runtime's name of the union's type, which its one reader of a value
+    // reads the tag of first, by the machine's enum, and then the record of the
+    // case the tag names from the same object, each case built by its class
+    // (docs/adr/0092, section 4).
+    fn read_union(&self, _value: &str, read: &UnionRead<'_>) -> String {
+        let cases: Vec<String> = read
+            .arms
+            .iter()
+            .map(|arm| {
+                format!(
+                    "{PYTHON_PAYLOAD}.CaseOf({}.{}, {}, {}{})",
+                    read.tag_ty,
+                    arm.tag_ident,
+                    arm.record.as_deref().unwrap_or("None"),
+                    read.ty,
+                    arm.case_ident
+                )
+            })
+            .collect();
+        format!(
+            "{PYTHON_PAYLOAD}.UnionOf({}, {}, [{}])",
+            python_literal(read.tag),
+            read.tag_reader,
+            cases.join(", ")
+        )
     }
-    fn read_union(&self, _value: &str, _read: &UnionRead<'_>) -> String {
-        unreachable!("{PYTHON_HOLDS_NO_UNION}")
-    }
-    fn write_union(&self, _held: &Held, _ty: &str, _tag: &str, _arms: &[UnionWriteArm]) -> String {
-        unreachable!("{PYTHON_HOLDS_NO_UNION}")
+    // One object, the tag among the fields of the case (docs/adr/0092, section
+    // 2.1): the runtime's `union_json`, which orders the keys as `record_json`
+    // does, or the `dict` a `<send>` holds a record in with the tag beside its
+    // fields, which the runtime orders. The case is told by its class, a `dict`
+    // of one writer per case, every case a key, so a value in none is never
+    // written; the record of a case is bound in its writer, as a record's
+    // writer reads it.
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let tag = python_literal(tag);
+        let arms: Vec<String> = arms
+            .iter()
+            .map(|arm| {
+                let variant = python_literal(&arm.variant);
+                let members: Vec<String> = arm
+                    .fields
+                    .iter()
+                    .flatten()
+                    .map(|(id, value)| format!("{}: {value}", python_literal(id)))
+                    .collect();
+                let written = match self.carrier {
+                    PythonCarrier::Json => format!(
+                        "{PYTHON_PAYLOAD}.union_json({tag}, {variant}, {{{}}})",
+                        members.join(", ")
+                    ),
+                    PythonCarrier::Wire => {
+                        let mut pairs = vec![format!("{tag}: {variant}")];
+                        pairs.extend(members);
+                        format!("{{{}}}", pairs.join(", "))
+                    }
+                };
+                let body = match &arm.fields {
+                    Some(_) => format!(
+                        "(lambda {}: {written})(sce_union.{PYTHON_CASE_VALUE})",
+                        self.write_binding()
+                    ),
+                    None => written,
+                };
+                format!("{ty}{}: lambda sce_union: {body}", arm.case_ident)
+            })
+            .collect();
+        format!(
+            "(lambda sce_union: {{{}}}[type(sce_union)](sce_union))({})",
+            arms.join(", "),
+            held.text
+        )
     }
     fn union_member(
         &self,
-        _union: &ScopedUnion,
-        _left: &[&ScopedCase],
-        _member: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
     ) -> Result<String, String> {
-        Err(PYTHON_HOLDS_NO_UNION.to_string())
+        python_union_member(union, left, member)
     }
+    // A field several cases share is written through the method that answers
+    // the union with that field replaced ([`Self::union_def`]); a case's record
+    // is rebuilt by the case's own class, so its name is kept free only.
     fn union_place_of(&self, read: &str) -> String {
-        format!("{read}_place")
+        format!("{read}_with")
     }
+    // A Python union is an immutable value, so no field of it is a place a
+    // value can be assigned to: a write assigns the holder the next value
+    // whole ([`Self::union_member_write`]).
     fn union_member_place(
         &self,
         _holder: &str,
-        _union: &ScopedUnion,
+        union: &ScopedUnion,
         _left: &[&ScopedCase],
-        _member: &str,
+        member: &str,
     ) -> Result<String, String> {
-        Err(PYTHON_HOLDS_NO_UNION.to_string())
+        Err(format!(
+            "`{member}` of `union:{}` is a field of an immutable Python value, which has no place \
+             of its own: its holder is assigned the next value whole",
+            union.name
+        ))
+    }
+    // The holder is assigned the union in the case it is in, its record with
+    // the field replaced, as a record variable's field is written
+    // (`sce_dataclasses.replace`, `StaticTarget::assign_field`); a field
+    // several cases share through the method that replaces it in whichever of
+    // them the value is in.
+    fn union_member_write(
+        &self,
+        holder: &str,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<UnionMemberWrite, String> {
+        let next: UnionNext = match union_member_of(union, left, member)? {
+            UnionMember::Tag => {
+                return Err(format!(
+                    "the tag `{member}` of `union:{}` is never written alone: the case changes by \
+                     a whole assignment (docs/adr/0092, section 6.1 item 6)",
+                    union.name
+                ))
+            }
+            UnionMember::Case(case) => {
+                let class = format!(
+                    "{}{}",
+                    self.union_type(&union.name),
+                    self.union_case_ident(&case.variant.name)
+                );
+                let record = format!("{holder}.{}()", python_case_read(&case.variant.name));
+                let field = member.to_string();
+                Box::new(move |value: &str| {
+                    format!("{class}(sce_dataclasses.replace({record}, {field}=({value})))")
+                })
+            }
+            UnionMember::Shared => {
+                let replace = format!(
+                    "{holder}.{}",
+                    self.union_place_of(&python_shared_read(member))
+                );
+                Box::new(move |value: &str| format!("{replace}({value})"))
+            }
+        };
+        Ok(UnionMemberWrite::Holder {
+            holder: holder.to_string(),
+            next,
+        })
     }
 }
 
@@ -474,10 +926,11 @@ mod tests {
 
     /// The Python row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
-    /// composed value sent (docs/adr/0086, sections 5 and 6), and no union
-    /// held yet (docs/adr/0092, section 7).
+    /// composed value sent (docs/adr/0086, sections 5 and 6), and a union held,
+    /// read by its tag, lifted and saved (docs/adr/0092, section 7); no
+    /// variable of a record that holds a composition yet.
     #[test]
-    fn the_python_row_lowers_every_composed_position_but_a_union() {
+    fn the_python_row_lowers_every_composed_position_but_a_composed_record_variable() {
         use crate::forge::event_schema_check::ComposedLowering;
         assert_eq!(
             ComposedLowering::of(crate::generator::Language::Python),
@@ -485,7 +938,7 @@ mod tests {
                 name: "python",
                 reads: true,
                 copies: true,
-                unions: false,
+                unions: true,
                 records: false,
                 sends: true,
             }
@@ -769,17 +1222,301 @@ mod tests {
         );
     }
 
-    /// A Python walk names no union: the one decision of what is lowered
-    /// refuses one on Python first, and the walk that would declare one says
-    /// why there is none.
+    /// The case of the shape union named `name`.
+    fn case<'s>(shapes: &'s Shapes, name: &str) -> &'s ScopedCase {
+        shapes
+            .union
+            .cases
+            .iter()
+            .find(|case| case.variant.name == name)
+            .expect("a case")
+    }
+
+    /// A union is the machine's own class at any depth, named by its document
+    /// (docs/adr/0092, section 7, the Python row); its tag is read by `kind`
+    /// whatever key it is written under, and a case is built by its own class.
     #[test]
-    fn a_python_walk_reads_no_union() {
+    fn a_python_machine_holds_a_union_in_its_own_class() {
         let shapes = shapes();
-        assert!(union_definition(SHAPE_KEY, &shapes, &kinds(), &PYTHON).is_err());
-        let all: Vec<&ScopedCase> = shapes.union.cases.iter().collect();
+        let kinds = kinds();
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &PYTHON),
+            Ok("MShapeUnion".to_string())
+        );
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &PYTHON
+            ),
+            Ok("list[Optional[MShapeUnion]]".to_string())
+        );
+        assert_eq!(PYTHON.union_tag_read("type"), Some("kind".to_string()));
+        assert_eq!(
+            PYTHON.union_value("MShapeUnion", "Dot", None),
+            "MShapeUnionDot()"
+        );
+        assert_eq!(
+            PYTHON.union_value("MShapeUnion", "Circle", Some("r")),
+            "MShapeUnionCircle(r)"
+        );
+    }
+
+    /// The declaration: the union's class, its proven read per case that holds
+    /// a record and its accessor of `radius`, which `circle` and `disc` share,
+    /// each testing the case and raising in any other, beside the method that
+    /// replaces the shared field; and one frozen dataclass per case, derived
+    /// from it, holding the record as `value` and its tag as `kind`.
+    #[test]
+    fn a_python_union_is_declared_as_a_class_and_one_dataclass_per_case() {
+        let def = union_definition(SHAPE_KEY, &shapes(), &kinds(), &PYTHON).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "proven_field_radius".to_string(),
+                ty: "int".to_string(),
+                cases: vec!["Circle".to_string(), "Disc".to_string()],
+            }]
+        );
+        let text = PYTHON.union_def(&def);
+        let raised = |read: &str| {
+            format!("raise AssertionError(\"a value of shape read as {read} is in another case\")")
+        };
+        for fragment in [
+            "class MShapeUnion:\n    \"\"\"SCE Accepted Subset §2.15: a `union:shape` value"
+                .to_string(),
+            format!(
+                "    def proven_circle(self) -> MRadiusRecord:\n        \"\"\"The record of the \
+                 case `circle`, read where a test of the tag proved the value is in it.\"\"\"\n        \
+                 if isinstance(self, MShapeUnionCircle):\n            return self.value\n        \
+                 {}\n",
+                raised("circle")
+            ),
+            format!(
+                "    def proven_field_radius(self) -> int:\n        \"\"\"The field `radius` the \
+                 cases that declare it share, read where a test of the tag proved the value is \
+                 in one of them.\"\"\"\n        if isinstance(self, (MShapeUnionCircle, \
+                 MShapeUnionDisc,)):\n            return self.value.radius\n        {}\n",
+                raised("radius")
+            ),
+            "    def proven_field_radius_with(self, sce_value: int) -> MShapeUnion:\n".to_string(),
+            "            return type(self)(sce_dataclasses.replace(self.value, \
+             radius=sce_value))\n"
+                .to_string(),
+            "\n\n@sce_dataclasses.dataclass(frozen=True)\nclass MShapeUnionDot(MShapeUnion):\n    \
+             \"\"\"The case `dot`, its tag alone.\"\"\"\n\n    kind = MKindEnum.Dot\n"
+                .to_string(),
+            "\n\n@sce_dataclasses.dataclass(frozen=True)\nclass MShapeUnionCircle(MShapeUnion):\n    \
+             \"\"\"The case `circle`, holding its record.\"\"\"\n\n    value: MRadiusRecord\n    \
+             kind = MKindEnum.Circle\n"
+                .to_string(),
+        ] {
+            assert!(text.contains(&fragment), "expected `{fragment}` in:\n{text}");
+        }
+        // An empty case has nothing to read.
+        assert!(!text.contains("proven_dot"), "{text}");
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// attribute, a field of the one case left through that case's proven
+    /// read, and a field two cases share through its accessor; a write assigns
+    /// the holder the next value whole, the case's record with the field
+    /// replaced, and the tag is never written alone.
+    #[test]
+    fn a_python_proven_read_and_write_are_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        let both = [case(&shapes, "circle"), case(&shapes, "disc")];
+        assert_eq!(python_union_member(union, &all, "kind"), Ok("kind".into()));
+        assert_eq!(
+            python_union_member(union, &[case(&shapes, "disc")], "radius"),
+            Ok("proven_disc().radius".into())
+        );
+        assert_eq!(
+            PYTHON.union_member(union, &both, "radius"),
+            Ok("proven_field_radius()".into())
+        );
+        assert!(python_union_member(union, &[case(&shapes, "dot")], "radius").is_err());
         assert!(PYTHON
-            .union_member(&shapes.union, &all, "kind")
-            .unwrap_err()
-            .contains("holds no union"));
+            .union_member_place("self.v_s", union, &both, "radius")
+            .is_err());
+        let written = |left: &[&ScopedCase]| match PYTHON
+            .union_member_write("self.v_s", union, left, "radius")
+        {
+            Ok(UnionMemberWrite::Holder { holder, next }) => (holder, next("7")),
+            Ok(UnionMemberWrite::Place(place)) => {
+                panic!("a Python union has no place of a field, not {place}")
+            }
+            Err(why) => panic!("{why}"),
+        };
+        assert_eq!(
+            written(&[case(&shapes, "disc")]),
+            (
+                "self.v_s".to_string(),
+                "MShapeUnionDisc(sce_dataclasses.replace(self.v_s.proven_disc(), radius=(7)))"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            written(&both),
+            (
+                "self.v_s".to_string(),
+                "self.v_s.proven_field_radius_with(7)".to_string()
+            )
+        );
+        let Err(tag) = PYTHON.union_member_write("self.v_s", union, &all, "kind") else {
+            panic!("the tag is never written alone");
+        };
+        assert!(tag.contains("never written alone"), "{tag}");
+    }
+
+    /// The reader is the runtime's name of the union's type, its tag read by
+    /// the machine's enum and each case built by its class from the record its
+    /// arm reads; the writer tells the case by its class and writes the tag
+    /// among the case's fields, as the JSON text and as the `dict` a `<send>`
+    /// holds; a union is copied whole, sharing no list with its source.
+    #[test]
+    fn a_python_union_is_read_tag_first_and_written_by_its_case() {
+        let shapes = shapes();
+        let kinds = kinds();
+        let p = PYTHON_PAYLOAD;
+        assert_eq!(
+            reader(&ty("union:Shape"), None, &shapes, &kinds, &PYTHON, "v"),
+            Ok(format!(
+                "{p}.UnionOf(\"kind\", MKindEnum, [{p}.CaseOf(MKindEnum.Dot, None, \
+                 MShapeUnionDot), {p}.CaseOf(MKindEnum.Circle, {p}.RecordOf([(\"radius\", \
+                 {p}.Whole(0, 65535))], None, MRadiusRecord), MShapeUnionCircle), \
+                 {p}.CaseOf(MKindEnum.Disc, {p}.RecordOf([(\"radius\", {p}.Whole(0, 65535))], \
+                 None, MRadiusRecord), MShapeUnionDisc)])"
+            ))
+        );
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &PYTHON,
+                &Held::place("x.s")
+            ),
+            Ok(format!(
+                "(lambda sce_union: {{MShapeUnionDot: lambda sce_union: {p}.union_json(\"kind\", \
+                 \"dot\", {{}}), MShapeUnionCircle: lambda sce_union: (lambda sce_element: \
+                 {p}.union_json(\"kind\", \"circle\", {{\"radius\": \
+                 {p}.value_json(sce_element.radius)}}))(sce_union.value), MShapeUnionDisc: \
+                 lambda sce_union: (lambda sce_element: {p}.union_json(\"kind\", \"disc\", \
+                 {{\"radius\": {p}.value_json(sce_element.radius)}}))(sce_union.value)}}\
+                 [type(sce_union)](sce_union))(x.s)"
+            ))
+        );
+        let wire = PythonComposed {
+            machine: "M",
+            carrier: PythonCarrier::Wire,
+        };
+        let sent = writer(
+            &ty("union:Shape"),
+            None,
+            &shapes,
+            &wire,
+            &Held::place("x.s"),
+        )
+        .expect("write");
+        for fragment in [
+            "MShapeUnionDot: lambda sce_union: {\"kind\": \"dot\"}",
+            "MShapeUnionCircle: lambda sce_union: (lambda sce_element: {\"kind\": \"circle\", \
+             \"radius\": sce_element.radius})(sce_union.value)",
+        ] {
+            assert!(sent.contains(fragment), "expected `{fragment}` in:\n{sent}");
+        }
+        let copy = |from: &str, to: &str| {
+            copier(
+                &ty(from),
+                None,
+                &ty(to),
+                None,
+                &shapes,
+                &kinds,
+                &PYTHON,
+                &Held::place("x"),
+            )
+        };
+        assert_eq!(
+            copy("union:Shape", "union:Shape"),
+            Ok("sce_algorithm.whole_copy(x)".to_string())
+        );
+        assert_eq!(
+            copy("optional<union:Shape>", "optional<union:Shape>"),
+            Ok("sce_algorithm.whole_copy(x)".to_string())
+        );
+    }
+
+    /// A union is saved as its tag beside the fields of its case, written by
+    /// the runtime's `saved_write_union` over the record's own `to_saved`, and
+    /// read back by the runtime's `saved_read_union`, tag first (docs/adr/0092,
+    /// section 6.1 item 7); both are set on the union's class.
+    #[test]
+    fn a_python_union_is_saved_by_its_tag_beside_its_case() {
+        let shapes = shapes();
+        let def = union_definition(SHAPE_KEY, &shapes, &kinds(), &PYTHON).expect("declared");
+        let text = PYTHON
+            .saved_union_ext(&def, SHAPE_KEY, &shapes)
+            .expect("spelled")
+            .expect("a Python union carries its saved form");
+        for fragment in [
+            "def _MShapeUnion_to_saved(self):\n",
+            "    if isinstance(self, MShapeUnionDot):\n        return \
+             sce_saved.saved_write_union(\"kind\", \"dot\", None)\n",
+            "    if isinstance(self, MShapeUnionCircle):\n        return \
+             sce_saved.saved_write_union(\"kind\", \"circle\", self.value.to_saved())\n",
+            "    raise AssertionError(\"a value of shape is in no case of its tag\")",
+            "def _MShapeUnion_from_saved(cls, value, what):\n",
+            "    return sce_saved.saved_read_union(value, what, \"kind\", \"shape\", {\n        \
+             \"dot\": lambda: MShapeUnionDot(),\n        \"circle\": lambda: \
+             MShapeUnionCircle(MRadiusRecord.from_saved(value, what)),\n",
+            "MShapeUnion.to_saved = _MShapeUnion_to_saved\nMShapeUnion.from_saved = \
+             classmethod(_MShapeUnion_from_saved)",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
+    }
+
+    /// A composed record's saved form: each field written by the runtime's
+    /// writer of its type and read back held to every bound and count its type
+    /// states, a list's lower count included (docs/adr/0086, section 15.6),
+    /// both set on the record's class.
+    #[test]
+    fn a_python_composed_record_is_saved_field_by_field_by_its_types() {
+        let held = held();
+        let enums = enums();
+        let text = PYTHON
+            .saved_record_ext("Item", &held, &enums)
+            .expect("spelled")
+            .expect("a Python composed record carries its saved form");
+        for fragment in [
+            "def _MItemRecord_to_saved(self):\n    \"\"\"This value as a saved state writes \
+             it.\"\"\"\n    return {\n        \"id\": (sce_saved.saved_write_uint32)(self.id),\n",
+            "        \"level\": (MLevelEnum.to_saved)(self.level),\n",
+            "        \"due\": (lambda sce_saved0: sce_saved.saved_write_optional(sce_saved0, \
+             sce_saved.saved_write_int64))(self.due),\n",
+            "        \"tags\": (lambda sce_saved0: sce_saved.saved_write_list(sce_saved0, \
+             sce_saved.saved_write_string))(self.tags),\n",
+            "        id=(sce_saved.saved_read_uint32)(sce_saved.saved_field(value, what, \"id\"), \
+             what + \".id\"),\n",
+            "        blob=(sce_saved.saved_bounded_bytes(4))(sce_saved.saved_field(value, what, \
+             \"blob\"), what + \".blob\"),\n",
+            "        tags=(lambda sce_saved0, sce_what0: \
+             sce_saved.saved_read_list_within(sce_saved0, sce_what0, 0, 4, \
+             sce_saved.saved_bounded_string(8)))(sce_saved.saved_field(value, what, \"tags\"), \
+             what + \".tags\"),\n",
+            "MItemRecord.to_saved = _MItemRecord_to_saved\nMItemRecord.from_saved = \
+             classmethod(_MItemRecord_from_saved)",
+        ] {
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
+        }
     }
 }

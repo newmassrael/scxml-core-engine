@@ -47,6 +47,7 @@ from sce_runtime import (  # noqa: E402 -- path inserted above
     MeshRaise,
     saved_state_from_json,
 )
+from sce_runtime.saved_json import write_json  # noqa: E402 -- path inserted above
 
 # The id a shared fixture's root session is given, and the moment on the wall clock
 # a scenario's `restore` step saves it at (docs/adr/0045, section 8).
@@ -78,12 +79,26 @@ def _read(policy, readers: dict, variable: str):
     return getattr(policy, attribute)
 
 
+def _is_union_case(value) -> bool:
+    """Whether ``value`` is a case of a machine's union (docs/adr/0092, section
+    7, the Python row): a frozen dataclass whose class, and not an instance of
+    it, holds the tag as ``kind``."""
+    return (dataclasses.is_dataclass(value) and not isinstance(value, type)
+            and "kind" in vars(type(value)) and hasattr(value, "to_saved"))
+
+
 def _as_json(value):
     """``value`` as the scenario writes it: an enum member by the name its
     document declares, a record by the schema's field ids, a list element by
     element -- what a host reads back, in the shape JSON states."""
     if hasattr(value, "sce_name"):
         return value.sce_name
+    # A union as a saved state holds it: its tag beside the fields of its case
+    # (docs/adr/0092, section 6.1 item 7), the one spelling of it every lane
+    # shares. A case answers its tag by a `kind` its class holds, which no record
+    # does, beside the record it holds as `value`.
+    if _is_union_case(value):
+        return json.loads(write_json(value.to_saved()))
     # A byte string as its byte-exact Latin-1 text, each byte the character of
     # that code point (docs/adr/0005, decision 2).
     if isinstance(value, bytes):
@@ -1224,3 +1239,13 @@ def test_an_older_entry_reads_a_widened_field_present_and_a_newer_null_absent() 
 # the write through `pick`.
 def test_a_record_that_may_be_absent_is_held_read_and_written_where_proven() -> None:
     replay("static_optional_record")
+
+
+# docs/adr/0092, sections 4 and 6.1: a payload that holds a union, read by testing its
+# tag at the top, in a list and where it may be absent; a union variable built where it
+# is declared and written where its case is proven, one that may be absent taking a
+# union whole, and a text lifted into a union or its refusal kept. A step that says
+# `restore` saves the machine, discards it and restores it from the text, every union
+# read back by its tag (section 6.1 item 7).
+def test_a_union_payload_is_read_by_its_tag_and_every_union_restores() -> None:
+    replay("static_union")

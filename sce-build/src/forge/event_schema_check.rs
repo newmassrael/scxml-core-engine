@@ -336,7 +336,10 @@ impl ComposedLowering {
                 ..walks
             },
 
-            Language::Python => walks,
+            Language::Python => Self {
+                unions: true,
+                ..walks
+            },
 
             Language::Cpp => Self {
                 unions: true,

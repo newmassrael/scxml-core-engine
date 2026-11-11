@@ -866,6 +866,7 @@ fn resolve_then_rename(
             | ExprTarget::Kotlin
             | ExprTarget::Go
             | ExprTarget::Cpp
+            | ExprTarget::Python
     ) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
     }
@@ -1176,15 +1177,16 @@ fn reject_unproven_union_reads(
 }
 
 /// Spell each read of a union's member as the machine of `target` reads it
-/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin, Go and
-/// C++ rows): the member a read names after the union's value becomes its
-/// tag's read, the field of the one case the facts leave read through that
+/// (docs/adr/0092, section 6.1 and section 7, the Rust, Swift, Kotlin, Go, C++
+/// and Python rows): the member a read names after the union's value becomes
+/// its tag's read, the field of the one case the facts leave read through that
 /// case's proven read, or the accessor of a field the cases left share
 /// ([`crate::forge::composed_lowering::rust_union_member`],
 /// [`crate::forge::composed_lowering::swift_union_member`],
 /// [`crate::forge::composed_lowering::kotlin_union_member`],
 /// [`crate::forge::composed_lowering::go_union_member`],
-/// [`crate::forge::composed_lowering::cpp_union_member`]). Each is a read
+/// [`crate::forge::composed_lowering::cpp_union_member`],
+/// [`crate::forge::composed_lowering::python_union_member`]). Each is a read
 /// that cannot fail at run time: [`reject_unproven_union_reads`] admitted it
 /// only where the facts prove its cases, and the facts grow here by the same
 /// rule. A node is spelled before the nodes below it, so its object is still
@@ -1307,6 +1309,9 @@ fn lower_union_reads(
                     }
                     ExprTarget::Cpp => {
                         crate::forge::composed_lowering::cpp_union_member(union, &left, property)
+                    }
+                    ExprTarget::Python => {
+                        crate::forge::composed_lowering::python_union_member(union, &left, property)
                     }
                     _ => crate::forge::composed_lowering::rust_union_member(union, &left, property),
                 }

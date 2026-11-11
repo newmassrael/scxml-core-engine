@@ -4837,7 +4837,13 @@ its own struct (or `std::optional` of it) of one `std::variant`, an alternative 
 per case holding its record as `value` (docs/adr/0092, section 7 item 2): its tag is
 read by `kind()`, from the alternative's index, a case's record by `proven<Case>()`,
 and a field of a case is written in place through the reference `proven<Case>Place()`
-beside it answers. A saved state holds the value as
+beside it answers. The Python machine holds either in its own class (or `Optional` of
+it) and one frozen dataclass per case derived from it, holding the case's record as
+`value` and its tag as a `kind` its class holds (docs/adr/0092, section 7, the Python
+row): its tag is read by `kind`, a case's record by `proven_<case>()`, and, immutable as
+its records are, a field of a case is written by assigning the variable the next value
+whole, the case's record replaced with the field, or, for a field several cases share,
+by the class's `proven_field_<field>_with`. A saved state holds the value as
 one object, its tag beside its case's fields, read back by its tag first, and the
 saved shape names the union's document and each case's record. A backend whose row
 of "Which backend lowers a composed value" holds no union refuses the variable by
@@ -5444,8 +5450,9 @@ holds no width, so the width is held there too); and `len`, an index, a field of
 record element and a `<foreach>` over a list the payload or an enclosing loop's item
 holds lower at any depth. A list a place holds is taken whole into a list variable
 whose type it fits as a copy that shares no list with the place, since the variable
-is written into in place. A payload that holds a union, at any depth, is refused by
-name on Python, which holds no union yet (docs/adr/0092, section 7).
+is written into in place. A payload that holds a union, at any depth, holds it in the
+machine's own union class (docs/adr/0092, section 7, the Python row), one frozen
+dataclass per case derived from it, the shape the union's own Python unit has.
 
 The C++ backend reads a composed payload as the Rust and Kotlin backends do
 (docs/adr/0086, section 7.1, the C++ row): its payload struct holds each field in
@@ -5569,7 +5576,7 @@ not lower.
 
 - `go` lowers reads, copies, unions, sends; refuses records
 
-- `python` lowers reads, copies, sends; refuses unions, records
+- `python` lowers reads, copies, unions, sends; refuses records
 
 - `c11` lowers reads, copies, sends; refuses unions, records
 

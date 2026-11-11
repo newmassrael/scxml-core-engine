@@ -26,8 +26,8 @@
 //!   element read through its index.
 //! * A list a payload holds is taken whole into a list variable as a copy that
 //!   shares no list with the payload.
-//! * A payload that holds a union stays refused by name on Python, which holds
-//!   no union yet (docs/adr/0092, section 7).
+//! * A payload that holds a union is read on Python, which holds a union in a
+//!   class of the machine (docs/adr/0092, section 7).
 
 mod common;
 
@@ -463,13 +463,14 @@ const SHAPES: [&str; 5] = [
     "event_shapes_minimal.scxml",
 ];
 
-/// Pinned by the union arm of the gate's read (`first_unlowered_composed_use`,
-/// `sce-build/src/forge/event_schema_check.rs`) and by `union_reached`
-/// (`sce-build/src/forge/composed_lowering.rs`): Python reads a composed
-/// payload, holds no union, and so refuses a read of a payload that holds one
-/// by its own name, naming the field and the union.
+/// Pinned by the Python row of the one table of what each backend lowers
+/// (`ComposedLowering::of`, `sce-build/src/forge/event_schema_check.rs`):
+/// Python holds a union (docs/adr/0092, section 7), so the gate's union arm
+/// (`first_unlowered_composed_use`) lets a read of a payload that holds one
+/// through, and the machine is generated
+/// (`a_python_machine_reads_a_union_payload_by_its_tag.rs` holds what it is).
 #[test]
-fn a_payload_that_holds_a_union_stays_refused_by_name_on_python() {
+fn a_payload_that_holds_a_union_is_read_on_python() {
     let unions = repo_root().join("sce-build/tests/fixtures/union");
     let (ok, out) = run(
         &["check", "-l", "python"],
@@ -478,12 +479,9 @@ fn a_payload_that_holds_a_union_stays_refused_by_name_on_python() {
         "shapes_reader.scxml",
         SHAPES_READER,
     );
-    assert!(!ok, "Python holds no union yet:\n{out}");
-    for part in [
-        "generate/unsupported-feature",
-        "the field `one` holds `union:Shape`",
-        "a statechart's read of `_event.data` has no python lowering of its union",
-    ] {
-        assert!(out.contains(part), "expected `{part}` in:\n{out}");
-    }
+    assert!(ok, "Python reads a payload that holds a union:\n{out}");
+    assert!(
+        !out.contains("generate/unsupported-feature"),
+        "nothing of the reader is refused on Python:\n{out}"
+    );
 }

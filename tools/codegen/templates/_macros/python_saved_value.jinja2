@@ -3,8 +3,9 @@
 
 {#
     A variable's saved form (SCE Accepted Subset §2.15, docs/adr/0045), as a
-    Python machine spells it: a record's or an enum's own (`to_saved` /
-    `from_saved`, emitted with the type by the static lowering), and every other
+    Python machine spells it: a record's, a union's or an enum's own (`to_saved`
+    / `from_saved`, emitted with the type by the static lowering; a union's reads
+    its tag first, docs/adr/0092, section 6.1 item 7), and every other
     type's by the runtime's `sce_saved` functions (`sce_runtime.saved_values`),
     named for the `sce:type`. What the saved functions of a machine that saves
     write and read each variable by (`python/saved_functions.py.jinja2`), and
@@ -15,11 +16,11 @@
 
 {#- The variable `field`, held by the policy `source`, as the JSON value a saved state holds. -#}
 {% macro write(field, source) -%}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
+{%- if field.saved_kind == "optional" and field.saved_elem in ["enum", "record", "union"] -%}
 sce_saved.saved_write_optional({{ source }}.{{ field.name }}, lambda v: v.to_saved())
 {%- elif field.saved_kind == "optional" -%}
 sce_saved.saved_write_optional({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{%- elif field.saved_kind in ["record", "enum", "union"] -%}
 {{ source }}.{{ field.name }}.to_saved()
 {%- elif field.saved_kind == "list" -%}
 sce_saved.saved_write_list({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
@@ -34,7 +35,7 @@ sce_saved.saved_write_{{ field.saved_type }}({{ source }}.{{ field.name }})
     field's own type, which raises the runtime's `StateRefusal` naming the
     variable for a value that is not of it or is past its bound. -#}
 {% macro read(field, raw) -%}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
+{%- if field.saved_kind == "optional" and field.saved_elem in ["enum", "record", "union"] -%}
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, {{ field.saved_type }}.from_saved)
 {%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_bytes({{ field.bound if field.bound is not none else 2147483647 }}))
@@ -42,7 +43,7 @@ sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_string({{ field.bound }}))
 {%- elif field.saved_kind == "optional" -%}
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_read_{{ field.saved_type }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{%- elif field.saved_kind in ["record", "enum", "union"] -%}
 {{ field.saved_type }}.from_saved({{ raw }}, {{ field.id | py_string_literal }})
 {%- elif field.saved_kind == "list" -%}
 sce_saved.saved_read_list({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }}, sce_saved.saved_read_{{ field.saved_type }})

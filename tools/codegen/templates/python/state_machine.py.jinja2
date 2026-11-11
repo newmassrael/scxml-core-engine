@@ -26,7 +26,10 @@ from __future__ import annotations
 {% if host_invoker_interface %}
 import json as _json
 {% endif %}
-{% if event_payload_active or host_invoker_interface or model.emitted_transition_table %}
+{# A record that holds a composed value is a `@dataclass` (`PythonComposed`), which a
+   union variable's case may hold where no typed payload declares it
+   (docs/adr/0092, section 7, the Python row). #}
+{% if event_payload_active or host_invoker_interface or model.emitted_transition_table or (static_type_defs and "@dataclass(" in static_type_defs) %}
 from dataclasses import dataclass
 {% endif %}
 from enum import IntEnum
@@ -120,6 +123,12 @@ import sce_forge_runtime.algorithm as sce_algorithm
 # A record variable is a frozen dataclass, changed a field at a time by
 # replacing it.
 import dataclasses as sce_dataclasses
+{% if static_type_defs and "sce_event_payload." in static_type_defs %}
+# A record that holds a composed value checks each bound where it is made through
+# the runtime's payload module, which a union variable's case may hold where no
+# typed payload imports it (docs/adr/0086, section 5.4; docs/adr/0092).
+import sce_runtime.event_payload as sce_event_payload
+{% endif %}
 {% endif %}
 {% if static_fields or static_saved_shape %}
 # SCE Accepted Subset §2.15: how each type of a datamodel is written into a saved
@@ -568,6 +577,10 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% if field.saved_kind == 'list' %}
         # A copy, so a host cannot write through the list into what the machine holds.
         return list(self.{{ field.name }})
+{% elif field.saved_kind == 'union' or field.saved_elem == 'union' %}
+        # A copy, so a host cannot write through a list a case's record holds into
+        # what the machine holds (docs/adr/0092, section 7, the Python row).
+        return sce_algorithm.whole_copy(self.{{ field.name }})
 {% else %}
         return self.{{ field.name }}
 {% endif %}
