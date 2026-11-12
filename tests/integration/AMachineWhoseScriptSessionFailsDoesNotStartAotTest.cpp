@@ -6,7 +6,8 @@
 //
 // The script engine is a double over the build's own engine (the one
 // `ScriptEngineProvider` names, which every other AOT test of this fixture runs
-// on). It fails, on request, one of the three steps that establish a session —
+// on), forwarding every call it does not change (`ForwardingScriptEngine`). It
+// fails, on request, one of the three steps that establish a session —
 // creating it, loading the shared library into it, binding the system
 // variables — and counts every call that runs a document's expressions, so "no
 // executable content ran" is read from the engine the machine runs its content
@@ -34,6 +35,7 @@
 #include "common/NoParent.h"
 #include "common/ScriptSessionFailure.h"
 #include "core/ConfigurationHelper.h"
+#include "integration/ForwardingScriptEngine.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptEngineProvider.h"
 
@@ -88,9 +90,9 @@ const char *nameOf(Fail fail) {
 
 /// The build's engine, with one step of establishing a session failing on
 /// request and every call that runs the document's expressions counted.
-class FailingEngine final : public ::SCE::IScriptEngine {
+class FailingEngine final : public ForwardingScriptEngine {
 public:
-    explicit FailingEngine(Fail fail) : inner_(::SCE::ScriptEngineProvider::getScriptEngine()), fail_(fail) {}
+    explicit FailingEngine(Fail fail) : fail_(fail) {}
 
     /// Calls that ran a document's expressions or wrote its datamodel.
     std::size_t ran() const {
@@ -134,7 +136,7 @@ public:
         case Fail::SystemVariables:
             break;
         }
-        return inner_.createSessionChecked(sessionId, parentSessionId);
+        return ForwardingScriptEngine::createSessionChecked(sessionId, parentSessionId);
     }
 
     std::future<::SCE::ScriptResult>
@@ -145,7 +147,7 @@ public:
             refused.set_value(::SCE::ScriptResult::createError("the double binds no system variable"));
             return refused.get_future();
         }
-        return inner_.setupSystemVariables(sessionId, sessionName, ioProcessors);
+        return ForwardingScriptEngine::setupSystemVariables(sessionId, sessionName, ioProcessors);
     }
 
     bool destroySession(const std::string &sessionId) override {
@@ -153,11 +155,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             destroyed_.push_back(sessionId);
         }
-        return inner_.destroySession(sessionId);
-    }
-
-    bool hasSession(const std::string &sessionId) const override {
-        return inner_.hasSession(sessionId);
+        return ForwardingScriptEngine::destroySession(sessionId);
     }
 
     // ── What runs a document's expressions, counted ────────────────────
@@ -165,115 +163,47 @@ public:
     std::future<::SCE::ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
                                                  const ::ScriptValue &value) override {
         ++ran_;
-        return inner_.setVariable(sessionId, name, value);
+        return ForwardingScriptEngine::setVariable(sessionId, name, value);
     }
 
     std::future<::SCE::ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                       const std::string &xmlContent) override {
         ++ran_;
-        return inner_.setVariableAsDOM(sessionId, name, xmlContent);
+        return ForwardingScriptEngine::setVariableAsDOM(sessionId, name, xmlContent);
     }
 
     std::future<::SCE::SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
                                                               const std::shared_ptr<::SCE::Event> &event) override {
         ++ran_;
-        return inner_.setCurrentEvent(sessionId, event);
+        return ForwardingScriptEngine::setCurrentEvent(sessionId, event);
     }
 
     std::future<::SCE::SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
                                                               const ::SCE::SetCurrentEventArgs &args) override {
         ++ran_;
-        return inner_.setCurrentEvent(sessionId, args);
+        return ForwardingScriptEngine::setCurrentEvent(sessionId, args);
     }
-
-    // ── The rest, as the build's engine answers it ─────────────────────
-
-    ::SCE::ScriptLanguage nativeLanguage() const override {
-        return inner_.nativeLanguage();
-    }
-
-    bool acceptsLanguage(::SCE::ScriptLanguage language) const override {
-        return inner_.acceptsLanguage(language);
-    }
-
-    std::future<::SCE::ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override {
-        return inner_.getVariable(sessionId, name);
-    }
-
-    bool hasVariable(const std::string &sessionId, const std::string &variableName) const override {
-        return inner_.hasVariable(sessionId, variableName);
-    }
-
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override {
-        return inner_.isVariablePreInitialized(sessionId, variableName);
-    }
-
-    bool registerGlobalFunction(const std::string &functionName,
-                                std::function<::ScriptValue(const std::vector<::ScriptValue> &)> callback) override {
-        return inner_.registerGlobalFunction(functionName, std::move(callback));
-    }
-
-    bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
-                          const std::vector<std::pair<std::string, NativeMethod>> &methods) override {
-        return inner_.bindNativeObject(sessionId, objectName, methods);
-    }
-
-    std::string getEngineInfo() const override {
-        return inner_.getEngineInfo();
-    }
-
-    size_t getMemoryUsage() const override {
-        return inner_.getMemoryUsage();
-    }
-
-    void collectGarbage() override {
-        inner_.collectGarbage();
-    }
-
-    void setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId) override {
-        inner_.setStateQueryCallback(std::move(callback), sessionId);
-    }
-
-    bool initialize() override {
-        return inner_.initialize();
-    }
-
-    bool isInitialized() const override {
-        return inner_.isInitialized();
-    }
-
-    // The build's engine is the test program's, shared by every test in it:
-    // the double does not stop or clear it.
-    void shutdown() override {}
-
-    void reset() override {}
 
 protected:
     std::future<::SCE::ScriptResult> doExecuteScript(const std::string &sessionId,
                                                      const ::SCE::ScriptSource &script) override {
         ++ran_;
-        return inner_.executeScript(sessionId, script);
+        return ForwardingScriptEngine::doExecuteScript(sessionId, script);
     }
 
     std::future<::SCE::ScriptResult> doEvaluateExpression(const std::string &sessionId,
                                                           const ::SCE::ScriptSource &expression) override {
         ++ran_;
-        return inner_.evaluateExpression(sessionId, expression);
-    }
-
-    std::future<::SCE::ScriptResult> doValidateExpression(const std::string &sessionId,
-                                                          const ::SCE::ScriptSource &expression) override {
-        return inner_.validateExpression(sessionId, expression);
+        return ForwardingScriptEngine::doEvaluateExpression(sessionId, expression);
     }
 
     std::future<::SCE::ScriptResult> doAssign(const std::string &sessionId, const ::SCE::ScriptSource &location,
                                               const ::SCE::ScriptSource &expr) override {
         ++ran_;
-        return inner_.assign(sessionId, location, expr);
+        return ForwardingScriptEngine::doAssign(sessionId, location, expr);
     }
 
 private:
-    ::SCE::IScriptEngine &inner_;
     const Fail fail_;
     std::atomic<std::size_t> ran_{0};
     mutable std::mutex mutex_;
