@@ -9,6 +9,8 @@
 //! Provides higher-level helpers used by generated invoke code:
 //! - [`drain_and_raise_child_events`]: drain child-to-parent event queue and raise with metadata
 //! - [`raise_done_invoke`]: generate done.invoke.{id} event when child completes
+//! - [`HandedValues`]: the values a parent handed a child, which the child's
+//!   start takes by the ids of its top-level `<data>`
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): the entire module is gated to
 //! `cfg(feature = "std")` because `Arc`/`Mutex`/`Vec`/`HashMap` are
@@ -151,6 +153,47 @@ pub fn start_child<Q: StatePolicy>(
     }
 }
 
+/// §scxml-6.4: the values an invoking session handed a child session, by name,
+/// held by the child until its start takes them (docs/adr/0098).
+///
+/// The parent hands every name its `<param>`s and `namelist` evaluated. Which
+/// of them the child takes is the child's to decide, because only the child's
+/// own document says what its top-level `<data>` are: its start takes the
+/// value handed under the id of each top-level `<data>` it declares, as that
+/// `<data>`'s initial value in place of its own, which is then not evaluated.
+/// A value no top-level `<data>` takes is dropped with this set when the start
+/// ends, and is never added to the child's datamodel. A state's `<data>` takes
+/// nothing from it.
+#[derive(Debug, Default)]
+pub struct HandedValues {
+    values: Vec<(String, crate::scripting::ScriptValue)>,
+}
+
+impl HandedValues {
+    /// Hand `value` under `name`. A name handed again holds the later value,
+    /// as the later of two `<param>`s of one name is evaluated last.
+    pub fn hand(&mut self, name: &str, value: crate::scripting::ScriptValue) {
+        match self.values.iter_mut().find(|(held, _)| held == name) {
+            Some((_, held)) => *held = value,
+            None => self.values.push((name.to_string(), value)),
+        }
+    }
+
+    /// The value handed under `id`, taken out of the set: the initial value of
+    /// the top-level `<data>` of that id, or `None` when nothing was handed
+    /// under it and the `<data>` takes its own.
+    pub fn take(&mut self, id: &str) -> Option<crate::scripting::ScriptValue> {
+        let at = self.values.iter().position(|(name, _)| name == id)?;
+        Some(self.values.swap_remove(at).1)
+    }
+
+    /// Whether no value is held: nothing was handed, or the start took or
+    /// dropped all of it.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+}
+
 /// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a
 /// hybrid `<invoke>`'s evaluated `srcexpr` names — what the value is matched
 /// against the declared `sce:candidates` by.
@@ -179,8 +222,44 @@ pub fn document_stem(value: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::document_stem;
+    use super::{document_stem, HandedValues};
     use crate::json::{parse, Value};
+    use crate::scripting::ScriptValue;
+
+    #[test]
+    fn a_handed_value_is_taken_once_by_its_id() {
+        let mut handed = HandedValues::default();
+        handed.hand("seen", ScriptValue::Int(7));
+        handed.hand("other", ScriptValue::String("x".to_string()));
+        assert_eq!(handed.take("seen"), Some(ScriptValue::Int(7)));
+        assert_eq!(
+            handed.take("seen"),
+            None,
+            "a value is the initial value of one <data> and is taken once"
+        );
+        assert!(!handed.is_empty(), "`other` is still held");
+    }
+
+    #[test]
+    fn an_id_nothing_was_handed_under_takes_nothing() {
+        let mut handed = HandedValues::default();
+        handed.hand("seen", ScriptValue::Int(7));
+        assert_eq!(handed.take("unseen"), None);
+        assert_eq!(handed.take("seen"), Some(ScriptValue::Int(7)));
+        assert!(handed.is_empty());
+    }
+
+    #[test]
+    fn a_name_handed_twice_holds_the_later_value() {
+        let mut handed = HandedValues::default();
+        handed.hand("seen", ScriptValue::Int(1));
+        handed.hand("seen", ScriptValue::Int(2));
+        assert_eq!(handed.take("seen"), Some(ScriptValue::Int(2)));
+        assert!(
+            handed.is_empty(),
+            "the second value replaced the first, so one value was held"
+        );
+    }
 
     /// tests/document_stem/document_stem.json: the cases every engine's reader
     /// of a hybrid invoke's value, and the build's reader of each candidate,
