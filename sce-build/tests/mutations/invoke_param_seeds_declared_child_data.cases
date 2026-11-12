@@ -46,7 +46,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_invoke_param_seeds_declared_child_data)$'
-mutation_targets sce/src/runtime/InvokeExecutor.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_targets sce/src/runtime/InvokeExecutor.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
 mutation_oracles tests/integration/InvokeParamSeedsDeclaredChildDataTest.cpp tests/integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp backends/c/tests/integration/test_invoke_param_seeds_declared_child_data.c
 
 # ── C++ Interpreter: which session evaluates ───────────────────────
@@ -94,14 +94,20 @@ PY
 
 # ── C++ AOT: which names are added ─────────────────────────────────
 #
-# Emitting the seed for every param regardless of what the child declares.
-# The `{% else %}` arm's comment goes with it, since a template that always
-# takes the first branch never renders the second.
+# The parent hands every name it evaluated and the child's start keeps those
+# its top-level `<data>` declare (docs/adr/0098). The mutant declares what
+# the start did not take instead of dropping it, so `nowhere` becomes a
+# variable of the child.
 
 mutation_case "the cpp aot engine seeds an invoke param the child never declared" <<'PY'
-edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                        {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}""",
-     """                        {% set child_keeps = child.child_needs_script_engine %}""")
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();""",
+     """        // take is dropped here, the names of state `<data>` included.
+        for (const auto& [leakedName, leakedValue] : pendingParams_) {
+            static_cast<void>(scriptEngine.setVariable(sessionId_.value(), leakedName, leakedValue).get());
+        }
+        pendingParams_.clear();""")
 PY
 
 # ── C++ AOT: the namelist arm carries a value at all ───────────────
@@ -113,8 +119,8 @@ PY
 
 mutation_case "the cpp aot engine seeds nothing from an invoke namelist" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """                        {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}""",
-     """                        {% if false %}""")
+     """                                {{ slot }}->setParamValueInScriptEngine("{{ ns_name }}", __sce_nl->second.front());""",
+     """                                static_cast<void>(__sce_nl);""")
 PY
 
 # ── C11: which session evaluates ───────────────────────────────────

@@ -81,6 +81,36 @@
                "the script session is established by the start, before any executable content runs");
     }
 
+    // §scxml-6.4.3: the value the invoking session handed this session under
+    // `id`, or none. A name handed more than once is the last value handed
+    // under it, the namelist's before the `<param>`s', as the parent hands
+    // them. Read by the start alone, for the ids of the top-level `<data>`.
+    [[nodiscard]] const ::ScriptValue* handedValueFor(std::string_view id) const {
+        const ::ScriptValue* handed = nullptr;
+        for (const auto& [name, value] : pendingParams_) {
+            if (name == id) {
+                handed = &value;
+            }
+        }
+        return handed;
+    }
+
+    // §scxml-6.4.3 + §scxml-5.3 (docs/adr/0098): declare the top-level `<data>`
+    // `id` with the value handed for it, in place of its own. A value the
+    // session cannot hold is that `<data>`'s initialization error: it raises
+    // error.execution and leaves the `<data>` as one whose own value failed.
+    template <typename Engine>
+    void declareHandedValue(::SCE::IScriptEngine& scriptEngine, const char* id, const ::ScriptValue& value,
+                            Engine& engine) {
+        auto declared = scriptEngine.setVariable(sessionId_.value(), id, value).get();
+        if (!declared.isSuccess()) {
+            std::string errorMsg = std::string("the value handed for <data id='") + id +
+                                   "'> could not be declared: " + declared.getErrorMessage();
+            SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+        }
+    }
+
     // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter)
     // W3C SCXML 5.2/5.3 + docs/adr/0096: establish the script session, then
     // initialize the datamodel in it, raising error.execution for a `<data>` or
@@ -119,25 +149,35 @@
         // No variables or scripts to initialize
 {% endif %}
 
+{% if model.variables %}
+        // §scxml-6.4.3: the top-level `<data>`, in document order. A value the
+        // invoking session handed this session under a `<data>`'s id is that
+        // `<data>`'s initial value, declared in place of its own: the `expr`,
+        // `src` or inline content is then not evaluated, raises nothing and
+        // has no effect (docs/adr/0098). Only these `<data>` take a handed
+        // value; the state `<data>` below never do.
+{% endif %}
 {% for var in model.variables %}
+        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        } else {
 {% if var.src %}
-        // W3C SCXML 5.3.1: Load datamodel variable from external file
-        // ARCHITECTURE.md: basePath resolved from executable location for execution independence
-        ::SCE::DataModelInitHelper::initializeVariableFromSrc(
-            scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
-            ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
+            // W3C SCXML 5.3.1: Load datamodel variable from external file
+            // ARCHITECTURE.md: basePath resolved from executable location for execution independence
+            ::SCE::DataModelInitHelper::initializeVariableFromSrc(
+                scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
+                ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+                [&engine](const ::std::string& msg) {
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                });
 {% elif var.expr %}
 {# ARCHITECTURE.md: Zero Duplication - Function detection matches DataModelInitHelper::isFunctionExpression() #}
 {# W3C SCXML B.2: Template-time detection (Python) for code generation optimization #}
 {% set is_function_expr = var.expr.strip().startswith('function') %}
 {% if is_function_expr %}
-        // W3C SCXML B.2: For function expressions, use direct JavaScript assignment to preserve function type
-        // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
-        // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
-        {
+            // W3C SCXML B.2: For function expressions, use direct JavaScript assignment to preserve function type
+            // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
+            // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
             auto scriptResult = scriptEngine.executeScript(sessionId_.value(), {{ var.expr | to_script_source_assignment(var.id) }}).get();
             if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
@@ -145,32 +185,36 @@
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
             }
             AOT_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
-        }
 {% else %}
-        // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
-        // Test 277: expr evaluation failure must raise error.execution (no fallback)
-        ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-            scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.expr | to_script_source_expr }},
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
+            // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
+            // Test 277: expr evaluation failure must raise error.execution (no fallback)
+            ::SCE::DataModelInitHelper::initializeVariableFromExpr(
+                scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.expr | to_script_source_expr }},
+                [&engine](const ::std::string& msg) {
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                });
 {% endif %}
 {% elif var.content %}
-        // W3C SCXML B.2: Initialize with inline XML content (DOM creation)
-        ::SCE::DataModelInitHelper::initializeVariable(
-            scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.content | to_script_source_data_content }},
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
+            // W3C SCXML B.2: Initialize with inline XML content (DOM creation)
+            ::SCE::DataModelInitHelper::initializeVariable(
+                scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.content | to_script_source_data_content }},
+                [&engine](const ::std::string& msg) {
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                });
 {% elif var.type == 'runtime' %}
-        // W3C SCXML 5.2: Runtime datamodel variable (late binding)
-        ::SCE::DataModelInitHelper::initializeVariable(
-            scriptEngine, sessionId_.value(), "{{ var.id }}", "",
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
+            // W3C SCXML 5.2: Runtime datamodel variable (late binding)
+            ::SCE::DataModelInitHelper::initializeVariable(
+                scriptEngine, sessionId_.value(), "{{ var.id }}", "",
+                [&engine](const ::std::string& msg) {
+                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                });
 {% endif %}
+        }
 {% endfor %}
+        // §scxml-6.4.3: a handed value that names no top-level `<data>` is not
+        // added to this session's datamodel: whatever the loop above did not
+        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();
 
 {% if model.states.values() | selectattr('datamodel') | list %}
 {% if model.binding == 'early' %}
@@ -190,21 +234,6 @@
         // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
 {% endif %}
 {% endif %}
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its `<data>`
-        // gave, and before the top-level `<script>`, which reads the datamodel
-        // the invocation started it with. The parent hands them before this
-        // session's start (`setParamValueInScriptEngine`) and this session
-        // applies them, so the child's session is made by the child.
-        for (auto& [paramName, paramValue] : pendingParams_) {
-            auto applied = scriptEngine.setVariable(sessionId_.value(), paramName, paramValue).get();
-            if (!applied.isSuccess()) {
-                SCE_LOG_ERROR("AOT initializeDataModel: invoke param '{}' was not applied: {}", paramName,
-                              applied.getErrorMessage());
-            }
-        }
-        pendingParams_.clear();
 
 {% if model.global_scripts %}
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time

@@ -46,11 +46,13 @@
     }
 
     // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`initializeDataModel`): the parent does not make
-    // this session's script session on its own stack (docs/adr/0096).
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start decides what to take (`initializeDataModel`, docs/adr/0098):
+    // a value whose name is the id of a top-level `<data>` is declared as that
+    // `<data>`'s initial value in place of its own, and any other is dropped.
+    // The parent does not make this session's script session on its own
+    // stack (docs/adr/0096).
     //
     // This side only stores. It used to take the author's expression TEXT and
     // evaluate it here, which asks a different question — what does this

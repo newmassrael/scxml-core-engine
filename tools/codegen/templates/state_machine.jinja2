@@ -792,8 +792,7 @@ struct {{ model.name }}Policy {
     // docs/adr/0096: whether the start established the script session.
     mutable bool scriptEngineInitialized_ = false;
     // §scxml-6.4.3: the invoke params the parent handed this session, which its
-    // start applies once its session is established and its `<data>`
-    // initialized.
+    // start consumes as it declares its top-level `<data>` (docs/adr/0098).
     std::vector<std::pair<std::string, ::ScriptValue>> pendingParams_;
     {% endif %}
     {% if model.needs_event_name %}

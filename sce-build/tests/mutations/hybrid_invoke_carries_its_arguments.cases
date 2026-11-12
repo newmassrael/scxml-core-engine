@@ -29,7 +29,9 @@ mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp b
 #
 # The candidate keeps its engine but loses its `<data>` list, so every
 # argument is evaluated and none is kept — `paramsOk` and `namelistOk` stay 0
-# on both template channels.
+# on the C11 channel. The C++ AOT no longer reads the list: it hands every
+# argument and the candidate's own start chooses (docs/adr/0098), so its
+# oracle stays green here and the C11 one is the killer.
 
 mutation_case "a candidate's declared names are not recorded" <<'PY'
 edit("sce-build/src/parser.rs",

@@ -58,9 +58,12 @@
 
     `child` describes the session being started — the invoke itself for a
     static child, the chosen candidate for a hybrid one. The arguments are the
-    invoke's and are evaluated whatever the child is; only which names the
-    child KEEPS depends on it, so a candidate is given exactly the names its
-    own top-level `<data>` declares.
+    invoke's and are evaluated whatever the child is. A child that runs a
+    script engine is handed every name evaluated, and which of them it keeps
+    is its own start's decision, made from its own top-level `<data>`
+    (`initializeDataModel`, docs/adr/0098): a parent that dropped the names
+    it knows the child does not declare would be a second copy of that rule.
+    A sce-static child is typed by the build instead (`seed_static_child`).
 #}
 {#
     §scxml-6.4.1 + §scxml-6.4.3 (SCE Accepted Subset §2.15): the child is a
@@ -138,36 +141,21 @@
 {% endmacro %}
 {% macro invoke_seed_child(invoke_info, child, slot, model) %}
                         {% if invoke_info.namelist %}
-                        // §scxml-6.4.1 + §scxml-6.4.3: pass namelist VALUES to
-                        // the child datamodel (Step 2). Which names are
-                        // eligible is decided here rather than at runtime,
-                        // because both the namelist and the child's top-level
-                        // `<data>` ids are static — the C11 backend has
-                        // filtered this way from the start, and deciding it at
-                        // codegen time keeps a `std::set` per invoke out of
-                        // every machine that has one.
+                        // §scxml-6.4.1 + §scxml-6.4.3: hand the child the value
+                        // stored at each namelist location (Step 2), every one
+                        // the guard above evaluated. The child's start takes
+                        // the ones that name a top-level `<data>` of its own,
+                        // as that `<data>`'s initial value in place of its own
+                        // expression, and adds none of the others.
                         {% if child.child_needs_script_engine %}
                         {% for ns_name in invoke_info.namelist.split() %}
-                        {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}
-                        // §scxml-6.4.3: `{{ ns_name }}` matches a top-level `<data>` of
-                        // the child, so the value at that location becomes its
-                        // initial value — and the `<data>`'s own expression is
-                        // ignored.
                         {
                             const auto __sce_nl = namelistTypedParams.find("{{ ns_name }}");
                             if (__sce_nl != namelistTypedParams.end() && !__sce_nl->second.empty()) {
-                                AOT_DEBUG("Seeding namelist location '{{ ns_name }}' in child {{ invoke_info.invoke_id }}");
+                                AOT_DEBUG("Handing namelist location '{{ ns_name }}' to child {{ invoke_info.invoke_id }}");
                                 {{ slot }}->setParamValueInScriptEngine("{{ ns_name }}", __sce_nl->second.front());
                             }
                         }
-                        {% else %}
-                        // §scxml-6.4.3: `{{ ns_name }}` matches no top-level `<data>` of
-                        // the child, so the Processor MUST NOT add it to the
-                        // invoked session's data model. Nothing is emitted for
-                        // it — the parent still evaluates it, because a
-                        // location the parent does not declare is an
-                        // error.execution either way (test553).
-                        {% endif %}
                         {% endfor %}
                         {% else %}
                         // Child does not use JSEngine - namelist handled via static datamodel
@@ -201,11 +189,11 @@
                            <param> is an argument of this <invoke> whether or not
                            the child declares `name` or runs a script engine, so
                            it is evaluated — and its failure raised — either way;
-                           §scxml-6.4.3 decides only what the child keeps. The
+                           §scxml-6.4.3 decides only what the child keeps, and
+                           the child's start decides it (docs/adr/0098). The
                            author's text is filtered where it is emitted, never
                            bound to a name first, so the migration scan reads
                            the site as the filter call it is. #}
-                        {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}
                         {% if not (param.expr or param.location) %}
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
                         {% else %}
@@ -213,12 +201,14 @@
                             assertScriptSession();
                             auto __sce_param = getScriptEngine().evaluateExpression(sessionId_.value(), {{ (param.expr if param.expr else param.location) | to_script_source_expr }}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(__sce_param)) {
-                                {% if child_keeps %}
+                                {% if child.child_needs_script_engine %}
+                                // §scxml-6.4.3: handed whatever the child declares;
+                                // its start keeps it only for a top-level `<data>`
+                                // of the same name.
                                 {{ slot }}->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());
                                 {% else %}
-                                // §scxml-6.4.3: `{{ param.name }}` matches no top-level
-                                // `<data>` of the child, so the Processor MUST NOT add
-                                // it to the invoked session's data model.
+                                // §scxml-6.4.3: the child runs no script engine, so it
+                                // declares no `<data>` a value could be handed to.
                                 (void)__sce_param;
                                 {% endif %}
                             } else {
