@@ -15,12 +15,12 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct EventTypeNamesItsQueue {
-    @Test func eachEventIsTypedByTheQueueItWasTakenFrom() {
+    @Test func eachEventIsTypedByTheQueueItWasTakenFrom() throws {
         // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine. The
         // document queues its own events; the run needs nothing from the host.
         let policy = EventTypeNamesItsQueuePolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
 
         let seen =
             "intCode=\(String(describing: policy.readScriptValue("intCode"))) "

@@ -27,7 +27,7 @@ import Testing
     /// data and invocations the saved run never initialised or started.
     @Test func aStateOfAnotherConfigurationIsRefusedByTheFeaturesThatDiffer() throws {
         let saving = Engine(policy: LiftedAccept.SessionPolicy(actions: LiftedAccept.RecordingSessionActions()))
-        saving.initialize()
+        try saving.initialize()
         var state = try saving.save(wallNowMs: 0)
         state.features = ["session-unicast"]
         let restoring = Engine(policy: LiftedAccept.SessionPolicy(actions: LiftedAccept.RecordingSessionActions()))

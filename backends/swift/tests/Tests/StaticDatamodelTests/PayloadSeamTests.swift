@@ -15,7 +15,7 @@ private func started() -> (StaticPayloadPolicy, Engine<StaticPayloadPolicy>) {
     let policy = StaticPayloadPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

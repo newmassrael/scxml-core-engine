@@ -177,14 +177,21 @@ private struct Answer {
 private struct Recorded {
     let completed: Bool
     let answers: [String: Json]?
+    /// Why the artifact's start was refused (docs/adr/0096), nil for one that started.
+    var refusal: String? = nil
 }
 
 /// Drive the artifact to its final state and read the answers back. The read is one fixed
 /// expression and reads the recording; every answer in it was computed before this call is made.
+/// A start refused for its script session ran nothing, so there is nothing to read.
 private func drive() -> Recorded {
     let policy = Ecma262LoweredPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    do {
+        try engine.initialize()
+    } catch {
+        return Recorded(completed: false, answers: nil, refusal: String(describing: error))
+    }
     let completed = engine.runUntilCompletion(timeout: .seconds(3), pollInterval: .milliseconds(10))
     guard case .string(let text)? = policy.readScriptValue("JSON.stringify(answers)"),
         let answers = try? JSONDecoder().decode([String: Json].self, from: Data(text.utf8))
@@ -266,6 +273,7 @@ private func controlReading(_ answers: [String: Json], _ slot: String) -> String
 // MARK: - The tests
 
 @Test func theArtifactReachedItsFinalStateAndRecordedItsAnswers() throws {
+    #expect(recorded.refusal == nil, "the artifact's start was refused: \(recorded.refusal ?? "")")
     #expect(
         recorded.completed,
         "the artifact did not reach its final state, so the answers would be a partial run reported as a full one")

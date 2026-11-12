@@ -20,11 +20,11 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct LateDataBindsOnFirstEntry {
-    @Test func aStateBindsItsDataOnlyOnItsFirstEntry() {
+    @Test func aStateBindsItsDataOnlyOnItsFirstEntry() throws {
         // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine.
         let policy = LateDataBindsOnFirstEntryPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         #expect(engine.getCurrentState() == .idle, "the run has to start in `idle`")
 
         // Enter `s`, change its `v`, leave it, enter it again: one step each.

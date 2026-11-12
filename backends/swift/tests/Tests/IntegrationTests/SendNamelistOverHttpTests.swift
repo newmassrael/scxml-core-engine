@@ -49,7 +49,7 @@ private func echoedForm(_ params: [String: [String]]) -> String {
 @Suite struct SendNamelistOverHttp {
     private static let accessURI = "http://127.0.0.1:18080/test"
 
-    @Test func theNamelistReachesTheFormAndABrokenItemDiscardsTheMessage() {
+    @Test func theNamelistReachesTheFormAndABrokenItemDiscardsTheMessage() throws {
         let policy = SendNamelistOverHttpPolicy()
         policy.basicHTTPAccessURI = Self.accessURI
         let engine = Engine(policy: policy)
@@ -59,7 +59,7 @@ private func echoedForm(_ params: [String: [String]]) -> String {
             return HttpSendResponse(eventName: request.eventName, eventData: echoedForm(request.params))
         }
         engine.setClock(ManualClock())
-        engine.initialize()
+        try engine.initialize()
         _ = driveOnVirtualTime(engine, budgetMs: 10_000)
 
         switch engine.terminalState {

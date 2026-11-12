@@ -21,7 +21,7 @@ private func started() -> (
 ) {
     let policy = TargetlessTransitionCompletesMacrostepPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

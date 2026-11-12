@@ -127,9 +127,9 @@ private func expectedFrom(_ posted: [EngineInboxInput<FlatEvent>]) -> [String] {
 
 /// `posted` replayed on a machine of its own by one thread: every post, then one tick. What it
 /// took and what its invoker was asked.
-private func replay(_ posted: [EngineInboxInput<FlatEvent>]) -> (taken: [String], invoker: [String]) {
+private func replay(_ posted: [EngineInboxInput<FlatEvent>]) throws -> (taken: [String], invoker: [String]) {
     let (engine, record) = makeProbe()
-    engine.initialize()
+    try engine.initialize()
     let inbox = engine.inbox
     for input in posted {
         #expect(inbox.post(input), "the replay's inbox refused a post")
@@ -185,7 +185,7 @@ private func postFromAnotherThread(_ inbox: EngineInbox<FlatEvent>, _ input: Eng
     // between ticks rather than on a clock.
     let wake = DispatchSemaphore(value: 0)
     inbox.wakeWith { _ = wake.signal() }
-    engine.initialize()
+    try engine.initialize()
     let token = try #require(startedToken(record), "`probe` never started")
 
     let producerCount = 8
@@ -229,7 +229,7 @@ private func postFromAnotherThread(_ inbox: EngineInbox<FlatEvent>, _ input: Eng
     #expect(posted.count == producerCount * perProducer)
     #expect(record.taken == expectedFrom(posted), "the machine did not take the posts in the order the inbox took them")
     #expect(record.invoker == ["start:\(token)"], "an ending was not applied, or a refused one was")
-    let replayed = replay(posted)
+    let replayed = try replay(posted)
     #expect(record.taken == replayed.taken, "the run differs from a single-threaded replay of its posts")
     #expect(record.invoker == replayed.invoker, "the invocations differ from a single-threaded replay of the posts")
 }
@@ -241,7 +241,7 @@ private func postFromAnotherThread(_ inbox: EngineInbox<FlatEvent>, _ input: Eng
 /// ordering; nothing sleeps.
 private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     _ queueOwn: @escaping (Engine<ScriptedPolicy>, ProbeRecord) -> Void
-) -> [String] {
+) throws -> [String] {
     let (engine, record) = makeProbe()
     let inbox = engine.inbox
     let enterIdle = engine.policy.onEntry[.idle]
@@ -250,12 +250,12 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
         #expect(postFromAnotherThread(inbox, .externalEvent(.ping, eventData: "posted")))
         queueOwn(engine, record)
     }
-    engine.initialize()
+    try engine.initialize()
     return record.taken
 }
 
-@Test func anEventPostedBeforeTheOwnersOwnSendIsTakenFirst() {
-    let taken = takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, _ in
+@Test func anEventPostedBeforeTheOwnersOwnSendIsTakenFirst() throws {
+    let taken = try takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, _ in
         // What the generated `<send event="ping"/>` with no target raises.
         var own = EventMetadata.external(sendID: "", sender: "")
         own.data = "own"
@@ -264,8 +264,8 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     #expect(taken == ["ping:posted", "ping:own"], "the owner's own send overtook an event posted before it")
 }
 
-@Test func anEventPostedBeforeAHostRunInvocationsDoneInvokeIsTakenFirst() {
-    let taken = takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, record in
+@Test func anEventPostedBeforeAHostRunInvocationsDoneInvokeIsTakenFirst() throws {
+    let taken = try takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, record in
         guard let token = startedToken(record) else {
             Issue.record("`probe` never started")
             return
@@ -279,7 +279,7 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
 @Test func aPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs() throws {
     let (engine, record) = makeProbe()
     let inbox = engine.inbox
-    engine.initialize()
+    try engine.initialize()
     let first = try #require(startedToken(record), "`probe` never started")
     // `go` leaves `idle`, which cancels the first start.
     engine.processEvent(.go)
@@ -306,7 +306,7 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
         "the first start's direct ending was taken")
 }
 
-@Test func aPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused() {
+@Test func aPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused() throws {
     let (engine, record) = makeProbe()
     let inbox = engine.inbox
     let woken = WakeCount()
@@ -316,7 +316,7 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     #expect(woken.count.load(ordering: .relaxed) == 1, "a taken post did not wake the owner")
     #expect(record.taken.isEmpty, "a post was applied before the run started")
     // Applied at the first macrostep boundary of the run.
-    engine.initialize()
+    try engine.initialize()
     #expect(record.taken == ["ping:early"])
 
     engine.stop()
@@ -324,13 +324,13 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     #expect(woken.count.load(ordering: .relaxed) == 1, "a refused post woke the owner")
 
     // A run entered again has an open inbox.
-    engine.initialize()
+    try engine.initialize()
     #expect(inbox.post(.externalEventByName("ping", eventData: "again")))
     engine.tick()
     #expect(record.taken == ["ping:early", "ping:again"])
 }
 
-@Test func whatTheInboxHeldWhenTheRunEndedIsCountedUnseenAndLaterPostsAreRefused() {
+@Test func whatTheInboxHeldWhenTheRunEndedIsCountedUnseenAndLaterPostsAreRefused() throws {
     let (engine, record) = makeProbe()
     let inbox = engine.inbox
     // Posted while the run's last macrostep runs: after that macrostep's boundary was drained, and
@@ -340,7 +340,7 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
         cancelOnExit?(engine)
         #expect(inbox.post(.externalEvent(.ping, eventData: "during")))
     }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.request)
     #expect(engine.isInFinalState)
     #expect(record.taken.isEmpty, "an ended run took an event")
@@ -349,11 +349,11 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
     #expect(record.invoker == ["start:1", "cancel:1"])
 }
 
-@Test func anInboxFirstAskedForAfterAStopRefusesPostsUntilTheNextRun() {
+@Test func anInboxFirstAskedForAfterAStopRefusesPostsUntilTheNextRun() throws {
     let (engine, _) = makeProbe()
-    engine.initialize()
+    try engine.initialize()
     engine.stop()
     #expect(!engine.inbox.post(.externalEvent(.ping)), "an inbox made after the stop took a post")
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.inbox.post(.externalEvent(.ping)), "the next run's inbox refused a post")
 }

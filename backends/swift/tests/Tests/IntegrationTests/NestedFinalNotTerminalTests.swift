@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct NestedFinalNotTerminal {
-    @Test func aNestedFinalDoesNotEndTheSession() {
+    @Test func aNestedFinalDoesNotEndTheSession() throws {
         let engine = Engine(policy: NestedFinalNotTerminalPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         #expect(
             engine.getCurrentState() == .phaseDone,

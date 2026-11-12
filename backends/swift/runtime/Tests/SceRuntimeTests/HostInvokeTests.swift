@@ -54,13 +54,13 @@ private func makeHostEngine() -> (Engine<ScriptedPolicy>, RecordingInvoker) {
     } catch {
         Issue.record("the test invoker was refused: \(error)")
     }
-    engine.initialize()
+    try engine.initialize()
     return (engine, invoker)
 }
 
-@Test func aTypeNobodyRegisteredIsNotRun() {
+@Test func aTypeNobodyRegisteredIsNotRun() throws {
     let (engine, _, _) = makeEngine { _ in }
-    engine.initialize()
+    try engine.initialize()
     #expect(!engine.hasInvoker("sce-host-test"))
     #expect(!engine.performHostInvoke(request()))
 }
@@ -259,12 +259,12 @@ private func deadlineRequest(_ written: String) -> HostInvokeRequest {
 
 // MARK: - A completion by another door
 
-@Test func aDoneInvokeThatDidNotComeThroughTheCompletionDoorIsRefusedAndCounted() {
+@Test func aDoneInvokeThatDidNotComeThroughTheCompletionDoorIsRefusedAndCounted() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.hostInvokeIDs = ["probe"]
         policy.transitions[.idle] = [FlatTransition(event: .doneInvokeProbe, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     // Raised as any event is, with no token: a cancelled run's late reply looks the same.
     engine.raiseExternal(.doneInvokeProbe)
     engine.tick()
@@ -273,11 +273,11 @@ private func deadlineRequest(_ written: String) -> HostInvokeRequest {
     _ = policy
 }
 
-@Test func aDoneInvokeOfAnInvokeNoHostRunsIsNotRefused() {
+@Test func aDoneInvokeOfAnInvokeNoHostRunsIsNotRefused() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .doneInvokeProbe, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternal(.doneInvokeProbe)
     engine.tick()
     #expect(engine.getCurrentState() == .done)

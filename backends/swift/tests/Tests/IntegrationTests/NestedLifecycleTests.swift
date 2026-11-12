@@ -30,13 +30,13 @@ private final class Run {
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct NestedLifecycle {
-    @Test func theMachineAndItsTransitionFunctionAgreeOnEveryPair() {
+    @Test func theMachineAndItsTransitionFunctionAgreeOnEveryPair() throws {
         let run = Run()
         let probe = EngineProbe(
             start: {
                 run.policy = NestedLifecyclePolicy()
                 run.engine = Engine(policy: run.policy)
-                run.engine.initialize()
+                try run.engine.initialize()
             },
             send: { name in
                 if let event = run.policy.getEventFromName(name) {
@@ -56,7 +56,7 @@ private final class Run {
             stateName: { $0.scxmlName },
             eventName: { $0.scxmlName })
         #expect(
-            expectEveryPairAgrees(function, probe) == Function.allStates.count * Function.allEvents.count,
+            try expectEveryPairAgrees(function, probe) == Function.allStates.count * Function.allEvents.count,
             "the drive did not check every pair")
     }
 }

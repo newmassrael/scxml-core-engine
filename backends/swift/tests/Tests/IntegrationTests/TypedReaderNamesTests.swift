@@ -26,7 +26,7 @@ import Testing
 private func started() -> (policy: TypedReaderNamesPolicy, engine: Engine<TypedReaderNamesPolicy>) {
     let policy = TypedReaderNamesPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

@@ -15,10 +15,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ParallelSelfTransitionKeepsItsLeaf {
-    @Test func theSelfTransitionedRegionAnswersTheNextEvent() {
+    @Test func theSelfTransitionedRegionAnswersTheNextEvent() throws {
         // The fixture's `<assign>`s make this an ECMAScript-datamodel machine.
         let engine = Engine(policy: ParallelSelfTransitionKeepsItsLeafPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // Two `e`s, then the verdict. The second one is the point: `judging` has no `e`
         // transition, so nothing but the self-transitioning region can answer it, and it can only

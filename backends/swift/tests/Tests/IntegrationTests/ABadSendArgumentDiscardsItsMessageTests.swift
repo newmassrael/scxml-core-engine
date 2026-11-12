@@ -19,11 +19,11 @@ import Testing
     /// On a manual clock advanced a full minute before `finish`: a channel that scheduled the
     /// message whose `delayexpr` failed, under some default delay, delivers it within that minute
     /// and moves `sent`.
-    @Test func eachBadArgumentDiscardsItsMessage() {
+    @Test func eachBadArgumentDiscardsItsMessage() throws {
         let policy = ABadSendArgumentDiscardsItsMessagePolicy()
         let engine = Engine(policy: policy)
         engine.setClock(ManualClock())
-        engine.initialize()
+        try engine.initialize()
         engine.advanceTimeMs(60000)
         engine.processEvent(.finish)
 

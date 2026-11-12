@@ -27,10 +27,10 @@ import Testing
             "a root start that is not refused must enter the machine")
     }
 
-    @Test func eachErrorEndsOnlyItsOwnBlock() {
+    @Test func eachErrorEndsOnlyItsOwnBlock() throws {
         let policy = AnErrorEndsTheBlockItWasRaisedInPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         for event in [AnErrorEndsTheBlockItWasRaisedInEvent.t, .finish] {
             engine.processEvent(event)
         }

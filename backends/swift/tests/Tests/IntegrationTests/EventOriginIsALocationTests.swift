@@ -21,8 +21,8 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct EventOriginIsALocation {
-    @Test func originIsTheSendersPublishedLocationAndRoutesBack() {
-        let engine = initializedOnVirtualTime(EventOriginIsALocationPolicy())
+    @Test func originIsTheSendersPublishedLocationAndRoutesBack() throws {
+        let engine = try initializedOnVirtualTime(EventOriginIsALocationPolicy())
         _ = driveOnVirtualTime(engine)
 
         let reached = engine.terminalState

@@ -14,10 +14,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ParallelCompletionRaisesDoneState {
-    @Test func everyRegionFinalCompletesTheParallel() {
+    @Test func everyRegionFinalCompletesTheParallel() throws {
         // `datamodel="null"`: this machine needs no script engine.
         let engine = Engine(policy: ParallelCompletionRaisesDoneStatePolicy())
-        engine.initialize()
+        try engine.initialize()
 
         engine.processEvent(.go)
 

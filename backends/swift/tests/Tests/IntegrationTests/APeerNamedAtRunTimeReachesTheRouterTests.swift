@@ -28,7 +28,7 @@ private final class Routed {
 @Suite struct APeerNamedAtRunTimeReachesTheRouter {
     /// With a router registered, the peer send is the router's: processor `sce:mesh`, the evaluated
     /// target, the event. The non-peer target is still this session's.
-    @Test func aPeerNamedAtRunTimeIsSentToTheRouter() {
+    @Test func aPeerNamedAtRunTimeIsSentToTheRouter() throws {
         let policy = APeerNamedAtRunTimeReachesTheRouterPolicy()
         let engine = Engine(policy: policy)
         let routed = Routed()
@@ -36,7 +36,7 @@ private final class Routed {
             routed.requests.append(request)
             return []
         }
-        engine.initialize()
+        try engine.initialize()
         engine.tick()
 
         #expect(routed.requests.count == 1, "exactly the peer send reaches the router: \(routed.requests)")
@@ -50,10 +50,10 @@ private final class Routed {
 
     /// With no router registered, the peer send is a send to a host processor nobody serves: one
     /// error.execution, and the non-peer target is unaffected.
-    @Test func aPeerWithNoRouterRegisteredIsErrorExecution() {
+    @Test func aPeerWithNoRouterRegisteredIsErrorExecution() throws {
         let policy = APeerNamedAtRunTimeReachesTheRouterPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         engine.tick()
 
         let wrong = mismatches([("refused", 1), ("looped", 1)]) { policy.readScriptValue($0) }

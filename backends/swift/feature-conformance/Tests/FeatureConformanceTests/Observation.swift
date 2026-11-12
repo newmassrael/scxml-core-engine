@@ -38,12 +38,18 @@ struct Observation: Equatable, CustomStringConvertible {
 }
 
 /// The observation of the machine `policy` describes after `run`, `calls` reading the
-/// calls its host has recorded.
+/// calls its host has recorded. The machine runs no script engine, so its start has no script
+/// session to fail (docs/adr/0096); a start refused all the same is an issue of the test, and
+/// the observation is of a machine that was not started.
 func observe<Policy: SavedPolicy>(
     _ policy: Policy, calls: () -> [String], run: [String]
 ) -> Observation {
     let engine = Engine(policy: policy)
-    engine.initialize()
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the start of a machine that runs no script engine was refused: \(error)")
+    }
     var seen = Observation()
     for name in run {
         guard let event = engine.resolveEventByName(name) else {

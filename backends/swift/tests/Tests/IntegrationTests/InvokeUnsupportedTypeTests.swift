@@ -21,8 +21,8 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct InvokeUnsupportedType {
-    @Test func anUnsupportedInvokeTypeRaisesErrorExecution() {
-        let engine = initializedOnVirtualTime(InvokeUnsupportedTypePolicy())
+    @Test func anUnsupportedInvokeTypeRaisesErrorExecution() throws {
+        let engine = try initializedOnVirtualTime(InvokeUnsupportedTypePolicy())
         _ = driveOnVirtualTime(engine)
 
         #expect(

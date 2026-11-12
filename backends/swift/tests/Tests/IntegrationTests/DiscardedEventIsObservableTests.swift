@@ -19,7 +19,7 @@ private func started() -> (
 ) {
     let policy = DiscardedEventIsObservablePolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

@@ -15,9 +15,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct InvokeParamSeedsDeclaredChildData {
-    @Test func anInvokeParamCarriesTheInvokingSessionsValue() {
+    @Test func anInvokeParamCarriesTheInvokingSessionsValue() throws {
         let engine = Engine(policy: InvokeParamSeedsDeclaredChildDataPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // Three sequential invokes, each answering in its own macrostep.
         _ = tickUntil(engine, timeout: .seconds(5)) { engine.isInFinalState }

@@ -41,7 +41,7 @@ private func startedComposedPayload() -> (StaticComposedPayloadPolicy, Engine<St
     let policy = StaticComposedPayloadPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

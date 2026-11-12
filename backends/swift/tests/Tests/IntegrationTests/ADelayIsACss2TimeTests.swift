@@ -18,11 +18,11 @@ import Testing
     /// On a manual clock advanced a full minute: both valid delays fire in the order their
     /// milliseconds give, and a refused message, had it been scheduled under some default wait,
     /// would have arrived and moved `bad`.
-    @Test func eachDelayIsReadAsOneCss2Time() {
+    @Test func eachDelayIsReadAsOneCss2Time() throws {
         let policy = ADelayIsACss2TimePolicy()
         let engine = Engine(policy: policy)
         engine.setClock(ManualClock())
-        engine.initialize()
+        try engine.initialize()
         engine.advanceTimeMs(60000)
         engine.tick()
 

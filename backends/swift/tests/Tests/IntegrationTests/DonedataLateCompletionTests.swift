@@ -15,11 +15,11 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct DonedataLateCompletion {
-    @Test func donedataRidesACompletionAfterTheInvokeStarted() {
+    @Test func donedataRidesACompletionAfterTheInvokeStarted() throws {
         // The parent's `done.invoke` guard and the child's `<donedata>` param both evaluate
         // expressions.
         let engine = Engine(policy: DonedataLateCompletionPolicy())
-        engine.initialize()
+        try engine.initialize()
         _ = tickUntil(engine) { engine.isInFinalState }
 
         #expect(

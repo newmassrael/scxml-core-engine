@@ -10,10 +10,17 @@ import Testing
 // final states), its transitions, `<raise>` and the In() guard. Each expectation is
 // worked from the document, not read off a run.
 
+/// The machine `policy` describes, started on a manual clock. These machines run no script engine,
+/// so a start has no script session to fail (docs/adr/0096); one refused all the same is an issue of
+/// the test that asked.
 private func started<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the start of a machine that runs no script engine was refused: \(error)")
+    }
     return engine
 }
 
@@ -57,13 +64,13 @@ private func started<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {
     #expect(engine.getActiveStates() == [.off])
 }
 
-@Test func haltFromRedEndsTheRunInTheTopLevelFinal() {
+@Test func haltFromRedEndsTheRunInTheTopLevelFinal() throws {
     let policy = StructureLightPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
     var completions = 0
     engine.setCompletionCallback { completions += 1 }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.power)
     engine.processEvent(.timer)
     engine.processEvent(.halt)

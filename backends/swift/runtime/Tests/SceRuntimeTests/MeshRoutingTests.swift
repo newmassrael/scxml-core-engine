@@ -68,73 +68,73 @@ private func makeChild() -> InvokedSession<ScriptedPolicy> {
 
 private func makeParent(
     giving router: RecordingRouter?, asked: @escaping (String, String) -> Void = { _, _ in }
-) -> Engine<ScriptedPolicy> {
+) throws -> Engine<ScriptedPolicy> {
     let (parent, _, _) = makeEngine { _ in }
     parent.registerChildMeshRouters { invokeID, document in
         asked(invokeID, document)
         return router
     }
-    parent.initialize()
+    try parent.initialize()
     return parent
 }
 
 private let meshSend = HostSendRequest(processorType: meshProcessorType, eventName: "ping", target: "#peer")
 
-@Test func aChildIsGivenTheRouterItsParentsFactoryAnsweredForTheInvokeAndTheDocument() {
+@Test func aChildIsGivenTheRouterItsParentsFactoryAnsweredForTheInvokeAndTheDocument() throws {
     let router = RecordingRouter()
     var asked: [String] = []
-    let parent = makeParent(giving: router) { asked.append("\($0):\($1)") }
+    let parent = try makeParent(giving: router) { asked.append("\($0):\($1)") }
     let child = makeChild()
     parent.startChildMesh(of: child, invokeID: "worker", document: "worker_doc")
-    child.initialize()
+    try child.initialize()
     child.engine.performHostSend(meshSend)
     #expect(asked == ["worker:worker_doc"])
     #expect(router.sends == [meshSend])
 }
 
-@Test func aChildOfAParentWithNoFactoryHasNoRouterAndItsPeerSendIsAnError() {
+@Test func aChildOfAParentWithNoFactoryHasNoRouterAndItsPeerSendIsAnError() throws {
     let (parent, _, _) = makeEngine { _ in }
-    parent.initialize()
+    try parent.initialize()
     let child = makeChild()
     parent.startChildMesh(of: child, invokeID: "worker", document: "")
-    child.initialize()
+    try child.initialize()
     child.engine.performHostSend(meshSend)
     child.engine.tick()
     #expect(child.engine.getCurrentState() == .busy)
 }
 
-@Test func aFactoryThatAnswersNothingLeavesTheChildWithNoRouter() {
-    let parent = makeParent(giving: nil)
+@Test func aFactoryThatAnswersNothingLeavesTheChildWithNoRouter() throws {
+    let parent = try makeParent(giving: nil)
     let child = makeChild()
     parent.startChildMesh(of: child, invokeID: "worker", document: "")
-    child.initialize()
+    try child.initialize()
     child.engine.performHostSend(meshSend)
     child.engine.tick()
     #expect(child.engine.getCurrentState() == .busy)
 }
 
-@Test func theRouterOfAChildIsNotTheOneItsParentHost() {
+@Test func theRouterOfAChildIsNotTheOneItsParentHost() throws {
     // A parent that has its own mesh router does not lend it to a child: the child's send goes
     // to the router the factory answered, and to nothing of the parent's.
     let parentRouter = RecordingRouter()
     let childRouter = RecordingRouter()
-    let parent = makeParent(giving: childRouter)
+    let parent = try makeParent(giving: childRouter)
     parent.registerMeshRouter { request in parentRouter.send(request) }
     let child = makeChild()
     parent.startChildMesh(of: child, invokeID: "worker", document: "")
-    child.initialize()
+    try child.initialize()
     child.engine.performHostSend(meshSend)
     #expect(childRouter.sends == [meshSend])
     #expect(parentRouter.sends.isEmpty)
 }
 
-@Test func whatArrivedForAChildIsAppliedInTheOrderTheRouterReleasedItBeforeTheChildSteps() {
+@Test func whatArrivedForAChildIsAppliedInTheOrderTheRouterReleasedItBeforeTheChildSteps() throws {
     // `go` then `again` takes the child through `busy` to `done`; the other order loses `again`
     // in `idle`, where nothing takes it.
     let ordered = RecordingRouter()
     let first = makeChild()
-    makeParent(giving: ordered).startChildMesh(of: first, invokeID: "w", document: "")
-    first.initialize()
+    try makeParent(giving: ordered).startChildMesh(of: first, invokeID: "w", document: "")
+    try first.initialize()
     ordered.pending = [
         .raise(name: "go", metadata: meshEventMetadata(data: "", source: "peer", sendID: "s1")),
         .raise(name: "again", metadata: meshEventMetadata(data: "", source: "peer", sendID: "s2")),
@@ -146,8 +146,8 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
 
     let reversed = RecordingRouter()
     let second = makeChild()
-    makeParent(giving: reversed).startChildMesh(of: second, invokeID: "w", document: "")
-    second.initialize()
+    try makeParent(giving: reversed).startChildMesh(of: second, invokeID: "w", document: "")
+    try second.initialize()
     reversed.pending = [
         .raise(name: "again", metadata: meshEventMetadata(data: "", source: "peer", sendID: "s2")),
         .raise(name: "go", metadata: meshEventMetadata(data: "", source: "peer", sendID: "s1")),
@@ -157,9 +157,9 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
     #expect(second.engine.getCurrentState() == .busy)
 }
 
-@Test func aChildGivenNoRouterAppliesNothing() {
+@Test func aChildGivenNoRouterAppliesNothing() throws {
     let child = makeChild()
-    child.initialize()
+    try child.initialize()
     child.applyMeshCalls()
     child.step()
     #expect(child.engine.getCurrentState() == .idle)
@@ -174,11 +174,11 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
     #expect(metadata.eventType == .externalEvent)
 }
 
-@Test func aMeshRequestOfAChildReachesTheRouterAndEndsWithTheAnswerThatNamesThePeer() {
+@Test func aMeshRequestOfAChildReachesTheRouterAndEndsWithTheAnswerThatNamesThePeer() throws {
     let router = RecordingRouter()
     let child = makeChild()
-    makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
-    child.initialize()
+    try makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
+    try child.initialize()
     #expect(child.engine.performHostInvoke(HostInvokeRequest(processorType: meshRpcInvokeType, invokeID: "probe")))
     let token = router.startToken(of: "probe")
     #expect(token != nil)
@@ -188,11 +188,11 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
     #expect(child.engine.getCurrentState() == .done)
 }
 
-@Test func aMeshRequestThatFailedEndsWithErrorInvoke() {
+@Test func aMeshRequestThatFailedEndsWithErrorInvoke() throws {
     let router = RecordingRouter()
     let child = makeChild()
-    makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
-    child.initialize()
+    try makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
+    try child.initialize()
     child.engine.performHostInvoke(HostInvokeRequest(processorType: meshRpcInvokeType, invokeID: "probe"))
     router.pending = [
         .endInvoke(invokeID: "probe", token: router.startToken(of: "probe") ?? 0, failed: true, data: "", source: nil)
@@ -202,11 +202,11 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
     #expect(child.engine.getCurrentState() == .busy)
 }
 
-@Test func anEndForAStartThatIsNoLongerRunningIsRefusedByTheTokenCheck() {
+@Test func anEndForAStartThatIsNoLongerRunningIsRefusedByTheTokenCheck() throws {
     let router = RecordingRouter()
     let child = makeChild()
-    makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
-    child.initialize()
+    try makeParent(giving: router).startChildMesh(of: child, invokeID: "probe", document: "")
+    try child.initialize()
     child.engine.performHostInvoke(HostInvokeRequest(processorType: meshRpcInvokeType, invokeID: "probe"))
     let stale = (router.startToken(of: "probe") ?? 0) + 100
     router.pending = [.endInvoke(invokeID: "probe", token: stale, failed: false, data: "{}", source: "peer")]
@@ -215,27 +215,27 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
     #expect(child.engine.getCurrentState() == .idle)
 }
 
-@Test func theRouterIsToldTheSessionEndedOnceAndNotAgain() {
+@Test func theRouterIsToldTheSessionEndedOnceAndNotAgain() throws {
     let router = RecordingRouter()
     let child = makeChild()
-    makeParent(giving: router).startChildMesh(of: child, invokeID: "w", document: "")
-    child.initialize()
+    try makeParent(giving: router).startChildMesh(of: child, invokeID: "w", document: "")
+    try child.initialize()
     child.detachMesh()
     child.detachMesh()
     #expect(router.detached == 1)
 }
 
-@Test func aChildsOwnChildrenAreGivenTheRouterItsRouterAnswersFor() {
+@Test func aChildsOwnChildrenAreGivenTheRouterItsRouterAnswersFor() throws {
     let router = RecordingRouter()
     let grandRouter = RecordingRouter()
     router.grandchild = grandRouter
     let child = makeChild()
-    makeParent(giving: router).startChildMesh(of: child, invokeID: "w", document: "")
-    child.initialize()
+    try makeParent(giving: router).startChildMesh(of: child, invokeID: "w", document: "")
+    try child.initialize()
 
     let grandchild = makeChild()
     child.engine.startChildMesh(of: grandchild, invokeID: "inner", document: "inner_doc")
-    grandchild.initialize()
+    try grandchild.initialize()
     grandchild.engine.performHostSend(meshSend)
     #expect(router.childrenAsked == ["inner:inner_doc"])
     #expect(grandRouter.sends == [meshSend])

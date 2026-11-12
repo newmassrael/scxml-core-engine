@@ -30,7 +30,7 @@ struct TransitionFunctionView<S: Hashable, E: Hashable> {
 /// configuration, an event delivered by name and run to completion, the ids of the active states,
 /// the final the run ended in, and how many events the engine has discarded.
 struct EngineProbe {
-    var start: () -> Void
+    var start: () throws -> Void
     var send: (String) -> Void
     var active: () -> Set<String>
     var terminal: () -> String?
@@ -68,8 +68,8 @@ func shortestPath<S: Hashable, E: Hashable>(
 /// events.
 func expectEveryPairAgrees<S: Hashable, E: Hashable>(
     _ function: TransitionFunctionView<S, E>, _ engine: EngineProbe
-) -> Int {
-    engine.start()
+) throws -> Int {
+    try engine.start()
     #expect(
         Set(function.configuration(function.initial)) == engine.active(),
         "the machine does not start where the function does")
@@ -82,7 +82,7 @@ func expectEveryPairAgrees<S: Hashable, E: Hashable>(
         }
         for event in function.events {
             let pair = "(\(name), \(function.eventName(event)))"
-            engine.start()
+            try engine.start()
             for taken in path {
                 engine.send(function.eventName(taken))
             }

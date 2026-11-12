@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct SendParamPayload {
-    @Test func sendParamsReachEventDataFromChildAndInternalQueue() {
+    @Test func sendParamsReachEventDataFromChildAndInternalQueue() throws {
         let engine = Engine(policy: SendParamPayloadPolicy())
-        engine.initialize()
+        try engine.initialize()
         _ = tickUntil(engine) { engine.isInFinalState }
 
         let reached = engine.terminalState

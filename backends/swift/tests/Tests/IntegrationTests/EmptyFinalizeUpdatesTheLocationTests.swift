@@ -15,9 +15,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct EmptyFinalizeUpdatesTheLocation {
-    @Test func anEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot() {
+    @Test func anEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot() throws {
         let engine = Engine(policy: EmptyFinalizeUpdatesTheLocationPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // Each phase is settled by a 3 s delayed `<send>`: a child that never answers must reach a
         // verdict rather than hang.

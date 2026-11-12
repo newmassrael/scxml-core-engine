@@ -23,9 +23,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AnOriginIsTheAddressItsSenderPublished {
-    @Test func anOriginIsTheAddressItsSenderPublished() {
+    @Test func anOriginIsTheAddressItsSenderPublished() throws {
         let policy = AnOriginIsTheAddressItsSenderPublishedPolicy()
-        let engine = initializedOnVirtualTime(policy)
+        let engine = try initializedOnVirtualTime(policy)
         _ = driveOnVirtualTime(engine)
 
         #expect(

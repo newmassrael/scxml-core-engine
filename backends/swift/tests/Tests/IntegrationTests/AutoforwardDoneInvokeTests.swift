@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AutoforwardDoneInvoke {
-    @Test func doneInvokeFromASiblingReachesTheAutoforwardChild() {
+    @Test func doneInvokeFromASiblingReachesTheAutoforwardChild() throws {
         let engine = Engine(policy: AutoforwardDoneInvokePolicy())
-        engine.initialize()
+        try engine.initialize()
         _ = tickUntil(engine) { engine.isInFinalState }
 
         #expect(

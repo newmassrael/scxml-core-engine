@@ -12,10 +12,17 @@ import Testing
 // language; the rest hold what no W3C document asks: a guard that mixes In() with an expression, a guard
 // that reads the event being handled, a guard that cannot be evaluated, and the session variables.
 
+/// The machine `policy` describes, started on a manual clock. A start refused for its script session
+/// (docs/adr/0096) is recorded as an issue of the test that asked, which then reads a machine that
+/// was not started.
 private func started<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the machine's start was refused: \(error)")
+    }
     return engine
 }
 

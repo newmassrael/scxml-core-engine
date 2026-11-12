@@ -62,7 +62,7 @@ private func lastOf(_ engine: Engine<StaticSchemaRevisionPolicy>) throws -> Stri
     try policy.setSessionID(root)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternalByName("reading.revised", eventData: #"{"level":4}"#)
     engine.step()
     #expect(try engine.save().toJSON() == fixture("static_schema_revision"))

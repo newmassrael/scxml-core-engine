@@ -29,9 +29,9 @@ import Testing
                 == "the machine sends to #_parent and was started with no parent session")
     }
 
-    @Test func aSendReachesOnlyWhatItsTargetNames() {
+    @Test func aSendReachesOnlyWhatItsTargetNames() throws {
         let policy = ASendReachesOnlyWhatItsTargetNamesPolicy()
-        let engine = initializedOnVirtualTime(policy)
+        let engine = try initializedOnVirtualTime(policy)
         _ = driveOnVirtualTime(engine)
 
         #expect(

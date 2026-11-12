@@ -18,7 +18,7 @@ private func started() -> (StatechartShapeCrossingPolicy, Engine<StatechartShape
     let policy = StatechartShapeCrossingPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

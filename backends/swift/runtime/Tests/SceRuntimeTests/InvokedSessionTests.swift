@@ -27,20 +27,20 @@ private func makeSession(
     #expect(policy.parentEventQueue === queue)
 }
 
-@Test func aSessionTakesAnEventDeliveredByNameWhenItSteps() {
+@Test func aSessionTakesAnEventDeliveredByNameWhenItSteps() throws {
     let (session, _, _) = makeSession()
-    session.initialize()
+    try session.initialize()
     #expect(session.engine.getCurrentState() == .idle)
     session.raiseExternalByName("go", eventData: "")
     session.step()
     #expect(session.engine.getCurrentState() == .busy)
 }
 
-@Test func aSessionThatReachesItsFinalStateSaysSoOnce() {
+@Test func aSessionThatReachesItsFinalStateSaysSoOnce() throws {
     let (session, _, _) = makeSession()
     var completions = 0
     session.setCompletionCallback { completions += 1 }
-    session.initialize()
+    try session.initialize()
     #expect(!session.isInFinalState)
     session.raiseExternalByName("go", eventData: "")
     session.step()
@@ -50,17 +50,17 @@ private func makeSession(
     #expect(completions == 1)
 }
 
-@Test func aSessionReportsTheDonedataItsFinalStateStashed() {
+@Test func aSessionReportsTheDonedataItsFinalStateStashed() throws {
     let (session, _, _) = makeSession()
-    session.initialize()
+    try session.initialize()
     #expect(session.donedataAtFinal.isEmpty)
     session.engine.stashDonedataAtFinal("{\"n\":1}")
     #expect(session.donedataAtFinal == "{\"n\":1}")
 }
 
-@Test func stoppingASessionRunsTheExitOfEveryStateItIsIn() {
+@Test func stoppingASessionRunsTheExitOfEveryStateItIsIn() throws {
     let (session, policy, _) = makeSession()
-    session.initialize()
+    try session.initialize()
     session.raiseExternalByName("go", eventData: "")
     session.step()
     policy.log.removeAll()
@@ -69,8 +69,8 @@ private func makeSession(
     #expect(policy.log == ["exit busy"])
 }
 
-@Test func aSessionAnswersTheDeadlineOfItsOwnScheduler() {
+@Test func aSessionAnswersTheDeadlineOfItsOwnScheduler() throws {
     let (session, _, _) = makeSession()
-    session.initialize()
+    try session.initialize()
     #expect(session.timeUntilNextScheduled() == nil)
 }

@@ -23,8 +23,8 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct InvokePrecedesDequeueMidrun {
-    @Test func pendingInvokesStartBeforeTheDequeueMidRun() {
-        let engine = initializedOnVirtualTime(InvokePrecedesDequeueMidrunPolicy())
+    @Test func pendingInvokesStartBeforeTheDequeueMidRun() throws {
+        let engine = try initializedOnVirtualTime(InvokePrecedesDequeueMidrunPolicy())
         _ = driveOnVirtualTime(engine)
 
         #expect(

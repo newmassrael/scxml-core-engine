@@ -27,7 +27,7 @@ private func started() -> (Hybrid, Engine<Hybrid>) {
     let policy = Hybrid()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

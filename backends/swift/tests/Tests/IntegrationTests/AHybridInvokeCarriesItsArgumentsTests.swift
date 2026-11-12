@@ -21,9 +21,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AHybridInvokeCarriesItsArguments {
-    @Test func eachArgumentReachesOnlyTheChildThatDeclaresIt() {
+    @Test func eachArgumentReachesOnlyTheChildThatDeclaresIt() throws {
         let policy = AHybridInvokeCarriesItsArgumentsPolicy()
-        let engine = initializedOnVirtualTime(policy)
+        let engine = try initializedOnVirtualTime(policy)
         _ = driveOnVirtualTime(engine)
 
         #expect(

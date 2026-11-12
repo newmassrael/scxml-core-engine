@@ -15,9 +15,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct InvokeParamErrorStartsTheChild {
-    @Test func anInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse() {
+    @Test func anInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse() throws {
         let engine = Engine(policy: InvokeParamErrorStartsTheChildPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // The fixture's own `timeout` is a 3 s delayed `<send>`: a channel that terminated the
         // element leaves the machine waiting on a session that was never created, and only the

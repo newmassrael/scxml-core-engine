@@ -39,7 +39,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
 private func started<P: SavedPolicy>(_ policy: P) -> Engine<P> {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     return engine
 }
 

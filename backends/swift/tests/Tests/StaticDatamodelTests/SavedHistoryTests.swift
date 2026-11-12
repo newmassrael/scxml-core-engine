@@ -39,7 +39,7 @@ private func started() throws -> (StaticHistoryPolicy, Engine<StaticHistoryPolic
     try policy.setSessionID(root)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     return (policy, engine)
 }
 

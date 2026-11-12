@@ -16,10 +16,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AncestorEntryIsNotDefaultEntry {
-    @Test func anAncestorEnteredOnTheWayToATargetTakesNoDefaultChild() {
+    @Test func anAncestorEnteredOnTheWayToATargetTakesNoDefaultChild() throws {
         // The fixture counts entries with `<assign>`, so this is an ECMAScript-datamodel machine.
         let engine = Engine(policy: AncestorEntryIsNotDefaultEntryPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // `cross` enters the `<parallel>` itself, so `run` is a parallel ancestor and
         // `drive`/`outer` are compound ones; `back` then `again` repeat the entry with the

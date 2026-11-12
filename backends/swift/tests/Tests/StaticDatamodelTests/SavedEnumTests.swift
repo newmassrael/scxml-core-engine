@@ -29,7 +29,7 @@ private func started() throws -> (StaticEnumPolicy, Engine<StaticEnumPolicy>) {
     try policy.setSessionID(root)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     return (policy, engine)
 }
 

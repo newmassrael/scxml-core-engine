@@ -38,7 +38,7 @@ private func requestingMachine(
     if let router {
         engine.registerMeshRpcInvoker(router.handle)
     }
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

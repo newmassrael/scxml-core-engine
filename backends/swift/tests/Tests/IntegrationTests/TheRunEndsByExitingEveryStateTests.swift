@@ -19,7 +19,7 @@ private func started() -> (
 ) {
     let policy = TheRunEndsByExitingEveryStatePolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     #expect(engine.getCurrentState() == .inner, "the run has to start inside `inner`")
     return (policy, engine)
 }

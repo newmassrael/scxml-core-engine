@@ -16,10 +16,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ABadInvokeArgumentIsReportedOnce {
-    @Test func eachArgumentCostsWhatItsClauseSays() {
+    @Test func eachArgumentCostsWhatItsClauseSays() throws {
         let policy = ABadInvokeArgumentIsReportedOncePolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         for event in [ABadInvokeArgumentIsReportedOnceEvent.go, .finish] {
             engine.processEvent(event)
         }

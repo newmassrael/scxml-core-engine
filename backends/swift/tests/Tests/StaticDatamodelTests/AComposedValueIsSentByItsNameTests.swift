@@ -20,11 +20,11 @@ import Testing
 // type; it is not, and every value read from it at depths 1 to 3 is what the first
 // delivery held.
 
-@Test func aDeliveryForwardedByItsNamesComesBackWhole() {
+@Test func aDeliveryForwardedByItsNamesComesBackWhole() throws {
     let policy = StaticComposedSendPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     // Every list full, the second item's `tags` holding three, an element of `maybe`
     // absent and `spare` present (`composedBatch`, AComposedPayloadIsReadAtAnyDepthTests).
     engine.raiseExternalByName("batch.sent", eventData: composedBatch(4, 3, 4))

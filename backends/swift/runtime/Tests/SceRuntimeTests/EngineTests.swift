@@ -10,18 +10,18 @@ import Testing
 
 // MARK: - Macrostep and queues
 
-@Test func anEntryThatRaisesAnEventIsTakenInTheSameMacrostep() {
+@Test func anEntryThatRaisesAnEventIsTakenInTheSameMacrostep() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.onEntry[.idle] = { $0.raise(EventWithMetadata(.go)) }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .busy)]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.getCurrentState() == .busy)
     #expect(policy.log == ["enter idle", "exit idle", "enter busy"])
     #expect(engine.isRunning)
 }
 
-@Test func anInternalEventIsTakenBeforeAnExternalOneThatWasQueuedFirst() {
+@Test func anInternalEventIsTakenBeforeAnExternalOneThatWasQueuedFirst() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.onEntry[.idle] = { $0.raise(EventWithMetadata(.ping)) }
         policy.transitions[.idle] = [
@@ -30,17 +30,17 @@ import Testing
         ]
     }
     engine.raiseExternal(.go)
-    engine.initialize()
+    try engine.initialize()
     // §scxml-C-1: the internal ping runs its targetless transition first; only then
     // is the external go taken.
     #expect(policy.log == ["enter idle", "content idle#1", "exit idle", "enter busy"])
 }
 
-@Test func aTargetlessTransitionRunsItsContentAndLeavesTheConfigurationAlone() {
+@Test func aTargetlessTransitionRunsItsContentAndLeavesTheConfigurationAlone() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .ping, target: nil, content: { _ in })]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.ping)
     #expect(engine.getCurrentState() == .idle)
     #expect(policy.log == ["enter idle", "content idle#0"])
@@ -48,20 +48,20 @@ import Testing
     #expect(engine.discardedExternalEvents == 0)
 }
 
-@Test func anEventNoTransitionMatchesIsDiscardedAndCounted() {
+@Test func anEventNoTransitionMatchesIsDiscardedAndCounted() throws {
     let (engine, _, _) = makeEngine { _ in }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.ping)
     engine.processEvent(.again)
     #expect(engine.discardedExternalEvents == 2)
     #expect(engine.lastDiscardedEvent == .again)
 }
 
-@Test func anEventHandedToAMachineThatHasEndedIsCountedAsUnseen() {
+@Test func anEventHandedToAMachineThatHasEndedIsCountedAsUnseen() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.go)
     #expect(engine.isInFinalState)
     #expect(engine.terminalState == .done)
@@ -72,11 +72,11 @@ import Testing
     #expect(engine.discardedExternalEvents == 0)
 }
 
-@Test func eventsQueuedWhenTheRunEndsAreCountedOnceAndDrained() {
+@Test func eventsQueuedWhenTheRunEndsAreCountedOnceAndDrained() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternal(.go)
     engine.raiseExternal(.ping)
     engine.raiseExternal(.again)
@@ -88,22 +88,22 @@ import Testing
     #expect(engine.unseenExternalEvents == 2)
 }
 
-@Test func theCompletionCallbackFiresWhenTheRunEntersATopLevelFinal() {
+@Test func theCompletionCallbackFiresWhenTheRunEntersATopLevelFinal() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }
     var completions = 0
     engine.setCompletionCallback { completions += 1 }
-    engine.initialize()
+    try engine.initialize()
     #expect(completions == 0)
     engine.processEvent(.go)
     #expect(completions == 1)
     #expect(engine.getActiveStates().isEmpty, "§scxml-D-exitInterpreter leaves the configuration empty")
 }
 
-@Test func aStoppedMachineExitsEveryStateItWasInAndTakesNoMoreEvents() {
+@Test func aStoppedMachineExitsEveryStateItWasInAndTakesNoMoreEvents() throws {
     let (engine, policy, _) = makeEngine { _ in }
-    engine.initialize()
+    try engine.initialize()
     engine.stop()
     #expect(policy.log == ["enter idle", "exit idle"])
     #expect(!engine.isRunning)
@@ -115,22 +115,22 @@ import Testing
     #expect(policy.log == ["enter idle", "exit idle"])
 }
 
-@Test func eventlessTransitionsAreTakenAfterEveryMicrostep() {
+@Test func eventlessTransitionsAreTakenAfterEveryMicrostep() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .null, target: .busy)]
         policy.transitions[.busy] = [FlatTransition(event: .null, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.getCurrentState() == .done)
     #expect(engine.isInFinalState)
 }
 
-@Test func aGuardThatIsFalseLeavesTheTransitionUntaken() {
+@Test func aGuardThatIsFalseLeavesTheTransitionUntaken() throws {
     var open = false
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .busy, guardHolds: { open })]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.processEvent(.go)
     #expect(engine.getCurrentState() == .idle)
     open = true
@@ -140,7 +140,7 @@ import Testing
 
 // MARK: - The ceilings
 
-@Test func aCyclicEventlessChainIsStoppedAndCountedAndTheMachineStaysReachable() {
+@Test func aCyclicEventlessChainIsStoppedAndCountedAndTheMachineStaysReachable() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.transitions[.idle] = [
             FlatTransition(event: .null, target: .busy),
@@ -148,7 +148,7 @@ import Testing
         ]
         policy.transitions[.busy] = [FlatTransition(event: .null, target: .idle)]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.truncatedMacrosteps == 1)
     #expect(engine.lastTruncatedMacrostepState != nil)
     #expect(engine.isRunning)
@@ -160,7 +160,7 @@ import Testing
     #expect(engine.truncatedMacrosteps >= 1)
 }
 
-@Test func aRaiseThatAnswersItselfIsStoppedAtTheMicrostepCeiling() {
+@Test func aRaiseThatAnswersItselfIsStoppedAtTheMicrostepCeiling() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.idle] = { $0.raise(EventWithMetadata(.again)) }
         policy.transitions[.idle] = [
@@ -171,7 +171,7 @@ import Testing
             )
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.truncatedMacrosteps == 1)
     #expect(engine.isRunning)
 }
@@ -187,7 +187,7 @@ import Testing
         ]
     }
     try engine.setMaxExternalEventsPerCall(5)
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternal(.again)
     engine.step()
     #expect(engine.truncatedEventChains == 1)
@@ -208,7 +208,7 @@ import Testing
     #expect(engine.maxExternalEventsPerCall == 7)
 }
 
-@Test func anErrorHandlerThatKeepsFailingTheSameWayIsCutAtTheCascadeCeiling() {
+@Test func anErrorHandlerThatKeepsFailingTheSameWayIsCutAtTheCascadeCeiling() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.raise(
@@ -225,7 +225,7 @@ import Testing
             )
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.errorCascadeEvents >= 1)
     #expect(engine.lastErrorCascadeEvent == .errorExecution)
     // The chain stopped at the cascade ceiling and not at the microstep one.
@@ -233,20 +233,20 @@ import Testing
     #expect(policy.log.count < 400)
 }
 
-@Test func anErrorNoTransitionAnswersIsCountedAsUnhandled() {
+@Test func anErrorNoTransitionAnswersIsCountedAsUnhandled() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.idle] = { $0.raise(.platformError(.errorCommunication, message: "nobody there")) }
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.unhandledErrorEvents == 1)
     #expect(engine.lastUnhandledError == .errorCommunication)
 }
 
-@Test func aRaisedEventThatMatchesNothingIsTheDocumentsOwnBusinessAndIsNotCounted() {
+@Test func aRaisedEventThatMatchesNothingIsTheDocumentsOwnBusinessAndIsNotCounted() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.idle] = { $0.raise(EventWithMetadata(.ping)) }
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.unhandledErrorEvents == 0)
     #expect(engine.discardedExternalEvents == 0)
 }
@@ -285,11 +285,11 @@ import Testing
     #expect(engine.arrivingEvent(name: "unknown.name", metadata: EventMetadata())?.event == .wildcard)
 }
 
-@Test func anExternalEventByNameCarriesTheNameItArrivedUnder() {
+@Test func anExternalEventByNameCarriesTheNameItArrivedUnder() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .requestNew, target: nil, content: { _ in })]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternalByName("request.new.later", eventData: "{}")
     engine.step()
     #expect(policy.log.last == "content idle#0")
@@ -297,14 +297,14 @@ import Testing
 
 // MARK: - The scheduler
 
-@Test func aDelayedSendComesDueWhenTheHostMovesTheClockPastIt() {
+@Test func aDelayedSendComesDueWhenTheHostMovesTheClockPastIt() throws {
     let (engine, policy, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.scheduleEvent(.go, delay: .milliseconds(100), sendID: "s1", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .busy)]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.timeUntilNextScheduled() == .milliseconds(100))
     engine.advanceTimeMs(99)
     #expect(engine.getCurrentState() == .idle)
@@ -316,7 +316,7 @@ import Testing
     #expect(policy.log.last == "enter busy")
 }
 
-@Test func aCancelledSendIsNeverDelivered() {
+@Test func aCancelledSendIsNeverDelivered() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.scheduleEvent(.go, delay: .milliseconds(50), sendID: "late", eventData: "", sender: "")
@@ -326,14 +326,14 @@ import Testing
             FlatTransition(event: .ping, target: nil, content: { _ in _ = 0 }),
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.cancelEvent(sendID: "late"))
     #expect(!engine.cancelEvent(sendID: "late"))
     engine.advanceTimeMs(1000)
     #expect(engine.getCurrentState() == .idle)
 }
 
-@Test func twoSendsArmedByOneEntryShareOneInstantAndFireInDeadlineOrder() {
+@Test func twoSendsArmedByOneEntryShareOneInstantAndFireInDeadlineOrder() throws {
     let (engine, policy, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.scheduleEvent(.ping, delay: .milliseconds(20), sendID: "second", eventData: "", sender: "")
@@ -344,26 +344,26 @@ import Testing
             FlatTransition(event: .ping, target: nil, content: { _ in }),
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     clock.advance(50)
     engine.tick()
     // Earliest deadline first, one macrostep apart.
     #expect(policy.log.suffix(2) == ["content idle#0", "content idle#1"])
 }
 
-@Test func aSendWithNoIdIsGivenOneThatCanBeCancelled() {
+@Test func aSendWithNoIdIsGivenOneThatCanBeCancelled() throws {
     let (engine, _, _) = makeEngine { _ in }
-    engine.initialize()
+    try engine.initialize()
     let id = engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "", eventData: "", sender: "")
     #expect(id == "auto_send_1")
     #expect(engine.cancelEvent(sendID: id))
 }
 
-@Test func aDelayedSendKeepsTheSenderAndTheNameItWasSentUnder() {
+@Test func aDelayedSendKeepsTheSenderAndTheNameItWasSentUnder() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .request, target: nil, content: { _ in })]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.sendNamedExternal(
         "request.later",
         delay: .milliseconds(10),
@@ -394,11 +394,11 @@ import Testing
 
 // MARK: - Sends to a target value
 
-@Test func aSendToTheMachinesOwnExternalQueueIsDeliveredAndATargetNoOneCanAddressIsReported() {
+@Test func aSendToTheMachinesOwnExternalQueueIsDeliveredAndATargetNoOneCanAddressIsReported() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .busy)]
     }
-    engine.initialize()
+    try engine.initialize()
     let sent = engine.sendToTarget(
         event: .go,
         eventName: "go",
@@ -434,11 +434,11 @@ import Testing
     _ = policy
 }
 
-@Test func aSendToTheParentReachesItOnlyWhereThereIsOne() {
+@Test func aSendToTheParentReachesItOnlyWhereThereIsOne() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.hasParent = true
     }
-    engine.initialize()
+    try engine.initialize()
     let outcome = engine.sendToTarget(
         event: nil,
         eventName: "done.child",
@@ -454,12 +454,12 @@ import Testing
     #expect(policy.parentDeliveries.map(\.data) == ["{}"])
 }
 
-@Test func aSendToARunningInvocationOrChildSessionIsDeliveredAndTheChildrenSettled() {
+@Test func aSendToARunningInvocationOrChildSessionIsDeliveredAndTheChildrenSettled() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.invocationsRunning = ["worker"]
         policy.sessionsRunning = ["kid"]
     }
-    engine.initialize()
+    try engine.initialize()
     func send(_ target: String) -> TargetSendOutcome {
         engine.sendToTarget(
             event: nil,
@@ -479,14 +479,14 @@ import Testing
     #expect(policy.settledChildren == 2)
 }
 
-@Test func aDelayedSendToAnInvocationThatEndedInTheMeantimeIsReportedWhenItComesDue() {
+@Test func aDelayedSendToAnInvocationThatEndedInTheMeantimeIsReportedWhenItComesDue() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.invocationsRunning = ["worker"]
         policy.transitions[.idle] = [
             FlatTransition(event: .errorCommunication, target: .busy)
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     let outcome = engine.sendToTarget(
         event: nil,
         eventName: "tell",
@@ -505,14 +505,14 @@ import Testing
     #expect(engine.getCurrentState() == .busy)
 }
 
-@Test func aSendToTheInternalQueueIsAnInternalEventAndKeepsItsPlaceAheadOfTheExternalQueue() {
+@Test func aSendToTheInternalQueueIsAnInternalEventAndKeepsItsPlaceAheadOfTheExternalQueue() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [
             FlatTransition(event: .go, target: nil, content: { _ in }),
             FlatTransition(event: .ping, target: nil, content: { _ in }),
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternal(.ping)
     let outcome = engine.sendToTarget(
         event: .go,
@@ -531,13 +531,13 @@ import Testing
 
 // MARK: - Late binding, the root's refusal
 
-@Test func aStatesDataIsBoundOnItsFirstEntryOfARunAndNeverAgain() {
+@Test func aStatesDataIsBoundOnItsFirstEntryOfARunAndNeverAgain() throws {
     let (engine, _, _) = makeEngine { _ in }
     #expect(engine.claimLateBindingFirstEntry(.busy))
     #expect(!engine.claimLateBindingFirstEntry(.busy))
     #expect(engine.claimLateBindingFirstEntry(.idle))
     // A new run binds again.
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.claimLateBindingFirstEntry(.busy))
 }
 
@@ -610,7 +610,7 @@ private final class ParentNeedingPolicy {}
     #expect(engine.lastUndecodablePayload == .ping)
 }
 
-@Test func anHttpSendIsHandedToTheCallbackAndItsResponseBecomesAnExternalEvent() {
+@Test func anHttpSendIsHandedToTheCallbackAndItsResponseBecomesAnExternalEvent() throws {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .requestNew, target: nil, content: { _ in })]
     }
@@ -619,7 +619,7 @@ private final class ParentNeedingPolicy {}
         seen.append(request)
         return HttpSendResponse(eventName: "request.new", eventData: "answer")
     }
-    engine.initialize()
+    try engine.initialize()
     engine.performHTTPSend(
         target: "http://localhost/x",
         eventName: "go",
@@ -637,14 +637,14 @@ private final class ParentNeedingPolicy {}
     engine.performHTTPSend(target: "http://localhost/x", eventName: "go", content: "", params: [:], sendID: "")
 }
 
-@Test func aDelayedHttpSendIsPostedWhenItsDelayIsOverAndAnEarlierCancelDropsIt() {
+@Test func aDelayedHttpSendIsPostedWhenItsDelayIsOverAndAnEarlierCancelDropsIt() throws {
     let (engine, _, clock) = makeEngine { _ in }
     var seen: [HttpSendRequest] = []
     engine.setHTTPSendCallback { request in
         seen.append(request)
         return nil
     }
-    engine.initialize()
+    try engine.initialize()
 
     // A wait of zero is no deferral: the request is made before the call returns.
     engine.scheduleHTTPSend(
@@ -674,25 +674,25 @@ private final class ParentNeedingPolicy {}
 
 // MARK: - The donedata stash
 
-@Test func theDonedataAFinalStashedIsWhatAParentReadsBack() {
+@Test func theDonedataAFinalStashedIsWhatAParentReadsBack() throws {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.done] = { $0.stashDonedataAtFinal(#"{"k":1}"#) }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.donedataAtFinal == "")
     engine.processEvent(.go)
     #expect(engine.donedataAtFinal == #"{"k":1}"#)
 }
 
-@Test func theMachineRunsUntilCompletionWhenAScheduledEventEndsIt() {
+@Test func theMachineRunsUntilCompletionWhenAScheduledEventEndsIt() throws {
     let (engine, _, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "end", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }
-    engine.initialize()
+    try engine.initialize()
     clock.advance(5)
     #expect(engine.runUntilCompletion(timeout: .seconds(5), pollInterval: .milliseconds(1)))
     #expect(engine.isInFinalState)

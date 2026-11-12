@@ -20,7 +20,7 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ADelayedHttpSendIsPostedWhenDue {
-    @Test func aDelayedHttpSendIsPostedWhenDue() {
+    @Test func aDelayedHttpSendIsPostedWhenDue() throws {
         let engine = Engine(policy: ADelayedHttpSendIsPostedWhenDuePolicy())
         var posted: [HttpSendRequest] = []
         engine.setHTTPSendCallback { request in
@@ -28,7 +28,7 @@ import Testing
             return nil
         }
         engine.setClock(ManualClock())
-        engine.initialize()
+        try engine.initialize()
         engine.tick()
 
         // A zero wait, written or evaluated, is no deferral: the POST is made before

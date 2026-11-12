@@ -15,10 +15,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct APayloadRidesOnItsOwnEvent {
-    @Test func eachPayloadArrivesOnItsOwnEvent() {
+    @Test func eachPayloadArrivesOnItsOwnEvent() throws {
         let policy = APayloadRidesOnItsOwnEventPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         engine.processEvent(.finish)
 
         let seen =

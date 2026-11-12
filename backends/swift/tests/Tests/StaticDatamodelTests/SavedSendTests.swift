@@ -37,7 +37,7 @@ private func startedTimers() throws -> (StaticTimersPolicy, Engine<StaticTimersP
     let engine = Engine(policy: policy)
     let clock = ManualClock()
     engine.setClock(clock)
-    engine.initialize()
+    try engine.initialize()
     return (policy, engine, clock)
 }
 
@@ -140,7 +140,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     try policy.setSessionID(root)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     engine.raiseExternalByName("arm")
     engine.step()
     let text = try engine.save(wallNowMs: startedAt).toJSON()

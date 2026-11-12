@@ -16,10 +16,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ABadSendParamEndsItsBlock {
-    @Test func theMessageGoesAndTheBlockStops() {
+    @Test func theMessageGoesAndTheBlockStops() throws {
         let policy = ABadSendParamEndsItsBlockPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         engine.processEvent(.finish)
 
         // errors: each unreadable <param> raises one error.execution; partials: both internal sends

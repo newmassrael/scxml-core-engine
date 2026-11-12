@@ -39,7 +39,7 @@ private final class Starts {
             }
             return nil
         }
-        engine.initialize()
+        try engine.initialize()
         engine.tick()
         let token = try #require(starts.tokens.first, "the host was not asked to run `job`")
         #expect(starts.tokens.count == 1, "the host was asked to run `job` \(starts.tokens.count) times")

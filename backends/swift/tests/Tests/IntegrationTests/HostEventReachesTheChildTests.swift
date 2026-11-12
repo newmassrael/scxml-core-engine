@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct HostEventReachesTheChild {
-    @Test func anEventTheHostHandsOverReachesTheAutoforwardChild() {
+    @Test func anEventTheHostHandsOverReachesTheAutoforwardChild() throws {
         let engine = Engine(policy: HostEventReachesTheChildPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // The child opens the exchange, so let its `ready` move the parent into `armed`: the one
         // state that can be handed an event from outside.

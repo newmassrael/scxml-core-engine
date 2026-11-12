@@ -286,9 +286,9 @@ private final class LinearPolicy: HistorylessPolicy {
 
 // MARK: - Acceptance 1: the round trip closes, through both code paths
 
-@Test func aParallelConfigurationRoundTripsThroughANewEngine() {
+@Test func aParallelConfigurationRoundTripsThroughANewEngine() throws {
     let ran = Engine(policy: ParallelPolicy())
-    ran.initialize()
+    try ran.initialize()
 
     // What a host would persist: both readers.
     let savedConfiguration = ran.getActiveStates()
@@ -307,9 +307,9 @@ private final class LinearPolicy: HistorylessPolicy {
     #expect(restored.isRunning)
 }
 
-@Test func aLinearConfigurationRoundTripsWithoutAPolicyActiveSet() {
+@Test func aLinearConfigurationRoundTripsWithoutAPolicyActiveSet() throws {
     let ran = Engine(policy: LinearPolicy())
-    ran.initialize()
+    try ran.initialize()
 
     let savedConfiguration = ran.getActiveStates()
     let savedCurrent = ran.getCurrentState()
@@ -347,13 +347,13 @@ private final class LinearPolicy: HistorylessPolicy {
     #expect(engine.getActiveStates() == configuration)
 }
 
-@Test func initializeByContrastDoesRunThem() {
+@Test func initializeByContrastDoesRunThem() throws {
     // The control: the same document through the other door moves, because the
     // entry actions are exactly what `initialize` is for. Without this the test above
     // could pass on a machine that simply cannot move.
     let policy = ParallelPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    try engine.initialize()
     #expect(policy.entries > 0)
     #expect(engine.getCurrentState() == .a2)
 }
@@ -411,7 +411,7 @@ private final class LinearPolicy: HistorylessPolicy {
     #expect(engine.enterAt(configuration: [.p, .ra, .a1, .rb, .b1], current: .p) == .currentNotAtomic)
 }
 
-@Test func aRefusedEntryLeavesTheEngineUntouched() {
+@Test func aRefusedEntryLeavesTheEngineUntouched() throws {
     // The property that makes a rejection safe to handle: the host can try a stale
     // record, be told no, and still hold an engine it can initialize.
     let policy = ParallelPolicy()
@@ -422,7 +422,7 @@ private final class LinearPolicy: HistorylessPolicy {
     #expect(!engine.isRunning)
     #expect(policy.entries == 0)
 
-    engine.initialize()
+    try engine.initialize()
     #expect(engine.getCurrentState() == .a2)
 }
 
@@ -430,6 +430,7 @@ private final class LinearPolicy: HistorylessPolicy {
     let reasons: [ConfigurationRejection] = [
         .empty, .duplicate, .ancestorMissing, .rootCount, .compoundChildCount, .parallelRegionMissing,
         .parallelChildCount, .atomicHasChildren, .currentNotActive, .currentNotAtomic,
+        .scriptSessionUnavailable(ScriptSessionFailure(stage: .create, message: "no memory")),
     ]
     let words = reasons.map(\.description)
     #expect(Set(words).count == words.count, "two rules share a sentence")

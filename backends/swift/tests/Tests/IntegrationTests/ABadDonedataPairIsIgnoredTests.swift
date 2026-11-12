@@ -16,12 +16,12 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ABadDonedataPairIsIgnored {
-    @Test func theBadPairsAreDroppedAndTheDoneEventsStillArrive() {
+    @Test func theBadPairsAreDroppedAndTheDoneEventsStillArrive() throws {
         // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine. The run
         // needs nothing from the host.
         let policy = ABadDonedataPairIsIgnoredPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
 
         let seen =
             "errors=\(String(describing: policy.readScriptValue("errors"))) "

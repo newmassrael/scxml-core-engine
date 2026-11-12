@@ -149,6 +149,18 @@ func hostCall(_ action: String, _ args: [JSONValue] = []) -> JSONValue {
 /// backends' suites give a machine.
 private let settleTicks = 5
 
+/// Starts `engine`, and records a start that was refused as an issue of the test that drives it. A
+/// machine of these scenarios runs no script engine, so its start has no script session to fail
+/// (docs/adr/0096) and the issue is never recorded; the replay goes on over the machine that was
+/// not started, whose every step then reads as the scenario's failure too.
+func startRecordingARefusal<Policy: StatePolicy>(_ engine: Engine<Policy>) {
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the start of a machine that runs no script engine was refused: \(error)")
+    }
+}
+
 /// Starts `policy` on a manual clock and returns it as a machine. `hostCalls` is how a
 /// machine whose host records reads what it was asked ([`Machine.hostCalls`]).
 func drive<Policy: StatePolicy>(
@@ -157,7 +169,7 @@ func drive<Policy: StatePolicy>(
     hostCalls: (() -> [JSONValue])? = nil,
     childHosts: (() -> [JSONValue])? = nil,
     peers: PeerRecorder? = nil,
-    start: (Engine<Policy>) -> Void = { $0.initialize() }
+    start: (Engine<Policy>) -> Void = { startRecordingARefusal($0) }
 ) -> Machine {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
@@ -525,7 +537,7 @@ func driveSaved<Policy: SavedPolicy>(
         start: { engine in
             held = engine
             guard let saved else {
-                engine.initialize()
+                startRecordingARefusal(engine)
                 return
             }
             do {

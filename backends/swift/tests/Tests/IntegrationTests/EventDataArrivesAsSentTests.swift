@@ -15,10 +15,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct EventDataArrivesAsSent {
-    @Test func aHostsJsonPayloadIsAddressableAndItsTextStaysText() {
+    @Test func aHostsJsonPayloadIsAddressableAndItsTextStaysText() throws {
         // The fixture reads `_event.data` in its guards, so this is an ECMAScript-datamodel machine.
         let engine = Engine(policy: EventDataArrivesAsSentPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         // A JSON object, the shape an embedder has when it holds structured data and a state
         // machine to give it to.

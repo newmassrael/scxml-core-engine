@@ -39,7 +39,7 @@ private func makeHostSendEngine() throws -> (Engine<ScriptedPolicy>, RecordingPr
     }
     let processor = RecordingProcessor()
     try engine.registerEventProcessor("x-host-test", handler: processor.handle)
-    engine.initialize()
+    try engine.initialize()
     return (engine, processor, clock)
 }
 
@@ -103,7 +103,7 @@ private final class ErrorSeen {
 
 /// A machine whose `error.execution` from `idle` records what the event carries, and no processor
 /// registered: every host send it is handed is an act nobody performs.
-private func makeErrorRecordingEngine() -> (Engine<ScriptedPolicy>, ErrorSeen, ManualClock) {
+private func makeErrorRecordingEngine() throws -> (Engine<ScriptedPolicy>, ErrorSeen, ManualClock) {
     let seen = ErrorSeen()
     let (engine, _, clock) = makeEngine { policy in
         policy.transitions[.idle] = [
@@ -115,14 +115,14 @@ private func makeErrorRecordingEngine() -> (Engine<ScriptedPolicy>, ErrorSeen, M
                 }),
         ]
     }
-    engine.initialize()
+    try engine.initialize()
     return (engine, seen, clock)
 }
 
 /// §scxml-6.2.4 + §scxml-5.10 (test 332): the error a send to a type nobody registered raises names
 /// that send by its id, as every other backend's does, and says what failed in the sentence they use.
-@Test func theErrorOfASendNobodyServesCarriesItsSendID() {
-    let (engine, seen, _) = makeErrorRecordingEngine()
+@Test func theErrorOfASendNobodyServesCarriesItsSendID() throws {
+    let (engine, seen, _) = try makeErrorRecordingEngine()
     engine.performHostSend(request("x-unregistered", sendID: "__send_3"))
     engine.tick()
     #expect(engine.getCurrentState() == .busy)
@@ -132,8 +132,8 @@ private func makeErrorRecordingEngine() -> (Engine<ScriptedPolicy>, ErrorSeen, M
 
 /// The same error for a delayed send, raised when its wait is over: the request the scheduler holds
 /// is the one the send made, its id included.
-@Test func theErrorOfADelayedSendNobodyServesCarriesItsSendID() {
-    let (engine, seen, clock) = makeErrorRecordingEngine()
+@Test func theErrorOfADelayedSendNobodyServesCarriesItsSendID() throws {
+    let (engine, seen, clock) = try makeErrorRecordingEngine()
     engine.scheduleHostSend(
         delay: .milliseconds(100), request: request("x-unregistered", sendID: "late"), sender: "o")
     engine.tick()

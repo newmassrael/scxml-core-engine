@@ -16,10 +16,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AnErrorInsideAForeachEndsItsBlock {
-    @Test func theErrorEndsTheBlockAndIsTheOnlyOne() {
+    @Test func theErrorEndsTheBlockAndIsTheOnlyOne() throws {
         let policy = AnErrorInsideAForeachEndsItsBlockPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         for event in [AnErrorInsideAForeachEndsItsBlockEvent.go, .t, .finish] {
             engine.processEvent(event)
         }

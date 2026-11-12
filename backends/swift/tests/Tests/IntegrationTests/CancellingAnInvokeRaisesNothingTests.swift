@@ -15,10 +15,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct CancellingAnInvokeRaisesNothing {
-    @Test func leavingTheInvokingStateRaisesNoCancelEvent() {
+    @Test func leavingTheInvokingStateRaisesNoCancelEvent() throws {
         let policy = CancellingAnInvokeRaisesNothingPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         #expect(
             engine.getCurrentState() == .p, "the run has to start in `p`, with its child invoked")
 

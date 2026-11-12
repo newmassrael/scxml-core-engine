@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct EventDescriptorSpellingsAgree {
-    @Test func everySpellingOfOneDescriptorCatchesTheSameEvents() {
+    @Test func everySpellingOfOneDescriptorCatchesTheSameEvents() throws {
         let engine = Engine(policy: EventDescriptorSpellingsAgreePolicy())
-        engine.initialize()
+        try engine.initialize()
         // The machine raises its own events, so it is finished by the ticks: the run is let go on
         // for as long as the other backends give a `simple` fixture.
         _ = engine.runUntilCompletion(timeout: .seconds(3), pollInterval: .milliseconds(10))

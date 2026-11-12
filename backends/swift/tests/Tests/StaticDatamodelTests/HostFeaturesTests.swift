@@ -327,7 +327,7 @@ private func replayHost<Policy: StatePolicy>(
         fail("the reference host could not be registered: \(error)", sourceLocation)
         return
     }
-    engine.initialize()
+    try engine.initialize()
     // `tick` and not `step`: it takes what has come due in the scheduler, which is where
     // the end of an invocation's time waits.
     engine.tick()
@@ -561,7 +561,7 @@ private func runSequence(_ table: JSONValue, _ classes: [JSONValue], _ sequence:
         fail("the reference host could not be registered: \(error)", at)
         return
     }
-    engine.initialize()
+    try engine.initialize()
     engine.tick()
     guard case .text(let event)? = table.member("ask")?.member("event"),
         let data = table.member("ask")?.member("data"),
@@ -819,7 +819,7 @@ private func runHarness(_ table: JSONValue, _ classes: [JSONValue], _ sequence: 
         fail("the reference host could not be registered: \(error)", at)
         return nil
     }
-    engine.initialize()
+    try engine.initialize()
     settleHarness(engine)
     for id in offered {
         let offer = writeJSON(.object([(key: "id", value: id)]))

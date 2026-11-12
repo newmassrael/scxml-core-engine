@@ -41,7 +41,7 @@ private func started() throws -> (StaticInvokePolicy, Engine<StaticInvokePolicy>
     try policy.setSessionID(root)
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     return (policy, engine)
 }
 

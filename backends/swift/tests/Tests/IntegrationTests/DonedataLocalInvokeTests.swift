@@ -15,9 +15,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct DonedataLocalInvoke {
-    @Test func parentObservesDonedataOnDoneInvoke() {
+    @Test func parentObservesDonedataOnDoneInvoke() throws {
         let engine = Engine(policy: DonedataLocalInvokePolicy())
-        engine.initialize()
+        try engine.initialize()
         _ = tickUntil(engine) { engine.isInFinalState }
 
         #expect(

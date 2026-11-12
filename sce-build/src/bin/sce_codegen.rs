@@ -11509,9 +11509,9 @@ impl W3cBackend for SwiftBackend {
              \n\
              // W3C SCXML {specnum}: {description}\n\
              @Test(\"W3C {test_id} settles in its {pass_state} state\")\n\
-             func w3c_{test_id}() {{\n\
+             func w3c_{test_id}() throws {{\n\
              \x20   let policy = {machine_name}Policy()\n\
-             \x20   let run = w3cSettled(policy)\n\
+             \x20   let run = try w3cSettled(policy)\n\
              \x20   #expect(run.completed, \"W3C {test_id} did not run to a final state\")\n\
              \x20   #expect(\n\
              \x20       w3cIsState(policy.getStateName(run.engine.getCurrentState()), named: \"{pass_state}\"),\n\

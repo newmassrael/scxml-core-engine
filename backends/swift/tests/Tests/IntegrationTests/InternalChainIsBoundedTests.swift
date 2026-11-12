@@ -30,7 +30,7 @@ private func started() -> (
 ) {
     let policy = InternalChainIsBoundedPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

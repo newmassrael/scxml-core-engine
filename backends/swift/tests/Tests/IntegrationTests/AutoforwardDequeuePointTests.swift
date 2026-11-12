@@ -14,9 +14,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AutoforwardDequeuePoint {
-    @Test func anExternalEventIsForwardedAtTheDequeueNotTheEnqueue() {
+    @Test func anExternalEventIsForwardedAtTheDequeueNotTheEnqueue() throws {
         let engine = Engine(policy: AutoforwardDequeuePointPolicy())
-        engine.initialize()
+        try engine.initialize()
         _ = tickUntil(engine) { engine.isInFinalState }
 
         #expect(

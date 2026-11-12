@@ -10,10 +10,10 @@ import SceRuntime
 
 /// The run every other backend gives a `simple` fixture: start the machine and let it tick, for at
 /// most three seconds, until it reaches a final state. A machine that starts a child session or
-/// sends to itself is only finished by the ticks.
-func w3cSettled<Policy: StatePolicy>(_ policy: Policy) -> (engine: Engine<Policy>, completed: Bool) {
+/// sends to itself is only finished by the ticks. Throws what refused the start (docs/adr/0096).
+func w3cSettled<Policy: StatePolicy>(_ policy: Policy) throws -> (engine: Engine<Policy>, completed: Bool) {
     let engine = Engine(policy: policy)
-    engine.initialize()
+    try engine.initialize()
     let completed = engine.runUntilCompletion(timeout: .seconds(3), pollInterval: .milliseconds(10))
     return (engine, completed)
 }

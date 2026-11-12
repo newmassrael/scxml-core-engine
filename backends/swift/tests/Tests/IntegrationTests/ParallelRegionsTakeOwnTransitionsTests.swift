@@ -15,10 +15,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ParallelRegionsTakeOwnTransitions {
-    @Test func everyRegionTakesItsOwnTransition() {
+    @Test func everyRegionTakesItsOwnTransition() throws {
         // The fixture's `<assign>`s make this an ECMAScript-datamodel machine.
         let engine = Engine(policy: ParallelRegionsTakeOwnTransitionsPolicy())
-        engine.initialize()
+        try engine.initialize()
 
         engine.processEvent(.e)
         engine.processEvent(.check)

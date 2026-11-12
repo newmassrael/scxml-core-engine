@@ -41,11 +41,23 @@ func tickUntil<Policy: StatePolicy>(
     return true
 }
 
-/// Starts a machine on a manual clock, so the drive below owns every instant the run sees.
-func initializedOnVirtualTime<Policy: StatePolicy>(_ policy: Policy) -> Engine<Policy> {
+/// Starts `engine` for a helper that hands a started machine to several tests, and records a start
+/// that was refused (docs/adr/0096) as an issue of the test that asked for it: what the test then
+/// reads of a machine that was not started fails it too.
+func startRecordingARefusal<Policy: StatePolicy>(_ engine: Engine<Policy>) {
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the machine's start was refused: \(error)")
+    }
+}
+
+/// Starts a machine on a manual clock, so the drive below owns every instant the run sees. Throws
+/// what refused the start (docs/adr/0096).
+func initializedOnVirtualTime<Policy: StatePolicy>(_ policy: Policy) throws -> Engine<Policy> {
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    try engine.initialize()
     return engine
 }
 

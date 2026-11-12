@@ -16,10 +16,10 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AnInvokeLeftBeforeItStartsRaisesNothing {
-    @Test func theLeftStatesInvokeIsNeverAttempted() {
+    @Test func theLeftStatesInvokeIsNeverAttempted() throws {
         let policy = AnInvokeLeftBeforeItStartsRaisesNothingPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         #expect(
             engine.getCurrentState() == .s1,
             "`s0` leaves on an eventless transition within the first macrostep")

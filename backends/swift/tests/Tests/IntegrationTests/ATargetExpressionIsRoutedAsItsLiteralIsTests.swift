@@ -16,9 +16,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct ATargetExpressionIsRoutedAsItsLiteralIs {
-    @Test func aTargetExpressionIsRoutedAsItsLiteralIs() {
+    @Test func aTargetExpressionIsRoutedAsItsLiteralIs() throws {
         let policy = ATargetExpressionIsRoutedAsItsLiteralIsPolicy()
-        let engine = initializedOnVirtualTime(policy)
+        let engine = try initializedOnVirtualTime(policy)
         _ = driveOnVirtualTime(engine, budgetMs: 3000)
 
         #expect(

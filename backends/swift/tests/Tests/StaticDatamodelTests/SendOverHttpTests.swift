@@ -30,7 +30,7 @@ private func httpMachine() -> (StaticSendHttpPolicy, Engine<StaticSendHttpPolicy
         transport.posted.append(request)
         return nil
     }
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine, transport)
 }
 

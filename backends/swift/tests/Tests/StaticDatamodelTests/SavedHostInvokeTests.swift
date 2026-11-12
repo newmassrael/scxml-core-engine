@@ -62,7 +62,7 @@ private func machine(_ host: Host, sessionID: String? = nil) throws -> (StaticHo
 private func fetching() throws -> (Host, StaticHostHttpPolicy, Engine<StaticHostHttpPolicy>) {
     let host = Host()
     let (policy, engine) = try machine(host, sessionID: root)
-    engine.initialize()
+    try engine.initialize()
     engine.raiseHostHttpFetchRequest(method: "GET", url: "https://example.test/a", headers: "accept: text/plain", body: "")
     engine.step()
     return (host, policy, engine)

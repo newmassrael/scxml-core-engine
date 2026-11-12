@@ -36,7 +36,7 @@ private func settledHybrid() -> (StaticInvokeHybridPolicy, Engine<StaticInvokeHy
     let policy = StaticInvokeHybridPolicy()
     let engine = Engine(policy: policy)
     engine.setClock(ManualClock())
-    engine.initialize()
+    startRecordingARefusal(engine)
     for _ in 0..<hybridRounds {
         engine.tick()
     }

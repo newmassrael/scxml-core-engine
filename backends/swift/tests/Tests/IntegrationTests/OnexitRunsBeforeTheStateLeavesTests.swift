@@ -16,11 +16,11 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct OnexitRunsBeforeTheStateLeaves {
-    @Test func aStateIsStillActiveWhileItsOwnOnexitRuns() {
+    @Test func aStateIsStillActiveWhileItsOwnOnexitRuns() throws {
         // The handlers record with `<assign>`, so this is an ECMAScript-datamodel machine.
         let policy = OnexitRunsBeforeTheStateLeavesPolicy()
         let engine = Engine(policy: policy)
-        engine.initialize()
+        try engine.initialize()
         #expect(engine.getCurrentState() == .inner, "the run has to start inside `inner`")
 
         engine.processEvent(.leave)

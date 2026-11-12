@@ -15,9 +15,9 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct SessionIdsAreDistinct {
-    @Test func twoLiveSessionsAreIssuedDifferentIds() {
+    @Test func twoLiveSessionsAreIssuedDifferentIds() throws {
         let engine = Engine(policy: SessionIdsAreDistinctPolicy())
-        engine.initialize()
+        try engine.initialize()
         // Two children report their `_sessionid` to the parent, which is only finished by the
         // ticks, so the run is let go on for as long as the other backends give a `simple`
         // fixture.

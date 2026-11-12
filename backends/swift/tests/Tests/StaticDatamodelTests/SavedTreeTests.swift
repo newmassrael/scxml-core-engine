@@ -55,7 +55,7 @@ private func working() throws -> (Asked, Engine<StaticInvokeTreePolicy>) {
         if case .start = event { asked.count += 1 }
         return nil
     }
-    engine.initialize()
+    try engine.initialize()
     // Started twice: left and entered again.
     for event in ["rest", "back"] {
         engine.raiseExternalByName(event)

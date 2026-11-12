@@ -56,7 +56,7 @@ private typealias Machine = Engine<LateTickHonoursCancelPolicy>
 private func started(on clock: any SceClock) -> Machine {
     let engine = Engine(policy: LateTickHonoursCancelPolicy())
     engine.setClock(clock)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return engine
 }
 
@@ -276,11 +276,11 @@ private func driveByDeadlines(_ engine: Machine, limit: Int = 10) -> Int {
         )
     }
 
-    @Test func oneGeneratedMachineServesBothKindsOfHost() {
+    @Test func oneGeneratedMachineServesBothKindsOfHost() throws {
         // The claim the seam exists to support, stated as one assertion: this is ONE generated
         // class, and which clock it runs on is a property of the instance.
         let onTheWall = Engine(policy: LateTickHonoursCancelPolicy())
-        onTheWall.initialize()
+        try onTheWall.initialize()
         let deadline = Date().addingTimeInterval(2)
         while !onTheWall.isInFinalState && Date() < deadline {
             onTheWall.tick()

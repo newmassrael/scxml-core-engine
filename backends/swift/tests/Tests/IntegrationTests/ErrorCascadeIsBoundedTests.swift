@@ -25,7 +25,7 @@ private func started() -> (
 ) {
     let policy = ErrorCascadeIsBoundedPolicy()
     let engine = Engine(policy: policy)
-    engine.initialize()
+    startRecordingARefusal(engine)
     return (policy, engine)
 }
 

@@ -37,7 +37,7 @@ private final class Requests {
                 return nil
             }
         }
-        engine.initialize()
+        startRecordingARefusal(engine)
         engine.tick()
         return (policy, engine)
     }
@@ -165,7 +165,7 @@ private final class Wire: Transport {
         let engine = Engine(policy: policy)
         engine.setClock(ManualClock())
         register(endpoint, on: engine)
-        engine.initialize()
+        startRecordingARefusal(engine)
         engine.tick()
         return (policy, engine)
     }

@@ -15,8 +15,8 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AnEventKeepsTheNameItWasSentUnder {
-    @Test func aNameTheDocumentDoesNotWriteIsToldWhole() {
-        let engine = initializedOnVirtualTime(AnEventKeepsTheNameItWasSentUnderPolicy())
+    @Test func aNameTheDocumentDoesNotWriteIsToldWhole() throws {
+        let engine = try initializedOnVirtualTime(AnEventKeepsTheNameItWasSentUnderPolicy())
         _ = driveOnVirtualTime(engine)
 
         #expect(

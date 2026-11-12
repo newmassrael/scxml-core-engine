@@ -15,8 +15,8 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct AComputedEventNameIsMatchedLikeAnyOther {
-    @Test func aComputedNameIsMatchedByTokenAndToldWhole() {
-        let engine = initializedOnVirtualTime(AComputedEventNameIsMatchedLikeAnyOtherPolicy())
+    @Test func aComputedNameIsMatchedByTokenAndToldWhole() throws {
+        let engine = try initializedOnVirtualTime(AComputedEventNameIsMatchedLikeAnyOtherPolicy())
         _ = driveOnVirtualTime(engine)
 
         #expect(
@@ -28,12 +28,12 @@ import Testing
     /// The document declares its transition table, and a run that reaches `pass` takes each of
     /// its six transitions once, in document order: the transition observer is told exactly
     /// those rows, each by the `(from, index)` its row of the table carries (docs/adr/0089).
-    @Test func theObserverIsToldEachRowOfTheTableTheRunTakes() {
+    @Test func theObserverIsToldEachRowOfTheTableTheRunTakes() throws {
         var seen: [TransitionTaken<AComputedEventNameIsMatchedLikeAnyOtherState>] = []
         let engine = Engine(policy: AComputedEventNameIsMatchedLikeAnyOtherPolicy())
         engine.setClock(ManualClock())
         engine.setTransitionObserver { seen.append($0) }
-        engine.initialize()
+        try engine.initialize()
         _ = driveOnVirtualTime(engine)
 
         #expect(engine.terminalState == .pass)
@@ -49,13 +49,13 @@ import Testing
 
     /// An observer set and then cleared is told nothing, and the run still reaches `pass`, as
     /// one that never had an observer does.
-    @Test func aClearedObserverIsToldNothingAndTheRunIsTheSame() {
+    @Test func aClearedObserverIsToldNothingAndTheRunIsTheSame() throws {
         var seen: [TransitionTaken<AComputedEventNameIsMatchedLikeAnyOtherState>] = []
         let engine = Engine(policy: AComputedEventNameIsMatchedLikeAnyOtherPolicy())
         engine.setClock(ManualClock())
         engine.setTransitionObserver { seen.append($0) }
         engine.setTransitionObserver(nil)
-        engine.initialize()
+        try engine.initialize()
         _ = driveOnVirtualTime(engine)
 
         #expect(engine.terminalState == .pass)

@@ -15,12 +15,12 @@ import Testing
 
 // One suite a stem, so two stems that name a test alike do not redeclare one function of the module.
 @Suite struct XmlDataIsADomTree {
-    @Test func aDataElementsXmlIsADomTreeTheDocumentCanWalk() {
+    @Test func aDataElementsXmlIsADomTreeTheDocumentCanWalk() throws {
         // The fixture reads the DOM in its guards, so this is an ECMAScript-datamodel machine.
         let engine = Engine(policy: XmlDataIsADomTreePolicy())
         // Every transition is eventless, so the verdict is reached in the first macrostep and no
         // event is needed to ask the question.
-        engine.initialize()
+        try engine.initialize()
 
         #expect(
             engine.getCurrentState() != .notADocument,

@@ -37,7 +37,7 @@ private final class Served {
             served.count += 1
             return [HostSendResponse(eventName: "host.reply")]
         }
-        engine.initialize()
+        try engine.initialize()
         engine.tick()
 
         // The host raises an event of its own, naming no origin.
