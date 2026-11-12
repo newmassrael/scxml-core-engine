@@ -181,11 +181,15 @@ Kotlin and the C++ Interpreter — cancelled the whole invoke without saying so,
 which a document sees as a stall rather than as an error.
 
 The child reports from a `<transition>` body rather than `<onentry>`, and that
-is a deliberate un-binding of two axes: C11 seeds an invoke's params AFTER
-`_init_with_parent`, which has already run the child's `<onentry>`, so a child
-that reported on entry would measure the seeding ORDER instead of what a
-failed `<param>` costs. That order is its own open debt — the C11 `_init`
-split — and this fixture found its witness while deliberately not carrying it.
+is a deliberate un-binding of two axes: C11 used to seed an invoke's params
+AFTER `_init_with_parent`, which had already run the child's `<onentry>`, so a
+child that reported on entry would have measured the seeding ORDER instead of
+what a failed `<param>` costs. That order was its own debt, the C11 `_init`
+split, and docs/adr/0098 closed it: a C11 child's start (`_init_with_parent`,
+or `_init_invoked` for a child that does not address its parent) takes the
+values its invoke hands it before it declares its datamodel, so its top-level
+`<script>`, its first `<onentry>` and its first macrostep read them. The
+fixture keeps reporting from a transition body, which is still one axis.
 
 `empty_finalize_updates_the_location` covers the clause an empty element
 carries. W3C §6.5.2 gives `<finalize>` with no executable content a meaning of
@@ -1348,8 +1352,10 @@ initial configuration is already its top-level `<final>` evaluates that
 before the parent applies the params. Two axes in one verdict, exactly
 what the rule above forbids. Deciding it in the child also puts the
 comparison where the seeded value lives, and a bare event name carries
-the answer with no payload path in between. The C11 ordering question is
-recorded as its own debt.
+the answer with no payload path in between. The C11 ordering question was
+recorded as its own debt, and docs/adr/0098 closed it: the child's start
+now takes the params before it declares its datamodel, so the entry walk
+reads them.
 
 `host_event_reaches_the_child` covers the half of §scxml-D-mainEventLoop's
 preliminary step that the four `autoforward_*` fixtures cannot reach. Those
