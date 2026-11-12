@@ -28,8 +28,10 @@
     One body for every child an invoke may start — a static child, or the
     candidate a hybrid invoke's value chose — because how the child was named
     does not change what the arguments are. Which names the child KEEPS is not
-    decided here: the child keeps only what its own <data> declares, filtered
-    where it applies `pendingInvokeParams`.
+    decided here: every name evaluated is handed, and the child takes one only
+    as the initial value of a top-level <data> of its own, in place of that
+    <data>'s value, where its start declares it (`declareHandedValue`,
+    docs/adr/0098).
 
     §scxml-6.4.2: "if the evaluation of its arguments produces an error, the
     SCXML Processor MUST terminate the processing of the element without

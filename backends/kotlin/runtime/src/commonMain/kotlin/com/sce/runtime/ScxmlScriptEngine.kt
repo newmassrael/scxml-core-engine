@@ -321,7 +321,11 @@ interface ScxmlScriptEngine {
     /**
      * §scxml-6.4: Check if a variable is declared in the datamodel.
      *
-     * Used by invoke param validation to skip variables not declared in child's datamodel.
+     * Used where a name must be a location the session can read, as each name
+     * of an `<invoke>` or `<send>` `namelist` must. It is not what decides
+     * which handed values a child takes: a state's early-bound `<data>` is
+     * declared here too, and only the top-level `<data>` the child was
+     * generated with take one (`StateMachineEngine.declareHandedValue`).
      * Returns true if the variable property exists in the session scope.
      *
      * @param sessionId Active session

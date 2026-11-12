@@ -9,7 +9,8 @@
 
     Generates:
     - establishScriptSession(): the session, made once, at the start (docs/adr/0096)
-    - declareDatamodel(): <data>, early <data>, invoke params, top-level <script>
+    - declareDatamodel(): <data> (each taking a value the invoke handed it in
+      place of its own), early <data>, top-level <script>
     - safeEvaluateGuard(): Guard condition evaluation with error.execution on failure
     - executeAssign(): Variable assignment via script engine
     - executeScriptBlock(): <script> block execution via script engine
@@ -49,10 +50,13 @@
 
     // W3C SCXML 5.3: initialize the datamodel in the session the start
     // established, before any state is entered: the document's <data>, its
-    // states' early-bound <data>, the invoke params the parent handed this
-    // session, then the top-level <script>s. The params are applied before the
-    // scripts, which read the datamodel the invocation started it with: the
-    // order of interpret in Appendix D, and that of every other backend.
+    // states' early-bound <data>, then the top-level <script>s, the order of
+    // interpret in Appendix D. §scxml-6.4: a value the invoke that started
+    // this session handed it under the id of a top-level <data> is that
+    // <data>'s initial value, declared in place of its own, so the scripts,
+    // the <onentry>s and the conditions of the first macrostep read it; a
+    // state's <data> never takes one, and a name no top-level <data> has is
+    // not added (docs/adr/0098).
     override fun declareDatamodel() {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -85,20 +89,6 @@
         declareStateVariablesPart{{ loop.index0 }}(engine, sid)
 {% endfor %}
 {% endif %}
-
-        // W3C SCXML 6.4: Apply pending invoke params from parent, overriding the
-        // <data> default just bound, and only for a name this session declares
-        // (C++ DatamodelValidationHelper). The parent hands them before this
-        // session's start (`setInvokeParams`) and this session applies them, so
-        // a child's session is made by the child.
-        if (pendingInvokeParams.isNotEmpty()) {
-            for ((pName, pValue) in pendingInvokeParams) {
-                if (engine.hasVariable(sid, pName)) {
-                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
-                }
-            }
-            pendingInvokeParams = emptyMap()
-        }
 {% if script_parts %}
 
         // W3C SCXML 5.8: Execute global scripts at document load time
@@ -109,43 +99,49 @@
     }
 {% for part in declared_parts %}
 
+{# §scxml-6.4 (docs/adr/0098, decision 2): each top-level <data> asks first
+   whether the invoke that started this session handed it a value
+   (`declareHandedValue`, in the runtime), and only when none was handed takes
+   its own `expr`, `src` or content, which is then not evaluated at all. The
+   ids asked are this document's top-level ones, known here: a state's <data>
+   is declared by `declareStateVariablesPart<n>` and never asks. Each item is
+   at most three statements, the handed value's question included, for the
+   bound one part's method is held to (dispatch.kt.jinja2): the value its own
+   text evaluates to is written in the call that writes it. #}
     @Suppress("UNUSED_PARAMETER")
     private fun declareVariablesPart{{ loop.index0 }}(engine: ScxmlScriptEngine, sid: String) {
 {% for var in part %}
+        // §scxml-6.4: '{{ var.id }}' takes a value its invoke handed it, in place of its own
+        if (!declareHandedValue(engine, sid, "{{ var.id }}", {{ machine_name }}Event.Error.Execution)) {
 {% if var.expr %}
-        // W3C SCXML 5.3: Initialize variable '{{ var.id }}' with expr
-        try {
-            val initResult_{{ var.id | to_camel_case }} = engine.evaluateExpr(sid, {{ var.expr | to_script_source_expr }})
-            engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
-        } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> expr failed to evaluate")
-        }
-{% elif var.src %}
-        // W3C SCXML 5.3.1: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
-        try {
-            val srcContent_{{ var.id | to_camel_case }} = engine.loadDataFromSrc("{{ var.src }}", "{{ model.scxml_base_path }}")
-            if (srcContent_{{ var.id | to_camel_case }} != null) {
-                val srcValue_{{ var.id | to_camel_case }} = engine.parseDataValue(sid, srcContent_{{ var.id | to_camel_case }})
-                engine.setVariable(sid, "{{ var.id }}", srcValue_{{ var.id | to_camel_case }})
+            // W3C SCXML 5.3: Initialize variable '{{ var.id }}' with expr
+            try {
+                engine.setVariable(sid, "{{ var.id }}", engine.evaluateExpr(sid, {{ var.expr | to_script_source_expr }}))
+            } catch (e: Exception) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> expr failed to evaluate")
             }
-        } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded")
-        }
+{% elif var.src %}
+            // W3C SCXML 5.3.1: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
+            try {
+                engine.loadDataFromSrc("{{ var.src }}", "{{ model.scxml_base_path }}")?.let { engine.setVariable(sid, "{{ var.id }}", engine.parseDataValue(sid, it)) }
+            } catch (e: Exception) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}' src='{{ var.src }}'> could not be loaded")
+            }
 {% elif var.content %}
-        // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content (C++ parseEventData pattern)
-        try {
-            val initResult_{{ var.id | to_camel_case }} = engine.parseDataValue(sid, "{{ var.content | escape_kotlin }}")
-            engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
-        } catch (e: Exception) {
-            raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> content failed to initialise")
-        }
+            // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content (C++ parseEventData pattern)
+            try {
+                engine.setVariable(sid, "{{ var.id }}", engine.parseDataValue(sid, "{{ var.content | escape_kotlin }}"))
+            } catch (e: Exception) {
+                raisePlatformError({{ machine_name }}Event.Error.Execution, "<data id='{{ var.id }}'> content failed to initialise")
+            }
 {% elif var.type == 'runtime' %}
-        // W3C SCXML 5.2: Runtime variable '{{ var.id }}' (late binding, undefined)
-        try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "{{ var.id }}", null)
-        } catch (_: Exception) {}
+            // W3C SCXML 5.2: Runtime variable '{{ var.id }}' (late binding, undefined)
+            try {
+                engine.evaluateExpr(sid, "undefined")
+                engine.setVariable(sid, "{{ var.id }}", null)
+            } catch (_: Exception) {}
 {% endif %}
+        }
 {% endfor %}
     }
 {% endfor %}

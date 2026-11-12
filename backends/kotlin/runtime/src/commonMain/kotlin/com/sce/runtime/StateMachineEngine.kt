@@ -523,12 +523,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * §scxml-5.3: declare this document's datamodel now, in the session the
-     * start established: the document's `<data>`, the early-bound `<data>` of
-     * its states, the invoke params a parent handed this session, then its
-     * top-level `<script>`, in that order, the order Appendix D's `interpret`
-     * gives. Run by every start ([initialize], [start], [enterAt]) after
-     * [establishScriptSession] answered `null` and before any state is
-     * entered: a `cond` or an `assign` evaluated after it would otherwise
+     * start established: the document's `<data>`, each taking in place of its
+     * own the value the invoke that started this session handed it under its id
+     * ([declareHandedValue]), then the early-bound `<data>` of its states,
+     * which never take one, then its top-level `<script>`, in that order, the
+     * order Appendix D's `interpret` gives. Run by every start ([initialize],
+     * [start], [enterAt]) after [establishScriptSession] answered `null` and
+     * before any state is entered: a `cond` or an `assign` evaluated after it would otherwise
      * reference variables that were never declared, and a host restoring saved
      * values wants somewhere to put them. A `<data>` or a `<script>` that fails
      * raises `error.execution` as executable content does.
@@ -5554,27 +5555,91 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param doneEvent Event to send when child completes (done.invoke)
      */
     /**
-     * §scxml-6.4: Set invoke parameters on a child SM before starting it.
+     * §scxml-6.4: hand [child], before it starts, the values this machine's
+     * `<invoke>` evaluated for it: every `<param>` and `namelist` name it
+     * evaluated, whether or not the child declares it (docs/adr/0098, decision
+     * 1). Which of them the child takes is the child's own answer, from its
+     * top-level `<datamodel>`, given where its start declares each `<data>`
+     * ([declareHandedValue]); this machine does not filter them.
      *
-     * Stores param values that the child's own start applies, after its
-     * `<data>` and before its top-level `<script>` ([declareDatamodel]), in
-     * the session that start established, so a child's session is made by the
-     * child (docs/adr/0096). Called by generated code between child
-     * construction and startInvoke.
+     * A value is copied out of this machine's session here, while that session
+     * is the one holding it, so the child is handed the value whole, structure
+     * included, and not a handle into a session it cannot read
+     * ([handedAcrossSessions]). Called by generated code between the child's
+     * construction and [startInvoke].
      *
      * @param child Child state machine instance
-     * @param params Map of variable name to value pairs
+     * @param params Each name the `<invoke>` evaluated, with its value
      */
     protected fun setInvokeParams(child: StateMachineEngine<*, *>, params: Map<String, Any?>) {
-        child.pendingInvokeParams = params
+        child.pendingInvokeParams = params.mapValues { (_, value) -> handedAcrossSessions(value) }
     }
 
     /**
-     * §scxml-6.4: Pending invoke parameters to be applied when the datamodel is
-     * initialized. Set by parent's setInvokeParams, consumed by the child's
-     * [declareDatamodel].
+     * §scxml-6.4: the values the invoke that started this session handed it,
+     * by name, as [setInvokeParams] gave them; empty for a session no invoke
+     * started.
+     *
+     * Kept for the life of the session rather than cleared by the first start:
+     * they are the arguments the session was started with, so every start of it
+     * ([initialize], [start], [enterAt]) declares its top-level `<data>` from the
+     * same values ([declareHandedValue]).
      */
-    protected var pendingInvokeParams: Map<String, Any?> = emptyMap()
+    private var pendingInvokeParams: Map<String, Any?> = emptyMap()
+
+    /**
+     * Declare the top-level `<data>` [id] with the value the invoke that
+     * started this session handed it under [id], in place of the `<data>`'s own
+     * (docs/adr/0098, decision 2; the handed values are [setInvokeParams]'s).
+     *
+     * The generated start asks this of each top-level `<data>` of its document,
+     * in document order, before the `<data>`'s own value, and of no other name:
+     * a state's `<data>`, early- or late-bound, never takes a handed value, and
+     * a handed name no top-level `<data>` has is never read here, so it is not
+     * added to the datamodel. Which names those are was known when the machine
+     * was generated; nothing asks the session what it already holds.
+     *
+     * @return whether a value was handed under [id]. When one was, the `<data>`'s
+     *   own `expr`, `src` or content is not evaluated: it raises nothing and has
+     *   no effect. A value the session cannot hold is the error of that
+     *   `<data>`'s initialization, as [declareDatamodel] reports one: [failed]
+     *   is raised, and the `<data>` is left as one whose own expression failed
+     *   is.
+     */
+    protected fun declareHandedValue(engine: ScxmlScriptEngine, sid: String, id: String, failed: E): Boolean {
+        if (!pendingInvokeParams.containsKey(id)) return false
+        try {
+            engine.setVariable(sid, id, pendingInvokeParams[id])
+        } catch (_: Exception) {
+            raisePlatformError(failed, "<data id='$id'> could not take the value its invoke handed it")
+        }
+        return true
+    }
+
+    /**
+     * [value], which this machine's engine evaluated, as a value another
+     * session can be given (docs/adr/0098, decision 3), for [setInvokeParams].
+     *
+     * A value the engine keeps inside itself ([EngineHeldValue]) is a handle
+     * into this machine's session, which a child's session refuses: it is
+     * copied out as the engine serialises it to JSON ([EngineHeldValue.toJson]),
+     * structure included, into the plain values every engine takes. Every other
+     * value already is one.
+     */
+    private fun handedAcrossSessions(value: Any?): Any? =
+        if (value is EngineHeldValue) plainValueOf(Json.parse(value.toJson())) else value
+
+    /**
+     * A value [Json.parse] read, as an engine is given one: each number as the
+     * `Long` its digits are, or else the `Double`, and every object and array
+     * member likewise, in the order it was written.
+     */
+    private fun plainValueOf(json: Any?): Any? = when (json) {
+        is Json.Number -> json.text.toLongOrNull() ?: json.text.toDouble()
+        is Map<*, *> -> json.entries.associate { (key, member) -> key to plainValueOf(member) }
+        is List<*> -> json.map { plainValueOf(it) }
+        else -> json
+    }
 
     /**
      * docs/adr/0045: give [child], a session this machine has just built to

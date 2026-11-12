@@ -50,9 +50,9 @@ pub const METHOD_ITEMS: usize = 256;
 /// 10) and the jump out (`goto_w`: 5) — 33 bytes. A table entry is the key
 /// loaded, the value built, `invokeinterface put` and `pop`, under 40 bytes for
 /// its own weight of one, each element of the list it holds weighed one item
-/// more. The widest is a variable's initialisation: the engine's evaluation,
-/// its write and the error its failure raises, about 60 bytes. 128 leaves room
-/// above every one of them.
+/// more. The widest is a variable's initialisation: whether its invoke handed
+/// it a value, the engine's evaluation, its write and the error its failure
+/// raises, about 75 bytes. 128 leaves room above every one of them.
 pub const ITEM_CODE_BYTES: usize = 128;
 
 // One method's items take at most half of the limit, so the method's own
