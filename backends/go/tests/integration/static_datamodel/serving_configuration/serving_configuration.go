@@ -54,3 +54,12 @@ func Machine(componentType string) testprofile.ComponentMachine {
 func ModuleParameters() []string {
 	return []string{}
 }
+
+// Input is the reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2, a
+// testprofile.InputReader): the message an input of the record type typeName on the system port
+// systemPort carries, its value read from the canonical form. An error, naming why, where the
+// configuration has no such system port, the `in` list of its type does not name the type, or the
+// value does not belong to it.
+func Input(systemPort, typeName string, _ any) (testprofile.Message, error) {
+	return testprofile.Message{}, testprofile.NotAnInput(systemPort, typeName, []string{})
+}

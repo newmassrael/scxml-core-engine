@@ -51,3 +51,24 @@ func Suite() testprofile.Suite {
 		},
 	}
 }
+
+// ModuleParameter is the value the runner is given for the module parameter id
+// (docs/SCE_TTCN3_LANE.md §4, `--module-parameter id=value`), a literal of its declared type as the
+// `value` of a `<sce:module-parameter>` writes one (docs/SCE_TEST_PROFILE.md §11.4), read as the
+// saved value of that type; an error, naming why, where the suite declares no such parameter or the
+// literal is no value of its type. It is a testprofile.ParameterReader.
+func ModuleParameter(id, literal string) (testprofile.ModuleParameterValue, error) {
+	switch id {
+	case "job":
+		return testprofile.IntegerParameter(id, literal, sce.SavedWriteUint32)
+	}
+	return nil, testprofile.UndeclaredParameter(id)
+}
+
+// Main is the runner program of the suite `runtime_suite` (docs/SCE_TTCN3_LANE.md §4): every test
+// case the world of `--world` selects, run against its recorded input trace from `--trace-dir`, its
+// canonical test log written to `--log-dir` (testprofile.RunnerMain), after which the process exits.
+// A module makes it a program with a `package main` whose `main` calls it.
+func Main() {
+	testprofile.RunnerMain(Suite(), ModuleParameter)
+}

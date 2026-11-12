@@ -17,13 +17,15 @@ import (
 const Name string = "keeps_a_ptc"
 
 // TestCase is the test case `keeps_a_ptc` (docs/SCE_TEST_PROFILE.md §11.7) as the runner
-// reads it: its name, its configuration and the machines of its components, and the module
-// parameters those components read.
+// reads it: its name, its configuration and the machines of its components, the module
+// parameters those components read, and the reader of the inputs a recorded trace of it carries
+// (docs/SCE_TTCN3_LANE.md §10.5).
 func TestCase() testprofile.TestCase {
 	return testprofile.TestCase{
 		Name:             Name,
 		Configuration:    sce_keeping_configuration.Configuration(),
 		Machines:         sce_keeping_configuration.Machine,
 		ModuleParameters: sce_keeping_configuration.ModuleParameters(),
+		Inputs:           sce_keeping_configuration.Input,
 	}
 }
