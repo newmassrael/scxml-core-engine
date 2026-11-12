@@ -34,7 +34,7 @@ std::unique_ptr<ILoggerBackend> Logger::backend_;
 // Mutex for thread-safe backend initialization
 static std::mutex backend_mutex;
 
-// The backend `initialize()` and a first use make: stdout, no file.
+// The backend `initialize()` and a first use make: the standard error, no file.
 static std::unique_ptr<ILoggerBackend> makeDefaultBackend() {
 #ifdef SCE_USE_SPDLOG
     return std::make_unique<SpdlogBackend>();
