@@ -460,7 +460,7 @@ impl CanonicalForm for PythonReading {
     /// The case's binding stands for its record. Python's test profile matches
     /// no union yet, which [`Self::union`] refuses once the walk has read its
     /// cases.
-    fn case_record(&self, bound: PythonReadAt) -> PythonReadAt {
+    fn case_record(&self, bound: PythonReadAt, _record: &str) -> PythonReadAt {
         bound
     }
 
