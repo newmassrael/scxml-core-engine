@@ -255,8 +255,11 @@ async function initVisualizer(scxmlContent) {
             runnableContent = lowered[0].text;
             startedDocuments = lowered.slice(1);
         } catch (error) {
+            // The product's own message: `lowerForInterpreter` throws an Error
+            // whose message is the refusal's records' messages, and whose
+            // records are on it for a caller that dispatches on their code.
             showLoading(false);
-            showFatalError(`The product cannot lower this document for the Interpreter: ${error}`);
+            showFatalError(`The product cannot lower this document for the Interpreter: ${error.message}`);
             return;
         }
 

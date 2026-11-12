@@ -17,6 +17,8 @@ use wasm_bindgen::prelude::*;
 
 use std::collections::BTreeMap;
 
+use sce_build::forge::diagnostic::ToDiagnostics;
+use sce_build::forge::error::{ForgeError, Located, XmlError};
 use sce_build::forge::static_js::LoweredDocument;
 use sce_build::generator::Language;
 use sce_build::template_registry;
@@ -192,16 +194,25 @@ pub fn documents_named_by(scxml_content: &str) -> Result<String, JsValue> {
 /// built-in standard library (`sce:std/...`) needs none. A name that is not here
 /// is a file that is not there.
 ///
-/// What the lowering cannot spell is refused with the product's own message;
-/// nothing falls back to running it unlowered.
+/// What the lowering cannot spell is refused with the product's own error, the
+/// one `sce-codegen lower` refuses the same document with; nothing falls back
+/// to running it unlowered. A text that is no XML document is refused as the
+/// product's parser refuses one, at the row and column the reader stopped.
 fn lowered_for_interpreter(
     scxml_content: &str,
     scxml_name: &str,
     siblings: &BTreeMap<String, String>,
-) -> Result<Vec<LoweredDocument>, String> {
+) -> Result<Vec<LoweredDocument>, Located<ForgeError>> {
     let file_name = format!("{scxml_name}.scxml");
-    let doc =
-        roxmltree::Document::parse(scxml_content).map_err(|e| format!("XML parse error: {e}"))?;
+    let doc = roxmltree::Document::parse(scxml_content).map_err(|e| {
+        let pos = e.pos();
+        Located::new(
+            ForgeError::Xml(XmlError::from_roxmltree(&e)),
+            file_name.clone(),
+            Some(pos.row),
+            Some(pos.col),
+        )
+    })?;
     if doc.root_element().attribute("datamodel") != Some("sce-static") {
         return Ok(vec![LoweredDocument {
             file_name,
@@ -210,40 +221,66 @@ fn lowered_for_interpreter(
     }
     let mut held = siblings.clone();
     held.insert(file_name.clone(), scxml_content.to_string());
-    sce_build::forge::static_js::lower_documents(&file_name, &held).map_err(|e| format!("{e:?}"))
+    sce_build::forge::static_js::lower_documents(&file_name, &held)
 }
 
-/// The documents the Interpreter runs for `scxml_content`, as JSON:
-/// `[{"file_name": ..., "text": ...}, ...]`, the document asked for first.
-/// `siblings_json` is an object of the documents beside it, by name. See
-/// [`lowered_for_interpreter`].
+/// The answer of [`lower_for_interpreter`], as a JSON value: the documents the
+/// Interpreter runs, `{"documents": [{"file_name": ..., "text": ...}, ...]}`
+/// with the document asked for first, or the refusal of them,
+/// `{"diagnostics": [...]}`, each record the one `sce-codegen lower
+/// --error-format=json` writes for the same refusal (SCE_ERROR_CONTRACT.md),
+/// built by the same [`ToDiagnostics`] mapping, so a caller tells a construct
+/// the lowering has no spelling of yet (`generate/unsupported-feature`) from
+/// any other refusal by its code and not by its text.
+///
+/// A refusal is an answer about the document. What is `Err` here is a call the
+/// caller wrote wrong — `siblings_json` that is not an object of text — and the
+/// failure to write the answer.
+fn lowering_answer(
+    scxml_content: &str,
+    scxml_name: &str,
+    siblings_json: &str,
+) -> Result<serde_json::Value, String> {
+    let siblings: BTreeMap<String, String> = serde_json::from_str(siblings_json)
+        .map_err(|e| format!("the sibling documents are not an object of text: {e}"))?;
+    match lowered_for_interpreter(scxml_content, scxml_name, &siblings) {
+        Ok(lowered) => {
+            let documents: Vec<_> = lowered
+                .into_iter()
+                .map(|d| serde_json::json!({ "file_name": d.file_name, "text": d.text }))
+                .collect();
+            Ok(serde_json::json!({ "documents": documents }))
+        }
+        Err(refusal) => {
+            let diagnostics = serde_json::to_value(refusal.to_diagnostics())
+                .map_err(|e| format!("JSON error: {e}"))?;
+            Ok(serde_json::json!({ "diagnostics": diagnostics }))
+        }
+    }
+}
+
+/// The documents the Interpreter runs for `scxml_content`, or the refusal of
+/// them, as the JSON of [`lowering_answer`]. `siblings_json` is an object of
+/// the documents beside it, by name. See [`lowered_for_interpreter`].
 #[wasm_bindgen]
 pub fn lower_for_interpreter(
     scxml_content: &str,
     scxml_name: &str,
     siblings_json: &str,
 ) -> Result<String, JsValue> {
-    let siblings: BTreeMap<String, String> = serde_json::from_str(siblings_json).map_err(|e| {
-        JsValue::from_str(&format!(
-            "the sibling documents are not an object of text: {e}"
-        ))
-    })?;
-    let lowered = lowered_for_interpreter(scxml_content, scxml_name, &siblings)
+    let answer = lowering_answer(scxml_content, scxml_name, siblings_json)
         .map_err(|e| JsValue::from_str(&e))?;
-    let documents: Vec<_> = lowered
-        .into_iter()
-        .map(|d| serde_json::json!({ "file_name": d.file_name, "text": d.text }))
-        .collect();
-    serde_json::to_string(&documents).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
+    serde_json::to_string(&answer).map_err(|e| JsValue::from_str(&format!("JSON error: {e}")))
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
+    use sce_build::forge::error::{ForgeError, Located};
     use sce_build::forge::static_js::LoweredDocument;
 
-    fn lowered_for_interpreter(content: &str, name: &str) -> Result<String, String> {
+    fn lowered_for_interpreter(content: &str, name: &str) -> Result<String, Located<ForgeError>> {
         let mut set = lowered_with_siblings(content, name, &BTreeMap::new())?;
         assert_eq!(set.len(), 1, "one document and nothing it starts");
         Ok(set.remove(0).text)
@@ -253,8 +290,34 @@ mod tests {
         content: &str,
         name: &str,
         siblings: &BTreeMap<String, String>,
-    ) -> Result<Vec<LoweredDocument>, String> {
+    ) -> Result<Vec<LoweredDocument>, Located<ForgeError>> {
         super::lowered_for_interpreter(content, name, siblings)
+    }
+
+    /// What the browser is answered for `content` beside `siblings`.
+    fn answer(content: &str, name: &str, siblings: &BTreeMap<String, String>) -> serde_json::Value {
+        let siblings = serde_json::to_string(siblings).expect("an object of text");
+        super::lowering_answer(content, name, &siblings)
+            .expect("the siblings are an object of text")
+    }
+
+    /// The records of a refused answer, each as its code and its message.
+    fn records_of(answer: &serde_json::Value) -> Vec<(String, String)> {
+        assert!(
+            answer.get("documents").is_none(),
+            "lowered, not refused: {answer}"
+        );
+        answer["diagnostics"]
+            .as_array()
+            .expect("a refusal holds its records")
+            .iter()
+            .map(|record| {
+                (
+                    record["code"].as_str().expect("a code").to_string(),
+                    record["message"].as_str().expect("a message").to_string(),
+                )
+            })
+            .collect()
     }
 
     const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="a" name="counter">
@@ -287,7 +350,54 @@ mod tests {
   <final id="d"><donedata><content><result code="7">finished</result></content></donedata></final>
 </scxml>"#;
         let refusal = lowered_for_interpreter(document, "refused").expect_err("refused");
-        assert!(refusal.contains("holding an element"), "{refusal}");
+        assert!(
+            refusal.to_string().contains("holding an element"),
+            "{refusal:?}"
+        );
+        // ... and the browser is told so in the error contract's terms: the record
+        // `sce-codegen lower --error-format=json` writes, whose code says the
+        // lowering has no spelling of the construct yet.
+        let records = records_of(&answer(document, "refused", &BTreeMap::new()));
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert_eq!(records[0].0, "generate/unsupported-feature", "{records:?}");
+        assert!(
+            records[0]
+                .1
+                .starts_with("feature unsupported in this language: "),
+            "{records:?}"
+        );
+        assert!(records[0].1.contains("holding an element"), "{records:?}");
+    }
+
+    #[test]
+    fn a_lowered_document_is_answered_with_the_documents_and_no_records() {
+        let answer = answer(COUNTER, "counter", &BTreeMap::new());
+        assert!(answer.get("diagnostics").is_none(), "{answer}");
+        assert_eq!(answer["documents"][0]["file_name"], "counter.scxml");
+        assert!(
+            answer["documents"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains(r#"datamodel="ecmascript""#)),
+            "{answer}"
+        );
+    }
+
+    #[test]
+    fn a_text_that_is_no_xml_document_is_refused_as_the_parser_refuses_one() {
+        let records = records_of(&answer("<scxml", "broken", &BTreeMap::new()));
+        assert_eq!(records.len(), 1, "{records:?}");
+        assert_eq!(records[0].0, "xml/parse", "{records:?}");
+        assert!(records[0].1.starts_with("XML parse error: "), "{records:?}");
+    }
+
+    #[test]
+    fn siblings_that_are_not_an_object_of_text_are_the_callers_fault_not_a_refusal() {
+        let fault = super::lowering_answer(COUNTER, "counter", "[]")
+            .expect_err("a list is not an object of text");
+        assert!(
+            fault.starts_with("the sibling documents are not an object of text: "),
+            "{fault}"
+        );
     }
 
     const HYBRID: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" datamodel="sce-static" initial="s">
@@ -328,9 +438,20 @@ mod tests {
 
     #[test]
     fn a_candidate_that_is_not_among_the_siblings_is_a_file_that_is_not_there() {
-        let refusal = lowered_with_siblings(HYBRID, "parent", &BTreeMap::new())
-            .expect_err("a.scxml is not here");
-        assert!(refusal.contains("a.scxml"), "{refusal}");
+        let answer = answer(HYBRID, "parent", &BTreeMap::new());
+        assert!(
+            answer.get("documents").is_none(),
+            "a.scxml is not here: {answer}"
+        );
+        let records = answer["diagnostics"].as_array().expect("a refusal");
+        let names_it =
+            |text: &serde_json::Value| text.as_str().is_some_and(|t| t.contains("a.scxml"));
+        assert!(
+            records
+                .iter()
+                .any(|record| names_it(&record["message"]) || names_it(&record["location"]["file"])),
+            "{answer}"
+        );
     }
 
     #[test]
