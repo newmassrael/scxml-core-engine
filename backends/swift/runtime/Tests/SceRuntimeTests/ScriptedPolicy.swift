@@ -79,6 +79,20 @@ final class ScriptedPolicy: InvocablePolicy {
     /// The ids of the `<invoke>`s a host runs, for a test that plays a document with some.
     var hostInvokeIDs: [String] = []
 
+    /// Whether the document sends to `#_parent`, for a test of the checked root start.
+    var needsParent = false
+
+    /// What establishing the script session answers (docs/adr/0096): nil for a session that is
+    /// established, the failure a test scripts otherwise. `sessionsAsked` counts the starts that
+    /// asked.
+    var sessionFailure: ScriptSessionFailure?
+    var sessionsAsked = 0
+
+    func establishScriptSession() -> ScriptSessionFailure? {
+        sessionsAsked += 1
+        return sessionFailure
+    }
+
     var invocationsRunning: Set<String> = []
     var invocationDeliveries: [(invokeID: String, name: String)] = []
     var sessionsRunning: Set<String> = []

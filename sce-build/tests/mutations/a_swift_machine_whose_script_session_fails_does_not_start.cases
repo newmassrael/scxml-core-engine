@@ -1,0 +1,144 @@
+# Mutation cases for docs/adr/0096 on the Swift channel: a machine whose script
+# session cannot be established does not start, and its host is told why; an
+# invoked child that cannot start is a failed invoke.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_swift_machine_whose_script_session_fails_does_not_start.cases`.
+#
+# Establishing a session used to be lazy: the generated `ensureLua` made it at
+# the first `<data>`, guard, assign or script, and a failure was turned into
+# error.execution, false or nil there, and tried again at every later use, so
+# it never reached the host. Each case below puts back one piece of that shape
+# and names the test that must go red. A Swift machine owns its Lua state, so
+# the oracle fails a step through the seam the generated machine compiles into
+# a debug build (`sceScriptSessionFault`), asked before each step, which a
+# parent hands to the children it starts.
+#
+# The values a refusal hands its host, and the engine's half over a scripted
+# policy, are held on their own in the runtime package's
+# `ScriptSessionFailureTests`; the generated machine is where the runtime and
+# template halves can only be seen together, and it is this package's.
+#
+# A case whose mutant reaches the datamodel over no session stops the process
+# at the generated `scriptSession`'s precondition; the runner counts every test
+# the run did not reach as failed.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_swift backends/swift/tests --filter AMachineWhoseScriptSessionFailsDoesNotStart
+mutation_oracles backends/swift/tests/Tests/IntegrationTests/AMachineWhoseScriptSessionFailsDoesNotStartTests.swift
+mutation_targets backends/swift/runtime/Sources/SceRuntime/Engine.swift backends/swift/runtime/Sources/SceRuntime/Invoke.swift backends/swift/runtime/Sources/SceRuntime/ScriptSession.swift
+
+# The templates reach the tests only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the tests, and the command is what carries a mutated
+# template into them.
+mutation_targets tools/codegen/templates/swift/script_engine.swift.jinja2 tools/codegen/templates/swift/invoke_methods.swift.jinja2
+mutation_targets backends/swift/tests/Sources/IntegrationMachines/a_child_may_send_many_events_in_one_tick_sm.swift
+mutation_targets backends/swift/tests/Sources/IntegrationMachines/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty_sm.swift
+mutation_regen scripts/regen_swift_integration.sh
+
+# ── The start goes on past a session that failed ────────────────────
+#
+# `initialize` drops the failure and enters the initial configuration anyway.
+# Killer: `aStartWhoseSessionCannotBeEstablishedIsRefusedWithTheStep`, whose
+# start declares `<data ticks>` over no session and stops at the precondition.
+
+mutation_case "initialize enters the machine past a session that failed" <<'PY'
+edit("backends/swift/runtime/Sources/SceRuntime/Engine.swift",
+     "    public func initialize() throws {\n        if let failure = policy.establishScriptSession() {\n            throw failure\n        }\n",
+     "    public func initialize() throws {\n        _ = policy.establishScriptSession()\n")
+PY
+
+# ── The checked root start goes on past a session that failed ───────
+#
+# Killer: `theCheckedRootStartIsRefusedForTheSession`.
+
+mutation_case "initializeAsRoot enters the machine past a session that failed" <<'PY'
+edit("backends/swift/runtime/Sources/SceRuntime/Engine.swift",
+     "        if let failure = policy.establishScriptSession() {\n            throw RootStartRefusal.scriptSession(failure)\n        }\n",
+     "        _ = policy.establishScriptSession()\n")
+PY
+
+# ── The resumed start goes on past a session that failed ────────────
+#
+# Killer: `aResumedStartWhoseSessionCannotBeEstablishedIsRefused`, whose
+# `enterAt` declares the datamodel over no session.
+
+mutation_case "enterAt enters the configuration past a session that failed" <<'PY'
+edit("backends/swift/runtime/Sources/SceRuntime/Engine.swift",
+     "            return .scriptSessionUnavailable(failure)\n",
+     "            _ = failure\n")
+PY
+
+# ── The refusal says another sentence than every backend's ──────────
+#
+# Killer: `aStartWhoseSessionCannotBeEstablishedIsRefusedWithTheStep`, which
+# holds the description to the sentence.
+
+mutation_case "the refusal's sentence leaves out the step" <<'PY'
+edit("backends/swift/runtime/Sources/SceRuntime/ScriptSession.swift",
+     "        \"the script session could not be established at step '\\(stage)': \\(message)\"\n",
+     "        \"the script session could not be established: \\(message)\"\n")
+PY
+
+# ── A library that did not load is the engine's own failure ─────────
+#
+# The generated machine reports a library that did not load as the create
+# step, so a build that shipped a chunk that does not load reads as a session
+# the engine could not make. Killers: the `library` round of
+# `aStartWhoseSessionCannotBeEstablishedIsRefusedWithTheStep` and
+# `theCheckedRootStartIsRefusedForTheSession`.
+
+mutation_case "a library that did not load is reported as the create step" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "            return ScriptSessionFailure(stage: .library, message: LuaError.message(of: error))\n",
+     "            return ScriptSessionFailure(stage: .create, message: LuaError.message(of: error))\n")
+PY
+
+# ── A session whose creation failed is taken as made ────────────────
+#
+# Killer: the `create` round of
+# `aStartWhoseSessionCannotBeEstablishedIsRefusedWithTheStep`, whose start is
+# not refused and stops at the precondition.
+
+mutation_case "the generated machine answers a creation that failed as a session" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "            return ScriptSessionFailure(stage: .create, message: LuaError.message(of: error))\n",
+     "            return nil\n")
+PY
+
+# ── A bind that failed leaves its session behind ────────────────────
+#
+# Killers: `aSessionWhoseSystemVariablesCannotBeBoundIsReleased` and every
+# `system-variables` round of `expectNothingStarted`, which find a session that
+# answers.
+
+mutation_case "a failed bind of the system variables keeps its session" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "            return ScriptSessionFailure(stage: .systemVariables, message: LuaError.message(of: error))\n",
+     "            lua = session\n            return ScriptSessionFailure(stage: .systemVariables, message: LuaError.message(of: error))\n")
+PY
+
+# ── The refused child is kept as the invocation ─────────────────────
+#
+# Killer: `aChildWhoseSessionFailsLeavesItsParentWithErrorExecutionAndNoChild`,
+# whose `isInvocationRunning("chatty")` answers the child that never started.
+
+mutation_case "the child whose start was refused is kept" <<'PY'
+edit("tools/codegen/templates/swift/invoke_methods.swift.jinja2",
+     "        guard startChildSession(session, invokeID: \"{{ invoke_info.invoke_id | escape_swift }}\", engine: engine) else {\n",
+     "        guard startChildSession(session, invokeID: \"{{ invoke_info.invoke_id | escape_swift }}\", engine: engine) || true else {\n")
+PY
+
+# ── The refused child raises nothing ────────────────────────────────
+#
+# The invoke ends without a child and without telling the document.
+# Killer: `aChildWhoseSessionFailsLeavesItsParentWithErrorExecutionAndNoChild`,
+# whose `lastUnhandledError` finds no error.execution.
+
+mutation_case "the child whose start was refused raises no error.execution" <<'PY'
+edit("backends/swift/runtime/Sources/SceRuntime/Invoke.swift",
+     "        if let error = engine.policy.getEventFromName(\"error.execution\") {\n",
+     "        if let error = engine.policy.getEventFromName(\"error.no-such-event\") {\n")
+PY
