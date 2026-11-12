@@ -405,15 +405,18 @@ type StaticBlockEndsListPolicy struct {
 
 // NewStaticBlockEndsListPolicy creates a new policy with default values.
 func NewStaticBlockEndsListPolicy() StaticBlockEndsListPolicy {
+	var vPicked []uint8 = nil
+	var vAfterAppend uint8 = 0
+	var vErrors uint8 = 0
 	return StaticBlockEndsListPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPicked: nil,
-		vAfterAppend: 0,
-		vErrors: 0,
+		vPicked: vPicked,
+		vAfterAppend: vAfterAppend,
+		vErrors: vErrors,
 	}
 }
 

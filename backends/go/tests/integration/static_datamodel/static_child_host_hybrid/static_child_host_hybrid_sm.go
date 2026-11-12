@@ -575,6 +575,8 @@ type StaticChildHostHybridPolicy struct {
 // initial state's `<onentry>` can already perform an act — this is the one
 // call every host has to make, so it is where the requirement belongs.
 func NewStaticChildHostHybridPolicy(actions StaticChildHostHybridActions) StaticChildHostHybridPolicy {
+	var vPick string = "static_hosted_first.scxml"
+	var vCompleted uint32 = 0
 	return StaticChildHostHybridPolicy{
 		actions: actions,
 		// docs/adr/0045: a session has an id, which a saved state names it by and
@@ -582,8 +584,8 @@ func NewStaticChildHostHybridPolicy(actions StaticChildHostHybridActions) Static
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPick: "static_hosted_first.scxml",
-		vCompleted: 0,
+		vPick: vPick,
+		vCompleted: vCompleted,
 		pendingInvokes: make([]sce.PendingInvoke[StaticChildHostHybridState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

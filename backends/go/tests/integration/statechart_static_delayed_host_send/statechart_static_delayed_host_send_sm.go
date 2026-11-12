@@ -413,14 +413,16 @@ type StatechartStaticDelayedHostSendPolicy struct {
 
 // NewStatechartStaticDelayedHostSendPolicy creates a new policy with default values.
 func NewStatechartStaticDelayedHostSendPolicy() StatechartStaticDelayedHostSendPolicy {
+	var vJob uint32 = 7
+	var vLabel string = "report"
 	return StatechartStaticDelayedHostSendPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vJob: 7,
-		vLabel: "report",
+		vJob: vJob,
+		vLabel: vLabel,
 	}
 }
 

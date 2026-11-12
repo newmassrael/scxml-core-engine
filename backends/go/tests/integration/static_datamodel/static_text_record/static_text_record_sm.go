@@ -607,17 +607,22 @@ type StaticTextRecordPolicy struct {
 
 // NewStaticTextRecordPolicy creates a new policy with default values.
 func NewStaticTextRecordPolicy() StaticTextRecordPolicy {
+	var vSlots []StaticTextRecordSlotRecord = nil
+	var vHeld StaticTextRecordSlotRecord = StaticTextRecordSlotRecord{slot: 1, version: 0, text: "start"}
+	var vIncoming StaticTextRecordSlotRecord = StaticTextRecordSlotRecord{slot: 1, version: 0, text: ""}
+	var vKnown uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticTextRecordPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vSlots: nil,
-		vHeld: StaticTextRecordSlotRecord{slot: 1, version: 0, text: "start"},
-		vIncoming: StaticTextRecordSlotRecord{slot: 1, version: 0, text: ""},
-		vKnown: 0,
-		vRefusals: 0,
+		vSlots: vSlots,
+		vHeld: vHeld,
+		vIncoming: vIncoming,
+		vKnown: vKnown,
+		vRefusals: vRefusals,
 	}
 }
 

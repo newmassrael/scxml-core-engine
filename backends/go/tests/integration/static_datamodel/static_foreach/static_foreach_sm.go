@@ -517,20 +517,28 @@ type StaticForeachPolicy struct {
 
 // NewStaticForeachPolicy creates a new policy with default values.
 func NewStaticForeachPolicy() StaticForeachPolicy {
+	var vPicked []uint8 = nil
+	var vTotal uint32 = 0
+	var vWeighted uint32 = 0
+	var vSmall uint8 = 0
+	var vCrossings uint32 = 0
+	var vVisited uint32 = 0
+	var vFinished uint32 = 0
+	var vErrors uint32 = 0
 	return StaticForeachPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPicked: nil,
-		vTotal: 0,
-		vWeighted: 0,
-		vSmall: 0,
-		vCrossings: 0,
-		vVisited: 0,
-		vFinished: 0,
-		vErrors: 0,
+		vPicked: vPicked,
+		vTotal: vTotal,
+		vWeighted: vWeighted,
+		vSmall: vSmall,
+		vCrossings: vCrossings,
+		vVisited: vVisited,
+		vFinished: vFinished,
+		vErrors: vErrors,
 	}
 }
 

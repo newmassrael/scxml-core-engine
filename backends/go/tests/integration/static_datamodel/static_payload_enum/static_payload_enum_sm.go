@@ -547,16 +547,20 @@ type StaticPayloadEnumPolicy struct {
 
 // NewStaticPayloadEnumPolicy creates a new policy with default values.
 func NewStaticPayloadEnumPolicy() StaticPayloadEnumPolicy {
+	var vLayout StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnumMonth
+	var vZoom uint8 = 0
+	var vAgenda bool = false
+	var vShown uint32 = 0
 	return StaticPayloadEnumPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLayout: StaticPayloadEnumViewModeEnumMonth,
-		vZoom: 0,
-		vAgenda: false,
-		vShown: 0,
+		vLayout: vLayout,
+		vZoom: vZoom,
+		vAgenda: vAgenda,
+		vShown: vShown,
 	}
 }
 

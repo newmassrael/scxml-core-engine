@@ -597,21 +597,30 @@ type StaticSendParamsPolicy struct {
 
 // NewStaticSendParamsPolicy creates a new policy with default values.
 func NewStaticSendParamsPolicy() StaticSendParamsPolicy {
+	var vCount uint32 = 3
+	var vSmall uint8 = 250
+	var vLabel string = "tally"
+	var vTotal uint32 = 0
+	var vOk bool = false
+	var vTag string = ""
+	var vPartialTotal uint32 = 0
+	var vPartialPart uint8 = 0
+	var vRefusals uint32 = 0
 	return StaticSendParamsPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vCount: 3,
-		vSmall: 250,
-		vLabel: "tally",
-		vTotal: 0,
-		vOk: false,
-		vTag: "",
-		vPartialTotal: 0,
-		vPartialPart: 0,
-		vRefusals: 0,
+		vCount: vCount,
+		vSmall: vSmall,
+		vLabel: vLabel,
+		vTotal: vTotal,
+		vOk: vOk,
+		vTag: vTag,
+		vPartialTotal: vPartialTotal,
+		vPartialPart: vPartialPart,
+		vRefusals: vRefusals,
 	}
 }
 

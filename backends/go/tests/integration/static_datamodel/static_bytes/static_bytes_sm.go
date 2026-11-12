@@ -474,18 +474,24 @@ type StaticBytesPolicy struct {
 
 // NewStaticBytesPolicy creates a new policy with default values.
 func NewStaticBytesPolicy() StaticBytesPolicy {
+	var vFrame []byte = []byte{0x61, 0x62}
+	var vTail []byte = []byte{0x78, 0x79}
+	var vSize uint32 = 0
+	var vMatches uint32 = 0
+	var vMisses uint32 = 0
+	var vErrors uint32 = 0
 	return StaticBytesPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vFrame: []byte{0x61, 0x62},
-		vTail: []byte{0x78, 0x79},
-		vSize: 0,
-		vMatches: 0,
-		vMisses: 0,
-		vErrors: 0,
+		vFrame: vFrame,
+		vTail: vTail,
+		vSize: vSize,
+		vMatches: vMatches,
+		vMisses: vMisses,
+		vErrors: vErrors,
 	}
 }
 

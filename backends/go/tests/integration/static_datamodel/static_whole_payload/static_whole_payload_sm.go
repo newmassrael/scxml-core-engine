@@ -629,17 +629,22 @@ type StaticWholePayloadPolicy struct {
 
 // NewStaticWholePayloadPolicy creates a new policy with default values.
 func NewStaticWholePayloadPolicy() StaticWholePayloadPolicy {
+	var vShown StaticWholePayloadViewRecord = StaticWholePayloadViewRecord{layout: StaticWholePayloadViewModeEnumMonth, zoom: 1}
+	var vSeen []StaticWholePayloadViewRecord = nil
+	var vUpdates uint32 = 0
+	var vAgendas uint32 = 0
+	var vOthers uint32 = 0
 	return StaticWholePayloadPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vShown: StaticWholePayloadViewRecord{layout: StaticWholePayloadViewModeEnumMonth, zoom: 1},
-		vSeen: nil,
-		vUpdates: 0,
-		vAgendas: 0,
-		vOthers: 0,
+		vShown: vShown,
+		vSeen: vSeen,
+		vUpdates: vUpdates,
+		vAgendas: vAgendas,
+		vOthers: vOthers,
 	}
 }
 

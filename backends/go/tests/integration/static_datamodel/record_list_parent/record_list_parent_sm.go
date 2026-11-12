@@ -1927,20 +1927,28 @@ type RecordListParentPolicy struct {
 
 // NewRecordListParentPolicy creates a new policy with default values.
 func NewRecordListParentPolicy() RecordListParentPolicy {
+	var vTold uint32 = 0
+	var vShown RecordListParentToldRecord = RecordListParentToldRecord{id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vOthers []RecordListParentToldValueRecord = nil
+	var vOther RecordListParentToldValueRecord = RecordListParentToldValueRecord{id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vRefused optional.Of[RecordListParentRefusedRecord] = optional.None[RecordListParentRefusedRecord]()
+	var vRefusedCount uint32 = 0
+	var vPendingCount uint32 = 0
+	var vConfirmedCount uint32 = 0
 	return RecordListParentPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vTold: 0,
-		vShown: RecordListParentToldRecord{id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vOthers: nil,
-		vOther: RecordListParentToldValueRecord{id: 0, field: 0, ordinal: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vRefused: optional.None[RecordListParentRefusedRecord](),
-		vRefusedCount: 0,
-		vPendingCount: 0,
-		vConfirmedCount: 0,
+		vTold: vTold,
+		vShown: vShown,
+		vOthers: vOthers,
+		vOther: vOther,
+		vRefused: vRefused,
+		vRefusedCount: vRefusedCount,
+		vPendingCount: vPendingCount,
+		vConfirmedCount: vConfirmedCount,
 		pendingInvokes: make([]sce.PendingInvoke[RecordListParentState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

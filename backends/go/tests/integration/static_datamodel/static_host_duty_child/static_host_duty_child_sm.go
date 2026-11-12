@@ -522,6 +522,7 @@ func NewSimulatedStaticHostDutyChildPolicy(actions StaticHostDutyChildActions) S
 
 // newStaticHostDutyChildPolicy is the one construction both entry points reach.
 func newStaticHostDutyChildPolicy(actions StaticHostDutyChildActions, acceptSimulatedHost bool) StaticHostDutyChildPolicy {
+	var vCompleted uint32 = 0
 	return StaticHostDutyChildPolicy{
 		actions: actions,
 		acceptSimulatedHost: acceptSimulatedHost,
@@ -530,7 +531,7 @@ func newStaticHostDutyChildPolicy(actions StaticHostDutyChildActions, acceptSimu
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vCompleted: 0,
+		vCompleted: vCompleted,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostDutyChildState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

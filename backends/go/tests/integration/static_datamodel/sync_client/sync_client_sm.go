@@ -674,21 +674,30 @@ type SyncClientPolicy struct {
 
 // NewSyncClientPolicy creates a new policy with default values.
 func NewSyncClientPolicy() SyncClientPolicy {
+	var vByToken bool = false
+	var vFullListing bool = true
+	var vOutcome uint8 = 0
+	var vRetryAt int64 = 0
+	var vDeleted uint32 = 0
+	var vUploaded uint32 = 0
+	var vDiscarded uint32 = 0
+	var vPages uint32 = 0
+	var vRefusals uint32 = 0
 	return SyncClientPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vByToken: false,
-		vFullListing: true,
-		vOutcome: 0,
-		vRetryAt: 0,
-		vDeleted: 0,
-		vUploaded: 0,
-		vDiscarded: 0,
-		vPages: 0,
-		vRefusals: 0,
+		vByToken: vByToken,
+		vFullListing: vFullListing,
+		vOutcome: vOutcome,
+		vRetryAt: vRetryAt,
+		vDeleted: vDeleted,
+		vUploaded: vUploaded,
+		vDiscarded: vDiscarded,
+		vPages: vPages,
+		vRefusals: vRefusals,
 	}
 }
 

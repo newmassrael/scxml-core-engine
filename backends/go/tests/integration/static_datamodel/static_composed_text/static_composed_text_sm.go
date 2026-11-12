@@ -685,22 +685,32 @@ type StaticComposedTextPolicy struct {
 
 // NewStaticComposedTextPolicy creates a new policy with default values.
 func NewStaticComposedTextPolicy() StaticComposedTextPolicy {
+	var vNoteIsAb bool = false
+	var vNoteLen uint32 = 0
+	var vFirstLabelIsAb bool = false
+	var vLabelsAb uint32 = 0
+	var vFirstTagsAb uint32 = 0
+	var vWordsAb uint32 = 0
+	var vLastLabel string = ""
+	var vBlobBytes uint32 = 0
+	var vBlobsAb uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticComposedTextPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNoteIsAb: false,
-		vNoteLen: 0,
-		vFirstLabelIsAb: false,
-		vLabelsAb: 0,
-		vFirstTagsAb: 0,
-		vWordsAb: 0,
-		vLastLabel: "",
-		vBlobBytes: 0,
-		vBlobsAb: 0,
-		vRefusals: 0,
+		vNoteIsAb: vNoteIsAb,
+		vNoteLen: vNoteLen,
+		vFirstLabelIsAb: vFirstLabelIsAb,
+		vLabelsAb: vLabelsAb,
+		vFirstTagsAb: vFirstTagsAb,
+		vWordsAb: vWordsAb,
+		vLastLabel: vLastLabel,
+		vBlobBytes: vBlobBytes,
+		vBlobsAb: vBlobsAb,
+		vRefusals: vRefusals,
 	}
 }
 

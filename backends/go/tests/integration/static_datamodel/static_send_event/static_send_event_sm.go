@@ -457,17 +457,22 @@ type StaticSendEventPolicy struct {
 
 // NewStaticSendEventPolicy creates a new policy with default values.
 func NewStaticSendEventPolicy() StaticSendEventPolicy {
+	var vName string = "ping"
+	var vScale uint32 = 3
+	var vPings uint32 = 0
+	var vPongs uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticSendEventPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vName: "ping",
-		vScale: 3,
-		vPings: 0,
-		vPongs: 0,
-		vRefusals: 0,
+		vName: vName,
+		vScale: vScale,
+		vPings: vPings,
+		vPongs: vPongs,
+		vRefusals: vRefusals,
 	}
 }
 

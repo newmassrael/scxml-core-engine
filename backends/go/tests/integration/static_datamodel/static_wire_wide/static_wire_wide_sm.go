@@ -539,18 +539,24 @@ type StaticWireWidePolicy struct {
 
 // NewStaticWireWidePolicy creates a new policy with default values.
 func NewStaticWireWidePolicy() StaticWireWidePolicy {
+	var vLow uint64 = 0
+	var vSmallLow int64 = 0
+	var vLarge bool = false
+	var vNegative bool = false
+	var vRelays uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticWireWidePolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLow: 0,
-		vSmallLow: 0,
-		vLarge: false,
-		vNegative: false,
-		vRelays: 0,
-		vRefusals: 0,
+		vLow: vLow,
+		vSmallLow: vSmallLow,
+		vLarge: vLarge,
+		vNegative: vNegative,
+		vRelays: vRelays,
+		vRefusals: vRefusals,
 	}
 }
 

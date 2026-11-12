@@ -471,18 +471,24 @@ type StaticSendIdlocationPolicy struct {
 
 // NewStaticSendIdlocationPolicy creates a new policy with default values.
 func NewStaticSendIdlocationPolicy() StaticSendIdlocationPolicy {
+	var vFirst string = ""
+	var vSecond string = ""
+	var vScale uint32 = 3
+	var vFirstFired uint32 = 0
+	var vSecondFired uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticSendIdlocationPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vFirst: "",
-		vSecond: "",
-		vScale: 3,
-		vFirstFired: 0,
-		vSecondFired: 0,
-		vRefusals: 0,
+		vFirst: vFirst,
+		vSecond: vSecond,
+		vScale: vScale,
+		vFirstFired: vFirstFired,
+		vSecondFired: vSecondFired,
+		vRefusals: vRefusals,
 	}
 }
 

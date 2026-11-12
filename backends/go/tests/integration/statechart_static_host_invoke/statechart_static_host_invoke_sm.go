@@ -471,16 +471,20 @@ type StatechartStaticHostInvokePolicy struct {
 
 // NewStatechartStaticHostInvokePolicy creates a new policy with default values.
 func NewStatechartStaticHostInvokePolicy() StatechartStaticHostInvokePolicy {
+	var vJob uint32 = 7
+	var vLabel string = "report"
+	var vPlace string = "job://report"
+	var vSeen uint32 = 0
 	return StatechartStaticHostInvokePolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vJob: 7,
-		vLabel: "report",
-		vPlace: "job://report",
-		vSeen: 0,
+		vJob: vJob,
+		vLabel: vLabel,
+		vPlace: vPlace,
+		vSeen: vSeen,
 		pendingInvokes: make([]sce.PendingInvoke[StatechartStaticHostInvokeState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

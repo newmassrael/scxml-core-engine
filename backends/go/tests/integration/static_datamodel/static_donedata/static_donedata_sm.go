@@ -515,16 +515,20 @@ type StaticDonedataPolicy struct {
 
 // NewStaticDonedataPolicy creates a new policy with default values.
 func NewStaticDonedataPolicy() StaticDonedataPolicy {
+	var vCount uint32 = 0
+	var vSmall uint8 = 250
+	var vLabel string = "tally"
+	var vLayout StaticDonedataViewModeEnum = StaticDonedataViewModeEnumMonth
 	return StaticDonedataPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vCount: 0,
-		vSmall: 250,
-		vLabel: "tally",
-		vLayout: StaticDonedataViewModeEnumMonth,
+		vCount: vCount,
+		vSmall: vSmall,
+		vLabel: vLabel,
+		vLayout: vLayout,
 	}
 }
 

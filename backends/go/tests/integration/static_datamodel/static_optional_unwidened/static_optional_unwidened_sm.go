@@ -941,36 +941,60 @@ type StaticOptionalUnwidenedPolicy struct {
 
 // NewStaticOptionalUnwidenedPolicy creates a new policy with default values.
 func NewStaticOptionalUnwidenedPolicy() StaticOptionalUnwidenedPolicy {
+	var vDue int64 = 12
+	var vOther int64 = 7
+	var vTitle string = "later"
+	var vStatus StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnumInProgress
+	var vItem StaticOptionalUnwidenedDueRecord = StaticOptionalUnwidenedDueRecord{id: 2, due: 3, title: "first", status: StaticOptionalUnwidenedStatusEnumOpen}
+	var vItems []StaticOptionalUnwidenedDueRecord = nil
+	var vDays int64 = 0
+	var vFollowing int64 = 0
+	var vLate bool = false
+	var vEarly bool = false
+	var vLabel string = ""
+	var vPlain StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnumOpen
+	var vKept int64 = 0
+	var vListed int64 = 0
+	var vMissing uint32 = 0
+	var vSame bool = false
+	var vAbsent bool = false
+	var vStatusDone bool = false
+	var vEchoed int64 = 0
+	var vEchoTitle string = "echo"
+	var vEchoStatus StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnumDone
+	var vFallbacks uint32 = 0
+	var vErrors uint32 = 0
+	var vHuge int64 = 4294967296
 	return StaticOptionalUnwidenedPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDue: 12,
-		vOther: 7,
-		vTitle: "later",
-		vStatus: StaticOptionalUnwidenedStatusEnumInProgress,
-		vItem: StaticOptionalUnwidenedDueRecord{id: 2, due: 3, title: "first", status: StaticOptionalUnwidenedStatusEnumOpen},
-		vItems: nil,
-		vDays: 0,
-		vFollowing: 0,
-		vLate: false,
-		vEarly: false,
-		vLabel: "",
-		vPlain: StaticOptionalUnwidenedStatusEnumOpen,
-		vKept: 0,
-		vListed: 0,
-		vMissing: 0,
-		vSame: false,
-		vAbsent: false,
-		vStatusDone: false,
-		vEchoed: 0,
-		vEchoTitle: "echo",
-		vEchoStatus: StaticOptionalUnwidenedStatusEnumDone,
-		vFallbacks: 0,
-		vErrors: 0,
-		vHuge: 4294967296,
+		vDue: vDue,
+		vOther: vOther,
+		vTitle: vTitle,
+		vStatus: vStatus,
+		vItem: vItem,
+		vItems: vItems,
+		vDays: vDays,
+		vFollowing: vFollowing,
+		vLate: vLate,
+		vEarly: vEarly,
+		vLabel: vLabel,
+		vPlain: vPlain,
+		vKept: vKept,
+		vListed: vListed,
+		vMissing: vMissing,
+		vSame: vSame,
+		vAbsent: vAbsent,
+		vStatusDone: vStatusDone,
+		vEchoed: vEchoed,
+		vEchoTitle: vEchoTitle,
+		vEchoStatus: vEchoStatus,
+		vFallbacks: vFallbacks,
+		vErrors: vErrors,
+		vHuge: vHuge,
 	}
 }
 

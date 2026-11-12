@@ -548,6 +548,9 @@ type StaticInvokeEndingOrderPolicy struct {
 // initial state's `<onentry>` can already perform an act — this is the one
 // call every host has to make, so it is where the requirement belongs.
 func NewStaticInvokeEndingOrderPolicy(actions StaticInvokeEndingOrderActions) StaticInvokeEndingOrderPolicy {
+	var vHeard uint32 = 0
+	var vStampedAt uint32 = 0
+	var vAnswerAt uint32 = 0
 	return StaticInvokeEndingOrderPolicy{
 		actions: actions,
 		// docs/adr/0045: a session has an id, which a saved state names it by and
@@ -555,9 +558,9 @@ func NewStaticInvokeEndingOrderPolicy(actions StaticInvokeEndingOrderActions) St
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vHeard: 0,
-		vStampedAt: 0,
-		vAnswerAt: 0,
+		vHeard: vHeard,
+		vStampedAt: vStampedAt,
+		vAnswerAt: vAnswerAt,
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeEndingOrderState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

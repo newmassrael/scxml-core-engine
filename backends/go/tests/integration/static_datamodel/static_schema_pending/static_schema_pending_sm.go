@@ -610,15 +610,18 @@ type StaticSchemaPendingPolicy struct {
 
 // NewStaticSchemaPendingPolicy creates a new policy with default values.
 func NewStaticSchemaPendingPolicy() StaticSchemaPendingPolicy {
+	var vLast StaticSchemaPendingSignalRecord = StaticSchemaPendingSignalRecord{level: StaticSchemaPendingSignalLevelEnumLow, count: 0, urgent: false}
+	var vTaken uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticSchemaPendingPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLast: StaticSchemaPendingSignalRecord{level: StaticSchemaPendingSignalLevelEnumLow, count: 0, urgent: false},
-		vTaken: 0,
-		vRefusals: 0,
+		vLast: vLast,
+		vTaken: vTaken,
+		vRefusals: vRefusals,
 	}
 }
 

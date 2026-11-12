@@ -756,20 +756,28 @@ type StaticStateAlgorithmEnumPolicy struct {
 
 // NewStaticStateAlgorithmEnumPolicy creates a new policy with default values.
 func NewStaticStateAlgorithmEnumPolicy() StaticStateAlgorithmEnumPolicy {
+	var vItems []StaticStateAlgorithmEnumItemRecord = nil
+	var vDraft StaticStateAlgorithmEnumItemRecord = StaticStateAlgorithmEnumItemRecord{id: 0, status: StaticStateAlgorithmEnumStatusEnumOpen}
+	var vLast StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnumOpen
+	var vOpenCount uint32 = 0
+	var vStartedCount uint32 = 0
+	var vDoneCount uint32 = 0
+	var vChecks uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticStateAlgorithmEnumPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vItems: nil,
-		vDraft: StaticStateAlgorithmEnumItemRecord{id: 0, status: StaticStateAlgorithmEnumStatusEnumOpen},
-		vLast: StaticStateAlgorithmEnumStatusEnumOpen,
-		vOpenCount: 0,
-		vStartedCount: 0,
-		vDoneCount: 0,
-		vChecks: 0,
-		vRefusals: 0,
+		vItems: vItems,
+		vDraft: vDraft,
+		vLast: vLast,
+		vOpenCount: vOpenCount,
+		vStartedCount: vStartedCount,
+		vDoneCount: vDoneCount,
+		vChecks: vChecks,
+		vRefusals: vRefusals,
 	}
 }
 

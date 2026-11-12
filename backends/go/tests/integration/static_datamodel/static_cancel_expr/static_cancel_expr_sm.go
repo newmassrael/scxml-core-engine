@@ -457,17 +457,22 @@ type StaticCancelExprPolicy struct {
 
 // NewStaticCancelExprPolicy creates a new policy with default values.
 func NewStaticCancelExprPolicy() StaticCancelExprPolicy {
+	var vWhich string = "a"
+	var vScale uint32 = 3
+	var vAFired uint32 = 0
+	var vBFired uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticCancelExprPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vWhich: "a",
-		vScale: 3,
-		vAFired: 0,
-		vBFired: 0,
-		vRefusals: 0,
+		vWhich: vWhich,
+		vScale: vScale,
+		vAFired: vAFired,
+		vBFired: vBFired,
+		vRefusals: vRefusals,
 	}
 }
 

@@ -612,17 +612,22 @@ type StaticRecordEnumPolicy struct {
 
 // NewStaticRecordEnumPolicy creates a new policy with default values.
 func NewStaticRecordEnumPolicy() StaticRecordEnumPolicy {
+	var vShown StaticRecordEnumViewRecord = StaticRecordEnumViewRecord{layout: StaticRecordEnumViewModeEnumMonth, zoom: 1}
+	var vSeen []StaticRecordEnumViewRecord = nil
+	var vWeeks uint32 = 0
+	var vFlips uint32 = 0
+	var vLeads uint32 = 0
 	return StaticRecordEnumPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vShown: StaticRecordEnumViewRecord{layout: StaticRecordEnumViewModeEnumMonth, zoom: 1},
-		vSeen: nil,
-		vWeeks: 0,
-		vFlips: 0,
-		vLeads: 0,
+		vShown: vShown,
+		vSeen: vSeen,
+		vWeeks: vWeeks,
+		vFlips: vFlips,
+		vLeads: vLeads,
 	}
 }
 

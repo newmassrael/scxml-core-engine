@@ -600,20 +600,28 @@ type StaticRecordBytesPolicy struct {
 
 // NewStaticRecordBytesPolicy creates a new policy with default values.
 func NewStaticRecordBytesPolicy() StaticRecordBytesPolicy {
+	var vLast StaticRecordBytesFramedRecord = StaticRecordBytesFramedRecord{sensor: 1, frame: []byte{0x61, 0x62}}
+	var vSpare []byte = []byte{0x68, 0x65, 0x6c, 0x6c, 0x6f}
+	var vFrames []StaticRecordBytesFramedRecord = nil
+	var vSize uint32 = 0
+	var vMatches uint32 = 0
+	var vMisses uint32 = 0
+	var vLeads uint32 = 0
+	var vErrors uint32 = 0
 	return StaticRecordBytesPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLast: StaticRecordBytesFramedRecord{sensor: 1, frame: []byte{0x61, 0x62}},
-		vSpare: []byte{0x68, 0x65, 0x6c, 0x6c, 0x6f},
-		vFrames: nil,
-		vSize: 0,
-		vMatches: 0,
-		vMisses: 0,
-		vLeads: 0,
-		vErrors: 0,
+		vLast: vLast,
+		vSpare: vSpare,
+		vFrames: vFrames,
+		vSize: vSize,
+		vMatches: vMatches,
+		vMisses: vMisses,
+		vLeads: vLeads,
+		vErrors: vErrors,
 	}
 }
 

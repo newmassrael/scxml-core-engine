@@ -581,21 +581,30 @@ type StaticListIndexPolicy struct {
 
 // NewStaticListIndexPolicy creates a new policy with default values.
 func NewStaticListIndexPolicy() StaticListIndexPolicy {
+	var vPicked []uint8 = nil
+	var vCursor int32 = 0
+	var vUnder uint8 = 0
+	var vFirst uint8 = 0
+	var vLast uint8 = 0
+	var vOrdered bool = false
+	var vRoom bool = false
+	var vCount uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticListIndexPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPicked: nil,
-		vCursor: 0,
-		vUnder: 0,
-		vFirst: 0,
-		vLast: 0,
-		vOrdered: false,
-		vRoom: false,
-		vCount: 0,
-		vRefusals: 0,
+		vPicked: vPicked,
+		vCursor: vCursor,
+		vUnder: vUnder,
+		vFirst: vFirst,
+		vLast: vLast,
+		vOrdered: vOrdered,
+		vRoom: vRoom,
+		vCount: vCount,
+		vRefusals: vRefusals,
 	}
 }
 

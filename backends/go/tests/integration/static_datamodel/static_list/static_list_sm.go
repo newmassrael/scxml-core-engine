@@ -470,15 +470,18 @@ type StaticListPolicy struct {
 
 // NewStaticListPolicy creates a new policy with default values.
 func NewStaticListPolicy() StaticListPolicy {
+	var vPicked []uint8 = nil
+	var vRefusals uint32 = 0
+	var vCount uint32 = 0
 	return StaticListPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPicked: nil,
-		vRefusals: 0,
-		vCount: 0,
+		vPicked: vPicked,
+		vRefusals: vRefusals,
+		vCount: vCount,
 	}
 }
 

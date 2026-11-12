@@ -562,15 +562,18 @@ type StaticInvokeTreePolicy struct {
 
 // NewStaticInvokeTreePolicy creates a new policy with default values.
 func NewStaticInvokeTreePolicy() StaticInvokeTreePolicy {
+	var vAnswers uint32 = 0
+	var vReports uint32 = 0
+	var vStamps uint32 = 0
 	return StaticInvokeTreePolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vAnswers: 0,
-		vReports: 0,
-		vStamps: 0,
+		vAnswers: vAnswers,
+		vReports: vReports,
+		vStamps: vStamps,
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeTreeState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

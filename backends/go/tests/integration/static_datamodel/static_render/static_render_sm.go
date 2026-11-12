@@ -550,18 +550,24 @@ type StaticRenderPolicy struct {
 
 // NewStaticRenderPolicy creates a new policy with default values.
 func NewStaticRenderPolicy() StaticRenderPolicy {
+	var vNote string = ""
+	var vWho string = "ann"
+	var vCount int16 = 0
+	var vView StaticRenderViewModeEnum = StaticRenderViewModeEnumMonth
+	var vSaid string = "hi"
+	var vRefusals uint32 = 0
 	return StaticRenderPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNote: "",
-		vWho: "ann",
-		vCount: 0,
-		vView: StaticRenderViewModeEnumMonth,
-		vSaid: "hi",
-		vRefusals: 0,
+		vNote: vNote,
+		vWho: vWho,
+		vCount: vCount,
+		vView: vView,
+		vSaid: vSaid,
+		vRefusals: vRefusals,
 	}
 }
 

@@ -706,19 +706,26 @@ type StaticStateAlgorithmPolicy struct {
 
 // NewStaticStateAlgorithmPolicy creates a new policy with default values.
 func NewStaticStateAlgorithmPolicy() StaticStateAlgorithmPolicy {
+	var vEntries []StaticStateAlgorithmEntryRecord = nil
+	var vTotal StaticStateAlgorithmTotalRecord = StaticStateAlgorithmTotalRecord{count: 0, sum: 0}
+	var vLast StaticStateAlgorithmEntryRecord = StaticStateAlgorithmEntryRecord{id: 0, amount: 0}
+	var vIds []uint32 = nil
+	var vIdsum uint32 = 0
+	var vLarge uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticStateAlgorithmPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vEntries: nil,
-		vTotal: StaticStateAlgorithmTotalRecord{count: 0, sum: 0},
-		vLast: StaticStateAlgorithmEntryRecord{id: 0, amount: 0},
-		vIds: nil,
-		vIdsum: 0,
-		vLarge: 0,
-		vRefusals: 0,
+		vEntries: vEntries,
+		vTotal: vTotal,
+		vLast: vLast,
+		vIds: vIds,
+		vIdsum: vIdsum,
+		vLarge: vLarge,
+		vRefusals: vRefusals,
 	}
 }
 

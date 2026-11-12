@@ -1403,28 +1403,44 @@ type StaticUnionPolicy struct {
 
 // NewStaticUnionPolicy creates a new policy with default values.
 func NewStaticUnionPolicy() StaticUnionPolicy {
+	var vBuilt StaticUnionUnionShapeUnion = StaticUnionUnionShapeUnionRect(StaticUnionRectRecord{width: 1, height: 2})
+	var vKept optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vLastKind StaticUnionKindEnum = StaticUnionKindEnumDot
+	var vRadius uint16 = 0
+	var vWidth uint16 = 0
+	var vHeight uint16 = 0
+	var vLabels uint32 = 0
+	var vPoints uint32 = 0
+	var vDots uint32 = 0
+	var vManyRadius uint16 = 0
+	var vManyWidth uint16 = 0
+	var vManyShapes uint32 = 0
+	var vMaybeWidth uint16 = 0
+	var vRefusals uint32 = 0
+	var vLifted optional.Of[StaticUnionUnionShapeUnion] = optional.None[StaticUnionUnionShapeUnion]()
+	var vLiftWhy optional.Of[StaticUnionLiftRefusalRecord] = optional.None[StaticUnionLiftRefusalRecord]()
 	return StaticUnionPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vBuilt: StaticUnionUnionShapeUnionRect(StaticUnionRectRecord{width: 1, height: 2}),
-		vKept: optional.None[StaticUnionUnionShapeUnion](),
-		vLastKind: StaticUnionKindEnumDot,
-		vRadius: 0,
-		vWidth: 0,
-		vHeight: 0,
-		vLabels: 0,
-		vPoints: 0,
-		vDots: 0,
-		vManyRadius: 0,
-		vManyWidth: 0,
-		vManyShapes: 0,
-		vMaybeWidth: 0,
-		vRefusals: 0,
-		vLifted: optional.None[StaticUnionUnionShapeUnion](),
-		vLiftWhy: optional.None[StaticUnionLiftRefusalRecord](),
+		vBuilt: vBuilt,
+		vKept: vKept,
+		vLastKind: vLastKind,
+		vRadius: vRadius,
+		vWidth: vWidth,
+		vHeight: vHeight,
+		vLabels: vLabels,
+		vPoints: vPoints,
+		vDots: vDots,
+		vManyRadius: vManyRadius,
+		vManyWidth: vManyWidth,
+		vManyShapes: vManyShapes,
+		vMaybeWidth: vMaybeWidth,
+		vRefusals: vRefusals,
+		vLifted: vLifted,
+		vLiftWhy: vLiftWhy,
 	}
 }
 

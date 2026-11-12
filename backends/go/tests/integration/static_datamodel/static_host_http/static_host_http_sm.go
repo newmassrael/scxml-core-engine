@@ -660,20 +660,28 @@ type StaticHostHttpPolicy struct {
 
 // NewStaticHostHttpPolicy creates a new policy with default values.
 func NewStaticHostHttpPolicy() StaticHostHttpPolicy {
+	var vMethod string = ""
+	var vUrl string = ""
+	var vRequestHeaders string = ""
+	var vRequestBody string = ""
+	var vOutcome string = ""
+	var vStatus uint16 = 0
+	var vResponseHeaders string = ""
+	var vResponseBody string = ""
 	return StaticHostHttpPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vMethod: "",
-		vUrl: "",
-		vRequestHeaders: "",
-		vRequestBody: "",
-		vOutcome: "",
-		vStatus: 0,
-		vResponseHeaders: "",
-		vResponseBody: "",
+		vMethod: vMethod,
+		vUrl: vUrl,
+		vRequestHeaders: vRequestHeaders,
+		vRequestBody: vRequestBody,
+		vOutcome: vOutcome,
+		vStatus: vStatus,
+		vResponseHeaders: vResponseHeaders,
+		vResponseBody: vResponseBody,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostHttpState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

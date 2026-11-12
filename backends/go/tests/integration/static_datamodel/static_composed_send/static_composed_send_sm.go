@@ -794,26 +794,40 @@ type StaticComposedSendPolicy struct {
 
 // NewStaticComposedSendPolicy creates a new policy with default values.
 func NewStaticComposedSendPolicy() StaticComposedSendPolicy {
+	var vDeliveries uint32 = 0
+	var vItemCount uint32 = 0
+	var vTagCount uint32 = 0
+	var vIdSum uint32 = 0
+	var vCellSum uint32 = 0
+	var vLevelCount uint32 = 0
+	var vFirstMaybe optional.Of[uint16] = optional.None[uint16]()
+	var vLateSum uint32 = 0
+	var vLate []uint8 = nil
+	var vRefusals uint32 = 0
+	var vHeld []uint8 = nil
+	var vCountedDeliveries uint32 = 0
+	var vCountedSum uint32 = 0
+	var vCountedHops uint8 = 0
 	return StaticComposedSendPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDeliveries: 0,
-		vItemCount: 0,
-		vTagCount: 0,
-		vIdSum: 0,
-		vCellSum: 0,
-		vLevelCount: 0,
-		vFirstMaybe: optional.None[uint16](),
-		vLateSum: 0,
-		vLate: nil,
-		vRefusals: 0,
-		vHeld: nil,
-		vCountedDeliveries: 0,
-		vCountedSum: 0,
-		vCountedHops: 0,
+		vDeliveries: vDeliveries,
+		vItemCount: vItemCount,
+		vTagCount: vTagCount,
+		vIdSum: vIdSum,
+		vCellSum: vCellSum,
+		vLevelCount: vLevelCount,
+		vFirstMaybe: vFirstMaybe,
+		vLateSum: vLateSum,
+		vLate: vLate,
+		vRefusals: vRefusals,
+		vHeld: vHeld,
+		vCountedDeliveries: vCountedDeliveries,
+		vCountedSum: vCountedSum,
+		vCountedHops: vCountedHops,
 	}
 }
 

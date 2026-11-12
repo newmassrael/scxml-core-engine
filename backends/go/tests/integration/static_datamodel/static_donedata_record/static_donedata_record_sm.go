@@ -521,13 +521,14 @@ type StaticDonedataRecordPolicy struct {
 
 // NewStaticDonedataRecordPolicy creates a new policy with default values.
 func NewStaticDonedataRecordPolicy() StaticDonedataRecordPolicy {
+	var vShown StaticDonedataRecordViewRecord = StaticDonedataRecordViewRecord{layout: StaticDonedataRecordViewModeEnumDay, zoom: 2}
 	return StaticDonedataRecordPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vShown: StaticDonedataRecordViewRecord{layout: StaticDonedataRecordViewModeEnumDay, zoom: 2},
+		vShown: vShown,
 	}
 }
 

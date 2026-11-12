@@ -624,16 +624,20 @@ type StaticWireEnumPolicy struct {
 
 // NewStaticWireEnumPolicy creates a new policy with default values.
 func NewStaticWireEnumPolicy() StaticWireEnumPolicy {
+	var vLayout StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnumWeek
+	var vShown StaticWireEnumViewRecord = StaticWireEnumViewRecord{layout: StaticWireEnumViewModeEnumDay, zoom: 2}
+	var vReceived StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnumMonth
+	var vDeliveries uint32 = 0
 	return StaticWireEnumPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLayout: StaticWireEnumViewModeEnumWeek,
-		vShown: StaticWireEnumViewRecord{layout: StaticWireEnumViewModeEnumDay, zoom: 2},
-		vReceived: StaticWireEnumViewModeEnumMonth,
-		vDeliveries: 0,
+		vLayout: vLayout,
+		vShown: vShown,
+		vReceived: vReceived,
+		vDeliveries: vDeliveries,
 	}
 }
 

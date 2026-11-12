@@ -3348,74 +3348,136 @@ type RecordListParentSceSynthInvokeListPolicy struct {
 
 // NewRecordListParentSceSynthInvokeListPolicy creates a new policy with default values.
 func NewRecordListParentSceSynthInvokeListPolicy() RecordListParentSceSynthInvokeListPolicy {
+	var vNode uint64 = 0
+	var vJournal bool = true
+	var vClock RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vDot RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vAdds []RecordListParentSceSynthInvokeListEntryRecord = nil
+	var vOne []RecordListParentSceSynthInvokeListEntryRecord = nil
+	var vEntry RecordListParentSceSynthInvokeListEntryRecord = RecordListParentSceSynthInvokeListEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0}
+	var vValues []RecordListParentSceSynthInvokeListValueRecord = nil
+	var vHeld RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vShareId uint32 = 0
+	var vShareField uint16 = 0
+	var vWasLive bool = false
+	var vPresent bool = false
+	var vRefusals uint32 = 0
+	var vRoomValues uint32 = 0
+	var vFull uint32 = 0
+	var vRoster []RecordListParentSceSynthInvokeListMemberRecord = nil
+	var vDenied uint32 = 0
+	var vForbidden bool = false
+	var vAuthorized bool = true
+	var vAnnounce bool = false
+	var vAnnounced uint32 = 0
+	var vMoved []uint64 = nil
+	var vListed bool = false
+	var vLive []RecordListParentSceSynthInvokeListValueRecord = nil
+	var vOrdinal uint32 = 0
+	var vEmpty RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vStaged []RecordListParentSceSynthInvokeListStagedRecord = nil
+	var vStaging RecordListParentSceSynthInvokeListStagedRecord = RecordListParentSceSynthInvokeListStagedRecord{kind: 0, id: 0, field: 0, value: 0, text: ""}
+	var vHolding bool = false
+	var vClosingNow int64 = 0
+	var vSpoiled bool = false
+	var vProbing bool = false
+	var vGone uint32 = 0
+	var vWrites uint32 = 0
+	var vCovered bool = false
+	var vProbe RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge
+	var vSpoiledFor RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge
+	var vNamedId uint32 = 0
+	var vNamedField uint16 = 0
+	var vNamedKind RecordListParentSceSynthInvokeListCommandEnum = RecordListParentSceSynthInvokeListCommandEnumEdit
+	var vTaking []RecordListParentSceSynthInvokeListOpRecord = nil
+	var vTook uint32 = 0
+	var vOp RecordListParentSceSynthInvokeListOpRecord = RecordListParentSceSynthInvokeListOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vRestoring bool = false
+	var vTentative bool = false
+	var vClosingCommand uint64 = 0
+	var vOffered []RecordListParentSceSynthInvokeListOpRecord = nil
+	var vOfferedAt RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vRefusedFor RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnumPeerRefused
+	var vClosedOps uint32 = 0
+	var vClosedFor optional.Of[RecordListParentSceSynthInvokeListRefusalEnum] = optional.None[RecordListParentSceSynthInvokeListRefusalEnum]()
+	var vClosedAt RecordListParentSceSynthInvokeListHlcRecord = RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vProvisional []RecordListParentSceSynthInvokeListProvisionalRecord = nil
+	var vProvisionalKept []RecordListParentSceSynthInvokeListProvisionalRecord = nil
+	var vStanding RecordListParentSceSynthInvokeListProvisionalRecord = RecordListParentSceSynthInvokeListProvisionalRecord{wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnumEdit}
+	var vProvisionalFound bool = false
+	var vWithdrawFrom uint32 = 0
+	var vUndo []RecordListParentSceSynthInvokeListUndoRecord = nil
+	var vUndoKept []RecordListParentSceSynthInvokeListUndoRecord = nil
+	var vUndoing RecordListParentSceSynthInvokeListUndoRecord = RecordListParentSceSynthInvokeListUndoRecord{atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
 	return RecordListParentSceSynthInvokeListPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNode: 0,
-		vJournal: true,
-		vClock: RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vStamp: RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vDot: RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vAdds: nil,
-		vOne: nil,
-		vEntry: RecordListParentSceSynthInvokeListEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0},
-		vValues: nil,
-		vHeld: RecordListParentSceSynthInvokeListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vShareId: 0,
-		vShareField: 0,
-		vWasLive: false,
-		vPresent: false,
-		vRefusals: 0,
-		vRoomValues: 0,
-		vFull: 0,
-		vRoster: nil,
-		vDenied: 0,
-		vForbidden: false,
-		vAuthorized: true,
-		vAnnounce: false,
-		vAnnounced: 0,
-		vMoved: nil,
-		vListed: false,
-		vLive: nil,
-		vOrdinal: 0,
-		vEmpty: RecordListParentSceSynthInvokeListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vStaged: nil,
-		vStaging: RecordListParentSceSynthInvokeListStagedRecord{kind: 0, id: 0, field: 0, value: 0, text: ""},
-		vHolding: false,
-		vClosingNow: 0,
-		vSpoiled: false,
-		vProbing: false,
-		vGone: 0,
-		vWrites: 0,
-		vCovered: false,
-		vProbe: RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge,
-		vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge,
-		vNamedId: 0,
-		vNamedField: 0,
-		vNamedKind: RecordListParentSceSynthInvokeListCommandEnumEdit,
-		vTaking: nil,
-		vTook: 0,
-		vOp: RecordListParentSceSynthInvokeListOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vRestoring: false,
-		vTentative: false,
-		vClosingCommand: 0,
-		vOffered: nil,
-		vOfferedAt: RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vRefusedFor: RecordListParentSceSynthInvokeListRefusalEnumPeerRefused,
-		vClosedOps: 0,
-		vClosedFor: optional.None[RecordListParentSceSynthInvokeListRefusalEnum](),
-		vClosedAt: RecordListParentSceSynthInvokeListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vProvisional: nil,
-		vProvisionalKept: nil,
-		vStanding: RecordListParentSceSynthInvokeListProvisionalRecord{wallTime: 0, counter: 0, command: 0, id: 0, field: 0, kind: RecordListParentSceSynthInvokeListCommandEnumEdit},
-		vProvisionalFound: false,
-		vWithdrawFrom: 0,
-		vUndo: nil,
-		vUndoKept: nil,
-		vUndoing: RecordListParentSceSynthInvokeListUndoRecord{atWallTime: 0, atCounter: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
+		vNode: vNode,
+		vJournal: vJournal,
+		vClock: vClock,
+		vStamp: vStamp,
+		vDot: vDot,
+		vAdds: vAdds,
+		vOne: vOne,
+		vEntry: vEntry,
+		vValues: vValues,
+		vHeld: vHeld,
+		vShareId: vShareId,
+		vShareField: vShareField,
+		vWasLive: vWasLive,
+		vPresent: vPresent,
+		vRefusals: vRefusals,
+		vRoomValues: vRoomValues,
+		vFull: vFull,
+		vRoster: vRoster,
+		vDenied: vDenied,
+		vForbidden: vForbidden,
+		vAuthorized: vAuthorized,
+		vAnnounce: vAnnounce,
+		vAnnounced: vAnnounced,
+		vMoved: vMoved,
+		vListed: vListed,
+		vLive: vLive,
+		vOrdinal: vOrdinal,
+		vEmpty: vEmpty,
+		vStaged: vStaged,
+		vStaging: vStaging,
+		vHolding: vHolding,
+		vClosingNow: vClosingNow,
+		vSpoiled: vSpoiled,
+		vProbing: vProbing,
+		vGone: vGone,
+		vWrites: vWrites,
+		vCovered: vCovered,
+		vProbe: vProbe,
+		vSpoiledFor: vSpoiledFor,
+		vNamedId: vNamedId,
+		vNamedField: vNamedField,
+		vNamedKind: vNamedKind,
+		vTaking: vTaking,
+		vTook: vTook,
+		vOp: vOp,
+		vRestoring: vRestoring,
+		vTentative: vTentative,
+		vClosingCommand: vClosingCommand,
+		vOffered: vOffered,
+		vOfferedAt: vOfferedAt,
+		vRefusedFor: vRefusedFor,
+		vClosedOps: vClosedOps,
+		vClosedFor: vClosedFor,
+		vClosedAt: vClosedAt,
+		vProvisional: vProvisional,
+		vProvisionalKept: vProvisionalKept,
+		vStanding: vStanding,
+		vProvisionalFound: vProvisionalFound,
+		vWithdrawFrom: vWithdrawFrom,
+		vUndo: vUndo,
+		vUndoKept: vUndoKept,
+		vUndoing: vUndoing,
 	}
 }
 

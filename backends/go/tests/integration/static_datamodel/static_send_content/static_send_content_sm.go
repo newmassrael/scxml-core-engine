@@ -650,16 +650,20 @@ type StaticSendContentPolicy struct {
 
 // NewStaticSendContentPolicy creates a new policy with default values.
 func NewStaticSendContentPolicy() StaticSendContentPolicy {
+	var vShown StaticSendContentViewRecord = StaticSendContentViewRecord{layout: StaticSendContentViewModeEnumDay, zoom: 2}
+	var vReceived StaticSendContentViewModeEnum = StaticSendContentViewModeEnumMonth
+	var vLevel uint8 = 0
+	var vRelays uint32 = 0
 	return StaticSendContentPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vShown: StaticSendContentViewRecord{layout: StaticSendContentViewModeEnumDay, zoom: 2},
-		vReceived: StaticSendContentViewModeEnumMonth,
-		vLevel: 0,
-		vRelays: 0,
+		vShown: vShown,
+		vReceived: vReceived,
+		vLevel: vLevel,
+		vRelays: vRelays,
 	}
 }
 

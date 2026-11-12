@@ -780,26 +780,40 @@ type StaticForgeCallsPolicy struct {
 
 // NewStaticForgeCallsPolicy creates a new policy with default values.
 func NewStaticForgeCallsPolicy() StaticForgeCallsPolicy {
+	var vGear uint8 = 0
+	var vRatio int32 = 0
+	var vCode int32 = 0
+	var vMisses uint32 = 0
+	var vLevel int32 = 0
+	var vOffset int32 = 0
+	var vAccepted bool = false
+	var vRpm uint16 = 0
+	var vLimit float64 = 0.0
+	var vHighs uint32 = 0
+	var vPhase StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnumOpen
+	var vWeight StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnumLight
+	var vCustomer string = "anna"
+	var vKnown bool = false
 	return StaticForgeCallsPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vGear: 0,
-		vRatio: 0,
-		vCode: 0,
-		vMisses: 0,
-		vLevel: 0,
-		vOffset: 0,
-		vAccepted: false,
-		vRpm: 0,
-		vLimit: 0.0,
-		vHighs: 0,
-		vPhase: StaticForgeCallsStatusEnumOpen,
-		vWeight: StaticForgeCallsLevelEnumLight,
-		vCustomer: "anna",
-		vKnown: false,
+		vGear: vGear,
+		vRatio: vRatio,
+		vCode: vCode,
+		vMisses: vMisses,
+		vLevel: vLevel,
+		vOffset: vOffset,
+		vAccepted: vAccepted,
+		vRpm: vRpm,
+		vLimit: vLimit,
+		vHighs: vHighs,
+		vPhase: vPhase,
+		vWeight: vWeight,
+		vCustomer: vCustomer,
+		vKnown: vKnown,
 	}
 }
 

@@ -690,22 +690,32 @@ type StaticOptionalRecordPolicy struct {
 
 // NewStaticOptionalRecordPolicy creates a new policy with default values.
 func NewStaticOptionalRecordPolicy() StaticOptionalRecordPolicy {
+	var vPick optional.Of[StaticOptionalRecordItemRecord] = optional.None[StaticOptionalRecordItemRecord]()
+	var vFound optional.Of[StaticOptionalRecordItemRecord] = optional.None[StaticOptionalRecordItemRecord]()
+	var vDraft StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord{id: 0, title: "draft", count: 0}
+	var vItems []StaticOptionalRecordItemRecord = nil
+	var vTitle string = ""
+	var vCount int32 = 0
+	var vShown int32 = 0
+	var vKnown bool = false
+	var vAbsent bool = false
+	var vErrors uint32 = 0
 	return StaticOptionalRecordPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPick: optional.None[StaticOptionalRecordItemRecord](),
-		vFound: optional.None[StaticOptionalRecordItemRecord](),
-		vDraft: StaticOptionalRecordItemRecord{id: 0, title: "draft", count: 0},
-		vItems: nil,
-		vTitle: "",
-		vCount: 0,
-		vShown: 0,
-		vKnown: false,
-		vAbsent: false,
-		vErrors: 0,
+		vPick: vPick,
+		vFound: vFound,
+		vDraft: vDraft,
+		vItems: vItems,
+		vTitle: vTitle,
+		vCount: vCount,
+		vShown: vShown,
+		vKnown: vKnown,
+		vAbsent: vAbsent,
+		vErrors: vErrors,
 	}
 }
 

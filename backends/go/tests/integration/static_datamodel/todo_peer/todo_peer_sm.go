@@ -2932,55 +2932,98 @@ type TodoPeerPolicy struct {
 
 // NewTodoPeerPolicy creates a new policy with default values.
 func NewTodoPeerPolicy() TodoPeerPolicy {
+	var vNode uint64 = 0
+	var vClock TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vDot TodoPeerHlcRecord = TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vAdds []TodoPeerEntryRecord = nil
+	var vOne []TodoPeerEntryRecord = nil
+	var vEntry TodoPeerEntryRecord = TodoPeerEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0}
+	var vValues []TodoPeerValueRecord = nil
+	var vTyped string = ""
+	var vHeld TodoPeerValueRecord = TodoPeerValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
+	var vWasLive bool = false
+	var vPresent bool = false
+	var vRefusals uint32 = 0
+	var vAgenda []TodoPeerOccurrenceRecord = nil
+	var vLocal []TodoPeerOccurrenceRecord = nil
+	var vOcc TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord{id: 0, start: 0, end: 0, nth: 0, conflict: 0}
+	var vAgendaNext uint32 = 0
+	var vZoneStarts1 []int64 = nil
+	var vZoneOffsets1 []int32 = nil
+	var vZoneStarts2 []int64 = nil
+	var vZoneOffsets2 []int32 = nil
+	var vZoneStarts3 []int64 = nil
+	var vZoneOffsets3 []int32 = nil
+	var vZoneStarts4 []int64 = nil
+	var vZoneOffsets4 []int32 = nil
+	var vZoneStarts []int64 = nil
+	var vZoneOffsets []int32 = nil
+	var vZoneRows uint32 = 0
+	var vSplit bool = false
+	var vSched TodoPeerScheduleRecord = TodoPeerScheduleRecord{zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0}
+	var vRawCount uint32 = 0
+	var vRawLast uint32 = 0
+	var vUtcSec int64 = 0
+	var vRoomValues uint32 = 0
+	var vFull uint32 = 0
+	var vGone uint32 = 0
+	var vRoster []TodoPeerMemberRecord = nil
+	var vDenied uint32 = 0
+	var vForbidden bool = false
+	var vAuthorized bool = true
+	var vTaking []TodoPeerOpRecord = nil
+	var vTook uint32 = 0
+	var vOp TodoPeerOpRecord = TodoPeerOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0}
 	return TodoPeerPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNode: 0,
-		vClock: TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vStamp: TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vDot: TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vAdds: nil,
-		vOne: nil,
-		vEntry: TodoPeerEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0},
-		vValues: nil,
-		vTyped: "",
-		vHeld: TodoPeerValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vWasLive: false,
-		vPresent: false,
-		vRefusals: 0,
-		vAgenda: nil,
-		vLocal: nil,
-		vOcc: TodoPeerOccurrenceRecord{id: 0, start: 0, end: 0, nth: 0, conflict: 0},
-		vAgendaNext: 0,
-		vZoneStarts1: nil,
-		vZoneOffsets1: nil,
-		vZoneStarts2: nil,
-		vZoneOffsets2: nil,
-		vZoneStarts3: nil,
-		vZoneOffsets3: nil,
-		vZoneStarts4: nil,
-		vZoneOffsets4: nil,
-		vZoneStarts: nil,
-		vZoneOffsets: nil,
-		vZoneRows: 0,
-		vSplit: false,
-		vSched: TodoPeerScheduleRecord{zone: 0, start: -1, length: 0, freq: 0, interval: 1, days: 0, count: 0, until: 0, bymonth: 0, mdPos: 0, mdNeg: 0, invalid: 0, op0: 0, op1: 0, op2: 0, op3: 0, op4: 0, op5: 0, op6: 0, on0: 0, on1: 0, on2: 0, on3: 0, on4: 0, on5: 0, on6: 0, spPos: 0, spNeg: 0, wkst: 1, wnPos: 0, wnNeg: 0, yd0: 0, yd1: 0, yd2: 0, yd3: 0, yd4: 0, yd5: 0, ydn0: 0, ydn1: 0, ydn2: 0, ydn3: 0, ydn4: 0, ydn5: 0, gone: 0, flag: 0},
-		vRawCount: 0,
-		vRawLast: 0,
-		vUtcSec: 0,
-		vRoomValues: 0,
-		vFull: 0,
-		vGone: 0,
-		vRoster: nil,
-		vDenied: 0,
-		vForbidden: false,
-		vAuthorized: true,
-		vTaking: nil,
-		vTook: 0,
-		vOp: TodoPeerOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
+		vNode: vNode,
+		vClock: vClock,
+		vStamp: vStamp,
+		vDot: vDot,
+		vAdds: vAdds,
+		vOne: vOne,
+		vEntry: vEntry,
+		vValues: vValues,
+		vTyped: vTyped,
+		vHeld: vHeld,
+		vWasLive: vWasLive,
+		vPresent: vPresent,
+		vRefusals: vRefusals,
+		vAgenda: vAgenda,
+		vLocal: vLocal,
+		vOcc: vOcc,
+		vAgendaNext: vAgendaNext,
+		vZoneStarts1: vZoneStarts1,
+		vZoneOffsets1: vZoneOffsets1,
+		vZoneStarts2: vZoneStarts2,
+		vZoneOffsets2: vZoneOffsets2,
+		vZoneStarts3: vZoneStarts3,
+		vZoneOffsets3: vZoneOffsets3,
+		vZoneStarts4: vZoneStarts4,
+		vZoneOffsets4: vZoneOffsets4,
+		vZoneStarts: vZoneStarts,
+		vZoneOffsets: vZoneOffsets,
+		vZoneRows: vZoneRows,
+		vSplit: vSplit,
+		vSched: vSched,
+		vRawCount: vRawCount,
+		vRawLast: vRawLast,
+		vUtcSec: vUtcSec,
+		vRoomValues: vRoomValues,
+		vFull: vFull,
+		vGone: vGone,
+		vRoster: vRoster,
+		vDenied: vDenied,
+		vForbidden: vForbidden,
+		vAuthorized: vAuthorized,
+		vTaking: vTaking,
+		vTook: vTook,
+		vOp: vOp,
 	}
 }
 

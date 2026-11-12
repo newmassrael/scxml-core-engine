@@ -536,6 +536,7 @@ type StaticChildHostPolicy struct {
 // initial state's `<onentry>` can already perform an act — this is the one
 // call every host has to make, so it is where the requirement belongs.
 func NewStaticChildHostPolicy(actions StaticChildHostActions) StaticChildHostPolicy {
+	var vCompleted uint32 = 0
 	return StaticChildHostPolicy{
 		actions: actions,
 		// docs/adr/0045: a session has an id, which a saved state names it by and
@@ -543,7 +544,7 @@ func NewStaticChildHostPolicy(actions StaticChildHostActions) StaticChildHostPol
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vCompleted: 0,
+		vCompleted: vCompleted,
 		pendingInvokes: make([]sce.PendingInvoke[StaticChildHostState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

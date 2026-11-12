@@ -602,18 +602,24 @@ type StaticRecordListPolicy struct {
 
 // NewStaticRecordListPolicy creates a new policy with default values.
 func NewStaticRecordListPolicy() StaticRecordListPolicy {
+	var vDraft StaticRecordListDayRecord = StaticRecordListDayRecord{year: 2026, month: 1, dayOfMonth: 1}
+	var vLast StaticRecordListDayRecord = StaticRecordListDayRecord{year: 2000, month: 1, dayOfMonth: 1}
+	var vDays []StaticRecordListDayRecord = nil
+	var vCopies []StaticRecordListDayRecord = nil
+	var vTotal uint32 = 0
+	var vErrors uint32 = 0
 	return StaticRecordListPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDraft: StaticRecordListDayRecord{year: 2026, month: 1, dayOfMonth: 1},
-		vLast: StaticRecordListDayRecord{year: 2000, month: 1, dayOfMonth: 1},
-		vDays: nil,
-		vCopies: nil,
-		vTotal: 0,
-		vErrors: 0,
+		vDraft: vDraft,
+		vLast: vLast,
+		vDays: vDays,
+		vCopies: vCopies,
+		vTotal: vTotal,
+		vErrors: vErrors,
 	}
 }
 

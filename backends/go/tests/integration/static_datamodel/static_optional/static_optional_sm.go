@@ -1042,36 +1042,60 @@ type StaticOptionalPolicy struct {
 
 // NewStaticOptionalPolicy creates a new policy with default values.
 func NewStaticOptionalPolicy() StaticOptionalPolicy {
+	var vDue optional.Of[int64] = optional.None[int64]()
+	var vOther optional.Of[int64] = optional.Some[int64](7)
+	var vTitle optional.Of[string] = optional.None[string]()
+	var vStatus optional.Of[StaticOptionalStatusEnum] = optional.Some[StaticOptionalStatusEnum](StaticOptionalStatusEnumOpen)
+	var vItem StaticOptionalDueRecord = StaticOptionalDueRecord{id: 0, due: optional.None[int64](), title: optional.Some[string]("first"), status: optional.None[StaticOptionalStatusEnum]()}
+	var vItems []StaticOptionalDueRecord = nil
+	var vDays int64 = 0
+	var vFollowing int64 = 0
+	var vLate bool = false
+	var vEarly bool = false
+	var vLabel string = ""
+	var vPlain StaticOptionalStatusEnum = StaticOptionalStatusEnumOpen
+	var vKept int64 = 0
+	var vListed int64 = 0
+	var vMissing uint32 = 0
+	var vSame bool = false
+	var vAbsent bool = false
+	var vStatusDone bool = false
+	var vEchoed int64 = 0
+	var vEchoTitle optional.Of[string] = optional.None[string]()
+	var vEchoStatus optional.Of[StaticOptionalStatusEnum] = optional.None[StaticOptionalStatusEnum]()
+	var vFallbacks uint32 = 0
+	var vErrors uint32 = 0
+	var vHuge int64 = 4294967296
 	return StaticOptionalPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDue: optional.None[int64](),
-		vOther: optional.Some[int64](7),
-		vTitle: optional.None[string](),
-		vStatus: optional.Some[StaticOptionalStatusEnum](StaticOptionalStatusEnumOpen),
-		vItem: StaticOptionalDueRecord{id: 0, due: optional.None[int64](), title: optional.Some[string]("first"), status: optional.None[StaticOptionalStatusEnum]()},
-		vItems: nil,
-		vDays: 0,
-		vFollowing: 0,
-		vLate: false,
-		vEarly: false,
-		vLabel: "",
-		vPlain: StaticOptionalStatusEnumOpen,
-		vKept: 0,
-		vListed: 0,
-		vMissing: 0,
-		vSame: false,
-		vAbsent: false,
-		vStatusDone: false,
-		vEchoed: 0,
-		vEchoTitle: optional.None[string](),
-		vEchoStatus: optional.None[StaticOptionalStatusEnum](),
-		vFallbacks: 0,
-		vErrors: 0,
-		vHuge: 4294967296,
+		vDue: vDue,
+		vOther: vOther,
+		vTitle: vTitle,
+		vStatus: vStatus,
+		vItem: vItem,
+		vItems: vItems,
+		vDays: vDays,
+		vFollowing: vFollowing,
+		vLate: vLate,
+		vEarly: vEarly,
+		vLabel: vLabel,
+		vPlain: vPlain,
+		vKept: vKept,
+		vListed: vListed,
+		vMissing: vMissing,
+		vSame: vSame,
+		vAbsent: vAbsent,
+		vStatusDone: vStatusDone,
+		vEchoed: vEchoed,
+		vEchoTitle: vEchoTitle,
+		vEchoStatus: vEchoStatus,
+		vFallbacks: vFallbacks,
+		vErrors: vErrors,
+		vHuge: vHuge,
 	}
 }
 

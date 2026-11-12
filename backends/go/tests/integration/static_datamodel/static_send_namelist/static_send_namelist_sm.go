@@ -577,17 +577,22 @@ type StaticSendNamelistPolicy struct {
 
 // NewStaticSendNamelistPolicy creates a new policy with default values.
 func NewStaticSendNamelistPolicy() StaticSendNamelistPolicy {
+	var vLayout StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnumWeek
+	var vZoom uint8 = 3
+	var vReceived StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnumMonth
+	var vLevel uint8 = 0
+	var vDeliveries uint32 = 0
 	return StaticSendNamelistPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLayout: StaticSendNamelistViewModeEnumWeek,
-		vZoom: 3,
-		vReceived: StaticSendNamelistViewModeEnumMonth,
-		vLevel: 0,
-		vDeliveries: 0,
+		vLayout: vLayout,
+		vZoom: vZoom,
+		vReceived: vReceived,
+		vLevel: vLevel,
+		vDeliveries: vDeliveries,
 	}
 }
 

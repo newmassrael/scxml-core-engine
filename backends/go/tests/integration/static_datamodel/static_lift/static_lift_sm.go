@@ -935,17 +935,22 @@ type StaticLiftPolicy struct {
 
 // NewStaticLiftPolicy creates a new policy with default values.
 func NewStaticLiftPolicy() StaticLiftPolicy {
+	var vAnswer optional.Of[StaticLiftAnswerRecord] = optional.None[StaticLiftAnswerRecord]()
+	var vWhy optional.Of[StaticLiftLiftRefusalRecord] = optional.None[StaticLiftLiftRefusalRecord]()
+	var vSaid string = ""
+	var vLifts uint32 = 0
+	var vErrors uint32 = 0
 	return StaticLiftPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vAnswer: optional.None[StaticLiftAnswerRecord](),
-		vWhy: optional.None[StaticLiftLiftRefusalRecord](),
-		vSaid: "",
-		vLifts: 0,
-		vErrors: 0,
+		vAnswer: vAnswer,
+		vWhy: vWhy,
+		vSaid: vSaid,
+		vLifts: vLifts,
+		vErrors: vErrors,
 	}
 }
 

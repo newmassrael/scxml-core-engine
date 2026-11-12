@@ -769,16 +769,20 @@ type StaticPayloadEnumUnimportedPolicy struct {
 
 // NewStaticPayloadEnumUnimportedPolicy creates a new policy with default values.
 func NewStaticPayloadEnumUnimportedPolicy() StaticPayloadEnumUnimportedPolicy {
+	var vLast optional.Of[StaticPayloadEnumUnimportedWhyEnum] = optional.None[StaticPayloadEnumUnimportedWhyEnum]()
+	var vKept []StaticPayloadEnumUnimportedRefusedRecord = nil
+	var vRow uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticPayloadEnumUnimportedPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLast: optional.None[StaticPayloadEnumUnimportedWhyEnum](),
-		vKept: nil,
-		vRow: 0,
-		vRefusals: 0,
+		vLast: vLast,
+		vKept: vKept,
+		vRow: vRow,
+		vRefusals: vRefusals,
 	}
 }
 

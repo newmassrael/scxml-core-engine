@@ -520,16 +520,20 @@ type StaticBytesWirePolicy struct {
 
 // NewStaticBytesWirePolicy creates a new policy with default values.
 func NewStaticBytesWirePolicy() StaticBytesWirePolicy {
+	var vHeld []byte = []byte{0x61, 0x62}
+	var vEcho []byte = []byte{}
+	var vRelays uint32 = 0
+	var vErrors uint32 = 0
 	return StaticBytesWirePolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vHeld: []byte{0x61, 0x62},
-		vEcho: []byte{},
-		vRelays: 0,
-		vErrors: 0,
+		vHeld: vHeld,
+		vEcho: vEcho,
+		vRelays: vRelays,
+		vErrors: vErrors,
 	}
 }
 

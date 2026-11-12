@@ -646,17 +646,22 @@ type StaticInvokeEntryPolicy struct {
 
 // NewStaticInvokeEntryPolicy creates a new policy with default values.
 func NewStaticInvokeEntryPolicy() StaticInvokeEntryPolicy {
+	var vBase uint32 = 7
+	var vBig uint32 = 4294967295
+	var vCompleted uint32 = 0
+	var vErrors uint32 = 0
+	var vGreetings uint32 = 0
 	return StaticInvokeEntryPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vBase: 7,
-		vBig: 4294967295,
-		vCompleted: 0,
-		vErrors: 0,
-		vGreetings: 0,
+		vBase: vBase,
+		vBig: vBig,
+		vCompleted: vCompleted,
+		vErrors: vErrors,
+		vGreetings: vGreetings,
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeEntryState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

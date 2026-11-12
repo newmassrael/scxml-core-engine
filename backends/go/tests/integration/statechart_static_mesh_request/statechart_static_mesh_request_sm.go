@@ -499,18 +499,24 @@ type StatechartStaticMeshRequestPolicy struct {
 
 // NewStatechartStaticMeshRequestPolicy creates a new policy with default values.
 func NewStatechartStaticMeshRequestPolicy() StatechartStaticMeshRequestPolicy {
+	var vLoad uint32 = 3
+	var vLabel string = "idle"
+	var vPeer string = "#motor"
+	var vAnswered uint32 = 0
+	var vFailed uint32 = 0
+	var vRefused uint32 = 0
 	return StatechartStaticMeshRequestPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLoad: 3,
-		vLabel: "idle",
-		vPeer: "#motor",
-		vAnswered: 0,
-		vFailed: 0,
-		vRefused: 0,
+		vLoad: vLoad,
+		vLabel: vLabel,
+		vPeer: vPeer,
+		vAnswered: vAnswered,
+		vFailed: vFailed,
+		vRefused: vRefused,
 		pendingInvokes: make([]sce.PendingInvoke[StatechartStaticMeshRequestState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

@@ -658,21 +658,30 @@ type StaticRecordListIndexPolicy struct {
 
 // NewStaticRecordListIndexPolicy creates a new policy with default values.
 func NewStaticRecordListIndexPolicy() StaticRecordListIndexPolicy {
+	var vDraft StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord{year: 2026, month: 1, dayOfMonth: 1}
+	var vPicked StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord{year: 2000, month: 1, dayOfMonth: 1}
+	var vDays []StaticRecordListIndexDayRecord = nil
+	var vCursor int32 = 0
+	var vDay uint8 = 0
+	var vYear uint16 = 0
+	var vSum uint32 = 0
+	var vOrdered bool = false
+	var vRefusals uint32 = 0
 	return StaticRecordListIndexPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDraft: StaticRecordListIndexDayRecord{year: 2026, month: 1, dayOfMonth: 1},
-		vPicked: StaticRecordListIndexDayRecord{year: 2000, month: 1, dayOfMonth: 1},
-		vDays: nil,
-		vCursor: 0,
-		vDay: 0,
-		vYear: 0,
-		vSum: 0,
-		vOrdered: false,
-		vRefusals: 0,
+		vDraft: vDraft,
+		vPicked: vPicked,
+		vDays: vDays,
+		vCursor: vCursor,
+		vDay: vDay,
+		vYear: vYear,
+		vSum: vSum,
+		vOrdered: vOrdered,
+		vRefusals: vRefusals,
 	}
 }
 

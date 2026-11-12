@@ -557,13 +557,14 @@ type StaticHistoryPolicy struct {
 
 // NewStaticHistoryPolicy creates a new policy with default values.
 func NewStaticHistoryPolicy() StaticHistoryPolicy {
+	var vResumed uint8 = 0
 	return StaticHistoryPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vResumed: 0,
+		vResumed: vResumed,
 		activeStates: make([]StaticHistoryState, 0),
 		historyCrewAll: nil,
 		historyDeepest: nil,

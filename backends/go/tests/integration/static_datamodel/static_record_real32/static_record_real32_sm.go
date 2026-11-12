@@ -519,15 +519,18 @@ type StaticRecordReal32Policy struct {
 
 // NewStaticRecordReal32Policy creates a new policy with default values.
 func NewStaticRecordReal32Policy() StaticRecordReal32Policy {
+	var vLast StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record{sensor: 1, value: 0.5}
+	var vSum float32 = 0.0
+	var vErrors uint32 = 0
 	return StaticRecordReal32Policy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLast: StaticRecordReal32Reading32Record{sensor: 1, value: 0.5},
-		vSum: 0.0,
-		vErrors: 0,
+		vLast: vLast,
+		vSum: vSum,
+		vErrors: vErrors,
 	}
 }
 

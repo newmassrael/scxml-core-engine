@@ -392,14 +392,16 @@ type StaticInvokeOptionalSceSynthInvokeAbsentPolicy struct {
 
 // NewStaticInvokeOptionalSceSynthInvokeAbsentPolicy creates a new policy with default values.
 func NewStaticInvokeOptionalSceSynthInvokeAbsentPolicy() StaticInvokeOptionalSceSynthInvokeAbsentPolicy {
+	var vSize optional.Of[int32] = optional.None[int32]()
+	var vLabel optional.Of[string] = optional.None[string]()
 	return StaticInvokeOptionalSceSynthInvokeAbsentPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vSize: optional.None[int32](),
-		vLabel: optional.None[string](),
+		vSize: vSize,
+		vLabel: vLabel,
 	}
 }
 

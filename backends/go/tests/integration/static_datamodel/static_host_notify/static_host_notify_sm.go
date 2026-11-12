@@ -1051,20 +1051,28 @@ type StaticHostNotifyPolicy struct {
 
 // NewStaticHostNotifyPolicy creates a new policy with default values.
 func NewStaticHostNotifyPolicy() StaticHostNotifyPolicy {
+	var vId string = ""
+	var vTitle string = ""
+	var vBody string = ""
+	var vAtMs int64 = 0
+	var vOutcome string = ""
+	var vPermission string = ""
+	var vStatus string = ""
+	var vExisted bool = false
 	return StaticHostNotifyPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vId: "",
-		vTitle: "",
-		vBody: "",
-		vAtMs: 0,
-		vOutcome: "",
-		vPermission: "",
-		vStatus: "",
-		vExisted: false,
+		vId: vId,
+		vTitle: vTitle,
+		vBody: vBody,
+		vAtMs: vAtMs,
+		vOutcome: vOutcome,
+		vPermission: vPermission,
+		vStatus: vStatus,
+		vExisted: vExisted,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostNotifyState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

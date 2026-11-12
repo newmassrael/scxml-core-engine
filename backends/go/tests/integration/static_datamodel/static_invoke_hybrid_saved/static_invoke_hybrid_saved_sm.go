@@ -569,15 +569,18 @@ type StaticInvokeHybridSavedPolicy struct {
 
 // NewStaticInvokeHybridSavedPolicy creates a new policy with default values.
 func NewStaticInvokeHybridSavedPolicy() StaticInvokeHybridSavedPolicy {
+	var vPick string = "static_hybrid_watcher.scxml"
+	var vBase uint32 = 4
+	var vCompleted uint32 = 0
 	return StaticInvokeHybridSavedPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPick: "static_hybrid_watcher.scxml",
-		vBase: 4,
-		vCompleted: 0,
+		vPick: vPick,
+		vBase: vBase,
+		vCompleted: vCompleted,
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeHybridSavedState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

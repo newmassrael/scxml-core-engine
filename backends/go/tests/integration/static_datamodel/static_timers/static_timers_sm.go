@@ -392,13 +392,14 @@ type StaticTimersPolicy struct {
 
 // NewStaticTimersPolicy creates a new policy with default values.
 func NewStaticTimersPolicy() StaticTimersPolicy {
+	var vTrace uint32 = 0
 	return StaticTimersPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vTrace: 0,
+		vTrace: vTrace,
 	}
 }
 

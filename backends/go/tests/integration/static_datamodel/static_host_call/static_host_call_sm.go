@@ -435,6 +435,9 @@ type StaticHostCallPolicy struct {
 // initial state's `<onentry>` can already perform an act — this is the one
 // call every host has to make, so it is where the requirement belongs.
 func NewStaticHostCallPolicy(actions StaticHostCallActions) StaticHostCallPolicy {
+	var vAttempts uint32 = 0
+	var vDue optional.Of[int32] = optional.None[int32]()
+	var vUrgent optional.Of[bool] = optional.None[bool]()
 	return StaticHostCallPolicy{
 		actions: actions,
 		// docs/adr/0045: a session has an id, which a saved state names it by and
@@ -442,9 +445,9 @@ func NewStaticHostCallPolicy(actions StaticHostCallActions) StaticHostCallPolicy
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vAttempts: 0,
-		vDue: optional.None[int32](),
-		vUrgent: optional.None[bool](),
+		vAttempts: vAttempts,
+		vDue: vDue,
+		vUrgent: vUrgent,
 	}
 }
 

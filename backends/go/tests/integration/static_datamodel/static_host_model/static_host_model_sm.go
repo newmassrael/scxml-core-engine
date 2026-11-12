@@ -1168,24 +1168,36 @@ type StaticHostModelPolicy struct {
 
 // NewStaticHostModelPolicy creates a new policy with default values.
 func NewStaticHostModelPolicy() StaticHostModelPolicy {
+	var vPrompt string = ""
+	var vMaxTokens uint32 = 0
+	var vTemperatureMilli uint16 = 0
+	var vCalls uint32 = 0
+	var vOutcome string = ""
+	var vFinish string = ""
+	var vConstrained bool = false
+	var vAnsweredBy string = ""
+	var vPromptTokens uint32 = 0
+	var vAnswerTokens uint32 = 0
+	var vAnswer optional.Of[StaticHostModelAnswerRecord] = optional.None[StaticHostModelAnswerRecord]()
+	var vWhy optional.Of[StaticHostModelLiftRefusalRecord] = optional.None[StaticHostModelLiftRefusalRecord]()
 	return StaticHostModelPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vPrompt: "",
-		vMaxTokens: 0,
-		vTemperatureMilli: 0,
-		vCalls: 0,
-		vOutcome: "",
-		vFinish: "",
-		vConstrained: false,
-		vAnsweredBy: "",
-		vPromptTokens: 0,
-		vAnswerTokens: 0,
-		vAnswer: optional.None[StaticHostModelAnswerRecord](),
-		vWhy: optional.None[StaticHostModelLiftRefusalRecord](),
+		vPrompt: vPrompt,
+		vMaxTokens: vMaxTokens,
+		vTemperatureMilli: vTemperatureMilli,
+		vCalls: vCalls,
+		vOutcome: vOutcome,
+		vFinish: vFinish,
+		vConstrained: vConstrained,
+		vAnsweredBy: vAnsweredBy,
+		vPromptTokens: vPromptTokens,
+		vAnswerTokens: vAnswerTokens,
+		vAnswer: vAnswer,
+		vWhy: vWhy,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostModelState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

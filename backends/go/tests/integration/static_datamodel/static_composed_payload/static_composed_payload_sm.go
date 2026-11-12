@@ -685,22 +685,32 @@ type StaticComposedPayloadPolicy struct {
 
 // NewStaticComposedPayloadPolicy creates a new policy with default values.
 func NewStaticComposedPayloadPolicy() StaticComposedPayloadPolicy {
+	var vItemCount uint32 = 0
+	var vTagCount uint32 = 0
+	var vWordCount uint32 = 0
+	var vIdSum uint32 = 0
+	var vCellSum uint32 = 0
+	var vCell uint8 = 0
+	var vFirstTags uint32 = 0
+	var vFirstMaybe optional.Of[uint16] = optional.None[uint16]()
+	var vLate []uint8 = nil
+	var vRefusals uint32 = 0
 	return StaticComposedPayloadPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vItemCount: 0,
-		vTagCount: 0,
-		vWordCount: 0,
-		vIdSum: 0,
-		vCellSum: 0,
-		vCell: 0,
-		vFirstTags: 0,
-		vFirstMaybe: optional.None[uint16](),
-		vLate: nil,
-		vRefusals: 0,
+		vItemCount: vItemCount,
+		vTagCount: vTagCount,
+		vWordCount: vWordCount,
+		vIdSum: vIdSum,
+		vCellSum: vCellSum,
+		vCell: vCell,
+		vFirstTags: vFirstTags,
+		vFirstMaybe: vFirstMaybe,
+		vLate: vLate,
+		vRefusals: vRefusals,
 	}
 }
 

@@ -680,24 +680,36 @@ type StatechartHostInvokerOptionalPolicy struct {
 
 // NewStatechartHostInvokerOptionalPolicy creates a new policy with default values.
 func NewStatechartHostInvokerOptionalPolicy() StatechartHostInvokerOptionalPolicy {
+	var vAt optional.Of[int64] = optional.None[int64]()
+	var vLabel optional.Of[string] = optional.None[string]()
+	var vHit optional.Of[bool] = optional.None[bool]()
+	var vAnswered uint8 = 0
+	var vRowsSeen uint8 = 0
+	var vTotalSeen uint64 = 0
+	var vAtPresent bool = false
+	var vAtValue int64 = 0
+	var vLabelPresent bool = false
+	var vLabelValue string = ""
+	var vHitKnown bool = false
+	var vHitTrue bool = false
 	return StatechartHostInvokerOptionalPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vAt: optional.None[int64](),
-		vLabel: optional.None[string](),
-		vHit: optional.None[bool](),
-		vAnswered: 0,
-		vRowsSeen: 0,
-		vTotalSeen: 0,
-		vAtPresent: false,
-		vAtValue: 0,
-		vLabelPresent: false,
-		vLabelValue: "",
-		vHitKnown: false,
-		vHitTrue: false,
+		vAt: vAt,
+		vLabel: vLabel,
+		vHit: vHit,
+		vAnswered: vAnswered,
+		vRowsSeen: vRowsSeen,
+		vTotalSeen: vTotalSeen,
+		vAtPresent: vAtPresent,
+		vAtValue: vAtValue,
+		vLabelPresent: vLabelPresent,
+		vLabelValue: vLabelValue,
+		vHitKnown: vHitKnown,
+		vHitTrue: vHitTrue,
 		pendingInvokes: make([]sce.PendingInvoke[StatechartHostInvokerOptionalState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

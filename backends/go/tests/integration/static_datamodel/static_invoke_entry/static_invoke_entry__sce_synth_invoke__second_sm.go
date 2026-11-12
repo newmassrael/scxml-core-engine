@@ -377,13 +377,14 @@ type StaticInvokeEntrySceSynthInvokeSecondPolicy struct {
 
 // NewStaticInvokeEntrySceSynthInvokeSecondPolicy creates a new policy with default values.
 func NewStaticInvokeEntrySceSynthInvokeSecondPolicy() StaticInvokeEntrySceSynthInvokeSecondPolicy {
+	var vStart uint32 = 5
 	return StaticInvokeEntrySceSynthInvokeSecondPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vStart: 5,
+		vStart: vStart,
 	}
 }
 

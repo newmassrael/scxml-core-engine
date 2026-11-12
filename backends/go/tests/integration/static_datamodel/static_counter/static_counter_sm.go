@@ -416,15 +416,18 @@ type StaticCounterPolicy struct {
 
 // NewStaticCounterPolicy creates a new policy with default values.
 func NewStaticCounterPolicy() StaticCounterPolicy {
+	var vCount uint32 = 0
+	var vReady bool = false
+	var vStep uint32 = 1
 	return StaticCounterPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vCount: 0,
-		vReady: false,
-		vStep: 1,
+		vCount: vCount,
+		vReady: vReady,
+		vStep: vStep,
 		activeStates: make([]StaticCounterState, 0),
 	}
 }

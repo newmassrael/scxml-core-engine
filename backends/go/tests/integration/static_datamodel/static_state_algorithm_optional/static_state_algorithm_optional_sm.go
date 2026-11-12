@@ -661,20 +661,28 @@ type StaticStateAlgorithmOptionalPolicy struct {
 
 // NewStaticStateAlgorithmOptionalPolicy creates a new policy with default values.
 func NewStaticStateAlgorithmOptionalPolicy() StaticStateAlgorithmOptionalPolicy {
+	var vGoals []StaticStateAlgorithmOptionalGoalRecord = nil
+	var vDraft StaticStateAlgorithmOptionalGoalRecord = StaticStateAlgorithmOptionalGoalRecord{id: 0, day: optional.None[int64](), weight: 0}
+	var vToday int64 = 100
+	var vFirst optional.Of[int64] = optional.None[int64]()
+	var vLeft optional.Of[int64] = optional.Some[int64](0)
+	var vUndated uint32 = 0
+	var vTotal int64 = 0
+	var vErrors uint32 = 0
 	return StaticStateAlgorithmOptionalPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vGoals: nil,
-		vDraft: StaticStateAlgorithmOptionalGoalRecord{id: 0, day: optional.None[int64](), weight: 0},
-		vToday: 100,
-		vFirst: optional.None[int64](),
-		vLeft: optional.Some[int64](0),
-		vUndated: 0,
-		vTotal: 0,
-		vErrors: 0,
+		vGoals: vGoals,
+		vDraft: vDraft,
+		vToday: vToday,
+		vFirst: vFirst,
+		vLeft: vLeft,
+		vUndated: vUndated,
+		vTotal: vTotal,
+		vErrors: vErrors,
 	}
 }
 

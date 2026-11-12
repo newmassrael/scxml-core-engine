@@ -1503,23 +1503,34 @@ type StaticModelHarnessPolicy struct {
 
 // NewStaticModelHarnessPolicy creates a new policy with default values.
 func NewStaticModelHarnessPolicy() StaticModelHarnessPolicy {
+	var vOffered []uint32 = nil
+	var vRequest string = ""
+	var vPrompt string = ""
+	var vSaid string = ""
+	var vOfferedOk bool = false
+	var vRefused StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord{code: StaticModelHarnessHarnessCodeEnumNotJson, path: ""}
+	var vRefusals []StaticModelHarnessRefusalRecord = nil
+	var vAttempts uint32 = 0
+	var vOutcome string = ""
+	var vAnswer optional.Of[StaticModelHarnessAnswerRecord] = optional.None[StaticModelHarnessAnswerRecord]()
+	var vWhy optional.Of[StaticModelHarnessLiftRefusalRecord] = optional.None[StaticModelHarnessLiftRefusalRecord]()
 	return StaticModelHarnessPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vOffered: nil,
-		vRequest: "",
-		vPrompt: "",
-		vSaid: "",
-		vOfferedOk: false,
-		vRefused: StaticModelHarnessRefusalRecord{code: StaticModelHarnessHarnessCodeEnumNotJson, path: ""},
-		vRefusals: nil,
-		vAttempts: 0,
-		vOutcome: "",
-		vAnswer: optional.None[StaticModelHarnessAnswerRecord](),
-		vWhy: optional.None[StaticModelHarnessLiftRefusalRecord](),
+		vOffered: vOffered,
+		vRequest: vRequest,
+		vPrompt: vPrompt,
+		vSaid: vSaid,
+		vOfferedOk: vOfferedOk,
+		vRefused: vRefused,
+		vRefusals: vRefusals,
+		vAttempts: vAttempts,
+		vOutcome: vOutcome,
+		vAnswer: vAnswer,
+		vWhy: vWhy,
 		pendingInvokes: make([]sce.PendingInvoke[StaticModelHarnessState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

@@ -1099,23 +1099,34 @@ type StaticHostKvPolicy struct {
 
 // NewStaticHostKvPolicy creates a new policy with default values.
 func NewStaticHostKvPolicy() StaticHostKvPolicy {
+	var vKey string = ""
+	var vValue string = ""
+	var vAfter string = ""
+	var vPrefix string = ""
+	var vOutcome string = ""
+	var vFound bool = false
+	var vGot string = ""
+	var vReplaced bool = false
+	var vExisted bool = false
+	var vNextFound bool = false
+	var vNext string = ""
 	return StaticHostKvPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vKey: "",
-		vValue: "",
-		vAfter: "",
-		vPrefix: "",
-		vOutcome: "",
-		vFound: false,
-		vGot: "",
-		vReplaced: false,
-		vExisted: false,
-		vNextFound: false,
-		vNext: "",
+		vKey: vKey,
+		vValue: vValue,
+		vAfter: vAfter,
+		vPrefix: vPrefix,
+		vOutcome: vOutcome,
+		vFound: vFound,
+		vGot: vGot,
+		vReplaced: vReplaced,
+		vExisted: vExisted,
+		vNextFound: vNextFound,
+		vNext: vNext,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostKvState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

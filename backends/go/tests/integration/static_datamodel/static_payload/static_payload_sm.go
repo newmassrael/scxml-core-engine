@@ -473,16 +473,20 @@ type StaticPayloadPolicy struct {
 
 // NewStaticPayloadPolicy creates a new policy with default values.
 func NewStaticPayloadPolicy() StaticPayloadPolicy {
+	var vDay uint8 = 0
+	var vLate bool = false
+	var vSinceEpoch uint16 = 0
+	var vRefusals uint32 = 0
 	return StaticPayloadPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vDay: 0,
-		vLate: false,
-		vSinceEpoch: 0,
-		vRefusals: 0,
+		vDay: vDay,
+		vLate: vLate,
+		vSinceEpoch: vSinceEpoch,
+		vRefusals: vRefusals,
 	}
 }
 

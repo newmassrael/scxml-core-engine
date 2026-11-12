@@ -659,17 +659,22 @@ type StaticHostClockPolicy struct {
 
 // NewStaticHostClockPolicy creates a new policy with default values.
 func NewStaticHostClockPolicy() StaticHostClockPolicy {
+	var vOutcome string = ""
+	var vUtcMs int64 = 0
+	var vMonotonicMs int64 = 0
+	var vZoneId string = ""
+	var vUtcOffsetS int32 = 0
 	return StaticHostClockPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vOutcome: "",
-		vUtcMs: 0,
-		vMonotonicMs: 0,
-		vZoneId: "",
-		vUtcOffsetS: 0,
+		vOutcome: vOutcome,
+		vUtcMs: vUtcMs,
+		vMonotonicMs: vMonotonicMs,
+		vZoneId: vZoneId,
+		vUtcOffsetS: vUtcOffsetS,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostClockState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

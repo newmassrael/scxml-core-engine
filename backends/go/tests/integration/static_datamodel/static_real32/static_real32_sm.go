@@ -474,18 +474,24 @@ type StaticReal32Policy struct {
 
 // NewStaticReal32Policy creates a new policy with default values.
 func NewStaticReal32Policy() StaticReal32Policy {
+	var vLevel float32 = 16777216.0
+	var vTenth float32 = 0.1
+	var vDrift float32 = 0.0
+	var vWide float64 = 0.0
+	var vSamples []float32 = nil
+	var vTotal float32 = 0.0
 	return StaticReal32Policy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLevel: 16777216.0,
-		vTenth: 0.1,
-		vDrift: 0.0,
-		vWide: 0.0,
-		vSamples: nil,
-		vTotal: 0.0,
+		vLevel: vLevel,
+		vTenth: vTenth,
+		vDrift: vDrift,
+		vWide: vWide,
+		vSamples: vSamples,
+		vTotal: vTotal,
 	}
 }
 

@@ -1827,32 +1827,52 @@ type SheetPeerPolicy struct {
 
 // NewSheetPeerPolicy creates a new policy with default values.
 func NewSheetPeerPolicy() SheetPeerPolicy {
+	var vNode uint64 = 0
+	var vHub bool = false
+	var vClock SheetPeerHlcRecord = SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vStamp SheetPeerHlcRecord = SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0}
+	var vCells []SheetPeerLwwCellRecord = nil
+	var vRows []SheetPeerRgaNodeRecord = nil
+	var vGone []SheetPeerRgaGoneRecord = nil
+	var vCols []SheetPeerRgaNodeRecord = nil
+	var vGoneCols []SheetPeerRgaGoneRecord = nil
+	var vTrail []int64 = nil
+	var vShown []SheetPeerShownRecord = nil
+	var vWrite SheetPeerLwwCellRecord = SheetPeerLwwCellRecord{row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0}
+	var vPlaced SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord{key: 0, after: 0}
+	var vRemoval SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord{key: 0, by: 0}
+	var vLamport uint64 = 0
+	var vNewKey uint64 = 0
+	var vNoKey uint64 = 0
+	var vNoNumber int64 = 0
+	var vOrphans uint32 = 0
+	var vRefusals uint32 = 0
 	return SheetPeerPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNode: 0,
-		vHub: false,
-		vClock: SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vStamp: SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
-		vCells: nil,
-		vRows: nil,
-		vGone: nil,
-		vCols: nil,
-		vGoneCols: nil,
-		vTrail: nil,
-		vShown: nil,
-		vWrite: SheetPeerLwwCellRecord{row: 0, col: 0, value: 0, wallTime: 0, counter: 0, nodeId: 0, op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0},
-		vPlaced: SheetPeerRgaNodeRecord{key: 0, after: 0},
-		vRemoval: SheetPeerRgaGoneRecord{key: 0, by: 0},
-		vLamport: 0,
-		vNewKey: 0,
-		vNoKey: 0,
-		vNoNumber: 0,
-		vOrphans: 0,
-		vRefusals: 0,
+		vNode: vNode,
+		vHub: vHub,
+		vClock: vClock,
+		vStamp: vStamp,
+		vCells: vCells,
+		vRows: vRows,
+		vGone: vGone,
+		vCols: vCols,
+		vGoneCols: vGoneCols,
+		vTrail: vTrail,
+		vShown: vShown,
+		vWrite: vWrite,
+		vPlaced: vPlaced,
+		vRemoval: vRemoval,
+		vLamport: vLamport,
+		vNewKey: vNewKey,
+		vNoKey: vNoKey,
+		vNoNumber: vNoNumber,
+		vOrphans: vOrphans,
+		vRefusals: vRefusals,
 	}
 }
 

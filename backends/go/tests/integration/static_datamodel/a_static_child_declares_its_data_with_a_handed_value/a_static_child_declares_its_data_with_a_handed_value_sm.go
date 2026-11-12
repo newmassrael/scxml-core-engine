@@ -492,13 +492,14 @@ type AStaticChildDeclaresItsDataWithAHandedValuePolicy struct {
 
 // NewAStaticChildDeclaresItsDataWithAHandedValuePolicy creates a new policy with default values.
 func NewAStaticChildDeclaresItsDataWithAHandedValuePolicy() AStaticChildDeclaresItsDataWithAHandedValuePolicy {
+	var vBase uint32 = 7
 	return AStaticChildDeclaresItsDataWithAHandedValuePolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vBase: 7,
+		vBase: vBase,
 		pendingInvokes: make([]sce.PendingInvoke[AStaticChildDeclaresItsDataWithAHandedValueState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

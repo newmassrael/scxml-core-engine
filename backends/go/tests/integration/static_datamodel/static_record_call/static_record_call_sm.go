@@ -548,16 +548,20 @@ type StaticRecordCallPolicy struct {
 
 // NewStaticRecordCallPolicy creates a new policy with default values.
 func NewStaticRecordCallPolicy() StaticRecordCallPolicy {
+	var vBest StaticRecordCallEntryRecord = StaticRecordCallEntryRecord{id: 0, amount: 0}
+	var vLarge uint32 = 0
+	var vDebts uint32 = 0
+	var vPeaks uint32 = 0
 	return StaticRecordCallPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vBest: StaticRecordCallEntryRecord{id: 0, amount: 0},
-		vLarge: 0,
-		vDebts: 0,
-		vPeaks: 0,
+		vBest: vBest,
+		vLarge: vLarge,
+		vDebts: vDebts,
+		vPeaks: vPeaks,
 	}
 }
 

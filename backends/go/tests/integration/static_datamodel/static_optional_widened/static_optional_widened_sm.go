@@ -491,17 +491,22 @@ type StaticOptionalWidenedPolicy struct {
 
 // NewStaticOptionalWidenedPolicy creates a new policy with default values.
 func NewStaticOptionalWidenedPolicy() StaticOptionalWidenedPolicy {
+	var vEntry uint32 = 0
+	var vDue optional.Of[int64] = optional.None[int64]()
+	var vRemind optional.Of[int64] = optional.None[int64]()
+	var vTaken uint32 = 0
+	var vRefusals uint32 = 0
 	return StaticOptionalWidenedPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vEntry: 0,
-		vDue: optional.None[int64](),
-		vRemind: optional.None[int64](),
-		vTaken: 0,
-		vRefusals: 0,
+		vEntry: vEntry,
+		vDue: vDue,
+		vRemind: vRemind,
+		vTaken: vTaken,
+		vRefusals: vRefusals,
 	}
 }
 

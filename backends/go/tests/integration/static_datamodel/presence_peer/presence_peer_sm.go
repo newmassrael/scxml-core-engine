@@ -858,24 +858,36 @@ type PresencePeerPolicy struct {
 
 // NewPresencePeerPolicy creates a new policy with default values.
 func NewPresencePeerPolicy() PresencePeerPolicy {
+	var vNode uint32 = 0
+	var vHub bool = false
+	var vTtl uint32 = 0
+	var vLease uint32 = 0
+	var vOnline []PresencePeerSeenRecord = nil
+	var vRebuilt []PresencePeerSeenRecord = nil
+	var vEntry PresencePeerSeenRecord = PresencePeerSeenRecord{client: 0, last: 0, gen: 0}
+	var vSerial uint32 = 0
+	var vKnown bool = false
+	var vFresh bool = false
+	var vLost uint32 = 0
+	var vRefusals uint32 = 0
 	return PresencePeerPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vNode: 0,
-		vHub: false,
-		vTtl: 0,
-		vLease: 0,
-		vOnline: nil,
-		vRebuilt: nil,
-		vEntry: PresencePeerSeenRecord{client: 0, last: 0, gen: 0},
-		vSerial: 0,
-		vKnown: false,
-		vFresh: false,
-		vLost: 0,
-		vRefusals: 0,
+		vNode: vNode,
+		vHub: vHub,
+		vTtl: vTtl,
+		vLease: vLease,
+		vOnline: vOnline,
+		vRebuilt: vRebuilt,
+		vEntry: vEntry,
+		vSerial: vSerial,
+		vKnown: vKnown,
+		vFresh: vFresh,
+		vLost: vLost,
+		vRefusals: vRefusals,
 	}
 }
 

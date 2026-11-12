@@ -533,22 +533,32 @@ type StaticBlockEndsPolicy struct {
 
 // NewStaticBlockEndsPolicy creates a new policy with default values.
 func NewStaticBlockEndsPolicy() StaticBlockEndsPolicy {
+	var vA uint8 = 250
+	var vB uint8 = 0
+	var vAfterAssign uint8 = 0
+	var vThenRan uint8 = 0
+	var vElseRan uint8 = 0
+	var vAfterIf uint8 = 0
+	var vInBranch uint8 = 0
+	var vAfterBranch uint8 = 0
+	var vAfterOk uint8 = 0
+	var vErrors uint8 = 0
 	return StaticBlockEndsPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vA: 250,
-		vB: 0,
-		vAfterAssign: 0,
-		vThenRan: 0,
-		vElseRan: 0,
-		vAfterIf: 0,
-		vInBranch: 0,
-		vAfterBranch: 0,
-		vAfterOk: 0,
-		vErrors: 0,
+		vA: vA,
+		vB: vB,
+		vAfterAssign: vAfterAssign,
+		vThenRan: vThenRan,
+		vElseRan: vElseRan,
+		vAfterIf: vAfterIf,
+		vInBranch: vInBranch,
+		vAfterBranch: vAfterBranch,
+		vAfterOk: vAfterOk,
+		vErrors: vErrors,
 	}
 }
 

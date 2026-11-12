@@ -984,18 +984,24 @@ type StaticInvokeOptionalPolicy struct {
 
 // NewStaticInvokeOptionalPolicy creates a new policy with default values.
 func NewStaticInvokeOptionalPolicy() StaticInvokeOptionalPolicy {
+	var vSize optional.Of[int32] = optional.Some[int32](7)
+	var vLabel optional.Of[string] = optional.Some[string]("abc")
+	var vNosize optional.Of[int32] = optional.None[int32]()
+	var vLengthy string = "abcdefgh"
+	var vCompleted uint32 = 0
+	var vErrors uint32 = 0
 	return StaticInvokeOptionalPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vSize: optional.Some[int32](7),
-		vLabel: optional.Some[string]("abc"),
-		vNosize: optional.None[int32](),
-		vLengthy: "abcdefgh",
-		vCompleted: 0,
-		vErrors: 0,
+		vSize: vSize,
+		vLabel: vLabel,
+		vNosize: vNosize,
+		vLengthy: vLengthy,
+		vCompleted: vCompleted,
+		vErrors: vErrors,
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeOptionalState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}

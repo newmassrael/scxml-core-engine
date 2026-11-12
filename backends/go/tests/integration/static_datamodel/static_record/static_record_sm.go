@@ -520,14 +520,16 @@ type StaticRecordPolicy struct {
 
 // NewStaticRecordPolicy creates a new policy with default values.
 func NewStaticRecordPolicy() StaticRecordPolicy {
+	var vShown StaticRecordDayRecord = StaticRecordDayRecord{year: 2026, month: 9, dayOfMonth: 24}
+	var vRefusals uint32 = 0
 	return StaticRecordPolicy{
 		// docs/adr/0045: a session has an id, which a saved state names it by and
 		// a peer addresses it by. A host that has one for it gives it with
 		// SetSessionID before it starts the machine; a child's is its parent's
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vShown: StaticRecordDayRecord{year: 2026, month: 9, dayOfMonth: 24},
-		vRefusals: 0,
+		vShown: vShown,
+		vRefusals: vRefusals,
 	}
 }
 
