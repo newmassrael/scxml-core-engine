@@ -36,6 +36,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
+
 #ifndef SCE_HOST_SAVED_FIXTURES_DIR
 #error "SCE_HOST_SAVED_FIXTURES_DIR names sce-build/tests/fixtures/host_processor/saved; the build defines it"
 #endif
@@ -164,7 +166,8 @@ static void waiting(machine_t *sm) {
     memset(&host, 0, sizeof(host));
     memset(&wiring, 0, sizeof(wiring));
     CHECK(sce_host_registry_register(&wiring, DECLARED_TYPE, handler, &host), "the processor registers");
-    M(init_with_clock_and_host_processors)(sm, sce_clock_manual(0u), &wiring);
+    REQUIRE_STARTED(M(init_with_clock_and_host_processors)(sm, sce_clock_manual(0u), &wiring),
+                    STATECHART_STATIC_DELAYED_HOST_SEND_START_OK);
     drive(sm, "start");
     drive(sm, "bump");
     M(advance_time_ms)(sm, WAITED_MS);

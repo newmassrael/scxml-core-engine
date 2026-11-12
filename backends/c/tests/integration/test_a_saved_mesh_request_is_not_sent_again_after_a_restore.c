@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
+
 #ifndef SCE_HOST_SAVED_FIXTURES_DIR
 #error "SCE_HOST_SAVED_FIXTURES_DIR names sce-build/tests/fixtures/host_processor/saved; the build defines it"
 #endif
@@ -117,7 +119,7 @@ static void asking(machine_t *sm, router_t *log) {
     memset(&wiring, 0, sizeof(wiring));
     memset(&meta, 0, sizeof(meta));
     CHECK(sce_host_invoker_register_mesh_rpc_invoker(&wiring, router, log), "the mesh-rpc door takes the router");
-    M(init_with_host_invokers)(sm, &wiring);
+    REQUIRE_STARTED(M(init_with_host_invokers)(sm, &wiring), STATECHART_STATIC_MESH_REQUEST_START_OK);
     M(run)(sm);
     CHECK(M(resolve_event_by_name)("go", &meta.event), "the document names `go`");
     M(raise_external)(sm, &meta);
