@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f3a316aacf7403325399aec899293549220a4c98b78ad03825aff15e55acb6a9
+// source-hash: adac8824ce3bf12969cf8a9f4a1db094aa59b5b7a2d7b37b7a611f3c7eb217dc
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -5660,6 +5660,86 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHanded.frameLength
+}
+
+// MARK: - codec: codec_source_leaf
+
+@Test func codecSourceLeafMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSourceLeaf.frameLength
+}
+
+// MARK: - codec: codec_source_parent_tag
+
+@Test func codecSourceParentTagMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSourceParentTag.frameLength
+}
+
+// MARK: - codec: codec_every_arm_says_near
+
+@Test func codecEveryArmSaysNearMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecEveryArmSaysNear.frameLength
+}
+
+// MARK: - codec: codec_every_arm_says_far
+
+@Test func codecEveryArmSaysFarMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecEveryArmSaysFar.frameLength
+}
+
+// MARK: - codec: codec_every_arm_says
+
+@Test func codecEveryArmSaysMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecEveryArmSays.frameLength
+}
+
+// MARK: - codec: codec_every_arm_says_parent
+
+@Test func codecEveryArmSaysParentMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecEveryArmSaysParent.frameLength
+}
+
+// MARK: - codec: codec_some_arms_say_plain
+
+@Test func codecSomeArmsSayPlainMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSomeArmsSayPlain.frameLength
+}
+
+// MARK: - codec: codec_some_arms_say
+
+@Test func codecSomeArmsSayMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSomeArmsSay.frameLength
+}
+
+// MARK: - codec: codec_some_arms_say_parent
+
+@Test func codecSomeArmsSayParentMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSomeArmsSayParent.frameLength
+}
+
+// MARK: - codec: codec_some_arms_say_forward
+
+@Test func codecSomeArmsSayForwardMatchesReference() throws {
+
+    // Compile-only probe: the oracle holds no case this fixture's field shape can express.
+    _ = CodecSomeArmsSayForward.frameLength
 }
 
 // MARK: - codec: codec_present_if_disjunction
