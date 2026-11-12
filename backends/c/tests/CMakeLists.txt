@@ -1541,6 +1541,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0096: a machine whose script session cannot be established does
+    # not start, and its host is told why; a child whose session fails is a
+    # failed invoke. The same generated machines as the target above, compiled
+    # again with the factory of their Lua state named
+    # (`SCE_LUA_STATE_FACTORY`), so the test supplies the state each machine
+    # is made with and fails the step a case asks for. The factory is the
+    # build's seam for a device's own allocator, not a switch of the machine:
+    # every other target compiles the default, `luaL_newstate`.
+    add_executable(sce_c_integration_a_machine_whose_script_session_fails_does_not_start
+        integration/test_a_machine_whose_script_session_fails_does_not_start.c
+        ${INTEGRATION_C_TEST_a_child_may_send_many_events_in_one_tick_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_a_machine_whose_script_session_fails_does_not_start PRIVATE
+        SCE_MAX_EVENTS=256
+        SCE_LUA_STATE_FACTORY=failing_lua_state
+    )
+    sce_c_link_runtime(sce_c_integration_a_machine_whose_script_session_fails_does_not_start)
+    target_include_directories(sce_c_integration_a_machine_whose_script_session_fails_does_not_start PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_machine_whose_script_session_fails_does_not_start PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_machine_whose_script_session_fails_does_not_start
+        COMMAND sce_c_integration_a_machine_whose_script_session_fails_does_not_start
+    )
+    set_tests_properties(c11_integration_a_machine_whose_script_session_fails_does_not_start PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 4.9 + 4.6: an error raised inside a <foreach> body ends the block
     # that contains the <foreach>, and it is the only error raised.
     sce_generate_static_integration_c_test(an_error_inside_a_foreach_ends_its_block "${SCE_C_INTEGRATION_GENERATED_DIR}")
