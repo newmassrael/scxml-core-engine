@@ -194,18 +194,27 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
     }
 
     @Test
-    fun `an object a parent hands arrives whole on every engine`() {
+    fun `an object a parent hands arrives whole on every engine, as a copy`() {
         // QuickJS keeps an object it evaluated inside the session that evaluated
         // it, and hands back a handle to it (`EngineHeldValue`), which the child's
-        // session refuses; the value is copied out where the parent hands it.
-        // Every engine is run whatever the suite selected, so the one that hands
-        // a handle is always among them.
+        // session refuses; Rhino hands back the object itself, which a child
+        // given it would share with its parent. The value is copied out where
+        // the parent hands it, so it arrives whole and as the child's own. Every
+        // engine is run whatever the suite selected, so both are always among
+        // them.
         for (name in W3CTestBase.KNOWN_ENGINES) {
             reported(W3CTestBase.engineFor(name)) { sm ->
                 assertEquals(
                     "whole",
                     sm.sawRecord(),
                     "$name: the object the parent handed did not arrive whole in the child",
+                )
+                assertEquals(
+                    "whole",
+                    sm.sawParentRecord(),
+                    "$name: the name the child wrote into the object it was handed is what the " +
+                        "parent's `record` holds, so the child was handed the parent's object " +
+                        "rather than a copy of it",
                 )
                 assertEquals(
                     "none",

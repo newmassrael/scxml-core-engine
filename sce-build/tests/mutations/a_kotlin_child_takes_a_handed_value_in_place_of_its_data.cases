@@ -29,6 +29,7 @@
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AChildTakesAHandedValueInPlaceOfItsDataTest'
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildTakesAHandedValueInPlaceOfItsDataTest.kt
 mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+mutation_targets backends/kotlin/rhino/src/main/kotlin/com/sce/scripting/RhinoScriptEngine.kt
 mutation_targets tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2
 mutation_targets_glob 'backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_takes_a_handed_value_in_place_of_its_data/*Sm.kt'
 mutation_regen scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh
@@ -138,12 +139,14 @@ edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachine
      "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n            return false\n        }\n        return true\n")
 PY
 
-# ── A value an engine keeps is handed as its handle ─────────────────
+# ── A value is handed as the parent's engine gave it back ───────────
 #
-# The parent hands the child the handle QuickJS keeps an object it evaluated
-# behind, which the child's session refuses. Killer: `an object a parent hands
-# arrives whole on every engine` (on QuickJS, `record` is not whole and the
-# child raised error.execution).
+# Nothing is copied: the parent hands the child the handle QuickJS keeps an
+# object it evaluated behind, which the child's session refuses, and Rhino's
+# own object, which the child then shares. Killer: `an object a parent hands
+# arrives whole on every engine, as a copy` (on QuickJS, `record` is not whole
+# and the child raised error.execution; on Rhino, `saw_parent_record` is the
+# child's name).
 
 mutation_case "an engine-held value is handed as its handle" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -153,11 +156,36 @@ PY
 
 # ── A number inside a copied value crosses as its text ──────────────
 #
-# Killer: `an object a parent hands arrives whole on every engine` (on QuickJS,
-# `record.inner.depth` is not the number 2).
+# Killer: `an object a parent hands arrives whole on every engine, as a copy`
+# (on QuickJS, `record.inner.depth` is not the number 2).
 
 mutation_case "a number inside a copied value is kept as its text" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        is Json.Number -> json.text.toLongOrNull() ?: json.text.toDouble()\n",
-     "        is Json.Number -> json\n")
+     "        is Json.Number -> value.text.toLongOrNull() ?: value.text.toDouble()\n",
+     "        is Json.Number -> value\n")
+PY
+
+# ── An object an engine hands back as a map crosses as itself ───────
+#
+# A map is no longer copied, so a Rhino child is handed the object its parent
+# holds (Rhino's objects are maps), and what the child writes into it the
+# parent reads. Killer: `an object a parent hands arrives whole on every
+# engine, as a copy` (on Rhino, `saw_parent_record` is the child's name).
+
+mutation_case "an object handed as a map is shared, not copied" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        is Map<*, *> -> value.entries.associate { (key, member) ->\n            key.toString() to handedAcrossSessions(member)\n        }\n",
+     "        is Map<*, *> -> value\n")
+PY
+
+# ── A copied object reaches a Rhino child as a Java map ─────────────
+#
+# Rhino wraps the copy as it wraps any Java value, so no script reads its
+# members. Killer: `an object a parent hands arrives whole on every engine, as
+# a copy` (on Rhino, `record` is not whole).
+
+mutation_case "a Rhino session holds a handed map as a Java object" <<'PY'
+edit("backends/kotlin/rhino/src/main/kotlin/com/sce/scripting/RhinoScriptEngine.kt",
+     "        is Map<*, *> -> cx.newObject(scope).also { built ->\n",
+     "        is java.util.SortedMap<*, *> -> cx.newObject(scope).also { built ->\n")
 PY

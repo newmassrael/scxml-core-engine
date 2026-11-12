@@ -156,13 +156,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
 
     override fun setVariable(sessionId: String, name: String, value: Any?) {
         val session = sessions[sessionId] ?: return
-        Context.enter()
+        val cx = Context.enter()
         try {
-            val wrapped = when (value) {
-                null -> Undefined.instance
-                is Scriptable -> value
-                else -> Context.javaToJS(value, session.scope)
-            }
+            val wrapped = if (value == null) Undefined.instance else jsValueOf(cx, session.scope, value)
             ScriptableObject.putProperty(session.scope, name, wrapped)
         } catch (e: RhinoException) {
             // The name is the document's (`<data id>`), so it may be a system
@@ -171,6 +167,29 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
+    }
+
+    /**
+     * [value] as a value of the session whose scope is [scope]. A Kotlin map or
+     * list, which is how another session's value crosses into this one (the
+     * runtime copies a value an invoke hands its child out of the parent's
+     * session, docs/adr/0098), is built here as a JavaScript object or array of
+     * this session, member by member, so the session holds an object of its own
+     * that reads as one it built; wrapped as Rhino wraps a Java value, it would
+     * be a Java map whose members no script could read. A member that is `null`
+     * is JavaScript's `null`. A value that already is this engine's is taken as
+     * it is, and anything else as Rhino wraps a Java value.
+     */
+    private fun jsValueOf(cx: Context, scope: Scriptable, value: Any?): Any? = when (value) {
+        null -> null
+        is Scriptable -> value
+        is Map<*, *> -> cx.newObject(scope).also { built ->
+            for ((key, member) in value) {
+                ScriptableObject.putProperty(built, key.toString(), jsValueOf(cx, scope, member))
+            }
+        }
+        is List<*> -> cx.newArray(scope, value.map { jsValueOf(cx, scope, it) }.toTypedArray())
+        else -> Context.javaToJS(value, scope)
     }
 
     override fun getVariable(sessionId: String, name: String): Any? {

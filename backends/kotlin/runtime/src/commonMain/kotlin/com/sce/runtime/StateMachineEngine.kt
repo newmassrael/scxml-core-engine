@@ -5637,28 +5637,36 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * [value], which this machine's engine evaluated, as a value another
-     * session can be given (docs/adr/0098, decision 3), for [setInvokeParams].
+     * [value], which this machine's engine evaluated, as a copy another
+     * session can be given and holds as its own (docs/adr/0098, decision 3),
+     * for [setInvokeParams]: a child never shares an object with this machine,
+     * so a change either makes to it is not seen by the other, whichever
+     * engine both run on.
      *
-     * A value the engine keeps inside itself ([EngineHeldValue]) is a handle
-     * into this machine's session, which a child's session refuses: it is
-     * copied out as the engine serialises it to JSON ([EngineHeldValue.toJson]),
-     * structure included, into the plain values every engine takes. Every other
-     * value already is one.
+     *  - A value the engine keeps inside itself ([EngineHeldValue], as QuickJS
+     *    keeps an object) is a handle into this machine's session, which a
+     *    child's session refuses: it is copied out as the engine serialises it
+     *    to JSON ([EngineHeldValue.toJson]), structure included.
+     *  - An object or array the engine hands back as a map or a list is copied
+     *    member by member, in its order. Rhino's own objects and arrays are
+     *    both a JavaScript value of this session and a `Map` or a `List`, so
+     *    without the copy a Rhino child would be handed the object this machine
+     *    holds; Lua's tables already arrive converted, and are copied alike.
+     *  - A number read from JSON is the `Long` its digits are, or else the
+     *    `Double`; a text is a `String` (Rhino joins strings lazily into a
+     *    `CharSequence` that is not one).
+     *
+     * Anything else (null, a boolean, a number, a function) is handed as it is.
      */
-    private fun handedAcrossSessions(value: Any?): Any? =
-        if (value is EngineHeldValue) plainValueOf(Json.parse(value.toJson())) else value
-
-    /**
-     * A value [Json.parse] read, as an engine is given one: each number as the
-     * `Long` its digits are, or else the `Double`, and every object and array
-     * member likewise, in the order it was written.
-     */
-    private fun plainValueOf(json: Any?): Any? = when (json) {
-        is Json.Number -> json.text.toLongOrNull() ?: json.text.toDouble()
-        is Map<*, *> -> json.entries.associate { (key, member) -> key to plainValueOf(member) }
-        is List<*> -> json.map { plainValueOf(it) }
-        else -> json
+    private fun handedAcrossSessions(value: Any?): Any? = when (value) {
+        is EngineHeldValue -> handedAcrossSessions(Json.parse(value.toJson()))
+        is Json.Number -> value.text.toLongOrNull() ?: value.text.toDouble()
+        is CharSequence -> value.toString()
+        is Map<*, *> -> value.entries.associate { (key, member) ->
+            key.toString() to handedAcrossSessions(member)
+        }
+        is List<*> -> value.map { handedAcrossSessions(it) }
+        else -> value
     }
 
     /**

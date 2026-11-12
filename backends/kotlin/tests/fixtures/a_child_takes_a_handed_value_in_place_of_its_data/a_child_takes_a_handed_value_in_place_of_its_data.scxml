@@ -20,7 +20,10 @@
                  takes a handed value and keeps its own.
     nowhere      a name the child declares nowhere: it is not added.
     record       an object with an object and an array inside it, handed
-                 from the parent's datamodel: it arrives whole.
+                 from the parent's datamodel: it arrives whole, and as a copy
+                 of the child's own, so the name the child writes into it
+                 after it reports is not what the parent's `record` holds
+                 (saw_parent_record).
     seen_by_script, seen_by_entry
                  the top-level <script> and the initial <onentry> read the
                  handed values, so they are declared before either runs.
@@ -58,6 +61,7 @@
         <data id="saw_by_script" expr="'unreported'"/>
         <data id="saw_by_entry" expr="'unreported'"/>
         <data id="saw_refused" expr="'unreported'"/>
+        <data id="saw_parent_record" expr="'unreported'"/>
     </datamodel>
 
     <state id="invoking">
@@ -106,6 +110,7 @@
                                 <param name="by_entry" expr="seen_by_entry"/>
                                 <param name="refused" expr="typeof refused"/>
                             </send>
+                            <assign location="record.name" expr="'changed by the child'"/>
                         </transition>
                     </state>
                     <final id="done"/>
@@ -123,6 +128,7 @@
             <assign location="saw_by_script" expr="_event.data.by_script"/>
             <assign location="saw_by_entry" expr="_event.data.by_entry"/>
             <assign location="saw_refused" expr="_event.data.refused"/>
+            <assign location="saw_parent_record" expr="record.name"/>
         </transition>
     </state>
 

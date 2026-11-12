@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 282
 native-prefix-documents 2
-datamodel-variable-init 528
+datamodel-variable-init 529
 transition-guard 258
-assign-action 457
+assign-action 458
 child-invoke-needs-script-engine 63
 log-expr 46
 send-param-expr 49
@@ -166,8 +166,8 @@ measured:** one document lands with this table, and it exists to need an engine.
   it must not evaluate are the point, so the engine is what it tests.
 
 Its parent raises `engine-documents` by one (281 to 282, after the Rust
-document above), `datamodel-variable-init` by 11 (517 to 528, its `<data>`),
-`assign-action` by ten (447 to 457, the report it keeps) and
+document above), `datamodel-variable-init` by 12 (517 to 529, its `<data>`),
+`assign-action` by 11 (447 to 458, the report it keeps) and
 `child-invoke-needs-script-engine` by one (62 to 63); its in-line child is not
 a document of the census. The figures were derived by reading the document
 against `script_engine_analyzer`; where the test's block disagrees, the test's
