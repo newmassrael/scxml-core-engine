@@ -159,9 +159,13 @@ fn bytes_payload_guard_misses_on_nonmatch() {
 // optimisation observable, which is the one thing it may not be.
 
 /// The event as every producer but the inject seam delivers it: its fields on
-/// the `data` wire, with no typed payload riding along.
+/// the `data` wire, with no typed payload riding along, on the external queue
+/// those producers put it on. Not `Engine::raise`: that is the internal queue,
+/// which holds only what the document raises for itself, and the generator
+/// proves this document raises nothing there (docs/adr/0076), so a test build
+/// stops a host that puts an event on it.
 fn deliver_lifted_data(engine: &mut sce_rust_runtime::Engine<StatechartLiftedPolicy>, data: &str) {
-    engine.raise(sce_rust_runtime::event::EventWithMetadata {
+    engine.raise_external_with_meta(sce_rust_runtime::event::EventWithMetadata {
         event: StatechartLiftedEvent::JobCompleted,
         payload: Default::default(),
         metadata: sce_rust_runtime::event::EventMetadata {
