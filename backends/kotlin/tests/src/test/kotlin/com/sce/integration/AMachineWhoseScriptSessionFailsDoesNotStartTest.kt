@@ -92,7 +92,16 @@ private class SessionDouble(
     /** The sessions this double created and has not destroyed. */
     val live = mutableSetOf<String>()
 
-    /** The calls that ran a document's expressions or wrote its datamodel. */
+    /**
+     * The calls that ran a document's expressions or wrote its datamodel, as the
+     * members an engine may implement see them: the `String` evaluations, the
+     * variable writes and the event binding. The [ScriptSource] entry points are
+     * not overridden: they carry the language refusal every engine owes, and
+     * `theLanguageContractIsNotAnEngineDetail` holds that no engine implements
+     * them, a double included. Delegation hands them to the Lua engine whole.
+     * Every event a running machine takes is bound here, so a machine that ran
+     * is counted.
+     */
     var ran = 0
         private set
 
@@ -131,29 +140,9 @@ private class SessionDouble(
         return engine.evaluateExpr(sessionId, expr)
     }
 
-    override fun evaluateExpr(sessionId: String, expr: ScriptSource): Any? {
-        ran++
-        return engine.evaluateExpr(sessionId, expr)
-    }
-
     override fun executeScript(sessionId: String, script: String) {
         ran++
         engine.executeScript(sessionId, script)
-    }
-
-    override fun executeScript(sessionId: String, script: ScriptSource) {
-        ran++
-        engine.executeScript(sessionId, script)
-    }
-
-    override fun evaluateCondition(sessionId: String, expr: ScriptSource): Boolean {
-        ran++
-        return engine.evaluateCondition(sessionId, expr)
-    }
-
-    override fun assign(sessionId: String, location: ScriptSource, expr: ScriptSource) {
-        ran++
-        engine.assign(sessionId, location, expr)
     }
 
     override fun setVariable(sessionId: String, name: String, value: Any?) {
