@@ -1285,7 +1285,7 @@ fn a_variant_whose_tag_its_caller_supplies_is_given_the_tag_on_decode() {
 /// and masked, as the `tag` of its decode.
 #[test]
 fn an_embedded_variant_is_handed_its_tag_by_a_flag_of_the_embedding_codec() {
-    let code = swift_of("backends/rust/forge-conformance/fixtures/codec_source_parent_tag.scxml")
+    let code = swift_of("tests/forge/resources/codec_source_parent_tag.scxml")
         .expect("a codec that embeds a variant by a dispatch flag is written");
     assert!(
         code.contains(

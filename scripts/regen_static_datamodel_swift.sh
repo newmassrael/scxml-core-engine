@@ -157,12 +157,10 @@ done
 # name (status 7) is listed, as the machines' are.
 UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator|timer|observer|procedure|codec|text-template)'
 # The conformance documents of the other backends' oracle that the catalog does not list, whose
-# units a test of the Swift backend reads: a codec that embeds a variant and says which of its own
-# flags selects the arm (ADR 0058), with the variant it embeds, and a CBOR map with an entry of an
-# open enum.
+# units a test of the Swift backend reads: a CBOR map with an entry of an open enum. A codec that
+# embeds a variant and says which of its own flags selects the arm (ADR 0058) is the catalog's
+# (`codec_source_parent_tag`, with the variant it embeds), and is listed with it below.
 CONFORMANCE_UNITS=(
-    backends/rust/forge-conformance/fixtures/codec_source_leaf.scxml
-    backends/rust/forge-conformance/fixtures/codec_source_parent_tag.scxml
     tests/forge/conformance/codec_cbor_open_enum/codec_cbor_open_enum.scxml
 )
 mapfile -t ALGORITHM_CANDIDATES < <(

@@ -44693,6 +44693,109 @@
         {"source": {"entries": [{"header": 2, "value": 5}]}, "error": "present-if-mismatch", "note": "a value on the first entry, which is handed it clear"},
         {"source": {"entries": [{"header": 130, "value": null}, {"header": 4, "value": 3}]}, "error": "present-if-mismatch", "note": "a value on an entry after identifier 2, wide clear"}
       ]
+    },
+    "codec_source_leaf": {
+      "fixture": "CodecSourceLeaf",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant with no tag of its own: its wire is the arm alone, and its caller hands the decode the tag of the arm, which a case states in its tag.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_variant_session_open", "body": {"version": 7}}}, "tag": 0, "encoded": [0, 7], "note": "the open arm alone: its caller holds the tag 0"},
+        {"source": {"body": {"arm": "codec_variant_session_open", "body": {"version": 258}}}, "tag": 0, "encoded": [1, 2], "note": "the open arm's version, high byte first"},
+        {"source": {"body": {"arm": "codec_variant_session_close", "body": {"reason": 4}}}, "tag": 1, "encoded": [4], "note": "the close arm alone, decoded under the tag 1"}
+      ]
+    },
+    "codec_source_parent_tag": {
+      "fixture": "CodecSourceParentTag",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a codec that embeds a variant with no tag of its own and holds the tag in the flag hdr.kind (<sce:variant-dispatch>): the encode derives the flag from the arm the body holds, and the decode hands the body what it read there.",
+      "sources": [
+        {"source": {"hdr": 0, "body": {"body": {"arm": "codec_variant_session_open", "body": {"version": 7}}}}, "encoded": [0, 0, 7], "note": "the open arm: kind clear"},
+        {"source": {"hdr": 128, "body": {"body": {"arm": "codec_variant_session_open", "body": {"version": 7}}}}, "encoded": [128, 0, 7], "note": "more set beside the open arm"},
+        {"source": {"hdr": 1, "body": {"body": {"arm": "codec_variant_session_close", "body": {"reason": 4}}}}, "encoded": [1, 4], "note": "the close arm: kind set"},
+        {"source": {"hdr": 129, "body": {"body": {"arm": "codec_variant_session_close", "body": {"reason": 4}}}}, "encoded": [129, 4], "note": "more set beside the close arm"},
+        {"source": {"hdr": 127, "body": {"body": {"arm": "codec_variant_session_close", "body": {"reason": 255}}}}, "encoded": [127, 255], "note": "the bits no flag names are kept"}
+      ]
+    },
+    "codec_every_arm_says_near": {
+      "fixture": "CodecEveryArmSaysNear",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an arm that says its flag input N (docs/adr/0065 \u00a76 R4a): set exactly where the suffix is there, its length derived with it.",
+      "sources": [
+        {"source": {"id": 7, "suffix": [97]}, "inputs": {"N": 1}, "encoded": [7, 1, 97], "note": "N set: the suffix and its length follow the id"},
+        {"source": {"id": 7, "suffix": null}, "inputs": {"N": 0}, "encoded": [7], "note": "N clear: the id alone"},
+        {"source": {"id": 0, "suffix": []}, "inputs": {"N": 1}, "encoded": [0, 0], "note": "N set and an empty suffix: its length is zero"},
+        {"source": {"id": 255, "suffix": [1, 2, 3, 4, 5, 6, 7, 8]}, "inputs": {"N": 1}, "encoded": [255, 8, 1, 2, 3, 4, 5, 6, 7, 8], "note": "the suffix at its bound of eight"}
+      ]
+    },
+    "codec_every_arm_says_far": {
+      "fixture": "CodecEveryArmSaysFar",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an arm that says its flag input bare at the other polarity: set exactly where the route is absent.",
+      "sources": [
+        {"source": {"route": 258}, "inputs": {"bare": 0}, "encoded": [1, 2], "note": "bare clear: the route, high byte first"},
+        {"source": {"route": null}, "inputs": {"bare": 1}, "encoded": [], "note": "bare set: nothing"}
+      ]
+    },
+    "codec_every_arm_says": {
+      "fixture": "CodecEveryArmSays",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant with no tag of its own, every arm of which says the flag input N, the far arm at the other polarity (docs/adr/0065 \u00a76 R4d): a value holds one arm, so every value says N, and the encode takes none.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}, "inputs": {"N": 1}, "tag": 1, "encoded": [7, 1, 97], "note": "the near arm with its suffix says N set"},
+        {"source": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}, "inputs": {"N": 0}, "tag": 1, "encoded": [7], "note": "the near arm without it says N clear"},
+        {"source": {"body": {"arm": "codec_every_arm_says_far", "body": {"route": 258}}}, "inputs": {"N": 0}, "tag": 0, "encoded": [1, 2], "note": "the far arm with its route says N clear"},
+        {"source": {"body": {"arm": "codec_every_arm_says_far", "body": {"route": null}}}, "inputs": {"N": 1}, "tag": 0, "encoded": [], "note": "the far arm without it says N set, and writes nothing"}
+      ]
+    },
+    "codec_every_arm_says_parent": {
+      "fixture": "CodecEveryArmSaysParent",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a codec whose header holds the flag input its body says (N, bound to header.N) and the tag of the body's arm (M, <sce:variant-dispatch flag=\"header.M\">): every arm says N (docs/adr/0065 \u00a76 R4d), so both bits are derived from the arm the body holds.",
+      "sources": [
+        {"source": {"header": 96, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}}, "encoded": [96, 7, 1, 97], "note": "the near arm with its suffix: N and M set"},
+        {"source": {"header": 64, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}}, "encoded": [64, 7], "note": "the near arm without it: M alone"},
+        {"source": {"header": 0, "body": {"body": {"arm": "codec_every_arm_says_far", "body": {"route": 258}}}}, "encoded": [0, 1, 2], "note": "the far arm with its route: neither"},
+        {"source": {"header": 32, "body": {"body": {"arm": "codec_every_arm_says_far", "body": {"route": null}}}}, "encoded": [32], "note": "the far arm without it: N alone, and no body bytes"},
+        {"source": {"header": 159, "body": {"body": {"arm": "codec_every_arm_says_far", "body": {"route": 258}}}}, "encoded": [159, 1, 2], "note": "the bits beside N and M are kept"}
+      ]
+    },
+    "codec_some_arms_say_plain": {
+      "fixture": "CodecSomeArmsSayPlain",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. an arm that reads no flag input.",
+      "sources": [
+        {"source": {"id": 7}, "encoded": [7], "note": "one byte"},
+        {"source": {"id": 255}, "encoded": [255], "note": "one byte at its largest"}
+      ]
+    },
+    "codec_some_arms_say": {
+      "fixture": "CodecSomeArmsSay",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a variant with no tag of its own that hands the flag input N to one arm of two (docs/adr/0065 \u00a76 R4e): a value in that arm says N, and one in the other has no bit N could change and says nothing of it.",
+      "sources": [
+        {"source": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}, "inputs": {"N": 1}, "tag": 1, "encoded": [7, 1, 97], "note": "the near arm with its suffix says N set"},
+        {"source": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}, "inputs": {"N": 0}, "tag": 1, "encoded": [7], "note": "the near arm without it says N clear"},
+        {"source": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}, "inputs": {"N": 0}, "tag": 0, "encoded": [7], "note": "the plain arm says nothing of N, handed clear"},
+        {"source": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}, "inputs": {"N": 1}, "tag": 0, "encoded": [7], "note": "the plain arm says nothing of N, handed set"}
+      ]
+    },
+    "codec_some_arms_say_parent": {
+      "fixture": "CodecSomeArmsSayParent",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a codec whose header holds the flag input N its body says in some values only (docs/adr/0065 \u00a76 R4e) and the tag of the body's arm (M, <sce:variant-dispatch>). M is derived from the arm; N is the value's own, held to the arm where the arm says it, and the encode refuses a value whose N says otherwise.",
+      "sources": [
+        {"source": {"header": 96, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}}, "encoded": [96, 7, 1, 97], "note": "the near arm with its suffix, N set as it says"},
+        {"source": {"header": 64, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}}, "encoded": [64, 7], "note": "the near arm without it, N clear as it says"},
+        {"source": {"header": 0, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "encoded": [0, 7], "note": "the plain arm, N clear: the value's own"},
+        {"source": {"header": 32, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "encoded": [32, 7], "note": "the plain arm, N set: the value's own"},
+        {"source": {"header": 191, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "encoded": [191, 7], "note": "the bits beside M are the value's, N among them"}
+      ],
+      "refused": [
+        {"source": {"header": 32, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}}, "error": "present-if-mismatch", "note": "N set where the near arm without its suffix says it clear"},
+        {"source": {"header": 64, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}}, "error": "present-if-mismatch", "note": "N clear where the near arm with its suffix says it set"}
+      ]
+    },
+    "codec_some_arms_say_forward": {
+      "fixture": "CodecSomeArmsSayForward",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a codec that hands its flag input N on to a body always there that says it in some values only (docs/adr/0065 \u00a76 R4a, R4e): the value says N as the body does, nothing where the body holds the arm that does not read it, and the encode takes none. M holds the tag of the body's arm (<sce:variant-dispatch>).",
+      "sources": [
+        {"source": {"header": 64, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [97]}}}}, "inputs": {"N": 1}, "encoded": [64, 7, 1, 97], "note": "the near arm with its suffix says the input N set"},
+        {"source": {"header": 64, "body": {"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": null}}}}, "inputs": {"N": 0}, "encoded": [64, 7], "note": "the near arm without it says N clear"},
+        {"source": {"header": 0, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "inputs": {"N": 0}, "encoded": [0, 7], "note": "the plain arm says nothing of N, handed clear"},
+        {"source": {"header": 0, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "inputs": {"N": 1}, "encoded": [0, 7], "note": "the plain arm says nothing of N, handed set"},
+        {"source": {"header": 191, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "inputs": {"N": 0}, "encoded": [191, 7], "note": "the bits beside M are kept"}
+      ]
     }
   },
   "string_lookups": {

@@ -632,88 +632,20 @@ mod said_inputs {
     }
 }
 
-// A carrier flag bound to an input its body says in some values only (docs/adr/0065
-// §6 R4e): the flag is the value's, held to the arm where the arm says the input.
-mod some_arms_say {
-    use super::codecs::codec_every_arm_says_near::CodecEveryArmSaysNearParts;
-    use super::codecs::codec_some_arms_say::{
-        CodecSomeArmsSayParts, CodecSomeArmsSayPartsBody as Body, CodecSomeArmsSayWire,
-    };
-    use super::codecs::codec_some_arms_say_parent::{
-        CodecSomeArmsSayParentParts, CodecSomeArmsSayParentWire,
-    };
-    use super::codecs::codec_some_arms_say_plain::CodecSomeArmsSayPlainParts;
-    use sce_forge_runtime::codec::{Bounded, CodecError, VecSink};
-
-    fn encoded(header: u8, value: &CodecSomeArmsSayParts<'_>) -> (Result<(), CodecError>, Vec<u8>) {
-        let parent = CodecSomeArmsSayParentParts {
-            header,
-            body: value,
-        };
-        let mut bytes = Vec::new();
-        let answer =
-            CodecSomeArmsSayParentWire::encode_source(&parent, &mut VecSink::new(&mut bytes));
-        (answer, bytes)
-    }
-
-    #[test]
-    fn the_input_is_the_arms_and_none_from_an_arm_that_does_not_read_it() {
-        let says = |body| CodecSomeArmsSayWire::input_n(&CodecSomeArmsSayParts { body });
-        let with = CodecEveryArmSaysNearParts {
-            id: 7,
-            suffix: Some(Bounded::new(&b"a"[..]).expect("within the bound")),
-        };
-        assert_eq!(says(Body::CodecEveryArmSaysNear(&with)), Some(true));
-        let plain = CodecSomeArmsSayPlainParts { id: 7 };
-        assert_eq!(says(Body::CodecSomeArmsSayPlain(&plain)), None);
-    }
-
-    #[test]
-    fn a_flag_is_held_to_the_arm_that_says_it_before_the_first_byte() {
-        let without = CodecEveryArmSaysNearParts {
-            id: 7,
-            suffix: None,
-        };
-        let value = CodecSomeArmsSayParts {
-            body: Body::CodecEveryArmSaysNear(&without),
-        };
-        // `N` is bit 5: the arm has no suffix, so a set bit says otherwise.
-        let (answer, bytes) = encoded(0x20, &value);
-        assert_eq!(answer, Err(CodecError::PresentIfMismatch));
-        assert!(bytes.is_empty(), "a refusal leaves the sink untouched");
-
-        let (answer, bytes) = encoded(0x00, &value);
-        assert_eq!(answer, Ok(()));
-        assert_eq!(bytes, [0x40, 7]);
-    }
-
-    #[test]
-    fn a_flag_is_the_values_own_in_an_arm_that_does_not_read_it() {
-        let plain = CodecSomeArmsSayPlainParts { id: 7 };
-        let value = CodecSomeArmsSayParts {
-            body: Body::CodecSomeArmsSayPlain(&plain),
-        };
-        for (header, written) in [(0x00, 0x00), (0x20, 0x20)] {
-            let (answer, bytes) = encoded(header, &value);
-            assert_eq!(answer, Ok(()));
-            assert_eq!(bytes, [written, 7]);
-        }
-    }
-}
-
-// A flag input every arm of a variant says (docs/adr/0065 §6 R4d): a value holds
-// one arm, so the input is the one that arm says, and a parent writes the flag it
-// binds to the input from it. The arms say it at opposite polarities.
+// A flag input every arm of a variant says (docs/adr/0065 §6 R4d), and the tag of
+// the arm a body holds (`<sce:variant-dispatch>`): a parent writes both flags from
+// the arm whatever its value states of them. The catalog's byte cases hold every
+// frame, refusal and input of these codecs; a case states a value as its decode
+// presents it, so none states a header that says otherwise than the arm, which is
+// what this holds.
 mod every_arm_says {
-    use super::codecs::codec_every_arm_says::{
-        CodecEveryArmSaysParts, CodecEveryArmSaysPartsBody, CodecEveryArmSaysWire,
-    };
+    use super::codecs::codec_every_arm_says::{CodecEveryArmSaysParts, CodecEveryArmSaysPartsBody};
     use super::codecs::codec_every_arm_says_far::CodecEveryArmSaysFarParts;
     use super::codecs::codec_every_arm_says_near::CodecEveryArmSaysNearParts;
     use super::codecs::codec_every_arm_says_parent::{
-        CodecEveryArmSaysParent, CodecEveryArmSaysParentParts, CodecEveryArmSaysParentWire,
+        CodecEveryArmSaysParentParts, CodecEveryArmSaysParentWire,
     };
-    use sce_forge_runtime::codec::{Bounded, SceCursor, VecSink};
+    use sce_forge_runtime::codec::{Bounded, VecSink};
 
     fn near(suffix: Option<&[u8]>) -> CodecEveryArmSaysNearParts<'_> {
         CodecEveryArmSaysNearParts {
@@ -738,30 +670,9 @@ mod every_arm_says {
     }
 
     #[test]
-    fn the_input_is_the_one_the_arm_it_holds_says() {
-        let says = |body| CodecEveryArmSaysWire::input_n(&CodecEveryArmSaysParts { body });
-        let with = near(Some(b"a"));
-        assert!(says(CodecEveryArmSaysPartsBody::CodecEveryArmSaysNear(
-            &with
-        )));
-        let without = near(None);
-        assert!(!says(CodecEveryArmSaysPartsBody::CodecEveryArmSaysNear(
-            &without
-        )));
-        // The other arm says it at the other polarity.
-        let routed = far(Some(9));
-        assert!(!says(CodecEveryArmSaysPartsBody::CodecEveryArmSaysFar(
-            &routed
-        )));
-        let bare = far(None);
-        assert!(says(CodecEveryArmSaysPartsBody::CodecEveryArmSaysFar(
-            &bare
-        )));
-    }
-
-    #[test]
     fn a_parent_writes_the_flag_it_binds_as_the_arm_says_it() {
-        // `N` is bit 5, as the arm says it, and `M` bit 6, the arm's tag.
+        // `N` is bit 5, as the arm says it, and `M` bit 6, the arm's tag; the
+        // value states both clear.
         let with = near(Some(b"a"));
         let value = CodecEveryArmSaysParts {
             body: CodecEveryArmSaysPartsBody::CodecEveryArmSaysNear(&with),
@@ -785,17 +696,6 @@ mod every_arm_says {
             body: CodecEveryArmSaysPartsBody::CodecEveryArmSaysFar(&bare),
         };
         assert_eq!(written(&value), [0x20]);
-    }
-
-    #[test]
-    fn a_frame_a_parent_decodes_is_written_back_byte_for_byte() {
-        for frame in [&[0x60, 7, 1, b'a'][..], &[0x40, 7], &[0x00, 1, 2], &[0x20]] {
-            let decoded = CodecEveryArmSaysParent::decode(&mut SceCursor::new(frame))
-                .expect("a frame the document gives");
-            let mut bytes = Vec::new();
-            let Ok(()) = decoded.encode(&mut VecSink::new(&mut bytes));
-            assert_eq!(bytes, frame);
-        }
     }
 }
 

@@ -7,9 +7,9 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_source_leaf">
-  <sce:import src="../../../../tests/forge/resources/codec_variant_session_open.scxml"
+  <sce:import src="codec_variant_session_open.scxml"
               kind="codec" as="codec_variant_session_open"/>
-  <sce:import src="../../../../tests/forge/resources/codec_variant_session_close.scxml"
+  <sce:import src="codec_variant_session_close.scxml"
               kind="codec" as="codec_variant_session_close"/>
   <datamodel>
     <sce:variant>

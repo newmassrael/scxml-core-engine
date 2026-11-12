@@ -20,11 +20,11 @@
 //! the Rust case refuses it.
 
 use super::super::rust_source::{
-    aligned_name, all_of, byte_values, case_inputs, chain_optional_in, entry_rows, enum_variant,
-    gates_label, group_accessor, group_arm_name, group_choice, group_type, holds_chain,
-    integer_value, law_start_bits, lawful_parts, placed_parts, source_members, spelled,
-    variant_choice, ChainInArm, ChosenGroupArm, CodecPath as RustCodecPath, HeldCodecs,
-    VARIANT_MEMBER,
+    aligned_name, all_of, byte_values, case_inputs, case_tag, chain_optional_in, entry_rows,
+    enum_variant, gates_label, group_accessor, group_arm_name, group_choice, group_type,
+    holds_chain, integer_value, law_start_bits, lawful_parts, placed_parts, source_members,
+    spelled, variant_choice, ChainInArm, ChosenGroupArm, CodecPath as RustCodecPath, HeldCodecs,
+    CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
 use super::{declared_parts, Part};
@@ -79,11 +79,13 @@ pub(crate) struct SourceCase {
     pub literal: String,
     /// Each element by its id, each group by its gates and the variant by
     /// `body`, with a `bool` expression over `(*decoded)` and `value` that
-    /// holds when the two present the same; and each flag input the value
-    /// says, with one that holds when it says the input the case is handed.
+    /// holds when the two present the same; each flag input the value says,
+    /// with one that holds when it says the input the case is handed; and the
+    /// tag a caller hands, with one that holds when both answer it.
     pub checks: Vec<(String, String)>,
-    /// The flag inputs the decode is handed, in the order the codec declares
-    /// them, as arguments of its `decode`.
+    /// The arguments of `decode` after the cursor: the flag inputs the decode
+    /// is handed, in the order the codec declares them, then the tag where its
+    /// variant takes its tag from its caller ([`case_tag`]).
     pub inputs: Vec<String>,
     /// The flag inputs the encode is handed, those the value does not say
     /// (docs/adr/0065 §6 R4a), in the order the codec declares them, as
@@ -93,19 +95,27 @@ pub(crate) struct SourceCase {
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, its parent
 /// handing it `inputs` (`{"name": 0 | 1}`, or `null` for a codec that takes
-/// none). A shape the literal does not spell yet is refused by name, and so is
-/// a source that states an element the value does not present or leaves out
-/// one it does, and inputs that are not the codec's.
+/// none) and its caller `tag` (a number for a variant with no tag of its own,
+/// `null` for any other codec). A shape the literal does not spell yet is
+/// refused by name, and so is a source that states an element the value does
+/// not present or leaves out one it does, inputs that are not the codec's, and
+/// a tag that is not the one of the arm the source holds.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
     source: &serde_json::Value,
     inputs: &serde_json::Value,
+    tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = value_literal(plan, path, source, held, &mut bindings)?;
-    let Handed { args, given, said } = handed_inputs(plan, path, inputs)?;
+    let Handed {
+        mut args,
+        given,
+        said,
+    } = handed_inputs(plan, path, inputs)?;
+    let tag = case_tag(plan, source, tag)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -128,6 +138,16 @@ pub(crate) fn source_case(
         ));
     }
     checks.extend(said);
+    if let Some(tag) = tag {
+        // The decode takes the tag after the flag inputs, and the value made
+        // and the value decoded under it both answer it (`tag()`): it is what
+        // a caller writes for the arm the value holds.
+        args.push(tag.to_string());
+        checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!("{VALUE}.tag() == {tag} && {DECODED}.tag() == {tag}"),
+        ));
+    }
     Ok(SourceCase {
         bindings,
         literal,

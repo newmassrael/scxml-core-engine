@@ -7,8 +7,7 @@
 // written by tests/forge/conformance/binary_model.py), the one source of byte
 // cases; what is here is what a case cannot hold, each with why.
 //
-// The headers are generated at build time from tests/forge/resources and
-// backends/rust/forge-conformance/fixtures:
+// The headers are generated at build time from tests/forge/resources:
 //
 // codec_length_stated (one length of two gated byte strings, which the value
 // states where neither is there): a value that states the length beside
@@ -22,17 +21,9 @@
 // value the enum does not declare does not decode. The catalog's decode
 // refusals (`rejects`) name no undeclared enum value, which only the decode of
 // a closed enum gives.
-//
-// codec_some_arms_say_forward (backends/rust/forge-conformance/fixtures) hands
-// its flag input on to a body that says it in some of its values only, and
-// answers the input as the body does. The body is a variant whose caller hands
-// its tag, which the catalog's model and its cases do not read yet; the
-// variant's family is the Rust arm's (forge_source_round_trip) and moves into
-// the catalog with that reading.
 
 #include "codec_group_enum.h"
 #include "codec_length_stated.h"
-#include "codec_some_arms_say_forward.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -82,41 +73,11 @@ void an_undeclared_enum_value_does_not_decode() {
           "the cursor records the undeclared enum value");
 }
 
-// An input a body always there says in some of its values only is answered as
-// the body answers it: the arm that reads it says it, the other says nothing.
-// A frame of either arm is written back byte for byte.
-void an_input_a_body_says_in_part_is_forwarded() {
-    namespace Fwd = ::SCE::Generated::CodecSomeArmsSayForward;
-
-    struct Case {
-        std::vector<std::uint8_t> frame;
-        std::uint8_t n;
-        std::optional<std::uint8_t> said;
-    };
-
-    const std::vector<Case> cases{
-        {{0x40, 7, 1, 'a'}, 1, std::optional<std::uint8_t>(1)},
-        {{0x40, 7}, 0, std::optional<std::uint8_t>(0)},
-        {{0x00, 7}, 0, std::nullopt},
-    };
-    for (const auto &c : cases) {
-        SceCursor cursor(c.frame.data(), c.frame.size());
-        const std::optional<Fwd::CodecSomeArmsSayForward> decoded = Fwd::CodecSomeArmsSayForward::decode(cursor, c.n);
-        CHECK(decoded.has_value() && cursor.remaining() == 0, "a forwarding frame decodes");
-        if (!decoded.has_value()) {
-            continue;
-        }
-        CHECK(decoded->encode_to_vec() == c.frame, "a forwarding frame is written back byte for byte");
-        CHECK(Fwd::input_n(*decoded) == c.said, "the input is what the body's arm says of it");
-    }
-}
-
 }  // namespace
 
 int main() {
     a_stated_length_the_content_agrees_with_is_written();
     an_undeclared_enum_value_does_not_decode();
-    an_input_a_body_says_in_part_is_forwarded();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

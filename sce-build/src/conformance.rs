@@ -3934,10 +3934,12 @@ struct PrintedCase {
     bindings: Vec<String>,
     /// The value the case states.
     literal: String,
-    /// Each element, group or input by its label, with an expression that holds
-    /// when a decode of the bytes presents what the value does.
+    /// Each element, group or input by its label, and the tag a caller hands,
+    /// with an expression that holds when a decode of the bytes presents what
+    /// the value does.
     checks: Vec<(String, String)>,
-    /// The flag inputs a decode is handed, as its arguments.
+    /// The arguments a decode is handed after its cursor: the flag inputs, then
+    /// the tag a caller hands a variant with no tag of its own.
     inputs: Vec<String>,
     /// The flag inputs the encode is handed, those the value does not say, as
     /// its arguments after the sink.
@@ -4003,10 +4005,13 @@ fn fold_case_rows(
                         include: &include,
                     };
                     let inputs = row.get("inputs").unwrap_or(&serde_json::Value::Null);
+                    // The tag a caller hands the decode of a variant with no
+                    // tag of its own, which such a case states.
+                    let tag = row.get("tag").unwrap_or(&serde_json::Value::Null);
                     let case = match printer {
                         CasePrinter::Cpp => {
                             let case = crate::forge::generator::cpp_source_case(
-                                plan, &cpp_path, source, inputs, &mut held,
+                                plan, &cpp_path, source, inputs, tag, &mut held,
                             )
                             .map_err(|e| format!("{at}: {e}"))?;
                             // The C++ fragment hands the note and each label to
@@ -4028,7 +4033,7 @@ fn fold_case_rows(
                         }
                         CasePrinter::Rust => {
                             let case = crate::forge::generator::rust_source_case(
-                                plan, &rust_path, source, inputs, &mut held,
+                                plan, &rust_path, source, inputs, tag, &mut held,
                             )
                             .map_err(|e| format!("{at}: {e}"))?;
                             PrintedCase {
@@ -5400,6 +5405,111 @@ mod tests {
             total.contains("never answers 'present-if-mismatch'"),
             "{total}"
         );
+    }
+
+    /// A case of a variant with no tag of its own hands its decode the tag of
+    /// the arm its source holds, after the flag inputs, and holds the value it
+    /// makes and the value it decodes to answering that tag; the refusal of a
+    /// flag bound to an input a body says in some values only reaches both
+    /// harnesses (docs/adr/0081 §5, docs/adr/0065 §6 R4e).
+    #[test]
+    fn a_caller_tag_case_hands_its_decode_the_tag_of_its_arm_in_both_harnesses() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let rust = render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
+            .expect("the Rust harness renders")
+            .source;
+        for line in [
+            // The close arm of the leaf, decoded under its tag 1.
+            "CodecSourceLeaf::decode(&mut cursor, 1)",
+            "fixtures::codec_source_leaf::CodecSourceLeafWire::tag_of(&parts) == 1 && \
+             fixtures::codec_source_leaf::CodecSourceLeafWire::tag_of(&decoded) == 1",
+            // The far arm without its route: the input N set, then the tag 0.
+            "CodecEveryArmSays::decode(&mut cursor, 1, 0)",
+            "codec_some_arms_say_parent refused 0: N set where the near arm without its suffix \
+             says it clear",
+        ] {
+            assert!(rust.contains(line), "the Rust harness lacks `{line}`");
+        }
+        let cpp = render_harness(&manifest, Language::Cpp, &template_base, &resource_dir)
+            .expect("the C++ harness renders")
+            .source;
+        for line in [
+            "SCE::Generated::CodecSourceLeaf::CodecSourceLeaf::decode(cursor, 1);",
+            "value.tag() == 1 && (*decoded).tag() == 1",
+            "SCE::Generated::CodecEveryArmSays::CodecEveryArmSays::decode(cursor, 1, 0);",
+            "codec_some_arms_say_parent refused 1: the encode wrote %zu bytes before it refused",
+        ] {
+            assert!(cpp.contains(line), "the C++ harness lacks `{line}`");
+        }
+    }
+
+    /// The tag a case hands is the one of the arm its source holds, stated
+    /// exactly where the codec's variant takes its tag from its caller. Each
+    /// is read from a reference written here, so the rule is held apart from
+    /// the catalog's own cases.
+    #[test]
+    fn a_case_hands_the_tag_of_its_arm_and_only_to_a_variant_with_none_of_its_own() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new("numerical_reference.json");
+        let fold = |name: &str, case: serde_json::Value| {
+            let fixture = manifest
+                .fixtures
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap_or_else(|| panic!("the catalog holds {name}"));
+            let reference = serde_json::json!({ "codecs": { name: { "sources": [case] } } });
+            let mut value = serde_json::to_value(fixture).expect("a fixture serializes");
+            fold_source_cases(
+                &mut value,
+                &reference,
+                fixture,
+                Language::Rust,
+                &resource_dir,
+                reference_path,
+            )
+            .map(|folded| (folded, value))
+        };
+        let close = serde_json::json!({
+            "arm": "codec_variant_session_close", "body": { "reason": 4 }
+        });
+
+        let (folded, value) = fold(
+            "codec_source_leaf",
+            serde_json::json!({ "source": { "body": close }, "tag": 1, "encoded": [4] }),
+        )
+        .expect("the close arm's own tag");
+        assert!(folded);
+        assert_eq!(value["sources"][0]["inputs"], serde_json::json!(["1"]));
+
+        let other = fold(
+            "codec_source_leaf",
+            serde_json::json!({ "source": { "body": close }, "tag": 0, "encoded": [4] }),
+        )
+        .expect_err("the tag of another arm");
+        assert!(
+            other.contains("hands the tag 0") && other.contains("of the tag 1"),
+            "{other}"
+        );
+        let none = fold(
+            "codec_source_leaf",
+            serde_json::json!({ "source": { "body": close }, "encoded": [4] }),
+        )
+        .expect_err("no tag");
+        assert!(none.contains("states `tag`"), "{none}");
+        let own = fold(
+            "codec_variant_session_close",
+            serde_json::json!({ "source": { "reason": 4 }, "tag": 1, "encoded": [4] }),
+        )
+        .expect_err("a codec with no variant is handed no tag");
+        assert!(own.contains("takes none from its caller"), "{own}");
     }
 
     /// An enum fragment must name the identifier the declaration emits,

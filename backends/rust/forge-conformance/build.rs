@@ -247,53 +247,17 @@ fn main() {
         &options,
     );
 
-    // Step 7: the sweeps of `forge_source_round_trip`, one for each codec whose
-    // generated file holds a source interface (docs/adr/0058). The catalog's
-    // codecs are swept, and so are the codecs below, which are in no catalog:
-    // they hold a shape whose interface nothing else compiles (the bits of a
-    // carrier an embedded variant's arm fills).
-    let source_fixtures = Path::new(&manifest_dir).join("fixtures");
-    println!("cargo:rerun-if-changed={}", source_fixtures.display());
-    for fixture in generate_stripped_fixtures(
-        &[
-            "codec_source_leaf",
-            "codec_source_parent_tag",
-            "codec_every_arm_says_near",
-            "codec_every_arm_says_far",
-            "codec_every_arm_says",
-            "codec_every_arm_says_parent",
-            "codec_some_arms_say_plain",
-            "codec_some_arms_say",
-            "codec_some_arms_say_parent",
-        ],
-        &source_fixtures,
-        &out_dir,
-        &options,
-    ) {
-        let source_trait = format!(
-            "pub trait {}Source",
-            sce_build::filters::to_pascal_case(fixture.name.clone())
-        );
-        let has_source = fixture
-            .files
-            .iter()
-            .any(|(_, code)| code.contains(&source_trait));
-        codec_modules.extend(fixture.files.iter().filter_map(|(filename, _)| {
-            filename
-                .strip_suffix(".rs")
-                .filter(|stem| !stem.ends_with("_test"))
-                .map(str::to_string)
-        }));
-        if let Some(mut sweep) = codec_sweep(&fixture.name, &fixture.text) {
-            if has_source && sweep.plain {
-                (sweep.view, sweep.owned, sweep.value) = forms(&fixture.files, &fixture.name);
-                sweeps.push(sweep);
-            }
-        }
-    }
+    // Step 7: the sweeps of `forge_source_round_trip`, one for each codec of the
+    // catalog whose generated file holds a source interface (docs/adr/0058),
+    // gathered in Step 2: a codec whose shape the round trip holds is one the
+    // catalog lists, with its byte cases (docs/adr/0081 §5).
     codec_modules.sort();
     codec_modules.dedup();
     write_source_sweeps(&out_dir, &codec_modules, &sweeps);
+
+    // The documents of this crate's own tests that the catalog does not list.
+    let source_fixtures = Path::new(&manifest_dir).join("fixtures");
+    println!("cargo:rerun-if-changed={}", source_fixtures.display());
 
     // Step 7b: an arm compiled under a build feature (docs/adr/0072). The first
     // variant imports the default-marker arms Step 4 generates and has a
@@ -718,8 +682,7 @@ fn generate_stripped_fixtures(
     resource_dir: &Path,
     out_dir: &str,
     options: &ForgeCompileOptions,
-) -> Vec<StrippedFixture> {
-    let mut generated = Vec::new();
+) {
     for name in names {
         let scxml_path = resource_dir.join(format!("{name}.scxml"));
         let loaded = load_forge_source(&scxml_path, &[])
@@ -740,13 +703,7 @@ fn generate_stripped_fixtures(
             std::fs::write(&target, strip_inner_attributes(code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
-        generated.push(StrippedFixture {
-            name: (*name).to_string(),
-            text: loaded.text().to_string(),
-            files: output.files,
-        });
     }
-    generated
 }
 
 /// The deploy the broadcast-log set is generated for: machine `mcu_node`, whose
@@ -834,14 +791,6 @@ fn generate_broadcast_log_set(paths: &[std::path::PathBuf], deploy_text: &str, o
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
-}
-
-/// What `generate_stripped_fixtures` generated for one fixture: its document,
-/// and every file the fixture and the codecs it imports came to.
-struct StrippedFixture {
-    name: String,
-    text: String,
-    files: Vec<(String, String)>,
 }
 
 /// Drop every inner attribute line (`#![doc = ...]`, and the `#![allow(...)]`

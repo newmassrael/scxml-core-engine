@@ -218,12 +218,14 @@ pub(crate) struct SourceCase {
     /// The `{Codec}Parts` value.
     pub literal: String,
     /// Each element by its id, with a `bool` expression over `decoded` and
-    /// `parts` that holds when the two present the same; and each flag input
-    /// the value says, with one that holds when it says the input the case
-    /// is handed.
+    /// `parts` that holds when the two present the same; each flag input the
+    /// value says, with one that holds when it says the input the case is
+    /// handed; and the tag a caller hands, with one that holds when both
+    /// answer it.
     pub checks: Vec<(String, String)>,
-    /// The flag inputs the decode is handed, in the order the codec declares
-    /// them, as arguments of its `decode`.
+    /// The arguments of `decode` after the cursor: the flag inputs the decode
+    /// is handed, in the order the codec declares them, then the tag where its
+    /// variant takes its tag from its caller ([`case_tag`]).
     pub inputs: Vec<String>,
     /// The flag inputs the encode is handed, those the value does not say
     /// (docs/adr/0065 §6 R4a), in the order the codec declares them, as
@@ -233,23 +235,27 @@ pub(crate) struct SourceCase {
 
 /// The byte case of `source`, a value of the codec `plan` at `path`, its parent
 /// handing it `inputs` (`{"name": 0 | 1}`, or `null` for a codec that takes
-/// none). A shape the literal does not spell yet is refused by name, and so is
-/// a source that states an element the value does not present or leaves out
-/// one it does, and inputs that are not the codec's.
+/// none) and its caller `tag` (a number for a variant with no tag of its own,
+/// `null` for any other codec). A shape the literal does not spell yet is
+/// refused by name, and so is a source that states an element the value does
+/// not present or leaves out one it does, inputs that are not the codec's, and
+/// a tag that is not the one of the arm the source holds.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     path: &CodecPath,
     source: &serde_json::Value,
     inputs: &serde_json::Value,
+    tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
     let mut bindings = Vec::new();
     let literal = parts_literal(plan, path, source, held, &mut bindings)?;
     let HandedInputs {
-        args: inputs,
+        args: mut inputs,
         given: encode_inputs,
         said,
     } = handed_inputs(plan, path, inputs)?;
+    let tag = case_tag(plan, source, tag)?;
     let mut fresh = 0;
     let mut checks: Vec<(String, String)> = plan
         .elements
@@ -272,6 +278,17 @@ pub(crate) fn source_case(
         ));
     }
     checks.extend(said);
+    if let Some(tag) = tag {
+        // The decode takes the tag after the flag inputs, and the value made
+        // and the value decoded under it both answer it: it is what a caller
+        // writes for the arm the value holds.
+        inputs.push(tag.to_string());
+        let tag_of = format!("{}::{}::tag_of", path.module, wire_name(&path.type_name));
+        checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!("{tag_of}(&parts) == {tag} && {tag_of}(&decoded) == {tag}"),
+        ));
+    }
     Ok(SourceCase {
         bindings,
         literal,
@@ -279,6 +296,58 @@ pub(crate) fn source_case(
         inputs,
         encode_inputs,
     })
+}
+
+/// The label of the check that a value answers the tag its caller hands.
+pub(super) const CALLER_TAG_LABEL: &str = "caller tag";
+
+/// The tag a case hands the decode of the codec `plan` (`SCE_FORGE.md`, the
+/// tag of a caller-tag variant's value): for a variant with no tag of its own,
+/// the number the case states as `tag`, which is the tag of the arm its
+/// `source` holds, a known arm's the document's and the default arm's the one
+/// it keeps, so the decode reads back the arm the value holds; `None` for any
+/// other codec, whose case states none. Every printer's case reads the tag
+/// here.
+pub(super) fn case_tag(
+    plan: &EncodePlan<'_>,
+    source: &serde_json::Value,
+    tag: &serde_json::Value,
+) -> Result<Option<u64>, String> {
+    let caller_tag = plan
+        .model
+        .variant
+        .as_ref()
+        .is_some_and(|v| v.tag_field.is_none());
+    if !caller_tag {
+        return if tag.is_null() {
+            Ok(None)
+        } else {
+            Err(
+                "the case states a `tag`, and the codec's variant takes none from its caller"
+                    .to_string(),
+            )
+        };
+    }
+    let stated = tag.as_u64().ok_or_else(|| {
+        "a case of a variant whose caller hands its tag states `tag`, the tag of the arm its \
+         source holds"
+            .to_string()
+    })?;
+    let arm = source
+        .get(VARIANT_MEMBER)
+        .ok_or_else(|| format!("the source states no `{VARIANT_MEMBER}`, the variant's arm"))?;
+    let (chosen, _) = variant_choice(plan, arm)?;
+    let held = chosen
+        .default_tag
+        .or(plan.arms[chosen.index].tag)
+        .ok_or_else(|| format!("the arm `{}` names no tag", chosen.codec))?;
+    if stated != held {
+        return Err(format!(
+            "the case hands the tag {stated}, and its source holds the arm `{}` of the tag {held}",
+            chosen.codec
+        ));
+    }
+    Ok(Some(stated))
 }
 
 /// The flag inputs a byte case hands its codec.
@@ -370,21 +439,16 @@ fn handed_inputs(
 /// Refuse what a literal does not spell yet: the shapes every printer's case
 /// refuses alike, since no case of the catalog states one (docs/adr/0081 §5).
 pub(super) fn spelled(plan: &EncodePlan<'_>) -> Result<(), String> {
-    if let Some(variant) = &plan.model.variant {
-        // A peeked byte's tag is the arm's own first byte, which the arm's value
-        // states: the literal is the one of a variant whose tag is derived.
-        if variant.tag_field.is_none() {
-            return Err(
-                "a variant whose tag its caller supplies is not spelled as a literal yet"
-                    .to_string(),
-            );
-        }
-        if let Some(arm) = plan.arms.iter().find(|arm| arm.feature.is_some()) {
-            return Err(format!(
-                "the arm `{}` is compiled under a feature, which a literal does not spell yet",
-                arm.codec
-            ));
-        }
+    // A peeked byte's tag is the arm's own first byte, which the arm's value
+    // states, and a tag the caller hands is the arm's, which the case hands the
+    // decode ([`case_tag`]): either literal is the one of a variant whose tag is
+    // derived. An arm under a build feature is not spelled; the plan has arms
+    // only where the codec has a variant.
+    if let Some(arm) = plan.arms.iter().find(|arm| arm.feature.is_some()) {
+        return Err(format!(
+            "the arm `{}` is compiled under a feature, which a literal does not spell yet",
+            arm.codec
+        ));
     }
     Ok(())
 }

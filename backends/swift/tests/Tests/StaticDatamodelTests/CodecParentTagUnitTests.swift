@@ -7,7 +7,7 @@ import XCTest
 @testable import StaticDatamodelMachines
 
 // A codec whose header carries, in a flag, the tag of the variant it embeds
-// (`backends/rust/forge-conformance/fixtures/codec_source_parent_tag.scxml`: `hdr.kind`, one bit, then
+// (`tests/forge/resources/codec_source_parent_tag.scxml`: `hdr.kind`, one bit, then
 // the arm's body; arm 0 is a 16-bit version, arm 1 a one-byte reason). A decode hands the variant the
 // flag as its tag. An encode is what the dispatch drives the other way: the bit of the flag is the tag
 // of the arm the value holds, whatever the stored header says, and every other bit of the header is

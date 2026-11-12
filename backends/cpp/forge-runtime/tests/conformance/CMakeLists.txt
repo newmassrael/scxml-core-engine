@@ -509,68 +509,19 @@ foreach(_gated_build IN ITEMS on off)
     add_test(NAME feature_gated_arm_${_gated_build} COMMAND ${_gated_target})
 endforeach()
 
-# A variant whose caller hands its tag, printed from its plan (docs/adr/0081
-# step 4), and the codecs that hold one, compiled and run against the frames
-# the Rust arm holds them to. The documents are the Rust arm's
-# (backends/rust/forge-conformance/fixtures) with the codecs they import, which
-# are generated into a directory of their own as the feature-gated arms are.
-set(CALLER_TAG_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/caller_tag_variant_headers")
-file(MAKE_DIRECTORY "${CALLER_TAG_GENERATED_DIR}")
-set(CALLER_TAG_DOCUMENTS
-    "${RESOURCE_DIR}/codec_variant_session_open.scxml"
-    "${RESOURCE_DIR}/codec_variant_session_close.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_source_leaf.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_source_parent_tag.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_near.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_far.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_parent.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_plain.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_parent.scxml"
-)
-set(CALLER_TAG_GENERATED_HEADERS "")
-foreach(_caller_tag_document IN LISTS CALLER_TAG_DOCUMENTS)
-    get_filename_component(_caller_tag_fixture "${_caller_tag_document}" NAME_WE)
-    sce_codegen_generation(_CALLER_TAG
-        DOCUMENT "${_caller_tag_document}"
-        OUTPUT_DIR "${CALLER_TAG_GENERATED_DIR}"
-        LANGUAGE cpp
-        CLAIM SCE_CALLER_TAG_CPP_DECLARED_OUTPUTS
-        COMMENT "Generating C++ caller-tag variant fixture ${_caller_tag_fixture}")
-    list(APPEND CALLER_TAG_GENERATED_HEADERS ${_CALLER_TAG_HEADERS})
-endforeach()
-add_custom_target(generate_caller_tag_variant_fixtures_cpp)
-target_sources(generate_caller_tag_variant_fixtures_cpp PRIVATE ${CALLER_TAG_GENERATED_HEADERS})
-add_executable(caller_tag_variant_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/caller_tag_variant_generated_test.cpp")
-add_dependencies(caller_tag_variant_generated_test generate_caller_tag_variant_fixtures_cpp)
-set_target_properties(caller_tag_variant_generated_test PROPERTIES CXX_STANDARD 17)
-target_include_directories(caller_tag_variant_generated_test PRIVATE
-    "${RUNTIME_INCLUDE_DIR}"
-    "${CALLER_TAG_GENERATED_DIR}"
-)
-target_compile_options(caller_tag_variant_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
-add_test(NAME caller_tag_variant_generated COMMAND caller_tag_variant_generated_test)
-
 # What the C++ printer prints from a plan (docs/adr/0081 step 4) that no case
 # of the catalog can state, the catalog being the one source of byte cases: a
 # length the value states beside content that agrees, and none with no content,
-# whose decode presents another value; an enum value a closed enum does not
-# declare, which no decode refusal of the catalog names; and an input a body
-# says in some of its values only, handed on from the codec that holds it, a
-# variant whose caller hands its tag, with the codecs of the body's arms. They
-# are generated into a directory of their own, so the catalog's codecs among
-# them are not two rules' output in `GENERATED_DIR`.
+# whose decode presents another value; and an enum value a closed enum does not
+# declare, which no decode refusal of the catalog names. They are generated
+# into a directory of their own, so the catalog's codecs among them are not two
+# rules' output in `GENERATED_DIR`.
 set(POSITIONAL_FORMS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/positional_forms_headers")
 file(MAKE_DIRECTORY "${POSITIONAL_FORMS_GENERATED_DIR}")
 set(POSITIONAL_FORMS_DOCUMENTS
     "${RESOURCE_DIR}/codec_length_stated.scxml"
     "${RESOURCE_DIR}/enum_session_state.scxml"
     "${RESOURCE_DIR}/codec_group_enum.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_every_arm_says_near.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_plain.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say.scxml"
-    "${GATED_ARM_FIXTURE_DIR}/codec_some_arms_say_forward.scxml"
 )
 set(POSITIONAL_FORMS_GENERATED_HEADERS "")
 foreach(_positional_document IN LISTS POSITIONAL_FORMS_DOCUMENTS)

@@ -15,7 +15,9 @@
 # answers is refused by name. A value of an imported enum is spelled as the
 # variant it holds, a flag input the value does not say is handed to the
 # encode as to the decode, and a number the value states while its content is
-# absent is a `std::optional` of C++ as it is an `Option` of Rust.
+# absent is a `std::optional` of C++ as it is an `Option` of Rust. A variant
+# with no tag of its own is handed, after the flag inputs, the tag of the arm
+# its source holds, and a case that states another is refused by name.
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -95,4 +97,22 @@ edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
                     element.presence,
                     crate::forge::encode_plan::Presence::Gated
                 );''')
+PY
+
+mutation_case "a caller's tag is not handed to the Rust decode" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''        inputs.push(tag.to_string());''',
+     r'''        let _ = &inputs;''')
+PY
+
+mutation_case "a case hands the tag of another arm" <<'PY'
+edit("sce-build/src/forge/generator/rust_source.rs",
+     r'''    if stated != held {''',
+     r'''    if stated != held && held > u64::from(u8::MAX) {''')
+PY
+
+mutation_case "the C++ decode is handed the tag before the flag inputs" <<'PY'
+edit("sce-build/src/forge/generator/cpp_source/source_case.rs",
+     r'''        args.push(tag.to_string());''',
+     r'''        args.insert(0, tag.to_string());''')
 PY

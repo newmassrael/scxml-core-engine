@@ -5040,27 +5040,17 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
     }
 
-    /// The fixtures the Rust conformance arm and the C++ harness both run.
-    fn conformance_fixtures() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/rust/forge-conformance/fixtures")
-    }
-
     /// Every file the C++ backend generates for the resource `stem`, in one
     /// text.
     fn cpp_of(stem: &str) -> String {
-        cpp_in(&resources(), stem)
-    }
-
-    /// Every file the C++ backend generates for the document `stem` of `dir`,
-    /// in one text.
-    fn cpp_in(dir: &Path, stem: &str) -> String {
+        let dir = resources();
         let text = std::fs::read_to_string(dir.join(format!("{stem}.scxml")))
             .unwrap_or_else(|e| panic!("read {stem}.scxml: {e}"));
         compile_forge_with_imports(
             &text,
             DocumentLabel::symmetric(stem),
             Language::Cpp,
-            dir,
+            &dir,
             &ForgeCompileOptions::default(),
         )
         .unwrap_or_else(|e| panic!("{stem} generates C++: {e}"))
@@ -5159,7 +5149,7 @@ mod tests {
     #[test]
     fn an_input_a_body_says_in_part_is_answered_as_the_body_answers_it() {
         let stem = "codec_some_arms_say_forward";
-        let code = cpp_in(&conformance_fixtures(), stem);
+        let code = cpp_of(stem);
         holds(
             stem,
             &code,

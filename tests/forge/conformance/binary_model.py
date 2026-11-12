@@ -3835,6 +3835,174 @@ FIXTURES = {
              PRESENT_IF_MISMATCH, "a value on an entry after identifier 2, wide clear"),
         ],
     ),
+    "codec_source_leaf": Fixture(
+        [
+            ({"body": {"arm": "codec_variant_session_open", "body": {"version": 7}}},
+             "the open arm alone: its caller holds the tag 0"),
+            ({"body": {"arm": "codec_variant_session_open", "body": {"version": 0x0102}}},
+             "the open arm's version, high byte first"),
+            ({"body": {"arm": "codec_variant_session_close", "body": {"reason": 4}}},
+             "the close arm alone, decoded under the tag 1"),
+        ],
+        "a variant with no tag of its own: its wire is the arm alone, and its caller hands "
+        "the decode the tag of the arm, which a case states in its tag.",
+    ),
+    "codec_source_parent_tag": Fixture(
+        [
+            ({"hdr": 0x00, "body": {"body": {"arm": "codec_variant_session_open",
+                                            "body": {"version": 7}}}},
+             "the open arm: kind clear"),
+            ({"hdr": 0x80, "body": {"body": {"arm": "codec_variant_session_open",
+                                            "body": {"version": 7}}}},
+             "more set beside the open arm"),
+            ({"hdr": 0x01, "body": {"body": {"arm": "codec_variant_session_close",
+                                            "body": {"reason": 4}}}},
+             "the close arm: kind set"),
+            ({"hdr": 0x81, "body": {"body": {"arm": "codec_variant_session_close",
+                                            "body": {"reason": 4}}}},
+             "more set beside the close arm"),
+            ({"hdr": 0x7F, "body": {"body": {"arm": "codec_variant_session_close",
+                                            "body": {"reason": 0xFF}}}},
+             "the bits no flag names are kept"),
+        ],
+        "a codec that embeds a variant with no tag of its own and holds the tag in the flag "
+        "hdr.kind (<sce:variant-dispatch>): the encode derives the flag from the arm the body "
+        "holds, and the decode hands the body what it read there.",
+    ),
+    "codec_every_arm_says_near": Fixture(
+        [
+            ({"id": 7, "suffix": [0x61]}, "N set: the suffix and its length follow the id",
+             {"N": 1}),
+            ({"id": 7, "suffix": None}, "N clear: the id alone", {"N": 0}),
+            ({"id": 0, "suffix": []}, "N set and an empty suffix: its length is zero",
+             {"N": 1}),
+            ({"id": 0xFF, "suffix": [1, 2, 3, 4, 5, 6, 7, 8]}, "the suffix at its bound of eight",
+             {"N": 1}),
+        ],
+        "an arm that says its flag input N (docs/adr/0065 §6 R4a): set exactly where the "
+        "suffix is there, its length derived with it.",
+    ),
+    "codec_every_arm_says_far": Fixture(
+        [
+            ({"route": 0x0102}, "bare clear: the route, high byte first", {"bare": 0}),
+            ({"route": None}, "bare set: nothing", {"bare": 1}),
+        ],
+        "an arm that says its flag input bare at the other polarity: set exactly where the "
+        "route is absent.",
+    ),
+    "codec_every_arm_says": Fixture(
+        [
+            ({"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [0x61]}}},
+             "the near arm with its suffix says N set", {"N": 1}),
+            ({"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": None}}},
+             "the near arm without it says N clear", {"N": 0}),
+            ({"body": {"arm": "codec_every_arm_says_far", "body": {"route": 0x0102}}},
+             "the far arm with its route says N clear", {"N": 0}),
+            ({"body": {"arm": "codec_every_arm_says_far", "body": {"route": None}}},
+             "the far arm without it says N set, and writes nothing", {"N": 1}),
+        ],
+        "a variant with no tag of its own, every arm of which says the flag input N, the far "
+        "arm at the other polarity (docs/adr/0065 §6 R4d): a value holds one arm, so every "
+        "value says N, and the encode takes none.",
+    ),
+    "codec_every_arm_says_parent": Fixture(
+        [
+            ({"header": 0x60, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": [0x61]}}}},
+             "the near arm with its suffix: N and M set"),
+            ({"header": 0x40, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": None}}}},
+             "the near arm without it: M alone"),
+            ({"header": 0x00, "body": {"body": {"arm": "codec_every_arm_says_far",
+                                               "body": {"route": 0x0102}}}},
+             "the far arm with its route: neither"),
+            ({"header": 0x20, "body": {"body": {"arm": "codec_every_arm_says_far",
+                                               "body": {"route": None}}}},
+             "the far arm without it: N alone, and no body bytes"),
+            ({"header": 0x9F, "body": {"body": {"arm": "codec_every_arm_says_far",
+                                               "body": {"route": 0x0102}}}},
+             "the bits beside N and M are kept"),
+        ],
+        "a codec whose header holds the flag input its body says (N, bound to header.N) and "
+        "the tag of the body's arm (M, <sce:variant-dispatch flag=\"header.M\">): every arm "
+        "says N (docs/adr/0065 §6 R4d), so both bits are derived from the arm the body holds.",
+    ),
+    "codec_some_arms_say_plain": Fixture(
+        [
+            ({"id": 7}, "one byte"),
+            ({"id": 0xFF}, "one byte at its largest"),
+        ],
+        "an arm that reads no flag input.",
+    ),
+    "codec_some_arms_say": Fixture(
+        [
+            ({"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": [0x61]}}},
+             "the near arm with its suffix says N set", {"N": 1}),
+            ({"body": {"arm": "codec_every_arm_says_near", "body": {"id": 7, "suffix": None}}},
+             "the near arm without it says N clear", {"N": 0}),
+            ({"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}},
+             "the plain arm says nothing of N, handed clear", {"N": 0}),
+            ({"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}},
+             "the plain arm says nothing of N, handed set", {"N": 1}),
+        ],
+        "a variant with no tag of its own that hands the flag input N to one arm of two "
+        "(docs/adr/0065 §6 R4e): a value in that arm says N, and one in the other has no bit "
+        "N could change and says nothing of it.",
+    ),
+    "codec_some_arms_say_parent": Fixture(
+        [
+            ({"header": 0x60, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": [0x61]}}}},
+             "the near arm with its suffix, N set as it says"),
+            ({"header": 0x40, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": None}}}},
+             "the near arm without it, N clear as it says"),
+            ({"header": 0x00, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the plain arm, N clear: the value's own"),
+            ({"header": 0x20, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the plain arm, N set: the value's own"),
+            ({"header": 0xBF, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the bits beside M are the value's, N among them"),
+        ],
+        "a codec whose header holds the flag input N its body says in some values only "
+        "(docs/adr/0065 §6 R4e) and the tag of the body's arm (M, <sce:variant-dispatch>). "
+        "M is derived from the arm; N is the value's own, held to the arm where the arm says "
+        "it, and the encode refuses a value whose N says otherwise.",
+        [
+            ({"header": 0x20, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": None}}}},
+             PRESENT_IF_MISMATCH, "N set where the near arm without its suffix says it clear"),
+            ({"header": 0x40, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": [0x61]}}}},
+             PRESENT_IF_MISMATCH, "N clear where the near arm with its suffix says it set"),
+        ],
+    ),
+    "codec_some_arms_say_forward": Fixture(
+        [
+            ({"header": 0x40, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": [0x61]}}}},
+             "the near arm with its suffix says the input N set", {"N": 1}),
+            ({"header": 0x40, "body": {"body": {"arm": "codec_every_arm_says_near",
+                                               "body": {"id": 7, "suffix": None}}}},
+             "the near arm without it says N clear", {"N": 0}),
+            ({"header": 0x00, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the plain arm says nothing of N, handed clear", {"N": 0}),
+            ({"header": 0x00, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the plain arm says nothing of N, handed set", {"N": 1}),
+            ({"header": 0xBF, "body": {"body": {"arm": "codec_some_arms_say_plain",
+                                               "body": {"id": 7}}}},
+             "the bits beside M are kept", {"N": 0}),
+        ],
+        "a codec that hands its flag input N on to a body always there that says it in some "
+        "values only (docs/adr/0065 §6 R4a, R4e): the value says N as the body does, nothing "
+        "where the body holds the arm that does not read it, and the encode takes none. M "
+        "holds the tag of the body's arm (<sce:variant-dispatch>).",
+    ),
 }
 
 
