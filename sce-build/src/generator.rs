@@ -4679,9 +4679,10 @@ pub(crate) fn swift_invoke_unlowered(
     }
     // What the invocation hands the child is a value the static lowering writes
     // (`Param::native_seed`). An `ecmascript` parent reads every argument as the invocation
-    // starts, and hands a child that runs a script engine each value as JSON, which the
-    // child's `<data>` of that name takes in place of its own; a child that runs none has no
-    // variable to take it, so its values are read for their errors and not given.
+    // starts, and hands a child that runs a script engine every value it read, which the
+    // child's top-level `<data>` of that name takes in place of its own (§scxml-6.4); a
+    // child that runs none has no variable to take it, so its values are read for their
+    // errors and not given.
     let hands_values = !info.common.base.params.is_empty() || !info.namelist.is_empty();
     if !statically_lowered && hands_values && !is_ecma {
         return Some("an <invoke> with a <param> or a namelist".to_string());

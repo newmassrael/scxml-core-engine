@@ -44,6 +44,7 @@
 {% if state.datamodel and model.binding == 'late' and ecmascript_datamodel %}
             // §scxml-D-enterStates, late binding: the state's `<data>` is bound on its FIRST entry only,
             // before its <onentry>. The engine owns the first-entry rule; this is what binding means here.
+            // A state's `<data>` takes no value a parent handed (§scxml-6.4: only the top-level data does).
             if engine.claimLateBindingFirstEntry(state) {
 {% for var in state.datamodel %}
                 defineData("{{ var.id | escape_swift }}", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)

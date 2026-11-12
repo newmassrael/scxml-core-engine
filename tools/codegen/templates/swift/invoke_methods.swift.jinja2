@@ -75,8 +75,10 @@
 {# W3C SCXML 6.4.1 + 6.4.3, under `datamodel="ecmascript"`: the same hand-over, with each value
    read once by the engine (`evaluateSeed`: a scalar as the value itself, anything else as its JSON,
    because JSON cannot write every number) and given to the child's `acceptSeeds` by the name of the
-   `<param>` or of the namelist entry. The child's `<data>` of that name takes it in place of its
-   own value, and one the child declares no variable for is dropped there. A `<param>` that cannot be
+   `<param>` or of the namelist entry. Every name read is handed, and none is filtered here: the
+   child alone decides what it takes (§scxml-6.4). Its top-level `<data>` of that name takes it in
+   place of its own value; a state's `<data>` never does, and a name no top-level `<data>` of the
+   child declares is dropped there. A `<param>` that cannot be
    read is reported and left out (5.7.1); a namelist name the document does not declare is an argument
    error of the element, which ends it (its name is never resolved at build time, as
    `<send namelist>`'s is not). #}
