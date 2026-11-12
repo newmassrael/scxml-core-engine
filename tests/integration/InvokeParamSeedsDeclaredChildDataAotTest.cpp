@@ -61,8 +61,8 @@ TEST(InvokeParamSeedsDeclaredChildDataAotTest, InvokeParamCarriesTheInvokingSess
     EXPECT_NE(sm.terminalState(), SM::State::FailUnmatchedParamEnteredTheChild)
         << "a `<param>` naming no top-level `<data>` of the child became a variable there: "
            "§scxml-6.4.3 says the Processor MUST NOT add it to the invoked session's data model. "
-           "The namelist arm of the same template already filters on "
-           "`DatamodelValidationHelper::isVariableDeclaredInChild`.";
+           "The child's start declares only the handed values its top-level `<data>` name "
+           "(`initializeDataModel`, docs/adr/0098).";
     EXPECT_NE(sm.terminalState(), SM::State::FailNamelistValueLost)
         << "the `namelist` value did not arrive: §scxml-6.4.1 says the value stored at the "
            "location is the value, so forwarding the rendered string as an expression turns a "
