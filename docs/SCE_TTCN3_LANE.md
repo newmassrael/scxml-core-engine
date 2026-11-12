@@ -363,8 +363,8 @@ On C++ the same is in place: `sce/include/test/` (`Trace.h`, `FromCanonical.h`, 
 (`tests/test_runtime/TraceTest.cpp`, `RunnerTest.cpp`, and `ATestSuiteRunsEndToEndTest.cpp`,
 `ARecordReadsBackTheFormItWritesTest.cpp` and `ARunnerProgramWritesTheLogOfEachTraceTest.cpp` under
 `tests/integration/`), in the words of the Rust reader. Its configuration of every form,
-`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place, since C++ lowers no
-union.
+`trace_forms/unionless_forms_configuration.scxml`, takes `order_taken` in `order_placed`'s place, since C++'s test profile
+matches no union yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`).
 
 On Go the same is in place: the readers of each form beside the writers in the package `testprofile/canonical`
 (`from_canonical.go`, each answering an error in the words of the Rust reader), `ParseTrace`, `TraceAdapter`,
@@ -414,7 +414,7 @@ runtime, `C11Reading` beside `C11Canonical`, and the C11 twins of the C++ tests
 reader the saved state is read with (`sce/saved_json.h`), every refusal is a sentence in a `sce_saved_error_t`, and
 every table is bounded, a trace past a bound refused by name. The runner makes its log directory through
 `sce_directory_make` (`sce/directory.h`), whose POSIX implementation is in the runtime's platform tier. It reads the
-same configuration of every form as C++, since C11 lowers no union either.
+same configuration of every form as C++, since C11's test profile matches no union yet either.
 
 The trace replay and the runner program are in place on all seven backends, Rust, Kotlin, C++, Go, Swift, Python and
 C11, each over the same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the

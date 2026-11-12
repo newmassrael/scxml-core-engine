@@ -34,8 +34,9 @@
  * unit of a test configuration) calls these by the walk its canonical writer is
  * spelled by (`forge::generator::test_template_walk::canonical_form`), and
  * writes each value read into the place the record's unit holds it in. The C11
- * port of `sce/include/test/FromCanonical.h`. C11 lowers no union, so no form
- * of one is read here.
+ * port of `sce/include/test/FromCanonical.h`. C11's test profile matches no
+ * union yet (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so no form of one
+ * is read here.
  *
  * What is C's own: a value is read into storage the caller places, and a text
  * into the buffer of its bound, which ends at its first U+0000, so a text that

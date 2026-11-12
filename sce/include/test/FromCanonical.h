@@ -28,7 +28,8 @@
 // generated reader of a record (`read<Record>` in the unit of a test
 // configuration) calls these by the walk its canonical writer is spelled by
 // (`forge::generator::test_template_walk::canonical_form`), and names the type
-// each value is read into. C++ lowers no union, so no form of one is read
+// each value is read into. C++'s test profile matches no union yet
+// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), so no form of one is read
 // here. The Rust sibling is `sce_rust_runtime::test::from_canonical`, whose
 // refusals these are, word for word. An object that names a member twice,
 // which the Rust reader refuses, is not one a SCE::Saved::JsonObject can hold.
