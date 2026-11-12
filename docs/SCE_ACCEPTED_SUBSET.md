@@ -7317,9 +7317,14 @@ does the same in the browser (`lower_for_interpreter` of the codegen WASM), with
 the documents the page fetched from beside it — an imported algorithm or schema,
 the candidates of a hybrid `<invoke>`; `sce:std/...` is built in — and draws the
 structure of the document as written, since lowering changes no state or
-transition. The scenarios every backend replays are replayed on that pair by the
+transition. A document it cannot lower is answered with the records
+`sce-codegen lower --error-format=json` writes for it, and the page shows their
+messages. The
+scenarios every backend replays are replayed on that pair by the
 `visualizer-layout` lane (`web/visualizer/measure/scenario-replay.js`); those
-that need time, a dispatcher or a host are skipped there by name and counted. Only the
+that need time, a dispatcher or a host are skipped there by name and counted, and
+a machine the lowering refuses with `generate/unsupported-feature` is counted as
+not yet lowered, as the native Interpreter's replay counts it. Only the
 document's expressions change: each is replaced, at the place the document
 wrote it, with the ECMAScript the typed expression means, and every other byte
 — comments, extension elements, formatting — is the author's. Each integer
