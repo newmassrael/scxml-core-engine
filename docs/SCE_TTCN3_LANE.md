@@ -155,7 +155,7 @@ in each program's usage. Design choice: a change to one is announced as a change
 | `sce-codegen export-ttcn3` | writes the two modules, the manifest and the witness of one suite, all or nothing (TP §9.5) |
 | `sce-ttcn3-validate <suite.scxml> <export directory>` | exit 0 with no violation, 1 with one or more, 2 when an input is not read (TP §9.4) |
 | `sce-codegen check-trace <suite> <trace>` (S1, design choice, not yet in place) | refuses a trace that does not fit the suite (§10.2) |
-| each backend's runner of a generated suite (S1; in place on Rust, Kotlin and C++) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
+| each backend's runner of a generated suite (S1; in place on all seven backends) | runs every test case a world selects against its trace and writes each one's canonical log (TP §12.5, §10.5), on the command line below |
 
 Every backend's runner takes one command line, so the downstream's lane calls the seven alike (design choice):
 
@@ -523,9 +523,9 @@ listed in DD §13.2.
 - Files: `schemas/`, the command in `sce-build/src/bin/sce_codegen.rs`, `SCE_WIRE_CONTRACTS.md`,
   `docs/SCE_TEST_PROFILE.md`, the seven test runtimes and their generators, and the generated test trees those
   generators write.
-- In place: the surface (§10.4), the shared walk of both directions and the Rust backend (§10.5): its readers, its
-  player, its runner and its program, held by the trace of `answers_the_job` to the expected log. To come: the other
-  six backends, after the Rust one, and `sce-codegen check-trace`.
+- In place: the surface (§10.4), the shared walk of both directions and all seven backends (§10.5): on each its
+  readers, its player, its runner and its program, held by the trace of `answers_the_job` to the expected log. To
+  come: `sce-codegen check-trace`.
 
 **S2: a corpus with traces and expected logs.**
 
