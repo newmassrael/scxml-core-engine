@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 280
+engine-documents 281
 native-prefix-documents 2
-datamodel-variable-init 506
+datamodel-variable-init 517
 transition-guard 258
-assign-action 437
-child-invoke-needs-script-engine 61
+assign-action 447
+child-invoke-needs-script-engine 62
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 102
@@ -141,6 +141,17 @@ It raises `engine-documents` by one, `datamodel-variable-init` by one (the
 parent's `box`) and `child-invoke-needs-script-engine` by two (`inv_early`,
 `inv_late`), as the analyzer counts the parent: an inline child's own causes
 are not the parent's.
+
+⚠ **2026-11-12, deliberately:** `tests/integration/a_child_takes_a_handed_value_in_place_of_its_data.scxml`
+holds docs/adr/0098 on the Rust channel: a child whose top-level `<data>` own
+values would raise error.execution or act, read back through its parent, so the
+child and the parent both need an engine, and the point is what the child's
+engine holds. Read against `script_engine_analyzer`, it raises
+`engine-documents` by one (280 to 281, after the Swift carrier above),
+`datamodel-variable-init` by eleven (506 to 517, the parent's eleven `<data>`),
+`assign-action` by ten (437 to 447, the parent's ten `<assign>`s) and
+`child-invoke-needs-script-engine` by one (61 to 62); the child's own causes are
+its document's, which the sweep does not walk.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.

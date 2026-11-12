@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  §scxml-6.4 (docs/adr/0098): a value an <invoke> hands its child, whose name
+  matches the id of a TOP-LEVEL <data> of the child, is declared as that
+  <data>'s initial value in place of its own. The <data>'s own expr is not
+  evaluated, so it raises nothing and has no effect; a state's <data> never
+  takes a handed value; a name no top-level <data> declares is not added; and
+  the child's top-level <script> and its initial <onentry> already read the
+  handed value.
+
+  The parent hands `kid` five values:
+
+    failing     the child's own expr is `holder.missing.deep`, which raises
+                error.execution when it is evaluated
+    effectful   the child's own expr is `trail.push('own')`, which leaves an
+                entry in `trail` when it is evaluated
+    local_only  matches only a <data> of the child's state `report`, which
+                keeps its own 'own'
+    stray       matches no <data> of the child, so it is never declared
+    shape       an object with an object inside, which arrives whole over
+                the child's own object of the same shape
+
+  The child counts its error.execution events, enters `report` (whose
+  <onentry> reads `effectful` and raises `report`, behind any error its start
+  raised) and answers its parent with two events: `counted`, the number of
+  errors and the length of `trail`, then `seen`, everything else it read. The
+  parent copies both into its own <data>, which the Rust driver reads.
+
+  It sits beside its driver rather than under `integration_resources/`: the
+  Rust channel lands docs/adr/0098 before the others, and the canonical
+  fixture of every channel lands last. See
+  `tools/codegen/trees/rust-integration.toml`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="a_child_takes_a_handed_value_in_place_of_its_data" datamodel="ecmascript"
+       initial="waiting">
+  <datamodel>
+    <data id="shape" expr="({label: 'whole', inner: {n: 2}})"/>
+    <data id="saw_errors" expr="-1"/>
+    <data id="saw_trail" expr="-1"/>
+    <data id="saw_failing" expr="''"/>
+    <data id="saw_effectful" expr="''"/>
+    <data id="saw_local" expr="''"/>
+    <data id="saw_stray" expr="''"/>
+    <data id="saw_label" expr="''"/>
+    <data id="saw_depth" expr="-1"/>
+    <data id="saw_script" expr="''"/>
+    <data id="saw_entry" expr="''"/>
+  </datamodel>
+
+  <state id="waiting">
+    <invoke type="scxml" id="kid">
+      <param name="failing" expr="'handed-failing'"/>
+      <param name="effectful" expr="'handed-effectful'"/>
+      <param name="local_only" expr="'handed-local'"/>
+      <param name="stray" expr="'handed-stray'"/>
+      <param name="shape" expr="shape"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+               datamodel="ecmascript" initial="report">
+          <datamodel>
+            <data id="holder" expr="({})"/>
+            <data id="trail" expr="[]"/>
+            <data id="failing" expr="holder.missing.deep"/>
+            <data id="effectful" expr="trail.push('own')"/>
+            <data id="shape" expr="({label: 'own', inner: {n: 0}})"/>
+            <data id="script_read" expr="''"/>
+            <data id="entry_read" expr="''"/>
+            <data id="errors" expr="0"/>
+          </datamodel>
+          <script>script_read = failing;</script>
+          <state id="report">
+            <datamodel>
+              <data id="local_only" expr="'own'"/>
+            </datamodel>
+            <onentry>
+              <assign location="entry_read" expr="effectful"/>
+              <raise event="report"/>
+            </onentry>
+            <transition event="error.execution">
+              <assign location="errors" expr="errors + 1"/>
+            </transition>
+            <transition event="report" target="done">
+              <send target="#_parent" event="counted">
+                <param name="errors" expr="errors"/>
+                <param name="trail_length" expr="trail.length"/>
+              </send>
+              <send target="#_parent" event="seen">
+                <param name="failing" expr="failing"/>
+                <param name="effectful" expr="effectful"/>
+                <param name="local_only" expr="local_only"/>
+                <param name="stray_type" expr="typeof stray"/>
+                <param name="shape_label" expr="shape.label"/>
+                <param name="shape_depth" expr="shape.inner.n"/>
+                <param name="script_read" expr="script_read"/>
+                <param name="entry_read" expr="entry_read"/>
+              </send>
+            </transition>
+          </state>
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="counted">
+      <assign location="saw_errors" expr="_event.data.errors"/>
+      <assign location="saw_trail" expr="_event.data.trail_length"/>
+    </transition>
+    <transition event="seen" target="received">
+      <assign location="saw_failing" expr="_event.data.failing"/>
+      <assign location="saw_effectful" expr="_event.data.effectful"/>
+      <assign location="saw_local" expr="_event.data.local_only"/>
+      <assign location="saw_stray" expr="_event.data.stray_type"/>
+      <assign location="saw_label" expr="_event.data.shape_label"/>
+      <assign location="saw_depth" expr="_event.data.shape_depth"/>
+      <assign location="saw_script" expr="_event.data.script_read"/>
+      <assign location="saw_entry" expr="_event.data.entry_read"/>
+    </transition>
+  </state>
+  <final id="received"/>
+</scxml>

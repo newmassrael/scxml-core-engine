@@ -963,10 +963,10 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -1183,7 +1183,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% if model.needs_script_engine %}
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
 {% if model.has_parallel_states or model.uses_in_predicate %}
             in_predicate_states: None,

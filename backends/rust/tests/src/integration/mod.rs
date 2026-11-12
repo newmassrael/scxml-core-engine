@@ -43,6 +43,12 @@
 //! and a stem under `integration_resources/` is a seven-channel contract. It
 //! lives at `tests/integration/external_chain_is_bounded.scxml`, beside its
 //! drivers.
+//!
+//! `a_child_takes_a_handed_value_in_place_of_its_data` is the fifth, outside
+//! for the order docs/adr/0098 lands in: each channel carries the rule with a
+//! test of its own, and the canonical fixture that holds it on all seven lands
+//! last, once every channel does. It lives at
+//! `tests/integration/a_child_takes_a_handed_value_in_place_of_its_data.scxml`.
 
 pub mod a_bad_donedata_pair_is_ignored;
 pub mod a_bad_invoke_argument_is_reported_once;

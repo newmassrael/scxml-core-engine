@@ -88,6 +88,29 @@
 {% endif %}
 {% endmacro %}
 
+{# Macro: Declare one top-level datamodel variable at the start (§scxml-6.4,
+   docs/adr/0098). A value the invoking session handed under its id is its
+   initial value, in place of its own: the `<data>`'s expr, src or content is
+   then not evaluated, raises nothing and has no effect. A handed value the
+   session cannot hold is the error of this `<data>`'s initialization, as a
+   failing expr of its own would be. Every other `<data>` takes its own value.
+   Expects `handed` (the `HandedValues` the start took) in scope, beside
+   `se`, `sid` and `engine`.
+   Parameters as for `initialize_variable`. #}
+{% macro declare_top_level_variable(var, machine_name, model) %}
+        // §scxml-6.4: '{{ var.id }}' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("{{ var.id | escape_rust }}") {
+            if let Err(e) = se.set_variable(&sid, "{{ var.id | escape_rust }}", value) {
+                ::sce_rust_runtime::sce_log_error!("<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));
+{% endif %}
+            }
+        } else {
+{{ initialize_variable(var, 'global', true, machine_name, model) }}
+        }
+{% endmacro %}
+
 {# Macro: Initialize all datamodel variables for a state #}
 {% macro initialize_state_datamodel(state, state_id, raise_error, machine_name, model) %}
 {% for var in state.datamodel %}

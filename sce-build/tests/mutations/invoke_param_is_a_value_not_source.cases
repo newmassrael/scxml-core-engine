@@ -26,7 +26,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-rust-tests --test invoke_param_seeds_declared_child_data
-mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2 tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2
+mutation_targets tools/codegen/templates/rust/invoke_methods.rs.jinja2 tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2 tools/codegen/templates/rust/datamodel_macros.rs.jinja2
 
 # The templates above reach `cargo test` only through the committed tree the
 # regeneration below writes, so both halves are declared: the generated files
@@ -53,9 +53,7 @@ mutation_oracles backends/rust/tests/tests/invoke_param_seeds_declared_child_dat
 
 mutation_case "an invoke param is evaluated in the parent and then dropped" <<'PY'
 edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
-     """                            // §scxml-6.4.3: the VALUE of the param element becomes
-                            // the child `<data>`'s initial value.
-                            child_policy.set_param_value_in_script_engine("{{ param.name | escape_rust }}", val);""",
+     """                            child_policy.hand_value("{{ param.name | escape_rust }}", val);""",
      """                            let _ = val;""")
 PY
 
@@ -67,8 +65,8 @@ PY
 # string the child could not compare.
 
 mutation_case "the child is seeded with absence rather than the parent's value" <<'PY'
-edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
-     """            let _ = se.set_variable(&sid, &name, value);""",
+edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
+     """            if let Err(e) = se.set_variable(&sid, "{{ var.id | escape_rust }}", value) {""",
      """            let _ = value;
-            let _ = se.set_variable(&sid, &name, sce_rust_runtime::ScriptValue::Null);""")
+            if let Err(e) = se.set_variable(&sid, "{{ var.id | escape_rust }}", sce_rust_runtime::ScriptValue::Null) {""")
 PY
