@@ -1,0 +1,603 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f
+
+// GENERATED CODE — DO NOT EDIT
+// Source: sce-build/tests/fixtures/static_datamodel/static_send_event.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: static_send_event.scxml:16 :: _machine
+
+package com.sce.integration.static_datamodel.static_send_event
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface StaticSendEventState : State {
+    data object Idle : StaticSendEventState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface StaticSendEventEvent : Event {
+    data object Blank : StaticSendEventEvent
+    sealed interface Error : StaticSendEventEvent {
+        data object Execution : Error
+    }
+    data object Go : StaticSendEventEvent
+    data object Overflow : StaticSendEventEvent
+    data object Ping : StaticSendEventEvent
+    data object Pong : StaticSendEventEvent
+    sealed interface Use : StaticSendEventEvent {
+        data object Ping : Use
+        data object Pong : Use
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+class StaticSendEventStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
+) : StateMachineEngine<StaticSendEventState, StaticSendEventEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
+    /** W3C SCXML 5.2: the `name` datamodel variable, the machine's own. */
+    private var vName: String = "ping"
+    /** W3C SCXML 5.2: the `scale` datamodel variable, the machine's own. */
+    private var vScale: UInt = 3.toUInt()
+    /** W3C SCXML 5.2: the `pings` datamodel variable, published (`sce:direction="out"`). */
+    private var vPings: UInt = 0.toUInt()
+
+    /** What the published `pings` holds. */
+    val pings: UInt get() = vPings
+    /** W3C SCXML 5.2: the `pongs` datamodel variable, published (`sce:direction="out"`). */
+    private var vPongs: UInt = 0.toUInt()
+
+    /** What the published `pongs` holds. */
+    val pongs: UInt get() = vPongs
+    /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
+    private var vRefusals: UInt = 0.toUInt()
+
+    /** What the published `refusals` holds. */
+    val refusals: UInt get() = vRefusals
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var name: String? = null
+        var scale: UInt? = null
+        var pings: UInt? = null
+        var pongs: UInt? = null
+        var refusals: UInt? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        acceptParamsPart0(params)
+    }
+
+    private fun acceptParamsPart0(params: InvokeParams) {
+        params.name?.let { vName = it }
+        params.scale?.let { vScale = it }
+        params.pings?.let { vPings = it }
+        params.pongs?.let { vPongs = it }
+        params.refusals?.let { vRefusals = it }
+    }
+
+    /** The published variables as one immutable value, in declaration order. */
+    data class Data(
+        val pings: UInt,
+        val pongs: UInt,
+        val refusals: UInt,
+    )
+
+    /**
+     * What a host observes: the full active configuration — every active
+     * state, each region of a `<parallel>` included — and the published
+     * variables, taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
+     */
+    data class Snapshot(
+        val configuration: Set<StaticSendEventState>,
+        val data: Data,
+        val truncated: Boolean,
+    )
+
+    private fun currentData(): Data = Data(
+        pings = vPings,
+        pongs = vPongs,
+        refusals = vRefusals,
+    )
+
+    private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
+        Snapshot(emptySet(), currentData(), false)
+    )
+
+    /**
+     * The machine as the host sees it: one [Snapshot] per completed macrostep
+     * (W3C SCXML Appendix D), never a state between two microsteps.
+     *
+     * Compose integration: `val s by sm.snapshot.collectAsState()`
+     */
+    val snapshot: kotlinx.coroutines.flow.StateFlow<Snapshot>
+        get() = _snapshot
+
+    override fun onMacrostepComplete(truncated: Boolean) {
+        _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
+    }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
+     */
+    val savedShape: SavedShape = SavedShape(
+        first = "3807dd2a8e853bc086919f654e88cd772085d40587e90de3cf30cd769e4ab373",
+        revised = "943653a32b02da535a6dbb290e6eeeb21d217692ab23f22c59ffbb9a3af0a52a",
+        format2First = "3807dd2a8e853bc086919f654e88cd772085d40587e90de3cf30cd769e4ab373",
+        format2Revised = "943653a32b02da535a6dbb290e6eeeb21d217692ab23f22c59ffbb9a3af0a52a",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState {
+        val variables = LinkedHashMap<String, Any?>()
+        saveVariablesPart0(variables)
+        return savedState(savedShape, variables, wallNowMs)
+    }
+
+    private fun saveVariablesPart0(variables: MutableMap<String, Any?>) {
+        variables += "name" to SavedValues.of(vName)
+        variables += "scale" to SavedValues.of(vScale)
+        variables += "pings" to SavedValues.of(vPings)
+        variables += "pongs" to SavedValues.of(vPongs)
+        variables += "refusals" to SavedValues.of(vRefusals)
+    }
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val writeVariablesPart0 = restoreVariablesPart0(savedGrown)
+        writeVariablesPart0()
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    // Reads this part's variables from [savedGrown], refusing a value its
+    // variable's type cannot hold, and answers what writes them: nothing is
+    // written until every part has read.
+    private fun restoreVariablesPart0(savedGrown: SavedState): () -> Unit {
+        val saved1 = SavedValues.string(savedGrown.variable("name"), "name", 16)
+        val saved2 = SavedValues.uint32(savedGrown.variable("scale"), "scale")
+        val saved3 = SavedValues.uint32(savedGrown.variable("pings"), "pings")
+        val saved4 = SavedValues.uint32(savedGrown.variable("pongs"), "pongs")
+        val saved5 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        return {
+            vName = saved1
+            vScale = saved2
+            vPings = saved3
+            vPongs = saved4
+            vRefusals = saved5
+        }
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        judgeVariablesPart0(savedGrown)
+    }
+
+    private fun judgeVariablesPart0(savedGrown: SavedState) {
+        SavedValues.string(savedGrown.variable("name"), "name", 16)
+        SavedValues.uint32(savedGrown.variable("scale"), "scale")
+        SavedValues.uint32(savedGrown.variable("pings"), "pings")
+        SavedValues.uint32(savedGrown.variable("pongs"), "pongs")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
+
+    override val initialState: StaticSendEventState = StaticSendEventState.Idle
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StaticSendEventState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StaticSendEventState, HistoryId>> =
+            listOf(StateTarget(StaticSendEventState.Idle))
+    }
+
+    private object TransitionsPart0 {
+
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 4, as the microstep reads it.
+        val transitionIdleAt4 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            4,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 5, as the microstep reads it.
+        val transitionIdleAt5 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            5,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 6, as the microstep reads it.
+        val transitionIdleAt6 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            6,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 7, as the microstep reads it.
+        val transitionIdleAt7 = EnabledTransition<StaticSendEventState, HistoryId>(
+            StaticSendEventState.Idle,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
+    }
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): StaticSendEventState? = when (stateId) {
+        "idle" -> StaticSendEventState.Idle
+        else -> null
+    }
+
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: StaticSendEventState): String = when (state) {
+        is StaticSendEventState.Idle -> "idle"
+    }
+
+
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
+    override fun documentOrderOf(state: StaticSendEventState): Int = when (state) {
+        is StaticSendEventState.Idle -> 0
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StaticSendEventEvent? = when (name) {
+        "blank" -> StaticSendEventEvent.Blank
+        "error.execution" -> StaticSendEventEvent.Error.Execution
+        "go" -> StaticSendEventEvent.Go
+        "overflow" -> StaticSendEventEvent.Overflow
+        "ping" -> StaticSendEventEvent.Ping
+        "pong" -> StaticSendEventEvent.Pong
+        "use.ping" -> StaticSendEventEvent.Use.Ping
+        "use.pong" -> StaticSendEventEvent.Use.Pong
+        else -> null
+    }
+
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: StaticSendEventEvent): String? = when (event) {
+        is StaticSendEventEvent.Blank -> "blank"
+        is StaticSendEventEvent.Error.Execution -> "error.execution"
+        is StaticSendEventEvent.Go -> "go"
+        is StaticSendEventEvent.Overflow -> "overflow"
+        is StaticSendEventEvent.Ping -> "ping"
+        is StaticSendEventEvent.Pong -> "pong"
+        is StaticSendEventEvent.Use.Ping -> "use.ping"
+        is StaticSendEventEvent.Use.Pong -> "use.pong"
+    }
+
+
+
+
+
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(state: StaticSendEventState, event: StaticSendEventEvent?): EnabledTransition<StaticSendEventState, HistoryId>? = when (state) {
+        is StaticSendEventState.Idle -> firstEnabledTransitionOfIdle(state, event)
+    }
+
+
+    // idle's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticSendEventState, event: StaticSendEventEvent?): EnabledTransition<StaticSendEventState, HistoryId>? = when {
+        event is StaticSendEventEvent.Go -> TransitionsPart0.transitionIdleAt0
+        event is StaticSendEventEvent.Overflow -> TransitionsPart0.transitionIdleAt1
+        event is StaticSendEventEvent.Use.Pong -> TransitionsPart0.transitionIdleAt2
+        event is StaticSendEventEvent.Use.Ping -> TransitionsPart0.transitionIdleAt3
+        event is StaticSendEventEvent.Blank -> TransitionsPart0.transitionIdleAt4
+        event is StaticSendEventEvent.Ping -> TransitionsPart0.transitionIdleAt5
+        event is StaticSendEventEvent.Pong -> TransitionsPart0.transitionIdleAt6
+        event is StaticSendEventEvent.Error.Execution -> TransitionsPart0.transitionIdleAt7
+        else -> null
+    }
+
+
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: static_send_event.scxml:16 :: _machine
+    override fun onEntry(state: StaticSendEventState, isDefaultEntry: Boolean) {
+        when (state) {
+            is StaticSendEventState.Idle -> onEntryOfIdle()
+        }
+    }
+
+
+    private fun onEntryOfIdle() {
+                // SCE-MAP: static_send_event.scxml:25 :: idle :: _state_body
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: static_send_event.scxml:16 :: _machine
+    override fun onExit(state: StaticSendEventState) {
+        when (state) {
+            is StaticSendEventState.Idle -> onExitOfIdle()
+        }
+    }
+
+
+    private fun onExitOfIdle() {
+                // SCE-MAP: static_send_event.scxml:25 :: idle :: _state_body
+    }
+
+
+
+    // Transition Content (W3C SCXML 3.13)
+    // SCE-MAP: static_send_event.scxml:16 :: _machine
+    override fun executeTransitionContent(source: StaticSendEventState, transitionIndex: Int) {
+        when (source) {
+            is StaticSendEventState.Idle -> transitionContentOfIdle(transitionIndex)
+        }
+    }
+
+
+    // The content of `idle`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfIdle(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfIdleAt0()
+            1 -> transitionContentOfIdleAt1()
+            2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
+            5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfIdleAt0() {
+                // SCE-MAP: static_send_event.scxml:26 :: idle :: _transition_0
+
+
+            if (run send@{
+            // The event's name is a string computed from the machine's fields now.
+            // A name that evaluates to nothing names no event, and an operation
+            // that fails cannot be evaluated: either is the argument error.
+            val sendEventName: String = vName
+            if (sendEventName.isEmpty()) {
+                raisePlatformError(StaticSendEventEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_0")
+                return@send true
+            }
+            val sendData = ""
+            // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event
+            // the document's names resolve it to (its own, the longest token
+            // prefix of it the document writes, or its wildcard), and `_event.name`
+            // is the whole name when the member is not called that.
+            val sendEvent = resolveArrivingEvent(sendEventName)
+            // W3C SCXML 6.2: send to this session's external queue
+            if (sendEvent != null) send(sendEvent, EventMetadata.sentBy(sessionId, sendId = "__send_0", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfIdleAt1() {
+                // SCE-MAP: static_send_event.scxml:29 :: idle :: _transition_1
+
+
+            if (run send@{
+            // The event's name is a string computed from the machine's fields now.
+            // A name that evaluates to nothing names no event, and an operation
+            // that fails cannot be evaluated: either is the argument error.
+            val sendEventName: String = try {
+                if (com.sce.forge.runtime.SceChecked.mul(vScale, 2000000000.toUInt()) > 1.toUInt()) "big" else "small"
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                ""
+            }
+            if (sendEventName.isEmpty()) {
+                raisePlatformError(StaticSendEventEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_1")
+                return@send true
+            }
+            val sendData = ""
+            // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event
+            // the document's names resolve it to (its own, the longest token
+            // prefix of it the document writes, or its wildcard), and `_event.name`
+            // is the whole name when the member is not called that.
+            val sendEvent = resolveArrivingEvent(sendEventName)
+            // W3C SCXML 6.2: send to this session's external queue
+            if (sendEvent != null) send(sendEvent, EventMetadata.sentBy(sessionId, sendId = "__send_1", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfIdleAt2() {
+                // SCE-MAP: static_send_event.scxml:32 :: idle :: _transition_2
+
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt3() {
+                // SCE-MAP: static_send_event.scxml:35 :: idle :: _transition_3
+
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt4() {
+                // SCE-MAP: static_send_event.scxml:38 :: idle :: _transition_4
+
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt5() {
+                // SCE-MAP: static_send_event.scxml:41 :: idle :: _transition_5
+
+            if (try { vPings = com.sce.forge.runtime.SceChecked.add(vPings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pings'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt6() {
+                // SCE-MAP: static_send_event.scxml:44 :: idle :: _transition_6
+
+            if (try { vPongs = com.sce.forge.runtime.SceChecked.add(vPongs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pongs'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt7() {
+                // SCE-MAP: static_send_event.scxml:47 :: idle :: _transition_7
+
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+}
