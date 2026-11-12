@@ -367,10 +367,13 @@ of the Rust tests (`trace_test.go`, `runner_test.go` and `canonical/from_canonic
 `backends/go/tests/integration/static_datamodel/`), which replay the same trace to the same log byte for byte, in
 place and through the program as a process. A Go function literal names the types it answers, so each generated read
 is an expression of the value and an error, a record, a list and a value that may be absent a function literal called
-where it stands. Go lowers no union, so its configuration of every form is the one C++ reads,
-`trace_forms/unionless_forms_configuration.scxml`.
+where it stands. A union is a function literal too, which binds its case (`canonical.ReadUnionCase`) and holds a
+`switch` on the case's variant whose `default` is its last case, so no end is left to reach; each case reads its record
+in the union's own scope, or the empty object of a case that holds none (`canonical.ReadNoRecord`), and builds the
+value by the constructor of its case. Its configuration of every form is the one Rust and Kotlin read,
+`trace_forms/forms_configuration.scxml`.
 
-The trace replay and the runner program are in place on Rust, Kotlin and C++. Go, Python, C11 and Swift follow the
+The trace replay and the runner program are in place on Rust, Kotlin, C++ and Go. Python, C11 and Swift follow the
 same design: the reader of each form in the runtime beside its writers, the reader of each record and `input` in the
 unit of a configuration over the same walk, a player behind the system adapter, the runner function and the program
 of §4.

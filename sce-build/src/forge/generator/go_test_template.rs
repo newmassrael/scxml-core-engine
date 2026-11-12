@@ -400,8 +400,10 @@ pub(super) struct GoReadingAt<'s> {
 /// not optional is read from `canonical.Member`, which every reader refuses as
 /// absent where the object does not name it; one that may be absent is looked
 /// up by the object's `Get`, read where it is there and absent otherwise, as a
-/// `null` element of a list is. Go lowers no union, so the walk's refusal of
-/// one stands.
+/// `null` element of a list is. A union (docs/adr/0092, section 7, the Go row)
+/// is read by its case, the record of a case read in the union's own scope
+/// ([`CanonicalForm::case_record`]), and built by the constructor of its case,
+/// as a template's value is.
 pub(super) struct GoReading<'s> {
     /// The spelling that names the types the reader answers.
     pub(super) spelling: &'s GoSpelling,
@@ -538,8 +540,30 @@ impl<'s> CanonicalForm for GoReading<'s> {
         (name, value)
     }
 
-    fn case_record(&self, bound: GoReadingAt<'s>) -> GoReadingAt<'s> {
-        bound
+    /// The case's value the union's reader binds, read as the record
+    /// `record:<record>` of the union's own scope, which names the type of
+    /// each of its fields; it stands where the union does, as a refusal names
+    /// it.
+    fn case_record(&self, bound: GoReadingAt<'s>, record: &str) -> GoReadingAt<'s> {
+        let scope: &'s TypeScope = bound.scope;
+        let union_scope: Option<&'s TypeScope> = match &bound.ty {
+            TypeOf::Union { alias } => scope.unions.get(alias).map(|union| &union.scope),
+            _ => None,
+        };
+        let union_scope = union_scope.unwrap_or_else(|| {
+            self.spelling.refuse(format!(
+                "a value of {} is read where a union that holds `record:{record}` stands",
+                bound.ty
+            ));
+            scope
+        });
+        GoReadingAt {
+            ty: TypeOf::Record {
+                alias: record.to_string(),
+            },
+            scope: union_scope,
+            ..bound
+        }
     }
 
     /// The element the loop over the list binds, of the list's element type.
@@ -756,13 +780,68 @@ impl<'s> CanonicalForm for GoReading<'s> {
         Self::called(&payload, &statements)
     }
 
+    /// A function literal that binds the variant of the case and the case's
+    /// value, whose variant the runtime has held to the declared ones, and a
+    /// `switch` on the variant, so each case has a clause and the last is the
+    /// `default`, which leaves no end of the function to reach. Each clause
+    /// reads the case's record and builds the union's value struct by the
+    /// constructor of its case, or, for a case that holds none, reads the
+    /// empty object it is. A union of one case is that case's read alone,
+    /// which binds no variant, since Go refuses a name bound and never read.
     fn union(
         &self,
-        _at: &GoReadingAt<'s>,
+        at: &GoReadingAt<'s>,
         union: &ScopedUnion,
-        _cases: Vec<CanonicalCase>,
+        cases: Vec<CanonicalCase>,
     ) -> Result<String, String> {
-        Err(crate::forge::value_type::union_unlowered(&union.name))
+        let union_type = self.spelling.union_type(union);
+        let refused = format!("if err != nil {{ return {union_type}{{}}, err }}");
+        let case = format!("case_{}", at.depth);
+        let names: Vec<String> = cases.iter().map(|(name, _)| go_literal(name)).collect();
+        let reads: Vec<(String, String)> = cases
+            .into_iter()
+            .map(|(name, held)| {
+                let built = self.spelling.case_constructor(union, &name);
+                let read = match held {
+                    Some((_, written)) => {
+                        format!("read, err := {written}; {refused}; return {built}(read), nil")
+                    }
+                    None => format!(
+                        "if err := {CANONICAL}.ReadNoRecord({case}, {}); err != nil {{ return \
+                         {union_type}{{}}, err }}; return {built}(), nil",
+                        go_literal(&format!("{}.{name}", at.what))
+                    ),
+                };
+                (go_literal(&name), read)
+            })
+            .collect();
+        let Some(((_, last), arms)) = reads.split_last() else {
+            return Err(format!("the union '{}' declares no case", union.name));
+        };
+        let variant = if arms.is_empty() {
+            "_".to_string()
+        } else {
+            format!("variant_{}", at.depth)
+        };
+        let mut statements = vec![
+            format!(
+                "{variant}, {case}, err := {CANONICAL}.ReadUnionCase({}, []string{{{}}}, {})",
+                at.json,
+                names.join(", "),
+                go_literal(&at.what)
+            ),
+            refused,
+        ];
+        if arms.is_empty() {
+            statements.push(last.clone());
+        } else {
+            let arms: String = arms
+                .iter()
+                .map(|(name, read)| format!("case {name}: {read}; "))
+                .collect();
+            statements.push(format!("switch {variant} {{ {arms}default: {last} }}"));
+        }
+        Ok(Self::called(&union_type, &statements))
     }
 }
 
@@ -878,6 +957,16 @@ impl GoSpelling {
     fn union_type(&self, union: &ScopedUnion) -> String {
         self.names_document(&union.name);
         union_unit_type(&union.name, Language::Go)
+    }
+
+    /// The constructor the unit of `union` declares for its case `variant`,
+    /// through its document's package: the only way a value of it is built.
+    fn case_constructor(&self, union: &ScopedUnion, variant: &str) -> String {
+        format!(
+            "{}{}",
+            self.union_type(union),
+            crate::forge::composed_lowering::go_case_ident(variant)
+        )
     }
 
     /// The Go type of a value of `ty`, read in `scope`; empty, with the
@@ -1253,9 +1342,8 @@ impl TemplateSpelling for GoSpelling {
         record: Option<String>,
     ) -> Result<String, String> {
         Ok(format!(
-            "{}{}({})",
-            self.union_type(union),
-            crate::forge::composed_lowering::go_case_ident(variant),
+            "{}({})",
+            self.case_constructor(union, variant),
             record.unwrap_or_default()
         ))
     }

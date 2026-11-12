@@ -420,7 +420,7 @@ impl CanonicalForm for CppReading {
         (name, value)
     }
 
-    fn case_record(&self, bound: CppReadingAt) -> CppReadingAt {
+    fn case_record(&self, bound: CppReadingAt, _record: &str) -> CppReadingAt {
         bound
     }
 

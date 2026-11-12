@@ -384,7 +384,7 @@ impl CanonicalForm for KotlinReading {
 
     /// The union's case is bound as the runtime's `UnionCase`, whose `value`
     /// is the case's record.
-    fn case_record(&self, bound: KotlinReadAt) -> KotlinReadAt {
+    fn case_record(&self, bound: KotlinReadAt, _record: &str) -> KotlinReadAt {
         KotlinReadAt::of(
             format!("{}.value", bound.json),
             bound.what,

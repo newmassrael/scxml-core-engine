@@ -1396,9 +1396,11 @@ pub(super) trait CanonicalForm {
     /// to, numbered by how many bindings `at` stands inside after `prefix`,
     /// and the value it binds.
     fn bound(&self, at: &Self::At, prefix: &str) -> (String, Self::At);
-    /// The place that holds a union case's record, once the walk has bound the
-    /// case as `bound` ([`Self::bound`] with the prefix `case`).
-    fn case_record(&self, bound: Self::At) -> Self::At;
+    /// The place that holds a union case's record, `record:<record>` in the
+    /// union's scope, once the walk has bound the case as `bound`
+    /// ([`Self::bound`] with the prefix `case`): what a direction that names
+    /// the type of each value it reads reads the case's fields by.
+    fn case_record(&self, bound: Self::At, record: &str) -> Self::At;
     /// The place that holds an element of the list at `list`, once the walk
     /// has bound it as `bound` ([`Self::bound`] with the prefix `item`).
     fn list_element(&self, list: &Self::At, bound: Self::At) -> Self::At;
@@ -1463,7 +1465,7 @@ impl<S: CanonicalSpelling> CanonicalForm for Writing<'_, S> {
     fn bound(&self, at: &S::At, prefix: &str) -> (String, S::At) {
         self.0.bound(at, prefix)
     }
-    fn case_record(&self, bound: S::At) -> S::At {
+    fn case_record(&self, bound: S::At, _record: &str) -> S::At {
         self.0.case_record(bound)
     }
     fn list_element(&self, list: &S::At, bound: S::At) -> S::At {
@@ -1607,7 +1609,7 @@ pub(super) fn canonical_form<S: CanonicalForm>(
                     let held = match &case.record {
                         Some(record) => {
                             let (binding, bound) = spelling.bound(at, "case");
-                            let held = spelling.case_record(bound);
+                            let held = spelling.case_record(bound, record);
                             let written = canonical_form(
                                 spelling,
                                 &TypeOf::Record {
@@ -1756,7 +1758,7 @@ impl<S: JoinSpelling> JoinSpelling for LowersUnions<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::value_type::{Bound, ScopedVariant};
+    use crate::forge::value_type::{Bound, ScopedCase, ScopedVariant};
 
     /// A spelling of the canonical form that keeps the default of every
     /// method that has one, its positions the names it reads.
@@ -1912,8 +1914,8 @@ mod tests {
             let name = format!("{prefix}_of_{at}");
             (name.clone(), name)
         }
-        fn case_record(&self, bound: String) -> String {
-            bound
+        fn case_record(&self, bound: String, record: &str) -> String {
+            format!("{bound}:{record}")
         }
         fn list_element(&self, _list: &String, bound: String) -> String {
             bound
@@ -2049,6 +2051,50 @@ mod tests {
                 "lines=list1..3(value.lines, item_of_value.lines: order_line@item_of_value.lines{",
                 "color=paint_color(item_of_value.lines.color),",
                 "quantity=uint16(item_of_value.lines.quantity)})}"
+            )
+            .to_string())
+        );
+    }
+
+    /// The walk hands a direction the alias of each case's record where it
+    /// binds the case, the record it then reads in the union's own scope: what
+    /// a direction that names the type of each value it reads reads the case's
+    /// fields by. A case that holds no record is its variant alone.
+    #[test]
+    fn the_walk_tells_a_direction_the_record_of_each_case() {
+        let card = ScopedRecord {
+            identity: "card_payment.scxml".to_string(),
+            name: "card_payment".to_string(),
+            fields: vec![("amount".to_string(), TypeOf::Scalar(SceType::Uint32))],
+            scope: TypeScope::default(),
+        };
+        let mut union_scope = TypeScope::default();
+        union_scope.records.insert("Card".to_string(), card);
+        let case = |name: &str, value: i128, record: Option<&str>| ScopedCase {
+            variant: ScopedVariant {
+                name: name.to_string(),
+                value,
+            },
+            record: record.map(str::to_string),
+        };
+        let payment = ScopedUnion {
+            identity: "order_payment.scxml".to_string(),
+            name: "order_payment".to_string(),
+            tag: "kind".to_string(),
+            tag_enum: "Kind".to_string(),
+            cases: vec![case("card", 0, Some("Card")), case("cash", 1, None)],
+            scope: union_scope,
+        };
+        let mut scope = TypeScope::default();
+        scope.unions.insert("Payment".to_string(), payment);
+        let ty: ValueType = TypeOf::Union {
+            alias: "Payment".to_string(),
+        };
+        assert_eq!(
+            canonical_form(&Typed, &ty, &Typed.root(), &scope),
+            Ok(concat!(
+                "order_payment@value[card(case_of_value: card_payment@case_of_value:Card{",
+                "amount=uint32(case_of_value:Card.amount)})|cash]"
             )
             .to_string())
         );

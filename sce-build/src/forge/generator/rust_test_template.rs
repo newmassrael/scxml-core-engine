@@ -390,7 +390,7 @@ impl CanonicalForm for RustReading {
         (name, value)
     }
 
-    fn case_record(&self, bound: Reading) -> Reading {
+    fn case_record(&self, bound: Reading, _record: &str) -> Reading {
         bound
     }
 

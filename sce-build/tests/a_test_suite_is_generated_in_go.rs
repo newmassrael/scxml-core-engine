@@ -333,21 +333,23 @@ fn a_configuration_reads_the_inputs_of_a_recorded_trace() {
 }
 
 /// docs/SCE_TTCN3_LANE.md §10.3: the configuration whose system port takes a
-/// record of every form Go holds generates a reader and a writer of each, which
+/// record of every form of the canonical value generates a reader and a writer
+/// of each, which
 /// `backends/go/tests/integration/static_datamodel/a_record_reads_back_the_form_it_writes_test.go`
 /// compiles and round-trips: an open enum read through its package's
 /// `FromUnderlying`, a closed one by its variants, a list of optional elements
 /// and an optional field each by a function literal that answers the absent
 /// value or the value read, a list of records each record by an object of its
-/// own, a byte string by its hex. The one whose record holds a union, which Go
-/// does not lower, is refused by name.
+/// own, a union by a `switch` on its case whose `default` is its last, each
+/// case built by its constructor, a byte string by its hex. The twin of the
+/// Rust and Kotlin cases, over the same configuration.
 #[test]
 fn a_configuration_reads_a_record_of_every_form_it_holds() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test_profile/trace_forms/unionless_forms_configuration.scxml");
-    let forms = file_at(&path, "unionless_forms_configuration");
+        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
+    let forms = file_at(&path, "forms_configuration");
     for (record, function) in [
-        ("order_taken", "OrderTaken"),
+        ("order_placed", "OrderPlaced"),
         ("job_status", "JobStatus"),
         ("form_extras", "FormExtras"),
     ] {
@@ -364,6 +366,9 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
         OPTIONAL_IMPORT.to_string(),
         imported("order_line"),
         imported("order_customer"),
+        imported("order_payment"),
+        imported("card_payment"),
+        imported("voucher_payment"),
         imported("paint_color"),
         imported("shape_kind_open"),
         "canonical.ReadOpenEnumerated(canonical.Member(object_0, \"shape\"), \
@@ -376,7 +381,7 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
          sce_paint_color.PaintColorRed}, "
             .to_string(),
         "object_1, err := canonical.ReadRecord(item_0, []string{\"sku\", \"quantity\", \
-         \"color\"}, \"order_taken.lines[]\")"
+         \"color\"}, \"order_placed.lines[]\")"
             .to_string(),
         "func(present_1 any) (optional.Of[uint16], error) { if present_1 == nil { return \
          optional.None[uint16](), nil }; read, err := canonical.ReadInteger[uint16](present_1, \
@@ -385,12 +390,28 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
         "return optional.Some(read), nil }(item_0)".to_string(),
         "func(present_0 any, held bool) (optional.Of[string], error) { if !held { return \
          optional.None[string](), nil }; read, err := canonical.ReadText(present_0, 32, \
-         \"order_taken.note\")"
+         \"order_placed.note\")"
             .to_string(),
         "}(object_0.Get(\"note\"))".to_string(),
-        "canonical.ReadBytes(canonical.Member(object_0, \"voucher_code\"), 4, \
-         \"order_taken.voucher_code\")"
+        "if read.Payment, err = func() (sce_order_payment.OrderPayment, error) { variant_0, \
+         case_0, err := canonical.ReadUnionCase(canonical.Member(object_0, \"payment\"), \
+         []string{\"card\", \"cash\", \"voucher\"}, \"order_placed.payment\"); if err != nil { \
+         return sce_order_payment.OrderPayment{}, err }; switch variant_0 { case \"card\": read, \
+         err := func() (sce_card_payment.CardPaymentPayload, error) { object_1, err := \
+         canonical.ReadRecord(case_0, []string{\"last4\", \"amount\"}, \"order_placed.payment\")"
             .to_string(),
+        "canonical.ReadText(canonical.Member(object_1, \"last4\"), 4, \
+         \"order_placed.payment.last4\")"
+            .to_string(),
+        "return sce_order_payment.OrderPaymentCard(read), nil; case \"cash\": if err := \
+         canonical.ReadNoRecord(case_0, \"order_placed.payment.cash\"); err != nil { return \
+         sce_order_payment.OrderPayment{}, err }; return sce_order_payment.OrderPaymentCash(), \
+         nil; default: read, err := func() (sce_voucher_payment.VoucherPaymentPayload, error) {"
+            .to_string(),
+        "canonical.ReadBytes(canonical.Member(object_1, \"voucher_code\"), 4, \
+         \"order_placed.payment.voucher_code\")"
+            .to_string(),
+        "return sce_order_payment.OrderPaymentVoucher(read), nil } }()".to_string(),
         "canonical.ReadElements(canonical.Member(object_0, \"flags\"), 1, 2, \
          \"form_extras.flags\")"
             .to_string(),
@@ -402,13 +423,9 @@ fn a_configuration_reads_a_record_of_every_form_it_holds() {
     ] {
         assert!(forms.contains(&needle), "`{needle}` in\n{forms}");
     }
-
-    let union = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test_profile/trace_forms/forms_configuration.scxml");
-    let Err(err) = generate(&union) else {
-        panic!("a configuration whose record holds a union generated on Go");
-    };
-    assert!(format!("{err:?}").contains("union"), "{err:?}");
+    // The reader names no package of the tag's enum: the variant is read as its
+    // declared name, and each case is built by its constructor.
+    assert!(!forms.contains(&imported("payment_kind")), "{forms}");
 }
 
 /// docs/SCE_TTCN3_LANE.md §10.5: two records a configuration's system ports
