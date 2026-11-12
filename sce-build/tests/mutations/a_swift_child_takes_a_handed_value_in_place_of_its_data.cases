@@ -1,0 +1,114 @@
+# Mutation cases for docs/adr/0098 on the Swift channel: a value an <invoke>
+# hands its child, whose name is the id of a top-level <data> of the child, is
+# that <data>'s initial value in place of its own (§scxml-6.4). The <data>'s
+# own expression is not evaluated; a state's <data>, early- or late-bound,
+# never takes a handed value; a name no top-level <data> declares is not added.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_swift_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# The Swift child declared a handed value in place of its own before this, but
+# from every `defineData`, so a state's <data> of a handed name took it too,
+# early-bound at the start and late-bound at the state's first entry, and the
+# values were never released. Each case below puts back one piece of a shape
+# some backend had (docs/adr/0098, "Context") and names the test that must go
+# red. The oracle starts each inline child of the fixture alone and hands it
+# its values through `acceptSeeds`, as its parent does, and also runs the
+# parent whole.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_swift backends/swift/tests --filter AChildTakesAHandedValueInPlaceOfItsData
+mutation_oracles backends/swift/tests/Tests/EcmaScriptMachinesTests/AChildTakesAHandedValueInPlaceOfItsDataTests.swift
+
+# The templates reach the tests only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the tests, and the command is what carries a mutated
+# template into them.
+mutation_targets tools/codegen/templates/swift/script_engine.swift.jinja2 tools/codegen/templates/swift/entry_exit_actions.swift.jinja2
+mutation_targets_glob 'backends/swift/tests/Sources/EcmaScriptMachines/*_sm.swift'
+mutation_regen scripts/regen_swift_ecmascript.sh
+
+# ── The <data>'s own value is evaluated, then the handed one replaces it ──
+#
+# The shape five backends had: the own expression runs, its error is raised
+# and its effect happens, and the handed value is written over it.
+# Killers: `aHandedValueIsDeclaredInPlaceOfTheOwnValueWhichIsNotEvaluated`,
+# whose `errors` and `effects` are 1, and
+# `theParentHandsEveryNameAndEachChildTakesWhatItDeclares`, which ends in
+# `failOwnValueRaised`.
+
+mutation_case "a handed top-level data evaluates its own value first" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "        do {\n            if let handed {\n                switch handed {\n",
+     "        do {\n            if handed != nil, let expression {\n                do {\n                    try session.defineGlobal(id, as: expression, chunkName: \"=data\")\n                } catch {\n                    raiseExecutionError(\"<data id='\\(id)'> expr failed to evaluate\", engine: engine)\n                }\n            }\n            if let handed {\n                switch handed {\n")
+PY
+
+# ── The handed value is not declared ────────────────────────────────
+#
+# The child keeps its own value whatever its parent handed.
+# Killers: `aHandedValueIsDeclaredInPlaceOfTheOwnValueWhichIsNotEvaluated`,
+# `anObjectArrivesWhole` and
+# `theTopLevelScriptAndTheInitialOnentryReadTheHandedValue`.
+
+mutation_case "a handed value is dropped and the own value stands" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "            if let handed {\n                switch handed {\n",
+     "            if let handed, handed == .json(\"\") {\n                switch handed {\n")
+PY
+
+# ── An object crosses as its text ───────────────────────────────────
+#
+# The JSON an object crosses in is declared as the string it is, not parsed.
+# Killer: `anObjectArrivesWhole`, whose top-level script finds no shape.
+
+mutation_case "a handed object is declared as its JSON text" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "                    try session.defineGlobal(id, as: \"JSON.parse(_scxml_seed)\", chunkName: \"=seed\")\n",
+     "                    try session.defineGlobal(id, as: \"_scxml_seed\", chunkName: \"=seed\")\n")
+PY
+
+# ── An early-bound state <data> takes a handed value ─────────────────
+#
+# The shape Go and Kotlin had: any variable of the handed name is seeded,
+# a state's included.
+# Killers: `aStatesDataTakesNoHandedValue`, whose early child's `kept` is
+# 'handed', and `theParentHandsEveryNameAndEachChildTakesWhatItDeclares`,
+# which ends in `failStateDataTookTheValue`.
+
+mutation_case "an early-bound state data takes a handed value" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "{% for var in state.datamodel %}\n        defineData(\"{{ var.id | escape_swift }}\", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)\n",
+     "{% for var in state.datamodel %}\n        defineData(\"{{ var.id | escape_swift }}\", handed: {{ 'handed' if model.variables else 'invokeSeeds' }}[\"{{ var.id | escape_swift }}\"], {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)\n")
+PY
+
+# ── A late-bound state <data> takes a handed value ──────────────────
+#
+# The shape the Swift child had: the values outlive the start and the
+# state's first entry declares its <data> from them. A late-bound <data> can
+# only reach a handed value the start did not consume, so the case puts back
+# both halves.
+# Killers: `aStatesDataTakesNoHandedValue`, whose late child's `kept` is
+# 'handed', `theParentHandsEveryNameAndEachChildTakesWhatItDeclares`, which
+# ends in `failLateStateDataTookTheValue`, and `aHandedValueIsTakenByOneStart`.
+
+mutation_case "a late-bound state data takes a handed value the start kept" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "        invokeSeeds = [:]\n{% for var in model.variables %}\n",
+     "{% for var in model.variables %}\n")
+edit("tools/codegen/templates/swift/entry_exit_actions.swift.jinja2",
+     "                defineData(\"{{ var.id | escape_swift }}\", {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)\n",
+     "                defineData(\"{{ var.id | escape_swift }}\", handed: invokeSeeds[\"{{ var.id | escape_swift }}\"], {{ ds.data_source(var, model.scxml_base_path) }}, engine: engine)\n")
+PY
+
+# ── The handed values outlive the start that took them ──────────────
+#
+# A later start of the same machine takes the first start's values again.
+# Killer: `aHandedValueIsTakenByOneStart`, whose second start finds
+# `failing` handed and `effects` 0.
+
+mutation_case "the handed values are kept past the start that took them" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     "        invokeSeeds = [:]\n{% for var in model.variables %}\n",
+     "{% for var in model.variables %}\n")
+PY
