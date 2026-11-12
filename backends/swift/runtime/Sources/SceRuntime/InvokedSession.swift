@@ -40,8 +40,8 @@ public final class InvokedSession<Policy: InvocablePolicy>: ChildEngine {
         engine = Engine(policy: policy)
     }
 
-    public func initialize() {
-        engine.initialize()
+    public func initialize() throws {
+        try engine.initialize()
     }
 
     public func tick() {

@@ -131,7 +131,12 @@ public func isInvokePending<State: Hashable>(_ pending: [PendingInvoke<State>], 
 ///
 /// The mesh members have defaults that do nothing, for a child given no Mesh router.
 public protocol ChildEngine: AnyObject {
-    func initialize()
+    /// Starts the child session. Throws the `ScriptSessionFailure` that refused the
+    /// start when the child's script session cannot be established, and nothing else
+    /// (docs/adr/0096); a parent starts a child through `startChildSession`, which
+    /// ends the invoke without a child then.
+    func initialize() throws
+
     func tick()
 
     /// Exits the child session when its parent cancels it (§scxml-D-exitInterpreter):
@@ -213,6 +218,33 @@ public func deliverToChild(_ child: any ChildEngine, eventName: String, eventDat
     child.raiseExternalByNameWithMeta(eventName, metadata: metadata)
     child.applyMeshCalls()
     child.step()
+}
+
+/// Starts `child`, the session the `<invoke>` `invokeID` of the machine `engine` runs is
+/// starting, and answers whether it started (§scxml-6.4).
+///
+/// A child whose start is refused because its script session cannot be established
+/// (docs/adr/0096) is a failed invoke: the router its parent's factory gave it is told
+/// it ended, `error.execution` is raised on the parent's internal queue with data that
+/// names the invoke and the step (`ScriptSessionFailure.childStartRefusal`), and the
+/// answer is false, so the caller keeps no child and raises no `done.invoke` for it.
+/// The path a `src` or a `namelist` that cannot be read takes. A document that declares
+/// no `error.execution` has nothing to raise, as the generated machine raises none.
+public func startChildSession<Policy: StatePolicy>(
+    _ child: any ChildEngine, invokeID: String, engine: Engine<Policy>
+) -> Bool {
+    do {
+        try child.initialize()
+        return true
+    } catch let failure as ScriptSessionFailure {
+        child.detachMesh()
+        if let error = engine.policy.getEventFromName("error.execution") {
+            engine.raise(EventWithMetadata.platformError(error, message: failure.childStartRefusal(invokeID: invokeID)))
+        }
+        return false
+    } catch {
+        preconditionFailure("a machine's start throws only a ScriptSessionFailure, and threw \(error)")
+    }
 }
 
 /// Drains events from a child's parent event queue and raises them in the parent

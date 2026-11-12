@@ -25,12 +25,19 @@ public enum RootStartRefusal: Error, Sendable, Equatable, CustomStringConvertibl
     /// has no parent to reach.
     case needsParent
 
+    /// The machine's script session could not be established, so nothing was entered
+    /// and nothing ran (docs/adr/0096). Judged after `needsParent`: a machine refused
+    /// for its parent establishes nothing.
+    case scriptSession(ScriptSessionFailure)
+
     /// The refusal as a sentence, for a host to report: the same words on every
     /// engine.
     public var description: String {
         switch self {
         case .needsParent:
             return "the machine sends to #_parent and was started with no parent session"
+        case .scriptSession(let failure):
+            return failure.description
         }
     }
 }
@@ -354,18 +361,42 @@ public final class Engine<Policy: StatePolicy> {
     /// `initialize` for a host that refuses to start a machine needing a parent as a
     /// root (`rootStartRefusal`). A refusal starts nothing: no datamodel is declared
     /// and no state is entered.
+    ///
+    /// Throws a `RootStartRefusal`: `.needsParent` before anything is established, or
+    /// `.scriptSession` carrying the failure when the machine's script session cannot
+    /// be established (docs/adr/0096).
     public func initializeAsRoot() throws {
         if let refusal = rootStartRefusal() {
             throw refusal
         }
-        initialize()
+        if let failure = policy.establishScriptSession() {
+            throw RootStartRefusal.scriptSession(failure)
+        }
+        enterInitialConfiguration()
     }
 
     /// Enters the initial configuration and runs the macrostep loop until stable.
     ///
     /// Matches Rust `Engine::initialize`. §scxml-5.3 guarantees datamodel
     /// initialization happens before any state entry.
-    public func initialize() {
+    ///
+    /// The machine's script session is established first, before the run is marked
+    /// running, its inbox opened or anything entered (docs/adr/0096). When it cannot
+    /// be, this throws the `ScriptSessionFailure` that names the step, and the start
+    /// is refused: no state is entered, no executable content runs and no event is
+    /// taken. It throws nothing else, and a machine without a script engine has no
+    /// session to fail, so its start never throws.
+    public func initialize() throws {
+        if let failure = policy.establishScriptSession() {
+            throw failure
+        }
+        enterInitialConfiguration()
+    }
+
+    /// What a start does once the machine's script session is established: the run
+    /// is marked running, the datamodel declared, the initial configuration entered
+    /// and the macrostep loop run until stable.
+    private func enterInitialConfiguration() {
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one instant;
         // see `beginTurn` for what reading the clock per `<send>` did to two of them.
@@ -451,13 +482,24 @@ public final class Engine<Policy: StatePolicy> {
     /// `StaticExecutionEngine::enterAt`.
     ///
     /// Returns `.accepted` on success; the rule that was broken otherwise, with the
-    /// engine untouched.
+    /// engine untouched. A configuration that is one of this document is entered only
+    /// over an established script session: when it cannot be established, the answer
+    /// is `.scriptSessionUnavailable` carrying the failure, and nothing is entered
+    /// (docs/adr/0096).
     public func enterAt(configuration: [State], current: State) -> ConfigurationRejection {
         // Before anything is touched: a rejection must not half-enter.
         let verdict = validateConfiguration(policy: policy, configuration: configuration, current: current)
         if verdict != .accepted {
             sceLog("Engine.enterAt: refused -- \(verdict)")
             return verdict
+        }
+
+        // docs/adr/0096: the session is established before the datamodel is declared,
+        // as `initialize` establishes it, and a session that cannot be refuses the
+        // resumed start as it refuses that one.
+        if let failure = policy.establishScriptSession() {
+            sceLog("Engine.enterAt: refused -- \(failure)")
+            return .scriptSessionUnavailable(failure)
         }
 
         // §scxml-5.3: the datamodel is declared before anything can read it. This is

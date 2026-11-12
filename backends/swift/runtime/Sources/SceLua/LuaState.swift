@@ -25,6 +25,24 @@ public enum LuaError: Error, Equatable, Sendable {
     case syntax(String)
     case runtime(String)
     case memory
+
+    /// What the failure says, in the engine's words: Lua's own message for a syntax or a
+    /// run-time error, and what an allocation that failed means for a memory error. What a
+    /// machine whose session could not be established hands its host (docs/adr/0096).
+    public var message: String {
+        switch self {
+        case .syntax(let text), .runtime(let text):
+            return text
+        case .memory:
+            return "the Lua engine could not allocate the memory it needed"
+        }
+    }
+
+    /// What `error`, thrown by a call into this engine, says: a `LuaError`'s `message`, and
+    /// the description of anything else.
+    public static func message(of error: any Error) -> String {
+        (error as? LuaError)?.message ?? String(describing: error)
+    }
 }
 
 /// One Lua state with the standard libraries open. Every call runs under a protected call inside

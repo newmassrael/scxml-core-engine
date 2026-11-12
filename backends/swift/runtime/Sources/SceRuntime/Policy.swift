@@ -239,6 +239,18 @@ public protocol StatePolicy: AnyObject {
     /// of a document with none answers none.
     var hostInvokeIDs: [String] { get }
 
+    /// Establishes the machine's script session, the first step of every start
+    /// (docs/adr/0096): creates the session, loads the shared library into it and binds
+    /// the system variables, in that order, replacing any session an earlier run held.
+    /// Answers nil once the session is there, or the step that failed and the engine's
+    /// words, with what the failed steps made released and no session held.
+    ///
+    /// The engine asks it before the run is marked running and before anything is
+    /// entered, and it is the one place a session is made: what runs after a start
+    /// reads the session it established. A policy without a script engine has no
+    /// session to establish, and answers nil.
+    func establishScriptSession() -> ScriptSessionFailure?
+
     /// Initializes the datamodel via the script engine (§scxml-5.3).
     func initializeDataModel(engine: Engine<Self>)
 
@@ -342,6 +354,8 @@ extension StatePolicy {
     public var needsParent: Bool { false }
 
     public var hostInvokeIDs: [String] { [] }
+
+    public func establishScriptSession() -> ScriptSessionFailure? { nil }
 
     public func initializeDataModel(engine: Engine<Self>) {}
 

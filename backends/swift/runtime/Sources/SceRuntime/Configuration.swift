@@ -68,6 +68,11 @@ public enum ConfigurationRejection: Sendable, Equatable, CustomStringConvertible
     /// current state the atomic one the engine descended to.
     case currentNotAtomic
 
+    /// The set is a configuration of this document, and the machine's script session
+    /// could not be established, so nothing was entered (docs/adr/0096). Only
+    /// `Engine.enterAt` answers it: the configuration rules above never do.
+    case scriptSessionUnavailable(ScriptSessionFailure)
+
     /// The human-readable reason, for the message a refusal carries.
     public var description: String {
         switch self {
@@ -93,6 +98,8 @@ public enum ConfigurationRejection: Sendable, Equatable, CustomStringConvertible
             return "the current state is not in the configuration"
         case .currentNotAtomic:
             return "the current state must be the atomic state the engine descended to"
+        case .scriptSessionUnavailable(let failure):
+            return failure.description
         }
     }
 }
