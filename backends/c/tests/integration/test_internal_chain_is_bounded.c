@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "internal_chain_is_bounded_sm.h"
 
 // The ceiling the engine applies, spelled here rather than read back from it.
@@ -56,7 +57,7 @@ int main(void) {
     // host is told. This block returning at all is half the assertion.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         if (internal_chain_is_bounded_truncated_macrosteps(&sm) != 0u) {
             fprintf(stderr, "internal_chain_is_bounded: FAIL - something was refused before the "
@@ -119,7 +120,7 @@ int main(void) {
     // where it meant >, reports this ordinary document as a runaway.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_BOUNDED);
 
@@ -165,7 +166,7 @@ int main(void) {
     // outcomes, because every other chain here answers every event it raises.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_UNANSWERED);
 
@@ -206,7 +207,7 @@ int main(void) {
     // ceilings half spent.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_ALTERNATE);
 
@@ -250,7 +251,7 @@ int main(void) {
     // is its own debt - the counters below are the same on both.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_RESUME);
 
@@ -289,7 +290,7 @@ int main(void) {
     // and fail nothing.
     {
         internal_chain_is_bounded_t sm;
-        internal_chain_is_bounded_init(&sm);
+        REQUIRE_STARTED(internal_chain_is_bounded_init(&sm), INTERNAL_CHAIN_IS_BOUNDED_START_OK);
 
         deliver(&sm, INTERNAL_CHAIN_IS_BOUNDED_EVENT_POKE);
 

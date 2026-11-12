@@ -36,11 +36,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "event_origin_is_a_location_sm.h"
 
 int main(void) {
     event_origin_is_a_location_t sm;
-    event_origin_is_a_location_init(&sm);
+    REQUIRE_STARTED(event_origin_is_a_location_init(&sm), EVENT_ORIGIN_IS_A_LOCATION_START_OK);
 
     // No `<send delay>` in this fixture: the child sends `fromChild` during
     // its own `_init`, and the parent's reply is a directed send consumed in

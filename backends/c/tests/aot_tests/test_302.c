@@ -28,11 +28,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test302_sm.h"
 
 int main(void) {
     test302_t sm;
-    test302_init(&sm);
+    REQUIRE_STARTED(test302_init(&sm), TEST302_START_OK);
     test302_run(&sm);
 
     int rc = test302_ended_in(&sm, TEST302_STATE_PASS) ? 0 : 1;

@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "../unit/shared_table.h"
 #include "system_variable_writes_sm.h"
 
@@ -321,7 +322,7 @@ static int answer_case(sm_t *sm, const char *object, int index) {
 // be read.
 static int check_case(const char *object, int index) {
     sm_t sm;
-    system_variable_writes_init(&sm);
+    REQUIRE_STARTED(system_variable_writes_init(&sm), SYSTEM_VARIABLE_WRITES_START_OK);
     if (sm.L == NULL) {
         (void)fprintf(stderr, "FAIL: case %d: the machine opened no Lua state, so it binds no system variable\n",
                       index);

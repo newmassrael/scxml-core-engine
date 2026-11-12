@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "discarded_event_is_observable_sm.h"
 
 static void deliver(discarded_event_is_observable_t *sm, discarded_event_is_observable_event_t event) {
@@ -40,7 +41,7 @@ int main(void) {
     // The axis: an event the machine knows but no active state answers.
     {
         discarded_event_is_observable_t sm;
-        discarded_event_is_observable_init(&sm);
+        REQUIRE_STARTED(discarded_event_is_observable_init(&sm), DISCARDED_EVENT_IS_OBSERVABLE_START_OK);
 
         if (discarded_event_is_observable_discarded_external_events(&sm) != 0u) {
             fprintf(stderr, "discarded_event_is_observable: FAIL - something was counted "
@@ -98,7 +99,7 @@ int main(void) {
     // always-false one.
     {
         discarded_event_is_observable_t sm;
-        discarded_event_is_observable_init(&sm);
+        REQUIRE_STARTED(discarded_event_is_observable_init(&sm), DISCARDED_EVENT_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, DISCARDED_EVENT_IS_OBSERVABLE_EVENT_POKE);
         int64_t pokes = -1;
@@ -139,7 +140,7 @@ int main(void) {
     // handled event and a discarded one.
     {
         discarded_event_is_observable_t sm;
-        discarded_event_is_observable_init(&sm);
+        REQUIRE_STARTED(discarded_event_is_observable_init(&sm), DISCARDED_EVENT_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, DISCARDED_EVENT_IS_OBSERVABLE_EVENT_POKE);
         uint32_t handled_active = discarded_event_is_observable_active_states(&sm);
@@ -168,7 +169,7 @@ int main(void) {
     // the host keeps sending no longer match anything.
     {
         discarded_event_is_observable_t sm;
-        discarded_event_is_observable_init(&sm);
+        REQUIRE_STARTED(discarded_event_is_observable_init(&sm), DISCARDED_EVENT_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, DISCARDED_EVENT_IS_OBSERVABLE_EVENT_GO);
         if (!discarded_event_is_observable_in_state(&sm, DISCARDED_EVENT_IS_OBSERVABLE_STATE_BUSY)) {

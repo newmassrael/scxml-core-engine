@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_delayed_host_send_sm.h"
 
 // The type the fixture was compiled for. `backends/c/tests/CMakeLists.txt`
@@ -85,7 +86,8 @@ static void boot(statechart_delayed_host_send_t *sm, recorder_t *rec, bool with_
         rec->sm = sm;
         (void)sce_host_registry_register(&wiring, DECLARED_TYPE, answering_handler, rec);
     }
-    statechart_delayed_host_send_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);
+    REQUIRE_STARTED(statechart_delayed_host_send_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring),
+                    STATECHART_DELAYED_HOST_SEND_START_OK);
 }
 
 static int fail(const char *scenario, const char *what) {

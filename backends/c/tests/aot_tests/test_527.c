@@ -15,11 +15,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test527_sm.h"
 
 int main(void) {
     test527_t sm;
-    test527_init(&sm);
+    REQUIRE_STARTED(test527_init(&sm), TEST527_START_OK);
     test527_run(&sm);
 
     int rc = test527_ended_in(&sm, TEST527_STATE_PASS) ? 0 : 1;

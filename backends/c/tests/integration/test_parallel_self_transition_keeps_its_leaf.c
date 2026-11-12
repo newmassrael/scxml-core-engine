@@ -22,11 +22,13 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "parallel_self_transition_keeps_its_leaf_sm.h"
 
 int main(void) {
     parallel_self_transition_keeps_its_leaf_t sm;
-    parallel_self_transition_keeps_its_leaf_init(&sm);
+    REQUIRE_STARTED(parallel_self_transition_keeps_its_leaf_init(&sm),
+                    PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_START_OK);
     parallel_self_transition_keeps_its_leaf_run(&sm);
 
     if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_WITHIN) ||

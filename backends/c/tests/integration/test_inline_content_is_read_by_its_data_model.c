@@ -22,11 +22,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "inline_content_is_read_by_its_data_model_sm.h"
 
 int main(void) {
     inline_content_is_read_by_its_data_model_t sm;
-    inline_content_is_read_by_its_data_model_init(&sm);
+    REQUIRE_STARTED(inline_content_is_read_by_its_data_model_init(&sm),
+                    INLINE_CONTENT_IS_READ_BY_ITS_DATA_MODEL_START_OK);
 
     // No `<send delay>` here: the child sends during its own `_init`.
     inline_content_is_read_by_its_data_model_run(&sm);

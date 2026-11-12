@@ -23,13 +23,14 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "test579_sm.h"
 
 extern uint64_t _sce_clock_now_ms(void);
 
 int main(void) {
     test579_t sm;
-    test579_init(&sm);
+    REQUIRE_STARTED(test579_init(&sm), TEST579_START_OK);
 
     /* W3C 6.2: poll cadence 10 ms — same default as cpp `runUntilCompletion`'s
        `pollInterval`. Timeout cap 5 s leaves comfortable headroom over the

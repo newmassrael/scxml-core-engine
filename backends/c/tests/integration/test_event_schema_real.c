@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "event_schema_real_sm.h"
 
 #ifndef SCE_JSON_REAL_TEXT_TABLE
@@ -102,7 +103,7 @@ static int check_case(const char *object, int index) {
     (void)snprintf(want, sizeof(want), "{\"value\":%s}", text);
 
     event_schema_real_t sm;
-    event_schema_real_init(&sm);
+    REQUIRE_STARTED(event_schema_real_init(&sm), EVENT_SCHEMA_REAL_START_OK);
     event_schema_real_reading_taken_payload_t payload;
     memset(&payload, 0, sizeof(payload));
     memcpy(&payload.value, &value_bits, sizeof(payload.value));
@@ -155,7 +156,7 @@ int main(void) {
     // rather than write text no peer can read.
     {
         event_schema_real_t sm;
-        event_schema_real_init(&sm);
+        REQUIRE_STARTED(event_schema_real_init(&sm), EVENT_SCHEMA_REAL_START_OK);
         event_schema_real_reading_taken_payload_t payload;
         memset(&payload, 0, sizeof(payload));
         payload.value = INFINITY;

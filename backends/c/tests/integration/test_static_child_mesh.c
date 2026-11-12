@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_child_mesh_sm.h"
 
 #define LOG_MAX 8
@@ -147,7 +148,7 @@ static void start(static_child_mesh_t *sm, sce_child_mesh_routers_fn ask) {
     if (ask != NULL) {
         (void)sce_host_registry_register_child_mesh_routers(&wiring, ask, NULL);
     }
-    static_child_mesh_init_with_host_processors(sm, &wiring);
+    REQUIRE_STARTED(static_child_mesh_init_with_host_processors(sm, &wiring), STATIC_CHILD_MESH_START_OK);
     settle(sm);
 }
 

@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_static_mesh_request_sm.h"
 
 typedef statechart_static_mesh_request_t sm_t;
@@ -80,7 +81,7 @@ static bool drive(sm_t *sm, const char *name) {
 static void boot(sm_t *sm, request_t *request, bool with_router) {
     memset(request, 0, sizeof(*request));
     if (!with_router) {
-        statechart_static_mesh_request_init(sm);
+        REQUIRE_STARTED(statechart_static_mesh_request_init(sm), STATECHART_STATIC_MESH_REQUEST_START_OK);
         statechart_static_mesh_request_run(sm);
         return;
     }
@@ -89,7 +90,8 @@ static void boot(sm_t *sm, request_t *request, bool with_router) {
     if (!sce_host_invoker_register_mesh_rpc_invoker(&invokers, router, request)) {
         (void)fprintf(stderr, "FAIL: the mesh-rpc door refused the router\n");
     }
-    statechart_static_mesh_request_init_with_host_invokers(sm, &invokers);
+    REQUIRE_STARTED(statechart_static_mesh_request_init_with_host_invokers(sm, &invokers),
+                    STATECHART_STATIC_MESH_REQUEST_START_OK);
     statechart_static_mesh_request_run(sm);
 }
 

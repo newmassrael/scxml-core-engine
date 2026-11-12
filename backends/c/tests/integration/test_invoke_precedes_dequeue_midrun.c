@@ -39,11 +39,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "invoke_precedes_dequeue_midrun_sm.h"
 
 int main(void) {
     invoke_precedes_dequeue_midrun_t sm;
-    invoke_precedes_dequeue_midrun_init(&sm);
+    REQUIRE_STARTED(invoke_precedes_dequeue_midrun_init(&sm), INVOKE_PRECEDES_DEQUEUE_MIDRUN_START_OK);
 
     // The child opens the verdict exchange itself (`ready` from its own
     // onentry), so the parent never has to guess when the invoke completed

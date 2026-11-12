@@ -20,13 +20,15 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_invoke_left_before_it_starts_raises_nothing_sm.h"
 
 typedef an_invoke_left_before_it_starts_raises_nothing_t sm_t;
 
 int main(void) {
     sm_t sm;
-    an_invoke_left_before_it_starts_raises_nothing_init(&sm);
+    REQUIRE_STARTED(an_invoke_left_before_it_starts_raises_nothing_init(&sm),
+                    AN_INVOKE_LEFT_BEFORE_IT_STARTS_RAISES_NOTHING_START_OK);
     an_invoke_left_before_it_starts_raises_nothing_run(&sm);
     if (!an_invoke_left_before_it_starts_raises_nothing_in_state(
             &sm, AN_INVOKE_LEFT_BEFORE_IT_STARTS_RAISES_NOTHING_STATE_S1)) {

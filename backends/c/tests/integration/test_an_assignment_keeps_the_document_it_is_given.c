@@ -20,11 +20,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_assignment_keeps_the_document_it_is_given_sm.h"
 
 int main(void) {
     an_assignment_keeps_the_document_it_is_given_t sm;
-    an_assignment_keeps_the_document_it_is_given_init(&sm);
+    REQUIRE_STARTED(an_assignment_keeps_the_document_it_is_given_init(&sm),
+                    AN_ASSIGNMENT_KEEPS_THE_DOCUMENT_IT_IS_GIVEN_START_OK);
 
     // No `<send delay>` here: the event the session sends itself is on the
     // external queue once `_init` returns, and `_run` consumes it.

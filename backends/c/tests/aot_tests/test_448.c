@@ -17,11 +17,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test448_sm.h"
 
 int main(void) {
     test448_t sm;
-    test448_init(&sm);
+    REQUIRE_STARTED(test448_init(&sm), TEST448_START_OK);
     test448_run(&sm);
 
     int rc = test448_ended_in(&sm, TEST448_STATE_PASS) ? 0 : 1;

@@ -17,11 +17,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test355_sm.h"
 
 int main(void) {
     test355_t sm;
-    test355_init(&sm);
+    REQUIRE_STARTED(test355_init(&sm), TEST355_START_OK);
     test355_run(&sm);
 
     if (test355_ended_in(&sm, TEST355_STATE_PASS)) {

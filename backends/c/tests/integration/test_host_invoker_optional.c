@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_host_invoker_optional_sm.h"
 
 // The type the fixture was compiled for. `backends/c/tests/CMakeLists.txt`
@@ -82,7 +83,8 @@ static bool boot_asking(statechart_host_invoker_optional_t *sm,
     table->cancel_lookup = lookup_cancel;
     memset(&wiring, 0, sizeof(wiring));
     (void)statechart_host_invoker_optional_register_x_sce_host_invoker(&wiring, table);
-    statechart_host_invoker_optional_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_optional_init_with_host_invokers(sm, &wiring),
+                    STATECHART_HOST_INVOKER_OPTIONAL_START_OK);
     if (!raise_event(sm, "ask")) {
         return false;
     }

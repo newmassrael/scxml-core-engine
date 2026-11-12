@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_bad_send_argument_discards_its_message_sm.h"
 
 typedef a_bad_send_argument_discards_its_message_t sm_t;
@@ -27,7 +28,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_bad_send_argument_discards_its_message_init(&sm);
+    REQUIRE_STARTED(a_bad_send_argument_discards_its_message_init(&sm),
+                    A_BAD_SEND_ARGUMENT_DISCARDS_ITS_MESSAGE_START_OK);
     a_bad_send_argument_discards_its_message_run(&sm);
     a_bad_send_argument_discards_its_message_advance_time_ms(&sm, 60000u);
 

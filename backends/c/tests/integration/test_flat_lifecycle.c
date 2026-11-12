@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "flat_lifecycle_sm.h"
 #include "flat_lifecycle_transition_function.h"
 #include "transition_function_equivalence.h"
@@ -28,7 +29,7 @@
 static flat_lifecycle_t sm;
 
 static void machine_start(void) {
-    flat_lifecycle_init(&sm);
+    REQUIRE_STARTED(flat_lifecycle_init(&sm), FLAT_LIFECYCLE_START_OK);
 }
 
 static void machine_stop(void) {

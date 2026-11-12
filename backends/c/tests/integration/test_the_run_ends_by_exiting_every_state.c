@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "the_run_ends_by_exiting_every_state_sm.h"
 
 typedef the_run_ends_by_exiting_every_state_t sm_t;
@@ -38,7 +39,7 @@ static void report(const sm_t *sm) {
 }
 
 static int started(sm_t *sm) {
-    the_run_ends_by_exiting_every_state_init(sm);
+    REQUIRE_STARTED(the_run_ends_by_exiting_every_state_init(sm), THE_RUN_ENDS_BY_EXITING_EVERY_STATE_START_OK);
     the_run_ends_by_exiting_every_state_run(sm);
     if (!the_run_ends_by_exiting_every_state_in_state(sm, THE_RUN_ENDS_BY_EXITING_EVERY_STATE_STATE_INNER)) {
         fprintf(stderr, "FAIL: the run has to start inside `inner`\n");

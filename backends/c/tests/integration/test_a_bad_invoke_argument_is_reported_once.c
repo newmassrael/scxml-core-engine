@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_bad_invoke_argument_is_reported_once_sm.h"
 
 typedef a_bad_invoke_argument_is_reported_once_t sm_t;
@@ -23,7 +24,7 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_bad_invoke_argument_is_reported_once_init(&sm);
+    REQUIRE_STARTED(a_bad_invoke_argument_is_reported_once_init(&sm), A_BAD_INVOKE_ARGUMENT_IS_REPORTED_ONCE_START_OK);
     a_bad_invoke_argument_is_reported_once_run(&sm);
 
     const a_bad_invoke_argument_is_reported_once_event_t events[] = {

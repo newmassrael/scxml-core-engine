@@ -23,11 +23,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "donedata_local_invoke_sm.h"
 
 int main(void) {
     donedata_local_invoke_t sm;
-    donedata_local_invoke_init(&sm);
+    REQUIRE_STARTED(donedata_local_invoke_init(&sm), DONEDATA_LOCAL_INVOKE_START_OK);
 
     // No `<send delay>` in this fixture — the macrostep loop in `_run`
     // drains the parent's two invokes synchronously (child SM reaches

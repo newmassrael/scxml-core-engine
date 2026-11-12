@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_self_sent_event_names_its_origin_sm.h"
 
 typedef a_self_sent_event_names_its_origin_t sm_t;
@@ -26,7 +27,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 int main(void) {
     sm_t sm;
     // The host owns the clock, so the delay passes when the test says so.
-    a_self_sent_event_names_its_origin_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_self_sent_event_names_its_origin_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SELF_SENT_EVENT_NAMES_ITS_ORIGIN_START_OK);
     a_self_sent_event_names_its_origin_run(&sm);
     a_self_sent_event_names_its_origin_advance_time_ms(&sm, 1000u);
     a_self_sent_event_names_its_origin_run(&sm);

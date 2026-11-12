@@ -21,6 +21,7 @@
 // `opendir` is POSIX, and the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "../require_started.h"
 #include "static_enum_sm.h"
 #include "static_history_sm.h"
 #include "static_list_sm.h"
@@ -234,7 +235,7 @@ static void raise_timers(static_timers_t *sm, const char *name) {
 }
 
 static void start_timers(static_timers_t *sm) {
-    static_timers_init_with_clock(sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(static_timers_init_with_clock(sm, sce_clock_manual(0u)), STATIC_TIMERS_START_OK);
 }
 
 static void a_waiting_send_survives_a_restore(void) {

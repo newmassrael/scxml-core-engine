@@ -26,11 +26,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test577_sm.h"
 
 int main(void) {
     test577_t sm;
-    test577_init(&sm);
+    REQUIRE_STARTED(test577_init(&sm), TEST577_START_OK);
     test577_run(&sm);
 
     int rc = test577_ended_in(&sm, TEST577_STATE_PASS) ? 0 : 1;

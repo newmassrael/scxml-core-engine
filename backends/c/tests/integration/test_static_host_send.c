@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_static_delayed_host_send_sm.h"
 #include "static_host_send_content_sm.h"
 
@@ -78,7 +79,9 @@ static void boot(sm_t *sm, seen_t *seen) {
     sce_host_processor_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_registry_register(&wiring, DECLARED_TYPE, handler, seen);
-    statechart_static_delayed_host_send_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);
+    REQUIRE_STARTED(
+        statechart_static_delayed_host_send_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring),
+        STATECHART_STATIC_DELAYED_HOST_SEND_START_OK);
 }
 
 static void send_event(sm_t *sm, const char *name) {
@@ -170,7 +173,8 @@ static int a_literal_content_is_the_text_it_spells(void) {
     sce_host_processor_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_registry_register(&wiring, DECLARED_TYPE, handler, &seen);
-    static_host_send_content_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(static_host_send_content_init_with_host_processors(&sm, &wiring),
+                    STATIC_HOST_SEND_CONTENT_START_OK);
     static_host_send_content_event_t go;
     if (!static_host_send_content_resolve_event_by_name("go", &go)) {
         (void)fprintf(stderr, "FAIL: the content machine has no event `go`\n");

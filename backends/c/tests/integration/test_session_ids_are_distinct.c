@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "session_ids_are_distinct_sm.h"
 
 // W3C SCXML 5.3: the machine answers what its own datamodel holds.
@@ -164,7 +165,7 @@ int main(void) {
         }
     }
 
-    session_ids_are_distinct_init(&sm);
+    REQUIRE_STARTED(session_ids_are_distinct_init(&sm), SESSION_IDS_ARE_DISTINCT_START_OK);
 
     // No `<send delay>` here: both children report during their own `_init`,
     // so the macrostep loop in `_run` decides the verdict.

@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "parallel_regions_take_own_transitions_sm.h"
 #include "statechart_native_action_sm.h"
 
@@ -115,7 +116,7 @@ static void a_resume_is_not_the_initial_configuration(void) {
     };
 
     parallel_regions_take_own_transitions_t fresh;
-    parallel_regions_take_own_transitions_init(&fresh);
+    REQUIRE_STARTED(parallel_regions_take_own_transitions_init(&fresh), PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_START_OK);
     const uint32_t initial = parallel_regions_take_own_transitions_active_states(&fresh);
     parallel_regions_take_own_transitions_destroy(&fresh);
 
@@ -283,7 +284,8 @@ static void every_state_reads_back_from_its_own_name(void) {
    proved alone. */
 static void a_configuration_journalled_as_names_is_accepted_back(void) {
     parallel_regions_take_own_transitions_t writer;
-    parallel_regions_take_own_transitions_init(&writer);
+    REQUIRE_STARTED(parallel_regions_take_own_transitions_init(&writer),
+                    PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_START_OK);
     parallel_regions_take_own_transitions_run(&writer);
     parallel_regions_take_own_transitions_event_with_meta_t e = {0};
     e.event = P_(EVENT_E);

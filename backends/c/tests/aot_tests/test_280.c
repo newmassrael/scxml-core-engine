@@ -13,11 +13,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test280_sm.h"
 
 int main(void) {
     test280_t sm;
-    test280_init(&sm);
+    REQUIRE_STARTED(test280_init(&sm), TEST280_START_OK);
     test280_run(&sm);
 
     int rc = test280_ended_in(&sm, TEST280_STATE_PASS) ? 0 : 1;

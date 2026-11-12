@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "external_chain_is_bounded_sm.h"
 
 #ifndef SCE_EXTERNAL_EVENT_BUDGET_TABLE
@@ -190,7 +191,8 @@ static int failures = 0;
 // refuses one afterwards, because deadlines armed against one clock do not
 // compare with another.
 static void started(external_chain_is_bounded_t *sm) {
-    external_chain_is_bounded_init_with_clock(sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(external_chain_is_bounded_init_with_clock(sm, sce_clock_manual(0u)),
+                    EXTERNAL_CHAIN_IS_BOUNDED_START_OK);
 }
 
 // One host call that delivers `event`: it joins the queue and the engine takes

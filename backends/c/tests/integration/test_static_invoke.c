@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_invoke_entry_sm.h"
 #include "static_invoke_hybrid_saved_sm.h"
 #include "static_invoke_hybrid_sm.h"
@@ -87,7 +88,7 @@ static int expect_count(uint32_t got, uint32_t want, const char *what) {
 // counts the run and leaves the parent in `working`, with no child running.
 static int a_child_takes_what_its_parent_forwards(void) {
     static static_invoke_t sm;
-    static_invoke_init(&sm);
+    REQUIRE_STARTED(static_invoke_init(&sm), STATIC_INVOKE_START_OK);
     int bad = expect_count(static_invoke_get_completed(&sm), 0u, "before any event");
     bad |= expect(static_invoke_send(&sm, "a"), "`a` is an event of the machine");
     bad |= expect_count(static_invoke_get_completed(&sm), 0u, "after `a`, the child is at `second`");
@@ -104,7 +105,7 @@ static int a_child_takes_what_its_parent_forwards(void) {
 // leaves it there.
 static int a_child_waits_for_its_first_event(void) {
     static static_invoke_t sm;
-    static_invoke_init(&sm);
+    REQUIRE_STARTED(static_invoke_init(&sm), STATIC_INVOKE_START_OK);
     (void)static_invoke_send(&sm, "b");
     int bad = expect_count(static_invoke_get_completed(&sm), 0u, "`b` before `a`");
     static_invoke_destroy(&sm);
@@ -115,7 +116,7 @@ static int a_child_waits_for_its_first_event(void) {
 // raises nothing (W3C SCXML 6.4): `b` later reaches no one.
 static int leaving_the_state_cancels_the_child(void) {
     static static_invoke_t sm;
-    static_invoke_init(&sm);
+    REQUIRE_STARTED(static_invoke_init(&sm), STATIC_INVOKE_START_OK);
     (void)static_invoke_send(&sm, "a");
     (void)static_invoke_send(&sm, "abort");
     (void)static_invoke_send(&sm, "b");
@@ -132,7 +133,7 @@ static int leaving_the_state_cancels_the_child(void) {
 // and waits for 8.
 static int the_children_are_handed_what_the_parent_holds_when_they_start(void) {
     static static_invoke_params_t sm;
-    static_invoke_params_init(&sm);
+    REQUIRE_STARTED(static_invoke_params_init(&sm), STATIC_INVOKE_PARAMS_START_OK);
     int bad = expect(static_invoke_params_in_state(&sm, STATIC_INVOKE_PARAMS_STATE_PLAIN),
                      "`worker` ended, so the parent moved to `plain`");
     bad |= expect_count(static_invoke_params_get_completed(&sm), 1u,
@@ -156,7 +157,7 @@ static int the_children_are_handed_what_the_parent_holds_when_they_start(void) {
 // parent was in place before the entry walk.
 static int the_values_are_there_when_the_child_enters(void) {
     static static_invoke_entry_t sm;
-    static_invoke_entry_init(&sm);
+    REQUIRE_STARTED(static_invoke_entry_init(&sm), STATIC_INVOKE_ENTRY_START_OK);
     int bad = expect(static_invoke_entry_in_state(&sm, STATIC_INVOKE_ENTRY_STATE_OVERFLOWING),
                      "`first` ended, so the parent moved to `overflowing`");
     bad |= expect_count(static_invoke_entry_get_completed(&sm), 2u, "both children ended");
@@ -173,7 +174,7 @@ static int the_values_are_there_when_the_child_enters(void) {
 // child that took a value past its bound would never end.
 static int a_string_handed_to_a_child_is_held_to_the_childs_bound(void) {
     static static_invoke_string_t sm;
-    static_invoke_string_init(&sm);
+    REQUIRE_STARTED(static_invoke_string_init(&sm), STATIC_INVOKE_STRING_START_OK);
     int bad = expect_count(static_invoke_string_get_completed(&sm), 111u, "all three children ended");
     bad |= expect_count(static_invoke_string_get_errors(&sm), 2u, "the two values past the bound were reported");
     static_invoke_string_destroy(&sm);
@@ -192,7 +193,7 @@ static int a_string_handed_to_a_child_is_held_to_the_childs_bound(void) {
 // declares would never end.
 static int a_hybrid_invoke_starts_the_candidate_its_value_names(void) {
     static static_invoke_hybrid_t sm;
-    static_invoke_hybrid_init(&sm);
+    REQUIRE_STARTED(static_invoke_hybrid_init(&sm), STATIC_INVOKE_HYBRID_START_OK);
     for (int i = 0; i < 40; ++i) {
         static_invoke_hybrid_step(&sm);
     }
@@ -211,7 +212,7 @@ static int a_hybrid_invoke_starts_the_candidate_its_value_names(void) {
 // is handed 7 and waits for an 8 nothing gives it.
 static int a_hybrid_invoke_of_a_document_with_no_error_event_starts_its_candidate(void) {
     static static_invoke_hybrid_saved_t sm;
-    static_invoke_hybrid_saved_init(&sm);
+    REQUIRE_STARTED(static_invoke_hybrid_saved_init(&sm), STATIC_INVOKE_HYBRID_SAVED_START_OK);
     for (int i = 0; i < 5; ++i) {
         static_invoke_hybrid_saved_step(&sm);
     }

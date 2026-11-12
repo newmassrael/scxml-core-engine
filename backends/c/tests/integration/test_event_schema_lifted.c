@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_lifted_sm.h"
 
 static int failures = 0;
@@ -56,7 +57,7 @@ int main(void) {
        guard the inject seam's typed payload does. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         expect_state("initial state is waiting", &sm, STATECHART_LIFTED_STATE_WAITING);
         deliver_data(&sm, "{\"elapsed_ms\":0}");
         expect_state("a payload on the data wire fires the same guard", &sm, STATECHART_LIFTED_STATE_DONE);
@@ -66,7 +67,7 @@ int main(void) {
        guard it was built for. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         statechart_lifted_job_completed_payload_t payload = {0};
         payload.elapsed_ms = 0;
         statechart_lifted_raise_job_completed_typed(&sm, &payload);
@@ -78,7 +79,7 @@ int main(void) {
        guard does not fire — what the script engine answers for this guard. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         deliver_data(&sm, "{\"elapsed_ms\":\"nought\"}");
         expect_state("a value of another type is refused", &sm, STATECHART_LIFTED_STATE_REFUSED);
     }
@@ -87,7 +88,7 @@ int main(void) {
        it. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         deliver_data(&sm, "");
         expect_state("an event with no data is refused the same way", &sm, STATECHART_LIFTED_STATE_REFUSED);
     }
@@ -95,7 +96,7 @@ int main(void) {
     /* Data that names none of the schema's fields cannot answer the guard. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         deliver_data(&sm, "{\"other\":0}");
         expect_state("a field the data does not name is refused", &sm, STATECHART_LIFTED_STATE_REFUSED);
     }
@@ -104,7 +105,7 @@ int main(void) {
        so nothing is raised and the machine waits. */
     {
         statechart_lifted_t sm;
-        statechart_lifted_init(&sm);
+        REQUIRE_STARTED(statechart_lifted_init(&sm), STATECHART_LIFTED_START_OK);
         deliver_data(&sm, "{\"elapsed_ms\":5}");
         expect_state("a payload the guard rejects is not an error", &sm, STATECHART_LIFTED_STATE_WAITING);
     }

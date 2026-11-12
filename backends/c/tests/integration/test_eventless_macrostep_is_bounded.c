@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "eventless_macrostep_is_bounded_sm.h"
 
 // The ceiling the engine applies, spelled here rather than read back from it.
@@ -54,7 +55,7 @@ int main(void) {
     // the host is told. This block returning at all is half the assertion.
     {
         eventless_macrostep_is_bounded_t sm;
-        eventless_macrostep_is_bounded_init(&sm);
+        REQUIRE_STARTED(eventless_macrostep_is_bounded_init(&sm), EVENTLESS_MACROSTEP_IS_BOUNDED_START_OK);
 
         if (eventless_macrostep_is_bounded_truncated_macrosteps(&sm) != 0u) {
             fprintf(stderr, "eventless_macrostep_is_bounded: FAIL - something was refused before "
@@ -118,7 +119,7 @@ int main(void) {
     // tested >= where it meant >, reports this ordinary document as a runaway.
     {
         eventless_macrostep_is_bounded_t sm;
-        eventless_macrostep_is_bounded_init(&sm);
+        REQUIRE_STARTED(eventless_macrostep_is_bounded_init(&sm), EVENTLESS_MACROSTEP_IS_BOUNDED_START_OK);
 
         deliver(&sm, EVENTLESS_MACROSTEP_IS_BOUNDED_EVENT_BOUNDED);
 
@@ -159,7 +160,7 @@ int main(void) {
     // the first was.
     {
         eventless_macrostep_is_bounded_t sm;
-        eventless_macrostep_is_bounded_init(&sm);
+        REQUIRE_STARTED(eventless_macrostep_is_bounded_init(&sm), EVENTLESS_MACROSTEP_IS_BOUNDED_START_OK);
 
         deliver(&sm, EVENTLESS_MACROSTEP_IS_BOUNDED_EVENT_SPIN);
         // reset is the fixture's way back out of the cycle, and it moves the
@@ -192,7 +193,7 @@ int main(void) {
     // and fail nothing.
     {
         eventless_macrostep_is_bounded_t sm;
-        eventless_macrostep_is_bounded_init(&sm);
+        REQUIRE_STARTED(eventless_macrostep_is_bounded_init(&sm), EVENTLESS_MACROSTEP_IS_BOUNDED_START_OK);
 
         deliver(&sm, EVENTLESS_MACROSTEP_IS_BOUNDED_EVENT_POKE);
 

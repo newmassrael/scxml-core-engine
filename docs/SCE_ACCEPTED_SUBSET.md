@@ -2819,7 +2819,7 @@ performing it, with the required, unqualified attribute `effect`:
   | Kotlin | `val realization: ActionRealization` | `require` at construction | `acceptSimulatedHost = true` |
   | Go | `Realization() sce.ActionRealization` | `New<Machine>Policy` panics | `NewSimulated<Machine>Policy` |
   | Python | `realization: ActionRealization` | `ValueError` at construction | `accept_simulated_host=True` |
-  | C11 | `sce_action_realization_t realization` in the vtable | `_init_with_actions` returns false | `_init_with_simulated_actions` |
+  | C11 | `sce_action_realization_t realization` in the vtable | `_init_with_actions` answers `<MACHINE>_START_HOST_ACTIONS_INCOMPLETE` | `_init_with_simulated_actions` |
 
   `performs` is a statement the host's author makes about the bodies of the
   methods, in a line a reviewer can find: SCE cannot read the bodies, and an

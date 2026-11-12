@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_host_names_its_origin_in_its_own_terms_sm.h"
 
 typedef a_host_names_its_origin_in_its_own_terms_t sm_t;
@@ -53,7 +54,8 @@ int main(void) {
         fprintf(stderr, "FAIL: the host could not register its invoker\n");
         return 1;
     }
-    a_host_names_its_origin_in_its_own_terms_init_with_host_invokers(&sm, &wiring);
+    REQUIRE_STARTED(a_host_names_its_origin_in_its_own_terms_init_with_host_invokers(&sm, &wiring),
+                    A_HOST_NAMES_ITS_ORIGIN_IN_ITS_OWN_TERMS_START_OK);
     a_host_names_its_origin_in_its_own_terms_run(&sm);
 
     int ok = 1;

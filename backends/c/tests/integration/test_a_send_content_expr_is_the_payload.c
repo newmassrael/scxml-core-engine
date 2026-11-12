@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_send_content_expr_is_the_payload_sm.h"
 
 typedef a_send_content_expr_is_the_payload_t sm_t;
@@ -22,7 +23,7 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_send_content_expr_is_the_payload_init(&sm);
+    REQUIRE_STARTED(a_send_content_expr_is_the_payload_init(&sm), A_SEND_CONTENT_EXPR_IS_THE_PAYLOAD_START_OK);
     a_send_content_expr_is_the_payload_run(&sm);
 
     int ok = 1;

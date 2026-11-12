@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "../unit/shared_table.h"
 #include "event_blank_fields_sm.h"
 
@@ -175,7 +176,7 @@ static int answer_case(sm_t *sm, const char *object, int index) {
 // carried is there to be read.
 static int check_case(const char *object, int index) {
     sm_t sm;
-    event_blank_fields_init(&sm);
+    REQUIRE_STARTED(event_blank_fields_init(&sm), EVENT_BLANK_FIELDS_START_OK);
     if (sm.L == NULL) {
         (void)fprintf(stderr, "FAIL: case %d: the machine opened no Lua state, so it binds no `_event`\n", index);
         event_blank_fields_destroy(&sm);

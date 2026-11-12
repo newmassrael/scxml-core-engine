@@ -30,13 +30,14 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "test240_sm.h"
 
 extern uint64_t _sce_clock_now_ms(void);
 
 int main(void) {
     test240_t sm;
-    test240_init(&sm);
+    REQUIRE_STARTED(test240_init(&sm), TEST240_START_OK);
 
     const uint64_t timeout_ms = 5000u;
     const struct timespec poll_ts = {0, 10L * 1000L * 1000L};

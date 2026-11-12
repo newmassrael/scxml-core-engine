@@ -21,11 +21,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "autoforward_event_fields_sm.h"
 
 int main(void) {
     autoforward_event_fields_t sm;
-    autoforward_event_fields_init(&sm);
+    REQUIRE_STARTED(autoforward_event_fields_init(&sm), AUTOFORWARD_EVENT_FIELDS_START_OK);
 
     // No `<send delay>` in this fixture: the child raises `childToParent`
     // during its own `_init`, the parent's macrostep loop autoforwards it

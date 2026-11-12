@@ -17,11 +17,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test403b_sm.h"
 
 int main(void) {
     test403b_t sm;
-    test403b_init(&sm);
+    REQUIRE_STARTED(test403b_init(&sm), TEST403B_START_OK);
     test403b_run(&sm);
 
     int rc = test403b_ended_in(&sm, TEST403B_STATE_PASS) ? 0 : 1;

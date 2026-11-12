@@ -766,7 +766,9 @@ static int fail(const char *what) {
 }
 int main(void) {
     char want[SCE_MAX_ID_LEN];
-    probe_init(&sm);
+    if (probe_init(&sm) != PROBE_START_OK) {
+        return fail("the machine did not start");
+    }
     probe_run(&sm);
     /* One event more than the queue holds: the last is dropped. */
     for (unsigned i = 0u; i <= 300u; ++i) {

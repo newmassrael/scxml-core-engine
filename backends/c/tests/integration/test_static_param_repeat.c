@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_param_repeat_sm.h"
 
 #define DECLARED_TYPE "x-sce-host"
@@ -133,7 +134,8 @@ int main(void) {
     memset(&invokers, 0, sizeof(invokers));
     (void)sce_host_registry_register(&processors, DECLARED_TYPE, on_send, &host);
     (void)sce_host_invoker_register(&invokers, DECLARED_TYPE, on_invoke, &host);
-    static_param_repeat_init_with_host_surfaces(&sm, &processors, &invokers);
+    REQUIRE_STARTED(static_param_repeat_init_with_host_surfaces(&sm, &processors, &invokers),
+                    STATIC_PARAM_REPEAT_START_OK);
 
     drive(&sm, "go");
     int bad = expect_int("sends the host served", host.send.calls, 1);

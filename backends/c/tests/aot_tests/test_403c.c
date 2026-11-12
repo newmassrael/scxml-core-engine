@@ -31,11 +31,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test403c_sm.h"
 
 int main(void) {
     test403c_t sm;
-    test403c_init(&sm);
+    REQUIRE_STARTED(test403c_init(&sm), TEST403C_START_OK);
     test403c_run(&sm);
 
     int rc = test403c_ended_in(&sm, TEST403C_STATE_PASS) ? 0 : 1;

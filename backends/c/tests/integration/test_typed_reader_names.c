@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "typed_reader_names_sm.h"
 
 static int expect(const char *name, bool ok, int64_t got, int64_t want) {
@@ -52,7 +53,7 @@ static int read_all(const typed_reader_names_t *sm, int64_t box, int64_t object,
 int main(void) {
     int rc = 0;
     typed_reader_names_t sm;
-    typed_reader_names_init(&sm);
+    REQUIRE_STARTED(typed_reader_names_init(&sm), TYPED_READER_NAMES_START_OK);
 
     // The value each variable was declared with.
     rc |= read_all(&sm, 1, 2, 3, 4, 10);

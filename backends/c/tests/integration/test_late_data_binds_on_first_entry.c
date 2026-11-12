@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "late_data_binds_on_first_entry_sm.h"
 
 typedef late_data_binds_on_first_entry_t sm_t;
@@ -53,7 +54,7 @@ static int expect_record(const sm_t *sm, const char *name, bool (*reader)(const 
 
 int main(void) {
     sm_t sm;
-    late_data_binds_on_first_entry_init(&sm);
+    REQUIRE_STARTED(late_data_binds_on_first_entry_init(&sm), LATE_DATA_BINDS_ON_FIRST_ENTRY_START_OK);
     late_data_binds_on_first_entry_run(&sm);
     if (!late_data_binds_on_first_entry_in_state(&sm, LATE_DATA_BINDS_ON_FIRST_ENTRY_STATE_IDLE)) {
         fprintf(stderr, "FAIL: the run has to start in `idle`\n");

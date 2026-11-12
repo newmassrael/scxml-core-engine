@@ -16,13 +16,14 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_child_reply_arrives_without_a_tick_sm.h"
 
 typedef a_child_reply_arrives_without_a_tick_t sm_t;
 
 int main(void) {
     sm_t sm;
-    a_child_reply_arrives_without_a_tick_init(&sm);
+    REQUIRE_STARTED(a_child_reply_arrives_without_a_tick_init(&sm), A_CHILD_REPLY_ARRIVES_WITHOUT_A_TICK_START_OK);
     a_child_reply_arrives_without_a_tick_run(&sm);
 
     a_child_reply_arrives_without_a_tick_event_with_meta_t carrier = {0};

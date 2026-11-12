@@ -12,11 +12,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test194_sm.h"
 
 int main(void) {
     test194_t sm;
-    test194_init(&sm);
+    REQUIRE_STARTED(test194_init(&sm), TEST194_START_OK);
     test194_run(&sm);
 
     int rc = test194_ended_in(&sm, TEST194_STATE_PASS) ? 0 : 1;

@@ -26,11 +26,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "xml_data_is_a_dom_tree_sm.h"
 
 int main(void) {
     xml_data_is_a_dom_tree_t sm;
-    xml_data_is_a_dom_tree_init(&sm);
+    REQUIRE_STARTED(xml_data_is_a_dom_tree_init(&sm), XML_DATA_IS_A_DOM_TREE_START_OK);
     // Every transition is eventless, so the run reaches the verdict without an
     // event; no payload path is involved.
     xml_data_is_a_dom_tree_run(&sm);

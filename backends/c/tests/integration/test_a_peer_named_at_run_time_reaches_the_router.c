@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_peer_named_at_run_time_reaches_the_router_sm.h"
 
 typedef a_peer_named_at_run_time_reaches_the_router_t sm_t;
@@ -76,7 +77,8 @@ static int a_peer_named_at_run_time_is_sent_to_the_router(void) {
         (void)fprintf(stderr, "FAIL [routed]: the router door refused the router\n");
         return 1;
     }
-    a_peer_named_at_run_time_reaches_the_router_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(a_peer_named_at_run_time_reaches_the_router_init_with_host_processors(&sm, &wiring),
+                    A_PEER_NAMED_AT_RUN_TIME_REACHES_THE_ROUTER_START_OK);
     a_peer_named_at_run_time_reaches_the_router_run(&sm);
 
     int bad = check_counts(&sm, "routed", 0);
@@ -95,7 +97,8 @@ static int a_peer_named_at_run_time_is_sent_to_the_router(void) {
 // target is unaffected.
 static int a_peer_with_no_router_registered_is_error_execution(void) {
     sm_t sm;
-    a_peer_named_at_run_time_reaches_the_router_init(&sm);
+    REQUIRE_STARTED(a_peer_named_at_run_time_reaches_the_router_init(&sm),
+                    A_PEER_NAMED_AT_RUN_TIME_REACHES_THE_ROUTER_START_OK);
     a_peer_named_at_run_time_reaches_the_router_run(&sm);
     int bad = check_counts(&sm, "no router", 1);
     a_peer_named_at_run_time_reaches_the_router_destroy(&sm);

@@ -26,11 +26,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "parallel_regions_take_own_transitions_sm.h"
 
 int main(void) {
     parallel_regions_take_own_transitions_t sm;
-    parallel_regions_take_own_transitions_init(&sm);
+    REQUIRE_STARTED(parallel_regions_take_own_transitions_init(&sm), PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_START_OK);
     parallel_regions_take_own_transitions_run(&sm);
 
     if (!parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_WORKING) ||

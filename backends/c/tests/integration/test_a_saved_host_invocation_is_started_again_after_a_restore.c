@@ -21,6 +21,7 @@
 // `strstr` and `snprintf` are C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
 
+#include "../require_started.h"
 #include "statechart_static_host_invoke_sm.h"
 
 #include <stdint.h>
@@ -163,7 +164,8 @@ static void boot(machine_t *sm, host_t *host) {
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     CHECK(sce_host_invoker_register(&wiring, HOST_TYPE, invoker, host), "the invoker registers");
-    statechart_static_host_invoke_init_with_clock_and_host_invokers(sm, sce_clock_manual(0u), &wiring);
+    REQUIRE_STARTED(statechart_static_host_invoke_init_with_clock_and_host_invokers(sm, sce_clock_manual(0u), &wiring),
+                    STATECHART_STATIC_HOST_INVOKE_START_OK);
 }
 
 // A machine standing in `working`, its invocation started with token 0.

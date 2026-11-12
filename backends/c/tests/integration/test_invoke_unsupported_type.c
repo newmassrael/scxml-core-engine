@@ -29,11 +29,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "invoke_unsupported_type_sm.h"
 
 int main(void) {
     invoke_unsupported_type_t sm;
-    invoke_unsupported_type_init(&sm);
+    REQUIRE_STARTED(invoke_unsupported_type_init(&sm), INVOKE_UNSUPPORTED_TYPE_START_OK);
     invoke_unsupported_type_run(&sm);
 
     int rc = 0;

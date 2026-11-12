@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "invoke_param_error_starts_the_child_sm.h"
 
 // The fixture's `timeout` is a 3 s delayed `<send>`, so the host drives a real
@@ -54,7 +55,7 @@ int main(void) {
     int rc = 0;
 
     invoke_param_error_starts_the_child_t sm;
-    invoke_param_error_starts_the_child_init(&sm);
+    REQUIRE_STARTED(invoke_param_error_starts_the_child_init(&sm), INVOKE_PARAM_ERROR_STARTS_THE_CHILD_START_OK);
 
     if (!run_to_final(&sm, 10000u)) {
         printf("FAIL: invoke_param_error_starts_the_child never reached a final "

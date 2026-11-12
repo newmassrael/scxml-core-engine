@@ -37,11 +37,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test178_sm.h"
 
 int main(void) {
     test178_t sm;
-    test178_init(&sm);
+    REQUIRE_STARTED(test178_init(&sm), TEST178_START_OK);
     test178_run(&sm);
 
     int rc = test178_ended_in(&sm, TEST178_STATE_FINAL) ? 0 : 1;

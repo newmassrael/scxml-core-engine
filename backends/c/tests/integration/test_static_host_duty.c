@@ -132,7 +132,7 @@ static int a_host_that_performs_the_duties_is_accepted(void) {
     static_host_duty_actions_t host;
     memset(&r, 0, sizeof(r));
     duty_table(&host, SCE_ACTION_PERFORMS, &r);
-    if (!static_host_duty_init_with_actions(&sm, &host)) {
+    if (static_host_duty_init_with_actions(&sm, &host) != STATIC_HOST_DUTY_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a table that performs was refused\n");
         return 1;
     }
@@ -159,7 +159,8 @@ static int a_host_that_only_simulates_the_duties_is_refused(void) {
     duty_table(&host, SCE_ACTION_SIMULATES, &r);
     memset(&sm, 0xA5, sizeof(sm));
     memcpy(before, &sm, sizeof(sm));
-    int bad = expect(!static_host_duty_init_with_actions(&sm, &host), "a table that only simulates was accepted");
+    int bad = expect(static_host_duty_init_with_actions(&sm, &host) == STATIC_HOST_DUTY_START_HOST_ACTIONS_INCOMPLETE,
+                     "a table that only simulates was accepted");
     bad |= expect_count((unsigned)r.count, 0u, "a refused host was not called");
     bad |= expect(memcmp(before, &sm, sizeof(sm)) == 0, "a refused call left the machine's storage as it was");
     return bad;
@@ -174,8 +175,10 @@ static int a_table_that_says_nothing_is_refused(void) {
     static_host_duty_actions_t host;
     memset(&r, 0, sizeof(r));
     duty_table(&host, SCE_ACTION_UNSTATED, &r);
-    int bad = expect(!static_host_duty_init_with_actions(&sm, &host), "an unstated table was accepted");
-    bad |= expect(!static_host_duty_init_with_simulated_actions(&sm, &host),
+    int bad = expect(static_host_duty_init_with_actions(&sm, &host) == STATIC_HOST_DUTY_START_HOST_ACTIONS_INCOMPLETE,
+                     "an unstated table was accepted");
+    bad |= expect(static_host_duty_init_with_simulated_actions(&sm, &host) ==
+                      STATIC_HOST_DUTY_START_HOST_ACTIONS_INCOMPLETE,
                   "an unstated table was accepted through the entry for a simulated host");
     bad |= expect_count((unsigned)r.count, 0u, "a refused host was not called");
     return bad;
@@ -190,7 +193,7 @@ static int a_simulating_host_is_accepted_through_the_entry_that_names_it(void) {
     static_host_duty_actions_t host;
     memset(&r, 0, sizeof(r));
     duty_table(&host, SCE_ACTION_SIMULATES, &r);
-    if (!static_host_duty_init_with_simulated_actions(&sm, &host)) {
+    if (static_host_duty_init_with_simulated_actions(&sm, &host) != STATIC_HOST_DUTY_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a simulating table was refused by the entry that names it\n");
         return 1;
     }
@@ -201,7 +204,7 @@ static int a_simulating_host_is_accepted_through_the_entry_that_names_it(void) {
 
     memset(&r, 0, sizeof(r));
     duty_table(&host, SCE_ACTION_PERFORMS, &r);
-    bad |= expect(static_host_duty_init_with_simulated_actions(&sm, &host),
+    bad |= expect(static_host_duty_init_with_simulated_actions(&sm, &host) == STATIC_HOST_DUTY_START_OK,
                   "a table that performs was refused by the entry for a simulated host");
     static_host_duty_destroy(&sm);
     return bad;
@@ -217,11 +220,13 @@ static int the_opt_in_does_not_excuse_a_missing_operation(void) {
     memset(&r, 0, sizeof(r));
     duty_table(&host, SCE_ACTION_SIMULATES, &r);
     host.stop_keepalive = NULL;
-    int bad = expect(!static_host_duty_init_with_simulated_actions(&sm, &host),
+    int bad = expect(static_host_duty_init_with_simulated_actions(&sm, &host) ==
+                         STATIC_HOST_DUTY_START_HOST_ACTIONS_INCOMPLETE,
                      "a table with a NULL operation was accepted for a simulated host");
     duty_table(&host, SCE_ACTION_PERFORMS, &r);
     host.note_engaged = NULL;
-    bad |= expect(!static_host_duty_init_with_actions(&sm, &host), "a table with a NULL operation was accepted");
+    bad |= expect(static_host_duty_init_with_actions(&sm, &host) == STATIC_HOST_DUTY_START_HOST_ACTIONS_INCOMPLETE,
+                  "a table with a NULL operation was accepted");
     return bad;
 }
 
@@ -252,7 +257,7 @@ static int a_machine_that_states_no_duty_takes_a_table_with_no_realization(void)
         .show_due = on_show_due,
         .user_data = &r,
     };
-    if (!static_host_call_init_with_actions(&sm, &host)) {
+    if (static_host_call_init_with_actions(&sm, &host) != STATIC_HOST_CALL_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a table of a machine with no duty was refused\n");
         return 1;
     }
@@ -319,7 +324,7 @@ static int a_child_whose_host_performs_is_begun_without_an_opt_in(void) {
     static parent_host_t host;
     static static_host_duty_child_t sm;
     parent_host_init(&host, SCE_ACTION_PERFORMS);
-    if (!static_host_duty_child_init_with_actions(&sm, &host.table)) {
+    if (static_host_duty_child_init_with_actions(&sm, &host.table) != STATIC_HOST_DUTY_CHILD_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a complete parent table was refused\n");
         return 1;
     }
@@ -341,7 +346,7 @@ static int a_child_whose_host_only_simulates_is_not_begun_without_an_opt_in(void
     static parent_host_t host;
     static static_host_duty_child_t sm;
     parent_host_init(&host, SCE_ACTION_SIMULATES);
-    if (!static_host_duty_child_init_with_actions(&sm, &host.table)) {
+    if (static_host_duty_child_init_with_actions(&sm, &host.table) != STATIC_HOST_DUTY_CHILD_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a complete parent table was refused\n");
         return 1;
     }
@@ -361,7 +366,7 @@ static int the_opt_in_of_the_parent_covers_the_child_it_begins(void) {
     static parent_host_t host;
     static static_host_duty_child_t sm;
     parent_host_init(&host, SCE_ACTION_SIMULATES);
-    if (!static_host_duty_child_init_with_simulated_actions(&sm, &host.table)) {
+    if (static_host_duty_child_init_with_simulated_actions(&sm, &host.table) != STATIC_HOST_DUTY_CHILD_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - the entry for a simulated host refused a complete table\n");
         return 1;
     }

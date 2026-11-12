@@ -23,11 +23,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "autoforward_internal_queue_sm.h"
 
 int main(void) {
     autoforward_internal_queue_t sm;
-    autoforward_internal_queue_init(&sm);
+    REQUIRE_STARTED(autoforward_internal_queue_init(&sm), AUTOFORWARD_INTERNAL_QUEUE_START_OK);
 
     // The child opens the exchange (`ready` from its own onentry), so it is
     // provably alive for everything that follows and the verdict does not

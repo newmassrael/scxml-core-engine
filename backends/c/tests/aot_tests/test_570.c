@@ -21,11 +21,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test570_sm.h"
 
 int main(void) {
     test570_t sm;
-    test570_init(&sm);
+    REQUIRE_STARTED(test570_init(&sm), TEST570_START_OK);
     test570_run(&sm);
 
     int rc = test570_ended_in(&sm, TEST570_STATE_PASS) ? 0 : 1;

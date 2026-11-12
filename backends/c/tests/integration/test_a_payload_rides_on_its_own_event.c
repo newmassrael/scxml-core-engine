@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_payload_rides_on_its_own_event_sm.h"
 
 typedef a_payload_rides_on_its_own_event_t sm_t;
@@ -46,7 +47,7 @@ static int expect_record(const sm_t *sm, const char *name, bool (*reader)(const 
 
 int main(void) {
     sm_t sm;
-    a_payload_rides_on_its_own_event_init(&sm);
+    REQUIRE_STARTED(a_payload_rides_on_its_own_event_init(&sm), A_PAYLOAD_RIDES_ON_ITS_OWN_EVENT_START_OK);
     a_payload_rides_on_its_own_event_run(&sm);
 
     a_payload_rides_on_its_own_event_event_with_meta_t carrier = {0};

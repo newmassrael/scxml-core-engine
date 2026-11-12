@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_hybrid_invoke_carries_its_arguments_sm.h"
 
 typedef a_hybrid_invoke_carries_its_arguments_t sm_t;
@@ -26,7 +27,7 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_hybrid_invoke_carries_its_arguments_init(&sm);
+    REQUIRE_STARTED(a_hybrid_invoke_carries_its_arguments_init(&sm), A_HYBRID_INVOKE_CARRIES_ITS_ARGUMENTS_START_OK);
     a_hybrid_invoke_carries_its_arguments_run(&sm);
 
     int ok = 1;

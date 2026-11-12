@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "sce/request_field.h"
 #include "statechart_host_invoker_sm.h"
 
@@ -173,7 +174,7 @@ static void boot(statechart_host_invoker_t *sm, recorder_t *rec, const char *reg
     if (register_as != NULL) {
         (void)sce_host_invoker_register(&wiring, register_as, recording_invoker, rec);
     }
-    statechart_host_invoker_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_host_invokers(sm, &wiring), STATECHART_HOST_INVOKER_START_OK);
 }
 
 static int a_registered_invoker_is_started_with_what_the_document_wrote(void) {
@@ -226,7 +227,7 @@ static int what_the_request_says_is_evaluated_when_the_invocation_starts(void) {
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, request_invoker, &rec);
-    statechart_host_invoker_init_with_host_invokers(&sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_host_invokers(&sm, &wiring), STATECHART_HOST_INVOKER_START_OK);
     memset(&rec, 0, sizeof(rec));  // `probe` / `probe2`, which the case above already reads
     statechart_host_invoker_event_with_meta_t evaluate;
     memset(&evaluate, 0, sizeof(evaluate));
@@ -292,7 +293,7 @@ static void boot_running(statechart_host_invoker_t *sm, running_t *run) {
     memset(run, 0, sizeof(*run));
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, running_invoker, run);
-    statechart_host_invoker_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_host_invokers(sm, &wiring), STATECHART_HOST_INVOKER_START_OK);
 }
 
 // This backend's delivery pair: enqueue, then run a macrostep.
@@ -409,7 +410,7 @@ static int a_refused_start_raises_error_execution_and_starts_nothing(void) {
     memset(&run, 0, sizeof(run));
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, refusing_invoker, &run);
-    statechart_host_invoker_init_with_host_invokers(&sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_host_invokers(&sm, &wiring), STATECHART_HOST_INVOKER_START_OK);
     deliver(&sm, STATECHART_HOST_INVOKER_EVENT_REFUSE);
 
     int bad = 0;
@@ -638,7 +639,7 @@ static int cancel_is_not_delivered_for_an_invocation_that_never_started(void) {
     recorder_t late;
     memset(&late, 0, sizeof(late));
     statechart_host_invoker_t sm;
-    statechart_host_invoker_init(&sm);
+    REQUIRE_STARTED(statechart_host_invoker_init(&sm), STATECHART_HOST_INVOKER_START_OK);
     (void)statechart_host_invoker_register_invoker(&sm, DECLARED_TYPE, recording_invoker, &late);
 
     int bad = 0;
@@ -744,7 +745,8 @@ static void boot_timed(statechart_host_invoker_t *sm, running_t *run) {
     memset(run, 0, sizeof(*run));
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, timed_invoker, run);
-    statechart_host_invoker_init_with_clock_and_host_invokers(sm, sce_clock_manual(0), &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_clock_and_host_invokers(sm, sce_clock_manual(0), &wiring),
+                    STATECHART_HOST_INVOKER_START_OK);
     deliver(sm, STATECHART_HOST_INVOKER_EVENT_TIME);
 }
 
@@ -1001,7 +1003,7 @@ static void boot_typed(statechart_host_invoker_t *sm, statechart_host_invoker_x_
     table->fallback_user_data = run;
     memset(&wiring, 0, sizeof(wiring));
     (void)statechart_host_invoker_register_x_sce_host_invoker(&wiring, table);
-    statechart_host_invoker_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(statechart_host_invoker_init_with_host_invokers(sm, &wiring), STATECHART_HOST_INVOKER_START_OK);
     deliver(sm, STATECHART_HOST_INVOKER_EVENT_TYPE);
 }
 

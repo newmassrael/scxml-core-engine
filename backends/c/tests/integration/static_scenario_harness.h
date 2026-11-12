@@ -26,6 +26,7 @@
 #include <sce/host_processor.h>
 #include <sce/types.h>
 
+#include "../require_started.h"
 #include "static_scenario.h"
 
 #ifndef SCE_STATIC_SCENARIO_DIR
@@ -316,7 +317,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,               \
-                         M##_init(&sm), NULL, NULL, NULL, NULL, NULL, NULL)
+                         REQUIRE_STARTED(M##_init(&sm), PASTED_START_OK), NULL, NULL, NULL, NULL, NULL, NULL)
 
 // A machine whose `<sce:action>`s go to a host that records them: INIT starts it
 // with that host installed, which it must be before the first entry runs, and
@@ -425,7 +426,7 @@ static const char *peers_sent(void *sm) {
         if (!sce_host_registry_register_mesh_router(&wiring, peers_router, NULL)) {                                    \
             (void)fprintf(stderr, "%s: FAIL - the router door refused the router\n", #M);                              \
         }                                                                                                              \
-        M##_init_with_host_processors(sm, &wiring);                                                                    \
+        REQUIRE_STARTED(M##_init_with_host_processors(sm, &wiring), PASTED_START_OK);                                  \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
                          M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL, NULL, NULL)
@@ -437,7 +438,7 @@ static const char *peers_sent(void *sm) {
 #define STATIC_SCENARIO_UNROUTED(M)                                                                                    \
     static int M##_unrouted_scenario(const char *scenario, int min_steps) {                                            \
         static M##_t sm;                                                                                               \
-        M##_init(&sm);                                                                                                 \
+        REQUIRE_STARTED(M##_init(&sm), PASTED_START_OK);                                                               \
         return M##_replay(&sm, NULL, scenario, min_steps);                                                             \
     }
 
@@ -450,8 +451,8 @@ static const char *peers_sent(void *sm) {
         return true;                                                                                                   \
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
-                         M##_init_with_clock(&sm, sce_clock_manual(0u)), M##_advance_clock, NULL, NULL, NULL, NULL,    \
-                         NULL)
+                         REQUIRE_STARTED(M##_init_with_clock(&sm, sce_clock_manual(0u)), PASTED_START_OK),             \
+                         M##_advance_clock, NULL, NULL, NULL, NULL, NULL)
 
 // A machine that does both: it sends to Mesh peers and its delayed sends wait on a
 // clock the scenario owns. It is started with the router installed and on a manual
@@ -465,7 +466,7 @@ static const char *peers_sent(void *sm) {
         if (!sce_host_registry_register_mesh_router(&wiring, peers_router, NULL)) {                                    \
             (void)fprintf(stderr, "%s: FAIL - the router door refused the router\n", #M);                              \
         }                                                                                                              \
-        M##_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);                                    \
+        REQUIRE_STARTED(M##_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring), PASTED_START_OK);  \
     }                                                                                                                  \
     static bool M##_advance_clock(void *sm, int64_t ms) {                                                              \
         M##_advance_time_ms((M##_t *)sm, (uint64_t)ms);                                                                \

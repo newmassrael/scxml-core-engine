@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "event_data_arrives_as_sent_sm.h"
 
 static void send_with_payload(event_data_arrives_as_sent_t *sm, event_data_arrives_as_sent_event_t event,
@@ -40,7 +41,7 @@ static void send_with_payload(event_data_arrives_as_sent_t *sm, event_data_arriv
 
 int main(void) {
     event_data_arrives_as_sent_t sm;
-    event_data_arrives_as_sent_init(&sm);
+    REQUIRE_STARTED(event_data_arrives_as_sent_init(&sm), EVENT_DATA_ARRIVES_AS_SENT_START_OK);
     event_data_arrives_as_sent_run(&sm);
 
     if (!event_data_arrives_as_sent_in_state(&sm, EVENT_DATA_ARRIVES_AS_SENT_STATE_WAITING)) {

@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "empty_finalize_updates_the_location_sm.h"
 
 // Each phase is settled by a 3 s delayed `<send>`, so the host drives a real
@@ -54,7 +55,7 @@ int main(void) {
     int rc = 0;
 
     empty_finalize_updates_the_location_t sm;
-    empty_finalize_updates_the_location_init(&sm);
+    REQUIRE_STARTED(empty_finalize_updates_the_location_init(&sm), EMPTY_FINALIZE_UPDATES_THE_LOCATION_START_OK);
 
     if (!run_to_final(&sm, 20000u)) {
         printf("FAIL: empty_finalize_updates_the_location never reached a final "

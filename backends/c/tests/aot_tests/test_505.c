@@ -13,11 +13,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test505_sm.h"
 
 int main(void) {
     test505_t sm;
-    test505_init(&sm);
+    REQUIRE_STARTED(test505_init(&sm), TEST505_START_OK);
     test505_run(&sm);
 
     int rc = test505_ended_in(&sm, TEST505_STATE_PASS) ? 0 : 1;

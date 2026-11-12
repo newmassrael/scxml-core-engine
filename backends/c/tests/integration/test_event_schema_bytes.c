@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "event_schema_bytes_sm.h"
 
 int main(void) {
@@ -34,7 +35,7 @@ int main(void) {
     // signal.received transition fires waiting -> done.
     {
         event_schema_bytes_t sm;
-        event_schema_bytes_init(&sm);
+        REQUIRE_STARTED(event_schema_bytes_init(&sm), EVENT_SCHEMA_BYTES_START_OK);
         if (!event_schema_bytes_in_state(&sm, EVENT_SCHEMA_BYTES_STATE_WAITING)) {
             fprintf(stderr, "FAIL: initial state is not waiting\n");
             return 1;
@@ -56,7 +57,7 @@ int main(void) {
     // waiting (the same event name with a payload the guard rejects).
     {
         event_schema_bytes_t sm;
-        event_schema_bytes_init(&sm);
+        REQUIRE_STARTED(event_schema_bytes_init(&sm), EVENT_SCHEMA_BYTES_START_OK);
 
         event_schema_bytes_signal_received_payload_t payload = {0};
         memcpy(payload.raw, "no", 2);

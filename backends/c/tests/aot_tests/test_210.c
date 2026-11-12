@@ -21,13 +21,14 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "test210_sm.h"
 
 extern uint64_t _sce_clock_now_ms(void);
 
 int main(void) {
     test210_t sm;
-    test210_init(&sm);
+    REQUIRE_STARTED(test210_init(&sm), TEST210_START_OK);
 
     const uint64_t timeout_ms = 5000u;
     const struct timespec poll_ts = {0, 10L * 1000L * 1000L};

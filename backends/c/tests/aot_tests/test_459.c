@@ -32,11 +32,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test459_sm.h"
 
 int main(void) {
     test459_t sm;
-    test459_init(&sm);
+    REQUIRE_STARTED(test459_init(&sm), TEST459_START_OK);
     test459_run(&sm);
 
     int rc = test459_ended_in(&sm, TEST459_STATE_PASS) ? 0 : 1;

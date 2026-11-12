@@ -35,6 +35,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "unhandled_error_is_observable_sm.h"
 
 static void deliver(unhandled_error_is_observable_t *sm, unhandled_error_is_observable_event_t event) {
@@ -50,7 +51,7 @@ int main(void) {
     // The axis: an error the engine raised that no active state answers.
     {
         unhandled_error_is_observable_t sm;
-        unhandled_error_is_observable_init(&sm);
+        REQUIRE_STARTED(unhandled_error_is_observable_init(&sm), UNHANDLED_ERROR_IS_OBSERVABLE_START_OK);
 
         if (unhandled_error_is_observable_unhandled_error_events(&sm) != 0u) {
             fprintf(stderr, "unhandled_error_is_observable: FAIL - an error was counted "
@@ -112,7 +113,7 @@ int main(void) {
     // always-true count is as useless as an always-false one.
     {
         unhandled_error_is_observable_t sm;
-        unhandled_error_is_observable_init(&sm);
+        REQUIRE_STARTED(unhandled_error_is_observable_init(&sm), UNHANDLED_ERROR_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, UNHANDLED_ERROR_IS_OBSERVABLE_EVENT_GO);
         if (!unhandled_error_is_observable_in_state(&sm, UNHANDLED_ERROR_IS_OBSERVABLE_STATE_GUARDED)) {
@@ -147,7 +148,7 @@ int main(void) {
     // not an unhandled error. Both ends of that event are inside the document.
     {
         unhandled_error_is_observable_t sm;
-        unhandled_error_is_observable_init(&sm);
+        REQUIRE_STARTED(unhandled_error_is_observable_init(&sm), UNHANDLED_ERROR_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, UNHANDLED_ERROR_IS_OBSERVABLE_EVENT_WHISPER);
 
@@ -183,7 +184,7 @@ int main(void) {
     // for a run that failed silently and one that did not fail at all.
     {
         unhandled_error_is_observable_t sm;
-        unhandled_error_is_observable_init(&sm);
+        REQUIRE_STARTED(unhandled_error_is_observable_init(&sm), UNHANDLED_ERROR_IS_OBSERVABLE_START_OK);
 
         deliver(&sm, UNHANDLED_ERROR_IS_OBSERVABLE_EVENT_POKE);
         const bool clean_in_idle =
@@ -216,7 +217,7 @@ int main(void) {
     // nothing in the configuration ever changes.
     {
         unhandled_error_is_observable_t sm;
-        unhandled_error_is_observable_init(&sm);
+        REQUIRE_STARTED(unhandled_error_is_observable_init(&sm), UNHANDLED_ERROR_IS_OBSERVABLE_START_OK);
 
         for (uint32_t round = 1u; round <= 3u; ++round) {
             deliver(&sm, UNHANDLED_ERROR_IS_OBSERVABLE_EVENT_BOOM);

@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "cancelling_an_invoke_raises_nothing_sm.h"
 
 typedef cancelling_an_invoke_raises_nothing_t sm_t;
@@ -30,7 +31,7 @@ static void deliver(sm_t *sm, cancelling_an_invoke_raises_nothing_event_t event)
 
 int main(void) {
     sm_t sm;
-    cancelling_an_invoke_raises_nothing_init(&sm);
+    REQUIRE_STARTED(cancelling_an_invoke_raises_nothing_init(&sm), CANCELLING_AN_INVOKE_RAISES_NOTHING_START_OK);
     cancelling_an_invoke_raises_nothing_run(&sm);
     if (!cancelling_an_invoke_raises_nothing_in_state(&sm, CANCELLING_AN_INVOKE_RAISES_NOTHING_STATE_P)) {
         fprintf(stderr, "FAIL: the run has to start in `p`, with its child invoked\n");

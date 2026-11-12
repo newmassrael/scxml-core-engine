@@ -7,11 +7,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test407_sm.h"
 
 int main(void) {
     test407_t sm;
-    test407_init(&sm);
+    REQUIRE_STARTED(test407_init(&sm), TEST407_START_OK);
     test407_run(&sm);
 
     int rc = test407_ended_in(&sm, TEST407_STATE_PASS) ? 0 : 1;

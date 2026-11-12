@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "ai_loop_sm.h"
 
 // The type the machine was generated for. `backends/c/tests/CMakeLists.txt`
@@ -131,7 +132,7 @@ static void wire(sce_host_processor_registry_t *wiring, sce_host_send_handler_fn
 // handler installed afterwards would arrive one act too late.
 static void boot(ai_loop_t *sm, sce_host_processor_registry_t *wiring) {
     wire(wiring, silent_handler, NULL);
-    ai_loop_init_with_host_processors(sm, wiring);
+    REQUIRE_STARTED(ai_loop_init_with_host_processors(sm, wiring), AI_LOOP_START_OK);
     ai_loop_step(sm);
 }
 
@@ -947,7 +948,7 @@ static int the_document_declares_its_acts_to_the_host(void) {
     wire(&wiring, recording_handler, &rec);
 
     ai_loop_t sm;
-    ai_loop_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(ai_loop_init_with_host_processors(&sm, &wiring), AI_LOOP_START_OK);
 
     int bad = 0;
     if (rec.calls == 0) {

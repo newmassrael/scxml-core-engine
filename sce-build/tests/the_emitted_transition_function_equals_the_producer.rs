@@ -1894,7 +1894,10 @@ int main(void) {
     int pairs = 0;
     {
         machine_t sm;
-        @M@_init(&sm);
+        if (@M@_init(&sm) != @UM@_START_OK) {
+            printf("MISMATCH: the machine did not start\n");
+            return 1;
+        }
         expect_that(holds_configuration(&sm, @p@_configuration(@P@_INITIAL)),
                     "the machine does not start where the function does", "", "");
         @M@_destroy(&sm);
@@ -1912,7 +1915,10 @@ int main(void) {
             @p@_event_t event = events[j];
             const char *event_name = @p@_event_name(event);
             machine_t sm;
-            @M@_init(&sm);
+            if (@M@_init(&sm) != @UM@_START_OK) {
+                printf("MISMATCH: the machine did not start\n");
+                return 1;
+            }
             for (int k = 0; k < length; ++k) {
                 deliver(&sm, path[k]);
             }

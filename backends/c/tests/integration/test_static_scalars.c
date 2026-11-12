@@ -144,6 +144,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "presence_peer_sm.h"
 #include "record_list_parent_sm.h"
 #include "record_list_sm.h"
@@ -385,7 +386,7 @@ static bool child_routers_deliver(const char *path, const char *event, const cha
             !sce_host_registry_register_child_mesh_routers(&wiring, child_routers_ask, NULL)) {                        \
             (void)fprintf(stderr, "%s: FAIL - the router doors refused the routers\n", #M);                            \
         }                                                                                                              \
-        M##_init_with_host_processors(sm, &wiring);                                                                    \
+        REQUIRE_STARTED(M##_init_with_host_processors(sm, &wiring), PASTED_START_OK);                                  \
     }                                                                                                                  \
     static bool M##_deliver(void *sm, const char *path, const char *event, const char *data) {                         \
         if (!child_routers_deliver(path, event, data)) {                                                               \
@@ -1580,8 +1581,8 @@ STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variab
 // as its value, which these readers answer once the presence reader has said it is
 // there.
 #define STATIC_OPTIONAL_SCENARIO(M, STATES, VARIABLES, TEXT, RECORDS, DONE, PRESENCE)                                  \
-    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, no_lists, RECORDS, DONE, NULL, NULL, NULL, M##_init(&sm), NULL,   \
-                         NULL, NULL, NULL, NULL, PRESENCE)
+    STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, no_lists, RECORDS, DONE, NULL, NULL, NULL,                        \
+                         REQUIRE_STARTED(M##_init(&sm), PASTED_START_OK), NULL, NULL, NULL, NULL, NULL, PRESENCE)
 VARIABLE_READER(static_optional, days)
 VARIABLE_READER(static_optional, following)
 VARIABLE_READER(static_optional, late)
@@ -2358,7 +2359,7 @@ static void host_call_start(static_host_call_t *sm) {
     host.show_due = host_hears_show_due;
     host_heard.len = 0u;
     host_heard.text[0] = '\0';
-    if (!static_host_call_init_with_actions(sm, &host)) {
+    if (static_host_call_init_with_actions(sm, &host) != STATIC_HOST_CALL_START_OK) {
         (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
     }
 }
@@ -2402,7 +2403,7 @@ static void host_duty_start(static_host_duty_t *sm) {
     host.stop_keepalive = host_hears_stop_keepalive;
     host_heard.len = 0u;
     host_heard.text[0] = '\0';
-    if (!static_host_duty_init_with_simulated_actions(sm, &host)) {
+    if (static_host_duty_init_with_simulated_actions(sm, &host) != STATIC_HOST_DUTY_START_OK) {
         (void)fprintf(stderr, "static_host_duty: FAIL - a complete simulating vtable was refused\n");
     }
 }
@@ -2595,7 +2596,7 @@ static void child_host_start(static_child_host_t *sm) {
     memset(&parent, 0, sizeof(parent));
     parent.actions_for_worker = child_host_for_worker;
     child_book_forget();
-    if (!static_child_host_init_with_actions(sm, &parent)) {
+    if (static_child_host_init_with_actions(sm, &parent) != STATIC_CHILD_HOST_START_OK) {
         (void)fprintf(stderr, "static_child_host: FAIL - a complete table was refused\n");
     }
 }
@@ -2606,7 +2607,7 @@ static void child_host_hybrid_start(static_child_host_hybrid_t *sm) {
     parent.actions_for_work_0j_static_hosted_first = child_host_for_first;
     parent.actions_for_work_0j_static_hosted_second = child_host_for_second;
     child_book_forget();
-    if (!static_child_host_hybrid_init_with_actions(sm, &parent)) {
+    if (static_child_host_hybrid_init_with_actions(sm, &parent) != STATIC_CHILD_HOST_HYBRID_START_OK) {
         (void)fprintf(stderr, "static_child_host_hybrid: FAIL - a complete table was refused\n");
     }
 }
@@ -2774,10 +2775,10 @@ static bool static_invoke_tree_save_and_restore(void *sm) {
     }
     return true;
 }
-STATIC_SCENARIO_CORE_RESTORING(static_invoke_tree, tree_states, tree_variables, NULL, no_lists, no_records, NULL, NULL,
-                               NULL, NULL, static_invoke_tree_init_with_clock(&sm, sce_clock_manual(0u)),
-                               static_invoke_tree_advance_clock, NULL, NULL, NULL, NULL, NULL,
-                               static_invoke_tree_save_and_restore)
+STATIC_SCENARIO_CORE_RESTORING(
+    static_invoke_tree, tree_states, tree_variables, NULL, no_lists, no_records, NULL, NULL, NULL, NULL,
+    REQUIRE_STARTED(static_invoke_tree_init_with_clock(&sm, sce_clock_manual(0u)), STATIC_INVOKE_TREE_START_OK),
+    static_invoke_tree_advance_clock, NULL, NULL, NULL, NULL, NULL, static_invoke_tree_save_and_restore)
 
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
@@ -3183,8 +3184,8 @@ static const record_variable_t union_records[] = {RECORD_ROW(static_union, built
                                                   RECORD_ROW(static_union, lift_why),
                                                   {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_CORE_RESTORING(static_union, union_states, union_variables, static_union_text, no_lists, union_records,
-                               NULL, NULL, NULL, NULL, static_union_init(&sm), NULL, NULL, NULL, NULL, NULL,
-                               static_union_presence, static_union_save_and_restore)
+                               NULL, NULL, NULL, NULL, REQUIRE_STARTED(static_union_init(&sm), STATIC_UNION_START_OK),
+                               NULL, NULL, NULL, NULL, NULL, static_union_presence, static_union_save_and_restore)
 
 // todo_peer: replayed through the readers `todo_peer_scenario.h` declares, which
 // `test_static_large.c` replays it through at the bounds of a team.
@@ -3398,7 +3399,7 @@ STATIC_SCENARIO_PEERED_TIMED(presence_peer, presence_peer_states, presence_peer_
 // happened.
 static int content_that_reads_a_payload_does_not_run_for_a_delivery_without_one(void) {
     static_payload_t sm;
-    static_payload_init(&sm);
+    REQUIRE_STARTED(static_payload_init(&sm), STATIC_PAYLOAD_START_OK);
     int bad = 0;
     int64_t day = 0;
     if (!static_payload_raise_event(&sm, "day.picked", "{\"year\":2026,\"month\":9,\"dayOfMonth\":30}") ||
@@ -3462,7 +3463,7 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
     int bad = 0;
     for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); i++) {
         static_payload_enum_t sm;
-        static_payload_enum_init(&sm);
+        REQUIRE_STARTED(static_payload_enum_init(&sm), STATIC_PAYLOAD_ENUM_START_OK);
         static_payload_enum_view_shown_payload_t payload;
         memset(&payload, 0, sizeof(payload));
         payload.layout = cases[i].value;
@@ -3480,7 +3481,7 @@ static int a_payload_enum_field_is_written_as_the_name_its_enum_declares(void) {
         }
     }
     static_payload_enum_t sm;
-    static_payload_enum_init(&sm);
+    REQUIRE_STARTED(static_payload_enum_init(&sm), STATIC_PAYLOAD_ENUM_START_OK);
     static_payload_enum_view_shown_payload_t payload;
     memset(&payload, 0, sizeof(payload));
     payload.layout = (enum_view_mode_enum_t)99;

@@ -29,11 +29,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "send_param_payload_sm.h"
 
 int main(void) {
     send_param_payload_t sm;
-    send_param_payload_init(&sm);
+    REQUIRE_STARTED(send_param_payload_init(&sm), SEND_PARAM_PAYLOAD_START_OK);
 
     // No `<send delay>` in this fixture: the child sends during its own
     // `_init`, and the parent's `#_internal` loopback is raised inside the

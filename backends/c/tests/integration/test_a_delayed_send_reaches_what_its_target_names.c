@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_delayed_send_reaches_what_its_target_names_sm.h"
 
 typedef a_delayed_send_reaches_what_its_target_names_t sm_t;
@@ -24,7 +25,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_delayed_send_reaches_what_its_target_names_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_delayed_send_reaches_what_its_target_names_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_DELAYED_SEND_REACHES_WHAT_ITS_TARGET_NAMES_START_OK);
     for (int elapsed = 0; elapsed < 1000 && !a_delayed_send_reaches_what_its_target_names_is_in_final_state(&sm);
          elapsed += 10) {
         a_delayed_send_reaches_what_its_target_names_advance_time_ms(&sm, 10u);

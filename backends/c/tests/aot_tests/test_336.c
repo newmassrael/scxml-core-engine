@@ -32,11 +32,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test336_sm.h"
 
 int main(void) {
     test336_t sm;
-    test336_init(&sm);
+    REQUIRE_STARTED(test336_init(&sm), TEST336_START_OK);
     test336_run(&sm);
 
     int rc = test336_ended_in(&sm, TEST336_STATE_PASS) ? 0 : 1;

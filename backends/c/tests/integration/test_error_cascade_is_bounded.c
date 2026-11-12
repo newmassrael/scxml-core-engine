@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "error_cascade_is_bounded_sm.h"
 
 // The ceiling the engine applies, spelled here rather than read back from it.
@@ -54,7 +55,7 @@ int main(void) {
     // the assertion - before the ceiling existed, it did not.
     {
         error_cascade_is_bounded_t sm;
-        error_cascade_is_bounded_init(&sm);
+        REQUIRE_STARTED(error_cascade_is_bounded_init(&sm), ERROR_CASCADE_IS_BOUNDED_START_OK);
 
         if (error_cascade_is_bounded_error_cascade_events(&sm) != 0u) {
             fprintf(stderr, "error_cascade_is_bounded: FAIL - something was refused before the "
@@ -133,7 +134,7 @@ int main(void) {
     // that ends by itself must pass through untouched.
     {
         error_cascade_is_bounded_t sm;
-        error_cascade_is_bounded_init(&sm);
+        REQUIRE_STARTED(error_cascade_is_bounded_init(&sm), ERROR_CASCADE_IS_BOUNDED_START_OK);
 
         deliver(&sm, ERROR_CASCADE_IS_BOUNDED_EVENT_SETTLE);
 
@@ -169,7 +170,7 @@ int main(void) {
     // measured handler-to-handler, not failure-to-failure.
     {
         error_cascade_is_bounded_t sm;
-        error_cascade_is_bounded_init(&sm);
+        REQUIRE_STARTED(error_cascade_is_bounded_init(&sm), ERROR_CASCADE_IS_BOUNDED_START_OK);
 
         for (int i = 0; i < 5; ++i) {
             deliver(&sm, ERROR_CASCADE_IS_BOUNDED_EVENT_BOOM);
@@ -194,7 +195,7 @@ int main(void) {
     // whole life.
     {
         error_cascade_is_bounded_t sm;
-        error_cascade_is_bounded_init(&sm);
+        REQUIRE_STARTED(error_cascade_is_bounded_init(&sm), ERROR_CASCADE_IS_BOUNDED_START_OK);
 
         deliver(&sm, ERROR_CASCADE_IS_BOUNDED_EVENT_SPIN);
         deliver(&sm, ERROR_CASCADE_IS_BOUNDED_EVENT_POKE);

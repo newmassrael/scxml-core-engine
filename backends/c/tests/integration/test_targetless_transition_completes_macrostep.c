@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "targetless_transition_completes_macrostep_sm.h"
 
 static void deliver(targetless_transition_completes_macrostep_t *sm,
@@ -50,7 +51,8 @@ int main(void) {
     // chained == 0 is the signature of one that never entered the chain at all.
     {
         targetless_transition_completes_macrostep_t sm;
-        targetless_transition_completes_macrostep_init(&sm);
+        REQUIRE_STARTED(targetless_transition_completes_macrostep_init(&sm),
+                        TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_START_OK);
 
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_ARM);
 
@@ -100,7 +102,8 @@ int main(void) {
     // raises is answered before the host gets control back.
     {
         targetless_transition_completes_macrostep_t sm;
-        targetless_transition_completes_macrostep_init(&sm);
+        REQUIRE_STARTED(targetless_transition_completes_macrostep_init(&sm),
+                        TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_START_OK);
 
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_PING);
 
@@ -131,7 +134,8 @@ int main(void) {
     // above with the same numbers as one that took them and stopped early.
     {
         targetless_transition_completes_macrostep_t sm;
-        targetless_transition_completes_macrostep_init(&sm);
+        REQUIRE_STARTED(targetless_transition_completes_macrostep_init(&sm),
+                        TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_START_OK);
 
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_QUIET);
 
@@ -176,7 +180,8 @@ int main(void) {
     // this too, in the same line of code and for the same reason.
     {
         targetless_transition_completes_macrostep_t sm;
-        targetless_transition_completes_macrostep_init(&sm);
+        REQUIRE_STARTED(targetless_transition_completes_macrostep_init(&sm),
+                        TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_START_OK);
 
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_RECYCLE);
 
@@ -205,7 +210,8 @@ int main(void) {
     // once per machine passes the blocks above and fails this one.
     {
         targetless_transition_completes_macrostep_t sm;
-        targetless_transition_completes_macrostep_init(&sm);
+        REQUIRE_STARTED(targetless_transition_completes_macrostep_init(&sm),
+                        TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_START_OK);
 
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_QUIET);
         deliver(&sm, TARGETLESS_TRANSITION_COMPLETES_MACROSTEP_EVENT_PING);

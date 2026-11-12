@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "onexit_runs_before_the_state_leaves_sm.h"
 
 /// What the handlers recorded (W3C SCXML 5.3 accessors).
@@ -40,7 +41,7 @@ static void report_records(const onexit_runs_before_the_state_leaves_t *sm) {
 
 int main(void) {
     onexit_runs_before_the_state_leaves_t sm;
-    onexit_runs_before_the_state_leaves_init(&sm);
+    REQUIRE_STARTED(onexit_runs_before_the_state_leaves_init(&sm), ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_START_OK);
     onexit_runs_before_the_state_leaves_run(&sm);
 
     if (!onexit_runs_before_the_state_leaves_in_state(&sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_INNER)) {

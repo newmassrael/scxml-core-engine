@@ -335,7 +335,7 @@ int main(void) {
     memcpy(p.raw, "ack", 3); p.raw_len = 3; p.label = label; p.ratio = 1.5; p.count = 7;
     for (size_t n = 0; n < sizeof(label); ++n) {
         memset(label, 'x', n); label[n] = 0;
-        bounded_payload_init(&sm);
+        if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
         int needed = snprintf(NULL, 0, "{\"raw\":\"ack\",\"label\":\"%s\",\"ratio\":1.5,\"count\":7}", label);
         assert(needed >= 0 && (size_t)needed < BOUNDED_PAYLOAD_DATA_LEN_DECLARED);
         assert(bounded_payload_raise_sample_received_typed(&sm, &p));
@@ -358,7 +358,7 @@ int main(void) {
         memset(p.raw, 0, sizeof(p.raw));
         p.raw_len = sizeof(p.raw);
         p.count = UINT32_MAX;
-        bounded_payload_init(&sm);
+        if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
         assert(bounded_payload_raise_sample_received_typed(&sm, &p));
         assert(sm.external_queue.count == 1);
         const char *queued = sm.external_queue.buf[sm.external_queue.head].data;
@@ -376,7 +376,7 @@ int main(void) {
         memset(past, 'x', sizeof(past) - 1u);
         past[sizeof(past) - 1u] = 0;
         p.label = past;
-        bounded_payload_init(&sm);
+        if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
         assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
         assert(sm.external_queue.count == 0);
         p.label = label;
@@ -391,7 +391,7 @@ int main(void) {
         past[sizeof(past) - 1u] = 0;
         meta.event = BOUNDED_PAYLOAD_EVENT_SAMPLE_RECEIVED;
         meta.data = past;
-        bounded_payload_init(&sm);
+        if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
         assert(bounded_payload_refused_event_data(&sm) == 0u);
         bounded_payload_raise_external(&sm, &meta);
         assert(bounded_payload_refused_event_data(&sm) == 1u);
@@ -399,7 +399,7 @@ int main(void) {
         assert(refused == BOUNDED_PAYLOAD_EVENT_SAMPLE_RECEIVED);
     }
     strcpy(label, "ready");
-    bounded_payload_init(&sm);
+    if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
     const unsigned char bytes[] = {0, 0x80, 0xff, '"', '\\'};
     memcpy(p.raw, bytes, sizeof(bytes)); p.raw_len = sizeof(bytes);
     assert(bounded_payload_raise_sample_received_typed(&sm, &p));
@@ -410,7 +410,7 @@ int main(void) {
     strcpy(label, "other"); memset(p.raw, 0, sizeof(p.raw));
     bounded_payload_run(&sm);
     assert(bounded_payload_in_state(&sm, BOUNDED_PAYLOAD_STATE_DONE));
-    bounded_payload_init(&sm);
+    if (bounded_payload_init(&sm) != BOUNDED_PAYLOAD_START_OK) { return 1; }
     p.raw_len = sizeof(p.raw) + 1;
     assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
     p.raw_len = SIZE_MAX;

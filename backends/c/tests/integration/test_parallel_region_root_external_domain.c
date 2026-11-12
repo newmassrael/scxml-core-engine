@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "parallel_region_root_external_domain_sm.h"
 
 #define D_(suffix) PARALLEL_REGION_ROOT_EXTERNAL_DOMAIN_##suffix
@@ -123,7 +124,7 @@ static void expect_configuration(const char *what, const parallel_region_root_ex
    `watch` was never exited. */
 static void an_external_region_root_transition_exits_every_region(void) {
     parallel_region_root_external_domain_t sm;
-    parallel_region_root_external_domain_init(&sm);
+    REQUIRE_STARTED(parallel_region_root_external_domain_init(&sm), PARALLEL_REGION_ROOT_EXTERNAL_DOMAIN_START_OK);
     parallel_region_root_external_domain_run(&sm);
 
     expect_configuration("the fixture's initial configuration", &sm, "alive | drive | run | watch | working",
@@ -148,7 +149,7 @@ static void an_external_region_root_transition_exits_every_region(void) {
    `watch` never exits and answers the event itself. */
 static void an_internal_region_root_transition_leaves_the_other_region(void) {
     parallel_region_root_external_domain_t sm;
-    parallel_region_root_external_domain_init(&sm);
+    REQUIRE_STARTED(parallel_region_root_external_domain_init(&sm), PARALLEL_REGION_ROOT_EXTERNAL_DOMAIN_START_OK);
     parallel_region_root_external_domain_run(&sm);
 
     parallel_region_root_external_domain_event_with_meta_t hold = {0};

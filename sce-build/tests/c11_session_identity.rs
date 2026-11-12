@@ -59,8 +59,9 @@ const DRIVER: &str = r#"#include <stdio.h>
 int main(void) {
     sessions_t a;
     sessions_t b;
-    sessions_init(&a);
-    sessions_init(&b);
+    if (sessions_init(&a) != SESSIONS_START_OK || sessions_init(&b) != SESSIONS_START_OK) {
+        return 1;
+    }
     printf("a0=%s|%s\n", sessions_session_id(&a), sessions_scxml_location(&a));
     printf("b0=%s|%s\n", sessions_session_id(&b), sessions_scxml_location(&b));
     sessions_step(&a);
@@ -243,7 +244,9 @@ int main(void) {
     printf("none=%d|%d\n", sessions_init_with_session_id(&refused, NULL) == SCE_START_REFUSAL_SESSION_ID_EMPTY,
            untouched(&refused, 0x5A));
 
-    sessions_init(&drawn);
+    if (sessions_init(&drawn) != SESSIONS_START_OK) {
+        return 1;
+    }
     printf("drawn=%s\n", sessions_session_id(&drawn));
     return 0;
 }

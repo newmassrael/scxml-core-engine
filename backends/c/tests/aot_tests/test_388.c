@@ -14,11 +14,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test388_sm.h"
 
 int main(void) {
     test388_t sm;
-    test388_init(&sm);
+    REQUIRE_STARTED(test388_init(&sm), TEST388_START_OK);
     test388_run(&sm);
 
     int rc = test388_ended_in(&sm, TEST388_STATE_PASS) ? 0 : 1;

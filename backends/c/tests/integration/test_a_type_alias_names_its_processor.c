@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_type_alias_names_its_processor_sm.h"
 
 typedef a_type_alias_names_its_processor_t sm_t;
@@ -25,7 +26,7 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_type_alias_names_its_processor_init(&sm);
+    REQUIRE_STARTED(a_type_alias_names_its_processor_init(&sm), A_TYPE_ALIAS_NAMES_ITS_PROCESSOR_START_OK);
     a_type_alias_names_its_processor_run(&sm);
 
     int ok = 1;

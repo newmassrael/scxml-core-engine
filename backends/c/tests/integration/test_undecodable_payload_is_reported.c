@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "undecodable_payload_is_reported_sm.h"
 
 // Content that announces an object and stops. The shape a truncated write, a
@@ -86,7 +87,7 @@ int main(void) {
     // it is counted.
     {
         undecodable_payload_is_reported_t sm;
-        undecodable_payload_is_reported_init(&sm);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&sm), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
 
         if (undecodable_payload_is_reported_undecodable_payloads(&sm) != 0u) {
             fprintf(stderr, "undecodable_payload_is_reported: FAIL - something was counted "
@@ -153,7 +154,7 @@ int main(void) {
     // outcome for a document whose author wrote prose.
     {
         undecodable_payload_is_reported_t sm;
-        undecodable_payload_is_reported_init(&sm);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&sm), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
 
         deliver(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE, PROSE);
         int64_t notes = -1;
@@ -194,11 +195,11 @@ int main(void) {
     // same through every accessor a host had.
     {
         undecodable_payload_is_reported_t broken;
-        undecodable_payload_is_reported_init(&broken);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&broken), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
         deliver(&broken, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER, TRUNCATED_OBJECT);
 
         undecodable_payload_is_reported_t intact;
-        undecodable_payload_is_reported_init(&intact);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&intact), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
         // Valid JSON, and `done` is genuinely absent - the innocent explanation
         // an operator has to rule out.
         deliver(&intact, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER, "{\"ready\":true}");
@@ -235,7 +236,7 @@ int main(void) {
     // move neither record.
     {
         undecodable_payload_is_reported_t sm;
-        undecodable_payload_is_reported_init(&sm);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&sm), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
 
         deliver(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER, TRUNCATED_OBJECT);
         deliver(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE, TRUNCATED_ARRAY);
@@ -281,7 +282,7 @@ int main(void) {
     // recording altogether and each of them would still pass.
     {
         undecodable_payload_is_reported_t sm;
-        undecodable_payload_is_reported_init(&sm);
+        REQUIRE_STARTED(undecodable_payload_is_reported_init(&sm), UNDECODABLE_PAYLOAD_IS_REPORTED_START_OK);
 
         deliver_internal(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_NOTE, TRUNCATED_ARRAY);
 

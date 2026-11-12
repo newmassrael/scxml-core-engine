@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "alone/session_sm.h"
 #include "lifted/session_sm.h"
 
@@ -95,7 +96,7 @@ static void end_accept(void *user_data) {
         SERVE_ACCEPT(host)                                                                                             \
         host.user_data = seen;                                                                                         \
         P##session_t sm;                                                                                               \
-        if (!P##session_init_with_actions(&sm, &host)) {                                                               \
+        if (P##session_init_with_actions(&sm, &host) != PASTED_START_OK) {                                             \
             fprintf(stderr, "feature_conformance: FAIL - `" #P "session` refused a host "                              \
                             "that serves every action of this build\n");                                               \
             exit(1);                                                                                                   \

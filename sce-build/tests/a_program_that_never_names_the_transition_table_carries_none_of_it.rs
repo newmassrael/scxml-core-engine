@@ -183,7 +183,9 @@ fn c_drive() -> String {
          int main(void) {{\n\
          \x20   {STEM}_t sm;\n\
          \x20   {STEM}_event_with_meta_t carrier;\n\
-         \x20   {STEM}_init(&sm);\n\
+         \x20   if ({STEM}_init(&sm) != {upper}_START_OK) {{\n\
+         \x20       return 1;\n\
+         \x20   }}\n\
          \x20   memset(&carrier, 0, sizeof carrier);\n\
          \x20   carrier.event = {upper}_EVENT_{event};\n\
          \x20   {STEM}_raise_external(&sm, &carrier);\n\

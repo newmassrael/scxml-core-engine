@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "event_type_names_its_queue_sm.h"
 
 typedef event_type_names_its_queue_t sm_t;
@@ -45,7 +46,7 @@ static int expect_record(const sm_t *sm, const char *name, bool (*reader)(const 
 
 int main(void) {
     sm_t sm;
-    event_type_names_its_queue_init(&sm);
+    REQUIRE_STARTED(event_type_names_its_queue_init(&sm), EVENT_TYPE_NAMES_ITS_QUEUE_START_OK);
     // The document queues its own events; the run needs nothing from the host.
     event_type_names_its_queue_run(&sm);
 

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_static_host_params_sm.h"
 
 #define DECLARED_TYPE "x-sce-host"
@@ -101,7 +102,8 @@ static void boot(sm_t *sm, host_t *host) {
     memset(&invokers, 0, sizeof(invokers));
     (void)sce_host_registry_register(&processors, DECLARED_TYPE, on_send, host);
     (void)sce_host_invoker_register(&invokers, DECLARED_TYPE, on_invoke, host);
-    statechart_static_host_params_init_with_host_surfaces(sm, &processors, &invokers);
+    REQUIRE_STARTED(statechart_static_host_params_init_with_host_surfaces(sm, &processors, &invokers),
+                    STATECHART_STATIC_HOST_PARAMS_START_OK);
 }
 
 static bool drive(sm_t *sm, const char *name) {

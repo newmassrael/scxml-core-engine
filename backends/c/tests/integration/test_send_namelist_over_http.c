@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "basic_http_test_endpoint.h"
 #include "send_namelist_over_http_sm.h"
 
@@ -74,7 +75,9 @@ int main(void) {
     // one fact — and `basic_http_test_endpoint.h` is the one place that says
     // which address that is.
     char access_uri[SCE_W3C_HTTP_URI_MAX];
-    send_namelist_over_http_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
+    REQUIRE_STARTED(
+        send_namelist_over_http_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri)),
+        SEND_NAMELIST_OVER_HTTP_START_OK);
 
     if (!run_to_final(&sm, 15000u)) {
         printf("FAIL: send_namelist_over_http never reached a final state — the "

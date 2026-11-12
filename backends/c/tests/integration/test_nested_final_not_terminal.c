@@ -23,11 +23,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "nested_final_not_terminal_sm.h"
 
 int main(void) {
     nested_final_not_terminal_t sm;
-    nested_final_not_terminal_init(&sm);
+    REQUIRE_STARTED(nested_final_not_terminal_init(&sm), NESTED_FINAL_NOT_TERMINAL_START_OK);
     nested_final_not_terminal_run(&sm);
 
     int rc = 0;

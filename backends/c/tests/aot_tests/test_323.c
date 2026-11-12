@@ -13,11 +13,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test323_sm.h"
 
 int main(void) {
     test323_t sm;
-    test323_init(&sm);
+    REQUIRE_STARTED(test323_init(&sm), TEST323_START_OK);
     test323_run(&sm);
 
     int rc = test323_ended_in(&sm, TEST323_STATE_PASS) ? 0 : 1;

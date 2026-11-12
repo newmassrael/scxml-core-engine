@@ -18,11 +18,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test396_sm.h"
 
 int main(void) {
     test396_t sm;
-    test396_init(&sm);
+    REQUIRE_STARTED(test396_init(&sm), TEST396_START_OK);
     test396_run(&sm);
 
     int rc = test396_ended_in(&sm, TEST396_STATE_PASS) ? 0 : 1;

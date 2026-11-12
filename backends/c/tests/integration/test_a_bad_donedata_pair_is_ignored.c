@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_bad_donedata_pair_is_ignored_sm.h"
 
 typedef a_bad_donedata_pair_is_ignored_t sm_t;
@@ -44,7 +45,7 @@ static int expect_record(const sm_t *sm, const char *name, bool (*reader)(const 
 
 int main(void) {
     sm_t sm;
-    a_bad_donedata_pair_is_ignored_init(&sm);
+    REQUIRE_STARTED(a_bad_donedata_pair_is_ignored_init(&sm), A_BAD_DONEDATA_PAIR_IS_IGNORED_START_OK);
     // The run needs nothing from the host.
     a_bad_donedata_pair_is_ignored_run(&sm);
 

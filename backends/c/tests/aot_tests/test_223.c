@@ -44,13 +44,14 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "test223_sm.h"
 
 extern uint64_t _sce_clock_now_ms(void);
 
 int main(void) {
     test223_t sm;
-    test223_init(&sm);
+    REQUIRE_STARTED(test223_init(&sm), TEST223_START_OK);
 
     const uint64_t timeout_ms = 5000u;
     const struct timespec poll_ts = {0, 10L * 1000L * 1000L};

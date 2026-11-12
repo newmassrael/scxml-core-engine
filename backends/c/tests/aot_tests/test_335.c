@@ -10,11 +10,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test335_sm.h"
 
 int main(void) {
     test335_t sm;
-    test335_init(&sm);
+    REQUIRE_STARTED(test335_init(&sm), TEST335_START_OK);
     test335_run(&sm);
 
     int rc = test335_ended_in(&sm, TEST335_STATE_PASS) ? 0 : 1;

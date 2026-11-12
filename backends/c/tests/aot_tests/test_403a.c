@@ -14,11 +14,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test403a_sm.h"
 
 int main(void) {
     test403a_t sm;
-    test403a_init(&sm);
+    REQUIRE_STARTED(test403a_init(&sm), TEST403A_START_OK);
     test403a_run(&sm);
 
     int rc = test403a_ended_in(&sm, TEST403A_STATE_PASS) ? 0 : 1;

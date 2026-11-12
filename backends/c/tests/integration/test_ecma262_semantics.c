@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "../unit/shared_table.h"
 #include "external_chain_is_bounded_sm.h"
 
@@ -172,7 +173,7 @@ static int answer_case(lua_State *L, const char *object, int index) {
 // next, so that nothing an earlier case assigned is there to be read.
 static int check_case(const char *object, int index) {
     external_chain_is_bounded_t sm;
-    external_chain_is_bounded_init(&sm);
+    REQUIRE_STARTED(external_chain_is_bounded_init(&sm), EXTERNAL_CHAIN_IS_BOUNDED_START_OK);
     if (sm.L == NULL) {
         (void)fprintf(stderr, "FAIL: case %d: the machine opened no Lua state, so there is no bootstrap to measure\n",
                       index);

@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_bad_send_param_ends_its_block_sm.h"
 
 typedef a_bad_send_param_ends_its_block_t sm_t;
@@ -48,7 +49,7 @@ static int expect_record(const sm_t *sm, const char *name, bool (*reader)(const 
 
 int main(void) {
     sm_t sm;
-    a_bad_send_param_ends_its_block_init(&sm);
+    REQUIRE_STARTED(a_bad_send_param_ends_its_block_init(&sm), A_BAD_SEND_PARAM_ENDS_ITS_BLOCK_START_OK);
     a_bad_send_param_ends_its_block_run(&sm);
 
     a_bad_send_param_ends_its_block_event_with_meta_t carrier = {0};

@@ -34,11 +34,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test307_sm.h"
 
 int main(void) {
     test307_t sm;
-    test307_init(&sm);
+    REQUIRE_STARTED(test307_init(&sm), TEST307_START_OK);
     test307_run(&sm);
 
     int rc = test307_ended_in(&sm, TEST307_STATE_FINAL) ? 0 : 1;

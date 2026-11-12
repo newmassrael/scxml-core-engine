@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_script_machine_owns_each_event_text_sm.h"
 
 typedef a_script_machine_owns_each_event_text_t sm_t;
@@ -68,7 +69,8 @@ static int expect_taken(const char *what, const sm_t *sm, const char *want) {
 static int a_dequeued_event_frees_its_text(void) {
     sm_t sm;
     int bad = 0;
-    a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
     bad |= expect_owned("before any event", &sm, 0u);
     hand(&sm, "note", "\"a\"");
     hand(&sm, "note", "\"b\"");
@@ -87,7 +89,8 @@ static int a_dequeued_event_frees_its_text(void) {
 static int an_internal_event_frees_its_text_once_read(void) {
     sm_t sm;
     int bad = 0;
-    a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
     hand(&sm, "echo", NULL);
     a_script_machine_owns_each_event_text_step(&sm);
     bad |= expect_taken("the internal event carried its data", &sm, "inner;");
@@ -102,7 +105,8 @@ static int an_internal_event_frees_its_text_once_read(void) {
 static int a_cancelled_entry_frees_its_text_and_a_due_one_moves_it(void) {
     sm_t sm;
     int bad = 0;
-    a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
     hand(&sm, "arm", NULL);
     a_script_machine_owns_each_event_text_step(&sm);
     bad |= expect_owned("two scheduled entries carry data", &sm, 2u);
@@ -123,7 +127,8 @@ static int a_cancelled_entry_frees_its_text_and_a_due_one_moves_it(void) {
 static int destroy_frees_every_text_the_machine_still_holds(void) {
     sm_t sm;
     int bad = 0;
-    a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
     hand(&sm, "arm", NULL);
     a_script_machine_owns_each_event_text_step(&sm);
     hand(&sm, "note", "\"x\"");
@@ -164,7 +169,8 @@ static int an_event_the_allocator_cannot_hold_is_refused_and_raised(void) {
     sm_t sm;
     failing_alloc_t wrap;
     int bad = 0;
-    a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_script_machine_owns_each_event_text_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
     memset(&wrap, 0, sizeof(wrap));
     wrap.inner = lua_getallocf(sm.L, &wrap.inner_context);
     lua_setallocf(sm.L, failing_alloc, &wrap);
@@ -217,7 +223,9 @@ static void boot_with_host(sm_t *sm, host_seen_t *seen) {
     memset(&wiring, 0, sizeof(wiring));
     memset(seen, 0, sizeof(*seen));
     (void)sce_host_registry_register(&wiring, "x-sce-host", post_handler, seen);
-    a_script_machine_owns_each_event_text_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);
+    REQUIRE_STARTED(
+        a_script_machine_owns_each_event_text_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring),
+        A_SCRIPT_MACHINE_OWNS_EACH_EVENT_TEXT_START_OK);
 }
 
 /* A delayed send the host serves owns the request's event data and each pair's

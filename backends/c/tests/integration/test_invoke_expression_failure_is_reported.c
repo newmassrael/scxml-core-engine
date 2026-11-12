@@ -21,11 +21,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "invoke_expression_failure_is_reported_sm.h"
 
 int main(void) {
     invoke_expression_failure_is_reported_t sm;
-    invoke_expression_failure_is_reported_init(&sm);
+    REQUIRE_STARTED(invoke_expression_failure_is_reported_init(&sm), INVOKE_EXPRESSION_FAILURE_IS_REPORTED_START_OK);
     invoke_expression_failure_is_reported_run(&sm);
 
     int rc = 0;

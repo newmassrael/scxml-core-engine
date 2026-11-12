@@ -35,11 +35,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test250_sm.h"
 
 int main(void) {
     test250_t sm;
-    test250_init(&sm);
+    REQUIRE_STARTED(test250_init(&sm), TEST250_START_OK);
     test250_run(&sm);
 
     int rc = test250_ended_in(&sm, TEST250_STATE_FINAL) ? 0 : 1;

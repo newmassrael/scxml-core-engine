@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "nested_lifecycle_sm.h"
 #include "nested_lifecycle_transition_function.h"
 #include "transition_function_equivalence.h"
@@ -29,7 +30,7 @@
 static nested_lifecycle_t sm;
 
 static void machine_start(void) {
-    nested_lifecycle_init(&sm);
+    REQUIRE_STARTED(nested_lifecycle_init(&sm), NESTED_LIFECYCLE_START_OK);
 }
 
 static void machine_stop(void) {

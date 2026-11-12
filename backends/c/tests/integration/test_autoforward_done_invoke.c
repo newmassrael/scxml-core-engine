@@ -20,11 +20,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "autoforward_done_invoke_sm.h"
 
 int main(void) {
     autoforward_done_invoke_t sm;
-    autoforward_done_invoke_init(&sm);
+    REQUIRE_STARTED(autoforward_done_invoke_init(&sm), AUTOFORWARD_DONE_INVOKE_START_OK);
 
     // No `<send delay>` in this fixture: `inv_short` reaches `<final>` during
     // its own `_init`, raising `done.invoke.inv_short` onto the parent's

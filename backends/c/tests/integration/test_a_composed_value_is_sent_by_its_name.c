@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_composed_send_sm.h"
 
 typedef static_composed_send_t sm_t;
@@ -53,7 +54,7 @@ static sm_t machine;
 
 int main(void) {
     sm_t *sm = &machine;
-    static_composed_send_init(sm);
+    REQUIRE_STARTED(static_composed_send_init(sm), STATIC_COMPOSED_SEND_START_OK);
     static_composed_send_run(sm);
     static_composed_send_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));

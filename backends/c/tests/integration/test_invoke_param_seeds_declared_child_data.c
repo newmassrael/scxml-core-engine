@@ -24,11 +24,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "invoke_param_seeds_declared_child_data_sm.h"
 
 int main(void) {
     invoke_param_seeds_declared_child_data_t sm;
-    invoke_param_seeds_declared_child_data_init(&sm);
+    REQUIRE_STARTED(invoke_param_seeds_declared_child_data_init(&sm), INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_START_OK);
 
     // No `<send delay>` in this fixture — each inline child reaches its
     // top-level `<final>` during its own `_init`, the parent's

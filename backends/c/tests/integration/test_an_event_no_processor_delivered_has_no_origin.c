@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "an_event_no_processor_delivered_has_no_origin_sm.h"
 
 typedef an_event_no_processor_delivered_has_no_origin_t sm_t;
@@ -56,7 +57,8 @@ int main(void) {
         fprintf(stderr, "FAIL: the host could not register its processor\n");
         return 1;
     }
-    an_event_no_processor_delivered_has_no_origin_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(an_event_no_processor_delivered_has_no_origin_init_with_host_processors(&sm, &wiring),
+                    AN_EVENT_NO_PROCESSOR_DELIVERED_HAS_NO_ORIGIN_START_OK);
     an_event_no_processor_delivered_has_no_origin_run(&sm);
 
     // The host raises an event of its own, naming no origin.

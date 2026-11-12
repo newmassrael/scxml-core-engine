@@ -30,11 +30,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test399_sm.h"
 
 int main(void) {
     test399_t sm;
-    test399_init(&sm);
+    REQUIRE_STARTED(test399_init(&sm), TEST399_START_OK);
     test399_run(&sm);
 
     int rc = test399_ended_in(&sm, TEST399_STATE_PASS) ? 0 : 1;

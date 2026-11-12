@@ -31,11 +31,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "donedata_late_completion_sm.h"
 
 int main(void) {
     donedata_late_completion_t sm;
-    donedata_late_completion_init(&sm);
+    REQUIRE_STARTED(donedata_late_completion_init(&sm), DONEDATA_LATE_COMPLETION_START_OK);
 
     // The child opens the verdict exchange itself (`ready` from its own
     // onentry) and the parent drives it to `<final>` with a directed send,

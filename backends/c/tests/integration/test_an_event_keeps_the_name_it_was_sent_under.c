@@ -21,11 +21,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_event_keeps_the_name_it_was_sent_under_sm.h"
 
 int main(void) {
     an_event_keeps_the_name_it_was_sent_under_t sm;
-    an_event_keeps_the_name_it_was_sent_under_init(&sm);
+    REQUIRE_STARTED(an_event_keeps_the_name_it_was_sent_under_init(&sm),
+                    AN_EVENT_KEEPS_THE_NAME_IT_WAS_SENT_UNDER_START_OK);
 
     // No `<send delay>` in this fixture: the child tells the parent it is `ready`
     // during its own `_init`, the parent answers `request.new`, and the child's

@@ -22,11 +22,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "invoke_candidate_selects_the_child_sm.h"
 
 int main(void) {
     invoke_candidate_selects_the_child_t sm;
-    invoke_candidate_selects_the_child_init(&sm);
+    REQUIRE_STARTED(invoke_candidate_selects_the_child_init(&sm), INVOKE_CANDIDATE_SELECTS_THE_CHILD_START_OK);
     invoke_candidate_selects_the_child_run(&sm);
 
     int rc = 0;

@@ -19,11 +19,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test377_sm.h"
 
 int main(void) {
     test377_t sm;
-    test377_init(&sm);
+    REQUIRE_STARTED(test377_init(&sm), TEST377_START_OK);
     test377_run(&sm);
 
     int rc = test377_ended_in(&sm, TEST377_STATE_PASS) ? 0 : 1;

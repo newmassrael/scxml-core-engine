@@ -26,13 +26,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_timers_sm.h"
 
 typedef static_timers_t sm_t;
 
 // A machine started on a clock the test moves, with its entry already run.
 static void start(sm_t *sm) {
-    static_timers_init_with_clock(sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(static_timers_init_with_clock(sm, sce_clock_manual(0u)), STATIC_TIMERS_START_OK);
     static_timers_run(sm);
 }
 

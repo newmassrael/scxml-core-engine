@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "late_tick_honours_cancel_sm.h"
 
 // Past both <send delay>s in `waiting` (100 ms and 200 ms), with margin for a
@@ -79,7 +80,8 @@ static void stepping_reset(uint64_t step_ms) {
 // cannot say once it has: W3C SCXML Appendix D exitInterpreter empties it.
 static void manual_trace(uint32_t *out, bool *ended_in_pass) {
     late_tick_honours_cancel_t sm;
-    late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u)),
+                    LATE_TICK_HONOURS_CANCEL_START_OK);
     out[0] = late_tick_honours_cancel_active_states(&sm);
     for (int i = 0; i < 6; ++i) {
         late_tick_honours_cancel_advance_time_ms(&sm, 100u);
@@ -106,7 +108,7 @@ int main(void) {
     // The axis: one tick, taken after both deadlines passed.
     {
         late_tick_honours_cancel_t sm;
-        late_tick_honours_cancel_init(&sm);
+        REQUIRE_STARTED(late_tick_honours_cancel_init(&sm), LATE_TICK_HONOURS_CANCEL_START_OK);
 
         sleep_ms(PAST_BOTH_DEADLINES_MS);
         late_tick_honours_cancel_tick(&sm);
@@ -135,7 +137,7 @@ int main(void) {
     // keep working — the fix is about the late wake-up.
     {
         late_tick_honours_cancel_t sm;
-        late_tick_honours_cancel_init(&sm);
+        REQUIRE_STARTED(late_tick_honours_cancel_init(&sm), LATE_TICK_HONOURS_CANCEL_START_OK);
         drive_to_final(&sm, 2000L, 10L);
         if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - a 10 ms tick loop, which "
@@ -150,7 +152,7 @@ int main(void) {
     // and driving by it lands every wake-up on a fire time.
     {
         late_tick_honours_cancel_t sm;
-        late_tick_honours_cancel_init(&sm);
+        REQUIRE_STARTED(late_tick_honours_cancel_init(&sm), LATE_TICK_HONOURS_CANCEL_START_OK);
 
         int64_t due = late_tick_honours_cancel_time_until_next_scheduled_ms(&sm);
         if (due < 0 || due > 100) {
@@ -221,7 +223,8 @@ int main(void) {
         for (size_t i = 0; i < sizeof(stalls) / sizeof(stalls[0]); ++i) {
             late_tick_honours_cancel_t sm;
             stepping_reset(stalls[i]);
-            late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL));
+            REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL)),
+                            LATE_TICK_HONOURS_CANCEL_START_OK);
 
             if (late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
                 fprintf(stderr,
@@ -260,7 +263,8 @@ int main(void) {
     {
         late_tick_honours_cancel_t sm;
         stepping_reset(150u);
-        late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL));
+        REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL)),
+                        LATE_TICK_HONOURS_CANCEL_START_OK);
         if (stepping_readings != 1) {
             fprintf(stderr,
                     "late_tick_honours_cancel: FAIL - _init is one turn and must take one "
@@ -286,7 +290,8 @@ int main(void) {
     // contract the Python channel has had all along (advance_time / now_ms).
     {
         late_tick_honours_cancel_t sm;
-        late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u));
+        REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u)),
+                        LATE_TICK_HONOURS_CANCEL_START_OK);
 
         if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_WAITING)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - nothing is due at t=0, so "
@@ -371,7 +376,8 @@ int main(void) {
     {
         late_tick_honours_cancel_t sm;
         stepping_reset(0u);
-        late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL));
+        REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL)),
+                        LATE_TICK_HONOURS_CANCEL_START_OK);
         uint64_t before = late_tick_honours_cancel_now_ms(&sm);
         uint64_t before_field = sm.clock.now_ms;
         late_tick_honours_cancel_advance_time_ms(&sm, 5000u);
@@ -396,7 +402,8 @@ int main(void) {
     // leave the check above passing for the wrong reason.
     {
         late_tick_honours_cancel_t sm;
-        late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u));
+        REQUIRE_STARTED(late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u)),
+                        LATE_TICK_HONOURS_CANCEL_START_OK);
         late_tick_honours_cancel_advance_time_ms(&sm, 250u);
         if (sm.clock.now_ms != 250u) {
             fprintf(stderr,

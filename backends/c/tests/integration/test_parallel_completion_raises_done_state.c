@@ -21,11 +21,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "parallel_completion_raises_done_state_sm.h"
 
 int main(void) {
     parallel_completion_raises_done_state_t sm;
-    parallel_completion_raises_done_state_init(&sm);
+    REQUIRE_STARTED(parallel_completion_raises_done_state_init(&sm), PARALLEL_COMPLETION_RAISES_DONE_STATE_START_OK);
     parallel_completion_raises_done_state_run(&sm);
 
     if (!parallel_completion_raises_done_state_in_state(&sm, PARALLEL_COMPLETION_RAISES_DONE_STATE_STATE_A1) ||

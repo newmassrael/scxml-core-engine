@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_computed_event_name_is_matched_like_any_other_sm.h"
 
 #if !A_COMPUTED_EVENT_NAME_IS_MATCHED_LIKE_ANY_OTHER_TRANSITION_OBSERVER
@@ -51,7 +52,8 @@ void a_computed_event_name_is_matched_like_any_other_observe_transition(
 int main(void) {
     a_computed_event_name_is_matched_like_any_other_t sm;
     seen_machine = &sm;
-    a_computed_event_name_is_matched_like_any_other_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_computed_event_name_is_matched_like_any_other_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_COMPUTED_EVENT_NAME_IS_MATCHED_LIKE_ANY_OTHER_START_OK);
     for (int elapsed = 0; elapsed < 1000 && !a_computed_event_name_is_matched_like_any_other_is_in_final_state(&sm);
          elapsed += 10) {
         a_computed_event_name_is_matched_like_any_other_advance_time_ms(&sm, 10u);

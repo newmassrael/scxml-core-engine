@@ -15,11 +15,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test401_sm.h"
 
 int main(void) {
     test401_t sm;
-    test401_init(&sm);
+    REQUIRE_STARTED(test401_init(&sm), TEST401_START_OK);
     test401_run(&sm);
 
     int rc = test401_ended_in(&sm, TEST401_STATE_PASS) ? 0 : 1;

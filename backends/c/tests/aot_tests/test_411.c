@@ -22,11 +22,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test411_sm.h"
 
 int main(void) {
     test411_t sm;
-    test411_init(&sm);
+    REQUIRE_STARTED(test411_init(&sm), TEST411_START_OK);
     test411_run(&sm);
 
     int rc = test411_ended_in(&sm, TEST411_STATE_PASS) ? 0 : 1;

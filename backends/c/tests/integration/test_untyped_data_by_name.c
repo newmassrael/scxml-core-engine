@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "untyped_data_by_name_sm.h"
 
 // The data a host may count on handing any machine, and the data one byte
@@ -47,7 +48,7 @@ int main(void) {
     past_the_slot[sizeof(past_the_slot) - 1u] = '\0';
 
     untyped_data_by_name_t sm;
-    untyped_data_by_name_init(&sm);
+    REQUIRE_STARTED(untyped_data_by_name_init(&sm), UNTYPED_DATA_BY_NAME_START_OK);
     untyped_data_by_name_run(&sm);
     int bad = 0;
 

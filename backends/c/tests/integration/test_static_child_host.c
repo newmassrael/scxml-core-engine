@@ -141,7 +141,7 @@ static void parent_host_init(parent_host_t *host) {
 }
 
 static bool start(parent_host_t *host, static_child_host_t *sm) {
-    if (!static_child_host_init_with_actions(sm, &host->table)) {
+    if (static_child_host_init_with_actions(sm, &host->table) != STATIC_CHILD_HOST_START_OK) {
         (void)fprintf(stderr, "static_child_host: FAIL - a complete table was refused\n");
         return false;
     }
@@ -277,7 +277,7 @@ static int a_candidate_is_given_the_table_answered_for_it_and_no_other(void) {
     host.table.actions_for_work_0j_static_hosted_first = on_actions_for_work_first;
     host.table.actions_for_work_0j_static_hosted_second = on_actions_for_work_second;
     host.table.user_data = &host;
-    if (!static_child_host_hybrid_init_with_actions(&sm, &host.table)) {
+    if (static_child_host_hybrid_init_with_actions(&sm, &host.table) != STATIC_CHILD_HOST_HYBRID_START_OK) {
         (void)fprintf(stderr, "static_child_host: FAIL - a complete table was refused\n");
         return 1;
     }
@@ -310,7 +310,8 @@ static int a_table_without_the_member_that_answers_a_childs_table_is_refused(voi
     static static_child_host_t sm;
     parent_host_init(&host);
     host.table.actions_for_worker = NULL;
-    return expect(!static_child_host_init_with_actions(&sm, &host.table),
+    return expect(static_child_host_init_with_actions(&sm, &host.table) ==
+                      STATIC_CHILD_HOST_START_HOST_ACTIONS_INCOMPLETE,
                   "a table with no answer for its child's table was accepted");
 }
 

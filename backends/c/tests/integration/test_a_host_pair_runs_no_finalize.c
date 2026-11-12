@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_host_pair_runs_no_finalize_sm.h"
 
 typedef a_host_pair_runs_no_finalize_t sm_t;
@@ -41,7 +42,7 @@ static int expect(const sm_t *sm, const char *phase, const char *name, reader_t 
 
 int main(void) {
     sm_t sm;
-    a_host_pair_runs_no_finalize_init(&sm);
+    REQUIRE_STARTED(a_host_pair_runs_no_finalize_init(&sm), A_HOST_PAIR_RUNS_NO_FINALIZE_START_OK);
     a_host_pair_runs_no_finalize_run(&sm);
 
     // The child's own send runs the finalize: the check below is not vacuous.

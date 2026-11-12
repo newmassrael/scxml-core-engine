@@ -48,6 +48,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "../require_started.h"
 #include "inbox_probe_sm.h"
 #include "static_invoke_ending_order_sm.h"
 
@@ -96,7 +97,7 @@ static void boot(inbox_probe_t *sm, host_log_t *log) {
     memset(&wiring, 0, sizeof(wiring));
     memset(log, 0, sizeof(*log));
     (void)sce_host_invoker_register(&wiring, TYPE, serve, log);
-    inbox_probe_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(inbox_probe_init_with_host_invokers(sm, &wiring), INBOX_PROBE_START_OK);
 }
 
 /* docs/adr/0086, section 8.5 (a): `inbox_probe` has a script engine, whose
@@ -720,7 +721,7 @@ static int a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it(
     memset(&host, 0, sizeof(host));
     host.sm = &sm;
     (void)sce_host_invoker_register(&wiring, TYPE, serve_posting, &host);
-    inbox_probe_init_with_host_invokers(&sm, &wiring);
+    REQUIRE_STARTED(inbox_probe_init_with_host_invokers(&sm, &wiring), INBOX_PROBE_START_OK);
     inbox_probe_step(&sm);
     if (!host.posted) {
         (void)fprintf(stderr, "FAIL: the inbox refused the post made during the start\n");
@@ -852,7 +853,8 @@ static bool start_ordering_tree(static_invoke_ending_order_t *sm, ordering_host_
     host->table.before_question = before_question;
     host->table.user_data = host;
     (void)sce_host_invoker_register(&wiring, ORDER_CLOCK_TYPE, serve_clock, host);
-    if (!static_invoke_ending_order_init_with_host_invokers(sm, &wiring, &host->table)) {
+    if (static_invoke_ending_order_init_with_host_invokers(sm, &wiring, &host->table) !=
+        STATIC_INVOKE_ENDING_ORDER_START_OK) {
         (void)fprintf(stderr, "FAIL: the machine refused a host table that performs `beforeQuestion`\n");
         return false;
     }

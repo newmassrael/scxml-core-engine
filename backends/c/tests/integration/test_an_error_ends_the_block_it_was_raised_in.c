@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_error_ends_the_block_it_was_raised_in_sm.h"
 
 typedef an_error_ends_the_block_it_was_raised_in_t sm_t;
@@ -30,7 +31,8 @@ int main(void) {
     }
 
     sm_t sm;
-    an_error_ends_the_block_it_was_raised_in_init(&sm);
+    REQUIRE_STARTED(an_error_ends_the_block_it_was_raised_in_init(&sm),
+                    AN_ERROR_ENDS_THE_BLOCK_IT_WAS_RAISED_IN_START_OK);
     an_error_ends_the_block_it_was_raised_in_run(&sm);
 
     const an_error_ends_the_block_it_was_raised_in_event_t events[] = {

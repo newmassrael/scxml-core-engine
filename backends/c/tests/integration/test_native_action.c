@@ -94,7 +94,7 @@ static int a_host_receives_every_declared_act(void) {
     statechart_native_action_actions_t v = host_vtable(&r);
 
     statechart_native_action_t sm;
-    if (!statechart_native_action_init_with_actions(&sm, &v)) {
+    if (statechart_native_action_init_with_actions(&sm, &v) != STATECHART_NATIVE_ACTION_START_OK) {
         (void)fprintf(stderr, "native_action: FAIL [every_act] - a complete vtable was refused\n");
         return 1;
     }
@@ -156,7 +156,7 @@ static int an_untyped_delivery_does_not_fire_the_arg_bearing_act(void) {
     statechart_native_action_actions_t v = host_vtable(&r);
 
     statechart_native_action_t sm;
-    if (!statechart_native_action_init_with_actions(&sm, &v)) {
+    if (statechart_native_action_init_with_actions(&sm, &v) != STATECHART_NATIVE_ACTION_START_OK) {
         (void)fprintf(stderr, "native_action: FAIL [untyped] - a complete vtable was refused\n");
         return 1;
     }
@@ -199,7 +199,7 @@ static int a_document_raise_is_answered_with_error_execution(void) {
     statechart_native_action_actions_t v = host_vtable(&r);
 
     statechart_native_action_t sm;
-    if (!statechart_native_action_init_with_actions(&sm, &v)) {
+    if (statechart_native_action_init_with_actions(&sm, &v) != STATECHART_NATIVE_ACTION_START_OK) {
         (void)fprintf(stderr, "native_action: FAIL [doc-raise] - a complete vtable was refused\n");
         return 1;
     }
@@ -231,7 +231,7 @@ static int a_vtable_missing_an_operation_is_refused(void) {
     v.reset_slot = NULL;
 
     statechart_native_action_t sm;
-    if (statechart_native_action_init_with_actions(&sm, &v)) {
+    if (statechart_native_action_init_with_actions(&sm, &v) != STATECHART_NATIVE_ACTION_START_HOST_ACTIONS_INCOMPLETE) {
         (void)fprintf(stderr, "native_action: FAIL [incomplete] - a vtable missing reset_slot was accepted\n");
         statechart_native_action_destroy(&sm);
         return 1;
@@ -244,7 +244,8 @@ static int a_vtable_missing_an_operation_is_refused(void) {
 
 static int a_null_vtable_is_refused(void) {
     statechart_native_action_t sm;
-    if (statechart_native_action_init_with_actions(&sm, NULL)) {
+    if (statechart_native_action_init_with_actions(&sm, NULL) !=
+        STATECHART_NATIVE_ACTION_START_HOST_ACTIONS_INCOMPLETE) {
         (void)fprintf(stderr, "native_action: FAIL [null] - a NULL vtable was accepted\n");
         statechart_native_action_destroy(&sm);
         return 1;
@@ -265,8 +266,8 @@ static int two_machines_reach_their_own_hosts(void) {
 
     statechart_native_action_t sm_a;
     statechart_native_action_t sm_b;
-    if (!statechart_native_action_init_with_actions(&sm_a, &va) ||
-        !statechart_native_action_init_with_actions(&sm_b, &vb)) {
+    if (statechart_native_action_init_with_actions(&sm_a, &va) != STATECHART_NATIVE_ACTION_START_OK ||
+        statechart_native_action_init_with_actions(&sm_b, &vb) != STATECHART_NATIVE_ACTION_START_OK) {
         (void)fprintf(stderr, "native_action: FAIL [two_hosts] - a complete vtable was refused\n");
         return 1;
     }

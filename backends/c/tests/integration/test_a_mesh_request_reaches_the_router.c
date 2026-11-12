@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_mesh_request_reaches_the_router_sm.h"
 
 typedef a_mesh_request_reaches_the_router_t sm_t;
@@ -67,7 +68,8 @@ static void start_with_router(sm_t *sm, request_t *request) {
     if (!sce_host_invoker_register_mesh_rpc_invoker(&invokers, router, request)) {
         (void)fprintf(stderr, "FAIL: the mesh-rpc door refused the router\n");
     }
-    a_mesh_request_reaches_the_router_init_with_host_invokers(sm, &invokers);
+    REQUIRE_STARTED(a_mesh_request_reaches_the_router_init_with_host_invokers(sm, &invokers),
+                    A_MESH_REQUEST_REACHES_THE_ROUTER_START_OK);
     a_mesh_request_reaches_the_router_run(sm);
 }
 
@@ -151,7 +153,7 @@ static int a_mesh_request_the_router_fails_is_error_invoke(void) {
 // error.execution (W3C SCXML 6.4.1).
 static int a_mesh_request_with_no_router_registered_is_error_execution(void) {
     sm_t sm;
-    a_mesh_request_reaches_the_router_init(&sm);
+    REQUIRE_STARTED(a_mesh_request_reaches_the_router_init(&sm), A_MESH_REQUEST_REACHES_THE_ROUTER_START_OK);
     a_mesh_request_reaches_the_router_run(&sm);
     int bad = check_counts(&sm, "no router", 0, 0, 1);
     a_mesh_request_reaches_the_router_destroy(&sm);

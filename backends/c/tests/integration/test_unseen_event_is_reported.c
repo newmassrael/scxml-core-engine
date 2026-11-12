@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "unseen_event_is_reported_sm.h"
 
 static void deliver(unseen_event_is_reported_t *sm, unseen_event_is_reported_event_t event) {
@@ -43,7 +44,7 @@ int main(void) {
     // The axis: an event the host queued after the machine stopped is counted.
     {
         unseen_event_is_reported_t sm;
-        unseen_event_is_reported_init(&sm);
+        REQUIRE_STARTED(unseen_event_is_reported_init(&sm), UNSEEN_EVENT_IS_REPORTED_START_OK);
 
         if (unseen_event_is_reported_unseen_external_events(&sm) != 0u) {
             fprintf(stderr, "unseen_event_is_reported: FAIL - something was refused before "
@@ -126,7 +127,7 @@ int main(void) {
     // and after the refused delivery.
     {
         unseen_event_is_reported_t sm;
-        unseen_event_is_reported_init(&sm);
+        REQUIRE_STARTED(unseen_event_is_reported_init(&sm), UNSEEN_EVENT_IS_REPORTED_START_OK);
         deliver(&sm, UNSEEN_EVENT_IS_REPORTED_EVENT_FINISH);
 
         const bool before_final = unseen_event_is_reported_is_in_final_state(&sm);
@@ -162,7 +163,7 @@ int main(void) {
     // the count accumulates rather than latching.
     {
         unseen_event_is_reported_t sm;
-        unseen_event_is_reported_init(&sm);
+        REQUIRE_STARTED(unseen_event_is_reported_init(&sm), UNSEEN_EVENT_IS_REPORTED_START_OK);
 
         deliver(&sm, UNSEEN_EVENT_IS_REPORTED_EVENT_POKE);
         if (unseen_event_is_reported_discarded_external_events(&sm) != 0u ||

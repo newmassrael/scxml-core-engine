@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_error_inside_a_foreach_ends_its_block_sm.h"
 
 typedef an_error_inside_a_foreach_ends_its_block_t sm_t;
@@ -24,7 +25,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    an_error_inside_a_foreach_ends_its_block_init(&sm);
+    REQUIRE_STARTED(an_error_inside_a_foreach_ends_its_block_init(&sm),
+                    AN_ERROR_INSIDE_A_FOREACH_ENDS_ITS_BLOCK_START_OK);
     an_error_inside_a_foreach_ends_its_block_run(&sm);
 
     const an_error_inside_a_foreach_ends_its_block_event_t events[] = {

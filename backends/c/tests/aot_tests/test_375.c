@@ -8,11 +8,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test375_sm.h"
 
 int main(void) {
     test375_t sm;
-    test375_init(&sm);
+    REQUIRE_STARTED(test375_init(&sm), TEST375_START_OK);
     test375_run(&sm);
 
     int rc = test375_ended_in(&sm, TEST375_STATE_PASS) ? 0 : 1;

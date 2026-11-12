@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_composed_payload_sm.h"
 
 typedef static_composed_payload_t sm_t;
@@ -74,7 +75,7 @@ static void batch_json(char *out, size_t cap, unsigned second_tags) {
 static sm_t machine;
 
 static sm_t *started(void) {
-    static_composed_payload_init(&machine);
+    REQUIRE_STARTED(static_composed_payload_init(&machine), STATIC_COMPOSED_PAYLOAD_START_OK);
     static_composed_payload_run(&machine);
     return &machine;
 }

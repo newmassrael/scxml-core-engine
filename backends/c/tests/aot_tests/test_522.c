@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "basic_http_test_endpoint.h"
 #include "test522_sm.h"
 
@@ -25,7 +26,8 @@ int main(void) {
        W3C document reads `_ioprocessors['basichttp'].location` to address its
        send, so a machine initialised through plain `_init` would publish no
        entry and send nowhere. */
-    test522_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri));
+    REQUIRE_STARTED(test522_init_with_basic_http(&sm, sce_w3c_http_test_access_uri(access_uri, sizeof access_uri)),
+                    TEST522_START_OK);
     test522_run(&sm);
 
     int rc = test522_ended_in(&sm, TEST522_STATE_PASS) ? 0 : 1;

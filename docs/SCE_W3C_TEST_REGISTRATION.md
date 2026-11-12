@@ -155,16 +155,20 @@ no test framework). A registered fixture without a runner fails the build of
 code is not written anywhere: the runner links what the generator states the
 machine requires. The runner's header comment is where what the C11 lowering
 of the fixture exercises is written; the registry's `summary` says what the
-fixture tests.
+fixture tests. Every `_init*` answers whether the machine started
+(`testXXX_start_status_t`, docs/adr/0096), and the runner reads it through
+`REQUIRE_STARTED` (`backends/c/tests/require_started.h`), which fails the run
+when the start is refused.
 
 ```c
 #include <stdio.h>
 
 #include "testXXX_sm.h"
+#include "../require_started.h"
 
 int main(void) {
     testXXX_t sm;
-    testXXX_init(&sm);
+    REQUIRE_STARTED(testXXX_init(&sm), TESTXXX_START_OK);
     testXXX_run(&sm);
     int rc = testXXX_ended_in(&sm, TESTXXX_STATE_PASS) ? 0 : 1;
     if (rc != 0) {

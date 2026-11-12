@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "event_descriptor_spellings_agree_sm.h"
 
 // Each failure final names the case it belongs to, so the diagnostic below
@@ -49,7 +50,7 @@ static const char *failure_case(const event_descriptor_spellings_agree_t *sm) {
 
 int main(void) {
     event_descriptor_spellings_agree_t sm;
-    event_descriptor_spellings_agree_init(&sm);
+    REQUIRE_STARTED(event_descriptor_spellings_agree_init(&sm), EVENT_DESCRIPTOR_SPELLINGS_AGREE_START_OK);
     event_descriptor_spellings_agree_run(&sm);
 
     int rc = 0;

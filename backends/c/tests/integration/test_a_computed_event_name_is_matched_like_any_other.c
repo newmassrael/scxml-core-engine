@@ -23,11 +23,13 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_computed_event_name_is_matched_like_any_other_sm.h"
 
 int main(void) {
     a_computed_event_name_is_matched_like_any_other_t sm;
-    a_computed_event_name_is_matched_like_any_other_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_computed_event_name_is_matched_like_any_other_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_COMPUTED_EVENT_NAME_IS_MATCHED_LIKE_ANY_OTHER_START_OK);
 
     // Two sends wait 20 ms each; 10 ms steps give the run all the time it can use
     // and no more.

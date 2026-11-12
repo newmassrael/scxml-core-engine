@@ -99,7 +99,7 @@ static int a_host_action_takes_typed_datamodel_arguments(void) {
     host.user_data = &r;
 
     static_host_call_t sm;
-    if (!static_host_call_init_with_actions(&sm, &host)) {
+    if (static_host_call_init_with_actions(&sm, &host) != STATIC_HOST_CALL_START_OK) {
         (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
         return 1;
     }
@@ -128,7 +128,7 @@ static int a_host_action_takes_an_argument_that_may_be_absent(void) {
     host.user_data = &r;
 
     static_host_call_t sm;
-    if (!static_host_call_init_with_actions(&sm, &host)) {
+    if (static_host_call_init_with_actions(&sm, &host) != STATIC_HOST_CALL_START_OK) {
         (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
         return 1;
     }
@@ -159,7 +159,7 @@ static int an_argument_that_overflows_stops_the_call_and_raises_an_error(void) {
     host.user_data = &r;
 
     static_host_call_arguments_t sm;
-    if (!static_host_call_arguments_init_with_actions(&sm, &host)) {
+    if (static_host_call_arguments_init_with_actions(&sm, &host) != STATIC_HOST_CALL_ARGUMENTS_START_OK) {
         (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
         return 1;
     }

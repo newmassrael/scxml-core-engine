@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "static_composed_text_sm.h"
 
 typedef static_composed_text_t sm_t;
@@ -74,7 +75,7 @@ static sm_t machine;
 
 /* A machine that took one delivery of `batch.sent` carrying `data`. */
 static sm_t *delivered(const char *data) {
-    static_composed_text_init(&machine);
+    REQUIRE_STARTED(static_composed_text_init(&machine), STATIC_COMPOSED_TEXT_START_OK);
     static_composed_text_run(&machine);
     static_composed_text_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));

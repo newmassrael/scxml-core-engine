@@ -19,13 +19,15 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_child_may_send_many_events_in_one_tick_sm.h"
 
 typedef a_child_may_send_many_events_in_one_tick_t sm_t;
 
 int main(void) {
     sm_t sm;
-    a_child_may_send_many_events_in_one_tick_init(&sm);
+    REQUIRE_STARTED(a_child_may_send_many_events_in_one_tick_init(&sm),
+                    A_CHILD_MAY_SEND_MANY_EVENTS_IN_ONE_TICK_START_OK);
     a_child_may_send_many_events_in_one_tick_run(&sm);
 
     a_child_may_send_many_events_in_one_tick_event_with_meta_t carrier = {0};

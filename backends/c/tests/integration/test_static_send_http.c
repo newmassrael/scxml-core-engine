@@ -26,6 +26,7 @@
 
 #include <sce/http_client.h>
 
+#include "../require_started.h"
 #include "static_send_http_sm.h"
 
 // ---- the platform's HTTP client, as this consumer provides it -----------------
@@ -185,7 +186,7 @@ static int expect_pairs(const char *scenario, const char *const *want, int want_
 static int a_send_over_http_carries_the_text_the_fields_hold_when_it_runs(void) {
     g_posted_count = 0;
     static_send_http_t sm;
-    static_send_http_init(&sm);
+    REQUIRE_STARTED(static_send_http_init(&sm), STATIC_SEND_HTTP_START_OK);
     raise_event(&sm, STATIC_SEND_HTTP_EVENT_BUMP);
     raise_event(&sm, STATIC_SEND_HTTP_EVENT_GO);
     const char *const want[] = {
@@ -198,7 +199,7 @@ static int a_send_over_http_carries_the_text_the_fields_hold_when_it_runs(void) 
 static int the_pairs_are_the_fields_as_they_stand_and_not_a_copy_from_start_up(void) {
     g_posted_count = 0;
     static_send_http_t sm;
-    static_send_http_init(&sm);
+    REQUIRE_STARTED(static_send_http_init(&sm), STATIC_SEND_HTTP_START_OK);
     raise_event(&sm, STATIC_SEND_HTTP_EVENT_GO);
     const char *const want[] = {
         "_scxmleventname=note", "count=3", "ready=false", "label=idle", "twice=6", "delta=-5", "ratio=1.5"};
@@ -211,7 +212,7 @@ static int the_pairs_are_the_fields_as_they_stand_and_not_a_copy_from_start_up(v
 static int a_param_that_cannot_be_read_is_left_out_and_the_request_still_goes(void) {
     g_posted_count = 0;
     static_send_http_t sm;
-    static_send_http_init(&sm);
+    REQUIRE_STARTED(static_send_http_init(&sm), STATIC_SEND_HTTP_START_OK);
     raise_event(&sm, STATIC_SEND_HTTP_EVENT_BUMP);
     raise_event(&sm, STATIC_SEND_HTTP_EVENT_BOOM);
     const char *const want[] = {"_scxmleventname=note", "count=4"};

@@ -9,11 +9,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "test313_sm.h"
 
 int main(void) {
     test313_t sm;
-    test313_init(&sm);
+    REQUIRE_STARTED(test313_init(&sm), TEST313_START_OK);
     test313_run(&sm);
 
     int rc = test313_ended_in(&sm, TEST313_STATE_PASS) ? 0 : 1;

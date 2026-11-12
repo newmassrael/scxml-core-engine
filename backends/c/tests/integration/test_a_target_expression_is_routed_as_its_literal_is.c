@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_target_expression_is_routed_as_its_literal_is_sm.h"
 
 typedef a_target_expression_is_routed_as_its_literal_is_t sm_t;
@@ -23,7 +24,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    a_target_expression_is_routed_as_its_literal_is_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_target_expression_is_routed_as_its_literal_is_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_TARGET_EXPRESSION_IS_ROUTED_AS_ITS_LITERAL_IS_START_OK);
     for (int elapsed = 0; elapsed < 1000 && !a_target_expression_is_routed_as_its_literal_is_is_in_final_state(&sm);
          elapsed += 10) {
         a_target_expression_is_routed_as_its_literal_is_advance_time_ms(&sm, 10u);

@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "event_schema_native_sm.h"
 
 int main(void) {
@@ -35,7 +36,7 @@ int main(void) {
     // job.completed transition fires waiting -> done.
     {
         event_schema_native_t sm;
-        event_schema_native_init(&sm);
+        REQUIRE_STARTED(event_schema_native_init(&sm), EVENT_SCHEMA_NATIVE_START_OK);
         if (!event_schema_native_in_state(&sm, EVENT_SCHEMA_NATIVE_STATE_WAITING)) {
             fprintf(stderr, "FAIL: initial state is not waiting\n");
             return 1;
@@ -56,7 +57,7 @@ int main(void) {
     // waiting (the same event name with a payload the guard rejects).
     {
         event_schema_native_t sm;
-        event_schema_native_init(&sm);
+        REQUIRE_STARTED(event_schema_native_init(&sm), EVENT_SCHEMA_NATIVE_START_OK);
 
         event_schema_native_job_completed_payload_t payload = {0};
         payload.elapsed_ms = 5;

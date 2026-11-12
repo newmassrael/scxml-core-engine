@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "a_send_reaches_only_what_its_target_names_sm.h"
 
 typedef a_send_reaches_only_what_its_target_names_t sm_t;
@@ -37,7 +38,8 @@ int main(void) {
     }
 
     sm_t sm;
-    a_send_reaches_only_what_its_target_names_init(&sm);
+    REQUIRE_STARTED(a_send_reaches_only_what_its_target_names_init(&sm),
+                    A_SEND_REACHES_ONLY_WHAT_ITS_TARGET_NAMES_START_OK);
     a_send_reaches_only_what_its_target_names_run(&sm);
 
     if (!a_send_reaches_only_what_its_target_names_ended_in(&sm,

@@ -25,11 +25,12 @@
 
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "parallel_done_state_is_delivered_sm.h"
 
 int main(void) {
     parallel_done_state_is_delivered_t sm;
-    parallel_done_state_is_delivered_init(&sm);
+    REQUIRE_STARTED(parallel_done_state_is_delivered_init(&sm), PARALLEL_DONE_STATE_IS_DELIVERED_START_OK);
     parallel_done_state_is_delivered_run(&sm);
 
     if (!parallel_done_state_is_delivered_in_state(&sm, PARALLEL_DONE_STATE_IS_DELIVERED_STATE_A1) ||

@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "sce/standard_host.h"
 #include "static_host_clock_sm.h"
 #include "static_host_http_sm.h"
@@ -741,8 +742,9 @@ typedef struct {
 
 // A machine that waits on no clock is started with its invokers and driven by `_step`; one that does (the HTTP
 // exchange carries a deadline) is started on a manual clock the scenario moves on and driven by `_tick`.
-#define START_PLAIN(M) M##_init_with_host_invokers((M##_t *)sm, registry)
-#define START_SCHEDULED(M) M##_init_with_clock_and_host_invokers((M##_t *)sm, sce_clock_manual(0u), registry)
+#define START_PLAIN(M) REQUIRE_STARTED(M##_init_with_host_invokers((M##_t *)sm, registry), PASTED_START_OK)
+#define START_SCHEDULED(M)                                                                                             \
+    REQUIRE_STARTED(M##_init_with_clock_and_host_invokers((M##_t *)sm, sce_clock_manual(0u), registry), PASTED_START_OK)
 #define ADVANCE_PLAIN(M)                                                                                               \
     (void)sm;                                                                                                          \
     (void)ms
@@ -1030,8 +1032,9 @@ static const variable_t harness_variables[] = {
 };
 
 static void harness_start(void *sm, const sce_host_invoker_registry_t *registry) {
-    static_model_harness_init_with_clock_and_host_invokers((static_model_harness_t *)sm, sce_clock_manual(0u),
-                                                           registry);
+    REQUIRE_STARTED(static_model_harness_init_with_clock_and_host_invokers((static_model_harness_t *)sm,
+                                                                           sce_clock_manual(0u), registry),
+                    STATIC_MODEL_HARNESS_START_OK);
 }
 
 static bool harness_raise(void *sm, const char *name, const char *data) {

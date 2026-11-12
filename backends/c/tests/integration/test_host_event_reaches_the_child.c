@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "host_event_reaches_the_child_sm.h"
 
 // Bounded rather than timed: every step here is the machine's own work, so a
@@ -36,7 +37,7 @@
 
 int main(void) {
     host_event_reaches_the_child_t sm;
-    host_event_reaches_the_child_init(&sm);
+    REQUIRE_STARTED(host_event_reaches_the_child_init(&sm), HOST_EVENT_REACHES_THE_CHILD_START_OK);
 
     // The child opens the exchange (`ready` from its own onentry), so it is
     // provably alive for everything that follows and the verdict does not

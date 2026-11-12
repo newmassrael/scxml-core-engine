@@ -39,6 +39,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "../require_started.h"
 #include "a_delayed_http_send_is_posted_when_due_sm.h"
 
 typedef a_delayed_http_send_is_posted_when_due_t sm_t;
@@ -229,7 +230,8 @@ int main(void) {
     };
 
     sm_t sm;
-    a_delayed_http_send_is_posted_when_due_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_delayed_http_send_is_posted_when_due_init_with_clock(&sm, sce_clock_manual(0u)),
+                    A_DELAYED_HTTP_SEND_IS_POSTED_WHEN_DUE_START_OK);
     // A zero wait, written or evaluated, is no deferral: the POST is made
     // before init returns, with no tick to bring it out.
     expect("at once (the undelayed send and the two zero-delay sends)", 3, all);

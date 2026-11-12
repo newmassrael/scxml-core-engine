@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "wildcard_in_document_order_sm.h"
 
 // Each failure final names the case it belongs to, so the diagnostic below
@@ -48,7 +49,7 @@ static const char *failure_case(const wildcard_in_document_order_t *sm) {
 
 int main(void) {
     wildcard_in_document_order_t sm;
-    wildcard_in_document_order_init(&sm);
+    REQUIRE_STARTED(wildcard_in_document_order_init(&sm), WILDCARD_IN_DOCUMENT_ORDER_START_OK);
     wildcard_in_document_order_run(&sm);
 
     int rc = 0;

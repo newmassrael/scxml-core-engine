@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_host_processor_sm.h"
 
 #ifndef SCE_RESERVED_TYPE_TABLE
@@ -169,7 +170,8 @@ static void drive(statechart_host_processor_t *sm, recorder_t *rec, const char *
     if (register_as != NULL) {
         (void)sce_host_registry_register(&wiring, register_as, recording_handler, rec);
     }
-    statechart_host_processor_init_with_host_processors(sm, &wiring);
+    REQUIRE_STARTED(statechart_host_processor_init_with_host_processors(sm, &wiring),
+                    STATECHART_HOST_PROCESSOR_START_OK);
     statechart_host_processor_run(sm);
 }
 
@@ -354,7 +356,8 @@ static int the_registry_reports_what_it_holds(void) {
     (void)sce_host_registry_register(&wiring, DECLARED_TYPE, recording_handler, &current);
 
     statechart_host_processor_t sm;
-    statechart_host_processor_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(statechart_host_processor_init_with_host_processors(&sm, &wiring),
+                    STATECHART_HOST_PROCESSOR_START_OK);
     statechart_host_processor_run(&sm);
 
     int bad = 0;
@@ -495,7 +498,8 @@ static int a_reply_longer_than_a_fixed_slot_arrives_whole(void) {
     (void)sce_host_registry_register(&wiring, DECLARED_TYPE, long_reply_handler, &ctx);
 
     statechart_host_processor_t sm;
-    statechart_host_processor_init_with_host_processors(&sm, &wiring);
+    REQUIRE_STARTED(statechart_host_processor_init_with_host_processors(&sm, &wiring),
+                    STATECHART_HOST_PROCESSOR_START_OK);
     statechart_host_processor_run(&sm);
 
     int bad = 0;

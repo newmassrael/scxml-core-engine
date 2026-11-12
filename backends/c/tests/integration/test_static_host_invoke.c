@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "statechart_static_host_invoke_sm.h"
 #include "static_host_invoke_overflow_sm.h"
 
@@ -70,7 +71,8 @@ static void boot(statechart_static_host_invoke_t *sm, seen_t *seen) {
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, invoker, seen);
-    statechart_static_host_invoke_init_with_host_invokers(sm, &wiring);
+    REQUIRE_STARTED(statechart_static_host_invoke_init_with_host_invokers(sm, &wiring),
+                    STATECHART_STATIC_HOST_INVOKE_START_OK);
 }
 
 static bool send_event(statechart_static_host_invoke_t *sm, const char *name) {
@@ -169,7 +171,8 @@ static int a_param_whose_value_cannot_be_computed_is_reported_and_left_out(void)
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, invoker, &seen);
-    static_host_invoke_overflow_init_with_host_invokers(&sm, &wiring);
+    REQUIRE_STARTED(static_host_invoke_overflow_init_with_host_invokers(&sm, &wiring),
+                    STATIC_HOST_INVOKE_OVERFLOW_START_OK);
 
     static_host_invoke_overflow_event_t event;
     int bad = 0;

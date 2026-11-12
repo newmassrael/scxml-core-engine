@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "ancestor_entry_is_not_default_entry_sm.h"
 
 /// The counters, as the machine holds them (W3C SCXML 5.3 accessors).
@@ -58,7 +59,7 @@ static void send(ancestor_entry_is_not_default_entry_t *sm, ancestor_entry_is_no
 
 int main(void) {
     ancestor_entry_is_not_default_entry_t sm;
-    ancestor_entry_is_not_default_entry_init(&sm);
+    REQUIRE_STARTED(ancestor_entry_is_not_default_entry_init(&sm), ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_START_OK);
     ancestor_entry_is_not_default_entry_run(&sm);
 
     if (!ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_AWAY)) {

@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "an_origin_is_the_address_its_sender_published_sm.h"
 
 typedef an_origin_is_the_address_its_sender_published_t sm_t;
@@ -30,7 +31,8 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 
 int main(void) {
     sm_t sm;
-    an_origin_is_the_address_its_sender_published_init(&sm);
+    REQUIRE_STARTED(an_origin_is_the_address_its_sender_published_init(&sm),
+                    AN_ORIGIN_IS_THE_ADDRESS_ITS_SENDER_PUBLISHED_START_OK);
     an_origin_is_the_address_its_sender_published_run(&sm);
 
     int ok = 1;

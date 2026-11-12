@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../require_started.h"
 #include "autoforward_keeps_the_arrival_name_sm.h"
 
 // Deliver `name` to the machine as a host does, by name, and run it to
@@ -35,7 +36,7 @@ static void deliver(autoforward_keeps_the_arrival_name_t *sm, const char *name) 
 
 int main(void) {
     autoforward_keeps_the_arrival_name_t sm;
-    autoforward_keeps_the_arrival_name_init(&sm);
+    REQUIRE_STARTED(autoforward_keeps_the_arrival_name_init(&sm), AUTOFORWARD_KEEPS_THE_ARRIVAL_NAME_START_OK);
     autoforward_keeps_the_arrival_name_run(&sm);
 
     deliver(&sm, "request.new");

@@ -19,6 +19,7 @@
 // sce-build/tests/c11_session_identity.rs; a test component started under its
 // name is held by test_a_test_suite_runs_through_its_runner.c.
 
+#include "../require_started.h"
 #include "static_enum_sm.h"
 
 #include <stdint.h>
@@ -116,7 +117,7 @@ static void a_restore_keeps_the_id_it_was_saved_with(void) {
 static void no_id_gives_the_drawn_default(void) {
     static static_enum_t sm;
     static const char DRAWN[] = "static_enum_session_";
-    static_enum_init(&sm);
+    REQUIRE_STARTED(static_enum_init(&sm), STATIC_ENUM_START_OK);
     CHECK(strncmp(static_enum_session_id(&sm), DRAWN, sizeof(DRAWN) - 1u) == 0, "the drawn id is `%s`",
           static_enum_session_id(&sm));
     CHECK(strcmp(static_enum_session_id(&sm), GIVEN) != 0, "a machine given no id holds none it was not given");

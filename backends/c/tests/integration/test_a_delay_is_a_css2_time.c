@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../require_started.h"
 #include "a_delay_is_a_css2_time_sm.h"
 
 typedef a_delay_is_a_css2_time_t sm_t;
@@ -26,7 +27,7 @@ typedef bool (*reader_t)(const sm_t *, int64_t *);
 int main(void) {
     sm_t sm;
     // The host owns the clock, so a minute passes when the test says so.
-    a_delay_is_a_css2_time_init_with_clock(&sm, sce_clock_manual(0u));
+    REQUIRE_STARTED(a_delay_is_a_css2_time_init_with_clock(&sm, sce_clock_manual(0u)), A_DELAY_IS_A_CSS2_TIME_START_OK);
     a_delay_is_a_css2_time_run(&sm);
     a_delay_is_a_css2_time_advance_time_ms(&sm, 60000u);
     a_delay_is_a_css2_time_run(&sm);
