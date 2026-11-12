@@ -496,10 +496,18 @@ public final class XmlDataIsADomTreePolicy: InvocablePolicy {
                     try session.setGlobal(id, value)
                 case .json(let text):
                     // The text is parsed where the session reads it, and the global it was carried
-                    // in is not left in the datamodel, which declares no such name.
+                    // in is not left in the datamodel, which declares no such name. The read is the
+                    // whole-document one, which says whether the text was JSON: `JSON.parse` answers
+                    // nil for text that is not, the same as for JSON `null`, so a value the session
+                    // cannot hold would be declared absent and raise nothing. A refusal fails the
+                    // declaration instead, which is this `<data>`'s initialization error.
                     try session.setGlobal("_scxml_seed", .string(text))
                     defer { try? session.setGlobal("_scxml_seed", .nilValue) }
-                    try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
+                    try session.defineGlobal(
+                        id,
+                        as: "(function() local value, isJson = JSON._parse_document(_scxml_seed) if not isJson then error(\"the handed value is not JSON\") end return value end)()",
+                        chunkName: "=seed"
+                    )
                 }
             } else if let expression {
                 do {
