@@ -64,8 +64,21 @@ PY
 
 mutation_case "a handed object is declared as its JSON text" <<'PY'
 edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
-     "                    try session.defineGlobal(id, as: \"JSON.parse(_scxml_seed)\", chunkName: \"=seed\")\n",
-     "                    try session.defineGlobal(id, as: \"_scxml_seed\", chunkName: \"=seed\")\n")
+     "                        as: \"(function() local value, isJson = JSON._parse_document(_scxml_seed) if not isJson then error(\\\"the handed value is not JSON\\\") end return value end)()\",\n",
+     "                        as: \"_scxml_seed\",\n")
+PY
+
+# ── A handed text that is not JSON is the <data>'s error ─────────────
+#
+# The seed is read whole, so text that is not JSON fails the declaration
+# rather than declaring the name absent (`JSON.parse` answers nil for both).
+# Killer: `aHandedValueTheSessionCannotHoldIsTheDatasInitializationError`,
+# which counts no error.execution.
+
+mutation_case "a handed text that is not JSON is declared absent and raises nothing" <<'PY'
+edit("tools/codegen/templates/swift/script_engine.swift.jinja2",
+     " if not isJson then error(\\\"the handed value is not JSON\\\") end return value end)()",
+     " return value end)()")
 PY
 
 # ── An early-bound state <data> takes a handed value ─────────────────
