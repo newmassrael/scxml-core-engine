@@ -1,0 +1,155 @@
+# Mutation cases for docs/adr/0098 on the Rust channel: a value an <invoke>
+# hands its child is the initial value of the child's top-level <data> of that
+# name, in place of its own (§scxml-6.4).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_rust_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# The child used to evaluate every <data>, then write each handed value over
+# it with its error ignored, and the parent dropped the names it knew the
+# child does not declare. Every case below restores a piece of an order that
+# is not the specification's — the <data>'s own value evaluated, the values
+# taken late, a state's <data> seeded, a refused value passed over or replaced
+# by the <data>'s own — and names the assertion that must go red. The script
+# engine of the refusal cases is a double over the Lua engine that refuses to
+# hold one value, so the failure is reached through the engine a generated
+# machine is handed, as a host's would be.
+#
+# Not here: a mutant that adds a name no top-level <data> declares. The set of
+# handed values gives up nothing but what a <data> asks for by id, so no small
+# edit can add the rest; the test
+# `a_handed_name_no_top_level_data_declares_is_not_added` and
+# `invoke_param_seeds_declared_child_data`'s `unmatched` phase hold it.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_child_takes_a_handed_value_in_place_of_its_data --test a_static_child_declares_its_data_with_a_handed_value
+mutation_targets tools/codegen/templates/rust/datamodel_macros.rs.jinja2 tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2 tools/codegen/templates/rust/state_machine.rs.jinja2
+
+# The templates reach `cargo test` only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the tests, and the command is what carries a mutated
+# template into them.
+mutation_targets_glob 'backends/rust/tests/src/integration/a_child_takes_a_handed_value_in_place_of_its_data/*.rs'
+mutation_targets_glob 'backends/rust/tests/src/integration/a_static_child_declares_its_data_with_a_handed_value/*.rs'
+mutation_regen scripts/materialize.sh rust-integration
+
+mutation_oracles backends/rust/tests/tests/a_child_takes_a_handed_value_in_place_of_its_data.rs backends/rust/tests/tests/a_static_child_declares_its_data_with_a_handed_value.rs
+
+# ── The <data>'s own value is evaluated, then overwritten ──────────
+#
+# The old order: every top-level <data> is evaluated, and a handed value is
+# written over it afterwards. `failing`'s own expr raises error.execution and
+# `effectful`'s own expr leaves an entry in `trail`.
+# Killers: `a_seeded_data_whose_own_expr_would_fail_takes_the_handed_value_and_raises_nothing`
+# (one error) and `a_seeded_data_whose_own_expr_acts_takes_the_handed_value_without_the_act`
+# (`trail` holds one entry).
+
+mutation_case "a seeded data's own value is evaluated before the handed one is written" <<'PY'
+edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
+     """        if let Some(value) = handed.take("{{ var.id | escape_rust }}") {""",
+     """{{ initialize_variable(var, 'global', true, machine_name, model) }}
+        if let Some(value) = handed.take("{{ var.id | escape_rust }}") {""")
+PY
+
+# ── The handed values are taken after the top-level <script> ───────
+#
+# The start declares every <data> with its own value and writes the handed
+# values once the top-level <script> has run, so the script reads the <data>'s
+# own value: nothing, for `failing`, whose own expr fails.
+# Killer: `the_childs_script_and_first_onentry_read_the_handed_values`, whose
+# `saw_script` finds no 'handed-failing'.
+
+mutation_case "the handed values are written after the top-level script" <<'PY'
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """        let mut handed = std::mem::take(&mut self.handed_values);""",
+     """        let mut handed = sce_rust_runtime::helpers::invoke_processing::HandedValues::default();""")
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() state query callback""",
+     """{% for var in model.variables %}
+        if let Some(value) = self.handed_values.take("{{ var.id | escape_rust }}") {
+            let _ = se.set_variable(&sid, "{{ var.id | escape_rust }}", value);
+        }
+{% endfor %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() state query callback""")
+PY
+
+# ── A state's <data> takes a handed value too ──────────────────────
+#
+# The early-bound <data> of a state is declared as a top-level one is, so a
+# value handed under its id replaces its own: the shape of a child that seeds
+# every name its session holds.
+# Killer: `a_state_data_of_a_handed_name_keeps_its_own_value`, whose
+# `local_only` is 'handed-local'.
+
+mutation_case "an early-bound state data takes a handed value" <<'PY'
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """        // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
+{{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}""",
+     """        // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
+{% if model.variables %}
+{% for var in state.datamodel %}
+{{ declare_top_level_variable(var, machine_name, model) }}
+{% endfor %}
+{% else %}
+{{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}
+{% endif %}""")
+PY
+
+# ── A handed value the session refuses raises nothing ──────────────
+#
+# The old `let _` on the write: the <data> is left unset and the document is
+# not told.
+# Killer: `a_handed_value_the_session_cannot_hold_is_its_datas_initialization_error`,
+# which counts no error.
+
+mutation_case "a handed value the session refuses raises no error.execution" <<'PY'
+edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
+     """{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""",
+     """{% if false %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it"));""")
+PY
+
+# ── A handed value the session refuses falls back to the own value ──
+#
+# The <data> whose handed value was refused is initialized from its own expr
+# instead, which evaluates what the specification says is ignored.
+# Killer: `a_handed_value_the_session_cannot_hold_is_its_datas_initialization_error`,
+# which counts the second error `failing`'s own expr raises.
+
+mutation_case "a refused handed value falls back to the data's own value" <<'PY'
+edit("tools/codegen/templates/rust/datamodel_macros.rs.jinja2",
+     """                ::sce_rust_runtime::sce_log_error!("<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it: {}", e);""",
+     """                ::sce_rust_runtime::sce_log_error!("<data id='{{ var.id | escape_rust }}'> could not hold the value its invoke handed it: {}", e);
+{{ initialize_variable(var, 'global', true, machine_name, model) }}""")
+PY
+
+# ── A static child writes the handed values over its variables ─────
+#
+# `accept_params` as it was: the variables are declared with their own initial
+# values when the machine is built, and a handed value is written over its
+# variable afterwards, so a variable declared after it read the own value.
+# Killer: `a_variable_declared_after_a_handed_one_reads_the_handed_value`,
+# whose `worker` holds `copied = 0` and never ends.
+
+mutation_case "a static child writes a handed value over its declared variable" <<'PY'
+edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
+     """{{ static_field_declarations(static_fields, static_enums, 'handed') }}
+{% for field in static_fields %}
+        self.{{ field.name }} = {{ field.name }};
+{% endfor %}""",
+     """{% for field in static_fields %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+        if handed.{{ field.name }}.is_some() {
+            self.{{ field.name }} = handed.{{ field.name }};
+        }
+{% elif field.seeded %}
+        if let Some(value) = handed.{{ field.name }} {
+            self.{{ field.name }} = value;
+        }
+{% endif %}
+{% endfor %}""")
+PY
