@@ -852,6 +852,12 @@ would move with the enum's order. So:
 3. A `union:U` variable with no `<sce:set>` is refused (`scxml/static-datamodel-rule`, on its `sce:type`, naming
    both repairs), and so is one with an `expr`. No diagnostic code is added.
 
+ADR 0098 (2026-11-12) states this as one rule over every type: no type has a zero, and a failure is no value.
+The sentence above that a record has a value every field of which is its type's zero is withdrawn: no record
+has one either, on any backend. On Swift that removes the two refusals the zero made (a record that holds a
+union, and an index read of a list of unions), and section 7's Swift row holds a record that holds a union as
+any other.
+
 ## Decided while landing step 4 on Go (2026-11-11)
 
 Step 4 on Go lands the statechart's part: a payload that holds a union, a union variable, its narrowing, its
