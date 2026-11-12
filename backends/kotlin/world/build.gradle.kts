@@ -42,11 +42,16 @@ dependencies {
 }
 
 // The machines this server can host, by the directory their generated source has under
-// `com/sce/integration`. Each needs a row in `Machines.kt`, so a name listed here and not
-// there is code nothing reaches, and a row there with no name here does not compile.
+// `com/sce/integration/static_datamodel`. Each needs a row in `Machines.kt`, so a name
+// listed here and not there is code nothing reaches, and a row there with no name here
+// does not compile.
 val hostedMachines = listOf("todo_peer", "record_list")
 
 val generatedTree = rootProject.file("backends/kotlin/tests/src/main/kotlin/com/sce")
+
+// Where scripts/regen_static_datamodel_kotlin.sh writes each machine: a directory of its
+// own, apart from the integration stems that share `com/sce/integration`.
+val machineTree = File(generatedTree, "integration/static_datamodel")
 
 // A generated machine imports the algorithms it calls as `com.sce.generated.<name>.*`, and
 // an algorithm imports the record schemas and algorithms it is built on the same way. The
@@ -69,7 +74,7 @@ fun importedAlgorithms(directory: File): Set<String> {
 val hostedAlgorithms: Set<String> = run {
     val found = sortedSetOf<String>()
     var frontier: Set<String> =
-        hostedMachines.flatMap { importedAlgorithms(File(generatedTree, "integration/$it")) }.toSet()
+        hostedMachines.flatMap { importedAlgorithms(File(machineTree, it)) }.toSet()
     while (frontier.isNotEmpty()) {
         found += frontier
         frontier = frontier
@@ -83,7 +88,7 @@ val hostedAlgorithms: Set<String> = run {
 // Each directory is added at its own path rather than at the shared root, so a machine
 // this module does not host is not compiled with the ones it does.
 sourceSets["main"].kotlin.srcDirs(
-    hostedMachines.map { File(generatedTree, "integration/$it") } +
+    hostedMachines.map { File(machineTree, it) } +
         hostedAlgorithms.map { File(generatedTree, "generated/$it") },
 )
 

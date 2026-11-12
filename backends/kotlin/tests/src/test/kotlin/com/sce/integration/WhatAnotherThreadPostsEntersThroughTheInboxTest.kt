@@ -37,9 +37,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderActions
-import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderEvent
-import com.sce.integration.static_invoke_ending_order.StaticInvokeEndingOrderStateMachine
+import com.sce.integration.static_datamodel.static_invoke_ending_order.StaticInvokeEndingOrderActions
+import com.sce.integration.static_datamodel.static_invoke_ending_order.StaticInvokeEndingOrderEvent
+import com.sce.integration.static_datamodel.static_invoke_ending_order.StaticInvokeEndingOrderStateMachine
 import com.sce.runtime.EnabledTransition
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata

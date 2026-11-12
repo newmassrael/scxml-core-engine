@@ -21,9 +21,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke_hybrid_saved.StaticInvokeHybridSavedEvent
-import com.sce.integration.static_invoke_hybrid_saved.StaticInvokeHybridSavedState
-import com.sce.integration.static_invoke_hybrid_saved.StaticInvokeHybridSavedStateMachine
+import com.sce.integration.static_datamodel.static_invoke_hybrid_saved.StaticInvokeHybridSavedEvent
+import com.sce.integration.static_datamodel.static_invoke_hybrid_saved.StaticInvokeHybridSavedState
+import com.sce.integration.static_datamodel.static_invoke_hybrid_saved.StaticInvokeHybridSavedStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedInvokes
 import com.sce.runtime.SavedState

@@ -4,7 +4,8 @@
 // A Kotlin machine sends a composed value by its name (docs/adr/0086, section
 // 5.2), run with no script engine, as the Rust machine does
 // (backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs). The
-// committed machine under `src/main/kotlin/com/sce/integration/static_composed_send/`
+// committed machine under
+// `src/main/kotlin/com/sce/integration/static_datamodel/static_composed_send/`
 // is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`
 // (regen: `scripts/regen_static_datamodel_kotlin.sh`).
@@ -18,7 +19,7 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_composed_send.StaticComposedSendStateMachine
+import com.sce.integration.static_datamodel.static_composed_send.StaticComposedSendStateMachine
 import com.sce.runtime.EventMetadata
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName

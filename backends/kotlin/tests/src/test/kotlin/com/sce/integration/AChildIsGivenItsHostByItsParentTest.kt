@@ -16,10 +16,10 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_child_host.RecordingStaticChildHostActions
-import com.sce.integration.static_child_host.RecordingStaticChildHostSceSynthInvokeWorkerActions
-import com.sce.integration.static_child_host.StaticChildHostEvent
-import com.sce.integration.static_child_host.StaticChildHostStateMachine
+import com.sce.integration.static_datamodel.static_child_host.RecordingStaticChildHostActions
+import com.sce.integration.static_datamodel.static_child_host.RecordingStaticChildHostSceSynthInvokeWorkerActions
+import com.sce.integration.static_datamodel.static_child_host.StaticChildHostEvent
+import com.sce.integration.static_datamodel.static_child_host.StaticChildHostStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import kotlin.test.Test

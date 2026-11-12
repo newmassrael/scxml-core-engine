@@ -27,7 +27,7 @@
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticHybridInvokeStartsTheCandidateItsValueNamesTest'
 mutation_targets tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2 tools/codegen/templates/kotlin/param_macros.kt.jinja2
-mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_invoke_hybrid/static_invoke_hybridSm.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybridSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticHybridInvokeStartsTheCandidateItsValueNamesTest.kt sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_first.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
 

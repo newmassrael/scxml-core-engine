@@ -27,7 +27,7 @@
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AStaticHybridInvokeIsStartedAgainByARestoreTest'
 mutation_targets tools/codegen/templates/kotlin/state_machine.kt.jinja2 tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2
-mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_invoke_hybrid_saved/static_invoke_hybrid_savedSm.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_invoke_hybrid_saved/static_invoke_hybrid_savedSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AStaticHybridInvokeIsStartedAgainByARestoreTest.kt sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid_saved.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_watcher.scxml sce-build/tests/fixtures/static_datamodel/static_hybrid_holder.scxml
 

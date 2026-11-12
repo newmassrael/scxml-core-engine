@@ -17,7 +17,7 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
+import com.sce.integration.static_datamodel.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.InboxInput
 import com.sce.runtime.Json

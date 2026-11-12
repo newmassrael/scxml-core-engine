@@ -20,8 +20,8 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_send_idlocation.StaticSendIdlocationEvent
-import com.sce.integration.static_send_idlocation.StaticSendIdlocationStateMachine
+import com.sce.integration.static_datamodel.static_send_idlocation.StaticSendIdlocationEvent
+import com.sce.integration.static_datamodel.static_send_idlocation.StaticSendIdlocationStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import java.io.File

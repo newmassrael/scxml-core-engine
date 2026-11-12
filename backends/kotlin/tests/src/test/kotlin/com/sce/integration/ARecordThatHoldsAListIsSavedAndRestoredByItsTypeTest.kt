@@ -14,9 +14,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_lift_list.StaticLiftListItemRecord
-import com.sce.integration.static_lift_list.StaticLiftListPlanRecord
-import com.sce.integration.static_lift_list.StaticLiftListStateMachine
+import com.sce.integration.static_datamodel.static_lift_list.StaticLiftListItemRecord
+import com.sce.integration.static_datamodel.static_lift_list.StaticLiftListPlanRecord
+import com.sce.integration.static_datamodel.static_lift_list.StaticLiftListStateMachine
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.Json
 import com.sce.runtime.SavedState

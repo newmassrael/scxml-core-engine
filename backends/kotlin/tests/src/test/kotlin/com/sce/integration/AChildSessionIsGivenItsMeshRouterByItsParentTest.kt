@@ -15,7 +15,7 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_child_mesh.StaticChildMeshStateMachine
+import com.sce.integration.static_datamodel.static_child_mesh.StaticChildMeshStateMachine
 import com.sce.runtime.ChildMeshRouter
 import com.sce.runtime.ManualClock
 import com.sce.runtime.MeshCall

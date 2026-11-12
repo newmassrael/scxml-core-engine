@@ -15,6 +15,13 @@
  * per-backend layout convention and the architectural-axis
  * (committed-tree vs build-time, Interpreter vs AOT) rationale.
  *
+ * The `datamodel="sce-static"` machines are a second generated tree and
+ * have a package of their own, `com.sce.integration.static_datamodel.<machine>`,
+ * written by `scripts/regen_static_datamodel_kotlin.sh` from
+ * `sce-build/tests/fixtures/static_datamodel/`, as Rust's
+ * `integration::static_datamodel` and Go's `integration/static_datamodel`
+ * are: two trees in one directory could not each own it.
+ *
  * This file is intentionally not §6.2.6 drift-gated: it is the only
  * hand-authored file under `com.sce.integration` and has no
  * `SCE-GENERATED` header, mirroring `backends/rust/tests/src/integration/mod.rs`.

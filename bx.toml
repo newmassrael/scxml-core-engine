@@ -572,7 +572,8 @@ run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalo
 #     rust-integration.toml) whose integration stems are a directory each under src/integration,
 #     found at run time, so no output can be declared for each.
 #   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
-#     com/sce/generated, the W3C tree, and its machines under com/sce/integration, the integration one.
+#     com/sce/generated, the W3C tree. Its machines are a directory of their own,
+#     com/sce/integration/static_datamodel, beside the integration stems.
 #   - regen-go-integration: a declared tree (tools/codegen/trees/go-integration.toml) whose stems are
 #     a directory each under backends/go/tests/integration, found at run time, and the static
 #     datamodel's directory beside them. The W3C Go tree is a directory of its own, and a step of its

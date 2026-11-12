@@ -4,7 +4,8 @@
 // A Kotlin machine reads a composed payload at any depth (docs/adr/0086,
 // section 6), run with no script engine, as the Rust machine does
 // (backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs). The
-// committed machine under `src/main/kotlin/com/sce/integration/static_composed_payload/`
+// committed machine under
+// `src/main/kotlin/com/sce/integration/static_datamodel/static_composed_payload/`
 // is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
 // (regen: `scripts/regen_static_datamodel_kotlin.sh`).
@@ -20,9 +21,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_composed_payload.StaticComposedPayloadItemRecord
-import com.sce.integration.static_composed_payload.StaticComposedPayloadSignalLevelEnum
-import com.sce.integration.static_composed_payload.StaticComposedPayloadStateMachine
+import com.sce.integration.static_datamodel.static_composed_payload.StaticComposedPayloadItemRecord
+import com.sce.integration.static_datamodel.static_composed_payload.StaticComposedPayloadSignalLevelEnum
+import com.sce.integration.static_datamodel.static_composed_payload.StaticComposedPayloadStateMachine
 import com.sce.runtime.BoundExceeded
 import com.sce.runtime.EventMetadata
 import org.junit.jupiter.api.Assertions.assertEquals

@@ -18,9 +18,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke_params.StaticInvokeParamsEvent
-import com.sce.integration.static_invoke_params.StaticInvokeParamsState
-import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
+import com.sce.integration.static_datamodel.static_invoke_params.StaticInvokeParamsEvent
+import com.sce.integration.static_datamodel.static_invoke_params.StaticInvokeParamsState
+import com.sce.integration.static_datamodel.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedState
 import kotlin.test.Test

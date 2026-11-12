@@ -1656,7 +1656,10 @@ fn a_kotlin_candidates_in_line_child_is_generated_into_its_parents_package() {
     generate_child_mesh_package(
         "kotlin",
         &out_dir,
-        &["--kotlin-package-prefix", "com.sce.integration"],
+        &[
+            "--kotlin-package-prefix",
+            "com.sce.integration.static_datamodel",
+        ],
     );
     let machine_files: Vec<PathBuf> = find_by_ext(&out_dir, "kt")
         .into_iter()
@@ -1683,7 +1686,7 @@ fn a_kotlin_candidates_in_line_child_is_generated_into_its_parents_package() {
         let src = std::fs::read_to_string(path).expect("read kotlin");
         assert_eq!(
             package_clause(&src),
-            Some("com.sce.integration.static_child_mesh"),
+            Some("com.sce.integration.static_datamodel.static_child_mesh"),
             "{} is not in the package of the machine that starts the candidate",
             path.display()
         );

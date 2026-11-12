@@ -7,8 +7,8 @@
 
 package com.sce.world
 
-import com.sce.integration.record_list.RecordListStateMachine
-import com.sce.integration.todo_peer.TodoPeerStateMachine
+import com.sce.integration.static_datamodel.record_list.RecordListStateMachine
+import com.sce.integration.static_datamodel.todo_peer.TodoPeerStateMachine
 
 /**
  * The wall clock reading a machine is saved and restored against. A saved delayed send

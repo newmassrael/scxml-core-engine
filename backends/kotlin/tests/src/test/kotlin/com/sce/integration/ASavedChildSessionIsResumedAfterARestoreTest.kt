@@ -24,9 +24,9 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke.StaticInvokeEvent
-import com.sce.integration.static_invoke.StaticInvokeState
-import com.sce.integration.static_invoke.StaticInvokeStateMachine
+import com.sce.integration.static_datamodel.static_invoke.StaticInvokeEvent
+import com.sce.integration.static_datamodel.static_invoke.StaticInvokeState
+import com.sce.integration.static_datamodel.static_invoke.StaticInvokeStateMachine
 import com.sce.runtime.ManualClock
 import com.sce.runtime.SavedInvokes
 import com.sce.runtime.SavedState

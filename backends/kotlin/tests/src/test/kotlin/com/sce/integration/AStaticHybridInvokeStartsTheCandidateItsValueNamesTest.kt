@@ -27,7 +27,7 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_invoke_hybrid.StaticInvokeHybridStateMachine
+import com.sce.integration.static_datamodel.static_invoke_hybrid.StaticInvokeHybridStateMachine
 import com.sce.runtime.ManualClock
 import kotlin.test.Test
 import kotlin.test.assertEquals

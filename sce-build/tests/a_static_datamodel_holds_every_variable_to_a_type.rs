@@ -6147,7 +6147,7 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
     ),
     (
         "kotlin",
-        "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{m}/{m}Sm.kt",
+        "backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/{m}/{m}Sm.kt",
     ),
     (
         "go",

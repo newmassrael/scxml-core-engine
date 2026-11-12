@@ -4,7 +4,7 @@
 // datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15) — Kotlin
 // compile+run gate.
 //
-// The committed SMs (com/sce/integration/<machine>/<machine>Sm.kt) are
+// The committed SMs (com/sce/integration/static_datamodel/<machine>/<machine>Sm.kt) are
 // generated from sce-build/tests/fixtures/static_datamodel/<machine>.scxml
 // (regen: scripts/regen_static_datamodel_kotlin.sh). Their variables are
 // Kotlin fields and every expression — the guard reading `count` and `In()`,
@@ -14,50 +14,50 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_bytes.StaticBytesStateMachine
-import com.sce.integration.static_counter.StaticCounterEvent
-import com.sce.integration.static_counter.StaticCounterState
-import com.sce.integration.static_counter.StaticCounterStateMachine
-import com.sce.integration.static_enum.StaticEnumEvent
-import com.sce.integration.static_enum.StaticEnumStateMachine
-import com.sce.integration.static_enum.StaticEnumViewModeEnum
-import com.sce.integration.static_host_call.RecordingStaticHostCallActions
-import com.sce.integration.static_host_call.StaticHostCallEvent
-import com.sce.integration.static_host_call.StaticHostCallState
-import com.sce.integration.static_host_call.StaticHostCallActions
-import com.sce.integration.static_host_call.StaticHostCallStateMachine
-import com.sce.integration.static_host_duty.RecordingStaticHostDutyActions
-import com.sce.integration.static_host_duty.StaticHostDutyActions
-import com.sce.integration.static_host_duty.StaticHostDutyEvent
-import com.sce.integration.static_host_duty.StaticHostDutyState
-import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
-import com.sce.integration.static_history.StaticHistoryEvent
-import com.sce.integration.static_history.StaticHistoryState
-import com.sce.integration.static_history.StaticHistoryStateMachine
-import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
-import com.sce.integration.static_list.StaticListEvent
-import com.sce.integration.static_list.StaticListStateMachine
-import com.sce.integration.static_optional.StaticOptionalDueRecord
-import com.sce.integration.static_optional.StaticOptionalStateMachine
-import com.sce.integration.static_optional.StaticOptionalStatusEnum
-import com.sce.integration.static_optional_record.StaticOptionalRecordItemRecord
-import com.sce.integration.static_optional_record.StaticOptionalRecordStateMachine
-import com.sce.integration.static_optional_unwidened.StaticOptionalUnwidenedStateMachine
-import com.sce.integration.static_overflow.StaticOverflowEvent
-import com.sce.integration.static_overflow.StaticOverflowState
-import com.sce.integration.static_overflow.StaticOverflowStateMachine
-import com.sce.integration.static_payload_bytes.StaticPayloadBytesStateMachine
-import com.sce.integration.static_record.StaticRecordDayRecord
-import com.sce.integration.static_record.StaticRecordEvent
-import com.sce.integration.static_record.StaticRecordStateMachine
-import com.sce.integration.static_record_bytes.StaticRecordBytesEvent
-import com.sce.integration.static_record_bytes.StaticRecordBytesStateMachine
-import com.sce.integration.static_record_string.StaticRecordStringStateMachine
-import com.sce.integration.static_schema_pending.StaticSchemaPendingStateMachine
-import com.sce.integration.static_schema_revision.StaticSchemaRevisionStateMachine
-import com.sce.integration.static_string_capacity.StaticStringCapacityStateMachine
-import com.sce.integration.static_timers.StaticTimersEvent
-import com.sce.integration.static_timers.StaticTimersStateMachine
+import com.sce.integration.static_datamodel.static_bytes.StaticBytesStateMachine
+import com.sce.integration.static_datamodel.static_counter.StaticCounterEvent
+import com.sce.integration.static_datamodel.static_counter.StaticCounterState
+import com.sce.integration.static_datamodel.static_counter.StaticCounterStateMachine
+import com.sce.integration.static_datamodel.static_enum.StaticEnumEvent
+import com.sce.integration.static_datamodel.static_enum.StaticEnumStateMachine
+import com.sce.integration.static_datamodel.static_enum.StaticEnumViewModeEnum
+import com.sce.integration.static_datamodel.static_host_call.RecordingStaticHostCallActions
+import com.sce.integration.static_datamodel.static_host_call.StaticHostCallEvent
+import com.sce.integration.static_datamodel.static_host_call.StaticHostCallState
+import com.sce.integration.static_datamodel.static_host_call.StaticHostCallActions
+import com.sce.integration.static_datamodel.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_datamodel.static_host_duty.RecordingStaticHostDutyActions
+import com.sce.integration.static_datamodel.static_host_duty.StaticHostDutyActions
+import com.sce.integration.static_datamodel.static_host_duty.StaticHostDutyEvent
+import com.sce.integration.static_datamodel.static_host_duty.StaticHostDutyState
+import com.sce.integration.static_datamodel.static_host_duty.StaticHostDutyStateMachine
+import com.sce.integration.static_datamodel.static_history.StaticHistoryEvent
+import com.sce.integration.static_datamodel.static_history.StaticHistoryState
+import com.sce.integration.static_datamodel.static_history.StaticHistoryStateMachine
+import com.sce.integration.static_datamodel.static_invoke_tree.StaticInvokeTreeStateMachine
+import com.sce.integration.static_datamodel.static_list.StaticListEvent
+import com.sce.integration.static_datamodel.static_list.StaticListStateMachine
+import com.sce.integration.static_datamodel.static_optional.StaticOptionalDueRecord
+import com.sce.integration.static_datamodel.static_optional.StaticOptionalStateMachine
+import com.sce.integration.static_datamodel.static_optional.StaticOptionalStatusEnum
+import com.sce.integration.static_datamodel.static_optional_record.StaticOptionalRecordItemRecord
+import com.sce.integration.static_datamodel.static_optional_record.StaticOptionalRecordStateMachine
+import com.sce.integration.static_datamodel.static_optional_unwidened.StaticOptionalUnwidenedStateMachine
+import com.sce.integration.static_datamodel.static_overflow.StaticOverflowEvent
+import com.sce.integration.static_datamodel.static_overflow.StaticOverflowState
+import com.sce.integration.static_datamodel.static_overflow.StaticOverflowStateMachine
+import com.sce.integration.static_datamodel.static_payload_bytes.StaticPayloadBytesStateMachine
+import com.sce.integration.static_datamodel.static_record.StaticRecordDayRecord
+import com.sce.integration.static_datamodel.static_record.StaticRecordEvent
+import com.sce.integration.static_datamodel.static_record.StaticRecordStateMachine
+import com.sce.integration.static_datamodel.static_record_bytes.StaticRecordBytesEvent
+import com.sce.integration.static_datamodel.static_record_bytes.StaticRecordBytesStateMachine
+import com.sce.integration.static_datamodel.static_record_string.StaticRecordStringStateMachine
+import com.sce.integration.static_datamodel.static_schema_pending.StaticSchemaPendingStateMachine
+import com.sce.integration.static_datamodel.static_schema_revision.StaticSchemaRevisionStateMachine
+import com.sce.integration.static_datamodel.static_string_capacity.StaticStringCapacityStateMachine
+import com.sce.integration.static_datamodel.static_timers.StaticTimersEvent
+import com.sce.integration.static_datamodel.static_timers.StaticTimersStateMachine
 import com.sce.runtime.ActionRealization
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.Json
@@ -527,7 +527,7 @@ class StaticDatamodelTest {
             sm.send(StaticListEvent.Full)
             sm.tick()
             assertEquals(
-                setOf(com.sce.integration.static_list.StaticListState.Collecting),
+                setOf(com.sce.integration.static_datamodel.static_list.StaticListState.Collecting),
                 sm.snapshot.value.configuration,
                 "two of three picked: the guard holds `full` back"
             )
@@ -536,7 +536,7 @@ class StaticDatamodelTest {
             sm.send(StaticListEvent.Full)
             sm.tick()
             assertEquals(
-                setOf(com.sce.integration.static_list.StaticListState.Done),
+                setOf(com.sce.integration.static_datamodel.static_list.StaticListState.Done),
                 sm.snapshot.value.configuration
             )
         } finally {

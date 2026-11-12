@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/<machine>/
+# Regenerate
+# backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/<machine>/
 # from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
 # machine in MACHINES; the test profile's templates from
 # sce-build/tests/fixtures/test_profile/ with the documents they name, under
@@ -33,8 +34,14 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 INPUT_ROOT="sce-build/tests/fixtures/static_datamodel"
-GENERATED_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration"
-PACKAGE_PREFIX="com.sce.integration"
+# The machines have a directory of their own, as the Rust (`integration::static_datamodel`)
+# and Go (`tests/integration/static_datamodel`) trees do, so that the integration stems
+# beside them in `com/sce/integration/` and these machines are two generated trees, each
+# the only writer of its directory. The package follows the directory, as a Kotlin
+# package does. SCE_KOTLIN_GENERATED_ROOT stays the source root above `com/`, which the
+# w3c-kotlin gate overrides to generate into a scratch copy.
+GENERATED_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/static_datamodel"
+PACKAGE_PREFIX="com.sce.integration.static_datamodel"
 
 # static_counter:   variables, a typed guard and assignments.
 # static_host_call: a native host action taking typed datamodel arguments.

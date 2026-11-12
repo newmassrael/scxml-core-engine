@@ -28,8 +28,8 @@
 
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AChildIsGivenItsHostByItsParentTest' --tests 'com.sce.integration.AHybridCandidateIsGivenItsHostByItsParentTest'
 mutation_targets sce-build/src/forge/native_action.rs
-mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host/static_child_hostSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host/static_child_host__sce_synth_invoke__workerSm.kt
-mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_child_host_hybridSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_hosted_firstSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_child_host_hybrid/static_hosted_secondSm.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_child_host/static_child_hostSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_child_host/static_child_host__sce_synth_invoke__workerSm.kt
+mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybridSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_child_host_hybrid/static_hosted_firstSm.kt backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel/static_child_host_hybrid/static_hosted_secondSm.kt
 mutation_regen scripts/regen_static_datamodel_kotlin.sh
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildIsGivenItsHostByItsParentTest.kt backends/kotlin/tests/src/test/kotlin/com/sce/integration/AHybridCandidateIsGivenItsHostByItsParentTest.kt sce-build/tests/fixtures/static_datamodel/static_child_host.scxml sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml
 

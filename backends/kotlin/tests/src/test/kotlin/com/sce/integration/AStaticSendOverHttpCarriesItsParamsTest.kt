@@ -12,7 +12,7 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_send_http.StaticSendHttpStateMachine
+import com.sce.integration.static_datamodel.static_send_http.StaticSendHttpStateMachine
 import com.sce.runtime.StateMachineEngine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName

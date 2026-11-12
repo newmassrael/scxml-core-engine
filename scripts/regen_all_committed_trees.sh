@@ -95,8 +95,9 @@ step_rust_tests() {
 # ── kotlin-tests: the committed trees of backends/kotlin/tests ──────────
 #
 # One step, because the trees are shared: the static datamodel's algorithms are
-# packages under com/sce/generated, beside the W3C machines, and its machines
-# sit under com/sce/integration with every integration stem.
+# packages under com/sce/generated, beside the W3C machines. Its machines have
+# their own directory, com/sce/integration/static_datamodel, beside the
+# integration stems.
 step_kotlin_tests() {
     require_codegen
 

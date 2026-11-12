@@ -14,11 +14,11 @@
 
 package com.sce.integration
 
-import com.sce.integration.static_child_host_hybrid.RecordingStaticChildHostHybridActions
-import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedFirstActions
-import com.sce.integration.static_child_host_hybrid.RecordingStaticHostedSecondActions
-import com.sce.integration.static_child_host_hybrid.StaticChildHostHybridEvent
-import com.sce.integration.static_child_host_hybrid.StaticChildHostHybridStateMachine
+import com.sce.integration.static_datamodel.static_child_host_hybrid.RecordingStaticChildHostHybridActions
+import com.sce.integration.static_datamodel.static_child_host_hybrid.RecordingStaticHostedFirstActions
+import com.sce.integration.static_datamodel.static_child_host_hybrid.RecordingStaticHostedSecondActions
+import com.sce.integration.static_datamodel.static_child_host_hybrid.StaticChildHostHybridEvent
+import com.sce.integration.static_datamodel.static_child_host_hybrid.StaticChildHostHybridStateMachine
 import com.sce.runtime.ManualClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
