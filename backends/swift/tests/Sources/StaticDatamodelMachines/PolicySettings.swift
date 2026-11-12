@@ -31,15 +31,14 @@ public enum PolicySettings {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:policy_settings:1\",\"x-sce-source-hash\":\"f3a316aacf7403325399aec899293549220a4c98b78ad03825aff15e55acb6a9\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"mode\":{\"enum\":[\"relaxed\",\"strict\"]},\"limitDays\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"burst\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"locked\":{\"type\":\"boolean\"}},\"required\":[\"mode\",\"limitDays\",\"burst\",\"locked\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct PolicySettingsPayload: Equatable, Sendable, SceDefault {
-    public var mode: PolicyMode = PolicyMode.allCases[0]
-    public var limitDays: UInt16 = 0
-    public var burst: UInt32 = 0
-    public var locked: Bool = false
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct PolicySettingsPayload: Equatable, Sendable {
+    public var mode: PolicyMode
+    public var limitDays: UInt16
+    public var burst: UInt32
+    public var locked: Bool
 
     public init(mode: PolicyMode, limitDays: UInt16, burst: UInt32, locked: Bool) {
         self.mode = mode

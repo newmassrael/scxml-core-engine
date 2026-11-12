@@ -15,59 +15,28 @@
 import SceForgeRuntime
 
 public enum MailboxInsert {
-    public static func mailboxInsert(_ queue: [MailboxSlotPayload], _ counter: Int64, _ hi: UInt64, _ lo: UInt64) throws -> [MailboxSlotPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(counter >= 0 && counter < 9223372036854775807)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func mailboxInsert(_ queue: [MailboxSlotPayload], _ counter: Int64, _ hi: UInt64, _ lo: UInt64) throws(AlgorithmError) -> [MailboxSlotPayload] {
+        if !(counter >= 0 && counter < 9223372036854775807) {
+            throw AlgorithmError.precondition
         }
         var out: [MailboxSlotPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var held: Bool = false
-        try sceFailure.throwIfFailed()
         var prev: Int64 = 0
-        try sceFailure.throwIfFailed()
         for s in queue {
-            do {
-                let sceCond3 = !(s.id > prev && s.id <= counter)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(s.id > prev && s.id <= counter) {
+                throw AlgorithmError.precondition
             }
             prev = s.id
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = s.hi == hi && s.lo == lo
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    held = true
-                    try sceFailure.throwIfFailed()
-                }
+            if s.hi == hi && s.lo == lo {
+                held = true
             }
             out.append(s)
-            try sceFailure.throwIfFailed()
         }
-        do {
-            let sceCond2 = !held
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                let fresh: MailboxSlotPayload = MailboxSlotPayload(id: Checked.add(sceFailure, counter, 1), hi: hi, lo: lo)
-                try sceFailure.throwIfFailed()
-                out.append(fresh)
-                try sceFailure.throwIfFailed()
-            }
+        if !held {
+            let fresh: MailboxSlotPayload = MailboxSlotPayload(id: (try Checked.add(counter, 1)), hi: hi, lo: lo)
+            out.append(fresh)
         }
-        do {
-            let sceReturned: [MailboxSlotPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

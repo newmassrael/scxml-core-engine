@@ -104,16 +104,16 @@ enum StaticBytesWirePayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticBytesWireFramedRelayedPayload {
-    var sensor: UInt8 = 0
-    var frame: [UInt8] = []
+    var sensor: UInt8
+    var frame: [UInt8]
 }
 
 /// The typed `_event.data` payload of `framed.taken` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticBytesWireFramedTakenPayload {
-    var sensor: UInt8 = 0
-    var frame: [UInt8] = []
+    var sensor: UInt8
+    var frame: [UInt8]
 }
 
 
@@ -138,8 +138,8 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticBytesWirePayloadTag = .none
-    var pendingFramedRelayedPayload = StaticBytesWireFramedRelayedPayload()
-    var pendingFramedTakenPayload = StaticBytesWireFramedTakenPayload()
+    var pendingFramedRelayedPayload: StaticBytesWireFramedRelayedPayload!
+    var pendingFramedTakenPayload: StaticBytesWireFramedTakenPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -426,16 +426,16 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
         switch event {
         case .framedRelayed:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticBytesWireFramedRelayedPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame", capacity: 8)
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.bytes("frame", capacity: 8)
+            let payload = StaticBytesWireFramedRelayedPayload(sensor: sceField0, frame: sceField1)
             pendingFramedRelayedPayload = payload
             pendingPayloadTag = .framedRelayed
         case .framedTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticBytesWireFramedTakenPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame", capacity: 8)
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.bytes("frame", capacity: 8)
+            let payload = StaticBytesWireFramedTakenPayload(sensor: sceField0, frame: sceField1)
             pendingFramedTakenPayload = payload
             pendingPayloadTag = .framedTaken
         default:
@@ -589,7 +589,7 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: [UInt8] = Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; self.vHeld = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8)); self.vHeld = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -639,13 +639,13 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: [UInt8] = Checked.bounded(sceFailure, self.pendingFramedRelayedPayload.frame, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='echo'>: an integer operation overflowed or failed")); return true }; self.vEcho = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedRelayedPayload.frame, capacity: 8)); self.vEcho = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='echo'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRelays, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; self.vRelays = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -655,7 +655,7 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

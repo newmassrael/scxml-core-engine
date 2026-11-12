@@ -128,16 +128,14 @@ extension StaticLiftEnumLiftKindEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-public struct StaticLiftAnswerRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int64 = 0
-    public var title: String = ""
-    public var kind: StaticLiftEnumLiftKindEnum = StaticLiftEnumLiftKindEnum.allCases[0]
-    public var note: String? = nil
-    public var tag: [UInt8] = []
-    public var priority: UInt8 = 0
-
-    public init() {}
+public struct StaticLiftAnswerRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int64
+    public var title: String
+    public var kind: StaticLiftEnumLiftKindEnum
+    public var note: String?
+    public var tag: [UInt8]
+    public var priority: UInt8
 
     public init(id: UInt32, amount: Int64, title: String, kind: StaticLiftEnumLiftKindEnum, note: String?, tag: [UInt8], priority: UInt8) {
         self.id = id
@@ -251,12 +249,10 @@ extension StaticLiftRefusalCodeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:LiftRefusal` datamodel value.
-public struct StaticLiftLiftRefusalRecord: Equatable, Sendable, SceDefault {
-    public var code: StaticLiftRefusalCodeEnum = StaticLiftRefusalCodeEnum.allCases[0]
-    public var path: String = ""
-    public var bound: UInt32? = nil
-
-    public init() {}
+public struct StaticLiftLiftRefusalRecord: Equatable, Sendable {
+    public var code: StaticLiftRefusalCodeEnum
+    public var path: String
+    public var bound: UInt32?
 
     public init(code: StaticLiftRefusalCodeEnum, path: String, bound: UInt32?) {
         self.code = code
@@ -296,14 +292,14 @@ enum StaticLiftPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticLiftTextGivenPayload {
-    var text: String = ""
+    var text: String
 }
 
 /// The typed `_event.data` payload of `text.kept` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticLiftTextKeptPayload {
-    var text: String = ""
+    var text: String
 }
 
 
@@ -328,8 +324,8 @@ public final class StaticLiftPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticLiftPayloadTag = .none
-    var pendingTextGivenPayload = StaticLiftTextGivenPayload()
-    var pendingTextKeptPayload = StaticLiftTextKeptPayload()
+    var pendingTextGivenPayload: StaticLiftTextGivenPayload!
+    var pendingTextKeptPayload: StaticLiftTextKeptPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -610,14 +606,14 @@ public final class StaticLiftPolicy: InvocablePolicy {
         switch event {
         case .textGiven:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticLiftTextGivenPayload()
-            payload.text = try fields.text("text", bound: 512)
+            let sceField0 = try fields.text("text", bound: 512)
+            let payload = StaticLiftTextGivenPayload(text: sceField0)
             pendingTextGivenPayload = payload
             pendingPayloadTag = .textGiven
         case .textKept:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticLiftTextKeptPayload()
-            payload.text = try fields.text("text", bound: 512)
+            let sceField0 = try fields.text("text", bound: 512)
+            let payload = StaticLiftTextKeptPayload(text: sceField0)
             pendingTextKeptPayload = payload
             pendingPayloadTag = .textKept
         default:
@@ -740,7 +736,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLifts, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; self.vLifts = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -753,7 +749,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTextKeptPayload.text, capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; self.vSaid = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTextKeptPayload.text, capacity: 512)); self.vSaid = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -764,7 +760,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLifts, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; self.vLifts = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -774,7 +770,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

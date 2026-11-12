@@ -15,32 +15,13 @@
 import SceForgeRuntime
 
 public enum HlcWithinDrift {
-    public static func hlcWithinDrift(_ wallTime: Int64, _ now: Int64, _ maxDrift: Int64) throws -> Bool {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(maxDrift >= 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func hlcWithinDrift(_ wallTime: Int64, _ now: Int64, _ maxDrift: Int64) throws(AlgorithmError) -> Bool {
+        if !(maxDrift >= 0) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = wallTime <= now
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceReturned: Bool = true
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
+        if wallTime <= now {
+            return true
         }
-        do {
-            let sceReturned: Bool = Checked.sub(sceFailure, wallTime, now) <= maxDrift
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return (try Checked.sub(wallTime, now)) <= maxDrift
     }
 }

@@ -31,20 +31,19 @@ public enum UndoStep {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:undo_step:1\",\"x-sce-source-hash\":\"fb4f42a34e7ac40a28d8e5daee5d633c3c45dddac513816edf2bb83fdc85f91c\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"entityId\":{\"type\":\"string\",\"pattern\":\"^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]|1844674407370955161[0-5])$\"},\"fieldId\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"verdict\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"restoreWallTime\":{\"type\":\"string\",\"pattern\":\"^(-([1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-8])|0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7])$\"},\"restoreCounter\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"restoreNodeId\":{\"type\":\"string\",\"pattern\":\"^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]|1844674407370955161[0-5])$\"},\"winnerWallTime\":{\"type\":\"string\",\"pattern\":\"^(-([1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-8])|0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7])$\"},\"winnerCounter\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"winnerNodeId\":{\"type\":\"string\",\"pattern\":\"^(0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]|1844674407370955161[0-5])$\"}},\"required\":[\"entityId\",\"fieldId\",\"verdict\",\"restoreWallTime\",\"restoreCounter\",\"restoreNodeId\",\"winnerWallTime\",\"winnerCounter\",\"winnerNodeId\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct UndoStepPayload: Equatable, Sendable, SceDefault {
-    public var entityId: UInt64 = 0
-    public var fieldId: UInt32 = 0
-    public var verdict: UInt8 = 0
-    public var restoreWallTime: Int64 = 0
-    public var restoreCounter: UInt32 = 0
-    public var restoreNodeId: UInt64 = 0
-    public var winnerWallTime: Int64 = 0
-    public var winnerCounter: UInt32 = 0
-    public var winnerNodeId: UInt64 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct UndoStepPayload: Equatable, Sendable {
+    public var entityId: UInt64
+    public var fieldId: UInt32
+    public var verdict: UInt8
+    public var restoreWallTime: Int64
+    public var restoreCounter: UInt32
+    public var restoreNodeId: UInt64
+    public var winnerWallTime: Int64
+    public var winnerCounter: UInt32
+    public var winnerNodeId: UInt64
 
     public init(entityId: UInt64, fieldId: UInt32, verdict: UInt8, restoreWallTime: Int64, restoreCounter: UInt32, restoreNodeId: UInt64, winnerWallTime: Int64, winnerCounter: UInt32, winnerNodeId: UInt64) {
         self.entityId = entityId

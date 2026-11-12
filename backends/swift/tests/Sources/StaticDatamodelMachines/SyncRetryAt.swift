@@ -15,53 +15,23 @@
 import SceForgeRuntime
 
 public enum SyncRetryAt {
-    public static func syncRetryAt(_ previous: Int64, _ kind: UInt8, _ status: Int32, _ now: Int64, _ retryAfter: Int64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(kind >= 1 && kind <= 9)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func syncRetryAt(_ previous: Int64, _ kind: UInt8, _ status: Int32, _ now: Int64, _ retryAfter: Int64) throws(AlgorithmError) -> Int64 {
+        if !(kind >= 1 && kind <= 9) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(kind == 4 ? status >= 300 && status <= 599 : status == 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(kind == 4 ? status >= 300 && status <= 599 : status == 0) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(previous >= 0 && now >= 0 && retryAfter >= 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(previous >= 0 && now >= 0 && retryAfter >= 0) {
+            throw AlgorithmError.precondition
         }
         var asked: Int64 = 0
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = kind == 4 && status == 503 && retryAfter > 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                asked = Checked.add(sceFailure, now, retryAfter)
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 4 && status == 503 && retryAfter > 0 {
+            asked = (try Checked.add(now, retryAfter))
         }
-        do {
-            let sceCond2 = kind == 4 && status == 502
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                asked = Checked.add(sceFailure, now, 900)
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 4 && status == 502 {
+            asked = (try Checked.add(now, 900))
         }
-        do {
-            let sceReturned: Int64 = asked > previous ? asked : previous
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return asked > previous ? asked : previous
     }
 }

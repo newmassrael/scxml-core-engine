@@ -15,116 +15,53 @@
 import SceForgeRuntime
 
 public enum SheetApply {
-    public static func sheetApply(_ op: UInt8, _ a: Int64, _ b: Int64) throws -> SheetValuePayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func sheetApply(_ op: UInt8, _ a: Int64, _ b: Int64) throws(AlgorithmError) -> SheetValuePayload {
         let top: Int64 = 9223372036854775807
-        try sceFailure.throwIfFailed()
-        let bottom: Int64 = Checked.sub(sceFailure, Checked.neg(sceFailure, top), 1)
-        try sceFailure.throwIfFailed()
+        let bottom: Int64 = (try Checked.sub((try Checked.neg(top)), 1))
         var value: Int64 = 0
-        try sceFailure.throwIfFailed()
         var fault: UInt8 = 0
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = op == 2
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceCond4 = b > 0 && a > Checked.sub(sceFailure, top, b) || b < 0 && a < Checked.sub(sceFailure, bottom, b)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        fault = 3
-                        try sceFailure.throwIfFailed()
-                    } else {
-                        value = Checked.add(sceFailure, a, b)
-                        try sceFailure.throwIfFailed()
-                    }
+        if op == 2 {
+            if (try Checked.or((try Checked.and(b > 0, { a > (try Checked.sub(top, b)) })), { (try Checked.and(b < 0, { a < (try Checked.sub(bottom, b)) })) })) {
+                fault = 3
+            } else {
+                value = (try Checked.add(a, b))
+            }
+        } else {
+            if op == 3 {
+                if (try Checked.or((try Checked.and(b < 0, { a > (try Checked.add(top, b)) })), { (try Checked.and(b > 0, { a < (try Checked.add(bottom, b)) })) })) {
+                    fault = 3
+                } else {
+                    value = (try Checked.sub(a, b))
                 }
             } else {
-                do {
-                    let sceCond4 = op == 3
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceCond6 = b < 0 && a > Checked.add(sceFailure, top, b) || b > 0 && a < Checked.add(sceFailure, bottom, b)
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
+                if op == 4 {
+                    if a == 0 || b == 0 {
+                        value = 0
+                    } else {
+                        if (try Checked.or((try Checked.or((try Checked.or((try Checked.and(a > 0 && b > 0, { a > (try Checked.div(top, b)) })), { (try Checked.and(a > 0 && b < 0, { b < (try Checked.div(bottom, a)) })) })), { (try Checked.and(a < 0 && b > 0, { a < (try Checked.div(bottom, b)) })) })), { (try Checked.and(a < 0 && b < 0, { b < (try Checked.div(top, a)) })) })) {
+                            fault = 3
+                        } else {
+                            value = (try Checked.mul(a, b))
+                        }
+                    }
+                } else {
+                    if op == 5 {
+                        if b == 0 {
+                            fault = 2
+                        } else {
+                            if a == bottom && b == -1 {
                                 fault = 3
-                                try sceFailure.throwIfFailed()
                             } else {
-                                value = Checked.sub(sceFailure, a, b)
-                                try sceFailure.throwIfFailed()
+                                value = (try Checked.div(a, b))
                             }
                         }
                     } else {
-                        do {
-                            let sceCond6 = op == 4
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                do {
-                                    let sceCond8 = a == 0 || b == 0
-                                    try sceFailure.throwIfFailed()
-                                    if sceCond8 {
-                                        value = 0
-                                        try sceFailure.throwIfFailed()
-                                    } else {
-                                        do {
-                                            let sceCond10 = a > 0 && b > 0 && a > Checked.div(sceFailure, top, b) || a > 0 && b < 0 && b < Checked.div(sceFailure, bottom, a) || a < 0 && b > 0 && a < Checked.div(sceFailure, bottom, b) || a < 0 && b < 0 && b < Checked.div(sceFailure, top, a)
-                                            try sceFailure.throwIfFailed()
-                                            if sceCond10 {
-                                                fault = 3
-                                                try sceFailure.throwIfFailed()
-                                            } else {
-                                                value = Checked.mul(sceFailure, a, b)
-                                                try sceFailure.throwIfFailed()
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                do {
-                                    let sceCond8 = op == 5
-                                    try sceFailure.throwIfFailed()
-                                    if sceCond8 {
-                                        do {
-                                            let sceCond10 = b == 0
-                                            try sceFailure.throwIfFailed()
-                                            if sceCond10 {
-                                                fault = 2
-                                                try sceFailure.throwIfFailed()
-                                            } else {
-                                                do {
-                                                    let sceCond12 = a == bottom && b == -1
-                                                    try sceFailure.throwIfFailed()
-                                                    if sceCond12 {
-                                                        fault = 3
-                                                        try sceFailure.throwIfFailed()
-                                                    } else {
-                                                        value = Checked.div(sceFailure, a, b)
-                                                        try sceFailure.throwIfFailed()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        fault = 5
-                                        try sceFailure.throwIfFailed()
-                                    }
-                                }
-                            }
-                        }
+                        fault = 5
                     }
                 }
             }
         }
         let result: SheetValuePayload = SheetValuePayload(value: value, fault: fault)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: SheetValuePayload = result
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return result
     }
 }

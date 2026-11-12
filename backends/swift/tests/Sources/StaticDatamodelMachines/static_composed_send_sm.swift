@@ -133,16 +133,14 @@ extension StaticComposedSendSignalLevelEnum: SavedEnumeration {
 /// SCE Accepted Subset §2.15: a `record:Item` value that holds a composed
 /// value (docs/adr/0086), built whole from its fields in the schema's order; a
 /// raise seam holds it to every bound its type declares before it sends it.
-public struct StaticComposedSendItemRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int64 = 0
-    public var label: String = ""
-    public var level: StaticComposedSendSignalLevelEnum = StaticComposedSendSignalLevelEnum.allCases[0]
-    public var due: Int64? = nil
-    public var blob: [UInt8] = []
-    public var tags: [String] = []
-
-    public init() {}
+public struct StaticComposedSendItemRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int64
+    public var label: String
+    public var level: StaticComposedSendSignalLevelEnum
+    public var due: Int64?
+    public var blob: [UInt8]
+    public var tags: [String]
 
     public init(id: UInt32, amount: Int64, label: String, level: StaticComposedSendSignalLevelEnum, due: Int64?, blob: [UInt8], tags: [String]) {
         self.id = id
@@ -168,21 +166,21 @@ enum StaticComposedSendPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticComposedSendBatchSentPayload {
-    var items: [StaticComposedSendItemRecord] = []
-    var grid: [[UInt8]] = []
-    var levels: [StaticComposedSendSignalLevelEnum] = []
-    var maybe: [UInt16?] = []
-    var spare: [UInt8]? = nil
-    var note: String = ""
-    var late: [UInt8] = []
+    var items: [StaticComposedSendItemRecord]
+    var grid: [[UInt8]]
+    var levels: [StaticComposedSendSignalLevelEnum]
+    var maybe: [UInt16?]
+    var spare: [UInt8]?
+    var note: String
+    var late: [UInt8]
 }
 
 /// The typed `_event.data` payload of `counted.sent` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticComposedSendCountedSentPayload {
-    var kept: [UInt8] = []
-    var hops: UInt8 = 0
+    var kept: [UInt8]
+    var hops: UInt8
 }
 
 
@@ -207,8 +205,8 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticComposedSendPayloadTag = .none
-    var pendingBatchSentPayload = StaticComposedSendBatchSentPayload()
-    var pendingCountedSentPayload = StaticComposedSendCountedSentPayload()
+    var pendingBatchSentPayload: StaticComposedSendBatchSentPayload!
+    var pendingCountedSentPayload: StaticComposedSendCountedSentPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -575,21 +573,21 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         switch event {
         case .batchSent:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"late\":[]}")
-            var payload = StaticComposedSendBatchSentPayload()
-            payload.items = try ({ (sceValue: PayloadValue) throws -> [StaticComposedSendItemRecord] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> StaticComposedSendItemRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticComposedSendItemRecord in try StaticComposedSendItemRecord(id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), amount: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("amount")), label: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("label")), level: ({ (sceValue: PayloadValue) throws -> StaticComposedSendSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedSendSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant })(sceFields.field("level")), due: ({ (sceValue: PayloadValue) throws -> Int64? in try sceValue.optional({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() }) })(sceFields.field("due")), blob: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.bytes(bound: 4) })(sceFields.field("blob")), tags: ({ (sceValue: PayloadValue) throws -> [String] in try sceValue.list(bound: 4, { (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) }) })(sceFields.field("tags"))) }) }) })(fields.field("items"))
-            payload.grid = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("grid"))
-            payload.levels = try ({ (sceValue: PayloadValue) throws -> [StaticComposedSendSignalLevelEnum] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> StaticComposedSendSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedSendSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant }) })(fields.field("levels"))
-            payload.maybe = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt16? in try sceValue.optional({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() }) }) })(fields.field("maybe"))
-            payload.spare = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try sceValue.optional({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("spare"))
-            payload.note = try ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) })(fields.field("note"))
-            payload.late = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("late"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> [StaticComposedSendItemRecord] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> StaticComposedSendItemRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticComposedSendItemRecord in try StaticComposedSendItemRecord(id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), amount: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("amount")), label: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("label")), level: ({ (sceValue: PayloadValue) throws -> StaticComposedSendSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedSendSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant })(sceFields.field("level")), due: ({ (sceValue: PayloadValue) throws -> Int64? in try sceValue.optional({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() }) })(sceFields.field("due")), blob: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.bytes(bound: 4) })(sceFields.field("blob")), tags: ({ (sceValue: PayloadValue) throws -> [String] in try sceValue.list(bound: 4, { (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) }) })(sceFields.field("tags"))) }) }) })(fields.field("items"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("grid"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> [StaticComposedSendSignalLevelEnum] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> StaticComposedSendSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedSendSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant }) })(fields.field("levels"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt16? in try sceValue.optional({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() }) }) })(fields.field("maybe"))
+            let sceField4 = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try sceValue.optional({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("spare"))
+            let sceField5 = try ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) })(fields.field("note"))
+            let sceField6 = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("late"))
+            let payload = StaticComposedSendBatchSentPayload(items: sceField0, grid: sceField1, levels: sceField2, maybe: sceField3, spare: sceField4, note: sceField5, late: sceField6)
             pendingBatchSentPayload = payload
             pendingPayloadTag = .batchSent
         case .countedSent:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticComposedSendCountedSentPayload()
-            payload.kept = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(least: 1, bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("kept"))
-            payload.hops = try ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(fields.field("hops"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(least: 1, bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("kept"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(fields.field("hops"))
+            let payload = StaticComposedSendCountedSentPayload(kept: sceField0, hops: sceField1)
             pendingCountedSentPayload = payload
             pendingPayloadTag = .countedSent
         default:
@@ -791,11 +789,9 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = { () -> WireValue in if self.vHeld.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }()
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("kept", sceValue))
-                        } else {
+                        let sceValue: WireValue = (try { () throws(AlgorithmError) -> WireValue in if self.vHeld.count < 1 { throw AlgorithmError.precondition }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }())
+                        sendParts.append(PayloadPair("kept", sceValue))
+                    } catch {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
@@ -803,7 +799,6 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 break sceBlock
-                        }
                     }
                     do {
                         let sceValue: WireValue = .integer(Int64(3))
@@ -830,7 +825,7 @@ break sceBlock
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDeliveries, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; self.vDeliveries = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -848,13 +843,13 @@ break sceBlock
                     let i = UInt32(truncatingIfNeeded: sceIndex); _ = i; _ = row
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTagCount, UInt32(truncatingIfNeeded: row.tags.count)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; self.vTagCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTagCount, UInt32(truncatingIfNeeded: row.tags.count))); self.vTagCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vIdSum, Checked.atDefault(sceFailure, self.pendingBatchSentPayload.items, i).id); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; self.vIdSum = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vIdSum, (try Checked.at(self.pendingBatchSentPayload.items, i)).id)); self.vIdSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -869,7 +864,7 @@ break sceBlock
                     _ = n
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCellSum, UInt32(n)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; self.vCellSum = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCellSum, UInt32(n))); self.vCellSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -881,7 +876,7 @@ break sceBlock
                     _ = each
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLateSum, UInt32(each)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; self.vLateSum = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLateSum, UInt32(each))); self.vLateSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -890,7 +885,7 @@ break sceBlock
                 if (UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.maybe.count) > 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.at(sceFailure, self.pendingBatchSentPayload.maybe, 0, fallback: nil); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; self.vFirstMaybe = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.pendingBatchSentPayload.maybe, 0)); self.vFirstMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -899,7 +894,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="held">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vHeld.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vHeld, 7); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: an integer operation overflowed or failed")); return true }; self.vHeld.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vHeld.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vHeld, 7); self.vHeld.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -912,11 +907,9 @@ break sceBlock
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = { () -> WireValue in if self.vHeld.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }()
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("kept", sceValue))
-                        } else {
+                        let sceValue: WireValue = (try { () throws(AlgorithmError) -> WireValue in if self.vHeld.count < 1 { throw AlgorithmError.precondition }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }())
+                        sendParts.append(PayloadPair("kept", sceValue))
+                    } catch {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
@@ -924,7 +917,6 @@ break sceBlock
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 break sceBlock
-                        }
                     }
                     do {
                         let sceValue: WireValue = .integer(Int64(3))
@@ -990,7 +982,7 @@ break sceBlock
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCountedDeliveries, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; self.vCountedDeliveries = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedDeliveries, 1)); self.vCountedDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1004,7 +996,7 @@ break sceBlock
                     _ = each
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCountedSum, UInt32(each)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; self.vCountedSum = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedSum, UInt32(each))); self.vCountedSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1015,7 +1007,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

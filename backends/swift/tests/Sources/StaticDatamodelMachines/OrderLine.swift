@@ -34,14 +34,13 @@ public enum OrderLine {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:order_line:1\",\"x-sce-source-hash\":\"d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"sku\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16},\"quantity\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"color\":{\"enum\":[\"red\",\"green\",\"blue\"]}},\"required\":[\"sku\",\"quantity\",\"color\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct OrderLinePayload: Equatable, Sendable, SceDefault {
-    public var sku: String = ""
-    public var quantity: UInt16 = 0
-    public var color: PaintColor = PaintColor.allCases[0]
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct OrderLinePayload: Equatable, Sendable {
+    public var sku: String
+    public var quantity: UInt16
+    public var color: PaintColor
 
     public init(sku: String, quantity: UInt16, color: PaintColor) {
         self.sku = sku

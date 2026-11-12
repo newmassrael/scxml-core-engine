@@ -136,57 +136,57 @@ enum StaticHostNotifyPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyDoneInvokeAskPayload {
-    var error: String = ""
-    var state: String = ""
+    var error: String
+    var state: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.cancel` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyDoneInvokeCancelPayload {
-    var error: String = ""
-    var existed: Bool = false
+    var error: String
+    var existed: Bool
 }
 
 /// The typed `_event.data` payload of `done.invoke.far` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyDoneInvokeFarPayload {
-    var error: String = ""
-    var status: String = ""
+    var error: String
+    var status: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.post` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyDoneInvokePostPayload {
-    var error: String = ""
-    var status: String = ""
+    var error: String
+    var status: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.prompt` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyDoneInvokePromptPayload {
-    var error: String = ""
-    var state: String = ""
+    var error: String
+    var state: String
 }
 
 /// The typed `_event.data` payload of `host.notify.cancel.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyHostNotifyCancelRequestPayload {
-    var id: String = ""
+    var id: String
 }
 
 /// The typed `_event.data` payload of `host.notify.post.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostNotifyHostNotifyPostRequestPayload {
-    var id: String = ""
-    var title: String = ""
-    var body: String = ""
-    var at_ms: Int64 = 0
+    var id: String
+    var title: String
+    var body: String
+    var at_ms: Int64
 }
 
 
@@ -211,13 +211,13 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticHostNotifyPayloadTag = .none
-    var pendingDoneInvokeAskPayload = StaticHostNotifyDoneInvokeAskPayload()
-    var pendingDoneInvokeCancelPayload = StaticHostNotifyDoneInvokeCancelPayload()
-    var pendingDoneInvokeFarPayload = StaticHostNotifyDoneInvokeFarPayload()
-    var pendingDoneInvokePostPayload = StaticHostNotifyDoneInvokePostPayload()
-    var pendingDoneInvokePromptPayload = StaticHostNotifyDoneInvokePromptPayload()
-    var pendingHostNotifyCancelRequestPayload = StaticHostNotifyHostNotifyCancelRequestPayload()
-    var pendingHostNotifyPostRequestPayload = StaticHostNotifyHostNotifyPostRequestPayload()
+    var pendingDoneInvokeAskPayload: StaticHostNotifyDoneInvokeAskPayload!
+    var pendingDoneInvokeCancelPayload: StaticHostNotifyDoneInvokeCancelPayload!
+    var pendingDoneInvokeFarPayload: StaticHostNotifyDoneInvokeFarPayload!
+    var pendingDoneInvokePostPayload: StaticHostNotifyDoneInvokePostPayload!
+    var pendingDoneInvokePromptPayload: StaticHostNotifyDoneInvokePromptPayload!
+    var pendingHostNotifyCancelRequestPayload: StaticHostNotifyHostNotifyCancelRequestPayload!
+    var pendingHostNotifyPostRequestPayload: StaticHostNotifyHostNotifyPostRequestPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -621,52 +621,52 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeAsk:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyDoneInvokeAskPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.state = try fields.text("state", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("state", bound: 16)
+            let payload = StaticHostNotifyDoneInvokeAskPayload(error: sceField0, state: sceField1)
             pendingDoneInvokeAskPayload = payload
             pendingPayloadTag = .doneInvokeAsk
         case .doneInvokeCancel:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyDoneInvokeCancelPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.existed = try fields.truth("existed")
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.truth("existed")
+            let payload = StaticHostNotifyDoneInvokeCancelPayload(error: sceField0, existed: sceField1)
             pendingDoneInvokeCancelPayload = payload
             pendingPayloadTag = .doneInvokeCancel
         case .doneInvokeFar:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyDoneInvokeFarPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.status = try fields.text("status", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("status", bound: 16)
+            let payload = StaticHostNotifyDoneInvokeFarPayload(error: sceField0, status: sceField1)
             pendingDoneInvokeFarPayload = payload
             pendingPayloadTag = .doneInvokeFar
         case .doneInvokePost:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyDoneInvokePostPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.status = try fields.text("status", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("status", bound: 16)
+            let payload = StaticHostNotifyDoneInvokePostPayload(error: sceField0, status: sceField1)
             pendingDoneInvokePostPayload = payload
             pendingPayloadTag = .doneInvokePost
         case .doneInvokePrompt:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyDoneInvokePromptPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.state = try fields.text("state", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("state", bound: 16)
+            let payload = StaticHostNotifyDoneInvokePromptPayload(error: sceField0, state: sceField1)
             pendingDoneInvokePromptPayload = payload
             pendingPayloadTag = .doneInvokePrompt
         case .hostNotifyCancelRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyHostNotifyCancelRequestPayload()
-            payload.id = try fields.text("id", bound: 64)
+            let sceField0 = try fields.text("id", bound: 64)
+            let payload = StaticHostNotifyHostNotifyCancelRequestPayload(id: sceField0)
             pendingHostNotifyCancelRequestPayload = payload
             pendingPayloadTag = .hostNotifyCancelRequest
         case .hostNotifyPostRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostNotifyHostNotifyPostRequestPayload()
-            payload.id = try fields.text("id", bound: 64)
-            payload.title = try fields.text("title", bound: 128)
-            payload.body = try fields.text("body", bound: 512)
-            payload.at_ms = try fields.signed64("at_ms")
+            let sceField0 = try fields.text("id", bound: 64)
+            let sceField1 = try fields.text("title", bound: 128)
+            let sceField2 = try fields.text("body", bound: 512)
+            let sceField3 = try fields.signed64("at_ms")
+            let payload = StaticHostNotifyHostNotifyPostRequestPayload(id: sceField0, title: sceField1, body: sceField2, at_ms: sceField3)
             pendingHostNotifyPostRequestPayload = payload
             pendingPayloadTag = .hostNotifyPostRequest
         default:
@@ -837,15 +837,12 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
             hostParts.append(PayloadPair("body", sceValue))
         }
         do {
-            let sceFailure = Failure()
-            let sceValue: WireValue = .signed64(Checked.add(sceFailure, self.vAtMs, 1))
-            if sceFailure.failed {
-                engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"))
-                requestRefused = true
-            } else {
-                appendFormParam(&hostParams, "at_ms", sceValue)
-                hostParts.append(PayloadPair("at_ms", sceValue))
-            }
+            let sceValue: WireValue = .signed64((try Checked.add(self.vAtMs, 1)))
+            appendFormParam(&hostParams, "at_ms", sceValue)
+            hostParts.append(PayloadPair("at_ms", sceValue))
+        } catch {
+            engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"))
+            requestRefused = true
         }
         if requestRefused {
             return
@@ -1294,13 +1291,13 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeAskPayload.state, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='permission'>: an integer operation overflowed or failed")); return true }; self.vPermission = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeAskPayload.state, capacity: 16)); self.vPermission = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='permission'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1313,7 +1310,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeAskPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeAskPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1323,7 +1320,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1333,7 +1330,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1355,7 +1352,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1368,7 +1365,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeCancelPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeCancelPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1378,7 +1375,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1388,7 +1385,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1406,19 +1403,19 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostNotifyPostRequestPayload.id, capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='id'>: an integer operation overflowed or failed")); return true }; self.vId = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostNotifyPostRequestPayload.id, capacity: 64)); self.vId = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostNotifyPostRequestPayload.title, capacity: 128); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; self.vTitle = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostNotifyPostRequestPayload.title, capacity: 128)); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostNotifyPostRequestPayload.body, capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='body'>: an integer operation overflowed or failed")); return true }; self.vBody = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostNotifyPostRequestPayload.body, capacity: 512)); self.vBody = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='body'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1435,7 +1432,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostNotifyCancelRequestPayload.id, capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='id'>: an integer operation overflowed or failed")); return true }; self.vId = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostNotifyCancelRequestPayload.id, capacity: 64)); self.vId = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1461,13 +1458,13 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokePostPayload.status, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; self.vStatus = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePostPayload.status, capacity: 16)); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1480,7 +1477,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokePostPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePostPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1490,7 +1487,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1500,7 +1497,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1518,13 +1515,13 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeFarPayload.status, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; self.vStatus = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeFarPayload.status, capacity: 16)); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1537,7 +1534,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeFarPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeFarPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1547,7 +1544,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1565,13 +1562,13 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokePromptPayload.state, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='permission'>: an integer operation overflowed or failed")); return true }; self.vPermission = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePromptPayload.state, capacity: 16)); self.vPermission = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='permission'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1584,7 +1581,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokePromptPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePromptPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1594,7 +1591,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1604,7 +1601,7 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostNotifyEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

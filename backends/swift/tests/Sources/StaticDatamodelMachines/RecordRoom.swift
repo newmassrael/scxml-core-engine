@@ -31,14 +31,13 @@ public enum RecordRoom {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:record_room:1\",\"x-sce-source-hash\":\"81cc59c6b8f46736a80b4b69ee489274d9b0ae32efae821805ba44c3bac3af2c\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"values\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"history\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"digest\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"values\",\"history\",\"digest\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct RecordRoomPayload: Equatable, Sendable, SceDefault {
-    public var values: UInt32 = 0
-    public var history: UInt32 = 0
-    public var digest: UInt32 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct RecordRoomPayload: Equatable, Sendable {
+    public var values: UInt32
+    public var history: UInt32
+    public var digest: UInt32
 
     public init(values: UInt32, history: UInt32, digest: UInt32) {
         self.values = values

@@ -15,49 +15,24 @@
 import SceForgeRuntime
 
 public enum MailboxPage {
-    public static func mailboxPage(_ queue: [MailboxSlotPayload], _ after: Int64, _ limit: UInt32) throws -> [MailboxSlotPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(limit >= 1 && limit <= 256)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func mailboxPage(_ queue: [MailboxSlotPayload], _ after: Int64, _ limit: UInt32) throws(AlgorithmError) -> [MailboxSlotPayload] {
+        if !(limit >= 1 && limit <= 256) {
+            throw AlgorithmError.precondition
         }
         var out: [MailboxSlotPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var taken: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var prev: Int64 = 0
-        try sceFailure.throwIfFailed()
         for s in queue {
-            do {
-                let sceCond3 = !(s.id > prev)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(s.id > prev) {
+                throw AlgorithmError.precondition
             }
             prev = s.id
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = s.id > after && taken < limit
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(s)
-                    try sceFailure.throwIfFailed()
-                    taken = Checked.add(sceFailure, taken, 1)
-                    try sceFailure.throwIfFailed()
-                }
+            if s.id > after && taken < limit {
+                out.append(s)
+                taken = (try Checked.add(taken, 1))
             }
         }
-        do {
-            let sceReturned: [MailboxSlotPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

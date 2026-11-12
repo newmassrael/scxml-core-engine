@@ -15,25 +15,10 @@
 import SceForgeRuntime
 
 public enum GoalUntil {
-    public static func goalUntil(_ today: Int64, _ day: Int64?) throws -> Int64? {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = day == nil
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceReturned: Int64? = nil
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
+    public static func goalUntil(_ today: Int64, _ day: Int64?) throws(AlgorithmError) -> Int64? {
+        if day == nil {
+            return nil
         }
-        do {
-            let sceReturned: Int64? = Checked.sub(sceFailure, SceOptional.proven(day), today)
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return (try Checked.sub(SceOptional.proven(day), today))
     }
 }

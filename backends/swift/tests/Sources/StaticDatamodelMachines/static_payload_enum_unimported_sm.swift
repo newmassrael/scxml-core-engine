@@ -185,15 +185,13 @@ extension StaticPayloadEnumUnimportedRecordCommandEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Refused` datamodel value.
-public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var kind: StaticPayloadEnumUnimportedRecordCommandEnum = StaticPayloadEnumUnimportedRecordCommandEnum.allCases[0]
-    public var reason: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum.allCases[0]
-    public var command: UInt64 = 0
-    public var withdrawn: Bool = false
-
-    public init() {}
+public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var field: UInt16
+    public var kind: StaticPayloadEnumUnimportedRecordCommandEnum
+    public var reason: StaticPayloadEnumUnimportedWhyEnum
+    public var command: UInt64
+    public var withdrawn: Bool
 
     public init(id: UInt32, field: UInt16, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum, command: UInt64, withdrawn: Bool) {
         self.id = id
@@ -241,12 +239,12 @@ enum StaticPayloadEnumUnimportedPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticPayloadEnumUnimportedRecordListRefusedPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var kind: StaticPayloadEnumUnimportedRecordCommandEnum = StaticPayloadEnumUnimportedRecordCommandEnum.allCases[0]
-    var reason: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum.allCases[0]
-    var command: UInt64 = 0
-    var withdrawn: Bool = false
+    var id: UInt32
+    var field: UInt16
+    var kind: StaticPayloadEnumUnimportedRecordCommandEnum
+    var reason: StaticPayloadEnumUnimportedWhyEnum
+    var command: UInt64
+    var withdrawn: Bool
 }
 
 
@@ -271,7 +269,7 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticPayloadEnumUnimportedPayloadTag = .none
-    var pendingRecordListRefusedPayload = StaticPayloadEnumUnimportedRecordListRefusedPayload()
+    var pendingRecordListRefusedPayload: StaticPayloadEnumUnimportedRecordListRefusedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -531,13 +529,13 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
         switch event {
         case .recordListRefused:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\",\"withdrawn\":false}")
-            var payload = StaticPayloadEnumUnimportedRecordListRefusedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.kind = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
-            payload.reason = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
-            payload.command = try fields.unsigned64("command")
-            payload.withdrawn = try fields.truth("withdrawn")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            let sceField3 = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
+            let sceField4 = try fields.unsigned64("command")
+            let sceField5 = try fields.truth("withdrawn")
+            let payload = StaticPayloadEnumUnimportedRecordListRefusedPayload(id: sceField0, field: sceField1, kind: sceField2, reason: sceField3, command: sceField4, withdrawn: sceField5)
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         default:
@@ -642,13 +640,13 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="kept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 2 { return true }; let sceValue = Checked.element(of: self.vKept, StaticPayloadEnumUnimportedRefusedRecord(id: self.pendingRecordListRefusedPayload.id, field: self.pendingRecordListRefusedPayload.field, kind: self.pendingRecordListRefusedPayload.kind, reason: self.pendingRecordListRefusedPayload.reason, command: self.pendingRecordListRefusedPayload.command, withdrawn: self.pendingRecordListRefusedPayload.withdrawn)); if sceFailure.failed { return true }; self.vKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vKept.count >= 2 { return true }; let sceValue = Checked.element(of: self.vKept, StaticPayloadEnumUnimportedRefusedRecord(id: self.pendingRecordListRefusedPayload.id, field: self.pendingRecordListRefusedPayload.field, kind: self.pendingRecordListRefusedPayload.kind, reason: self.pendingRecordListRefusedPayload.reason, command: self.pendingRecordListRefusedPayload.command, withdrawn: self.pendingRecordListRefusedPayload.withdrawn)); self.vKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

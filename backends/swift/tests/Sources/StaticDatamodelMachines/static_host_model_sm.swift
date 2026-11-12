@@ -151,16 +151,14 @@ extension StaticHostModelEnumLiftKindEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-public struct StaticHostModelAnswerRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int64 = 0
-    public var title: String = ""
-    public var kind: StaticHostModelEnumLiftKindEnum = StaticHostModelEnumLiftKindEnum.allCases[0]
-    public var note: String? = nil
-    public var tag: [UInt8] = []
-    public var priority: UInt8 = 0
-
-    public init() {}
+public struct StaticHostModelAnswerRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int64
+    public var title: String
+    public var kind: StaticHostModelEnumLiftKindEnum
+    public var note: String?
+    public var tag: [UInt8]
+    public var priority: UInt8
 
     public init(id: UInt32, amount: Int64, title: String, kind: StaticHostModelEnumLiftKindEnum, note: String?, tag: [UInt8], priority: UInt8) {
         self.id = id
@@ -274,12 +272,10 @@ extension StaticHostModelRefusalCodeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:LiftRefusal` datamodel value.
-public struct StaticHostModelLiftRefusalRecord: Equatable, Sendable, SceDefault {
-    public var code: StaticHostModelRefusalCodeEnum = StaticHostModelRefusalCodeEnum.allCases[0]
-    public var path: String = ""
-    public var bound: UInt32? = nil
-
-    public init() {}
+public struct StaticHostModelLiftRefusalRecord: Equatable, Sendable {
+    public var code: StaticHostModelRefusalCodeEnum
+    public var path: String
+    public var bound: UInt32?
 
     public init(code: StaticHostModelRefusalCodeEnum, path: String, bound: UInt32?) {
         self.code = code
@@ -319,23 +315,23 @@ enum StaticHostModelPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostModelDoneInvokeGenPayload {
-    var error: String = ""
-    var text: String = ""
-    var constrained: Bool = false
-    var model: String = ""
-    var prompt_tokens: UInt32 = 0
-    var answer_tokens: UInt32 = 0
-    var finish: String = ""
+    var error: String
+    var text: String
+    var constrained: Bool
+    var model: String
+    var prompt_tokens: UInt32
+    var answer_tokens: UInt32
+    var finish: String
 }
 
 /// The typed `_event.data` payload of `host.model.generate.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostModelHostModelGenerateRequestPayload {
-    var prompt: String = ""
-    var answer_schema: String = ""
-    var max_tokens: UInt32 = 0
-    var temperature_milli: UInt16 = 0
+    var prompt: String
+    var answer_schema: String
+    var max_tokens: UInt32
+    var temperature_milli: UInt16
 }
 
 
@@ -360,8 +356,8 @@ public final class StaticHostModelPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticHostModelPayloadTag = .none
-    var pendingDoneInvokeGenPayload = StaticHostModelDoneInvokeGenPayload()
-    var pendingHostModelGenerateRequestPayload = StaticHostModelHostModelGenerateRequestPayload()
+    var pendingDoneInvokeGenPayload: StaticHostModelDoneInvokeGenPayload!
+    var pendingHostModelGenerateRequestPayload: StaticHostModelHostModelGenerateRequestPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -726,23 +722,23 @@ public final class StaticHostModelPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeGen:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostModelDoneInvokeGenPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.text = try fields.text("text", bound: 4096)
-            payload.constrained = try fields.truth("constrained")
-            payload.model = try fields.text("model", bound: 128)
-            payload.prompt_tokens = try fields.unsigned("prompt_tokens")
-            payload.answer_tokens = try fields.unsigned("answer_tokens")
-            payload.finish = try fields.text("finish", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("text", bound: 4096)
+            let sceField2 = try fields.truth("constrained")
+            let sceField3 = try fields.text("model", bound: 128)
+            let sceField4 = try fields.unsigned("prompt_tokens")
+            let sceField5 = try fields.unsigned("answer_tokens")
+            let sceField6 = try fields.text("finish", bound: 16)
+            let payload = StaticHostModelDoneInvokeGenPayload(error: sceField0, text: sceField1, constrained: sceField2, model: sceField3, prompt_tokens: sceField4, answer_tokens: sceField5, finish: sceField6)
             pendingDoneInvokeGenPayload = payload
             pendingPayloadTag = .doneInvokeGen
         case .hostModelGenerateRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostModelHostModelGenerateRequestPayload()
-            payload.prompt = try fields.text("prompt", bound: 8192)
-            payload.answer_schema = try fields.text("answer_schema", bound: 128)
-            payload.max_tokens = try fields.unsigned("max_tokens")
-            payload.temperature_milli = try fields.unsigned("temperature_milli")
+            let sceField0 = try fields.text("prompt", bound: 8192)
+            let sceField1 = try fields.text("answer_schema", bound: 128)
+            let sceField2 = try fields.unsigned("max_tokens")
+            let sceField3 = try fields.unsigned("temperature_milli")
+            let payload = StaticHostModelHostModelGenerateRequestPayload(prompt: sceField0, answer_schema: sceField1, max_tokens: sceField2, temperature_milli: sceField3)
             pendingHostModelGenerateRequestPayload = payload
             pendingPayloadTag = .hostModelGenerateRequest
         default:
@@ -982,7 +978,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGenPayload.finish, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='finish'>: an integer operation overflowed or failed")); return true }; self.vFinish = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGenPayload.finish, capacity: 16)); self.vFinish = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='finish'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -992,7 +988,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGenPayload.model, capacity: 128); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='answered_by'>: an integer operation overflowed or failed")); return true }; self.vAnsweredBy = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGenPayload.model, capacity: 128)); self.vAnsweredBy = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='answered_by'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1013,14 +1009,14 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                 if (self.vWhy == nil) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "read", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("read", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 } else {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1035,7 +1031,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGenPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGenPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1045,7 +1041,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1055,7 +1051,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "invalid_argument", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("invalid_argument", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1065,7 +1061,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "left", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("left", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1083,7 +1079,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostModelGenerateRequestPayload.prompt, capacity: 8192); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='prompt'>: an integer operation overflowed or failed")); return true }; self.vPrompt = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostModelGenerateRequestPayload.prompt, capacity: 8192)); self.vPrompt = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='prompt'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1097,19 +1093,19 @@ public final class StaticHostModelPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCalls, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='calls'>: an integer operation overflowed or failed")); return true }; self.vCalls = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCalls, 1)); self.vCalls = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='calls'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='finish'>: an integer operation overflowed or failed")); return true }; self.vFinish = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vFinish = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='finish'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1119,7 +1115,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 128); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='answered_by'>: an integer operation overflowed or failed")); return true }; self.vAnsweredBy = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 128)); self.vAnsweredBy = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostModelEvent.errorExecution, message: "<assign location='answered_by'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -15,16 +15,8 @@
 import SceForgeRuntime
 
 public enum LedgerBump {
-    public static func ledgerBump(_ total: SchemaTotalPayload, _ delta: Int32) throws -> SchemaTotalPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        let next: SchemaTotalPayload = SchemaTotalPayload(count: Checked.add(sceFailure, total.count, 1), sum: Checked.add(sceFailure, total.sum, delta))
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: SchemaTotalPayload = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+    public static func ledgerBump(_ total: SchemaTotalPayload, _ delta: Int32) throws(AlgorithmError) -> SchemaTotalPayload {
+        let next: SchemaTotalPayload = SchemaTotalPayload(count: (try Checked.add(total.count, 1)), sum: (try Checked.add(total.sum, delta)))
+        return next
     }
 }

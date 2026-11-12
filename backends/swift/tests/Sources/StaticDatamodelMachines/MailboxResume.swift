@@ -15,78 +15,34 @@
 import SceForgeRuntime
 
 public enum MailboxResume {
-    public static func mailboxResume(_ restored: Int64, _ held: [Int64], _ cursors: [Int64]) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(restored >= 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func mailboxResume(_ restored: Int64, _ held: [Int64], _ cursors: [Int64]) throws(AlgorithmError) -> Int64 {
+        if !(restored >= 0) {
+            throw AlgorithmError.precondition
         }
         var next: Int64 = restored
-        try sceFailure.throwIfFailed()
         var i: UInt32 = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = i < UInt32(truncatingIfNeeded: held.count)
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            do {
-                let sceCond3 = !(Checked.at(sceFailure, held, i, fallback: 0) >= 0)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
-            }
-            do {
-                let sceCond3 = Checked.at(sceFailure, held, i, fallback: 0) > next
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    next = Checked.at(sceFailure, held, i, fallback: 0)
-                    try sceFailure.throwIfFailed()
-                }
-            }
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
-        }
-        i = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = i < UInt32(truncatingIfNeeded: cursors.count)
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            do {
-                let sceCond3 = !(Checked.at(sceFailure, cursors, i, fallback: 0) >= 0)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
-            }
-            do {
-                let sceCond3 = Checked.at(sceFailure, cursors, i, fallback: 0) > next
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    next = Checked.at(sceFailure, cursors, i, fallback: 0)
-                    try sceFailure.throwIfFailed()
-                }
-            }
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
-        }
-        do {
-            let sceCond2 = !(next < 9223372036854775807)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
+        while i < UInt32(truncatingIfNeeded: held.count) {
+            if !((try Checked.at(held, i)) >= 0) {
                 throw AlgorithmError.precondition
             }
+            if (try Checked.at(held, i)) > next {
+                next = (try Checked.at(held, i))
+            }
+            i = (try Checked.add(i, 1))
         }
-        do {
-            let sceReturned: Int64 = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
+        i = 0
+        while i < UInt32(truncatingIfNeeded: cursors.count) {
+            if !((try Checked.at(cursors, i)) >= 0) {
+                throw AlgorithmError.precondition
+            }
+            if (try Checked.at(cursors, i)) > next {
+                next = (try Checked.at(cursors, i))
+            }
+            i = (try Checked.add(i, 1))
         }
+        if !(next < 9223372036854775807) {
+            throw AlgorithmError.precondition
+        }
+        return next
     }
 }

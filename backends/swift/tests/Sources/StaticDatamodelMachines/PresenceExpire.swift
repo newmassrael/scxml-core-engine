@@ -31,12 +31,11 @@ public enum PresenceExpire {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:presence_expire:1\",\"x-sce-source-hash\":\"d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"gen\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"gen\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct PresenceExpirePayload: Equatable, Sendable, SceDefault {
-    public var gen: UInt32 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct PresenceExpirePayload: Equatable, Sendable {
+    public var gen: UInt32
 
     public init(gen: UInt32) {
         self.gen = gen

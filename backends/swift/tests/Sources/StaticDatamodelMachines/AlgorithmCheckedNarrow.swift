@@ -15,18 +15,9 @@
 import SceForgeRuntime
 
 public enum AlgorithmCheckedNarrow {
-    public static func algorithmCheckedNarrow(_ x: Int64, _ y: UInt32) throws -> Int32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        let small: UInt8 = Checked.narrow(sceFailure, y, to: UInt8.self)
-        try sceFailure.throwIfFailed()
-        let wide: Int64 = Checked.add(sceFailure, x, Int64(small))
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: Int32 = Checked.narrow(sceFailure, wide, to: Int32.self)
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+    public static func algorithmCheckedNarrow(_ x: Int64, _ y: UInt32) throws(AlgorithmError) -> Int32 {
+        let small: UInt8 = (try Checked.narrow(y, to: UInt8.self))
+        let wide: Int64 = (try Checked.add(x, Int64(small)))
+        return (try Checked.narrow(wide, to: Int32.self))
     }
 }

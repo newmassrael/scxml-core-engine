@@ -147,8 +147,8 @@ enum StaticSendNamelistPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticSendNamelistViewShownPayload {
-    var layout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum.allCases[0]
-    var zoom: UInt8 = 0
+    var layout: StaticSendNamelistViewModeEnum
+    var zoom: UInt8
 }
 
 
@@ -173,7 +173,7 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticSendNamelistPayloadTag = .none
-    var pendingViewShownPayload = StaticSendNamelistViewShownPayload()
+    var pendingViewShownPayload: StaticSendNamelistViewShownPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -459,9 +459,9 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticSendNamelistViewShownPayload()
-            payload.layout = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            payload.zoom = try fields.unsigned("zoom")
+            let sceField0 = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1 = try fields.unsigned("zoom")
+            let payload = StaticSendNamelistViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown
         default:
@@ -643,14 +643,11 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.vZoom, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("zoom", sceValue))
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.add(self.vZoom, 1))))
+                        sendParts.append(PayloadPair("zoom", sceValue))
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, message: "<send> <param name=zoom> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     do {
                         let sceValue: WireValue = .text((self.vLayout).declaredName)
@@ -690,7 +687,7 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDeliveries, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; self.vDeliveries = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -15,70 +15,29 @@
 import SceForgeRuntime
 
 public enum SyncFailure {
-    public static func syncFailure(_ kind: UInt8, _ status: Int32) throws -> UInt8 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(kind >= 1 && kind <= 9)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func syncFailure(_ kind: UInt8, _ status: Int32) throws(AlgorithmError) -> UInt8 {
+        if !(kind >= 1 && kind <= 9) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(kind == 4 ? status >= 300 && status <= 599 : status == 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(kind == 4 ? status >= 300 && status <= 599 : status == 0) {
+            throw AlgorithmError.precondition
         }
         var action: UInt8 = 2
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = kind == 8 || kind == 1 || kind == 2
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                action = 1
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 8 || kind == 1 || kind == 2 {
+            action = 1
         }
-        do {
-            let sceCond2 = kind == 7
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                action = 4
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 7 {
+            action = 4
         }
-        do {
-            let sceCond2 = kind == 3
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                action = 0
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 3 {
+            action = 0
         }
-        do {
-            let sceCond2 = kind == 4 && status == 401
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                action = 3
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 4 && status == 401 {
+            action = 3
         }
-        do {
-            let sceCond2 = kind == 4 && (status == 503 || status == 502)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                action = 1
-                try sceFailure.throwIfFailed()
-            }
+        if kind == 4 && (status == 503 || status == 502) {
+            action = 1
         }
-        do {
-            let sceReturned: UInt8 = action
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return action
     }
 }

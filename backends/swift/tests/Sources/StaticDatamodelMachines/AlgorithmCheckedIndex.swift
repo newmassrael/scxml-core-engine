@@ -15,14 +15,7 @@
 import SceForgeRuntime
 
 public enum AlgorithmCheckedIndex {
-    public static func algorithmCheckedIndex(_ data: [UInt8], _ i: Int32, _ u: UInt32) throws -> UInt8 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceReturned: UInt8 = Checked.at(sceFailure, data, i, fallback: 0) ^ Checked.at(sceFailure, data, u, fallback: 0)
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+    public static func algorithmCheckedIndex(_ data: [UInt8], _ i: Int32, _ u: UInt32) throws(AlgorithmError) -> UInt8 {
+        return (try Checked.at(data, i)) ^ (try Checked.at(data, u))
     }
 }

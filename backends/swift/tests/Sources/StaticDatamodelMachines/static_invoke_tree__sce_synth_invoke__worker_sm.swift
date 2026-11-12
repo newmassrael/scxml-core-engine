@@ -146,12 +146,10 @@ extension StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Revised` datamodel value.
-public struct StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord: Equatable, Sendable, SceDefault {
-    public var level: UInt8 = 0
-    public var layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum = StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum.allCases[0]
-    public var urgent: Bool = false
-
-    public init() {}
+public struct StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord: Equatable, Sendable {
+    public var level: UInt8
+    public var layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum
+    public var urgent: Bool
 
     public init(level: UInt8, layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum, urgent: Bool) {
         self.level = level
@@ -896,7 +894,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vSteps, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; self.vSteps = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 1)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -967,7 +965,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "static_hybrid_holder.scxml", capacity: 48); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; self.vPick = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_holder.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -977,7 +975,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vSteps, 10); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; self.vSteps = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 10)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

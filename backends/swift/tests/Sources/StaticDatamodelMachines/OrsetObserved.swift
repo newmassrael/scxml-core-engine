@@ -15,27 +15,14 @@
 import SceForgeRuntime
 
 public enum OrsetObserved {
-    public static func orsetObserved(_ live: [OrsetEntryPayload], _ element: UInt64) throws -> [OrsetEntryPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func orsetObserved(_ live: [OrsetEntryPayload], _ element: UInt64) throws(AlgorithmError) -> [OrsetEntryPayload] {
         var out: [OrsetEntryPayload] = []
         out.reserveCapacity(1024)
-        try sceFailure.throwIfFailed()
         for x in live {
-            do {
-                let sceCond3 = x.element == element
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(x)
-                    try sceFailure.throwIfFailed()
-                }
+            if x.element == element {
+                out.append(x)
             }
         }
-        do {
-            let sceReturned: [OrsetEntryPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

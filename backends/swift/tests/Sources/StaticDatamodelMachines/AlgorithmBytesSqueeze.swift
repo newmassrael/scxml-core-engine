@@ -15,29 +15,15 @@
 import SceForgeRuntime
 
 public enum AlgorithmBytesSqueeze {
-    public static func algorithmBytesSqueeze(_ data: [UInt8]) throws -> [UInt8] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func algorithmBytesSqueeze(_ data: [UInt8]) throws(AlgorithmError) -> [UInt8] {
         var out: [UInt8] = []
         out.reserveCapacity(16)
-        try sceFailure.throwIfFailed()
         for b in data {
             let n: UInt32 = UInt32(truncatingIfNeeded: out.count)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = n == 0 || Checked.at(sceFailure, out, Checked.sub(sceFailure, n, 1), fallback: 0) != b
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(b)
-                    try sceFailure.throwIfFailed()
-                }
+            if (try Checked.or(n == 0, { (try Checked.at(out, (try Checked.sub(n, 1)))) != b })) {
+                out.append(b)
             }
         }
-        do {
-            let sceReturned: [UInt8] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

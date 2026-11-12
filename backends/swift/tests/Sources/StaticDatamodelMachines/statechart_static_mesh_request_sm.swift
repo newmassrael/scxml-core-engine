@@ -449,15 +449,12 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
         appendFormParam(&hostParams, "_mesh_event", .text("service.request.force"))
         appendFormParam(&hostParams, "_mesh_deadline_ms", .text("250"))
         do {
-            let sceFailure = Failure()
-            let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vLoad, 2)))
-            if sceFailure.failed {
-                engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<invoke> <param name='force'> cannot be its request field: it failed to evaluate"))
-                requestRefused = true
-            } else {
-                appendFormParam(&hostParams, "force", sceValue)
-                hostParts.append(PayloadPair("force", sceValue))
-            }
+            let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vLoad, 2))))
+            appendFormParam(&hostParams, "force", sceValue)
+            hostParts.append(PayloadPair("force", sceValue))
+        } catch {
+            engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<invoke> <param name='force'> cannot be its request field: it failed to evaluate"))
+            requestRefused = true
         }
         do {
             let sceValue: WireValue = .text(self.vLabel)
@@ -637,7 +634,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAnswered, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='answered'>: an integer operation overflowed or failed")); return true }; self.vAnswered = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnswered, 1)); self.vAnswered = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='answered'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -647,7 +644,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFailed, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='failed'>: an integer operation overflowed or failed")); return true }; self.vFailed = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFailed, 1)); self.vFailed = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='failed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -657,7 +654,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefused, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; self.vRefused = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -672,13 +669,13 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLoad, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='load'>: an integer operation overflowed or failed")); return true }; self.vLoad = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLoad, 1)); self.vLoad = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='load'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "busy", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -688,7 +685,7 @@ public final class StatechartStaticMeshRequestPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "#ghost", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='peer'>: an integer operation overflowed or failed")); return true }; self.vPeer = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#ghost", capacity: 16)); self.vPeer = sceValue } catch { engine.raise(EventWithMetadata.platformError(StatechartStaticMeshRequestEvent.errorExecution, message: "<assign location='peer'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

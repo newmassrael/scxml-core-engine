@@ -37,13 +37,12 @@ public enum KvNextKeyRequest {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:kv_next_key_request:1\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"after\":{\"type\":\"string\",\"maxLength\":256,\"x-sce-max-bytes\":256},\"prefix\":{\"type\":\"string\",\"maxLength\":256,\"x-sce-max-bytes\":256}},\"required\":[\"after\",\"prefix\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct KvNextKeyRequestPayload: Equatable, Sendable, SceDefault {
-    public var after: String = ""
-    public var prefix: String = ""
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct KvNextKeyRequestPayload: Equatable, Sendable {
+    public var after: String
+    public var prefix: String
 
     public init(after: String, prefix: String) {
         self.after = after

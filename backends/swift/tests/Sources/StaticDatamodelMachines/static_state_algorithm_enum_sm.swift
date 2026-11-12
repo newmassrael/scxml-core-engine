@@ -133,11 +133,9 @@ extension StaticStateAlgorithmEnumStatusEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Item` datamodel value.
-public struct StaticStateAlgorithmEnumItemRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var status: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.allCases[0]
-
-    public init() {}
+public struct StaticStateAlgorithmEnumItemRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var status: StaticStateAlgorithmEnumStatusEnum
 
     public init(id: UInt32, status: StaticStateAlgorithmEnumStatusEnum) {
         self.id = id
@@ -174,16 +172,16 @@ enum StaticStateAlgorithmEnumPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticStateAlgorithmEnumItemAddedPayload {
-    var id: UInt32 = 0
-    var status: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.allCases[0]
+    var id: UInt32
+    var status: StaticStateAlgorithmEnumStatusEnum
 }
 
 /// The typed `_event.data` payload of `item.moved` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticStateAlgorithmEnumItemMovedPayload {
-    var id: UInt32 = 0
-    var status: StaticStateAlgorithmEnumStatusEnum = StaticStateAlgorithmEnumStatusEnum.allCases[0]
+    var id: UInt32
+    var status: StaticStateAlgorithmEnumStatusEnum
 }
 
 
@@ -191,12 +189,12 @@ struct StaticStateAlgorithmEnumItemMovedPayload {
 // SCE Accepted Subset §2.15: the calls of an algorithm over a record or a list
 // ======================================================================
 
-private func call_CountStatus__v(_ p0: [StaticStateAlgorithmEnumItemRecord], _ p1: StaticStateAlgorithmEnumStatusEnum) throws -> UInt32 {
+private func call_CountStatus__v(_ p0: [StaticStateAlgorithmEnumItemRecord], _ p1: StaticStateAlgorithmEnumStatusEnum) throws(AlgorithmError) -> UInt32 {
     let r = try ItemStatusCount.itemStatusCount(p0.map { SchemaItemPayload(id: $0.id, status: { (sceValue: StaticStateAlgorithmEnumStatusEnum) -> EnumItemStatus in switch sceValue { case StaticStateAlgorithmEnumStatusEnum.open: return EnumItemStatus.open; case StaticStateAlgorithmEnumStatusEnum.inProgress: return EnumItemStatus.inProgress; case StaticStateAlgorithmEnumStatusEnum.done: return EnumItemStatus.done } }($0.status)) }, { (sceValue: StaticStateAlgorithmEnumStatusEnum) -> EnumItemStatus in switch sceValue { case StaticStateAlgorithmEnumStatusEnum.open: return EnumItemStatus.open; case StaticStateAlgorithmEnumStatusEnum.inProgress: return EnumItemStatus.inProgress; case StaticStateAlgorithmEnumStatusEnum.done: return EnumItemStatus.done } }(p1))
     return r
 }
 
-private func call_SetStatus__v(_ p0: [StaticStateAlgorithmEnumItemRecord], _ p1: UInt32, _ p2: StaticStateAlgorithmEnumStatusEnum) throws -> [StaticStateAlgorithmEnumItemRecord] {
+private func call_SetStatus__v(_ p0: [StaticStateAlgorithmEnumItemRecord], _ p1: UInt32, _ p2: StaticStateAlgorithmEnumStatusEnum) throws(AlgorithmError) -> [StaticStateAlgorithmEnumItemRecord] {
     let r = try ItemStatusSet.itemStatusSet(p0.map { SchemaItemPayload(id: $0.id, status: { (sceValue: StaticStateAlgorithmEnumStatusEnum) -> EnumItemStatus in switch sceValue { case StaticStateAlgorithmEnumStatusEnum.open: return EnumItemStatus.open; case StaticStateAlgorithmEnumStatusEnum.inProgress: return EnumItemStatus.inProgress; case StaticStateAlgorithmEnumStatusEnum.done: return EnumItemStatus.done } }($0.status)) }, p1, { (sceValue: StaticStateAlgorithmEnumStatusEnum) -> EnumItemStatus in switch sceValue { case StaticStateAlgorithmEnumStatusEnum.open: return EnumItemStatus.open; case StaticStateAlgorithmEnumStatusEnum.inProgress: return EnumItemStatus.inProgress; case StaticStateAlgorithmEnumStatusEnum.done: return EnumItemStatus.done } }(p2))
     return r.map { StaticStateAlgorithmEnumItemRecord(id: $0.id, status: { (sceValue: EnumItemStatus) -> StaticStateAlgorithmEnumStatusEnum in switch sceValue { case EnumItemStatus.open: return StaticStateAlgorithmEnumStatusEnum.open; case EnumItemStatus.inProgress: return StaticStateAlgorithmEnumStatusEnum.inProgress; case EnumItemStatus.done: return StaticStateAlgorithmEnumStatusEnum.done } }($0.status)) }
 }
@@ -227,8 +225,8 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticStateAlgorithmEnumPayloadTag = .none
-    var pendingItemAddedPayload = StaticStateAlgorithmEnumItemAddedPayload()
-    var pendingItemMovedPayload = StaticStateAlgorithmEnumItemMovedPayload()
+    var pendingItemAddedPayload: StaticStateAlgorithmEnumItemAddedPayload!
+    var pendingItemMovedPayload: StaticStateAlgorithmEnumItemMovedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -539,16 +537,16 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
         switch event {
         case .itemAdded:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticStateAlgorithmEnumItemAddedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let payload = StaticStateAlgorithmEnumItemAddedPayload(id: sceField0, status: sceField1)
             pendingItemAddedPayload = payload
             pendingPayloadTag = .itemAdded
         case .itemMoved:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticStateAlgorithmEnumItemMovedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let payload = StaticStateAlgorithmEnumItemMovedPayload(id: sceField0, status: sceField1)
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved
         default:
@@ -694,7 +692,7 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="items">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vItems.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<sce:append target='items'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vItems, self.vDraft); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; self.vItems.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vItems.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<sce:append target='items'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vItems, self.vDraft); self.vItems.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -707,7 +705,7 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_SetStatus__v(self.vItems, self.pendingItemMovedPayload.id, self.pendingItemMovedPayload.status) }), capacity: 4); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='items'>: an integer operation overflowed or failed")); return true }; self.vItems = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_SetStatus__v(self.vItems, self.pendingItemMovedPayload.id, self.pendingItemMovedPayload.status)), capacity: 4)); self.vItems = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='items'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -721,19 +719,19 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.open) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; self.vOpenCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.open)); self.vOpenCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.inProgress) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; self.vStartedCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.inProgress)); self.vStartedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.done) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; self.vDoneCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_CountStatus__v(self.vItems, StaticStateAlgorithmEnumStatusEnum.done)); self.vDoneCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -743,7 +741,7 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChecks, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; self.vChecks = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vChecks, 1)); self.vChecks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -753,7 +751,7 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEnumEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

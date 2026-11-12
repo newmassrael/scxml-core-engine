@@ -112,7 +112,7 @@ enum CoordinatorPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct CoordinatorJobRequestPayload {
-    var job: UInt32 = 0
+    var job: UInt32
 }
 
 
@@ -155,7 +155,7 @@ public final class CoordinatorPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: CoordinatorPayloadTag = .none
-    var pendingJobRequestPayload = CoordinatorJobRequestPayload()
+    var pendingJobRequestPayload: CoordinatorJobRequestPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -439,8 +439,8 @@ public final class CoordinatorPolicy: InvocablePolicy {
         switch event {
         case .jobRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = CoordinatorJobRequestPayload()
-            payload.job = try fields.unsigned("job")
+            let sceField0 = try fields.unsigned("job")
+            let payload = CoordinatorJobRequestPayload(job: sceField0)
             pendingJobRequestPayload = payload
             pendingPayloadTag = .jobRequest
         default:

@@ -415,14 +415,11 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
             // MUST place error.execution in the internal event queue and use the empty string
             // as the value of the <content> element."
             do {
-                let sceFailure = Failure()
-                let doneValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2000000000)))
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
-                    doneEventData = WireValue.text("").json
-                } else {
-                    doneEventData = doneValue.json
-                }
+                let doneValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2000000000))))
+                doneEventData = doneValue.json
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
+                doneEventData = WireValue.text("").json
             }
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
             // invoking parent can lift it onto done.invoke.<id>._event.data.
@@ -449,14 +446,11 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
             // MUST place error.execution in the internal event queue and use the empty string
             // as the value of the <content> element."
             do {
-                let sceFailure = Failure()
-                let doneValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2)))
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
-                    doneEventData = WireValue.text("").json
-                } else {
-                    doneEventData = doneValue.json
-                }
+                let doneValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
+                doneEventData = doneValue.json
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
+                doneEventData = WireValue.text("").json
             }
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
             // invoking parent can lift it onto done.invoke.<id>._event.data.
@@ -575,7 +569,7 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; self.vCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

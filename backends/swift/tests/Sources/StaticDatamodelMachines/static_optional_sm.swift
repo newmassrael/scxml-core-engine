@@ -140,13 +140,11 @@ extension StaticOptionalStatusEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Due` datamodel value.
-public struct StaticOptionalDueRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var due: Int64? = nil
-    public var title: String? = nil
-    public var status: StaticOptionalStatusEnum? = nil
-
-    public init() {}
+public struct StaticOptionalDueRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var due: Int64?
+    public var title: String?
+    public var status: StaticOptionalStatusEnum?
 
     public init(id: UInt32, due: Int64?, title: String?, status: StaticOptionalStatusEnum?) {
         self.id = id
@@ -189,19 +187,19 @@ enum StaticOptionalPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticOptionalDueSentPayload {
-    var due: Int64? = nil
-    var title: String? = nil
-    var status: StaticOptionalStatusEnum? = nil
+    var due: Int64?
+    var title: String?
+    var status: StaticOptionalStatusEnum?
 }
 
 /// The typed `_event.data` payload of `due.set` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticOptionalDueSetPayload {
-    var id: UInt32 = 0
-    var due: Int64? = nil
-    var title: String? = nil
-    var status: StaticOptionalStatusEnum? = nil
+    var id: UInt32
+    var due: Int64?
+    var title: String?
+    var status: StaticOptionalStatusEnum?
 }
 
 
@@ -226,8 +224,8 @@ public final class StaticOptionalPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticOptionalPayloadTag = .none
-    var pendingDueSentPayload = StaticOptionalDueSentPayload()
-    var pendingDueSetPayload = StaticOptionalDueSetPayload()
+    var pendingDueSentPayload: StaticOptionalDueSentPayload!
+    var pendingDueSetPayload: StaticOptionalDueSetPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -710,19 +708,19 @@ public final class StaticOptionalPolicy: InvocablePolicy {
         switch event {
         case .dueSent:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticOptionalDueSentPayload()
-            payload.due = try fields.optional("due") { fields in try fields.signed64("due") }
-            payload.title = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
-            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let sceField0 = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField1 = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
+            let sceField2 = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let payload = StaticOptionalDueSentPayload(due: sceField0, title: sceField1, status: sceField2)
             pendingDueSentPayload = payload
             pendingPayloadTag = .dueSent
         case .dueSet:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticOptionalDueSetPayload()
-            payload.id = try fields.unsigned("id")
-            payload.due = try fields.optional("due") { fields in try fields.signed64("due") }
-            payload.title = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
-            payload.status = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField2 = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
+            let sceField3 = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let payload = StaticOptionalDueSetPayload(id: sceField0, due: sceField1, title: sceField2, status: sceField3)
             pendingDueSetPayload = payload
             pendingPayloadTag = .dueSet
         default:
@@ -941,7 +939,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = (self.pendingDueSetPayload.title).map { (scePresent) in Checked.bounded(sceFailure, scePresent, capacity: 16) }; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; self.vTitle = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try (self.pendingDueSetPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -951,14 +949,14 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = StaticOptionalDueRecord(id: self.pendingDueSetPayload.id, due: self.pendingDueSetPayload.due, title: (self.pendingDueSetPayload.title).map { (scePresent) in Checked.bounded(sceFailure, scePresent, capacity: 16) }, status: self.pendingDueSetPayload.status); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='item'>: an integer operation overflowed or failed")); return true }; self.vItem = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticOptionalDueRecord(id: self.pendingDueSetPayload.id, due: self.pendingDueSetPayload.due, title: (try (self.pendingDueSetPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }), status: self.pendingDueSetPayload.status); self.vItem = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='item'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="items">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vItems.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vItems, self.vItem); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; self.vItems.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vItems.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vItems, self.vItem); self.vItems.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1000,7 +998,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = !(self.vDue == nil) ? Checked.add(sceFailure, SceOptional.proven(self.vDue), 1) : 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='following'>: an integer operation overflowed or failed")); return true }; self.vFollowing = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = !(self.vDue == nil) ? (try Checked.add(SceOptional.proven(self.vDue), 1)) : 0; self.vFollowing = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='following'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1008,21 +1006,21 @@ public final class StaticOptionalPolicy: InvocablePolicy {
                 if (self.vTitle == nil) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "untitled", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("untitled", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 } else if (SceOptional.proven(self.vTitle).utf8.elementsEqual("soon".utf8)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "due soon", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("due soon", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 } else {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, SceOptional.proven(self.vTitle), capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(SceOptional.proven(self.vTitle), capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1060,14 +1058,14 @@ public final class StaticOptionalPolicy: InvocablePolicy {
                 if (it.due != nil) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.vListed, SceOptional.proven(it.due)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='listed'>: an integer operation overflowed or failed")); return true }; self.vListed = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add(self.vListed, SceOptional.proven(it.due))); self.vListed = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='listed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 } else {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vMissing, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='missing'>: an integer operation overflowed or failed")); return true }; self.vMissing = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMissing, 1)); self.vMissing = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='missing'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1100,19 +1098,19 @@ public final class StaticOptionalPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vTitle ?? "none", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vTitle ?? "none", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = self.vDue ?? Checked.mul(sceFailure, self.vHuge, self.vHuge); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; self.vDays = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.coalesce(self.vDue, { (try Checked.mul(self.vHuge, self.vHuge)) })); self.vDays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFallbacks, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='fallbacks'>: an integer operation overflowed or failed")); return true }; self.vFallbacks = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFallbacks, 1)); self.vFallbacks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='fallbacks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1170,7 +1168,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = (self.pendingDueSentPayload.title).map { (scePresent) in Checked.bounded(sceFailure, scePresent, capacity: 16) }; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='echoTitle'>: an integer operation overflowed or failed")); return true }; self.vEchoTitle = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try (self.pendingDueSentPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }); self.vEchoTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='echoTitle'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1191,7 +1189,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = (self.pendingDueSentPayload.title).map { (scePresent) in Checked.bounded(sceFailure, scePresent, capacity: 16) }; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='echoTitle'>: an integer operation overflowed or failed")); return true }; self.vEchoTitle = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try (self.pendingDueSentPayload.title).map { (scePresent) in (try Checked.bounded(scePresent, capacity: 16)) }); self.vEchoTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='echoTitle'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1205,7 +1203,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

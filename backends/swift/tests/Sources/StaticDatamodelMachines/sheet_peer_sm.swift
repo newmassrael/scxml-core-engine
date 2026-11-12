@@ -101,12 +101,10 @@ public enum SheetPeerEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Hlc` datamodel value.
-public struct SheetPeerHlcRecord: Equatable, Sendable, SceDefault {
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct SheetPeerHlcRecord: Equatable, Sendable {
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.wallTime = wallTime
@@ -134,24 +132,22 @@ public struct SheetPeerHlcRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:LwwCell` datamodel value.
-public struct SheetPeerLwwCellRecord: Equatable, Sendable, SceDefault {
-    public var row: UInt64 = 0
-    public var col: UInt64 = 0
-    public var value: Int64 = 0
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-    public var op: UInt8 = 0
-    public var aRef: Bool = false
-    public var aRow: UInt64 = 0
-    public var aCol: UInt64 = 0
-    public var aVal: Int64 = 0
-    public var bRef: Bool = false
-    public var bRow: UInt64 = 0
-    public var bCol: UInt64 = 0
-    public var bVal: Int64 = 0
-
-    public init() {}
+public struct SheetPeerLwwCellRecord: Equatable, Sendable {
+    public var row: UInt64
+    public var col: UInt64
+    public var value: Int64
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
+    public var op: UInt8
+    public var aRef: Bool
+    public var aRow: UInt64
+    public var aCol: UInt64
+    public var aVal: Int64
+    public var bRef: Bool
+    public var bRow: UInt64
+    public var bCol: UInt64
+    public var bVal: Int64
 
     public init(row: UInt64, col: UInt64, value: Int64, wallTime: Int64, counter: UInt32, nodeId: UInt64, op: UInt8, aRef: Bool, aRow: UInt64, aCol: UInt64, aVal: Int64, bRef: Bool, bRow: UInt64, bCol: UInt64, bVal: Int64) {
         self.row = row
@@ -215,11 +211,9 @@ public struct SheetPeerLwwCellRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:RgaNode` datamodel value.
-public struct SheetPeerRgaNodeRecord: Equatable, Sendable, SceDefault {
-    public var key: UInt64 = 0
-    public var after: UInt64 = 0
-
-    public init() {}
+public struct SheetPeerRgaNodeRecord: Equatable, Sendable {
+    public var key: UInt64
+    public var after: UInt64
 
     public init(key: UInt64, after: UInt64) {
         self.key = key
@@ -244,11 +238,9 @@ public struct SheetPeerRgaNodeRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:RgaGone` datamodel value.
-public struct SheetPeerRgaGoneRecord: Equatable, Sendable, SceDefault {
-    public var key: UInt64 = 0
-    public var by: UInt64 = 0
-
-    public init() {}
+public struct SheetPeerRgaGoneRecord: Equatable, Sendable {
+    public var key: UInt64
+    public var by: UInt64
 
     public init(key: UInt64, by: UInt64) {
         self.key = key
@@ -273,13 +265,11 @@ public struct SheetPeerRgaGoneRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Shown` datamodel value.
-public struct SheetPeerShownRecord: Equatable, Sendable, SceDefault {
-    public var row: UInt64 = 0
-    public var col: UInt64 = 0
-    public var value: Int64 = 0
-    public var fault: UInt8 = 0
-
-    public init() {}
+public struct SheetPeerShownRecord: Equatable, Sendable {
+    public var row: UInt64
+    public var col: UInt64
+    public var value: Int64
+    public var fault: UInt8
 
     public init(row: UInt64, col: UInt64, value: Int64, fault: UInt8) {
         self.row = row
@@ -332,117 +322,117 @@ enum SheetPeerPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetAddColPayload {
-    var after: UInt64 = 0
+    var after: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.add_row` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetAddRowPayload {
-    var after: UInt64 = 0
+    var after: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.cell` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetCellPayload {
-    var row: UInt64 = 0
-    var col: UInt64 = 0
-    var value: Int64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var op: UInt8 = 0
-    var aRef: Bool = false
-    var aRow: UInt64 = 0
-    var aCol: UInt64 = 0
-    var aVal: Int64 = 0
-    var bRef: Bool = false
-    var bRow: UInt64 = 0
-    var bCol: UInt64 = 0
-    var bVal: Int64 = 0
+    var row: UInt64
+    var col: UInt64
+    var value: Int64
+    var wallTime: Int64
+    var counter: UInt32
+    var nodeId: UInt64
+    var op: UInt8
+    var aRef: Bool
+    var aRow: UInt64
+    var aCol: UInt64
+    var aVal: Int64
+    var bRef: Bool
+    var bRow: UInt64
+    var bCol: UInt64
+    var bVal: Int64
 }
 
 /// The typed `_event.data` payload of `sheet.col` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetColPayload {
-    var key: UInt64 = 0
-    var after: UInt64 = 0
+    var key: UInt64
+    var after: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.drop_col` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetDropColPayload {
-    var col: UInt64 = 0
+    var col: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.drop_row` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetDropRowPayload {
-    var row: UInt64 = 0
+    var row: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.edit` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetEditPayload {
-    var row: UInt64 = 0
-    var col: UInt64 = 0
-    var value: Int64 = 0
-    var now: Int64 = 0
+    var row: UInt64
+    var col: UInt64
+    var value: Int64
+    var now: Int64
 }
 
 /// The typed `_event.data` payload of `sheet.formula` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetFormulaPayload {
-    var row: UInt64 = 0
-    var col: UInt64 = 0
-    var op: UInt8 = 0
-    var aRef: Bool = false
-    var aRow: UInt64 = 0
-    var aCol: UInt64 = 0
-    var aVal: Int64 = 0
-    var bRef: Bool = false
-    var bRow: UInt64 = 0
-    var bCol: UInt64 = 0
-    var bVal: Int64 = 0
-    var now: Int64 = 0
+    var row: UInt64
+    var col: UInt64
+    var op: UInt8
+    var aRef: Bool
+    var aRow: UInt64
+    var aCol: UInt64
+    var aVal: Int64
+    var bRef: Bool
+    var bRow: UInt64
+    var bCol: UInt64
+    var bVal: Int64
+    var now: Int64
 }
 
 /// The typed `_event.data` payload of `sheet.gone` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetGonePayload {
-    var key: UInt64 = 0
-    var by: UInt64 = 0
+    var key: UInt64
+    var by: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.gone_col` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetGoneColPayload {
-    var key: UInt64 = 0
-    var by: UInt64 = 0
+    var key: UInt64
+    var by: UInt64
 }
 
 /// The typed `_event.data` payload of `sheet.join` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetJoinPayload {
-    var node: UInt64 = 0
-    var hub: Bool = false
+    var node: UInt64
+    var hub: Bool
 }
 
 /// The typed `_event.data` payload of `sheet.row` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct SheetPeerSheetRowPayload {
-    var key: UInt64 = 0
-    var after: UInt64 = 0
+    var key: UInt64
+    var after: UInt64
 }
 
 
@@ -450,17 +440,17 @@ struct SheetPeerSheetRowPayload {
 // SCE Accepted Subset §2.15: the calls of an algorithm over a record or a list
 // ======================================================================
 
-private func call_HlcReceive__vv(_ p0: SheetPeerHlcRecord, _ p1: SheetPeerHlcRecord, _ p2: Int64, _ p3: UInt64) throws -> SheetPeerHlcRecord {
+private func call_HlcReceive__vv(_ p0: SheetPeerHlcRecord, _ p1: SheetPeerHlcRecord, _ p2: Int64, _ p3: UInt64) throws(AlgorithmError) -> SheetPeerHlcRecord {
     let r = try HlcReceive.hlcReceive(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), HlcTimestampPayload(wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId), p2, p3)
     return SheetPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_HlcSend__v(_ p0: SheetPeerHlcRecord, _ p1: Int64, _ p2: UInt64) throws -> SheetPeerHlcRecord {
+private func call_HlcSend__v(_ p0: SheetPeerHlcRecord, _ p1: Int64, _ p2: UInt64) throws(AlgorithmError) -> SheetPeerHlcRecord {
     let r = try HlcSend.hlcSend(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1, p2)
     return SheetPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_LwwWrite__vv(_ p0: [SheetPeerLwwCellRecord], _ p1: SheetPeerLwwCellRecord) throws -> [SheetPeerLwwCellRecord] {
+private func call_LwwWrite__vv(_ p0: [SheetPeerLwwCellRecord], _ p1: SheetPeerLwwCellRecord) throws(AlgorithmError) -> [SheetPeerLwwCellRecord] {
     let r = try LwwWrite.lwwWrite(p0.map { LwwCellPayload(row: $0.row, col: $0.col, value: $0.value, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId, op: $0.op, aRef: $0.aRef, aRow: $0.aRow, aCol: $0.aCol, aVal: $0.aVal, bRef: $0.bRef, bRow: $0.bRow, bCol: $0.bCol, bVal: $0.bVal) }, LwwCellPayload(row: p1.row, col: p1.col, value: p1.value, wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId, op: p1.op, aRef: p1.aRef, aRow: p1.aRow, aCol: p1.aCol, aVal: p1.aVal, bRef: p1.bRef, bRow: p1.bRow, bCol: p1.bCol, bVal: p1.bVal))
     return r.map { SheetPeerLwwCellRecord(row: $0.row, col: $0.col, value: $0.value, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId, op: $0.op, aRef: $0.aRef, aRow: $0.aRow, aCol: $0.aCol, aVal: $0.aVal, bRef: $0.bRef, bRow: $0.bRow, bCol: $0.bCol, bVal: $0.bVal) }
 }
@@ -470,22 +460,22 @@ private func call_RgaHolds__v(_ p0: [SheetPeerRgaNodeRecord], _ p1: UInt64) -> B
     return r
 }
 
-private func call_RgaInsert__vv(_ p0: [SheetPeerRgaNodeRecord], _ p1: SheetPeerRgaNodeRecord) throws -> [SheetPeerRgaNodeRecord] {
+private func call_RgaInsert__vv(_ p0: [SheetPeerRgaNodeRecord], _ p1: SheetPeerRgaNodeRecord) throws(AlgorithmError) -> [SheetPeerRgaNodeRecord] {
     let r = try RgaInsert.rgaInsert(p0.map { RgaNodePayload(key: $0.key, after: $0.after) }, RgaNodePayload(key: p1.key, after: p1.after))
     return r.map { SheetPeerRgaNodeRecord(key: $0.key, after: $0.after) }
 }
 
-private func call_RgaRemove__vv(_ p0: [SheetPeerRgaGoneRecord], _ p1: SheetPeerRgaGoneRecord) throws -> [SheetPeerRgaGoneRecord] {
+private func call_RgaRemove__vv(_ p0: [SheetPeerRgaGoneRecord], _ p1: SheetPeerRgaGoneRecord) throws(AlgorithmError) -> [SheetPeerRgaGoneRecord] {
     let r = try RgaRemove.rgaRemove(p0.map { RgaGonePayload(key: $0.key, by: $0.by) }, RgaGonePayload(key: p1.key, by: p1.by))
     return r.map { SheetPeerRgaGoneRecord(key: $0.key, by: $0.by) }
 }
 
-private func call_SheetSettle__vvvvv(_ p0: [SheetPeerLwwCellRecord], _ p1: [SheetPeerRgaNodeRecord], _ p2: [SheetPeerRgaGoneRecord], _ p3: [SheetPeerRgaNodeRecord], _ p4: [SheetPeerRgaGoneRecord]) throws -> [Int64] {
+private func call_SheetSettle__vvvvv(_ p0: [SheetPeerLwwCellRecord], _ p1: [SheetPeerRgaNodeRecord], _ p2: [SheetPeerRgaGoneRecord], _ p3: [SheetPeerRgaNodeRecord], _ p4: [SheetPeerRgaGoneRecord]) throws(AlgorithmError) -> [Int64] {
     let r = try SheetSettle.sheetSettle(p0.map { LwwCellPayload(row: $0.row, col: $0.col, value: $0.value, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId, op: $0.op, aRef: $0.aRef, aRow: $0.aRow, aCol: $0.aCol, aVal: $0.aVal, bRef: $0.bRef, bRow: $0.bRow, bCol: $0.bCol, bVal: $0.bVal) }, p1.map { RgaNodePayload(key: $0.key, after: $0.after) }, p2.map { RgaGonePayload(key: $0.key, by: $0.by) }, p3.map { RgaNodePayload(key: $0.key, after: $0.after) }, p4.map { RgaGonePayload(key: $0.key, by: $0.by) })
     return r
 }
 
-private func call_SheetShow__vv(_ p0: [SheetPeerLwwCellRecord], _ p1: [Int64]) throws -> [SheetPeerShownRecord] {
+private func call_SheetShow__vv(_ p0: [SheetPeerLwwCellRecord], _ p1: [Int64]) throws(AlgorithmError) -> [SheetPeerShownRecord] {
     let r = try SheetShow.sheetShow(p0.map { LwwCellPayload(row: $0.row, col: $0.col, value: $0.value, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId, op: $0.op, aRef: $0.aRef, aRow: $0.aRow, aCol: $0.aCol, aVal: $0.aVal, bRef: $0.bRef, bRow: $0.bRow, bCol: $0.bCol, bVal: $0.bVal) }, p1)
     return r.map { SheetPeerShownRecord(row: $0.row, col: $0.col, value: $0.value, fault: $0.fault) }
 }
@@ -511,18 +501,18 @@ public final class SheetPeerPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: SheetPeerPayloadTag = .none
-    var pendingSheetAddColPayload = SheetPeerSheetAddColPayload()
-    var pendingSheetAddRowPayload = SheetPeerSheetAddRowPayload()
-    var pendingSheetCellPayload = SheetPeerSheetCellPayload()
-    var pendingSheetColPayload = SheetPeerSheetColPayload()
-    var pendingSheetDropColPayload = SheetPeerSheetDropColPayload()
-    var pendingSheetDropRowPayload = SheetPeerSheetDropRowPayload()
-    var pendingSheetEditPayload = SheetPeerSheetEditPayload()
-    var pendingSheetFormulaPayload = SheetPeerSheetFormulaPayload()
-    var pendingSheetGonePayload = SheetPeerSheetGonePayload()
-    var pendingSheetGoneColPayload = SheetPeerSheetGoneColPayload()
-    var pendingSheetJoinPayload = SheetPeerSheetJoinPayload()
-    var pendingSheetRowPayload = SheetPeerSheetRowPayload()
+    var pendingSheetAddColPayload: SheetPeerSheetAddColPayload!
+    var pendingSheetAddRowPayload: SheetPeerSheetAddRowPayload!
+    var pendingSheetCellPayload: SheetPeerSheetCellPayload!
+    var pendingSheetColPayload: SheetPeerSheetColPayload!
+    var pendingSheetDropColPayload: SheetPeerSheetDropColPayload!
+    var pendingSheetDropRowPayload: SheetPeerSheetDropRowPayload!
+    var pendingSheetEditPayload: SheetPeerSheetEditPayload!
+    var pendingSheetFormulaPayload: SheetPeerSheetFormulaPayload!
+    var pendingSheetGonePayload: SheetPeerSheetGonePayload!
+    var pendingSheetGoneColPayload: SheetPeerSheetGoneColPayload!
+    var pendingSheetJoinPayload: SheetPeerSheetJoinPayload!
+    var pendingSheetRowPayload: SheetPeerSheetRowPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -955,107 +945,107 @@ public final class SheetPeerPolicy: InvocablePolicy {
         switch event {
         case .sheetAddCol:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetAddColPayload()
-            payload.after = try fields.unsigned64("after")
+            let sceField0 = try fields.unsigned64("after")
+            let payload = SheetPeerSheetAddColPayload(after: sceField0)
             pendingSheetAddColPayload = payload
             pendingPayloadTag = .sheetAddCol
         case .sheetAddRow:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetAddRowPayload()
-            payload.after = try fields.unsigned64("after")
+            let sceField0 = try fields.unsigned64("after")
+            let payload = SheetPeerSheetAddRowPayload(after: sceField0)
             pendingSheetAddRowPayload = payload
             pendingPayloadTag = .sheetAddRow
         case .sheetCell:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetCellPayload()
-            payload.row = try fields.unsigned64("row")
-            payload.col = try fields.unsigned64("col")
-            payload.value = try fields.signed64("value")
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.op = try fields.unsigned("op")
-            payload.aRef = try fields.truth("aRef")
-            payload.aRow = try fields.unsigned64("aRow")
-            payload.aCol = try fields.unsigned64("aCol")
-            payload.aVal = try fields.signed64("aVal")
-            payload.bRef = try fields.truth("bRef")
-            payload.bRow = try fields.unsigned64("bRow")
-            payload.bCol = try fields.unsigned64("bCol")
-            payload.bVal = try fields.signed64("bVal")
+            let sceField0 = try fields.unsigned64("row")
+            let sceField1 = try fields.unsigned64("col")
+            let sceField2 = try fields.signed64("value")
+            let sceField3 = try fields.signed64("wallTime")
+            let sceField4 = try fields.unsigned("counter")
+            let sceField5 = try fields.unsigned64("nodeId")
+            let sceField6 = try fields.unsigned("op")
+            let sceField7 = try fields.truth("aRef")
+            let sceField8 = try fields.unsigned64("aRow")
+            let sceField9 = try fields.unsigned64("aCol")
+            let sceField10 = try fields.signed64("aVal")
+            let sceField11 = try fields.truth("bRef")
+            let sceField12 = try fields.unsigned64("bRow")
+            let sceField13 = try fields.unsigned64("bCol")
+            let sceField14 = try fields.signed64("bVal")
+            let payload = SheetPeerSheetCellPayload(row: sceField0, col: sceField1, value: sceField2, wallTime: sceField3, counter: sceField4, nodeId: sceField5, op: sceField6, aRef: sceField7, aRow: sceField8, aCol: sceField9, aVal: sceField10, bRef: sceField11, bRow: sceField12, bCol: sceField13, bVal: sceField14)
             pendingSheetCellPayload = payload
             pendingPayloadTag = .sheetCell
         case .sheetCol:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetColPayload()
-            payload.key = try fields.unsigned64("key")
-            payload.after = try fields.unsigned64("after")
+            let sceField0 = try fields.unsigned64("key")
+            let sceField1 = try fields.unsigned64("after")
+            let payload = SheetPeerSheetColPayload(key: sceField0, after: sceField1)
             pendingSheetColPayload = payload
             pendingPayloadTag = .sheetCol
         case .sheetDropCol:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetDropColPayload()
-            payload.col = try fields.unsigned64("col")
+            let sceField0 = try fields.unsigned64("col")
+            let payload = SheetPeerSheetDropColPayload(col: sceField0)
             pendingSheetDropColPayload = payload
             pendingPayloadTag = .sheetDropCol
         case .sheetDropRow:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetDropRowPayload()
-            payload.row = try fields.unsigned64("row")
+            let sceField0 = try fields.unsigned64("row")
+            let payload = SheetPeerSheetDropRowPayload(row: sceField0)
             pendingSheetDropRowPayload = payload
             pendingPayloadTag = .sheetDropRow
         case .sheetEdit:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetEditPayload()
-            payload.row = try fields.unsigned64("row")
-            payload.col = try fields.unsigned64("col")
-            payload.value = try fields.signed64("value")
-            payload.now = try fields.signed64("now")
+            let sceField0 = try fields.unsigned64("row")
+            let sceField1 = try fields.unsigned64("col")
+            let sceField2 = try fields.signed64("value")
+            let sceField3 = try fields.signed64("now")
+            let payload = SheetPeerSheetEditPayload(row: sceField0, col: sceField1, value: sceField2, now: sceField3)
             pendingSheetEditPayload = payload
             pendingPayloadTag = .sheetEdit
         case .sheetFormula:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetFormulaPayload()
-            payload.row = try fields.unsigned64("row")
-            payload.col = try fields.unsigned64("col")
-            payload.op = try fields.unsigned("op")
-            payload.aRef = try fields.truth("aRef")
-            payload.aRow = try fields.unsigned64("aRow")
-            payload.aCol = try fields.unsigned64("aCol")
-            payload.aVal = try fields.signed64("aVal")
-            payload.bRef = try fields.truth("bRef")
-            payload.bRow = try fields.unsigned64("bRow")
-            payload.bCol = try fields.unsigned64("bCol")
-            payload.bVal = try fields.signed64("bVal")
-            payload.now = try fields.signed64("now")
+            let sceField0 = try fields.unsigned64("row")
+            let sceField1 = try fields.unsigned64("col")
+            let sceField2 = try fields.unsigned("op")
+            let sceField3 = try fields.truth("aRef")
+            let sceField4 = try fields.unsigned64("aRow")
+            let sceField5 = try fields.unsigned64("aCol")
+            let sceField6 = try fields.signed64("aVal")
+            let sceField7 = try fields.truth("bRef")
+            let sceField8 = try fields.unsigned64("bRow")
+            let sceField9 = try fields.unsigned64("bCol")
+            let sceField10 = try fields.signed64("bVal")
+            let sceField11 = try fields.signed64("now")
+            let payload = SheetPeerSheetFormulaPayload(row: sceField0, col: sceField1, op: sceField2, aRef: sceField3, aRow: sceField4, aCol: sceField5, aVal: sceField6, bRef: sceField7, bRow: sceField8, bCol: sceField9, bVal: sceField10, now: sceField11)
             pendingSheetFormulaPayload = payload
             pendingPayloadTag = .sheetFormula
         case .sheetGone:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetGonePayload()
-            payload.key = try fields.unsigned64("key")
-            payload.by = try fields.unsigned64("by")
+            let sceField0 = try fields.unsigned64("key")
+            let sceField1 = try fields.unsigned64("by")
+            let payload = SheetPeerSheetGonePayload(key: sceField0, by: sceField1)
             pendingSheetGonePayload = payload
             pendingPayloadTag = .sheetGone
         case .sheetGoneCol:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetGoneColPayload()
-            payload.key = try fields.unsigned64("key")
-            payload.by = try fields.unsigned64("by")
+            let sceField0 = try fields.unsigned64("key")
+            let sceField1 = try fields.unsigned64("by")
+            let payload = SheetPeerSheetGoneColPayload(key: sceField0, by: sceField1)
             pendingSheetGoneColPayload = payload
             pendingPayloadTag = .sheetGoneCol
         case .sheetJoin:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetJoinPayload()
-            payload.node = try fields.unsigned64("node")
-            payload.hub = try fields.truth("hub")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.truth("hub")
+            let payload = SheetPeerSheetJoinPayload(node: sceField0, hub: sceField1)
             pendingSheetJoinPayload = payload
             pendingPayloadTag = .sheetJoin
         case .sheetRow:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = SheetPeerSheetRowPayload()
-            payload.key = try fields.unsigned64("key")
-            payload.after = try fields.unsigned64("after")
+            let sceField0 = try fields.unsigned64("key")
+            let sceField1 = try fields.unsigned64("after")
+            let payload = SheetPeerSheetRowPayload(key: sceField0, after: sceField1)
             pendingSheetRowPayload = payload
             pendingPayloadTag = .sheetRow
         default:
@@ -1309,7 +1299,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.pendingSheetEditPayload.now, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.pendingSheetEditPayload.now, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1512,7 +1502,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.pendingSheetFormulaPayload.now, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.pendingSheetFormulaPayload.now, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1729,7 +1719,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vStamp, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcReceive__vv(self.vClock, self.vStamp, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1797,7 +1787,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_LwwWrite__vv(self.vCells, self.vWrite) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='cells'>: an integer operation overflowed or failed")); return true }; self.vCells = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_LwwWrite__vv(self.vCells, self.vWrite)), capacity: 256)); self.vCells = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='cells'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2045,13 +2035,13 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_SheetSettle__vvvvv(self.vCells, self.vRows, self.vGone, self.vCols, self.vGoneCols) }), capacity: 768); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='trail'>: an integer operation overflowed or failed")); return true }; self.vTrail = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_SheetSettle__vvvvv(self.vCells, self.vRows, self.vGone, self.vCols, self.vGoneCols)), capacity: 768)); self.vTrail = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='trail'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_SheetShow__vv(self.vCells, self.vTrail) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; self.vShown = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_SheetShow__vv(self.vCells, self.vTrail)), capacity: 256)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2064,13 +2054,13 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, self.vLamport, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; self.vLamport = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add(self.vLamport, 1)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vLamport, 256), self.vNode); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; self.vNewKey = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vLamport, 256)), self.vNode)); self.vNewKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2156,10 +2146,10 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
                 var ifCondFailed4 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, self.pendingSheetRowPayload.key, 256) > self.vLamport; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.div(self.pendingSheetRowPayload.key, 256)) > self.vLamport } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false } }()) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.div(sceFailure, self.pendingSheetRowPayload.key, 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; self.vLamport = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(self.pendingSheetRowPayload.key, 256)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2180,7 +2170,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 if (self.pendingSheetRowPayload.after != 0 && !call_RgaHolds__v(self.vRows, self.pendingSheetRowPayload.key) && !call_RgaHolds__v(self.vRows, self.pendingSheetRowPayload.after)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vOrphans, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; self.vOrphans = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOrphans, 1)); self.vOrphans = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2188,7 +2178,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RgaInsert__vv(self.vRows, self.vPlaced) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='rows'>: an integer operation overflowed or failed")); return true }; self.vRows = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RgaInsert__vv(self.vRows, self.vPlaced)), capacity: 256)); self.vRows = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='rows'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2204,7 +2194,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 }
 
                 var ifCondFailed6 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = self.vHub && Checked.rem(sceFailure, self.pendingSheetRowPayload.key, 256) != 1; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_10"
                 do {
@@ -2257,7 +2247,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
                 var ifCondFailed7 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = self.vHub && Checked.rem(sceFailure, self.pendingSheetRowPayload.key, 256) != 2; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_11"
                 do {
@@ -2405,7 +2395,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RgaRemove__vv(self.vGone, self.vRemoval) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; self.vGone = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RgaRemove__vv(self.vGone, self.vRemoval)), capacity: 256)); self.vGone = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2526,13 +2516,13 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, self.vLamport, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; self.vLamport = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add(self.vLamport, 1)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vLamport, 256), self.vNode); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; self.vNewKey = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vLamport, 256)), self.vNode)); self.vNewKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2618,10 +2608,10 @@ public final class SheetPeerPolicy: InvocablePolicy {
                     }
 
                 var ifCondFailed10 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, self.pendingSheetColPayload.key, 256) > self.vLamport; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.div(self.pendingSheetColPayload.key, 256)) > self.vLamport } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false } }()) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.div(sceFailure, self.pendingSheetColPayload.key, 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; self.vLamport = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(self.pendingSheetColPayload.key, 256)); self.vLamport = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2642,7 +2632,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 if (self.pendingSheetColPayload.after != 0 && !call_RgaHolds__v(self.vCols, self.pendingSheetColPayload.key) && !call_RgaHolds__v(self.vCols, self.pendingSheetColPayload.after)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vOrphans, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; self.vOrphans = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOrphans, 1)); self.vOrphans = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2650,7 +2640,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RgaInsert__vv(self.vCols, self.vPlaced) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='cols'>: an integer operation overflowed or failed")); return true }; self.vCols = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RgaInsert__vv(self.vCols, self.vPlaced)), capacity: 256)); self.vCols = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='cols'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2666,7 +2656,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 }
 
                 var ifCondFailed12 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = self.vHub && Checked.rem(sceFailure, self.pendingSheetColPayload.key, 256) != 1; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_20"
                 do {
@@ -2719,7 +2709,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
                 var ifCondFailed13 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = self.vHub && Checked.rem(sceFailure, self.pendingSheetColPayload.key, 256) != 2; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_21"
                 do {
@@ -2867,7 +2857,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RgaRemove__vv(self.vGoneCols, self.vRemoval) }), capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; self.vGoneCols = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RgaRemove__vv(self.vGoneCols, self.vRemoval)), capacity: 256)); self.vGoneCols = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2985,7 +2975,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

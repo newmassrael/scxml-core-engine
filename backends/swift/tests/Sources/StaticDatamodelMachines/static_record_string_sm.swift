@@ -104,11 +104,9 @@ public enum StaticRecordStringEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Labelled` datamodel value.
-public struct StaticRecordStringLabelledRecord: Equatable, Sendable, SceDefault {
-    public var sensor: UInt8 = 0
-    public var label: String = ""
-
-    public init() {}
+public struct StaticRecordStringLabelledRecord: Equatable, Sendable {
+    public var sensor: UInt8
+    public var label: String
 
     public init(sensor: UInt8, label: String) {
         self.sensor = sensor
@@ -144,8 +142,8 @@ enum StaticRecordStringPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticRecordStringLabelledTakenPayload {
-    var sensor: UInt8 = 0
-    var label: String = ""
+    var sensor: UInt8
+    var label: String
 }
 
 
@@ -170,7 +168,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticRecordStringPayloadTag = .none
-    var pendingLabelledTakenPayload = StaticRecordStringLabelledTakenPayload()
+    var pendingLabelledTakenPayload: StaticRecordStringLabelledTakenPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -494,9 +492,9 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
         switch event {
         case .labelledTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticRecordStringLabelledTakenPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.label = try fields.text("label", bound: 8)
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.text("label", bound: 8)
+            let payload = StaticRecordStringLabelledTakenPayload(sensor: sceField0, label: sceField1)
             pendingLabelledTakenPayload = payload
             pendingPayloadTag = .labelledTaken
         default:
@@ -719,7 +717,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
             }
             if event == .isfirst {
                 // W3C SCXML 5.9: cond="labels[0].label === 'whole'" lowered to Swift at build time
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.vLabels, 0).label.utf8.elementsEqual("whole".utf8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vLabels, 0)).label.utf8.elementsEqual("whole".utf8) } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed")); return false } }()) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -790,7 +788,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "abcdefgh", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("abcdefgh", capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -800,7 +798,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "é€é", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("é€é", capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -810,7 +808,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "é€éé", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("é€éé", capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -820,7 +818,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "a", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("a", capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -830,7 +828,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "abcdefghijklmnop", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("abcdefghijklmnop", capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -840,7 +838,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vNote, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vNote, capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -850,7 +848,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vLast.label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vLast.label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -863,14 +861,14 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = StaticRecordStringLabelledRecord(sensor: self.pendingLabelledTakenPayload.sensor, label: Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 8)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticRecordStringLabelledRecord(sensor: self.pendingLabelledTakenPayload.sensor, label: (try Checked.bounded(self.pendingLabelledTakenPayload.label, capacity: 8))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="labels">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vLabels.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vLabels, StaticRecordStringLabelledRecord(sensor: self.pendingLabelledTakenPayload.sensor, label: Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 8))); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: an integer operation overflowed or failed")); return true }; self.vLabels.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vLabels.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: the list already holds its capacity of 3")); return true }; do { let sceValue = Checked.element(of: self.vLabels, StaticRecordStringLabelledRecord(sensor: self.pendingLabelledTakenPayload.sensor, label: (try Checked.bounded(self.pendingLabelledTakenPayload.label, capacity: 8)))); self.vLabels.append(sceValue) } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -883,7 +881,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingLabelledTakenPayload.label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -896,7 +894,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingLabelledTakenPayload.label, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingLabelledTakenPayload.label, capacity: 8)); self.vLast.label = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -911,7 +909,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="labels">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vLabels.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vLabels, self.vLast); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: an integer operation overflowed or failed")); return true }; self.vLabels.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vLabels.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<sce:append target='labels'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vLabels, self.vLast); self.vLabels.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -925,7 +923,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                     _ = l
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, l.label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(l.label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -936,7 +934,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, Checked.atDefault(sceFailure, self.vLabels, 0).label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded((try Checked.at(self.vLabels, 0)).label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -946,7 +944,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, Checked.atDefault(sceFailure, self.vLabels, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vLabels.count), 1)).label, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded((try Checked.at(self.vLabels, (try Checked.sub(UInt32(truncatingIfNeeded: self.vLabels.count), 1)))).label, capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -956,7 +954,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "first", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; self.vNote = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("first", capacity: 16)); self.vNote = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='note'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -966,7 +964,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vLabels, 0); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vLabels, 0)); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -976,7 +974,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vLabels, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vLabels.count), 1)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vLabels, (try Checked.sub(UInt32(truncatingIfNeeded: self.vLabels.count), 1)))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -995,7 +993,7 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

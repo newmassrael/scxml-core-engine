@@ -140,10 +140,8 @@ extension StaticUnionKindEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Radius` datamodel value.
-public struct StaticUnionRadiusRecord: Equatable, Sendable, SceDefault {
-    public var radius: UInt16 = 0
-
-    public init() {}
+public struct StaticUnionRadiusRecord: Equatable, Sendable {
+    public var radius: UInt16
 
     public init(radius: UInt16) {
         self.radius = radius
@@ -165,11 +163,9 @@ public struct StaticUnionRadiusRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Rect` datamodel value.
-public struct StaticUnionRectRecord: Equatable, Sendable, SceDefault {
-    public var width: UInt16 = 0
-    public var height: UInt16 = 0
-
-    public init() {}
+public struct StaticUnionRectRecord: Equatable, Sendable {
+    public var width: UInt16
+    public var height: UInt16
 
     public init(width: UInt16, height: UInt16) {
         self.width = width
@@ -194,11 +190,9 @@ public struct StaticUnionRectRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Label` datamodel value.
-public struct StaticUnionLabelRecord: Equatable, Sendable, SceDefault {
-    public var text: String = ""
-    public var note: String? = nil
-
-    public init() {}
+public struct StaticUnionLabelRecord: Equatable, Sendable {
+    public var text: String
+    public var note: String?
 
     public init(text: String, note: String?) {
         self.text = text
@@ -225,10 +219,8 @@ public struct StaticUnionLabelRecord: Equatable, Sendable, SceDefault {
 /// SCE Accepted Subset §2.15: a `record:Path` value that holds a composed
 /// value (docs/adr/0086), built whole from its fields in the schema's order; a
 /// raise seam holds it to every bound its type declares before it sends it.
-public struct StaticUnionPathRecord: Equatable, Sendable, SceDefault {
-    public var points: [UInt8] = []
-
-    public init() {}
+public struct StaticUnionPathRecord: Equatable, Sendable {
+    public var points: [UInt8]
 
     public init(points: [UInt8]) {
         self.points = points
@@ -468,12 +460,10 @@ extension StaticUnionRefusalCodeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:LiftRefusal` datamodel value.
-public struct StaticUnionLiftRefusalRecord: Equatable, Sendable, SceDefault {
-    public var code: StaticUnionRefusalCodeEnum = StaticUnionRefusalCodeEnum.allCases[0]
-    public var path: String = ""
-    public var bound: UInt32? = nil
-
-    public init() {}
+public struct StaticUnionLiftRefusalRecord: Equatable, Sendable {
+    public var code: StaticUnionRefusalCodeEnum
+    public var path: String
+    public var bound: UInt32?
 
     public init(code: StaticUnionRefusalCodeEnum, path: String, bound: UInt32?) {
         self.code = code
@@ -513,7 +503,7 @@ enum StaticUnionPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticUnionShapeSaidPayload {
-    var text: String = ""
+    var text: String
 }
 
 /// The typed `_event.data` payload of `shapes.sent` (NL-to-IR Item C1 Path A): what a
@@ -521,8 +511,8 @@ struct StaticUnionShapeSaidPayload {
 /// values to the inject seam below.
 struct StaticUnionShapesSentPayload {
     var one: StaticUnionUnionShapeUnion
-    var many: [StaticUnionUnionShapeUnion] = []
-    var maybe: StaticUnionUnionShapeUnion? = nil
+    var many: [StaticUnionUnionShapeUnion]
+    var maybe: StaticUnionUnionShapeUnion?
 }
 
 
@@ -547,7 +537,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticUnionPayloadTag = .none
-    var pendingShapeSaidPayload = StaticUnionShapeSaidPayload()
+    var pendingShapeSaidPayload: StaticUnionShapeSaidPayload!
     var pendingShapesSentPayload: StaticUnionShapesSentPayload!
 
 
@@ -927,8 +917,8 @@ public final class StaticUnionPolicy: InvocablePolicy {
         switch event {
         case .shapeSaid:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticUnionShapeSaidPayload()
-            payload.text = try fields.text("text", bound: 96)
+            let sceField0 = try fields.text("text", bound: 96)
+            let payload = StaticUnionShapeSaidPayload(text: sceField0)
             pendingShapeSaidPayload = payload
             pendingPayloadTag = .shapeSaid
         case .shapesSent:
@@ -1060,7 +1050,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 if (self.pendingShapesSentPayload.one.kind == StaticUnionKindEnum.dot) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDots, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='dots'>: an integer operation overflowed or failed")); return true }; self.vDots = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDots, 1)); self.vDots = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='dots'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1085,7 +1075,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     _ = point
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vPoints, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='points'>: an integer operation overflowed or failed")); return true }; self.vPoints = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPoints, 1)); self.vPoints = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='points'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1093,7 +1083,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 } else {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLabels, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='labels'>: an integer operation overflowed or failed")); return true }; self.vLabels = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabels, 1)); self.vLabels = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='labels'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1105,7 +1095,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     _ = shape
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vManyShapes, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; self.vManyShapes = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vManyShapes, 1)); self.vManyShapes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1135,7 +1125,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 if (self.vBuilt.kind == StaticUnionKindEnum.rect) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.add(sceFailure, self.vBuilt.provenRect.width, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; self.vBuilt.provenRectPlace.width = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.add(self.vBuilt.provenRect.width, 1)); self.vBuilt.provenRectPlace.width = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1163,7 +1153,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

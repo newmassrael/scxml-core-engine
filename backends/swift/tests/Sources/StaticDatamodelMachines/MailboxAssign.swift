@@ -15,40 +15,19 @@
 import SceForgeRuntime
 
 public enum MailboxAssign {
-    public static func mailboxAssign(_ queue: [MailboxSlotPayload], _ counter: Int64, _ hi: UInt64, _ lo: UInt64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(counter >= 0 && counter < 9223372036854775807)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
+    public static func mailboxAssign(_ queue: [MailboxSlotPayload], _ counter: Int64, _ hi: UInt64, _ lo: UInt64) throws(AlgorithmError) -> Int64 {
+        if !(counter >= 0 && counter < 9223372036854775807) {
+            throw AlgorithmError.precondition
+        }
+        var id: Int64 = (try Checked.add(counter, 1))
+        for s in queue {
+            if !(s.id >= 1 && s.id <= counter) {
                 throw AlgorithmError.precondition
             }
-        }
-        var id: Int64 = Checked.add(sceFailure, counter, 1)
-        try sceFailure.throwIfFailed()
-        for s in queue {
-            do {
-                let sceCond3 = !(s.id >= 1 && s.id <= counter)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
-            }
-            do {
-                let sceCond3 = s.hi == hi && s.lo == lo
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    id = s.id
-                    try sceFailure.throwIfFailed()
-                }
+            if s.hi == hi && s.lo == lo {
+                id = s.id
             }
         }
-        do {
-            let sceReturned: Int64 = id
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return id
     }
 }

@@ -134,13 +134,11 @@ extension StaticOptionalUnwidenedStatusEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Due` datamodel value.
-public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var due: Int64 = 0
-    public var title: String = ""
-    public var status: StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnum.allCases[0]
-
-    public init() {}
+public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var due: Int64
+    public var title: String
+    public var status: StaticOptionalUnwidenedStatusEnum
 
     public init(id: UInt32, due: Int64, title: String, status: StaticOptionalUnwidenedStatusEnum) {
         self.id = id
@@ -707,7 +705,7 @@ public final class StaticOptionalUnwidenedPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="items">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vItems.count >= 3 { return true }; let sceValue = Checked.element(of: self.vItems, self.vItem); if sceFailure.failed { return true }; self.vItems.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vItems.count >= 3 { return true }; let sceValue = Checked.element(of: self.vItems, self.vItem); self.vItems.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

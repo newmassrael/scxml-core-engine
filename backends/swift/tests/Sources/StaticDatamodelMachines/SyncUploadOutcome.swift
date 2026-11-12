@@ -15,47 +15,20 @@
 import SceForgeRuntime
 
 public enum SyncUploadOutcome {
-    public static func syncUploadOutcome(_ create: Bool, _ status: Int32, _ davError: Bool) throws -> UInt8 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(status >= 200 && status <= 599)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func syncUploadOutcome(_ create: Bool, _ status: Int32, _ davError: Bool) throws(AlgorithmError) -> UInt8 {
+        if !(status >= 200 && status <= 599) {
+            throw AlgorithmError.precondition
         }
         var outcome: UInt8 = 2
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = status < 300
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                outcome = 0
-                try sceFailure.throwIfFailed()
-            }
+        if status < 300 {
+            outcome = 0
         }
-        do {
-            let sceCond2 = status == 403 || status == 412 || status == 409 && davError
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                outcome = 1
-                try sceFailure.throwIfFailed()
-            }
+        if status == 403 || status == 412 || status == 409 && davError {
+            outcome = 1
         }
-        do {
-            let sceCond2 = !create && (status == 404 || status == 410 || status == 409)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                outcome = 1
-                try sceFailure.throwIfFailed()
-            }
+        if !create && (status == 404 || status == 410 || status == 409) {
+            outcome = 1
         }
-        do {
-            let sceReturned: UInt8 = outcome
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return outcome
     }
 }

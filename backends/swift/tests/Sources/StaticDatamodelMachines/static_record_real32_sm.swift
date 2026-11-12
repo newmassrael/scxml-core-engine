@@ -90,11 +90,9 @@ public enum StaticRecordReal32Event: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Reading32` datamodel value.
-public struct StaticRecordReal32Reading32Record: Equatable, Sendable, SceDefault {
-    public var sensor: UInt8 = 0
-    public var value: Float = 0.0
-
-    public init() {}
+public struct StaticRecordReal32Reading32Record: Equatable, Sendable {
+    public var sensor: UInt8
+    public var value: Float
 
     public init(sensor: UInt8, value: Float) {
         self.sensor = sensor
@@ -130,8 +128,8 @@ enum StaticRecordReal32PayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticRecordReal32Reading32TakenPayload {
-    var sensor: UInt8 = 0
-    var value: Float = 0.0
+    var sensor: UInt8
+    var value: Float
 }
 
 
@@ -156,7 +154,7 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticRecordReal32PayloadTag = .none
-    var pendingReading32TakenPayload = StaticRecordReal32Reading32TakenPayload()
+    var pendingReading32TakenPayload: StaticRecordReal32Reading32TakenPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -418,9 +416,9 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
         switch event {
         case .reading32Taken:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticRecordReal32Reading32TakenPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.value = try fields.float32("value")
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.float32("value")
+            let payload = StaticRecordReal32Reading32TakenPayload(sensor: sceField0, value: sceField1)
             pendingReading32TakenPayload = payload
             pendingPayloadTag = .reading32Taken
         default:
@@ -562,7 +560,7 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordReal32Event.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordReal32Event.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

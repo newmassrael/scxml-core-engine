@@ -144,15 +144,15 @@ enum StaticEnumNumberPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticEnumNumberItemMovedPayload {
-    var id: UInt32 = 0
-    var status: StaticEnumNumberStatusEnum = StaticEnumNumberStatusEnum.allCases[0]
+    var id: UInt32
+    var status: StaticEnumNumberStatusEnum
 }
 
 /// The typed `_event.data` payload of `status.number` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticEnumNumberStatusNumberPayload {
-    var number: Int64 = 0
+    var number: Int64
 }
 
 
@@ -177,8 +177,8 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticEnumNumberPayloadTag = .none
-    var pendingItemMovedPayload = StaticEnumNumberItemMovedPayload()
-    var pendingStatusNumberPayload = StaticEnumNumberStatusNumberPayload()
+    var pendingItemMovedPayload: StaticEnumNumberItemMovedPayload!
+    var pendingStatusNumberPayload: StaticEnumNumberStatusNumberPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -457,15 +457,15 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
         switch event {
         case .itemMoved:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticEnumNumberItemMovedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.status = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let payload = StaticEnumNumberItemMovedPayload(id: sceField0, status: sceField1)
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved
         case .statusNumber:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticEnumNumberStatusNumberPayload()
-            payload.number = try fields.signed64("number")
+            let sceField0 = try fields.signed64("number")
+            let payload = StaticEnumNumberStatusNumberPayload(number: sceField0)
             pendingStatusNumberPayload = payload
             pendingPayloadTag = .statusNumber
         default:
@@ -606,7 +606,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeCase(sceFailure, { try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying(Checked.narrow(sceFailure, self.pendingStatusNumberPayload.number, to: UInt8.self))) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; self.vStatus = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying((try Checked.narrow(self.pendingStatusNumberPayload.number, to: UInt8.self))))); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -616,7 +616,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChecks, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; self.vChecks = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vChecks, 1)); self.vChecks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -626,7 +626,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

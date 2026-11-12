@@ -98,16 +98,16 @@ enum StaticWireWidePayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticWireWideWideInPayload {
-    var big: UInt64 = 0
-    var small: Int64 = 0
+    var big: UInt64
+    var small: Int64
 }
 
 /// The typed `_event.data` payload of `wide.relayed` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticWireWideWideRelayedPayload {
-    var big: UInt64 = 0
-    var small: Int64 = 0
+    var big: UInt64
+    var small: Int64
 }
 
 
@@ -132,8 +132,8 @@ public final class StaticWireWidePolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticWireWidePayloadTag = .none
-    var pendingWideInPayload = StaticWireWideWideInPayload()
-    var pendingWideRelayedPayload = StaticWireWideWideRelayedPayload()
+    var pendingWideInPayload: StaticWireWideWideInPayload!
+    var pendingWideRelayedPayload: StaticWireWideWideRelayedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -432,16 +432,16 @@ public final class StaticWireWidePolicy: InvocablePolicy {
         switch event {
         case .wideIn:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticWireWideWideInPayload()
-            payload.big = try fields.unsigned64("big")
-            payload.small = try fields.signed64("small")
+            let sceField0 = try fields.unsigned64("big")
+            let sceField1 = try fields.signed64("small")
+            let payload = StaticWireWideWideInPayload(big: sceField0, small: sceField1)
             pendingWideInPayload = payload
             pendingPayloadTag = .wideIn
         case .wideRelayed:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticWireWideWideRelayedPayload()
-            payload.big = try fields.unsigned64("big")
-            payload.small = try fields.signed64("small")
+            let sceField0 = try fields.unsigned64("big")
+            let sceField1 = try fields.signed64("small")
+            let payload = StaticWireWideWideRelayedPayload(big: sceField0, small: sceField1)
             pendingWideRelayedPayload = payload
             pendingPayloadTag = .wideRelayed
         default:
@@ -570,14 +570,11 @@ public final class StaticWireWidePolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("big", sceValue))
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .signed64(Checked.sub(sceFailure, self.pendingWideInPayload.small, 1))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("small", sceValue))
-                        } else {
+                        let sceValue: WireValue = .signed64((try Checked.sub(self.pendingWideInPayload.small, 1)))
+                        sendParts.append(PayloadPair("small", sceValue))
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<send> <param name=small> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     let sendEventData = payloadJSON(sendParts)
                     do {
@@ -605,7 +602,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.rem(sceFailure, self.pendingWideRelayedPayload.big, 1000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='low'>: an integer operation overflowed or failed")); return true }; self.vLow = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(self.pendingWideRelayedPayload.big, 1000)); self.vLow = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='low'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -615,7 +612,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.rem(sceFailure, self.pendingWideRelayedPayload.small, 1000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; self.vSmallLow = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.rem(self.pendingWideRelayedPayload.small, 1000)); self.vSmallLow = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='smallLow'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -625,7 +622,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRelays, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; self.vRelays = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -635,7 +632,7 @@ public final class StaticWireWidePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireWideEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

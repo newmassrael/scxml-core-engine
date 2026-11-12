@@ -15,32 +15,17 @@
 import SceForgeRuntime
 
 public enum ItemStatusSet {
-    public static func itemStatusSet(_ items: [SchemaItemPayload], _ id: UInt32, _ status: EnumItemStatus) throws -> [SchemaItemPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func itemStatusSet(_ items: [SchemaItemPayload], _ id: UInt32, _ status: EnumItemStatus) throws(AlgorithmError) -> [SchemaItemPayload] {
         let moved: SchemaItemPayload = SchemaItemPayload(id: id, status: status)
-        try sceFailure.throwIfFailed()
         var out: [SchemaItemPayload] = []
         out.reserveCapacity(4)
-        try sceFailure.throwIfFailed()
         for e in items {
-            do {
-                let sceCond3 = e.id == id
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(moved)
-                    try sceFailure.throwIfFailed()
-                } else {
-                    out.append(e)
-                    try sceFailure.throwIfFailed()
-                }
+            if e.id == id {
+                out.append(moved)
+            } else {
+                out.append(e)
             }
         }
-        do {
-            let sceReturned: [SchemaItemPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

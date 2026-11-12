@@ -15,44 +15,22 @@
 import SceForgeRuntime
 
 public enum LedgerAdd {
-    public static func ledgerAdd(_ entries: [SchemaEntryPayload], _ id: UInt32, _ amount: Int32) throws -> [SchemaEntryPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func ledgerAdd(_ entries: [SchemaEntryPayload], _ id: UInt32, _ amount: Int32) throws(AlgorithmError) -> [SchemaEntryPayload] {
         let fresh: SchemaEntryPayload = SchemaEntryPayload(id: id, amount: amount)
-        try sceFailure.throwIfFailed()
         var out: [SchemaEntryPayload] = []
         out.reserveCapacity(8)
-        try sceFailure.throwIfFailed()
         var seen: Bool = false
-        try sceFailure.throwIfFailed()
         for e in entries {
-            do {
-                let sceCond3 = e.id == id
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    seen = true
-                    try sceFailure.throwIfFailed()
-                    out.append(fresh)
-                    try sceFailure.throwIfFailed()
-                } else {
-                    out.append(e)
-                    try sceFailure.throwIfFailed()
-                }
-            }
-        }
-        do {
-            let sceCond2 = !seen
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
+            if e.id == id {
+                seen = true
                 out.append(fresh)
-                try sceFailure.throwIfFailed()
+            } else {
+                out.append(e)
             }
         }
-        do {
-            let sceReturned: [SchemaEntryPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
+        if !seen {
+            out.append(fresh)
         }
+        return out
     }
 }

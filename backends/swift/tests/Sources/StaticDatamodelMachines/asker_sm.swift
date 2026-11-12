@@ -110,8 +110,8 @@ enum AskerPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct AskerJobReplyPayload {
-    var job: UInt32 = 0
-    var code: UInt32 = 0
+    var job: UInt32
+    var code: UInt32
 }
 
 
@@ -154,7 +154,7 @@ public final class AskerPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: AskerPayloadTag = .none
-    var pendingJobReplyPayload = AskerJobReplyPayload()
+    var pendingJobReplyPayload: AskerJobReplyPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -424,9 +424,9 @@ public final class AskerPolicy: InvocablePolicy {
         switch event {
         case .jobReply:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = AskerJobReplyPayload()
-            payload.job = try fields.unsigned("job")
-            payload.code = try fields.unsigned("code")
+            let sceField0 = try fields.unsigned("job")
+            let sceField1 = try fields.unsigned("code")
+            let payload = AskerJobReplyPayload(job: sceField0, code: sceField1)
             pendingJobReplyPayload = payload
             pendingPayloadTag = .jobReply
         default:

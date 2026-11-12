@@ -34,14 +34,13 @@ public enum Refusal {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:refusal:1\",\"x-sce-source-hash\":\"84fb9ab720a733e5ae584f0097d5e6a562408447dcdd1ab7923585e9289913d3\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"code\":{\"enum\":[\"notJson\",\"notObject\",\"tooDeep\",\"missing\",\"nullNotOptional\",\"wrongKind\",\"badNumber\",\"outOfRange\",\"tooLong\",\"tooMany\",\"unknownVariant\",\"notByteText\",\"nulInText\",\"tooFew\"]},\"path\":{\"type\":\"string\",\"maxLength\":256,\"x-sce-max-bytes\":256},\"bound\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},{\"type\":\"null\"}]}},\"required\":[\"code\",\"path\",\"bound\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct RefusalPayload: Equatable, Sendable, SceDefault {
-    public var code: RefusalCode = RefusalCode.allCases[0]
-    public var path: String = ""
-    public var bound: UInt32? = nil
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct RefusalPayload: Equatable, Sendable {
+    public var code: RefusalCode
+    public var path: String
+    public var bound: UInt32?
 
     public init(code: RefusalCode, path: String, bound: UInt32?) {
         self.code = code

@@ -15,24 +15,11 @@
 import SceForgeRuntime
 
 public enum HlcSend {
-    public static func hlcSend(_ prev: HlcTimestampPayload, _ now: Int64, _ node: UInt64) throws -> HlcTimestampPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func hlcSend(_ prev: HlcTimestampPayload, _ now: Int64, _ node: UInt64) throws(AlgorithmError) -> HlcTimestampPayload {
         var next: HlcTimestampPayload = HlcTimestampPayload(wallTime: now > prev.wallTime ? now : prev.wallTime, counter: 0, nodeId: node)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = next.wallTime == prev.wallTime
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                next.counter = Checked.add(sceFailure, prev.counter, 1)
-                try sceFailure.throwIfFailed()
-            }
+        if next.wallTime == prev.wallTime {
+            next.counter = (try Checked.add(prev.counter, 1))
         }
-        do {
-            let sceReturned: HlcTimestampPayload = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return next
     }
 }

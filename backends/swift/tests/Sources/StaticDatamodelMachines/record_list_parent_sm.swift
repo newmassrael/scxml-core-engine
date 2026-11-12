@@ -105,17 +105,15 @@ public enum RecordListParentEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Told` datamodel value.
-public struct RecordListParentToldRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var count: UInt32 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListParentToldRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var field: UInt16
+    public var count: UInt32
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(id: UInt32, field: UInt16, count: UInt32, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.id = id
@@ -158,17 +156,15 @@ public struct RecordListParentToldRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:ToldValue` datamodel value.
-public struct RecordListParentToldValueRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var ordinal: UInt32 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListParentToldValueRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var field: UInt16
+    public var ordinal: UInt32
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(id: UInt32, field: UInt16, ordinal: UInt32, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.id = id
@@ -308,15 +304,13 @@ extension RecordListParentRecordRefusalEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Refused` datamodel value.
-public struct RecordListParentRefusedRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var kind: RecordListParentRecordCommandEnum = RecordListParentRecordCommandEnum.allCases[0]
-    public var reason: RecordListParentRecordRefusalEnum = RecordListParentRecordRefusalEnum.allCases[0]
-    public var command: UInt64 = 0
-    public var withdrawn: Bool = false
-
-    public init() {}
+public struct RecordListParentRefusedRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var field: UInt16
+    public var kind: RecordListParentRecordCommandEnum
+    public var reason: RecordListParentRecordRefusalEnum
+    public var command: UInt64
+    public var withdrawn: Bool
 
     public init(id: UInt32, field: UInt16, kind: RecordListParentRecordCommandEnum, reason: RecordListParentRecordRefusalEnum, command: UInt64, withdrawn: Bool) {
         self.id = id
@@ -353,17 +347,15 @@ public struct RecordListParentRefusedRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
-public struct RecordListParentOpRecord: Equatable, Sendable, SceDefault {
-    public var kind: UInt8 = 0
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListParentOpRecord: Equatable, Sendable {
+    public var kind: UInt8
+    public var id: UInt32
+    public var field: UInt16
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.kind = kind
@@ -476,137 +468,137 @@ enum RecordListParentPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListChangePayload {
-    var by: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var ops: [RecordListParentOpRecord] = []
+    var by: UInt64
+    var wallTime: Int64
+    var counter: UInt32
+    var ops: [RecordListParentOpRecord]
 }
 
 /// The typed `_event.data` payload of `record_list.clear` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListClearPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.confirm` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListConfirmPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var command: UInt64 = 0
+    var wallTime: Int64
+    var counter: UInt32
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.edit` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListEditPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var value: Int64
+    var text: String
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.join` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListJoinPayload {
-    var node: UInt64 = 0
-    var journal: Bool = false
+    var node: UInt64
+    var journal: Bool
 }
 
 /// The typed `_event.data` payload of `record_list.refused` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListRefusedPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var kind: RecordListParentRecordCommandEnum = RecordListParentRecordCommandEnum.allCases[0]
-    var reason: RecordListParentRecordRefusalEnum = RecordListParentRecordRefusalEnum.allCases[0]
-    var command: UInt64 = 0
-    var withdrawn: Bool = false
+    var id: UInt32
+    var field: UInt16
+    var kind: RecordListParentRecordCommandEnum
+    var reason: RecordListParentRecordRefusalEnum
+    var command: UInt64
+    var withdrawn: Bool
 }
 
 /// The typed `_event.data` payload of `record_list.register` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListRegisterPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var count: UInt32 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var count: UInt32
+    var value: Int64
+    var text: String
+    var wallTime: Int64
+    var counter: UInt32
+    var nodeId: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.retire` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListRetirePayload {
-    var id: UInt32 = 0
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.role` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListRolePayload {
-    var node: UInt64 = 0
-    var role: UInt8 = 0
+    var node: UInt64
+    var role: UInt8
 }
 
 /// The typed `_event.data` payload of `record_list.room` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListRoomPayload {
-    var values: UInt32 = 0
-    var history: UInt32 = 0
-    var digest: UInt32 = 0
+    var values: UInt32
+    var history: UInt32
+    var digest: UInt32
 }
 
 /// The typed `_event.data` payload of `record_list.value` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListValuePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var ordinal: UInt32 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var ordinal: UInt32
+    var value: Int64
+    var text: String
+    var wallTime: Int64
+    var counter: UInt32
+    var nodeId: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.verdict` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListVerdictPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var outcome: RecordListParentRecordOutcomeEnum = RecordListParentRecordOutcomeEnum.allCases[0]
-    var reason: RecordListParentRecordRefusalEnum? = nil
+    var wallTime: Int64
+    var counter: UInt32
+    var outcome: RecordListParentRecordOutcomeEnum
+    var reason: RecordListParentRecordRefusalEnum?
 }
 
 /// The typed `_event.data` payload of `record_list.withdraw` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListParentRecordListWithdrawPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var command: UInt64 = 0
+    var wallTime: Int64
+    var counter: UInt32
+    var command: UInt64
 }
 
 
@@ -631,19 +623,19 @@ public final class RecordListParentPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: RecordListParentPayloadTag = .none
-    var pendingRecordListChangePayload = RecordListParentRecordListChangePayload()
-    var pendingRecordListClearPayload = RecordListParentRecordListClearPayload()
-    var pendingRecordListConfirmPayload = RecordListParentRecordListConfirmPayload()
-    var pendingRecordListEditPayload = RecordListParentRecordListEditPayload()
-    var pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload()
-    var pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload()
-    var pendingRecordListRegisterPayload = RecordListParentRecordListRegisterPayload()
-    var pendingRecordListRetirePayload = RecordListParentRecordListRetirePayload()
-    var pendingRecordListRolePayload = RecordListParentRecordListRolePayload()
-    var pendingRecordListRoomPayload = RecordListParentRecordListRoomPayload()
-    var pendingRecordListValuePayload = RecordListParentRecordListValuePayload()
-    var pendingRecordListVerdictPayload = RecordListParentRecordListVerdictPayload()
-    var pendingRecordListWithdrawPayload = RecordListParentRecordListWithdrawPayload()
+    var pendingRecordListChangePayload: RecordListParentRecordListChangePayload!
+    var pendingRecordListClearPayload: RecordListParentRecordListClearPayload!
+    var pendingRecordListConfirmPayload: RecordListParentRecordListConfirmPayload!
+    var pendingRecordListEditPayload: RecordListParentRecordListEditPayload!
+    var pendingRecordListJoinPayload: RecordListParentRecordListJoinPayload!
+    var pendingRecordListRefusedPayload: RecordListParentRecordListRefusedPayload!
+    var pendingRecordListRegisterPayload: RecordListParentRecordListRegisterPayload!
+    var pendingRecordListRetirePayload: RecordListParentRecordListRetirePayload!
+    var pendingRecordListRolePayload: RecordListParentRecordListRolePayload!
+    var pendingRecordListRoomPayload: RecordListParentRecordListRoomPayload!
+    var pendingRecordListValuePayload: RecordListParentRecordListValuePayload!
+    var pendingRecordListVerdictPayload: RecordListParentRecordListVerdictPayload!
+    var pendingRecordListWithdrawPayload: RecordListParentRecordListWithdrawPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -1035,126 +1027,126 @@ public final class RecordListParentPolicy: InvocablePolicy {
         switch event {
         case .recordListChange:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListChangePayload()
-            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
-            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
-            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
-            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListParentOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentOpRecord in try RecordListParentOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [RecordListParentOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentOpRecord in try RecordListParentOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let payload = RecordListParentRecordListChangePayload(by: sceField0, wallTime: sceField1, counter: sceField2, ops: sceField3)
             pendingRecordListChangePayload = payload
             pendingPayloadTag = .recordListChange
         case .recordListClear:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            var payload = RecordListParentRecordListClearPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.signed64("now")
+            let sceField3 = try fields.truth("more")
+            let sceField4 = try fields.unsigned64("command")
+            let payload = RecordListParentRecordListClearPayload(id: sceField0, field: sceField1, now: sceField2, more: sceField3, command: sceField4)
             pendingRecordListClearPayload = payload
             pendingPayloadTag = .recordListClear
         case .recordListConfirm:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListConfirmPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try fields.unsigned64("command")
+            let payload = RecordListParentRecordListConfirmPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListConfirmPayload = payload
             pendingPayloadTag = .recordListConfirm
         case .recordListEdit:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"more\":false,\"command\":\"0\"}")
-            var payload = RecordListParentRecordListEditPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 32)
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.signed64("value")
+            let sceField3 = try fields.text("text", bound: 32)
+            let sceField4 = try fields.signed64("now")
+            let sceField5 = try fields.truth("more")
+            let sceField6 = try fields.unsigned64("command")
+            let payload = RecordListParentRecordListEditPayload(id: sceField0, field: sceField1, value: sceField2, text: sceField3, now: sceField4, more: sceField5, command: sceField6)
             pendingRecordListEditPayload = payload
             pendingPayloadTag = .recordListEdit
         case .recordListJoin:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"journal\":true}")
-            var payload = RecordListParentRecordListJoinPayload()
-            payload.node = try fields.unsigned64("node")
-            payload.journal = try fields.truth("journal")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.truth("journal")
+            let payload = RecordListParentRecordListJoinPayload(node: sceField0, journal: sceField1)
             pendingRecordListJoinPayload = payload
             pendingPayloadTag = .recordListJoin
         case .recordListRefused:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\",\"withdrawn\":false}")
-            var payload = RecordListParentRecordListRefusedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.kind = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
-            payload.reason = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }()
-            payload.command = try fields.unsigned64("command")
-            payload.withdrawn = try fields.truth("withdrawn")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            let sceField3 = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }()
+            let sceField4 = try fields.unsigned64("command")
+            let sceField5 = try fields.truth("withdrawn")
+            let payload = RecordListParentRecordListRefusedPayload(id: sceField0, field: sceField1, kind: sceField2, reason: sceField3, command: sceField4, withdrawn: sceField5)
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         case .recordListRegister:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListRegisterPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.count = try fields.unsigned("count")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 96)
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.unsigned("count")
+            let sceField3 = try fields.signed64("value")
+            let sceField4 = try fields.text("text", bound: 96)
+            let sceField5 = try fields.signed64("wallTime")
+            let sceField6 = try fields.unsigned("counter")
+            let sceField7 = try fields.unsigned64("nodeId")
+            let payload = RecordListParentRecordListRegisterPayload(id: sceField0, field: sceField1, count: sceField2, value: sceField3, text: sceField4, wallTime: sceField5, counter: sceField6, nodeId: sceField7)
             pendingRecordListRegisterPayload = payload
             pendingPayloadTag = .recordListRegister
         case .recordListRetire:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            var payload = RecordListParentRecordListRetirePayload()
-            payload.id = try fields.unsigned("id")
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.signed64("now")
+            let sceField2 = try fields.truth("more")
+            let sceField3 = try fields.unsigned64("command")
+            let payload = RecordListParentRecordListRetirePayload(id: sceField0, now: sceField1, more: sceField2, command: sceField3)
             pendingRecordListRetirePayload = payload
             pendingPayloadTag = .recordListRetire
         case .recordListRole:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListRolePayload()
-            payload.node = try fields.unsigned64("node")
-            payload.role = try fields.unsigned("role")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.unsigned("role")
+            let payload = RecordListParentRecordListRolePayload(node: sceField0, role: sceField1)
             pendingRecordListRolePayload = payload
             pendingPayloadTag = .recordListRole
         case .recordListRoom:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListRoomPayload()
-            payload.values = try fields.unsigned("values")
-            payload.history = try fields.unsigned("history")
-            payload.digest = try fields.unsigned("digest")
+            let sceField0 = try fields.unsigned("values")
+            let sceField1 = try fields.unsigned("history")
+            let sceField2 = try fields.unsigned("digest")
+            let payload = RecordListParentRecordListRoomPayload(values: sceField0, history: sceField1, digest: sceField2)
             pendingRecordListRoomPayload = payload
             pendingPayloadTag = .recordListRoom
         case .recordListValue:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListValuePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.ordinal = try fields.unsigned("ordinal")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 96)
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.unsigned("ordinal")
+            let sceField3 = try fields.signed64("value")
+            let sceField4 = try fields.text("text", bound: 96)
+            let sceField5 = try fields.signed64("wallTime")
+            let sceField6 = try fields.unsigned("counter")
+            let sceField7 = try fields.unsigned64("nodeId")
+            let payload = RecordListParentRecordListValuePayload(id: sceField0, field: sceField1, ordinal: sceField2, value: sceField3, text: sceField4, wallTime: sceField5, counter: sceField6, nodeId: sceField7)
             pendingRecordListValuePayload = payload
             pendingPayloadTag = .recordListValue
         case .recordListVerdict:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListVerdictPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.outcome = try { () throws -> RecordListParentRecordOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListParentRecordOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "record_outcome") }; return variant }()
-            payload.reason = try fields.optional("reason") { fields in try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }() }
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try { () throws -> RecordListParentRecordOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListParentRecordOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "record_outcome") }; return variant }()
+            let sceField3 = try fields.optional("reason") { fields in try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }() }
+            let payload = RecordListParentRecordListVerdictPayload(wallTime: sceField0, counter: sceField1, outcome: sceField2, reason: sceField3)
             pendingRecordListVerdictPayload = payload
             pendingPayloadTag = .recordListVerdict
         case .recordListWithdraw:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListParentRecordListWithdrawPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try fields.unsigned64("command")
+            let payload = RecordListParentRecordListWithdrawPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListWithdrawPayload = payload
             pendingPayloadTag = .recordListWithdraw
         default:
@@ -2286,7 +2278,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListRegisterPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; self.vShown.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListRegisterPayload.text, capacity: 96)); self.vShown.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2309,7 +2301,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTold, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; self.vTold = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2338,7 +2330,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListValuePayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; self.vOther.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListValuePayload.text, capacity: 96)); self.vOther.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2357,13 +2349,13 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="others">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOthers.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<sce:append target='others'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOthers, self.vOther); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<sce:append target='others'>: an integer operation overflowed or failed")); return true }; self.vOthers.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOthers.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<sce:append target='others'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOthers, self.vOther); self.vOthers.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTold, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; self.vTold = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2380,7 +2372,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusedCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='refusedCount'>: an integer operation overflowed or failed")); return true }; self.vRefusedCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusedCount, 1)); self.vRefusedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='refusedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2390,7 +2382,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vPendingCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='pendingCount'>: an integer operation overflowed or failed")); return true }; self.vPendingCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPendingCount, 1)); self.vPendingCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='pendingCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2400,7 +2392,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vConfirmedCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='confirmedCount'>: an integer operation overflowed or failed")); return true }; self.vConfirmedCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vConfirmedCount, 1)); self.vConfirmedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='confirmedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

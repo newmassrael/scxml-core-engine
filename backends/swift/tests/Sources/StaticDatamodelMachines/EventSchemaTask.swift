@@ -31,13 +31,12 @@ public enum EventSchemaTask {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:event_schema_task:1\",\"x-sce-source-hash\":\"f3a316aacf7403325399aec899293549220a4c98b78ad03825aff15e55acb6a9\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"taskId\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"phase\":{\"enum\":[\"todo\",\"in_review\",\"shipped\"]}},\"required\":[\"taskId\",\"phase\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct EventSchemaTaskPayload: Equatable, Sendable, SceDefault {
-    public var taskId: UInt32 = 0
-    public var phase: EnumTaskPhase = EnumTaskPhase.allCases[0]
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct EventSchemaTaskPayload: Equatable, Sendable {
+    public var taskId: UInt32
+    public var phase: EnumTaskPhase
 
     public init(taskId: UInt32, phase: EnumTaskPhase) {
         self.taskId = taskId

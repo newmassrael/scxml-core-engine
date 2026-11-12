@@ -15,84 +15,40 @@
 import SceForgeRuntime
 
 public enum MerklePrune {
-    public static func merklePrune(_ nodes: [MerkleNodePayload], _ keep: UInt32) throws -> [MerkleNodePayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(keep >= 1)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func merklePrune(_ nodes: [MerkleNodePayload], _ keep: UInt32) throws(AlgorithmError) -> [MerkleNodePayload] {
+        if !(keep >= 1) {
+            throw AlgorithmError.precondition
         }
         var out: [MerkleNodePayload] = []
         out.reserveCapacity(2048)
-        try sceFailure.throwIfFailed()
         var prevDepth: Int32 = -1
-        try sceFailure.throwIfFailed()
         var prevPrefix: UInt64 = 0
-        try sceFailure.throwIfFailed()
         for x in nodes {
-            do {
-                let sceCond3 = !(x.depth <= 30 && (Int32(x.depth) > prevDepth || Int32(x.depth) == prevDepth && x.prefix > prevPrefix))
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(x.depth <= 30 && (Int32(x.depth) > prevDepth || Int32(x.depth) == prevDepth && x.prefix > prevPrefix)) {
+                throw AlgorithmError.precondition
             }
             prevDepth = Int32(x.depth)
-            try sceFailure.throwIfFailed()
             prevPrefix = x.prefix
-            try sceFailure.throwIfFailed()
             var kept: Bool = true
-            try sceFailure.throwIfFailed()
             var d: UInt32 = UInt32(x.depth)
-            try sceFailure.throwIfFailed()
             var p: UInt64 = x.prefix
-            try sceFailure.throwIfFailed()
-            while true {
-                let sceCond3 = kept && d >= 1
-                try sceFailure.throwIfFailed()
-                if !sceCond3 { break }
+            while kept && d >= 1 {
                 var after: UInt32 = 0
-                try sceFailure.throwIfFailed()
                 for y in nodes {
-                    do {
-                        let sceCond5 = UInt32(y.depth) == d && (d == 1 || Checked.div(sceFailure, y.prefix, 3) == Checked.div(sceFailure, p, 3)) && y.prefix > p
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            after = Checked.add(sceFailure, after, 1)
-                            try sceFailure.throwIfFailed()
-                        }
+                    if (try Checked.and(UInt32(y.depth) == d, { (try Checked.or(d == 1, { (try Checked.div(y.prefix, 3)) == (try Checked.div(p, 3)) })) })) && y.prefix > p {
+                        after = (try Checked.add(after, 1))
                     }
                 }
-                do {
-                    let sceCond4 = after >= keep
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        kept = false
-                        try sceFailure.throwIfFailed()
-                    }
+                if after >= keep {
+                    kept = false
                 }
-                p = d >= 2 ? Checked.div(sceFailure, p, 3) : 0
-                try sceFailure.throwIfFailed()
-                d = Checked.sub(sceFailure, d, 1)
-                try sceFailure.throwIfFailed()
+                p = d >= 2 ? (try Checked.div(p, 3)) : 0
+                d = (try Checked.sub(d, 1))
             }
-            do {
-                let sceCond3 = kept
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(x)
-                    try sceFailure.throwIfFailed()
-                }
+            if kept {
+                out.append(x)
             }
         }
-        do {
-            let sceReturned: [MerkleNodePayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

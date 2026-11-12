@@ -96,9 +96,9 @@ enum StaticOptionalWidenedPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticOptionalWidenedDueWidenedPayload {
-    var id: UInt32 = 0
-    var due: Int64? = nil
-    var remind: Int64? = nil
+    var id: UInt32
+    var due: Int64?
+    var remind: Int64?
 }
 
 
@@ -123,7 +123,7 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticOptionalWidenedPayloadTag = .none
-    var pendingDueWidenedPayload = StaticOptionalWidenedDueWidenedPayload()
+    var pendingDueWidenedPayload: StaticOptionalWidenedDueWidenedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -405,10 +405,10 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
         switch event {
         case .dueWidened:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"remind\":null}")
-            var payload = StaticOptionalWidenedDueWidenedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.due = try fields.optional("due") { fields in try fields.signed64("due") }
-            payload.remind = try fields.optional("remind") { fields in try fields.signed64("remind") }
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField2 = try fields.optional("remind") { fields in try fields.signed64("remind") }
+            let payload = StaticOptionalWidenedDueWidenedPayload(id: sceField0, due: sceField1, remind: sceField2)
             pendingDueWidenedPayload = payload
             pendingPayloadTag = .dueWidened
         default:
@@ -527,7 +527,7 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTaken, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalWidenedEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; self.vTaken = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTaken, 1)); self.vTaken = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalWidenedEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -537,7 +537,7 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticOptionalWidenedEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalWidenedEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

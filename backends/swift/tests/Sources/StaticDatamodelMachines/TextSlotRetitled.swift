@@ -15,31 +15,16 @@
 import SceForgeRuntime
 
 public enum TextSlotRetitled {
-    public static func textSlotRetitled(_ slots: [TextSlotPayload]) throws -> [TextSlotPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func textSlotRetitled(_ slots: [TextSlotPayload]) throws(AlgorithmError) -> [TextSlotPayload] {
         var out: [TextSlotPayload] = []
         out.reserveCapacity(16)
-        try sceFailure.throwIfFailed()
         for s in slots {
             var shown: TextSlotPayload = TextSlotPayload(slot: s.slot, version: s.version, text: s.text)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = s.text.utf8.elementsEqual("".utf8)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    shown.text = "untitled"
-                    try sceFailure.throwIfFailed()
-                }
+            if s.text.utf8.elementsEqual("".utf8) {
+                shown.text = "untitled"
             }
             out.append(shown)
-            try sceFailure.throwIfFailed()
         }
-        do {
-            let sceReturned: [TextSlotPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

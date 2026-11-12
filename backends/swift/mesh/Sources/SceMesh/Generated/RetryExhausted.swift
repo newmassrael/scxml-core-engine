@@ -15,21 +15,10 @@
 import SceForgeRuntime
 
 public enum RetryExhausted {
-    public static func retryExhausted(_ attempts: UInt32, _ maxRetries: UInt32, _ retryable: Bool) throws -> Bool {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(maxRetries > 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func retryExhausted(_ attempts: UInt32, _ maxRetries: UInt32, _ retryable: Bool) throws(AlgorithmError) -> Bool {
+        if !(maxRetries > 0) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceReturned: Bool = !retryable || attempts > maxRetries
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return !retryable || attempts > maxRetries
     }
 }

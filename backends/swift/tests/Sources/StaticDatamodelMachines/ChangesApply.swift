@@ -15,152 +15,74 @@
 import SceForgeRuntime
 
 public enum ChangesApply {
-    public static func changesApply(_ state: [ItemVersionPayload], _ log: [ChangeEntryPayload]) throws -> [ItemVersionPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func changesApply(_ state: [ItemVersionPayload], _ log: [ChangeEntryPayload]) throws(AlgorithmError) -> [ItemVersionPayload] {
         var prevItem: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var first: Bool = true
-        try sceFailure.throwIfFailed()
         for held0 in state {
-            do {
-                let sceCond3 = !(first || held0.item > prevItem)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(first || held0.item > prevItem) {
+                throw AlgorithmError.precondition
             }
             prevItem = held0.item
-            try sceFailure.throwIfFailed()
             first = false
-            try sceFailure.throwIfFailed()
         }
         var prevToken: UInt64 = 0
-        try sceFailure.throwIfFailed()
         for row0 in log {
-            do {
-                let sceCond3 = !(row0.token >= prevToken && row0.op >= 1 && row0.op <= 3)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(row0.token >= prevToken && row0.op >= 1 && row0.op <= 3) {
+                throw AlgorithmError.precondition
             }
             prevToken = row0.token
-            try sceFailure.throwIfFailed()
         }
         var out: [ItemVersionPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var last: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var started: Bool = false
-        try sceFailure.throwIfFailed()
         var more: Bool = true
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = more
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
+        while more {
             var found: Bool = false
-            try sceFailure.throwIfFailed()
             var best: UInt64 = 0
-            try sceFailure.throwIfFailed()
             var bestToken: UInt64 = 0
-            try sceFailure.throwIfFailed()
             for s in state {
-                do {
-                    let sceCond4 = (!started || s.item > last) && (!found || s.item < best)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        var present: Bool = true
-                        try sceFailure.throwIfFailed()
-                        var token: UInt64 = s.token
-                        try sceFailure.throwIfFailed()
-                        for r in log {
-                            do {
-                                let sceCond7 = r.item == s.item
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    present = r.op != 3
-                                    try sceFailure.throwIfFailed()
-                                    token = r.token
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
+                if (!started || s.item > last) && (!found || s.item < best) {
+                    var present: Bool = true
+                    var token: UInt64 = s.token
+                    for r in log {
+                        if r.item == s.item {
+                            present = r.op != 3
+                            token = r.token
                         }
-                        do {
-                            let sceCond6 = present
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                found = true
-                                try sceFailure.throwIfFailed()
-                                best = s.item
-                                try sceFailure.throwIfFailed()
-                                bestToken = token
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
+                    }
+                    if present {
+                        found = true
+                        best = s.item
+                        bestToken = token
                     }
                 }
             }
             for c in log {
-                do {
-                    let sceCond4 = (!started || c.item > last) && (!found || c.item < best)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        var present2: Bool = false
-                        try sceFailure.throwIfFailed()
-                        var token2: UInt64 = 0
-                        try sceFailure.throwIfFailed()
-                        for d in log {
-                            do {
-                                let sceCond7 = d.item == c.item
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    present2 = d.op != 3
-                                    try sceFailure.throwIfFailed()
-                                    token2 = d.token
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
+                if (!started || c.item > last) && (!found || c.item < best) {
+                    var present2: Bool = false
+                    var token2: UInt64 = 0
+                    for d in log {
+                        if d.item == c.item {
+                            present2 = d.op != 3
+                            token2 = d.token
                         }
-                        do {
-                            let sceCond6 = present2
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                found = true
-                                try sceFailure.throwIfFailed()
-                                best = c.item
-                                try sceFailure.throwIfFailed()
-                                bestToken = token2
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
+                    }
+                    if present2 {
+                        found = true
+                        best = c.item
+                        bestToken = token2
                     }
                 }
             }
-            do {
-                let sceCond3 = found
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    let held: ItemVersionPayload = ItemVersionPayload(item: best, token: bestToken)
-                    try sceFailure.throwIfFailed()
-                    out.append(held)
-                    try sceFailure.throwIfFailed()
-                    last = best
-                    try sceFailure.throwIfFailed()
-                    started = true
-                    try sceFailure.throwIfFailed()
-                }
+            if found {
+                let held: ItemVersionPayload = ItemVersionPayload(item: best, token: bestToken)
+                out.append(held)
+                last = best
+                started = true
             }
             more = found
-            try sceFailure.throwIfFailed()
         }
-        do {
-            let sceReturned: [ItemVersionPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

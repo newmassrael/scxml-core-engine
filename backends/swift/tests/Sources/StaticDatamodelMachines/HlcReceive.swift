@@ -15,44 +15,20 @@
 import SceForgeRuntime
 
 public enum HlcReceive {
-    public static func hlcReceive(_ prev: HlcTimestampPayload, _ msg: HlcTimestampPayload, _ now: Int64, _ node: UInt64) throws -> HlcTimestampPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func hlcReceive(_ prev: HlcTimestampPayload, _ msg: HlcTimestampPayload, _ now: Int64, _ node: UInt64) throws(AlgorithmError) -> HlcTimestampPayload {
         let seen: Int64 = prev.wallTime > msg.wallTime ? prev.wallTime : msg.wallTime
-        try sceFailure.throwIfFailed()
         var next: HlcTimestampPayload = HlcTimestampPayload(wallTime: now > seen ? now : seen, counter: 0, nodeId: node)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = next.wallTime == prev.wallTime && next.wallTime == msg.wallTime
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                next.counter = Checked.add(sceFailure, prev.counter > msg.counter ? prev.counter : msg.counter, 1)
-                try sceFailure.throwIfFailed()
+        if next.wallTime == prev.wallTime && next.wallTime == msg.wallTime {
+            next.counter = (try Checked.add(prev.counter > msg.counter ? prev.counter : msg.counter, 1))
+        } else {
+            if next.wallTime == prev.wallTime {
+                next.counter = (try Checked.add(prev.counter, 1))
             } else {
-                do {
-                    let sceCond4 = next.wallTime == prev.wallTime
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        next.counter = Checked.add(sceFailure, prev.counter, 1)
-                        try sceFailure.throwIfFailed()
-                    } else {
-                        do {
-                            let sceCond6 = next.wallTime == msg.wallTime
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                next.counter = Checked.add(sceFailure, msg.counter, 1)
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
-                    }
+                if next.wallTime == msg.wallTime {
+                    next.counter = (try Checked.add(msg.counter, 1))
                 }
             }
         }
-        do {
-            let sceReturned: HlcTimestampPayload = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return next
     }
 }

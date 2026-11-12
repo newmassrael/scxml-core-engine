@@ -37,17 +37,16 @@ public enum JobStatus {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:job_status:1\",\"x-sce-source-hash\":\"c8f4caa94683bb9084a79d20432745e1b4d427b60033d2d08defe34d89a24446\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"elapsed_ms\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"note\":{\"anyOf\":[{\"type\":\"string\",\"maxLength\":32,\"x-sce-max-bytes\":32},{\"type\":\"null\"}]},\"codes\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"maxItems\":4},\"tag\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"retry\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"count\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"elapsed_ms\",\"note\",\"codes\",\"tag\",\"retry\",\"count\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct JobStatusPayload: Equatable, Sendable, SceDefault {
-    public var elapsed_ms: UInt32 = 0
-    public var note: String? = nil
-    public var codes: [UInt8] = []
-    public var tag: UInt8? = nil
-    public var retry: UInt8? = nil
-    public var count: UInt32 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct JobStatusPayload: Equatable, Sendable {
+    public var elapsed_ms: UInt32
+    public var note: String?
+    public var codes: [UInt8]
+    public var tag: UInt8?
+    public var retry: UInt8?
+    public var count: UInt32
 
     public init(elapsed_ms: UInt32, note: String?, codes: [UInt8], tag: UInt8?, retry: UInt8?, count: UInt32) {
         self.elapsed_ms = elapsed_ms

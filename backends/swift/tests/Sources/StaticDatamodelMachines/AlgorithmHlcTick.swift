@@ -15,24 +15,11 @@
 import SceForgeRuntime
 
 public enum AlgorithmHlcTick {
-    public static func algorithmHlcTick(_ prev: EventSchemaHlcPayload, _ now: Int64, _ node: UInt64) throws -> EventSchemaHlcPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func algorithmHlcTick(_ prev: EventSchemaHlcPayload, _ now: Int64, _ node: UInt64) throws(AlgorithmError) -> EventSchemaHlcPayload {
         var next: EventSchemaHlcPayload = EventSchemaHlcPayload(wallTime: now > prev.wallTime ? now : prev.wallTime, counter: 0, nodeId: node)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = next.wallTime == prev.wallTime
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                next.counter = Checked.add(sceFailure, prev.counter, 1)
-                try sceFailure.throwIfFailed()
-            }
+        if next.wallTime == prev.wallTime {
+            next.counter = (try Checked.add(prev.counter, 1))
         }
-        do {
-            let sceReturned: EventSchemaHlcPayload = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return next
     }
 }

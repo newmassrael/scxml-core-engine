@@ -31,13 +31,12 @@ public enum RecordAnnounce {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:record_announce:1\",\"x-sce-source-hash\":\"81cc59c6b8f46736a80b4b69ee489274d9b0ae32efae821805ba44c3bac3af2c\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"field\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"id\",\"field\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct RecordAnnouncePayload: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct RecordAnnouncePayload: Equatable, Sendable {
+    public var id: UInt32
+    public var field: UInt16
 
     public init(id: UInt32, field: UInt16) {
         self.id = id

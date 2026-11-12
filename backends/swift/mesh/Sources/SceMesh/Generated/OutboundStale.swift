@@ -15,24 +15,11 @@
 import SceForgeRuntime
 
 public enum OutboundStale {
-    public static func outboundStale(_ enqueuedAtMs: Int64, _ now: Int64, _ maxAgeMs: Int64) throws -> Bool {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func outboundStale(_ enqueuedAtMs: Int64, _ now: Int64, _ maxAgeMs: Int64) throws(AlgorithmError) -> Bool {
         var stale: Bool = false
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = maxAgeMs > 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                stale = Checked.sub(sceFailure, now, enqueuedAtMs) > maxAgeMs
-                try sceFailure.throwIfFailed()
-            }
+        if maxAgeMs > 0 {
+            stale = (try Checked.sub(now, enqueuedAtMs)) > maxAgeMs
         }
-        do {
-            let sceReturned: Bool = stale
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return stale
     }
 }

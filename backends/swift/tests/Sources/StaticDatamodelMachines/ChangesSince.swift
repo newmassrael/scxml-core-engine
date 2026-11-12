@@ -15,82 +15,39 @@
 import SceForgeRuntime
 
 public enum ChangesSince {
-    public static func changesSince(_ log: [ChangeEntryPayload], _ since: UInt64, _ current: UInt64, _ lowWater: UInt64, _ limit: UInt32) throws -> [ChangeEntryPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(since >= lowWater && since <= current)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func changesSince(_ log: [ChangeEntryPayload], _ since: UInt64, _ current: UInt64, _ lowWater: UInt64, _ limit: UInt32) throws(AlgorithmError) -> [ChangeEntryPayload] {
+        if !(since >= lowWater && since <= current) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(limit >= 1 && limit <= 256)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(limit >= 1 && limit <= 256) {
+            throw AlgorithmError.precondition
         }
         var out: [ChangeEntryPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var taken: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var prevToken: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var i: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for e in log {
-            do {
-                let sceCond3 = !(e.token >= prevToken && e.op >= 1 && e.op <= 3)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(e.token >= prevToken && e.op >= 1 && e.op <= 3) {
+                throw AlgorithmError.precondition
             }
             prevToken = e.token
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = e.token >= since && taken < limit
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    var superseded: Bool = false
-                    try sceFailure.throwIfFailed()
-                    var j: UInt32 = 0
-                    try sceFailure.throwIfFailed()
-                    for f in log {
-                        do {
-                            let sceCond6 = j > i && f.item == e.item
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                superseded = true
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
-                        j = Checked.add(sceFailure, j, 1)
-                        try sceFailure.throwIfFailed()
+            if e.token >= since && taken < limit {
+                var superseded: Bool = false
+                var j: UInt32 = 0
+                for f in log {
+                    if j > i && f.item == e.item {
+                        superseded = true
                     }
-                    do {
-                        let sceCond5 = !superseded
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            out.append(e)
-                            try sceFailure.throwIfFailed()
-                            taken = Checked.add(sceFailure, taken, 1)
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
+                    j = (try Checked.add(j, 1))
+                }
+                if !superseded {
+                    out.append(e)
+                    taken = (try Checked.add(taken, 1))
                 }
             }
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
+            i = (try Checked.add(i, 1))
         }
-        do {
-            let sceReturned: [ChangeEntryPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

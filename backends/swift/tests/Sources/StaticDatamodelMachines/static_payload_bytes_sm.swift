@@ -89,11 +89,9 @@ public enum StaticPayloadBytesEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Framed` datamodel value.
-public struct StaticPayloadBytesFramedRecord: Equatable, Sendable, SceDefault {
-    public var sensor: UInt8 = 0
-    public var frame: [UInt8] = []
-
-    public init() {}
+public struct StaticPayloadBytesFramedRecord: Equatable, Sendable {
+    public var sensor: UInt8
+    public var frame: [UInt8]
 
     public init(sensor: UInt8, frame: [UInt8]) {
         self.sensor = sensor
@@ -129,8 +127,8 @@ enum StaticPayloadBytesPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticPayloadBytesFramedTakenPayload {
-    var sensor: UInt8 = 0
-    var frame: [UInt8] = []
+    var sensor: UInt8
+    var frame: [UInt8]
 }
 
 
@@ -155,7 +153,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticPayloadBytesPayloadTag = .none
-    var pendingFramedTakenPayload = StaticPayloadBytesFramedTakenPayload()
+    var pendingFramedTakenPayload: StaticPayloadBytesFramedTakenPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -445,9 +443,9 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
         switch event {
         case .framedTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticPayloadBytesFramedTakenPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.frame = try fields.bytes("frame", capacity: 8)
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.bytes("frame", capacity: 8)
+            let payload = StaticPayloadBytesFramedTakenPayload(sensor: sceField0, frame: sceField1)
             pendingFramedTakenPayload = payload
             pendingPayloadTag = .framedTaken
         default:
@@ -623,7 +621,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vMatches, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='matches'>: an integer operation overflowed or failed")); return true }; self.vMatches = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMatches, 1)); self.vMatches = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='matches'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -633,7 +631,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vMisses, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; self.vMisses = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMisses, 1)); self.vMisses = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -646,14 +644,14 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = StaticPayloadBytesFramedRecord(sensor: self.pendingFramedTakenPayload.sensor, frame: Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 8)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticPayloadBytesFramedRecord(sensor: self.pendingFramedTakenPayload.sensor, frame: (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8))); self.vLast = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="frames">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vFrames.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<sce:append target='frames'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vFrames, StaticPayloadBytesFramedRecord(sensor: self.pendingFramedTakenPayload.sensor, frame: Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 8))); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<sce:append target='frames'>: an integer operation overflowed or failed")); return true }; self.vFrames.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vFrames.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<sce:append target='frames'>: the list already holds its capacity of 3")); return true }; do { let sceValue = Checked.element(of: self.vFrames, StaticPayloadBytesFramedRecord(sensor: self.pendingFramedTakenPayload.sensor, frame: (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8)))); self.vFrames.append(sceValue) } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<sce:append target='frames'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -666,7 +664,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: [UInt8] = Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 4); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; self.vHeld = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 4)); self.vHeld = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -691,7 +689,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vMisses, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; self.vMisses = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMisses, 1)); self.vMisses = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -704,7 +702,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: [UInt8] = Checked.bounded(sceFailure, self.pendingFramedTakenPayload.frame, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; self.vLast.frame = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8)); self.vLast.frame = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -718,7 +716,7 @@ public final class StaticPayloadBytesPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadBytesEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

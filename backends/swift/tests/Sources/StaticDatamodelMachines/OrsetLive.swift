@@ -15,39 +15,20 @@
 import SceForgeRuntime
 
 public enum OrsetLive {
-    public static func orsetLive(_ adds: [OrsetEntryPayload], _ tombstones: [OrsetEntryPayload]) throws -> [OrsetEntryPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func orsetLive(_ adds: [OrsetEntryPayload], _ tombstones: [OrsetEntryPayload]) throws(AlgorithmError) -> [OrsetEntryPayload] {
         var out: [OrsetEntryPayload] = []
         out.reserveCapacity(1024)
-        try sceFailure.throwIfFailed()
         for x in adds {
             var removed: Bool = false
-            try sceFailure.throwIfFailed()
             for t in tombstones {
-                do {
-                    let sceCond4 = t.element == x.element && t.wallTime == x.wallTime && t.counter == x.counter && t.nodeId == x.nodeId
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        removed = true
-                        try sceFailure.throwIfFailed()
-                    }
+                if t.element == x.element && t.wallTime == x.wallTime && t.counter == x.counter && t.nodeId == x.nodeId {
+                    removed = true
                 }
             }
-            do {
-                let sceCond3 = !removed
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(x)
-                    try sceFailure.throwIfFailed()
-                }
+            if !removed {
+                out.append(x)
             }
         }
-        do {
-            let sceReturned: [OrsetEntryPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

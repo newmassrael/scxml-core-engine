@@ -15,29 +15,12 @@
 import SceForgeRuntime
 
 public enum AlgorithmCheckedCall {
-    public static func algorithmCheckedCall(_ a: Int32, _ b: Int32, _ op: UInt8) throws -> Int32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        Checked.take(sceFailure, fallback: 0, { try AlgorithmCheckedArith.algorithmCheckedArith(a, b, op) })
-        try sceFailure.throwIfFailed()
-        let s: Int32 = Checked.take(sceFailure, fallback: 0, { try AlgorithmCheckedArith.algorithmCheckedArith(a, b, 0) })
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = Checked.take(sceFailure, fallback: 0, { try AlgorithmCheckedArith.algorithmCheckedArith(s, s, 2) }) > 100
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceReturned: Int32 = 0
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
+    public static func algorithmCheckedCall(_ a: Int32, _ b: Int32, _ op: UInt8) throws(AlgorithmError) -> Int32 {
+        (try AlgorithmCheckedArith.algorithmCheckedArith(a, b, op))
+        let s: Int32 = (try AlgorithmCheckedArith.algorithmCheckedArith(a, b, 0))
+        if (try AlgorithmCheckedArith.algorithmCheckedArith(s, s, 2)) > 100 {
+            return 0
         }
-        do {
-            let sceReturned: Int32 = Checked.add(sceFailure, s, 1)
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return (try Checked.add(s, 1))
     }
 }

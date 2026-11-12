@@ -416,13 +416,10 @@ public final class StaticDonedataPolicy: InvocablePolicy {
             // out; the pairs that survived are the data, `{}` when none did.
             var doneParts: [PayloadPair] = []
             do {
-                let sceFailure = Failure()
-                let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2)))
-                if !sceFailure.failed {
-                    doneParts.append(PayloadPair("total", sceValue))
-                } else {
-                    engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=total> failed to evaluate"))
-                }
+                let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
+                doneParts.append(PayloadPair("total", sceValue))
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=total> failed to evaluate"))
             }
             do {
                 let sceValue: WireValue = .truth(self.vCount > 2)
@@ -437,13 +434,10 @@ public final class StaticDonedataPolicy: InvocablePolicy {
                 doneParts.append(PayloadPair("layout", sceValue))
             }
             do {
-                let sceFailure = Failure()
-                let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.vSmall, self.vSmall)))
-                if !sceFailure.failed {
-                    doneParts.append(PayloadPair("overflow", sceValue))
-                } else {
-                    engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=overflow> failed to evaluate"))
-                }
+                let sceValue: WireValue = .integer(Int64((try Checked.add(self.vSmall, self.vSmall))))
+                doneParts.append(PayloadPair("overflow", sceValue))
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=overflow> failed to evaluate"))
             }
             doneEventData = doneParts.isEmpty ? "{}" : payloadJSON(doneParts)
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
@@ -541,7 +535,7 @@ public final class StaticDonedataPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; self.vCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

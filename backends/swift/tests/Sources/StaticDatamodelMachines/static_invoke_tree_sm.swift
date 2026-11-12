@@ -872,7 +872,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAnswers, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='answers'>: an integer operation overflowed or failed")); return true }; self.vAnswers = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnswers, 1)); self.vAnswers = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='answers'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -882,7 +882,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vReports, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='reports'>: an integer operation overflowed or failed")); return true }; self.vReports = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vReports, 1)); self.vReports = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='reports'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -892,7 +892,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vStamps, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; self.vStamps = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vStamps, 1)); self.vStamps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

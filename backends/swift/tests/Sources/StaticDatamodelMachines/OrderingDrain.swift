@@ -15,26 +15,13 @@
 import SceForgeRuntime
 
 public enum OrderingDrain {
-    public static func orderingDrain(_ pending: [OrderingSlotPayload], _ start: UInt64) throws -> UInt64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func orderingDrain(_ pending: [OrderingSlotPayload], _ start: UInt64) throws(AlgorithmError) -> UInt64 {
         var next: UInt64 = start
-        try sceFailure.throwIfFailed()
         for slot in pending {
-            do {
-                let sceCond3 = slot.seq == next
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    next = Checked.add(sceFailure, next, 1)
-                    try sceFailure.throwIfFailed()
-                }
+            if slot.seq == next {
+                next = (try Checked.add(next, 1))
             }
         }
-        do {
-            let sceReturned: UInt64 = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return next
     }
 }

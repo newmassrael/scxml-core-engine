@@ -15,60 +15,29 @@
 import SceForgeRuntime
 
 public enum DedupAdmit {
-    public static func dedupAdmit(_ window: [EnvelopeIdPayload], _ id: EnvelopeIdPayload, _ capacity: UInt32) throws -> [EnvelopeIdPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(capacity > 0 && UInt32(truncatingIfNeeded: window.count) <= capacity)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func dedupAdmit(_ window: [EnvelopeIdPayload], _ id: EnvelopeIdPayload, _ capacity: UInt32) throws(AlgorithmError) -> [EnvelopeIdPayload] {
+        if !(capacity > 0 && UInt32(truncatingIfNeeded: window.count) <= capacity) {
+            throw AlgorithmError.precondition
         }
         var held: Bool = false
-        try sceFailure.throwIfFailed()
         for x in window {
-            do {
-                let sceCond3 = x.hi == id.hi && x.lo == id.lo
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    held = true
-                    try sceFailure.throwIfFailed()
-                }
+            if x.hi == id.hi && x.lo == id.lo {
+                held = true
             }
         }
         var out: [EnvelopeIdPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         let skip: UInt32 = held || UInt32(truncatingIfNeeded: window.count) < capacity ? 0 : 1
-        try sceFailure.throwIfFailed()
         var i: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for kept in window {
-            do {
-                let sceCond3 = i >= skip
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(kept)
-                    try sceFailure.throwIfFailed()
-                }
+            if i >= skip {
+                out.append(kept)
             }
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
+            i = (try Checked.add(i, 1))
         }
-        do {
-            let sceCond2 = !held
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                out.append(id)
-                try sceFailure.throwIfFailed()
-            }
+        if !held {
+            out.append(id)
         }
-        do {
-            let sceReturned: [EnvelopeIdPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

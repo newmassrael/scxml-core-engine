@@ -31,13 +31,12 @@ public enum SchemaReading32 {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:schema_reading32:1\",\"x-sce-source-hash\":\"d8c75e4d0233623996dc9a7cc3bdbe850af8d4f91ab023212ebd9f938cf7955f\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"sensor\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"value\":{\"type\":\"number\",\"minimum\":-3.4028234663852886e+38,\"maximum\":3.4028234663852886e+38}},\"required\":[\"sensor\",\"value\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct SchemaReading32Payload: Equatable, Sendable, SceDefault {
-    public var sensor: UInt8 = 0
-    public var value: Float = 0.0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct SchemaReading32Payload: Equatable, Sendable {
+    public var sensor: UInt8
+    public var value: Float
 
     public init(sensor: UInt8, value: Float) {
         self.sensor = sensor

@@ -15,38 +15,18 @@
 import SceForgeRuntime
 
 public enum AlgorithmWeeklyExpand {
-    public static func algorithmWeeklyExpand(_ dtstart: Int64, _ mask: UInt8, _ interval: Int64, _ window_start: Int64, _ window_end: Int64) throws -> [Int64] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func algorithmWeeklyExpand(_ dtstart: Int64, _ mask: UInt8, _ interval: Int64, _ window_start: Int64, _ window_end: Int64) throws(AlgorithmError) -> [Int64] {
         var out: [Int64] = []
         out.reserveCapacity(366)
-        try sceFailure.throwIfFailed()
         var d: Int64 = window_start > dtstart ? window_start : dtstart
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = d < window_end
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            let weekday: Int64 = Checked.rem(sceFailure, Checked.add(sceFailure, d, 3), 7)
-            try sceFailure.throwIfFailed()
-            let week: Int64 = Checked.div(sceFailure, Checked.sub(sceFailure, d, dtstart), 7)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = ((Int64(mask) >> weekday) & 1) == 1 && Checked.rem(sceFailure, week, interval) == 0
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(d)
-                    try sceFailure.throwIfFailed()
-                }
+        while d < window_end {
+            let weekday: Int64 = (try Checked.rem((try Checked.add(d, 3)), 7))
+            let week: Int64 = (try Checked.div((try Checked.sub(d, dtstart)), 7))
+            if (try Checked.and(((Int64(mask) >> weekday) & 1) == 1, { (try Checked.rem(week, interval)) == 0 })) {
+                out.append(d)
             }
-            d = Checked.add(sceFailure, d, 1)
-            try sceFailure.throwIfFailed()
+            d = (try Checked.add(d, 1))
         }
-        do {
-            let sceReturned: [Int64] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

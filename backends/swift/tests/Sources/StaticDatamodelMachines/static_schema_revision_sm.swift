@@ -133,12 +133,10 @@ extension StaticSchemaRevisionViewModeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Revised` datamodel value.
-public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable, SceDefault {
-    public var level: UInt8 = 0
-    public var layout: StaticSchemaRevisionViewModeEnum = StaticSchemaRevisionViewModeEnum.allCases[0]
-    public var urgent: Bool = false
-
-    public init() {}
+public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable {
+    public var level: UInt8
+    public var layout: StaticSchemaRevisionViewModeEnum
+    public var urgent: Bool
 
     public init(level: UInt8, layout: StaticSchemaRevisionViewModeEnum, urgent: Bool) {
         self.level = level
@@ -177,9 +175,9 @@ enum StaticSchemaRevisionPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticSchemaRevisionReadingRevisedPayload {
-    var level: UInt8 = 0
-    var layout: StaticSchemaRevisionViewModeEnum = StaticSchemaRevisionViewModeEnum.allCases[0]
-    var urgent: Bool = false
+    var level: UInt8
+    var layout: StaticSchemaRevisionViewModeEnum
+    var urgent: Bool
 }
 
 
@@ -204,7 +202,7 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticSchemaRevisionPayloadTag = .none
-    var pendingReadingRevisedPayload = StaticSchemaRevisionReadingRevisedPayload()
+    var pendingReadingRevisedPayload: StaticSchemaRevisionReadingRevisedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -462,10 +460,10 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
         switch event {
         case .readingRevised:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"layout\":\"week\",\"urgent\":true}")
-            var payload = StaticSchemaRevisionReadingRevisedPayload()
-            payload.level = try fields.unsigned("level")
-            payload.layout = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            payload.urgent = try fields.truth("urgent")
+            let sceField0 = try fields.unsigned("level")
+            let sceField1 = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField2 = try fields.truth("urgent")
+            let payload = StaticSchemaRevisionReadingRevisedPayload(level: sceField0, layout: sceField1, urgent: sceField2)
             pendingReadingRevisedPayload = payload
             pendingPayloadTag = .readingRevised
         default:
@@ -576,7 +574,7 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTaken, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSchemaRevisionEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; self.vTaken = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTaken, 1)); self.vTaken = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSchemaRevisionEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -586,7 +584,7 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSchemaRevisionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSchemaRevisionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

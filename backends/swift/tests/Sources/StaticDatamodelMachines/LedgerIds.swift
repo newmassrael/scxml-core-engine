@@ -15,20 +15,11 @@
 import SceForgeRuntime
 
 public enum LedgerIds {
-    public static func ledgerIds(_ ids: [UInt32]) throws -> UInt32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func ledgerIds(_ ids: [UInt32]) throws(AlgorithmError) -> UInt32 {
         var sum: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for id in ids {
-            sum = Checked.add(sceFailure, sum, id)
-            try sceFailure.throwIfFailed()
+            sum = (try Checked.add(sum, id))
         }
-        do {
-            let sceReturned: UInt32 = sum
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return sum
     }
 }

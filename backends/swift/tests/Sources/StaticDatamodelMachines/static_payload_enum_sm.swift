@@ -143,8 +143,8 @@ enum StaticPayloadEnumPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticPayloadEnumViewShownPayload {
-    var layout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum.allCases[0]
-    var zoom: UInt8 = 0
+    var layout: StaticPayloadEnumViewModeEnum
+    var zoom: UInt8
 }
 
 
@@ -169,7 +169,7 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticPayloadEnumPayloadTag = .none
-    var pendingViewShownPayload = StaticPayloadEnumViewShownPayload()
+    var pendingViewShownPayload: StaticPayloadEnumViewShownPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -433,9 +433,9 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticPayloadEnumViewShownPayload()
-            payload.layout = try { () throws -> StaticPayloadEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            payload.zoom = try fields.unsigned("zoom")
+            let sceField0 = try { () throws -> StaticPayloadEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticPayloadEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1 = try fields.unsigned("zoom")
+            let payload = StaticPayloadEnumViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown
         default:
@@ -555,7 +555,7 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vShown, 1); if sceFailure.failed { return true }; self.vShown = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vShown, 1)); self.vShown = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -580,7 +580,7 @@ public final class StaticPayloadEnumPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vShown, 1); if sceFailure.failed { return true }; self.vShown = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vShown, 1)); self.vShown = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

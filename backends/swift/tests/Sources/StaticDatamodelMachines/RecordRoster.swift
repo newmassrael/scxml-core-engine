@@ -15,37 +15,18 @@
 import SceForgeRuntime
 
 public enum RecordRoster {
-    public static func recordRoster(_ roster: [RecordMemberPayload], _ node: UInt64, _ role: UInt8) throws -> [RecordMemberPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func recordRoster(_ roster: [RecordMemberPayload], _ node: UInt64, _ role: UInt8) throws(AlgorithmError) -> [RecordMemberPayload] {
         var out: [RecordMemberPayload] = []
         out.reserveCapacity(64)
-        try sceFailure.throwIfFailed()
         for m in roster {
-            do {
-                let sceCond3 = m.node != node
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(m)
-                    try sceFailure.throwIfFailed()
-                }
+            if m.node != node {
+                out.append(m)
             }
         }
-        do {
-            let sceCond2 = role != 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                let made: RecordMemberPayload = RecordMemberPayload(node: node, role: role)
-                try sceFailure.throwIfFailed()
-                out.append(made)
-                try sceFailure.throwIfFailed()
-            }
+        if role != 0 {
+            let made: RecordMemberPayload = RecordMemberPayload(node: node, role: role)
+            out.append(made)
         }
-        do {
-            let sceReturned: [RecordMemberPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

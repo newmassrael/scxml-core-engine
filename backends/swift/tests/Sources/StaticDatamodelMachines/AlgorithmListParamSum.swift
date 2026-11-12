@@ -15,30 +15,15 @@
 import SceForgeRuntime
 
 public enum AlgorithmListParamSum {
-    public static func algorithmListParamSum(_ xs: [Int32]) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func algorithmListParamSum(_ xs: [Int32]) throws(AlgorithmError) -> Int64 {
         var s: Int64 = 0
-        try sceFailure.throwIfFailed()
         for x in xs {
-            s = Checked.add(sceFailure, s, Int64(x))
-            try sceFailure.throwIfFailed()
+            s = (try Checked.add(s, Int64(x)))
         }
         let n: UInt32 = UInt32(truncatingIfNeeded: xs.count)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = n > 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                s = Checked.add(sceFailure, s, Int64(Checked.at(sceFailure, xs, Checked.sub(sceFailure, n, 1), fallback: 0)))
-                try sceFailure.throwIfFailed()
-            }
+        if n > 0 {
+            s = (try Checked.add(s, Int64((try Checked.at(xs, (try Checked.sub(n, 1)))))))
         }
-        do {
-            let sceReturned: Int64 = s
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return s
     }
 }

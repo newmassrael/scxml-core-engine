@@ -710,7 +710,7 @@ public final class StaticInvokePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCompleted, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; self.vCompleted = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

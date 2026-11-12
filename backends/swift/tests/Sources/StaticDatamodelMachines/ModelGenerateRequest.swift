@@ -37,15 +37,14 @@ public enum ModelGenerateRequest {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:model_generate_request:1\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"prompt\":{\"type\":\"string\",\"maxLength\":8192,\"x-sce-max-bytes\":8192},\"answer_schema\":{\"type\":\"string\",\"maxLength\":128,\"x-sce-max-bytes\":128},\"max_tokens\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"temperature_milli\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"prompt\",\"answer_schema\",\"max_tokens\",\"temperature_milli\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct ModelGenerateRequestPayload: Equatable, Sendable, SceDefault {
-    public var prompt: String = ""
-    public var answer_schema: String = ""
-    public var max_tokens: UInt32 = 0
-    public var temperature_milli: UInt16 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct ModelGenerateRequestPayload: Equatable, Sendable {
+    public var prompt: String
+    public var answer_schema: String
+    public var max_tokens: UInt32
+    public var temperature_milli: UInt16
 
     public init(prompt: String, answer_schema: String, max_tokens: UInt32, temperature_milli: UInt16) {
         self.prompt = prompt

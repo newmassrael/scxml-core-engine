@@ -15,27 +15,14 @@
 import SceForgeRuntime
 
 public enum MvValueDrop {
-    public static func mvValueDrop(_ values: [MvValuePayload], _ gone: MvValuePayload) throws -> [MvValuePayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func mvValueDrop(_ values: [MvValuePayload], _ gone: MvValuePayload) throws(AlgorithmError) -> [MvValuePayload] {
         var out: [MvValuePayload] = []
         out.reserveCapacity(512)
-        try sceFailure.throwIfFailed()
         for v in values {
-            do {
-                let sceCond3 = v.id != gone.id || v.field != gone.field || v.wallTime != gone.wallTime || v.counter != gone.counter || v.nodeId != gone.nodeId
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(v)
-                    try sceFailure.throwIfFailed()
-                }
+            if v.id != gone.id || v.field != gone.field || v.wallTime != gone.wallTime || v.counter != gone.counter || v.nodeId != gone.nodeId {
+                out.append(v)
             }
         }
-        do {
-            let sceReturned: [MvValuePayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

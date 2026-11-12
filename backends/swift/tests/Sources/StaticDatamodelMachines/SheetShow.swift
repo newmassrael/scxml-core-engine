@@ -15,100 +15,48 @@
 import SceForgeRuntime
 
 public enum SheetShow {
-    public static func sheetShow(_ cells: [LwwCellPayload], _ trail: [Int64]) throws -> [SheetShownPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func sheetShow(_ cells: [LwwCellPayload], _ trail: [Int64]) throws(AlgorithmError) -> [SheetShownPayload] {
         var out: [SheetShownPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var started: Bool = false
-        try sceFailure.throwIfFailed()
         var lastRow: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var lastCol: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var more: Bool = true
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = more
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
+        while more {
             var chosen: Bool = false
-            try sceFailure.throwIfFailed()
             var bestRow: UInt64 = 0
-            try sceFailure.throwIfFailed()
             var bestCol: UInt64 = 0
-            try sceFailure.throwIfFailed()
             var bestAt: Int64 = 0
-            try sceFailure.throwIfFailed()
             var cursor: Int64 = 0
-            try sceFailure.throwIfFailed()
             for s in cells {
-                do {
-                    let sceCond4 = (!started || s.row > lastRow || s.row == lastRow && s.col > lastCol) && (!chosen || s.row < bestRow || s.row == bestRow && s.col < bestCol)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        chosen = true
-                        try sceFailure.throwIfFailed()
-                        bestRow = s.row
-                        try sceFailure.throwIfFailed()
-                        bestCol = s.col
-                        try sceFailure.throwIfFailed()
-                        bestAt = cursor
-                        try sceFailure.throwIfFailed()
-                    }
+                if (!started || s.row > lastRow || s.row == lastRow && s.col > lastCol) && (!chosen || s.row < bestRow || s.row == bestRow && s.col < bestCol) {
+                    chosen = true
+                    bestRow = s.row
+                    bestCol = s.col
+                    bestAt = cursor
                 }
-                cursor = Checked.add(sceFailure, cursor, 1)
-                try sceFailure.throwIfFailed()
+                cursor = (try Checked.add(cursor, 1))
             }
-            do {
-                let sceCond3 = chosen
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    var shownValue: Int64 = 0
-                    try sceFailure.throwIfFailed()
-                    var shownFault: UInt8 = 1
-                    try sceFailure.throwIfFailed()
-                    var u: Int64 = 0
-                    try sceFailure.throwIfFailed()
-                    while true {
-                        let sceCond5 = u < Int64(truncatingIfNeeded: trail.count)
-                        try sceFailure.throwIfFailed()
-                        if !sceCond5 { break }
-                        do {
-                            let sceCond6 = Checked.at(sceFailure, trail, u, fallback: 0) == bestAt
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                shownValue = Checked.at(sceFailure, trail, Checked.add(sceFailure, u, 1), fallback: 0)
-                                try sceFailure.throwIfFailed()
-                                shownFault = Checked.narrow(sceFailure, Checked.at(sceFailure, trail, Checked.add(sceFailure, u, 2), fallback: 0), to: UInt8.self)
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
-                        u = Checked.add(sceFailure, u, 3)
-                        try sceFailure.throwIfFailed()
+            if chosen {
+                var shownValue: Int64 = 0
+                var shownFault: UInt8 = 1
+                var u: Int64 = 0
+                while u < Int64(truncatingIfNeeded: trail.count) {
+                    if (try Checked.at(trail, u)) == bestAt {
+                        shownValue = (try Checked.at(trail, (try Checked.add(u, 1))))
+                        shownFault = (try Checked.narrow((try Checked.at(trail, (try Checked.add(u, 2)))), to: UInt8.self))
                     }
-                    let line: SheetShownPayload = SheetShownPayload(row: bestRow, col: bestCol, value: shownValue, fault: shownFault)
-                    try sceFailure.throwIfFailed()
-                    out.append(line)
-                    try sceFailure.throwIfFailed()
-                    started = true
-                    try sceFailure.throwIfFailed()
-                    lastRow = bestRow
-                    try sceFailure.throwIfFailed()
-                    lastCol = bestCol
-                    try sceFailure.throwIfFailed()
-                } else {
-                    more = false
-                    try sceFailure.throwIfFailed()
+                    u = (try Checked.add(u, 3))
                 }
+                let line: SheetShownPayload = SheetShownPayload(row: bestRow, col: bestCol, value: shownValue, fault: shownFault)
+                out.append(line)
+                started = true
+                lastRow = bestRow
+                lastCol = bestCol
+            } else {
+                more = false
             }
         }
-        do {
-            let sceReturned: [SheetShownPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

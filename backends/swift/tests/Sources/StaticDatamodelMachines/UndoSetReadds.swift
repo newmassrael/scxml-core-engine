@@ -15,65 +15,31 @@
 import SceForgeRuntime
 
 public enum UndoSetReadds {
-    public static func undoSetReadds(_ batchTombstones: [OrsetEntryPayload], _ live: [OrsetEntryPayload]) throws -> [UInt64] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(batchTombstones.count <= 256)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func undoSetReadds(_ batchTombstones: [OrsetEntryPayload], _ live: [OrsetEntryPayload]) throws(AlgorithmError) -> [UInt64] {
+        if !(batchTombstones.count <= 256) {
+            throw AlgorithmError.precondition
         }
         var out: [UInt64] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         for t in batchTombstones {
             var held: Bool = false
-            try sceFailure.throwIfFailed()
             for l in live {
-                do {
-                    let sceCond4 = l.element == t.element
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        held = true
-                        try sceFailure.throwIfFailed()
-                    }
+                if l.element == t.element {
+                    held = true
                 }
             }
             var listed: Bool = false
-            try sceFailure.throwIfFailed()
             var i: UInt32 = 0
-            try sceFailure.throwIfFailed()
-            while true {
-                let sceCond3 = i < UInt32(truncatingIfNeeded: out.count)
-                try sceFailure.throwIfFailed()
-                if !sceCond3 { break }
-                do {
-                    let sceCond4 = Checked.at(sceFailure, out, i, fallback: 0) == t.element
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        listed = true
-                        try sceFailure.throwIfFailed()
-                    }
+            while i < UInt32(truncatingIfNeeded: out.count) {
+                if (try Checked.at(out, i)) == t.element {
+                    listed = true
                 }
-                i = Checked.add(sceFailure, i, 1)
-                try sceFailure.throwIfFailed()
+                i = (try Checked.add(i, 1))
             }
-            do {
-                let sceCond3 = !held && !listed
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(t.element)
-                    try sceFailure.throwIfFailed()
-                }
+            if !held && !listed {
+                out.append(t.element)
             }
         }
-        do {
-            let sceReturned: [UInt64] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

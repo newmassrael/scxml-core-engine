@@ -133,11 +133,9 @@ extension StaticWholePayloadViewModeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
-public struct StaticWholePayloadViewRecord: Equatable, Sendable, SceDefault {
-    public var layout: StaticWholePayloadViewModeEnum = StaticWholePayloadViewModeEnum.allCases[0]
-    public var zoom: UInt8 = 0
-
-    public init() {}
+public struct StaticWholePayloadViewRecord: Equatable, Sendable {
+    public var layout: StaticWholePayloadViewModeEnum
+    public var zoom: UInt8
 
     public init(layout: StaticWholePayloadViewModeEnum, zoom: UInt8) {
         self.layout = layout
@@ -173,8 +171,8 @@ enum StaticWholePayloadPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticWholePayloadViewShownPayload {
-    var layout: StaticWholePayloadViewModeEnum = StaticWholePayloadViewModeEnum.allCases[0]
-    var zoom: UInt8 = 0
+    var layout: StaticWholePayloadViewModeEnum
+    var zoom: UInt8
 }
 
 
@@ -199,7 +197,7 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticWholePayloadPayloadTag = .none
-    var pendingViewShownPayload = StaticWholePayloadViewShownPayload()
+    var pendingViewShownPayload: StaticWholePayloadViewShownPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -473,9 +471,9 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticWholePayloadViewShownPayload()
-            payload.layout = try { () throws -> StaticWholePayloadViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWholePayloadViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            payload.zoom = try fields.unsigned("zoom")
+            let sceField0 = try { () throws -> StaticWholePayloadViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWholePayloadViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1 = try fields.unsigned("zoom")
+            let payload = StaticWholePayloadViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown
         default:
@@ -599,13 +597,13 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="seen">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vSeen.count >= 4 { return true }; let sceValue = Checked.element(of: self.vSeen, StaticWholePayloadViewRecord(layout: self.pendingViewShownPayload.layout, zoom: self.pendingViewShownPayload.zoom)); if sceFailure.failed { return true }; self.vSeen.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vSeen.count >= 4 { return true }; let sceValue = Checked.element(of: self.vSeen, StaticWholePayloadViewRecord(layout: self.pendingViewShownPayload.layout, zoom: self.pendingViewShownPayload.zoom)); self.vSeen.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vUpdates, 1); if sceFailure.failed { return true }; self.vUpdates = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vUpdates, 1)); self.vUpdates = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -615,7 +613,7 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAgendas, 1); if sceFailure.failed { return true }; self.vAgendas = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAgendas, 1)); self.vAgendas = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -625,7 +623,7 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vOthers, 1); if sceFailure.failed { return true }; self.vOthers = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOthers, 1)); self.vOthers = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

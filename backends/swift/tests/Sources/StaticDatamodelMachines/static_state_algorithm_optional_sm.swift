@@ -92,12 +92,10 @@ public enum StaticStateAlgorithmOptionalEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Goal` datamodel value.
-public struct StaticStateAlgorithmOptionalGoalRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var day: Int64? = nil
-    public var weight: Int32 = 0
-
-    public init() {}
+public struct StaticStateAlgorithmOptionalGoalRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var day: Int64?
+    public var weight: Int32
 
     public init(id: UInt32, day: Int64?, weight: Int32) {
         self.id = id
@@ -136,9 +134,9 @@ enum StaticStateAlgorithmOptionalPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticStateAlgorithmOptionalGoalAddedPayload {
-    var id: UInt32 = 0
-    var day: Int64? = nil
-    var weight: Int32 = 0
+    var id: UInt32
+    var day: Int64?
+    var weight: Int32
 }
 
 
@@ -146,7 +144,7 @@ struct StaticStateAlgorithmOptionalGoalAddedPayload {
 // SCE Accepted Subset §2.15: the calls of an algorithm over a record or a list
 // ======================================================================
 
-private func call_DaySum__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord], _ p1: Int64) throws -> Int64 {
+private func call_DaySum__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord], _ p1: Int64) throws(AlgorithmError) -> Int64 {
     let r = try GoalDaySum.goalDaySum(p0.map { SchemaGoalPayload(id: $0.id, day: $0.day, weight: $0.weight) }, p1)
     return r
 }
@@ -156,7 +154,7 @@ private func call_Earliest__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord]) ->
     return r
 }
 
-private func call_Undated__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord]) throws -> UInt32 {
+private func call_Undated__v(_ p0: [StaticStateAlgorithmOptionalGoalRecord]) throws(AlgorithmError) -> UInt32 {
     let r = try GoalUndated.goalUndated(p0.map { SchemaGoalPayload(id: $0.id, day: $0.day, weight: $0.weight) })
     return r
 }
@@ -182,7 +180,7 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticStateAlgorithmOptionalPayloadTag = .none
-    var pendingGoalAddedPayload = StaticStateAlgorithmOptionalGoalAddedPayload()
+    var pendingGoalAddedPayload: StaticStateAlgorithmOptionalGoalAddedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -490,10 +488,10 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
         switch event {
         case .goalAdded:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticStateAlgorithmOptionalGoalAddedPayload()
-            payload.id = try fields.unsigned("id")
-            payload.day = try fields.optional("day") { fields in try fields.signed64("day") }
-            payload.weight = try fields.signed("weight")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.optional("day") { fields in try fields.signed64("day") }
+            let sceField2 = try fields.signed("weight")
+            let payload = StaticStateAlgorithmOptionalGoalAddedPayload(id: sceField0, day: sceField1, weight: sceField2)
             pendingGoalAddedPayload = payload
             pendingPayloadTag = .goalAdded
         default:
@@ -638,7 +636,7 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="goals">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vGoals.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<sce:append target='goals'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vGoals, self.vDraft); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<sce:append target='goals'>: an integer operation overflowed or failed")); return true }; self.vGoals.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vGoals.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<sce:append target='goals'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vGoals, self.vDraft); self.vGoals.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -648,19 +646,19 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.take(sceFailure, fallback: nil, { try GoalUntil.goalUntil(self.vToday, self.vFirst) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; self.vLeft = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try GoalUntil.goalUntil(self.vToday, self.vFirst)); self.vLeft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_Undated__v(self.vGoals) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='undated'>: an integer operation overflowed or failed")); return true }; self.vUndated = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_Undated__v(self.vGoals)); self.vUndated = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='undated'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.takeDefault(sceFailure, { try call_DaySum__v(self.vGoals, 0) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; self.vTotal = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try call_DaySum__v(self.vGoals, 0)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -670,7 +668,7 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.take(sceFailure, fallback: nil, { try GoalUntil.goalUntil(self.vToday, nil) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; self.vLeft = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try GoalUntil.goalUntil(self.vToday, nil)); self.vLeft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -680,7 +678,7 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.take(sceFailure, fallback: nil, { try GoalUntil.goalUntil(self.vToday, 150) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; self.vLeft = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try GoalUntil.goalUntil(self.vToday, 150)); self.vLeft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -699,19 +697,19 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.take(sceFailure, fallback: nil, { try GoalUntil.goalUntil(self.vToday, self.vFirst) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; self.vLeft = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try GoalUntil.goalUntil(self.vToday, self.vFirst)); self.vLeft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='left'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_Undated__v(self.vGoals) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='undated'>: an integer operation overflowed or failed")); return true }; self.vUndated = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_Undated__v(self.vGoals)); self.vUndated = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='undated'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.takeDefault(sceFailure, { try call_DaySum__v(self.vGoals, 0) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; self.vTotal = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try call_DaySum__v(self.vGoals, 0)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -721,7 +719,7 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmOptionalEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

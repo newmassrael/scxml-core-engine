@@ -31,13 +31,12 @@ public enum AclAce {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:acl_ace:1\",\"x-sce-source-hash\":\"c59281ae7be4758cbffb01ac828a80a4489cab0ae77d7577e991e823091b27bc\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"principal\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"privilege\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"principal\",\"privilege\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct AclAcePayload: Equatable, Sendable, SceDefault {
-    public var principal: UInt32 = 0
-    public var privilege: UInt32 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct AclAcePayload: Equatable, Sendable {
+    public var principal: UInt32
+    public var privilege: UInt32
 
     public init(principal: UInt32, privilege: UInt32) {
         self.principal = principal

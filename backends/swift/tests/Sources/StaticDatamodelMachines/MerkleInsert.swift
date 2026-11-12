@@ -15,114 +15,53 @@
 import SceForgeRuntime
 
 public enum MerkleInsert {
-    public static func merkleInsert(_ nodes: [MerkleNodePayload], _ minute: Int64, _ hash: UInt32) throws -> [MerkleNodePayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(minute >= 0 && minute <= 153722867280912)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func merkleInsert(_ nodes: [MerkleNodePayload], _ minute: Int64, _ hash: UInt32) throws(AlgorithmError) -> [MerkleNodePayload] {
+        if !(minute >= 0 && minute <= 153722867280912) {
+            throw AlgorithmError.precondition
         }
         var out: [MerkleNodePayload] = []
         out.reserveCapacity(2048)
-        try sceFailure.throwIfFailed()
         var pd: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var pp: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var div: Int64 = 68630377364883
-        try sceFailure.throwIfFailed()
         var prevDepth: Int32 = -1
-        try sceFailure.throwIfFailed()
         var prevPrefix: UInt64 = 0
-        try sceFailure.throwIfFailed()
         for x in nodes {
-            do {
-                let sceCond3 = !(x.depth <= 30 && (Int32(x.depth) > prevDepth || Int32(x.depth) == prevDepth && x.prefix > prevPrefix))
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(x.depth <= 30 && (Int32(x.depth) > prevDepth || Int32(x.depth) == prevDepth && x.prefix > prevPrefix)) {
+                throw AlgorithmError.precondition
             }
             prevDepth = Int32(x.depth)
-            try sceFailure.throwIfFailed()
             prevPrefix = x.prefix
-            try sceFailure.throwIfFailed()
-            while true {
-                let sceCond3 = pd <= 30 && (pd < UInt32(x.depth) || pd == UInt32(x.depth) && pp < x.prefix)
-                try sceFailure.throwIfFailed()
-                if !sceCond3 { break }
-                let created: MerkleNodePayload = MerkleNodePayload(depth: Checked.narrow(sceFailure, pd, to: UInt8.self), prefix: pp, hash: hash)
-                try sceFailure.throwIfFailed()
+            while pd <= 30 && (pd < UInt32(x.depth) || pd == UInt32(x.depth) && pp < x.prefix) {
+                let created: MerkleNodePayload = MerkleNodePayload(depth: (try Checked.narrow(pd, to: UInt8.self)), prefix: pp, hash: hash)
                 out.append(created)
-                try sceFailure.throwIfFailed()
-                pd = Checked.add(sceFailure, pd, 1)
-                try sceFailure.throwIfFailed()
-                pp = Checked.narrow(sceFailure, Checked.div(sceFailure, minute, div), to: UInt64.self)
-                try sceFailure.throwIfFailed()
-                do {
-                    let sceCond4 = div > 1
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        div = Checked.div(sceFailure, div, 3)
-                        try sceFailure.throwIfFailed()
-                    }
+                pd = (try Checked.add(pd, 1))
+                pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+                if div > 1 {
+                    div = (try Checked.div(div, 3))
                 }
             }
-            do {
-                let sceCond3 = pd <= 30 && pd == UInt32(x.depth) && pp == x.prefix
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    let merged: MerkleNodePayload = MerkleNodePayload(depth: x.depth, prefix: x.prefix, hash: x.hash ^ hash)
-                    try sceFailure.throwIfFailed()
-                    out.append(merged)
-                    try sceFailure.throwIfFailed()
-                    pd = Checked.add(sceFailure, pd, 1)
-                    try sceFailure.throwIfFailed()
-                    pp = Checked.narrow(sceFailure, Checked.div(sceFailure, minute, div), to: UInt64.self)
-                    try sceFailure.throwIfFailed()
-                    do {
-                        let sceCond5 = div > 1
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            div = Checked.div(sceFailure, div, 3)
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
-                } else {
-                    out.append(x)
-                    try sceFailure.throwIfFailed()
+            if pd <= 30 && pd == UInt32(x.depth) && pp == x.prefix {
+                let merged: MerkleNodePayload = MerkleNodePayload(depth: x.depth, prefix: x.prefix, hash: x.hash ^ hash)
+                out.append(merged)
+                pd = (try Checked.add(pd, 1))
+                pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+                if div > 1 {
+                    div = (try Checked.div(div, 3))
                 }
+            } else {
+                out.append(x)
             }
         }
-        while true {
-            let sceCond2 = pd <= 30
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            let tail: MerkleNodePayload = MerkleNodePayload(depth: Checked.narrow(sceFailure, pd, to: UInt8.self), prefix: pp, hash: hash)
-            try sceFailure.throwIfFailed()
+        while pd <= 30 {
+            let tail: MerkleNodePayload = MerkleNodePayload(depth: (try Checked.narrow(pd, to: UInt8.self)), prefix: pp, hash: hash)
             out.append(tail)
-            try sceFailure.throwIfFailed()
-            pd = Checked.add(sceFailure, pd, 1)
-            try sceFailure.throwIfFailed()
-            pp = Checked.narrow(sceFailure, Checked.div(sceFailure, minute, div), to: UInt64.self)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = div > 1
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    div = Checked.div(sceFailure, div, 3)
-                    try sceFailure.throwIfFailed()
-                }
+            pd = (try Checked.add(pd, 1))
+            pp = (try Checked.narrow((try Checked.div(minute, div)), to: UInt64.self))
+            if div > 1 {
+                div = (try Checked.div(div, 3))
             }
         }
-        do {
-            let sceReturned: [MerkleNodePayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

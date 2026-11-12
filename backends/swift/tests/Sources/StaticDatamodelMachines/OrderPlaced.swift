@@ -37,20 +37,18 @@ public enum OrderPlaced {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:order_placed:1\",\"x-sce-source-hash\":\"d4646eb3233d0326b8220cebf3753ec7bf14af5b5faee8ffa467c7536202f42b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"order_id\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"lines\":{\"type\":\"array\",\"items\":{\"$ref\":\"#/$defs/order_line\"},\"maxItems\":4},\"note\":{\"anyOf\":[{\"type\":\"string\",\"maxLength\":32,\"x-sce-max-bytes\":32},{\"type\":\"null\"}]},\"priority\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},{\"type\":\"null\"}]},\"customer\":{\"$ref\":\"#/$defs/order_customer\"},\"payment\":{\"$ref\":\"#/$defs/order_payment\"}},\"required\":[\"order_id\",\"lines\",\"note\",\"priority\",\"customer\",\"payment\"],\"additionalProperties\":false,\"$defs\":{\"order_customer\":{\"type\":\"object\",\"properties\":{\"full_name\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"vip\":{\"type\":\"boolean\"}},\"required\":[\"full_name\",\"vip\"],\"additionalProperties\":false},\"order_line\":{\"type\":\"object\",\"properties\":{\"sku\":{\"type\":\"string\",\"maxLength\":16,\"x-sce-max-bytes\":16},\"quantity\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"color\":{\"enum\":[\"red\",\"green\",\"blue\"]}},\"required\":[\"sku\",\"quantity\",\"color\"],\"additionalProperties\":false},\"order_payment\":{\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"card\"},\"last4\":{\"type\":\"string\",\"maxLength\":4,\"x-sce-max-bytes\":4},\"amount\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295}},\"required\":[\"kind\",\"last4\",\"amount\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"cash\"}},\"required\":[\"kind\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"voucher\"},\"voucher_code\":{\"type\":\"string\",\"maxLength\":4,\"pattern\":\"^[\\\\u0000-\\\\u00ff]*$\"}},\"required\":[\"kind\",\"voucher_code\"],\"additionalProperties\":false}]}}}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order. A field
-/// that holds a union directly has no value to start at (docs/adr/0092, amendment of
-/// 2026-11-07: no case is the zero of the others), so the payload has no zero either: it is
-/// built whole by its initialiser and is no `SceDefault`. A value, so a host that reads one
-/// holds a copy.
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
 public struct OrderPlacedPayload: Equatable, Sendable {
-    public var order_id: UInt32 = 0
-    public var lines: [OrderLinePayload] = []
-    public var note: String? = nil
-    public var priority: UInt8? = nil
-    public var customer: OrderCustomerPayload = OrderCustomerPayload()
+    public var order_id: UInt32
+    public var lines: [OrderLinePayload]
+    public var note: String?
+    public var priority: UInt8?
+    public var customer: OrderCustomerPayload
     public var payment: OrderPayment
 
-    public init(order_id: UInt32 = 0, lines: [OrderLinePayload] = [], note: String? = nil, priority: UInt8? = nil, customer: OrderCustomerPayload = OrderCustomerPayload(), payment: OrderPayment) {
+    public init(order_id: UInt32, lines: [OrderLinePayload], note: String?, priority: UInt8?, customer: OrderCustomerPayload, payment: OrderPayment) {
         self.order_id = order_id
         self.lines = lines
         self.note = note

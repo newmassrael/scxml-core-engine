@@ -753,7 +753,7 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vHeard, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; self.vHeard = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -767,7 +767,7 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vHeard, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; self.vHeard = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

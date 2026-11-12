@@ -15,54 +15,19 @@
 import SceForgeRuntime
 
 public enum DaysInMonth {
-    public static func daysInMonth(_ year: Int32, _ month: UInt8) throws -> UInt8 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(month >= 1 && month <= 12)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
+    public static func daysInMonth(_ year: Int32, _ month: UInt8) throws(AlgorithmError) -> UInt8 {
+        if !(month >= 1 && month <= 12) {
+            throw AlgorithmError.precondition
+        }
+        if month == 2 {
+            if IsLeapYear.isLeapYear(year) {
+                return 29
             }
+            return 28
         }
-        do {
-            let sceCond2 = month == 2
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceCond4 = IsLeapYear.isLeapYear(year)
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceReturned: UInt8 = 29
-                            try sceFailure.throwIfFailed()
-                            return sceReturned
-                        }
-                    }
-                }
-                do {
-                    let sceReturned: UInt8 = 28
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
+        if month == 4 || month == 6 || month == 9 || month == 11 {
+            return 30
         }
-        do {
-            let sceCond2 = month == 4 || month == 6 || month == 9 || month == 11
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceReturned: UInt8 = 30
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
-        }
-        do {
-            let sceReturned: UInt8 = 31
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return 31
     }
 }

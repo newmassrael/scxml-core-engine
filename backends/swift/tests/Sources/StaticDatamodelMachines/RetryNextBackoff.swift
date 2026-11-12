@@ -15,33 +15,15 @@
 import SceForgeRuntime
 
 public enum RetryNextBackoff {
-    public static func retryNextBackoff(_ prevMs: Int64, _ multiplier: Double, _ maxMs: Int64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(multiplier >= 1.0 && prevMs > 0 && maxMs >= prevMs)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func retryNextBackoff(_ prevMs: Int64, _ multiplier: Double, _ maxMs: Int64) throws(AlgorithmError) -> Int64 {
+        if !(multiplier >= 1.0 && prevMs > 0 && maxMs >= prevMs) {
+            throw AlgorithmError.precondition
         }
         let grown: Double = Double(prevMs) * multiplier
-        try sceFailure.throwIfFailed()
         var next: Int64 = maxMs
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = grown < Double(maxMs)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                next = Real.floor(grown, to: Int64.self)
-                try sceFailure.throwIfFailed()
-            }
+        if grown < Double(maxMs) {
+            next = Real.floor(grown, to: Int64.self)
         }
-        do {
-            let sceReturned: Int64 = next
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return next
     }
 }

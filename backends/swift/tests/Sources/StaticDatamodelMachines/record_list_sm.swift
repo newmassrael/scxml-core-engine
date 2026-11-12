@@ -118,12 +118,10 @@ public enum RecordListEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Hlc` datamodel value.
-public struct RecordListHlcRecord: Equatable, Sendable, SceDefault {
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListHlcRecord: Equatable, Sendable {
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.wallTime = wallTime
@@ -151,13 +149,11 @@ public struct RecordListHlcRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
-public struct RecordListEntryRecord: Equatable, Sendable, SceDefault {
-    public var element: UInt64 = 0
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListEntryRecord: Equatable, Sendable {
+    public var element: UInt64
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(element: UInt64, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.element = element
@@ -188,16 +184,14 @@ public struct RecordListEntryRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Value` datamodel value.
-public struct RecordListValueRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt64 = 0
-    public var field: UInt64 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListValueRecord: Equatable, Sendable {
+    public var id: UInt64
+    public var field: UInt64
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(id: UInt64, field: UInt64, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.id = id
@@ -237,11 +231,9 @@ public struct RecordListValueRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
-public struct RecordListMemberRecord: Equatable, Sendable, SceDefault {
-    public var node: UInt64 = 0
-    public var role: UInt8 = 0
-
-    public init() {}
+public struct RecordListMemberRecord: Equatable, Sendable {
+    public var node: UInt64
+    public var role: UInt8
 
     public init(node: UInt64, role: UInt8) {
         self.node = node
@@ -266,14 +258,12 @@ public struct RecordListMemberRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Staged` datamodel value.
-public struct RecordListStagedRecord: Equatable, Sendable, SceDefault {
-    public var kind: UInt8 = 0
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-
-    public init() {}
+public struct RecordListStagedRecord: Equatable, Sendable {
+    public var kind: UInt8
+    public var id: UInt32
+    public var field: UInt16
+    public var value: Int64
+    public var text: String
 
     public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String) {
         self.kind = kind
@@ -404,17 +394,15 @@ extension RecordListCommandEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
-public struct RecordListOpRecord: Equatable, Sendable, SceDefault {
-    public var kind: UInt8 = 0
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListOpRecord: Equatable, Sendable {
+    public var kind: UInt8
+    public var id: UInt32
+    public var field: UInt16
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.kind = kind
@@ -457,15 +445,13 @@ public struct RecordListOpRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Provisional` datamodel value.
-public struct RecordListProvisionalRecord: Equatable, Sendable, SceDefault {
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var command: UInt64 = 0
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var kind: RecordListCommandEnum = RecordListCommandEnum.allCases[0]
-
-    public init() {}
+public struct RecordListProvisionalRecord: Equatable, Sendable {
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var command: UInt64
+    public var id: UInt32
+    public var field: UInt16
+    public var kind: RecordListCommandEnum
 
     public init(wallTime: Int64, counter: UInt32, command: UInt64, id: UInt32, field: UInt16, kind: RecordListCommandEnum) {
         self.wallTime = wallTime
@@ -502,18 +488,16 @@ public struct RecordListProvisionalRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Undo` datamodel value.
-public struct RecordListUndoRecord: Equatable, Sendable, SceDefault {
-    public var atWallTime: Int64 = 0
-    public var atCounter: UInt32 = 0
-    public var id: UInt64 = 0
-    public var field: UInt64 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct RecordListUndoRecord: Equatable, Sendable {
+    public var atWallTime: Int64
+    public var atCounter: UInt32
+    public var id: UInt64
+    public var field: UInt64
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(atWallTime: Int64, atCounter: UInt32, id: UInt64, field: UInt64, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.atWallTime = atWallTime
@@ -630,136 +614,136 @@ enum RecordListPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListAnnouncePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
+    var id: UInt32
+    var field: UInt16
 }
 
 /// The typed `_event.data` payload of `record_list.change` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListChangePayload {
-    var by: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var ops: [RecordListOpRecord] = []
+    var by: UInt64
+    var wallTime: Int64
+    var counter: UInt32
+    var ops: [RecordListOpRecord]
 }
 
 /// The typed `_event.data` payload of `record_list.clear` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListClearPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.confirm` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListConfirmPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var command: UInt64 = 0
+    var wallTime: Int64
+    var counter: UInt32
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.edit` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListEditPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var field: UInt16
+    var value: Int64
+    var text: String
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.join` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListJoinPayload {
-    var node: UInt64 = 0
-    var journal: Bool = false
+    var node: UInt64
+    var journal: Bool
 }
 
 /// The typed `_event.data` payload of `record_list.raise` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRaisePayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var command: UInt64 = 0
+    var wallTime: Int64
+    var counter: UInt32
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.recall` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRecallPayload {
-    var by: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var ops: [RecordListOpRecord] = []
-    var command: UInt64 = 0
-    var provisional: Bool = false
+    var by: UInt64
+    var wallTime: Int64
+    var counter: UInt32
+    var ops: [RecordListOpRecord]
+    var command: UInt64
+    var provisional: Bool
 }
 
 /// The typed `_event.data` payload of `record_list.restore` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRestorePayload {
-    var by: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var ops: [RecordListOpRecord] = []
+    var by: UInt64
+    var wallTime: Int64
+    var counter: UInt32
+    var ops: [RecordListOpRecord]
 }
 
 /// The typed `_event.data` payload of `record_list.retire` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRetirePayload {
-    var id: UInt32 = 0
-    var now: Int64 = 0
-    var more: Bool = false
-    var command: UInt64 = 0
+    var id: UInt32
+    var now: Int64
+    var more: Bool
+    var command: UInt64
 }
 
 /// The typed `_event.data` payload of `record_list.role` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRolePayload {
-    var node: UInt64 = 0
-    var role: UInt8 = 0
+    var node: UInt64
+    var role: UInt8
 }
 
 /// The typed `_event.data` payload of `record_list.room` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListRoomPayload {
-    var values: UInt32 = 0
-    var history: UInt32 = 0
-    var digest: UInt32 = 0
+    var values: UInt32
+    var history: UInt32
+    var digest: UInt32
 }
 
 /// The typed `_event.data` payload of `record_list.verdict` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListVerdictPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var outcome: RecordListOutcomeEnum = RecordListOutcomeEnum.allCases[0]
-    var reason: RecordListRefusalEnum? = nil
+    var wallTime: Int64
+    var counter: UInt32
+    var outcome: RecordListOutcomeEnum
+    var reason: RecordListRefusalEnum?
 }
 
 /// The typed `_event.data` payload of `record_list.withdraw` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct RecordListRecordListWithdrawPayload {
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var command: UInt64 = 0
+    var wallTime: Int64
+    var counter: UInt32
+    var command: UInt64
 }
 
 
@@ -767,17 +751,17 @@ struct RecordListRecordListWithdrawPayload {
 // SCE Accepted Subset §2.15: the calls of an algorithm over a record or a list
 // ======================================================================
 
-private func call_HlcReceive__vv(_ p0: RecordListHlcRecord, _ p1: RecordListHlcRecord, _ p2: Int64, _ p3: UInt64) throws -> RecordListHlcRecord {
+private func call_HlcReceive__vv(_ p0: RecordListHlcRecord, _ p1: RecordListHlcRecord, _ p2: Int64, _ p3: UInt64) throws(AlgorithmError) -> RecordListHlcRecord {
     let r = try HlcReceive.hlcReceive(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), HlcTimestampPayload(wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId), p2, p3)
     return RecordListHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_HlcSend__v(_ p0: RecordListHlcRecord, _ p1: Int64, _ p2: UInt64) throws -> RecordListHlcRecord {
+private func call_HlcSend__v(_ p0: RecordListHlcRecord, _ p1: Int64, _ p2: UInt64) throws(AlgorithmError) -> RecordListHlcRecord {
     let r = try HlcSend.hlcSend(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1, p2)
     return RecordListHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_MvValueDrop__vv(_ p0: [RecordListValueRecord], _ p1: RecordListValueRecord) throws -> [RecordListValueRecord] {
+private func call_MvValueDrop__vv(_ p0: [RecordListValueRecord], _ p1: RecordListValueRecord) throws(AlgorithmError) -> [RecordListValueRecord] {
     let r = try MvValueDrop.mvValueDrop(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, MvValuePayload(id: p1.id, field: p1.field, value: p1.value, text: p1.text, wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId))
     return r.map { RecordListValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
@@ -787,27 +771,27 @@ private func call_MvValueHolds__vv(_ p0: [RecordListValueRecord], _ p1: RecordLi
     return r
 }
 
-private func call_MvValueKeep__vv(_ p0: [RecordListValueRecord], _ p1: RecordListValueRecord) throws -> [RecordListValueRecord] {
+private func call_MvValueKeep__vv(_ p0: [RecordListValueRecord], _ p1: RecordListValueRecord) throws(AlgorithmError) -> [RecordListValueRecord] {
     let r = try MvValueKeep.mvValueKeep(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, MvValuePayload(id: p1.id, field: p1.field, value: p1.value, text: p1.text, wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId))
     return r.map { RecordListValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_OrsetLive__vv(_ p0: [RecordListEntryRecord], _ p1: [RecordListEntryRecord]) throws -> [RecordListEntryRecord] {
+private func call_OrsetLive__vv(_ p0: [RecordListEntryRecord], _ p1: [RecordListEntryRecord]) throws(AlgorithmError) -> [RecordListEntryRecord] {
     let r = try OrsetLive.orsetLive(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) })
     return r.map { RecordListEntryRecord(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_OrsetUnion__vv(_ p0: [RecordListEntryRecord], _ p1: [RecordListEntryRecord]) throws -> [RecordListEntryRecord] {
+private func call_OrsetUnion__vv(_ p0: [RecordListEntryRecord], _ p1: [RecordListEntryRecord]) throws(AlgorithmError) -> [RecordListEntryRecord] {
     let r = try OrsetUnion.orsetUnion(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) })
     return r.map { RecordListEntryRecord(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_RecordRoster__v(_ p0: [RecordListMemberRecord], _ p1: UInt64, _ p2: UInt8) throws -> [RecordListMemberRecord] {
+private func call_RecordRoster__v(_ p0: [RecordListMemberRecord], _ p1: UInt64, _ p2: UInt8) throws(AlgorithmError) -> [RecordListMemberRecord] {
     let r = try RecordRoster.recordRoster(p0.map { RecordMemberPayload(node: $0.node, role: $0.role) }, p1, p2)
     return r.map { RecordListMemberRecord(node: $0.node, role: $0.role) }
 }
 
-private func call_RegisterValues__v(_ p0: [RecordListValueRecord], _ p1: UInt64, _ p2: UInt64) throws -> [RecordListValueRecord] {
+private func call_RegisterValues__v(_ p0: [RecordListValueRecord], _ p1: UInt64, _ p2: UInt64) throws(AlgorithmError) -> [RecordListValueRecord] {
     let r = try RegisterValues.registerValues(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1, p2)
     return r.map { RecordListValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
@@ -833,20 +817,20 @@ public final class RecordListPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: RecordListPayloadTag = .none
-    var pendingRecordListAnnouncePayload = RecordListRecordListAnnouncePayload()
-    var pendingRecordListChangePayload = RecordListRecordListChangePayload()
-    var pendingRecordListClearPayload = RecordListRecordListClearPayload()
-    var pendingRecordListConfirmPayload = RecordListRecordListConfirmPayload()
-    var pendingRecordListEditPayload = RecordListRecordListEditPayload()
-    var pendingRecordListJoinPayload = RecordListRecordListJoinPayload()
-    var pendingRecordListRaisePayload = RecordListRecordListRaisePayload()
-    var pendingRecordListRecallPayload = RecordListRecordListRecallPayload()
-    var pendingRecordListRestorePayload = RecordListRecordListRestorePayload()
-    var pendingRecordListRetirePayload = RecordListRecordListRetirePayload()
-    var pendingRecordListRolePayload = RecordListRecordListRolePayload()
-    var pendingRecordListRoomPayload = RecordListRecordListRoomPayload()
-    var pendingRecordListVerdictPayload = RecordListRecordListVerdictPayload()
-    var pendingRecordListWithdrawPayload = RecordListRecordListWithdrawPayload()
+    var pendingRecordListAnnouncePayload: RecordListRecordListAnnouncePayload!
+    var pendingRecordListChangePayload: RecordListRecordListChangePayload!
+    var pendingRecordListClearPayload: RecordListRecordListClearPayload!
+    var pendingRecordListConfirmPayload: RecordListRecordListConfirmPayload!
+    var pendingRecordListEditPayload: RecordListRecordListEditPayload!
+    var pendingRecordListJoinPayload: RecordListRecordListJoinPayload!
+    var pendingRecordListRaisePayload: RecordListRecordListRaisePayload!
+    var pendingRecordListRecallPayload: RecordListRecordListRecallPayload!
+    var pendingRecordListRestorePayload: RecordListRecordListRestorePayload!
+    var pendingRecordListRetirePayload: RecordListRecordListRetirePayload!
+    var pendingRecordListRolePayload: RecordListRecordListRolePayload!
+    var pendingRecordListRoomPayload: RecordListRecordListRoomPayload!
+    var pendingRecordListVerdictPayload: RecordListRecordListVerdictPayload!
+    var pendingRecordListWithdrawPayload: RecordListRecordListWithdrawPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -1517,124 +1501,124 @@ public final class RecordListPolicy: InvocablePolicy {
         switch event {
         case .recordListAnnounce:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListAnnouncePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let payload = RecordListRecordListAnnouncePayload(id: sceField0, field: sceField1)
             pendingRecordListAnnouncePayload = payload
             pendingPayloadTag = .recordListAnnounce
         case .recordListChange:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListChangePayload()
-            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
-            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
-            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
-            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let payload = RecordListRecordListChangePayload(by: sceField0, wallTime: sceField1, counter: sceField2, ops: sceField3)
             pendingRecordListChangePayload = payload
             pendingPayloadTag = .recordListChange
         case .recordListClear:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            var payload = RecordListRecordListClearPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.signed64("now")
+            let sceField3 = try fields.truth("more")
+            let sceField4 = try fields.unsigned64("command")
+            let payload = RecordListRecordListClearPayload(id: sceField0, field: sceField1, now: sceField2, more: sceField3, command: sceField4)
             pendingRecordListClearPayload = payload
             pendingPayloadTag = .recordListClear
         case .recordListConfirm:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListConfirmPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try fields.unsigned64("command")
+            let payload = RecordListRecordListConfirmPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListConfirmPayload = payload
             pendingPayloadTag = .recordListConfirm
         case .recordListEdit:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"more\":false,\"command\":\"0\"}")
-            var payload = RecordListRecordListEditPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 32)
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.signed64("value")
+            let sceField3 = try fields.text("text", bound: 32)
+            let sceField4 = try fields.signed64("now")
+            let sceField5 = try fields.truth("more")
+            let sceField6 = try fields.unsigned64("command")
+            let payload = RecordListRecordListEditPayload(id: sceField0, field: sceField1, value: sceField2, text: sceField3, now: sceField4, more: sceField5, command: sceField6)
             pendingRecordListEditPayload = payload
             pendingPayloadTag = .recordListEdit
         case .recordListJoin:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"journal\":true}")
-            var payload = RecordListRecordListJoinPayload()
-            payload.node = try fields.unsigned64("node")
-            payload.journal = try fields.truth("journal")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.truth("journal")
+            let payload = RecordListRecordListJoinPayload(node: sceField0, journal: sceField1)
             pendingRecordListJoinPayload = payload
             pendingPayloadTag = .recordListJoin
         case .recordListRaise:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListRaisePayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try fields.unsigned64("command")
+            let payload = RecordListRecordListRaisePayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListRaisePayload = payload
             pendingPayloadTag = .recordListRaise
         case .recordListRecall:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListRecallPayload()
-            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
-            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
-            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
-            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
-            payload.command = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("command"))
-            payload.provisional = try ({ (sceValue: PayloadValue) throws -> Bool in try sceValue.truth() })(fields.field("provisional"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let sceField4 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("command"))
+            let sceField5 = try ({ (sceValue: PayloadValue) throws -> Bool in try sceValue.truth() })(fields.field("provisional"))
+            let payload = RecordListRecordListRecallPayload(by: sceField0, wallTime: sceField1, counter: sceField2, ops: sceField3, command: sceField4, provisional: sceField5)
             pendingRecordListRecallPayload = payload
             pendingPayloadTag = .recordListRecall
         case .recordListRestore:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListRestorePayload()
-            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
-            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
-            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
-            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [RecordListOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListOpRecord in try RecordListOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let payload = RecordListRecordListRestorePayload(by: sceField0, wallTime: sceField1, counter: sceField2, ops: sceField3)
             pendingRecordListRestorePayload = payload
             pendingPayloadTag = .recordListRestore
         case .recordListRetire:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            var payload = RecordListRecordListRetirePayload()
-            payload.id = try fields.unsigned("id")
-            payload.now = try fields.signed64("now")
-            payload.more = try fields.truth("more")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.signed64("now")
+            let sceField2 = try fields.truth("more")
+            let sceField3 = try fields.unsigned64("command")
+            let payload = RecordListRecordListRetirePayload(id: sceField0, now: sceField1, more: sceField2, command: sceField3)
             pendingRecordListRetirePayload = payload
             pendingPayloadTag = .recordListRetire
         case .recordListRole:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListRolePayload()
-            payload.node = try fields.unsigned64("node")
-            payload.role = try fields.unsigned("role")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.unsigned("role")
+            let payload = RecordListRecordListRolePayload(node: sceField0, role: sceField1)
             pendingRecordListRolePayload = payload
             pendingPayloadTag = .recordListRole
         case .recordListRoom:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListRoomPayload()
-            payload.values = try fields.unsigned("values")
-            payload.history = try fields.unsigned("history")
-            payload.digest = try fields.unsigned("digest")
+            let sceField0 = try fields.unsigned("values")
+            let sceField1 = try fields.unsigned("history")
+            let sceField2 = try fields.unsigned("digest")
+            let payload = RecordListRecordListRoomPayload(values: sceField0, history: sceField1, digest: sceField2)
             pendingRecordListRoomPayload = payload
             pendingPayloadTag = .recordListRoom
         case .recordListVerdict:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListVerdictPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.outcome = try { () throws -> RecordListOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "Outcome") }; return variant }()
-            payload.reason = try fields.optional("reason") { fields in try { () throws -> RecordListRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Refusal") }; return variant }() }
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try { () throws -> RecordListOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "Outcome") }; return variant }()
+            let sceField3 = try fields.optional("reason") { fields in try { () throws -> RecordListRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Refusal") }; return variant }() }
+            let payload = RecordListRecordListVerdictPayload(wallTime: sceField0, counter: sceField1, outcome: sceField2, reason: sceField3)
             pendingRecordListVerdictPayload = payload
             pendingPayloadTag = .recordListVerdict
         case .recordListWithdraw:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = RecordListRecordListWithdrawPayload()
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.command = try fields.unsigned64("command")
+            let sceField0 = try fields.signed64("wallTime")
+            let sceField1 = try fields.unsigned("counter")
+            let sceField2 = try fields.unsigned64("command")
+            let payload = RecordListRecordListWithdrawPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListWithdrawPayload = payload
             pendingPayloadTag = .recordListWithdraw
         default:
@@ -2048,7 +2032,7 @@ public final class RecordListPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RecordRoster__v(self.vRoster, self.pendingRecordListRolePayload.node, self.pendingRecordListRolePayload.role) }), capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; self.vRoster = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RecordRoster__v(self.vRoster, self.pendingRecordListRolePayload.node, self.pendingRecordListRolePayload.role)), capacity: 64)); self.vRoster = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2058,7 +2042,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2068,7 +2052,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2078,7 +2062,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2133,7 +2117,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListEditPayload.text, capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2144,7 +2128,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2227,14 +2211,14 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2317,14 +2301,14 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; self.vStaging.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2379,7 +2363,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 if (self.vForbidden) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2466,7 +2450,7 @@ public final class RecordListPolicy: InvocablePolicy {
                     _ = s
 
                 var ifCondFailed14 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, a.element, 65536) == UInt64(s.id) && (s.kind == 2 || Checked.rem(sceFailure, a.element, 65536) == UInt64(s.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { (try Checked.or(s.kind == 2, { (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false } }()) {
 
 
                 self.vCovered = true
@@ -2481,7 +2465,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 if (self.vCovered) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vGone, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; self.vGone = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vGone, 1)); self.vGone = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2496,7 +2480,7 @@ public final class RecordListPolicy: InvocablePolicy {
                 if (s.kind == 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vWrites, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='writes'>: an integer operation overflowed or failed")); return true }; self.vWrites = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWrites, 1)); self.vWrites = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='writes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2507,10 +2491,10 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed17 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0 && self.vRoomValues > 0 && self.vWrites > self.vGone && Checked.add(sceFailure, UInt32(truncatingIfNeeded: self.vValues.count), self.vWrites) > Checked.add(sceFailure, self.vRoomValues, self.vGone); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.and(!self.vSpoiled, { (try Checked.add(self.vGone, self.vWrites)) > 0 })) && self.vRoomValues > 0 && self.vWrites > self.vGone, { (try Checked.add(UInt32(truncatingIfNeeded: self.vValues.count), self.vWrites)) > (try Checked.add(self.vRoomValues, self.vGone)) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false } }()) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFull, 1)); self.vFull = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2529,7 +2513,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed18 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && self.vJournal && Checked.add(sceFailure, self.vGone, self.vWrites) > 0 && UInt32(truncatingIfNeeded: self.vProvisional.count) >= 8; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled && self.vJournal, { (try Checked.add(self.vGone, self.vWrites)) > 0 })) && UInt32(truncatingIfNeeded: self.vProvisional.count) >= 8 } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false } }()) {
 
 
                 self.vSpoiled = true
@@ -2545,7 +2529,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed19 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) > 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { (try Checked.add(self.vGone, self.vWrites)) > 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false } }()) {
 
 
                 self.vProbing = true
@@ -2556,7 +2540,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; self.vStamp = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2587,7 +2571,7 @@ public final class RecordListPolicy: InvocablePolicy {
                     _ = s
 
                 var ifCondFailed20 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, a.element, 65536) == UInt64(s.id) && (s.kind == 2 || Checked.rem(sceFailure, a.element, 65536) == UInt64(s.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { (try Checked.or(s.kind == 2, { (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false } }()) {
 
 
                 self.vCovered = true
@@ -2606,13 +2590,13 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, a.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; self.vOp.id = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vOp.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, a.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; self.vOp.field = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vOp.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2622,7 +2606,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2641,7 +2625,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2672,7 +2656,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, s.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(s.text, capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2691,7 +2675,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2766,7 +2750,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="offered">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOffered.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vOffered, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='offered'>: an integer operation overflowed or failed")); return true }; self.vOffered.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOffered.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vOffered, t); self.vOffered.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2794,7 +2778,7 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed25 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = !self.vSpoiled && Checked.add(sceFailure, self.vGone, self.vWrites) == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { (try Checked.add(self.vGone, self.vWrites)) == 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false } }()) {
 
                 // SCE Accepted Subset §2.15: <sce:clear target="staged">
 
@@ -3026,12 +3010,10 @@ public final class RecordListPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("counter", sceValue))
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = { () -> WireValue in if self.vOffered.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vOffered, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
-                        if !sceFailure.failed {
-                            appendFormParam(&sendForm, "ops", sceValue)
-                            sendParts.append(PayloadPair("ops", sceValue))
-                        } else {
+                        let sceValue: WireValue = (try { () throws(AlgorithmError) -> WireValue in if self.vOffered.count < 1 { throw AlgorithmError.precondition }; return WireValue.composed(listJSON(self.vOffered, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }())
+                        appendFormParam(&sendForm, "ops", sceValue)
+                        sendParts.append(PayloadPair("ops", sceValue))
+                    } catch {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
@@ -3039,7 +3021,6 @@ public final class RecordListPolicy: InvocablePolicy {
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 break sceBlock
-                        }
                     }
                     do {
                         let sceValue: WireValue = .unsigned64(self.vClosingCommand)
@@ -3090,19 +3071,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.atDefault(sceFailure, self.vOffered, 0).id; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; self.vStanding.id = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vOffered, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.atDefault(sceFailure, self.vOffered, 0).field; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; self.vStanding.field = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vOffered, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 var ifCondFailed30 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.vOffered, 0).kind == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vOffered, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false } }()) {
 
 
                 self.vStanding.kind = RecordListCommandEnum.edit
@@ -3291,7 +3272,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, t); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3317,7 +3298,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3457,7 +3438,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3561,7 +3542,7 @@ break sceBlock
                 if (!self.vAuthorized) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3660,19 +3641,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.atDefault(sceFailure, self.vTaking, 0).id; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; self.vStanding.id = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vTaking, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.atDefault(sceFailure, self.vTaking, 0).field; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; self.vStanding.field = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vTaking, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 var ifCondFailed42 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.vTaking, 0).kind == 0; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vTaking, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false } }()) {
 
 
                 self.vStanding.kind = RecordListCommandEnum.edit
@@ -3690,7 +3671,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3741,7 +3722,7 @@ break sceBlock
                 if (self.vDot.nodeId != self.vNode) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3822,13 +3803,13 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vTaking, self.vTook); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; self.vOp = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTook, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; self.vTook = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTook, 1)); self.vTook = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3838,7 +3819,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.vOp.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3846,7 +3827,7 @@ break sceBlock
                 if (self.vOp.kind == 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vOp.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vOp.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3916,19 +3897,19 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4028,7 +4009,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, v.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; self.vUndoing.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(v.text, capacity: 96)); self.vUndoing.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4058,7 +4039,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, self.vUndoing); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, self.vUndoing); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4080,7 +4061,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4099,7 +4080,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4114,19 +4095,19 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueDrop__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4196,12 +4177,10 @@ break sceBlock
                         sendParts.append(PayloadPair("counter", sceValue))
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = { () -> WireValue in if self.vTaking.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
-                        if !sceFailure.failed {
-                            appendFormParam(&sendForm, "ops", sceValue)
-                            sendParts.append(PayloadPair("ops", sceValue))
-                        } else {
+                        let sceValue: WireValue = (try { () throws(AlgorithmError) -> WireValue in if self.vTaking.count < 1 { throw AlgorithmError.precondition }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }())
+                        appendFormParam(&sendForm, "ops", sceValue)
+                        sendParts.append(PayloadPair("ops", sceValue))
+                    } catch {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
@@ -4209,7 +4188,6 @@ break sceBlock
                         sendError.metadata.sendID = "__send_22"
                         engine.raise(sendError)
 break sceBlock
-                        }
                     }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
@@ -4266,7 +4244,7 @@ break sceBlock
                 if (!self.vProvisionalFound) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4288,7 +4266,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; self.vProvisionalKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4307,7 +4285,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4326,7 +4304,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4345,7 +4323,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4480,7 +4458,7 @@ break sceBlock
                 if (!self.vProvisionalFound) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4515,7 +4493,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vProvisional, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vProvisional.count), 1)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; self.vStanding = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vProvisional, (try Checked.sub(UInt32(truncatingIfNeeded: self.vProvisional.count), 1)))); self.vStanding = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4533,7 +4511,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, a); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, a); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4542,7 +4520,7 @@ break sceBlock
                 }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4552,13 +4530,13 @@ break sceBlock
                     _ = a
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.div(sceFailure, a.element, 65536); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; self.vHeld.id = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(a.element, 65536)); self.vHeld.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.rem(sceFailure, a.element, 65536); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; self.vHeld.field = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(a.element, 65536)); self.vHeld.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4576,7 +4554,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueDrop__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4584,13 +4562,13 @@ break sceBlock
                 if (self.vAnnounce) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, a.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, a.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4637,7 +4615,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), u.field); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), u.field)); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4661,13 +4639,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4685,7 +4663,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, u.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(u.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4703,7 +4681,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4711,13 +4689,13 @@ break sceBlock
                 if (self.vAnnounce) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, u.id, to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(u.id, to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, u.field, to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(u.field, to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4768,7 +4746,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4787,7 +4765,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4803,11 +4781,11 @@ break sceBlock
                     let at = UInt32(truncatingIfNeeded: sceIndex); _ = at; _ = p
 
                 var ifCondFailed72 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.add(sceFailure, at, 1) < UInt32(truncatingIfNeeded: self.vProvisional.count); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.add(at, 1)) < UInt32(truncatingIfNeeded: self.vProvisional.count) } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false } }()) {
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; self.vProvisionalKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4829,7 +4807,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4955,7 +4933,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.pendingRecordListAnnouncePayload.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.pendingRecordListAnnouncePayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4995,7 +4973,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="moved">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vMoved.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vMoved, self.vEntry.element); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='moved'>: an integer operation overflowed or failed")); return true }; self.vMoved.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vMoved.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vMoved, self.vEntry.element); self.vMoved.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5011,19 +4989,19 @@ break sceBlock
                     _ = named
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, named, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(named, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, named, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(named, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_RegisterValues__v(self.vValues, UInt64(self.vShareId), UInt64(self.vShareField)) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='live'>: an integer operation overflowed or failed")); return true }; self.vLive = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RegisterValues__v(self.vValues, UInt64(self.vShareId), UInt64(self.vShareField))), capacity: 512)); self.vLive = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='live'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5143,7 +5121,7 @@ break sceBlock
                 }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAnnounced, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; self.vAnnounced = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5391,13 +5369,13 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAnnounced, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; self.vAnnounced = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vOrdinal, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; self.vOrdinal = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOrdinal, 1)); self.vOrdinal = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5414,7 +5392,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

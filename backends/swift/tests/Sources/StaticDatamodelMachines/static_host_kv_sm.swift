@@ -131,64 +131,64 @@ enum StaticHostKvPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvDoneInvokeDelPayload {
-    var error: String = ""
-    var existed: Bool = false
+    var error: String
+    var existed: Bool
 }
 
 /// The typed `_event.data` payload of `done.invoke.get` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvDoneInvokeGetPayload {
-    var error: String = ""
-    var found: Bool = false
-    var value: String = ""
+    var error: String
+    var found: Bool
+    var value: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.put` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvDoneInvokePutPayload {
-    var error: String = ""
-    var replaced: Bool = false
+    var error: String
+    var replaced: Bool
 }
 
 /// The typed `_event.data` payload of `done.invoke.walk` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvDoneInvokeWalkPayload {
-    var error: String = ""
-    var found: Bool = false
-    var key: String = ""
+    var error: String
+    var found: Bool
+    var key: String
 }
 
 /// The typed `_event.data` payload of `host.kv.delete.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvHostKvDeleteRequestPayload {
-    var key: String = ""
+    var key: String
 }
 
 /// The typed `_event.data` payload of `host.kv.get.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvHostKvGetRequestPayload {
-    var key: String = ""
+    var key: String
 }
 
 /// The typed `_event.data` payload of `host.kv.next_key.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvHostKvNextKeyRequestPayload {
-    var after: String = ""
-    var prefix: String = ""
+    var after: String
+    var prefix: String
 }
 
 /// The typed `_event.data` payload of `host.kv.put.request` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticHostKvHostKvPutRequestPayload {
-    var key: String = ""
-    var value: String = ""
+    var key: String
+    var value: String
 }
 
 
@@ -213,14 +213,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticHostKvPayloadTag = .none
-    var pendingDoneInvokeDelPayload = StaticHostKvDoneInvokeDelPayload()
-    var pendingDoneInvokeGetPayload = StaticHostKvDoneInvokeGetPayload()
-    var pendingDoneInvokePutPayload = StaticHostKvDoneInvokePutPayload()
-    var pendingDoneInvokeWalkPayload = StaticHostKvDoneInvokeWalkPayload()
-    var pendingHostKvDeleteRequestPayload = StaticHostKvHostKvDeleteRequestPayload()
-    var pendingHostKvGetRequestPayload = StaticHostKvHostKvGetRequestPayload()
-    var pendingHostKvNextKeyRequestPayload = StaticHostKvHostKvNextKeyRequestPayload()
-    var pendingHostKvPutRequestPayload = StaticHostKvHostKvPutRequestPayload()
+    var pendingDoneInvokeDelPayload: StaticHostKvDoneInvokeDelPayload!
+    var pendingDoneInvokeGetPayload: StaticHostKvDoneInvokeGetPayload!
+    var pendingDoneInvokePutPayload: StaticHostKvDoneInvokePutPayload!
+    var pendingDoneInvokeWalkPayload: StaticHostKvDoneInvokeWalkPayload!
+    var pendingHostKvDeleteRequestPayload: StaticHostKvHostKvDeleteRequestPayload!
+    var pendingHostKvGetRequestPayload: StaticHostKvHostKvGetRequestPayload!
+    var pendingHostKvNextKeyRequestPayload: StaticHostKvHostKvNextKeyRequestPayload!
+    var pendingHostKvPutRequestPayload: StaticHostKvHostKvPutRequestPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -643,58 +643,58 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeDel:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvDoneInvokeDelPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.existed = try fields.truth("existed")
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.truth("existed")
+            let payload = StaticHostKvDoneInvokeDelPayload(error: sceField0, existed: sceField1)
             pendingDoneInvokeDelPayload = payload
             pendingPayloadTag = .doneInvokeDel
         case .doneInvokeGet:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvDoneInvokeGetPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.found = try fields.truth("found")
-            payload.value = try fields.text("value", bound: 4096)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.truth("found")
+            let sceField2 = try fields.text("value", bound: 4096)
+            let payload = StaticHostKvDoneInvokeGetPayload(error: sceField0, found: sceField1, value: sceField2)
             pendingDoneInvokeGetPayload = payload
             pendingPayloadTag = .doneInvokeGet
         case .doneInvokePut:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvDoneInvokePutPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.replaced = try fields.truth("replaced")
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.truth("replaced")
+            let payload = StaticHostKvDoneInvokePutPayload(error: sceField0, replaced: sceField1)
             pendingDoneInvokePutPayload = payload
             pendingPayloadTag = .doneInvokePut
         case .doneInvokeWalk:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvDoneInvokeWalkPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.found = try fields.truth("found")
-            payload.key = try fields.text("key", bound: 256)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.truth("found")
+            let sceField2 = try fields.text("key", bound: 256)
+            let payload = StaticHostKvDoneInvokeWalkPayload(error: sceField0, found: sceField1, key: sceField2)
             pendingDoneInvokeWalkPayload = payload
             pendingPayloadTag = .doneInvokeWalk
         case .hostKvDeleteRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvHostKvDeleteRequestPayload()
-            payload.key = try fields.text("key", bound: 256)
+            let sceField0 = try fields.text("key", bound: 256)
+            let payload = StaticHostKvHostKvDeleteRequestPayload(key: sceField0)
             pendingHostKvDeleteRequestPayload = payload
             pendingPayloadTag = .hostKvDeleteRequest
         case .hostKvGetRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvHostKvGetRequestPayload()
-            payload.key = try fields.text("key", bound: 256)
+            let sceField0 = try fields.text("key", bound: 256)
+            let payload = StaticHostKvHostKvGetRequestPayload(key: sceField0)
             pendingHostKvGetRequestPayload = payload
             pendingPayloadTag = .hostKvGetRequest
         case .hostKvNextKeyRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvHostKvNextKeyRequestPayload()
-            payload.after = try fields.text("after", bound: 256)
-            payload.prefix = try fields.text("prefix", bound: 256)
+            let sceField0 = try fields.text("after", bound: 256)
+            let sceField1 = try fields.text("prefix", bound: 256)
+            let payload = StaticHostKvHostKvNextKeyRequestPayload(after: sceField0, prefix: sceField1)
             pendingHostKvNextKeyRequestPayload = payload
             pendingPayloadTag = .hostKvNextKeyRequest
         case .hostKvPutRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticHostKvHostKvPutRequestPayload()
-            payload.key = try fields.text("key", bound: 256)
-            payload.value = try fields.text("value", bound: 4096)
+            let sceField0 = try fields.text("key", bound: 256)
+            let sceField1 = try fields.text("value", bound: 4096)
+            let payload = StaticHostKvHostKvPutRequestPayload(key: sceField0, value: sceField1)
             pendingHostKvPutRequestPayload = payload
             pendingPayloadTag = .hostKvPutRequest
         default:
@@ -1232,7 +1232,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1245,7 +1245,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeDelPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeDelPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1255,7 +1255,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1265,7 +1265,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1287,13 +1287,13 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGetPayload.value, capacity: 4096); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='got'>: an integer operation overflowed or failed")); return true }; self.vGot = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGetPayload.value, capacity: 4096)); self.vGot = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='got'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1306,7 +1306,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGetPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGetPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1316,7 +1316,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1326,7 +1326,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1344,7 +1344,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvGetRequestPayload.key, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; self.vKey = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvGetRequestPayload.key, capacity: 256)); self.vKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1357,13 +1357,13 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvPutRequestPayload.key, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; self.vKey = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvPutRequestPayload.key, capacity: 256)); self.vKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvPutRequestPayload.value, capacity: 4096); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='value'>: an integer operation overflowed or failed")); return true }; self.vValue = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvPutRequestPayload.value, capacity: 4096)); self.vValue = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='value'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1376,7 +1376,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvDeleteRequestPayload.key, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; self.vKey = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvDeleteRequestPayload.key, capacity: 256)); self.vKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1389,13 +1389,13 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvNextKeyRequestPayload.after, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='after'>: an integer operation overflowed or failed")); return true }; self.vAfter = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvNextKeyRequestPayload.after, capacity: 256)); self.vAfter = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='after'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHostKvNextKeyRequestPayload.prefix, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='prefix'>: an integer operation overflowed or failed")); return true }; self.vPrefix = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvNextKeyRequestPayload.prefix, capacity: 256)); self.vPrefix = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='prefix'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1417,7 +1417,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1430,7 +1430,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokePutPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePutPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1440,7 +1440,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1450,7 +1450,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1472,13 +1472,13 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeWalkPayload.key, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='next'>: an integer operation overflowed or failed")); return true }; self.vNext = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeWalkPayload.key, capacity: 256)); self.vNext = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='next'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "done", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1491,7 +1491,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeWalkPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeWalkPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1501,7 +1501,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "deadline", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1511,7 +1511,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "refused", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

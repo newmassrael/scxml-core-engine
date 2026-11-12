@@ -89,11 +89,9 @@ public enum StaticRecordRealEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Reading` datamodel value.
-public struct StaticRecordRealReadingRecord: Equatable, Sendable, SceDefault {
-    public var sensor: UInt8 = 0
-    public var value: Double = 0.0
-
-    public init() {}
+public struct StaticRecordRealReadingRecord: Equatable, Sendable {
+    public var sensor: UInt8
+    public var value: Double
 
     public init(sensor: UInt8, value: Double) {
         self.sensor = sensor
@@ -129,8 +127,8 @@ enum StaticRecordRealPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticRecordRealReadingTakenPayload {
-    var sensor: UInt8 = 0
-    var value: Double = 0.0
+    var sensor: UInt8
+    var value: Double
 }
 
 
@@ -155,7 +153,7 @@ public final class StaticRecordRealPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticRecordRealPayloadTag = .none
-    var pendingReadingTakenPayload = StaticRecordRealReadingTakenPayload()
+    var pendingReadingTakenPayload: StaticRecordRealReadingTakenPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -403,9 +401,9 @@ public final class StaticRecordRealPolicy: InvocablePolicy {
         switch event {
         case .readingTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticRecordRealReadingTakenPayload()
-            payload.sensor = try fields.unsigned("sensor")
-            payload.value = try fields.float64("value")
+            let sceField0 = try fields.unsigned("sensor")
+            let sceField1 = try fields.float64("value")
+            let payload = StaticRecordRealReadingTakenPayload(sensor: sceField0, value: sceField1)
             pendingReadingTakenPayload = payload
             pendingPayloadTag = .readingTaken
         default:

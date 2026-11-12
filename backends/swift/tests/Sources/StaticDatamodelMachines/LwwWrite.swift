@@ -15,55 +15,27 @@
 import SceForgeRuntime
 
 public enum LwwWrite {
-    public static func lwwWrite(_ cells: [LwwCellPayload], _ write: LwwCellPayload) throws -> [LwwCellPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func lwwWrite(_ cells: [LwwCellPayload], _ write: LwwCellPayload) throws(AlgorithmError) -> [LwwCellPayload] {
         var out: [LwwCellPayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var held: Bool = false
-        try sceFailure.throwIfFailed()
         let incoming: HlcTimestampPayload = HlcTimestampPayload(wallTime: write.wallTime, counter: write.counter, nodeId: write.nodeId)
-        try sceFailure.throwIfFailed()
         for c in cells {
-            do {
-                let sceCond3 = c.row == write.row && c.col == write.col
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    held = true
-                    try sceFailure.throwIfFailed()
-                    let stored: HlcTimestampPayload = HlcTimestampPayload(wallTime: c.wallTime, counter: c.counter, nodeId: c.nodeId)
-                    try sceFailure.throwIfFailed()
-                    do {
-                        let sceCond5 = HlcCompare.hlcCompare(incoming, stored) > 0
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            out.append(write)
-                            try sceFailure.throwIfFailed()
-                        } else {
-                            out.append(c)
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
+            if c.row == write.row && c.col == write.col {
+                held = true
+                let stored: HlcTimestampPayload = HlcTimestampPayload(wallTime: c.wallTime, counter: c.counter, nodeId: c.nodeId)
+                if HlcCompare.hlcCompare(incoming, stored) > 0 {
+                    out.append(write)
                 } else {
                     out.append(c)
-                    try sceFailure.throwIfFailed()
                 }
+            } else {
+                out.append(c)
             }
         }
-        do {
-            let sceCond2 = !held
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                out.append(write)
-                try sceFailure.throwIfFailed()
-            }
+        if !held {
+            out.append(write)
         }
-        do {
-            let sceReturned: [LwwCellPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

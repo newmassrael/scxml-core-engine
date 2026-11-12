@@ -137,11 +137,9 @@ extension StaticWireEnumViewModeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
-public struct StaticWireEnumViewRecord: Equatable, Sendable, SceDefault {
-    public var layout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.allCases[0]
-    public var zoom: UInt8 = 0
-
-    public init() {}
+public struct StaticWireEnumViewRecord: Equatable, Sendable {
+    public var layout: StaticWireEnumViewModeEnum
+    public var zoom: UInt8
 
     public init(layout: StaticWireEnumViewModeEnum, zoom: UInt8) {
         self.layout = layout
@@ -177,8 +175,8 @@ enum StaticWireEnumPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticWireEnumViewShownPayload {
-    var layout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum.allCases[0]
-    var zoom: UInt8 = 0
+    var layout: StaticWireEnumViewModeEnum
+    var zoom: UInt8
 }
 
 
@@ -203,7 +201,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticWireEnumPayloadTag = .none
-    var pendingViewShownPayload = StaticWireEnumViewShownPayload()
+    var pendingViewShownPayload: StaticWireEnumViewShownPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -479,9 +477,9 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticWireEnumViewShownPayload()
-            payload.layout = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            payload.zoom = try fields.unsigned("zoom")
+            let sceField0 = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1 = try fields.unsigned("zoom")
+            let payload = StaticWireEnumViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown
         default:
@@ -744,7 +742,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDeliveries, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticWireEnumEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; self.vDeliveries = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireEnumEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

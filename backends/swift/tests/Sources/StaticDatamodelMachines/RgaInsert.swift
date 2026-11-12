@@ -15,97 +15,45 @@
 import SceForgeRuntime
 
 public enum RgaInsert {
-    public static func rgaInsert(_ nodes: [RgaNodePayload], _ node: RgaNodePayload) throws -> [RgaNodePayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func rgaInsert(_ nodes: [RgaNodePayload], _ node: RgaNodePayload) throws(AlgorithmError) -> [RgaNodePayload] {
         var out: [RgaNodePayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var held: Bool = false
-        try sceFailure.throwIfFailed()
         for probe in nodes {
-            do {
-                let sceCond3 = probe.key == node.key
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    held = true
-                    try sceFailure.throwIfFailed()
-                }
+            if probe.key == node.key {
+                held = true
             }
         }
-        do {
-            let sceCond2 = held
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                for same in nodes {
-                    out.append(same)
-                    try sceFailure.throwIfFailed()
-                }
-                do {
-                    let sceReturned: [RgaNodePayload] = out
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
+        if held {
+            for same in nodes {
+                out.append(same)
             }
+            return out
         }
         var phase: UInt8 = node.after == 0 ? 1 : 0
-        try sceFailure.throwIfFailed()
         for n in nodes {
-            do {
-                let sceCond3 = phase == 0
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    out.append(n)
-                    try sceFailure.throwIfFailed()
-                    do {
-                        let sceCond5 = n.key == node.after
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            phase = 1
-                            try sceFailure.throwIfFailed()
-                        }
+            if phase == 0 {
+                out.append(n)
+                if n.key == node.after {
+                    phase = 1
+                }
+            } else {
+                if phase == 1 {
+                    if n.key > node.key {
+                        out.append(n)
+                    } else {
+                        out.append(node)
+                        out.append(n)
+                        phase = 2
                     }
                 } else {
-                    do {
-                        let sceCond5 = phase == 1
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            do {
-                                let sceCond7 = n.key > node.key
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    out.append(n)
-                                    try sceFailure.throwIfFailed()
-                                } else {
-                                    out.append(node)
-                                    try sceFailure.throwIfFailed()
-                                    out.append(n)
-                                    try sceFailure.throwIfFailed()
-                                    phase = 2
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
-                        } else {
-                            out.append(n)
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
+                    out.append(n)
                 }
             }
         }
-        do {
-            let sceCond2 = phase != 2
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                out.append(node)
-                try sceFailure.throwIfFailed()
-            }
+        if phase != 2 {
+            out.append(node)
         }
-        do {
-            let sceReturned: [RgaNodePayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

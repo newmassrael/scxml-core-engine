@@ -15,30 +15,15 @@
 import SceForgeRuntime
 
 public enum OrderingGapEnd {
-    public static func orderingGapEnd(_ pending: [OrderingSlotPayload], _ next: UInt64, _ now: Int64, _ timeoutMs: Int64) throws -> UInt64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func orderingGapEnd(_ pending: [OrderingSlotPayload], _ next: UInt64, _ now: Int64, _ timeoutMs: Int64) throws(AlgorithmError) -> UInt64 {
         var resume: UInt64 = next
-        try sceFailure.throwIfFailed()
         var first: Bool = true
-        try sceFailure.throwIfFailed()
         for slot in pending {
-            do {
-                let sceCond3 = first && slot.seq != next && Checked.sub(sceFailure, now, slot.arrivedAtMs) >= timeoutMs
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    resume = slot.seq
-                    try sceFailure.throwIfFailed()
-                }
+            if (try Checked.and(first && slot.seq != next, { (try Checked.sub(now, slot.arrivedAtMs)) >= timeoutMs })) {
+                resume = slot.seq
             }
             first = false
-            try sceFailure.throwIfFailed()
         }
-        do {
-            let sceReturned: UInt64 = resume
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return resume
     }
 }

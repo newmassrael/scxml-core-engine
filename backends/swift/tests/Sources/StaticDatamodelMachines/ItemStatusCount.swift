@@ -15,26 +15,13 @@
 import SceForgeRuntime
 
 public enum ItemStatusCount {
-    public static func itemStatusCount(_ items: [SchemaItemPayload], _ status: EnumItemStatus) throws -> UInt32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func itemStatusCount(_ items: [SchemaItemPayload], _ status: EnumItemStatus) throws(AlgorithmError) -> UInt32 {
         var count: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for e in items {
-            do {
-                let sceCond3 = e.status == status
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    count = Checked.add(sceFailure, count, 1)
-                    try sceFailure.throwIfFailed()
-                }
+            if e.status == status {
+                count = (try Checked.add(count, 1))
             }
         }
-        do {
-            let sceReturned: UInt32 = count
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return count
     }
 }

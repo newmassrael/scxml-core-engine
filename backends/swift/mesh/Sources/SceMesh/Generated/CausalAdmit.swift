@@ -15,70 +15,33 @@
 import SceForgeRuntime
 
 public enum CausalAdmit {
-    public static func causalAdmit(_ delivered: [CausalEntryPayload], _ dot: CausalEntryPayload, _ context: [CausalEntryPayload]) throws -> CausalAdmission {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func causalAdmit(_ delivered: [CausalEntryPayload], _ dot: CausalEntryPayload, _ context: [CausalEntryPayload]) throws(AlgorithmError) -> CausalAdmission {
         var seen: UInt64 = 0
-        try sceFailure.throwIfFailed()
         for mine in delivered {
-            do {
-                let sceCond3 = mine.hi == dot.hi && mine.lo == dot.lo
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    seen = mine.seq
-                    try sceFailure.throwIfFailed()
-                }
+            if mine.hi == dot.hi && mine.lo == dot.lo {
+                seen = mine.seq
             }
         }
         var covered: Bool = true
-        try sceFailure.throwIfFailed()
         var have: UInt64 = 0
-        try sceFailure.throwIfFailed()
         for needed in context {
             have = 0
-            try sceFailure.throwIfFailed()
             for held in delivered {
-                do {
-                    let sceCond4 = held.hi == needed.hi && held.lo == needed.lo
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        have = held.seq
-                        try sceFailure.throwIfFailed()
-                    }
+                if held.hi == needed.hi && held.lo == needed.lo {
+                    have = held.seq
                 }
             }
-            do {
-                let sceCond3 = (needed.hi != dot.hi || needed.lo != dot.lo) && needed.seq > have
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    covered = false
-                    try sceFailure.throwIfFailed()
-                }
+            if (needed.hi != dot.hi || needed.lo != dot.lo) && needed.seq > have {
+                covered = false
             }
         }
         var result: CausalAdmission = CausalAdmission.hold
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = dot.seq <= seen
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                result = CausalAdmission.drop
-                try sceFailure.throwIfFailed()
-            }
+        if dot.seq <= seen {
+            result = CausalAdmission.drop
         }
-        do {
-            let sceCond2 = dot.seq == Checked.add(sceFailure, seen, 1) && covered
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                result = CausalAdmission.deliver
-                try sceFailure.throwIfFailed()
-            }
+        if dot.seq == (try Checked.add(seen, 1)) && covered {
+            result = CausalAdmission.deliver
         }
-        do {
-            let sceReturned: CausalAdmission = result
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return result
     }
 }

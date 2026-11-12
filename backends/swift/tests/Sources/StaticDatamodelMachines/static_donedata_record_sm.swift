@@ -138,11 +138,9 @@ extension StaticDonedataRecordViewModeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
-public struct StaticDonedataRecordViewRecord: Equatable, Sendable, SceDefault {
-    public var layout: StaticDonedataRecordViewModeEnum = StaticDonedataRecordViewModeEnum.allCases[0]
-    public var zoom: UInt8 = 0
-
-    public init() {}
+public struct StaticDonedataRecordViewRecord: Equatable, Sendable {
+    public var layout: StaticDonedataRecordViewModeEnum
+    public var zoom: UInt8
 
     public init(layout: StaticDonedataRecordViewModeEnum, zoom: UInt8) {
         self.layout = layout
@@ -501,7 +499,7 @@ public final class StaticDonedataRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.add(sceFailure, self.vShown.zoom, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticDonedataRecordEvent.errorExecution, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; self.vShown.zoom = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.zoom, 1)); self.vShown.zoom = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataRecordEvent.errorExecution, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

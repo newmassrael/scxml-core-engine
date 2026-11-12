@@ -576,7 +576,7 @@ public final class StaticRealPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="samples">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vSamples.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRealEvent.errorExecution, message: "<sce:append target='samples'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vSamples, self.vLevel); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRealEvent.errorExecution, message: "<sce:append target='samples'>: an integer operation overflowed or failed")); return true }; self.vSamples.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vSamples.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRealEvent.errorExecution, message: "<sce:append target='samples'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vSamples, self.vLevel); self.vSamples.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -619,7 +619,7 @@ public final class StaticRealPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRealEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRealEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

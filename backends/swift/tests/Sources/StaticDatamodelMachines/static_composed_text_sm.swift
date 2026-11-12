@@ -132,16 +132,14 @@ extension StaticComposedTextSignalLevelEnum: SavedEnumeration {
 /// SCE Accepted Subset §2.15: a `record:Item` value that holds a composed
 /// value (docs/adr/0086), built whole from its fields in the schema's order; a
 /// raise seam holds it to every bound its type declares before it sends it.
-public struct StaticComposedTextItemRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int64 = 0
-    public var label: String = ""
-    public var level: StaticComposedTextSignalLevelEnum = StaticComposedTextSignalLevelEnum.allCases[0]
-    public var due: Int64? = nil
-    public var blob: [UInt8] = []
-    public var tags: [String] = []
-
-    public init() {}
+public struct StaticComposedTextItemRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int64
+    public var label: String
+    public var level: StaticComposedTextSignalLevelEnum
+    public var due: Int64?
+    public var blob: [UInt8]
+    public var tags: [String]
 
     public init(id: UInt32, amount: Int64, label: String, level: StaticComposedTextSignalLevelEnum, due: Int64?, blob: [UInt8], tags: [String]) {
         self.id = id
@@ -166,13 +164,13 @@ enum StaticComposedTextPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticComposedTextBatchSentPayload {
-    var items: [StaticComposedTextItemRecord] = []
-    var grid: [[UInt8]] = []
-    var levels: [StaticComposedTextSignalLevelEnum] = []
-    var maybe: [UInt16?] = []
-    var spare: [UInt8]? = nil
-    var note: String = ""
-    var late: [UInt8] = []
+    var items: [StaticComposedTextItemRecord]
+    var grid: [[UInt8]]
+    var levels: [StaticComposedTextSignalLevelEnum]
+    var maybe: [UInt16?]
+    var spare: [UInt8]?
+    var note: String
+    var late: [UInt8]
 }
 
 
@@ -197,7 +195,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticComposedTextPayloadTag = .none
-    var pendingBatchSentPayload = StaticComposedTextBatchSentPayload()
+    var pendingBatchSentPayload: StaticComposedTextBatchSentPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -529,14 +527,14 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
         switch event {
         case .batchSent:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"late\":[]}")
-            var payload = StaticComposedTextBatchSentPayload()
-            payload.items = try ({ (sceValue: PayloadValue) throws -> [StaticComposedTextItemRecord] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> StaticComposedTextItemRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticComposedTextItemRecord in try StaticComposedTextItemRecord(id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), amount: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("amount")), label: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("label")), level: ({ (sceValue: PayloadValue) throws -> StaticComposedTextSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedTextSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant })(sceFields.field("level")), due: ({ (sceValue: PayloadValue) throws -> Int64? in try sceValue.optional({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() }) })(sceFields.field("due")), blob: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.bytes(bound: 4) })(sceFields.field("blob")), tags: ({ (sceValue: PayloadValue) throws -> [String] in try sceValue.list(bound: 4, { (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) }) })(sceFields.field("tags"))) }) }) })(fields.field("items"))
-            payload.grid = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("grid"))
-            payload.levels = try ({ (sceValue: PayloadValue) throws -> [StaticComposedTextSignalLevelEnum] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> StaticComposedTextSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedTextSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant }) })(fields.field("levels"))
-            payload.maybe = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt16? in try sceValue.optional({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() }) }) })(fields.field("maybe"))
-            payload.spare = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try sceValue.optional({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("spare"))
-            payload.note = try ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) })(fields.field("note"))
-            payload.late = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("late"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> [StaticComposedTextItemRecord] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) throws -> StaticComposedTextItemRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> StaticComposedTextItemRecord in try StaticComposedTextItemRecord(id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), amount: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("amount")), label: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) })(sceFields.field("label")), level: ({ (sceValue: PayloadValue) throws -> StaticComposedTextSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedTextSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant })(sceFields.field("level")), due: ({ (sceValue: PayloadValue) throws -> Int64? in try sceValue.optional({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() }) })(sceFields.field("due")), blob: ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.bytes(bound: 4) })(sceFields.field("blob")), tags: ({ (sceValue: PayloadValue) throws -> [String] in try sceValue.list(bound: 4, { (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) }) })(sceFields.field("tags"))) }) }) })(fields.field("items"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("grid"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> [StaticComposedTextSignalLevelEnum] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> StaticComposedTextSignalLevelEnum in let sceName = try sceValue.name(); guard let sceVariant = StaticComposedTextSignalLevelEnum(declaredName: sceName) else { throw sceValue.unknownVariant(sceName, alias: "SignalLevel") }; return sceVariant }) })(fields.field("levels"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt16? in try sceValue.optional({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() }) }) })(fields.field("maybe"))
+            let sceField4 = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try sceValue.optional({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) }) })(fields.field("spare"))
+            let sceField5 = try ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 4) })(fields.field("note"))
+            let sceField6 = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("late"))
+            let payload = StaticComposedTextBatchSentPayload(items: sceField0, grid: sceField1, levels: sceField2, maybe: sceField3, spare: sceField4, note: sceField5, late: sceField6)
             pendingBatchSentPayload = payload
             pendingPayloadTag = .batchSent
         default:
@@ -665,7 +663,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.items.count) > 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.atDefault(sceFailure, self.pendingBatchSentPayload.items, 0).label.utf8.elementsEqual("ab".utf8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; self.vFirstLabelIsAb = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Bool = (try Checked.at(self.pendingBatchSentPayload.items, 0)).label.utf8.elementsEqual("ab".utf8); self.vFirstLabelIsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -679,7 +677,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (row.label.utf8.elementsEqual("ab".utf8)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLabelsAb, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; self.vLabelsAb = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabelsAb, 1)); self.vLabelsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -687,10 +685,10 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
 
 
                 var ifCondFailed3 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = UInt32(truncatingIfNeeded: row.tags.count) > 0 && Checked.at(sceFailure, row.tags, 0, fallback: "").utf8.elementsEqual("ab".utf8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false }; return sceValue }()) {
+                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: row.tags.count) > 0, { (try Checked.at(row.tags, 0)).utf8.elementsEqual("ab".utf8) })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false } }()) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFirstTagsAb, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; self.vFirstTagsAb = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstTagsAb, 1)); self.vFirstTagsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -707,7 +705,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (word.utf8.elementsEqual("ab".utf8)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vWordsAb, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; self.vWordsAb = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWordsAb, 1)); self.vWordsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -716,13 +714,13 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, row.label, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; self.vLastLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(row.label, capacity: 8)); self.vLastLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vBlobBytes, UInt32(truncatingIfNeeded: row.blob.count)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; self.vBlobBytes = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobBytes, UInt32(truncatingIfNeeded: row.blob.count))); self.vBlobBytes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -730,7 +728,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (row.blob == Array("ab".utf8)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vBlobsAb, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; self.vBlobsAb = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobsAb, 1)); self.vBlobsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -754,7 +752,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

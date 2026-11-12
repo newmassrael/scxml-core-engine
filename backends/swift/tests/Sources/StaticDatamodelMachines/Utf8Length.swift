@@ -15,101 +15,44 @@
 import SceForgeRuntime
 
 public enum Utf8Length {
-    public static func utf8Length(_ data: [UInt8]) throws -> UInt32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func utf8Length(_ data: [UInt8]) throws(AlgorithmError) -> UInt32 {
         let n: UInt32 = UInt32(truncatingIfNeeded: data.count)
-        try sceFailure.throwIfFailed()
         var i: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var count: UInt32 = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = i < n
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            let lead: UInt32 = UInt32(Checked.at(sceFailure, data, i, fallback: 0))
-            try sceFailure.throwIfFailed()
+        while i < n {
+            let lead: UInt32 = UInt32((try Checked.at(data, i)))
             var tails: UInt32 = 0
-            try sceFailure.throwIfFailed()
             var lo: UInt32 = 128
-            try sceFailure.throwIfFailed()
             var hi: UInt32 = 191
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = lead <= 127
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    tails = 0
-                    try sceFailure.throwIfFailed()
+            if lead <= 127 {
+                tails = 0
+            } else {
+                if lead >= 194 && lead <= 223 {
+                    tails = 1
                 } else {
-                    do {
-                        let sceCond5 = lead >= 194 && lead <= 223
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            tails = 1
-                            try sceFailure.throwIfFailed()
+                    if lead == 224 {
+                        tails = 2
+                        lo = 160
+                    } else {
+                        if lead == 237 {
+                            tails = 2
+                            hi = 159
                         } else {
-                            do {
-                                let sceCond7 = lead == 224
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    tails = 2
-                                    try sceFailure.throwIfFailed()
-                                    lo = 160
-                                    try sceFailure.throwIfFailed()
+                            if lead >= 225 && lead <= 239 {
+                                tails = 2
+                            } else {
+                                if lead == 240 {
+                                    tails = 3
+                                    lo = 144
                                 } else {
-                                    do {
-                                        let sceCond9 = lead == 237
-                                        try sceFailure.throwIfFailed()
-                                        if sceCond9 {
-                                            tails = 2
-                                            try sceFailure.throwIfFailed()
-                                            hi = 159
-                                            try sceFailure.throwIfFailed()
-                                        } else {
-                                            do {
-                                                let sceCond11 = lead >= 225 && lead <= 239
-                                                try sceFailure.throwIfFailed()
-                                                if sceCond11 {
-                                                    tails = 2
-                                                    try sceFailure.throwIfFailed()
-                                                } else {
-                                                    do {
-                                                        let sceCond13 = lead == 240
-                                                        try sceFailure.throwIfFailed()
-                                                        if sceCond13 {
-                                                            tails = 3
-                                                            try sceFailure.throwIfFailed()
-                                                            lo = 144
-                                                            try sceFailure.throwIfFailed()
-                                                        } else {
-                                                            do {
-                                                                let sceCond15 = lead == 244
-                                                                try sceFailure.throwIfFailed()
-                                                                if sceCond15 {
-                                                                    tails = 3
-                                                                    try sceFailure.throwIfFailed()
-                                                                    hi = 143
-                                                                    try sceFailure.throwIfFailed()
-                                                                } else {
-                                                                    do {
-                                                                        let sceCond17 = !(lead >= 241 && lead <= 243)
-                                                                        try sceFailure.throwIfFailed()
-                                                                        if sceCond17 {
-                                                                            throw AlgorithmError.precondition
-                                                                        }
-                                                                    }
-                                                                    tails = 3
-                                                                    try sceFailure.throwIfFailed()
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                    if lead == 244 {
+                                        tails = 3
+                                        hi = 143
+                                    } else {
+                                        if !(lead >= 241 && lead <= 243) {
+                                            throw AlgorithmError.precondition
                                         }
+                                        tails = 3
                                     }
                                 }
                             }
@@ -117,40 +60,20 @@ public enum Utf8Length {
                     }
                 }
             }
-            do {
-                let sceCond3 = !(tails <= Checked.sub(sceFailure, Checked.sub(sceFailure, n, i), 1))
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    throw AlgorithmError.precondition
-                }
+            if !(tails <= (try Checked.sub((try Checked.sub(n, i)), 1))) {
+                throw AlgorithmError.precondition
             }
             var k: UInt32 = 1
-            try sceFailure.throwIfFailed()
-            while true {
-                let sceCond3 = k <= tails
-                try sceFailure.throwIfFailed()
-                if !sceCond3 { break }
-                let b: UInt32 = UInt32(Checked.at(sceFailure, data, Checked.add(sceFailure, i, k), fallback: 0))
-                try sceFailure.throwIfFailed()
-                do {
-                    let sceCond4 = !(b >= (k == 1 ? lo : 128) && b <= (k == 1 ? hi : 191))
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        throw AlgorithmError.precondition
-                    }
+            while k <= tails {
+                let b: UInt32 = UInt32((try Checked.at(data, (try Checked.add(i, k)))))
+                if !(b >= (k == 1 ? lo : 128) && b <= (k == 1 ? hi : 191)) {
+                    throw AlgorithmError.precondition
                 }
-                k = Checked.add(sceFailure, k, 1)
-                try sceFailure.throwIfFailed()
+                k = (try Checked.add(k, 1))
             }
-            i = Checked.add(sceFailure, Checked.add(sceFailure, i, tails), 1)
-            try sceFailure.throwIfFailed()
-            count = Checked.add(sceFailure, count, 1)
-            try sceFailure.throwIfFailed()
+            i = (try Checked.add((try Checked.add(i, tails)), 1))
+            count = (try Checked.add(count, 1))
         }
-        do {
-            let sceReturned: UInt32 = count
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return count
     }
 }

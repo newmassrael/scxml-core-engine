@@ -15,20 +15,11 @@
 import SceForgeRuntime
 
 public enum GoalDaySum {
-    public static func goalDaySum(_ goals: [SchemaGoalPayload], _ instead: Int64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func goalDaySum(_ goals: [SchemaGoalPayload], _ instead: Int64) throws(AlgorithmError) -> Int64 {
         var sum: Int64 = 0
-        try sceFailure.throwIfFailed()
         for g in goals {
-            sum = Checked.add(sceFailure, sum, g.day ?? instead)
-            try sceFailure.throwIfFailed()
+            sum = (try Checked.add(sum, g.day ?? instead))
         }
-        do {
-            let sceReturned: Int64 = sum
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return sum
     }
 }

@@ -15,29 +15,14 @@
 import SceForgeRuntime
 
 public enum GcraAdmit {
-    public static func gcraAdmit(_ tat: Int64, _ now: Int64, _ cost: UInt32, _ interval: Int64, _ burst: UInt32) throws -> GcraDecisionPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(cost >= 1 && interval >= 1 && burst >= 1 && cost <= burst)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func gcraAdmit(_ tat: Int64, _ now: Int64, _ cost: UInt32, _ interval: Int64, _ burst: UInt32) throws(AlgorithmError) -> GcraDecisionPayload {
+        if !(cost >= 1 && interval >= 1 && burst >= 1 && cost <= burst) {
+            throw AlgorithmError.precondition
         }
         let start: Int64 = tat > now ? tat : now
-        try sceFailure.throwIfFailed()
-        let arrival: Int64 = Checked.add(sceFailure, start, Checked.mul(sceFailure, Int64(cost), interval))
-        try sceFailure.throwIfFailed()
-        let limit: Int64 = Checked.add(sceFailure, now, Checked.mul(sceFailure, Int64(burst), interval))
-        try sceFailure.throwIfFailed()
-        let decision: GcraDecisionPayload = GcraDecisionPayload(admitted: arrival <= limit, tat: arrival <= limit ? arrival : tat, retryAfter: arrival <= limit ? 0 : Checked.sub(sceFailure, arrival, limit))
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: GcraDecisionPayload = decision
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        let arrival: Int64 = (try Checked.add(start, (try Checked.mul(Int64(cost), interval))))
+        let limit: Int64 = (try Checked.add(now, (try Checked.mul(Int64(burst), interval))))
+        let decision: GcraDecisionPayload = GcraDecisionPayload(admitted: arrival <= limit, tat: arrival <= limit ? arrival : tat, retryAfter: arrival <= limit ? 0 : (try Checked.sub(arrival, limit)))
+        return decision
     }
 }

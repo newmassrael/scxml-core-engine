@@ -90,12 +90,10 @@ public enum StaticTextRecordEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Slot` datamodel value.
-public struct StaticTextRecordSlotRecord: Equatable, Sendable, SceDefault {
-    public var slot: UInt32 = 0
-    public var version: Int64 = 0
-    public var text: String = ""
-
-    public init() {}
+public struct StaticTextRecordSlotRecord: Equatable, Sendable {
+    public var slot: UInt32
+    public var version: Int64
+    public var text: String
 
     public init(slot: UInt32, version: Int64, text: String) {
         self.slot = slot
@@ -134,9 +132,9 @@ enum StaticTextRecordPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticTextRecordTextSlotPayload {
-    var slot: UInt32 = 0
-    var version: Int64 = 0
-    var text: String = ""
+    var slot: UInt32
+    var version: Int64
+    var text: String
 }
 
 
@@ -154,7 +152,7 @@ private func call_Latest__vv(_ p0: StaticTextRecordSlotRecord, _ p1: StaticTextR
     return StaticTextRecordSlotRecord(slot: r.slot, version: r.version, text: r.text)
 }
 
-private func call_Retitled__v(_ p0: [StaticTextRecordSlotRecord]) throws -> [StaticTextRecordSlotRecord] {
+private func call_Retitled__v(_ p0: [StaticTextRecordSlotRecord]) throws(AlgorithmError) -> [StaticTextRecordSlotRecord] {
     let r = try TextSlotRetitled.textSlotRetitled(p0.map { TextSlotPayload(slot: $0.slot, version: $0.version, text: $0.text) })
     return r.map { StaticTextRecordSlotRecord(slot: $0.slot, version: $0.version, text: $0.text) }
 }
@@ -180,7 +178,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticTextRecordPayloadTag = .none
-    var pendingTextSlotPayload = StaticTextRecordTextSlotPayload()
+    var pendingTextSlotPayload: StaticTextRecordTextSlotPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -454,10 +452,10 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
         switch event {
         case .textSlot:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticTextRecordTextSlotPayload()
-            payload.slot = try fields.unsigned("slot")
-            payload.version = try fields.signed64("version")
-            payload.text = try fields.text("text", bound: 32)
+            let sceField0 = try fields.unsigned("slot")
+            let sceField1 = try fields.signed64("version")
+            let sceField2 = try fields.text("text", bound: 32)
+            let payload = StaticTextRecordTextSlotPayload(slot: sceField0, version: sceField1, text: sceField2)
             pendingTextSlotPayload = payload
             pendingPayloadTag = .textSlot
         default:
@@ -575,7 +573,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = StaticTextRecordSlotRecord(slot: self.pendingTextSlotPayload.slot, version: self.pendingTextSlotPayload.version, text: Checked.bounded(sceFailure, self.pendingTextSlotPayload.text, capacity: 32)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; self.vIncoming = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticTextRecordSlotRecord(slot: self.pendingTextSlotPayload.slot, version: self.pendingTextSlotPayload.version, text: (try Checked.bounded(self.pendingTextSlotPayload.text, capacity: 32))); self.vIncoming = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -587,7 +585,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                 if (call_Holds__vv(self.vSlots, self.vIncoming)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vKnown, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='known'>: an integer operation overflowed or failed")); return true }; self.vKnown = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vKnown, 1)); self.vKnown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='known'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -596,7 +594,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="slots">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vSlots.count >= 16 { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<sce:append target='slots'>: the list already holds its capacity of 16")); return true }; let sceValue = Checked.element(of: self.vSlots, self.vIncoming); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<sce:append target='slots'>: an integer operation overflowed or failed")); return true }; self.vSlots.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vSlots.count >= 16 { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<sce:append target='slots'>: the list already holds its capacity of 16")); return true }; let sceValue = Checked.element(of: self.vSlots, self.vIncoming); self.vSlots.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -606,7 +604,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_Retitled__v(self.vSlots) }), capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='slots'>: an integer operation overflowed or failed")); return true }; self.vSlots = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_Retitled__v(self.vSlots)), capacity: 16)); self.vSlots = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='slots'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -616,7 +614,7 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTextRecordEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

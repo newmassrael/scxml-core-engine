@@ -31,13 +31,12 @@ public enum MonthDay {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:month_day:1\",\"x-sce-source-hash\":\"d5a1192f784ff99a5aa95877e35eef81f703dd6fbaf723312b776f25706b4354\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"month\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"day\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"month\",\"day\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct MonthDayPayload: Equatable, Sendable, SceDefault {
-    public var month: UInt8 = 0
-    public var day: UInt8 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct MonthDayPayload: Equatable, Sendable {
+    public var month: UInt8
+    public var day: UInt8
 
     public init(month: UInt8, day: UInt8) {
         self.month = month

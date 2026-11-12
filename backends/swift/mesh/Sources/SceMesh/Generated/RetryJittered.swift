@@ -15,25 +15,12 @@
 import SceForgeRuntime
 
 public enum RetryJittered {
-    public static func retryJittered(_ baseMs: Int64, _ jitterPct: Int64, _ draw: Int64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(baseMs > 0 && jitterPct >= 0 && jitterPct <= 100 && draw >= 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func retryJittered(_ baseMs: Int64, _ jitterPct: Int64, _ draw: Int64) throws(AlgorithmError) -> Int64 {
+        if !(baseMs > 0 && jitterPct >= 0 && jitterPct <= 100 && draw >= 0) {
+            throw AlgorithmError.precondition
         }
-        let delta: Int64 = Checked.add(sceFailure, Checked.mul(sceFailure, Checked.div(sceFailure, baseMs, 100), jitterPct), Checked.div(sceFailure, Checked.mul(sceFailure, Checked.rem(sceFailure, baseMs, 100), jitterPct), 100))
-        try sceFailure.throwIfFailed()
-        let waited: Int64 = Checked.add(sceFailure, Checked.sub(sceFailure, baseMs, delta), Checked.rem(sceFailure, draw, Checked.add(sceFailure, Checked.mul(sceFailure, 2, delta), 1)))
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: Int64 = waited < 1 ? 1 : waited
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        let delta: Int64 = (try Checked.add((try Checked.mul((try Checked.div(baseMs, 100)), jitterPct)), (try Checked.div((try Checked.mul((try Checked.rem(baseMs, 100)), jitterPct)), 100))))
+        let waited: Int64 = (try Checked.add((try Checked.sub(baseMs, delta)), (try Checked.rem(draw, (try Checked.add((try Checked.mul(2, delta)), 1))))))
+        return waited < 1 ? 1 : waited
     }
 }

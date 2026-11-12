@@ -15,40 +15,20 @@
 import SceForgeRuntime
 
 public enum AlgorithmTaskPhaseAdvance {
-    public static func algorithmTaskPhaseAdvance(_ tasks: [EventSchemaTaskPayload]) throws -> [EventSchemaTaskPayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func algorithmTaskPhaseAdvance(_ tasks: [EventSchemaTaskPayload]) throws(AlgorithmError) -> [EventSchemaTaskPayload] {
         var out: [EventSchemaTaskPayload] = []
         out.reserveCapacity(4)
-        try sceFailure.throwIfFailed()
         for t in tasks {
             var next: EventSchemaTaskPayload = EventSchemaTaskPayload(taskId: t.taskId, phase: t.phase)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = t.phase == EnumTaskPhase.todo
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    next.phase = EnumTaskPhase.inReview
-                    try sceFailure.throwIfFailed()
-                } else {
-                    do {
-                        let sceCond5 = t.phase != EnumTaskPhase.shipped
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            next.phase = EnumTaskPhase.shipped
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
+            if t.phase == EnumTaskPhase.todo {
+                next.phase = EnumTaskPhase.inReview
+            } else {
+                if t.phase != EnumTaskPhase.shipped {
+                    next.phase = EnumTaskPhase.shipped
                 }
             }
             out.append(next)
-            try sceFailure.throwIfFailed()
         }
-        do {
-            let sceReturned: [EventSchemaTaskPayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

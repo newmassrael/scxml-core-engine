@@ -88,11 +88,9 @@ public enum StaticListCallEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
-public struct StaticListCallEntryRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int32 = 0
-
-    public init() {}
+public struct StaticListCallEntryRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int32
 
     public init(id: UInt32, amount: Int32) {
         self.id = id
@@ -128,8 +126,8 @@ enum StaticListCallPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticListCallLedgerEntryPayload {
-    var id: UInt32 = 0
-    var amount: Int32 = 0
+    var id: UInt32
+    var amount: Int32
 }
 
 
@@ -168,7 +166,7 @@ public final class StaticListCallPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticListCallPayloadTag = .none
-    var pendingLedgerEntryPayload = StaticListCallLedgerEntryPayload()
+    var pendingLedgerEntryPayload: StaticListCallLedgerEntryPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -434,9 +432,9 @@ public final class StaticListCallPolicy: InvocablePolicy {
         switch event {
         case .ledgerEntry:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticListCallLedgerEntryPayload()
-            payload.id = try fields.unsigned("id")
-            payload.amount = try fields.signed("amount")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.signed("amount")
+            let payload = StaticListCallLedgerEntryPayload(id: sceField0, amount: sceField1)
             pendingLedgerEntryPayload = payload
             pendingPayloadTag = .ledgerEntry
         default:
@@ -534,7 +532,7 @@ public final class StaticListCallPolicy: InvocablePolicy {
                 if (call_Has__v(self.vEntries, self.pendingLedgerEntryPayload.id)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRepeats, 1); if sceFailure.failed { return true }; self.vRepeats = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRepeats, 1)); self.vRepeats = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -547,14 +545,14 @@ public final class StaticListCallPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="entries">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vEntries.count >= 8 { return true }; let sceValue = Checked.element(of: self.vEntries, self.vLine); if sceFailure.failed { return true }; self.vEntries.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vEntries.count >= 8 { return true }; let sceValue = Checked.element(of: self.vEntries, self.vLine); self.vEntries.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="ids">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vIds.count >= 8 { return true }; let sceValue = Checked.element(of: self.vIds, self.pendingLedgerEntryPayload.id); if sceFailure.failed { return true }; self.vIds.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vIds.count >= 8 { return true }; let sceValue = Checked.element(of: self.vIds, self.pendingLedgerEntryPayload.id); self.vIds.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -562,7 +560,7 @@ public final class StaticListCallPolicy: InvocablePolicy {
                 if (call_Above__v(self.vIds, 100)) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vHigh, 1); if sceFailure.failed { return true }; self.vHigh = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHigh, 1)); self.vHigh = sceValue } catch { return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

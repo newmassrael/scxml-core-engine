@@ -102,9 +102,9 @@ enum StaticListPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticListDayPickedPayload {
-    var year: UInt16 = 0
-    var month: UInt8 = 0
-    var dayOfMonth: UInt8 = 0
+    var year: UInt16
+    var month: UInt8
+    var dayOfMonth: UInt8
 }
 
 
@@ -129,7 +129,7 @@ public final class StaticListPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticListPayloadTag = .none
-    var pendingDayPickedPayload = StaticListDayPickedPayload()
+    var pendingDayPickedPayload: StaticListDayPickedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -403,10 +403,10 @@ public final class StaticListPolicy: InvocablePolicy {
         switch event {
         case .dayPicked:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticListDayPickedPayload()
-            payload.year = try fields.unsigned("year")
-            payload.month = try fields.unsigned("month")
-            payload.dayOfMonth = try fields.unsigned("dayOfMonth")
+            let sceField0 = try fields.unsigned("year")
+            let sceField1 = try fields.unsigned("month")
+            let sceField2 = try fields.unsigned("dayOfMonth")
+            let payload = StaticListDayPickedPayload(year: sceField0, month: sceField1, dayOfMonth: sceField2)
             pendingDayPickedPayload = payload
             pendingPayloadTag = .dayPicked
         default:
@@ -537,7 +537,7 @@ public final class StaticListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -560,7 +560,7 @@ public final class StaticListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

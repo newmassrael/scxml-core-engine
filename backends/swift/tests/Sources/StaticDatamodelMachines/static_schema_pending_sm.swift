@@ -131,12 +131,10 @@ extension StaticSchemaPendingSignalLevelEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Signal` datamodel value.
-public struct StaticSchemaPendingSignalRecord: Equatable, Sendable, SceDefault {
-    public var level: StaticSchemaPendingSignalLevelEnum = StaticSchemaPendingSignalLevelEnum.allCases[0]
-    public var count: UInt16 = 0
-    public var urgent: Bool = false
-
-    public init() {}
+public struct StaticSchemaPendingSignalRecord: Equatable, Sendable {
+    public var level: StaticSchemaPendingSignalLevelEnum
+    public var count: UInt16
+    public var urgent: Bool
 
     public init(level: StaticSchemaPendingSignalLevelEnum, count: UInt16, urgent: Bool) {
         self.level = level
@@ -175,9 +173,9 @@ enum StaticSchemaPendingPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticSchemaPendingSignalRaisedPayload {
-    var level: StaticSchemaPendingSignalLevelEnum = StaticSchemaPendingSignalLevelEnum.allCases[0]
-    var count: UInt16 = 0
-    var urgent: Bool = false
+    var level: StaticSchemaPendingSignalLevelEnum
+    var count: UInt16
+    var urgent: Bool
 }
 
 
@@ -202,7 +200,7 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticSchemaPendingPayloadTag = .none
-    var pendingSignalRaisedPayload = StaticSchemaPendingSignalRaisedPayload()
+    var pendingSignalRaisedPayload: StaticSchemaPendingSignalRaisedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -464,10 +462,10 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
         switch event {
         case .signalRaised:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"urgent\":true}")
-            var payload = StaticSchemaPendingSignalRaisedPayload()
-            payload.level = try { () throws -> StaticSchemaPendingSignalLevelEnum in let name = try fields.text("level"); guard let variant = StaticSchemaPendingSignalLevelEnum(declaredName: name) else { throw try fields.field("level").unknownVariant(name, alias: "SignalLevel") }; return variant }()
-            payload.count = try fields.unsigned("count")
-            payload.urgent = try fields.truth("urgent")
+            let sceField0 = try { () throws -> StaticSchemaPendingSignalLevelEnum in let name = try fields.text("level"); guard let variant = StaticSchemaPendingSignalLevelEnum(declaredName: name) else { throw try fields.field("level").unknownVariant(name, alias: "SignalLevel") }; return variant }()
+            let sceField1 = try fields.unsigned("count")
+            let sceField2 = try fields.truth("urgent")
+            let payload = StaticSchemaPendingSignalRaisedPayload(level: sceField0, count: sceField1, urgent: sceField2)
             pendingSignalRaisedPayload = payload
             pendingPayloadTag = .signalRaised
         default:
@@ -629,7 +627,7 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTaken, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSchemaPendingEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; self.vTaken = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTaken, 1)); self.vTaken = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSchemaPendingEvent.errorExecution, message: "<assign location='taken'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -639,7 +637,7 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSchemaPendingEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSchemaPendingEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -655,7 +655,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "#_internal", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; self.vRoute = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_internal", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -665,7 +665,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "#_parent", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; self.vRoute = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_parent", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -675,7 +675,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "#_scxml_stranger", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; self.vRoute = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_scxml_stranger", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -685,7 +685,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLanded, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; self.vLanded = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLanded, 1)); self.vLanded = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -695,7 +695,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefused, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; self.vRefused = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

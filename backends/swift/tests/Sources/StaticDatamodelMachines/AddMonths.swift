@@ -15,48 +15,23 @@
 import SceForgeRuntime
 
 public enum AddMonths {
-    public static func addMonths(_ year: Int32, _ month: UInt8, _ day: UInt8, _ n: Int32) throws -> CivilDatePayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(month >= 1 && month <= 12)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func addMonths(_ year: Int32, _ month: UInt8, _ day: UInt8, _ n: Int32) throws(AlgorithmError) -> CivilDatePayload {
+        if !(month >= 1 && month <= 12) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(day >= 1 && day <= Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(year, month) }))
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !((try Checked.and(day >= 1, { day <= (try DaysInMonth.daysInMonth(year, month)) }))) {
+            throw AlgorithmError.precondition
         }
         let yr: Int64 = Int64(year)
-        try sceFailure.throwIfFailed()
         let mo: Int64 = Int64(month)
-        try sceFailure.throwIfFailed()
         let step: Int64 = Int64(n)
-        try sceFailure.throwIfFailed()
-        let total: Int64 = Checked.add(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, yr, 12), Checked.sub(sceFailure, mo, 1)), step)
-        try sceFailure.throwIfFailed()
-        let q: Int64 = Checked.div(sceFailure, total, 12)
-        try sceFailure.throwIfFailed()
-        let r: Int64 = Checked.rem(sceFailure, total, 12)
-        try sceFailure.throwIfFailed()
-        let ny: Int64 = r < 0 ? Checked.sub(sceFailure, q, 1) : q
-        try sceFailure.throwIfFailed()
-        let nm: Int64 = Checked.add(sceFailure, r < 0 ? Checked.add(sceFailure, r, 12) : r, 1)
-        try sceFailure.throwIfFailed()
-        let last: UInt8 = Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(Checked.narrow(sceFailure, ny, to: Int32.self), Checked.narrow(sceFailure, nm, to: UInt8.self)) })
-        try sceFailure.throwIfFailed()
-        let date: CivilDatePayload = CivilDatePayload(year: Checked.narrow(sceFailure, ny, to: Int32.self), month: Checked.narrow(sceFailure, nm, to: UInt8.self), day: day < last ? day : last)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: CivilDatePayload = date
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        let total: Int64 = (try Checked.add((try Checked.add((try Checked.mul(yr, 12)), (try Checked.sub(mo, 1)))), step))
+        let q: Int64 = (try Checked.div(total, 12))
+        let r: Int64 = (try Checked.rem(total, 12))
+        let ny: Int64 = r < 0 ? (try Checked.sub(q, 1)) : q
+        let nm: Int64 = (try Checked.add(r < 0 ? (try Checked.add(r, 12)) : r, 1))
+        let last: UInt8 = (try DaysInMonth.daysInMonth((try Checked.narrow(ny, to: Int32.self)), (try Checked.narrow(nm, to: UInt8.self))))
+        let date: CivilDatePayload = CivilDatePayload(year: (try Checked.narrow(ny, to: Int32.self)), month: (try Checked.narrow(nm, to: UInt8.self)), day: day < last ? day : last)
+        return date
     }
 }

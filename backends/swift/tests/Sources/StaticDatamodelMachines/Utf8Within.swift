@@ -15,14 +15,7 @@
 import SceForgeRuntime
 
 public enum Utf8Within {
-    public static func utf8Within(_ data: [UInt8], _ limit: UInt32) throws -> Bool {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceReturned: Bool = Checked.take(sceFailure, fallback: 0, { try Utf8Length.utf8Length(data) }) <= limit
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+    public static func utf8Within(_ data: [UInt8], _ limit: UInt32) throws(AlgorithmError) -> Bool {
+        return (try Utf8Length.utf8Length(data)) <= limit
     }
 }

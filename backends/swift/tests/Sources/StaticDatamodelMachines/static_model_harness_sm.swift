@@ -277,11 +277,9 @@ extension StaticModelHarnessHarnessCodeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Refusal` datamodel value.
-public struct StaticModelHarnessRefusalRecord: Equatable, Sendable, SceDefault {
-    public var code: StaticModelHarnessHarnessCodeEnum = StaticModelHarnessHarnessCodeEnum.allCases[0]
-    public var path: String = ""
-
-    public init() {}
+public struct StaticModelHarnessRefusalRecord: Equatable, Sendable {
+    public var code: StaticModelHarnessHarnessCodeEnum
+    public var path: String
 
     public init(code: StaticModelHarnessHarnessCodeEnum, path: String) {
         self.code = code
@@ -344,16 +342,14 @@ extension StaticModelHarnessEnumLiftKindEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-public struct StaticModelHarnessAnswerRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt32 = 0
-    public var amount: Int64 = 0
-    public var title: String = ""
-    public var kind: StaticModelHarnessEnumLiftKindEnum = StaticModelHarnessEnumLiftKindEnum.allCases[0]
-    public var note: String? = nil
-    public var tag: [UInt8] = []
-    public var priority: UInt8 = 0
-
-    public init() {}
+public struct StaticModelHarnessAnswerRecord: Equatable, Sendable {
+    public var id: UInt32
+    public var amount: Int64
+    public var title: String
+    public var kind: StaticModelHarnessEnumLiftKindEnum
+    public var note: String?
+    public var tag: [UInt8]
+    public var priority: UInt8
 
     public init(id: UInt32, amount: Int64, title: String, kind: StaticModelHarnessEnumLiftKindEnum, note: String?, tag: [UInt8], priority: UInt8) {
         self.id = id
@@ -467,12 +463,10 @@ extension StaticModelHarnessLiftRefusalCodeEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:LiftRefusal` datamodel value.
-public struct StaticModelHarnessLiftRefusalRecord: Equatable, Sendable, SceDefault {
-    public var code: StaticModelHarnessLiftRefusalCodeEnum = StaticModelHarnessLiftRefusalCodeEnum.allCases[0]
-    public var path: String = ""
-    public var bound: UInt32? = nil
-
-    public init() {}
+public struct StaticModelHarnessLiftRefusalRecord: Equatable, Sendable {
+    public var code: StaticModelHarnessLiftRefusalCodeEnum
+    public var path: String
+    public var bound: UInt32?
 
     public init(code: StaticModelHarnessLiftRefusalCodeEnum, path: String, bound: UInt32?) {
         self.code = code
@@ -513,27 +507,27 @@ enum StaticModelHarnessPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticModelHarnessDoneInvokeGenPayload {
-    var error: String = ""
-    var text: String = ""
-    var constrained: Bool = false
-    var model: String = ""
-    var prompt_tokens: UInt32 = 0
-    var answer_tokens: UInt32 = 0
-    var finish: String = ""
+    var error: String
+    var text: String
+    var constrained: Bool
+    var model: String
+    var prompt_tokens: UInt32
+    var answer_tokens: UInt32
+    var finish: String
 }
 
 /// The typed `_event.data` payload of `harness.offer` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticModelHarnessHarnessOfferPayload {
-    var id: UInt32 = 0
+    var id: UInt32
 }
 
 /// The typed `_event.data` payload of `harness.start` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticModelHarnessHarnessStartPayload {
-    var request: String = ""
+    var request: String
 }
 
 
@@ -558,9 +552,9 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticModelHarnessPayloadTag = .none
-    var pendingDoneInvokeGenPayload = StaticModelHarnessDoneInvokeGenPayload()
-    var pendingHarnessOfferPayload = StaticModelHarnessHarnessOfferPayload()
-    var pendingHarnessStartPayload = StaticModelHarnessHarnessStartPayload()
+    var pendingDoneInvokeGenPayload: StaticModelHarnessDoneInvokeGenPayload!
+    var pendingHarnessOfferPayload: StaticModelHarnessHarnessOfferPayload!
+    var pendingHarnessStartPayload: StaticModelHarnessHarnessStartPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -976,26 +970,26 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeGen:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticModelHarnessDoneInvokeGenPayload()
-            payload.error = try fields.text("error", bound: 24)
-            payload.text = try fields.text("text", bound: 4096)
-            payload.constrained = try fields.truth("constrained")
-            payload.model = try fields.text("model", bound: 128)
-            payload.prompt_tokens = try fields.unsigned("prompt_tokens")
-            payload.answer_tokens = try fields.unsigned("answer_tokens")
-            payload.finish = try fields.text("finish", bound: 16)
+            let sceField0 = try fields.text("error", bound: 24)
+            let sceField1 = try fields.text("text", bound: 4096)
+            let sceField2 = try fields.truth("constrained")
+            let sceField3 = try fields.text("model", bound: 128)
+            let sceField4 = try fields.unsigned("prompt_tokens")
+            let sceField5 = try fields.unsigned("answer_tokens")
+            let sceField6 = try fields.text("finish", bound: 16)
+            let payload = StaticModelHarnessDoneInvokeGenPayload(error: sceField0, text: sceField1, constrained: sceField2, model: sceField3, prompt_tokens: sceField4, answer_tokens: sceField5, finish: sceField6)
             pendingDoneInvokeGenPayload = payload
             pendingPayloadTag = .doneInvokeGen
         case .harnessOffer:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticModelHarnessHarnessOfferPayload()
-            payload.id = try fields.unsigned("id")
+            let sceField0 = try fields.unsigned("id")
+            let payload = StaticModelHarnessHarnessOfferPayload(id: sceField0)
             pendingHarnessOfferPayload = payload
             pendingPayloadTag = .harnessOffer
         case .harnessStart:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticModelHarnessHarnessStartPayload()
-            payload.request = try fields.text("request", bound: 512)
+            let sceField0 = try fields.text("request", bound: 512)
+            let payload = StaticModelHarnessHarnessStartPayload(request: sceField0)
             pendingHarnessStartPayload = payload
             pendingPayloadTag = .harnessStart
         default:
@@ -1118,7 +1112,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
 
                 // docs/adr/0087: <sce:render template="Ask" location="prompt">
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, HarnessAsk.render(self.vRequest), capacity: 8192); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:render template='Ask'>: an integer operation overflowed or failed")); return true }; self.vPrompt = sceValue; sceLogRender(machine: "static_model_harness", template: "Ask", location: "prompt"); return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(HarnessAsk.render(self.vRequest), capacity: 8192)); self.vPrompt = sceValue; sceLogRender(machine: "static_model_harness", template: "Ask", location: "prompt") } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:render template='Ask'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1141,21 +1135,21 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAttempts, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='attempts'>: an integer operation overflowed or failed")); return true }; self.vAttempts = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAttempts, 1)); self.vAttempts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='attempts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="refusals">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vRefusals.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='refusals'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vRefusals, self.vRefused); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vRefusals.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='refusals'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vRefusals, self.vRefused); self.vRefusals.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // docs/adr/0087: <sce:render template="Repair" location="prompt">
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, HarnessRepair.render((self.vRefused.code).declaredName, self.vRefused.path, self.vSaid), capacity: 8192); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:render template='Repair'>: an integer operation overflowed or failed")); return true }; self.vPrompt = sceValue; sceLogRender(machine: "static_model_harness", template: "Repair", location: "prompt"); return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(HarnessRepair.render((self.vRefused.code).declaredName, self.vRefused.path, self.vSaid), capacity: 8192)); self.vPrompt = sceValue; sceLogRender(machine: "static_model_harness", template: "Repair", location: "prompt") } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:render template='Repair'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1165,7 +1159,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAttempts, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='attempts'>: an integer operation overflowed or failed")); return true }; self.vAttempts = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAttempts, 1)); self.vAttempts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='attempts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1447,13 +1441,13 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 if (self.vWhy != nil) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeCase(sceFailure, { try Checked.found(StaticModelHarnessHarnessCodeEnum.fromUnderlying(StaticModelHarnessLiftRefusalCodeEnum.toUnderlying(SceOptional.proven(self.vWhy).code))) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.code'>: an integer operation overflowed or failed")); return true }; self.vRefused.code = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticModelHarnessHarnessCodeEnum.fromUnderlying(StaticModelHarnessLiftRefusalCodeEnum.toUnderlying(SceOptional.proven(self.vWhy).code)))); self.vRefused.code = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.code'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, SceOptional.proven(self.vWhy).path, capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; self.vRefused.path = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(SceOptional.proven(self.vWhy).path, capacity: 256)); self.vRefused.path = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1469,7 +1463,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "/id", capacity: 256); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; self.vRefused.path = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("/id", capacity: 256)); self.vRefused.path = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='refused.path'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1479,7 +1473,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "accepted", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("accepted", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1497,7 +1491,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGenPayload.text, capacity: 4096); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; self.vSaid = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGenPayload.text, capacity: 4096)); self.vSaid = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1515,7 +1509,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingDoneInvokeGenPayload.error, capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGenPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1525,7 +1519,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "invalid_argument", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("invalid_argument", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1540,7 +1534,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "exhausted", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("exhausted", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1555,7 +1549,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "exhausted", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("exhausted", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1574,7 +1568,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="offered">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOffered.count >= 8 { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOffered, self.pendingHarnessOfferPayload.id); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='offered'>: an integer operation overflowed or failed")); return true }; self.vOffered.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOffered.count >= 8 { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOffered, self.pendingHarnessOfferPayload.id); self.vOffered.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1587,7 +1581,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingHarnessStartPayload.request, capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='request'>: an integer operation overflowed or failed")); return true }; self.vRequest = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHarnessStartPayload.request, capacity: 512)); self.vRequest = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='request'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1602,7 +1596,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "timeout", capacity: 24); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; self.vOutcome = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("timeout", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticModelHarnessEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -536,11 +536,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             }
             childPolicy.acceptParams(seed)
             do {
-                let sceFailure = Failure()
-                let _: WireValue = .integer(Int64(Checked.sub(sceFailure, self.vBase, 4)))
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                }
+                let _: WireValue = .integer(Int64((try Checked.sub(self.vBase, 4))))
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -562,13 +560,10 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 seed.vStart = self.vBase
             }
             do {
-                let sceFailure = Failure()
-                let sceValue: UInt32 = Checked.sub(sceFailure, self.vBase, 4)
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                } else {
-                    seed.vExtra = sceValue
-                }
+                let sceValue: UInt32 = (try Checked.sub(self.vBase, 4))
+                seed.vExtra = sceValue
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -654,11 +649,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             }
             childPolicy.acceptParams(seed)
             do {
-                let sceFailure = Failure()
-                let _: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vBase, 2000000000)))
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                }
+                let _: WireValue = .integer(Int64((try Checked.mul(self.vBase, 2000000000))))
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -680,13 +673,10 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 seed.vStart = self.vBase
             }
             do {
-                let sceFailure = Failure()
-                let sceValue: UInt32 = Checked.mul(sceFailure, self.vBase, 2000000000)
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                } else {
-                    seed.vExtra = sceValue
-                }
+                let sceValue: UInt32 = (try Checked.mul(self.vBase, 2000000000))
+                seed.vExtra = sceValue
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -874,11 +864,9 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             }
             childPolicy.acceptParams(seed)
             do {
-                let sceFailure = Failure()
-                let _: WireValue = .integer(Int64(Checked.sub(sceFailure, self.vBase, 4)))
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                }
+                let _: WireValue = .integer(Int64((try Checked.sub(self.vBase, 4))))
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -900,13 +888,10 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 seed.vStart = self.vBase
             }
             do {
-                let sceFailure = Failure()
-                let sceValue: UInt32 = Checked.sub(sceFailure, self.vBase, 4)
-                if sceFailure.failed {
-                    engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
-                } else {
-                    seed.vExtra = sceValue
-                }
+                let sceValue: UInt32 = (try Checked.sub(self.vBase, 4))
+                seed.vExtra = sceValue
+            } catch {
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -1168,7 +1153,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vBase, 3); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; self.vBase = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 3)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1189,7 +1174,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "./static_hybrid_first.scxml", capacity: 48); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; self.vPick = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("./static_hybrid_first.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1210,7 +1195,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "static_hybrid_missing.scxml", capacity: 48); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; self.vPick = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_missing.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1231,7 +1216,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "/opt/charts/static_hybrid_second.scxml", capacity: 48); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; self.vPick = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("/opt/charts/static_hybrid_second.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1412,7 +1397,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCompleted, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; self.vCompleted = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1427,7 +1412,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCompleted, 100); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; self.vCompleted = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1442,7 +1427,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCompleted, 1000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; self.vCompleted = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1000)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1452,7 +1437,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1467,7 +1452,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1482,7 +1467,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCompleted, 10); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; self.vCompleted = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

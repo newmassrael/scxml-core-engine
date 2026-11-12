@@ -129,10 +129,8 @@ extension StatechartShapeCrossingShapeKindEnum: SavedEnumeration {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Radius` datamodel value.
-public struct StatechartShapeCrossingRadiusRecord: Equatable, Sendable, SceDefault {
-    public var radius: UInt16 = 0
-
-    public init() {}
+public struct StatechartShapeCrossingRadiusRecord: Equatable, Sendable {
+    public var radius: UInt16
 
     public init(radius: UInt16) {
         self.radius = radius
@@ -154,11 +152,9 @@ public struct StatechartShapeCrossingRadiusRecord: Equatable, Sendable, SceDefau
 }
 
 /// SCE Accepted Subset §2.15: a `record:Rect` datamodel value.
-public struct StatechartShapeCrossingRectRecord: Equatable, Sendable, SceDefault {
-    public var width: UInt16 = 0
-    public var height: UInt16 = 0
-
-    public init() {}
+public struct StatechartShapeCrossingRectRecord: Equatable, Sendable {
+    public var width: UInt16
+    public var height: UInt16
 
     public init(width: UInt16, height: UInt16) {
         self.width = width

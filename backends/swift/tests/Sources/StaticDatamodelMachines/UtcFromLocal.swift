@@ -15,94 +15,38 @@
 import SceForgeRuntime
 
 public enum UtcFromLocal {
-    public static func utcFromLocal(_ starts: [Int64], _ offsets: [Int32], _ local: Int64) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(starts.count == offsets.count && starts.count > 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func utcFromLocal(_ starts: [Int64], _ offsets: [Int32], _ local: Int64) throws(AlgorithmError) -> Int64 {
+        if !(starts.count == offsets.count && starts.count > 0) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(Checked.sub(sceFailure, local, Int64(Checked.at(sceFailure, offsets, 0, fallback: 0))) >= Checked.at(sceFailure, starts, 0, fallback: 0))
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !((try Checked.sub(local, Int64((try Checked.at(offsets, 0))))) >= (try Checked.at(starts, 0))) {
+            throw AlgorithmError.precondition
         }
         let n: UInt32 = UInt32(truncatingIfNeeded: starts.count)
-        try sceFailure.throwIfFailed()
         var k: UInt32 = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = k < n
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            do {
-                let sceCond3 = k > 0
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    do {
-                        let sceCond5 = !(Checked.at(sceFailure, starts, k, fallback: 0) > Checked.at(sceFailure, starts, Checked.sub(sceFailure, k, 1), fallback: 0))
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            throw AlgorithmError.precondition
-                        }
-                    }
+        while k < n {
+            if k > 0 {
+                if !((try Checked.at(starts, k)) > (try Checked.at(starts, (try Checked.sub(k, 1))))) {
+                    throw AlgorithmError.precondition
                 }
             }
-            let u: Int64 = Checked.sub(sceFailure, local, Int64(Checked.at(sceFailure, offsets, k, fallback: 0)))
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = u >= Checked.at(sceFailure, starts, k, fallback: 0) && (Checked.add(sceFailure, k, 1) == n || u < Checked.at(sceFailure, starts, Checked.add(sceFailure, k, 1), fallback: 0))
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    do {
-                        let sceReturned: Int64 = u
-                        try sceFailure.throwIfFailed()
-                        return sceReturned
-                    }
-                }
+            let u: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, k)))))
+            if (try Checked.and(u >= (try Checked.at(starts, k)), { (try Checked.or((try Checked.add(k, 1)) == n, { u < (try Checked.at(starts, (try Checked.add(k, 1)))) })) })) {
+                return u
             }
-            k = Checked.add(sceFailure, k, 1)
-            try sceFailure.throwIfFailed()
+            k = (try Checked.add(k, 1))
         }
         var g: UInt32 = 1
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = g < n
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            let before: Int64 = Checked.sub(sceFailure, local, Int64(Checked.at(sceFailure, offsets, Checked.sub(sceFailure, g, 1), fallback: 0)))
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = before >= Checked.at(sceFailure, starts, g, fallback: 0) && Checked.sub(sceFailure, local, Int64(Checked.at(sceFailure, offsets, g, fallback: 0))) < Checked.at(sceFailure, starts, g, fallback: 0)
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    do {
-                        let sceReturned: Int64 = before
-                        try sceFailure.throwIfFailed()
-                        return sceReturned
-                    }
-                }
+        while g < n {
+            let before: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, (try Checked.sub(g, 1)))))))
+            if (try Checked.and(before >= (try Checked.at(starts, g)), { (try Checked.sub(local, Int64((try Checked.at(offsets, g))))) < (try Checked.at(starts, g)) })) {
+                return before
             }
-            g = Checked.add(sceFailure, g, 1)
-            try sceFailure.throwIfFailed()
+            g = (try Checked.add(g, 1))
         }
-        do {
-            let sceCond2 = !(false)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(false) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceReturned: Int64 = 0
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return 0
     }
 }

@@ -15,79 +15,28 @@
 import SceForgeRuntime
 
 public enum Precondition {
-    public static func precondition(_ exists: Bool, _ readOnly: Bool, _ ifMatch: UInt8, _ ifUnmodifiedSince: UInt8, _ ifNoneMatch: UInt8, _ ifModifiedSince: UInt8) throws -> UInt16 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(ifMatch <= 3 && ifUnmodifiedSince <= 2 && ifNoneMatch <= 3 && ifModifiedSince <= 2)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
+    public static func precondition(_ exists: Bool, _ readOnly: Bool, _ ifMatch: UInt8, _ ifUnmodifiedSince: UInt8, _ ifNoneMatch: UInt8, _ ifModifiedSince: UInt8) throws(AlgorithmError) -> UInt16 {
+        if !(ifMatch <= 3 && ifUnmodifiedSince <= 2 && ifNoneMatch <= 3 && ifModifiedSince <= 2) {
+            throw AlgorithmError.precondition
+        }
+        if ifMatch != 0 {
+            if !exists || ifMatch == 3 {
+                return 412
+            }
+        } else {
+            if ifUnmodifiedSince == 2 {
+                return 412
             }
         }
-        do {
-            let sceCond2 = ifMatch != 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceCond4 = !exists || ifMatch == 3
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceReturned: UInt16 = 412
-                            try sceFailure.throwIfFailed()
-                            return sceReturned
-                        }
-                    }
-                }
-            } else {
-                do {
-                    let sceCond4 = ifUnmodifiedSince == 2
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceReturned: UInt16 = 412
-                            try sceFailure.throwIfFailed()
-                            return sceReturned
-                        }
-                    }
-                }
+        if ifNoneMatch != 0 {
+            if ifNoneMatch == 1 && exists || ifNoneMatch == 2 {
+                return readOnly ? 304 : 412
+            }
+        } else {
+            if readOnly && ifModifiedSince == 2 {
+                return 304
             }
         }
-        do {
-            let sceCond2 = ifNoneMatch != 0
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceCond4 = ifNoneMatch == 1 && exists || ifNoneMatch == 2
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceReturned: UInt16 = readOnly ? 304 : 412
-                            try sceFailure.throwIfFailed()
-                            return sceReturned
-                        }
-                    }
-                }
-            } else {
-                do {
-                    let sceCond4 = readOnly && ifModifiedSince == 2
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        do {
-                            let sceReturned: UInt16 = 304
-                            try sceFailure.throwIfFailed()
-                            return sceReturned
-                        }
-                    }
-                }
-            }
-        }
-        do {
-            let sceReturned: UInt16 = 0
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return 0
     }
 }

@@ -43,15 +43,14 @@ public enum HttpFetchRequest {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:http_fetch_request:1\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"method\":{\"type\":\"string\",\"maxLength\":8,\"x-sce-max-bytes\":8},\"url\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"headers\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"body\":{\"type\":\"string\",\"maxLength\":16384,\"x-sce-max-bytes\":16384}},\"required\":[\"method\",\"url\",\"headers\",\"body\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct HttpFetchRequestPayload: Equatable, Sendable, SceDefault {
-    public var method: String = ""
-    public var url: String = ""
-    public var headers: String = ""
-    public var body: String = ""
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct HttpFetchRequestPayload: Equatable, Sendable {
+    public var method: String
+    public var url: String
+    public var headers: String
+    public var body: String
 
     public init(method: String, url: String, headers: String, body: String) {
         self.method = method

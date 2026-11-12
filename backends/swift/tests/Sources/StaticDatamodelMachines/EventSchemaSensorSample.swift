@@ -31,14 +31,13 @@ public enum EventSchemaSensorSample {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:event_schema_sensor_sample:1\",\"x-sce-source-hash\":\"f3a316aacf7403325399aec899293549220a4c98b78ad03825aff15e55acb6a9\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"sensorId\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"reading\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647},\"status\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255}},\"required\":[\"sensorId\",\"reading\",\"status\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct EventSchemaSensorSamplePayload: Equatable, Sendable, SceDefault {
-    public var sensorId: UInt16 = 0
-    public var reading: Int32 = 0
-    public var status: UInt8 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct EventSchemaSensorSamplePayload: Equatable, Sendable {
+    public var sensorId: UInt16
+    public var reading: Int32
+    public var status: UInt8
 
     public init(sensorId: UInt16, reading: Int32, status: UInt8) {
         self.sensorId = sensorId

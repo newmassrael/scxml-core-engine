@@ -15,39 +15,19 @@
 import SceForgeRuntime
 
 public enum RgaRemove {
-    public static func rgaRemove(_ gone: [RgaGonePayload], _ removal: RgaGonePayload) throws -> [RgaGonePayload] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func rgaRemove(_ gone: [RgaGonePayload], _ removal: RgaGonePayload) throws(AlgorithmError) -> [RgaGonePayload] {
         var out: [RgaGonePayload] = []
         out.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var held: Bool = false
-        try sceFailure.throwIfFailed()
         for g in gone {
             out.append(g)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = g.key == removal.key
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    held = true
-                    try sceFailure.throwIfFailed()
-                }
+            if g.key == removal.key {
+                held = true
             }
         }
-        do {
-            let sceCond2 = !held
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                out.append(removal)
-                try sceFailure.throwIfFailed()
-            }
+        if !held {
+            out.append(removal)
         }
-        do {
-            let sceReturned: [RgaGonePayload] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

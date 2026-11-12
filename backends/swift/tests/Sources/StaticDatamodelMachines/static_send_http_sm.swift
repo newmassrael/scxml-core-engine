@@ -481,7 +481,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "busy", capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; self.vLabel = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -513,14 +513,11 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                         appendFormParam(&sendForm, "label", sceValue)
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2)))
-                        if !sceFailure.failed {
-                            appendFormParam(&sendForm, "twice", sceValue)
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
+                        appendFormParam(&sendForm, "twice", sceValue)
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<send> <param name=twice> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     do {
                         let sceValue: WireValue = .integer(Int64(self.vDelta))
@@ -566,14 +563,11 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                         appendFormParam(&sendForm, "count", sceValue)
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2000000000)))
-                        if !sceFailure.failed {
-                            appendFormParam(&sendForm, "big", sceValue)
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2000000000))))
+                        appendFormParam(&sendForm, "big", sceValue)
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<send> <param name=big> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     // W3C SCXML C.2: a BasicHTTP send. The engine hands the request to the transport
                     // the host registered (`setHTTPSendCallback`); a document with no `<content>`
@@ -597,7 +591,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

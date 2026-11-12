@@ -15,46 +15,22 @@
 import SceForgeRuntime
 
 public enum DaysFromCivil {
-    public static func daysFromCivil(_ year: Int32, _ month: UInt8, _ day: UInt8) throws -> Int64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(month >= 1 && month <= 12)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func daysFromCivil(_ year: Int32, _ month: UInt8, _ day: UInt8) throws(AlgorithmError) -> Int64 {
+        if !(month >= 1 && month <= 12) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(day >= 1 && day <= Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(year, month) }))
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !((try Checked.and(day >= 1, { day <= (try DaysInMonth.daysInMonth(year, month)) }))) {
+            throw AlgorithmError.precondition
         }
         let yr: Int64 = Int64(year)
-        try sceFailure.throwIfFailed()
         let mo: Int64 = Int64(month)
-        try sceFailure.throwIfFailed()
         let dy: Int64 = Int64(day)
-        try sceFailure.throwIfFailed()
-        let y: Int64 = mo <= 2 ? Checked.sub(sceFailure, yr, 1) : yr
-        try sceFailure.throwIfFailed()
-        let era: Int64 = Checked.div(sceFailure, y >= 0 ? y : Checked.sub(sceFailure, y, 399), 400)
-        try sceFailure.throwIfFailed()
-        let yoe: Int64 = Checked.sub(sceFailure, y, Checked.mul(sceFailure, era, 400))
-        try sceFailure.throwIfFailed()
-        let mp: Int64 = mo > 2 ? Checked.sub(sceFailure, mo, 3) : Checked.add(sceFailure, mo, 9)
-        try sceFailure.throwIfFailed()
-        let doy: Int64 = Checked.sub(sceFailure, Checked.add(sceFailure, Checked.div(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, 153, mp), 2), 5), dy), 1)
-        try sceFailure.throwIfFailed()
-        let doe: Int64 = Checked.add(sceFailure, Checked.sub(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, yoe, 365), Checked.div(sceFailure, yoe, 4)), Checked.div(sceFailure, yoe, 100)), doy)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: Int64 = Checked.sub(sceFailure, Checked.add(sceFailure, Checked.mul(sceFailure, era, 146097), doe), 719468)
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        let y: Int64 = mo <= 2 ? (try Checked.sub(yr, 1)) : yr
+        let era: Int64 = (try Checked.div(y >= 0 ? y : (try Checked.sub(y, 399)), 400))
+        let yoe: Int64 = (try Checked.sub(y, (try Checked.mul(era, 400))))
+        let mp: Int64 = mo > 2 ? (try Checked.sub(mo, 3)) : (try Checked.add(mo, 9))
+        let doy: Int64 = (try Checked.sub((try Checked.add((try Checked.div((try Checked.add((try Checked.mul(153, mp)), 2)), 5)), dy)), 1))
+        let doe: Int64 = (try Checked.add((try Checked.sub((try Checked.add((try Checked.mul(yoe, 365)), (try Checked.div(yoe, 4)))), (try Checked.div(yoe, 100)))), doy))
+        return (try Checked.sub((try Checked.add((try Checked.mul(era, 146097)), doe)), 719468))
     }
 }

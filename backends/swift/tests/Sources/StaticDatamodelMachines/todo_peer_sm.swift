@@ -98,12 +98,10 @@ public enum TodoPeerEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Hlc` datamodel value.
-public struct TodoPeerHlcRecord: Equatable, Sendable, SceDefault {
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct TodoPeerHlcRecord: Equatable, Sendable {
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.wallTime = wallTime
@@ -131,13 +129,11 @@ public struct TodoPeerHlcRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
-public struct TodoPeerEntryRecord: Equatable, Sendable, SceDefault {
-    public var element: UInt64 = 0
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct TodoPeerEntryRecord: Equatable, Sendable {
+    public var element: UInt64
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(element: UInt64, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.element = element
@@ -168,16 +164,14 @@ public struct TodoPeerEntryRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Value` datamodel value.
-public struct TodoPeerValueRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt64 = 0
-    public var field: UInt64 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct TodoPeerValueRecord: Equatable, Sendable {
+    public var id: UInt64
+    public var field: UInt64
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(id: UInt64, field: UInt64, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.id = id
@@ -217,14 +211,12 @@ public struct TodoPeerValueRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Occurrence` datamodel value.
-public struct TodoPeerOccurrenceRecord: Equatable, Sendable, SceDefault {
-    public var id: UInt64 = 0
-    public var start: Int64 = 0
-    public var end: Int64 = 0
-    public var nth: UInt32 = 0
-    public var conflict: UInt8 = 0
-
-    public init() {}
+public struct TodoPeerOccurrenceRecord: Equatable, Sendable {
+    public var id: UInt64
+    public var start: Int64
+    public var end: Int64
+    public var nth: UInt32
+    public var conflict: UInt8
 
     public init(id: UInt64, start: Int64, end: Int64, nth: UInt32, conflict: UInt8) {
         self.id = id
@@ -258,54 +250,52 @@ public struct TodoPeerOccurrenceRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Schedule` datamodel value.
-public struct TodoPeerScheduleRecord: Equatable, Sendable, SceDefault {
-    public var zone: Int64 = 0
-    public var start: Int64 = 0
-    public var length: Int64 = 0
-    public var freq: Int64 = 0
-    public var interval: Int64 = 0
-    public var days: Int64 = 0
-    public var count: Int64 = 0
-    public var until: Int64 = 0
-    public var bymonth: Int64 = 0
-    public var mdPos: Int64 = 0
-    public var mdNeg: Int64 = 0
-    public var invalid: Int64 = 0
-    public var op0: Int64 = 0
-    public var op1: Int64 = 0
-    public var op2: Int64 = 0
-    public var op3: Int64 = 0
-    public var op4: Int64 = 0
-    public var op5: Int64 = 0
-    public var op6: Int64 = 0
-    public var on0: Int64 = 0
-    public var on1: Int64 = 0
-    public var on2: Int64 = 0
-    public var on3: Int64 = 0
-    public var on4: Int64 = 0
-    public var on5: Int64 = 0
-    public var on6: Int64 = 0
-    public var spPos: Int64 = 0
-    public var spNeg: Int64 = 0
-    public var wkst: Int64 = 0
-    public var wnPos: Int64 = 0
-    public var wnNeg: Int64 = 0
-    public var yd0: Int64 = 0
-    public var yd1: Int64 = 0
-    public var yd2: Int64 = 0
-    public var yd3: Int64 = 0
-    public var yd4: Int64 = 0
-    public var yd5: Int64 = 0
-    public var ydn0: Int64 = 0
-    public var ydn1: Int64 = 0
-    public var ydn2: Int64 = 0
-    public var ydn3: Int64 = 0
-    public var ydn4: Int64 = 0
-    public var ydn5: Int64 = 0
-    public var gone: Int64 = 0
-    public var flag: Int64 = 0
-
-    public init() {}
+public struct TodoPeerScheduleRecord: Equatable, Sendable {
+    public var zone: Int64
+    public var start: Int64
+    public var length: Int64
+    public var freq: Int64
+    public var interval: Int64
+    public var days: Int64
+    public var count: Int64
+    public var until: Int64
+    public var bymonth: Int64
+    public var mdPos: Int64
+    public var mdNeg: Int64
+    public var invalid: Int64
+    public var op0: Int64
+    public var op1: Int64
+    public var op2: Int64
+    public var op3: Int64
+    public var op4: Int64
+    public var op5: Int64
+    public var op6: Int64
+    public var on0: Int64
+    public var on1: Int64
+    public var on2: Int64
+    public var on3: Int64
+    public var on4: Int64
+    public var on5: Int64
+    public var on6: Int64
+    public var spPos: Int64
+    public var spNeg: Int64
+    public var wkst: Int64
+    public var wnPos: Int64
+    public var wnNeg: Int64
+    public var yd0: Int64
+    public var yd1: Int64
+    public var yd2: Int64
+    public var yd3: Int64
+    public var yd4: Int64
+    public var yd5: Int64
+    public var ydn0: Int64
+    public var ydn1: Int64
+    public var ydn2: Int64
+    public var ydn3: Int64
+    public var ydn4: Int64
+    public var ydn5: Int64
+    public var gone: Int64
+    public var flag: Int64
 
     public init(zone: Int64, start: Int64, length: Int64, freq: Int64, interval: Int64, days: Int64, count: Int64, until: Int64, bymonth: Int64, mdPos: Int64, mdNeg: Int64, invalid: Int64, op0: Int64, op1: Int64, op2: Int64, op3: Int64, op4: Int64, op5: Int64, op6: Int64, on0: Int64, on1: Int64, on2: Int64, on3: Int64, on4: Int64, on5: Int64, on6: Int64, spPos: Int64, spNeg: Int64, wkst: Int64, wnPos: Int64, wnNeg: Int64, yd0: Int64, yd1: Int64, yd2: Int64, yd3: Int64, yd4: Int64, yd5: Int64, ydn0: Int64, ydn1: Int64, ydn2: Int64, ydn3: Int64, ydn4: Int64, ydn5: Int64, gone: Int64, flag: Int64) {
         self.zone = zone
@@ -459,11 +449,9 @@ public struct TodoPeerScheduleRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
-public struct TodoPeerMemberRecord: Equatable, Sendable, SceDefault {
-    public var node: UInt64 = 0
-    public var role: UInt8 = 0
-
-    public init() {}
+public struct TodoPeerMemberRecord: Equatable, Sendable {
+    public var node: UInt64
+    public var role: UInt8
 
     public init(node: UInt64, role: UInt8) {
         self.node = node
@@ -488,17 +476,15 @@ public struct TodoPeerMemberRecord: Equatable, Sendable, SceDefault {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
-public struct TodoPeerOpRecord: Equatable, Sendable, SceDefault {
-    public var kind: UInt8 = 0
-    public var id: UInt32 = 0
-    public var field: UInt16 = 0
-    public var value: Int64 = 0
-    public var text: String = ""
-    public var wallTime: Int64 = 0
-    public var counter: UInt32 = 0
-    public var nodeId: UInt64 = 0
-
-    public init() {}
+public struct TodoPeerOpRecord: Equatable, Sendable {
+    public var kind: UInt8
+    public var id: UInt32
+    public var field: UInt16
+    public var value: Int64
+    public var text: String
+    public var wallTime: Int64
+    public var counter: UInt32
+    public var nodeId: UInt64
 
     public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
         self.kind = kind
@@ -558,62 +544,62 @@ enum TodoPeerPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerRecordListChangePayload {
-    var by: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var ops: [TodoPeerOpRecord] = []
+    var by: UInt64
+    var wallTime: Int64
+    var counter: UInt32
+    var ops: [TodoPeerOpRecord]
 }
 
 /// The typed `_event.data` payload of `todo.agenda` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoAgendaPayload {
-    var id: UInt32 = 0
-    var windowStart: Int64 = 0
-    var windowEnd: Int64 = 0
-    var skip: UInt32 = 0
+    var id: UInt32
+    var windowStart: Int64
+    var windowEnd: Int64
+    var skip: UInt32
 }
 
 /// The typed `_event.data` payload of `todo.edit` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoEditPayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var now: Int64 = 0
+    var id: UInt32
+    var field: UInt16
+    var value: Int64
+    var text: String
+    var now: Int64
 }
 
 /// The typed `_event.data` payload of `todo.join` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoJoinPayload {
-    var node: UInt64 = 0
+    var node: UInt64
 }
 
 /// The typed `_event.data` payload of `todo.role` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoRolePayload {
-    var node: UInt64 = 0
-    var role: UInt8 = 0
+    var node: UInt64
+    var role: UInt8
 }
 
 /// The typed `_event.data` payload of `todo.room` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoRoomPayload {
-    var values: UInt32 = 0
+    var values: UInt32
 }
 
 /// The typed `_event.data` payload of `todo.zone` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoZonePayload {
-    var zone: UInt8 = 0
-    var start: Int64 = 0
-    var offset: Int32 = 0
+    var zone: UInt8
+    var start: Int64
+    var offset: Int32
 }
 
 
@@ -621,7 +607,7 @@ struct TodoPeerTodoZonePayload {
 // SCE Accepted Subset §2.15: the calls of an algorithm over a record or a list
 // ======================================================================
 
-private func call_EventAgenda__vv(_ p0: TodoPeerScheduleRecord, _ p1: [TodoPeerValueRecord], _ p2: UInt64, _ p3: Int64, _ p4: Int64, _ p5: UInt32) throws -> [TodoPeerOccurrenceRecord] {
+private func call_EventAgenda__vv(_ p0: TodoPeerScheduleRecord, _ p1: [TodoPeerValueRecord], _ p2: UInt64, _ p3: Int64, _ p4: Int64, _ p5: UInt32) throws(AlgorithmError) -> [TodoPeerOccurrenceRecord] {
     let r = try EventAgenda.eventAgenda(EventSchedulePayload(zone: p0.zone, start: p0.start, length: p0.length, freq: p0.freq, interval: p0.interval, days: p0.days, count: p0.count, until: p0.until, bymonth: p0.bymonth, mdPos: p0.mdPos, mdNeg: p0.mdNeg, invalid: p0.invalid, op0: p0.op0, op1: p0.op1, op2: p0.op2, op3: p0.op3, op4: p0.op4, op5: p0.op5, op6: p0.op6, on0: p0.on0, on1: p0.on1, on2: p0.on2, on3: p0.on3, on4: p0.on4, on5: p0.on5, on6: p0.on6, spPos: p0.spPos, spNeg: p0.spNeg, wkst: p0.wkst, wnPos: p0.wnPos, wnNeg: p0.wnNeg, yd0: p0.yd0, yd1: p0.yd1, yd2: p0.yd2, yd3: p0.yd3, yd4: p0.yd4, yd5: p0.yd5, ydn0: p0.ydn0, ydn1: p0.ydn1, ydn2: p0.ydn2, ydn3: p0.ydn3, ydn4: p0.ydn4, ydn5: p0.ydn5, gone: p0.gone, flag: p0.flag), p1.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p2, p3, p4, p5)
     return r.map { TodoPeerOccurrenceRecord(id: $0.id, start: $0.start, end: $0.end, nth: $0.nth, conflict: $0.conflict) }
 }
@@ -636,22 +622,22 @@ private func call_EventLatest__v(_ p0: [TodoPeerValueRecord], _ p1: UInt64, _ p2
     return r
 }
 
-private func call_EventRoster__v(_ p0: [TodoPeerMemberRecord], _ p1: UInt64, _ p2: UInt8) throws -> [TodoPeerMemberRecord] {
+private func call_EventRoster__v(_ p0: [TodoPeerMemberRecord], _ p1: UInt64, _ p2: UInt8) throws(AlgorithmError) -> [TodoPeerMemberRecord] {
     let r = try EventRoster.eventRoster(p0.map { EventMemberPayload(node: $0.node, role: $0.role) }, p1, p2)
     return r.map { TodoPeerMemberRecord(node: $0.node, role: $0.role) }
 }
 
-private func call_HlcReceive__vv(_ p0: TodoPeerHlcRecord, _ p1: TodoPeerHlcRecord, _ p2: Int64, _ p3: UInt64) throws -> TodoPeerHlcRecord {
+private func call_HlcReceive__vv(_ p0: TodoPeerHlcRecord, _ p1: TodoPeerHlcRecord, _ p2: Int64, _ p3: UInt64) throws(AlgorithmError) -> TodoPeerHlcRecord {
     let r = try HlcReceive.hlcReceive(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), HlcTimestampPayload(wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId), p2, p3)
     return TodoPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_HlcSend__v(_ p0: TodoPeerHlcRecord, _ p1: Int64, _ p2: UInt64) throws -> TodoPeerHlcRecord {
+private func call_HlcSend__v(_ p0: TodoPeerHlcRecord, _ p1: Int64, _ p2: UInt64) throws(AlgorithmError) -> TodoPeerHlcRecord {
     let r = try HlcSend.hlcSend(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1, p2)
     return TodoPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
 }
 
-private func call_MvValueDrop__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerValueRecord) throws -> [TodoPeerValueRecord] {
+private func call_MvValueDrop__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerValueRecord) throws(AlgorithmError) -> [TodoPeerValueRecord] {
     let r = try MvValueDrop.mvValueDrop(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, MvValuePayload(id: p1.id, field: p1.field, value: p1.value, text: p1.text, wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId))
     return r.map { TodoPeerValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
@@ -661,22 +647,22 @@ private func call_MvValueHolds__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerVa
     return r
 }
 
-private func call_MvValueKeep__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerValueRecord) throws -> [TodoPeerValueRecord] {
+private func call_MvValueKeep__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerValueRecord) throws(AlgorithmError) -> [TodoPeerValueRecord] {
     let r = try MvValueKeep.mvValueKeep(p0.map { MvValuePayload(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, MvValuePayload(id: p1.id, field: p1.field, value: p1.value, text: p1.text, wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId))
     return r.map { TodoPeerValueRecord(id: $0.id, field: $0.field, value: $0.value, text: $0.text, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_OrsetLive__vv(_ p0: [TodoPeerEntryRecord], _ p1: [TodoPeerEntryRecord]) throws -> [TodoPeerEntryRecord] {
+private func call_OrsetLive__vv(_ p0: [TodoPeerEntryRecord], _ p1: [TodoPeerEntryRecord]) throws(AlgorithmError) -> [TodoPeerEntryRecord] {
     let r = try OrsetLive.orsetLive(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) })
     return r.map { TodoPeerEntryRecord(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_OrsetUnion__vv(_ p0: [TodoPeerEntryRecord], _ p1: [TodoPeerEntryRecord]) throws -> [TodoPeerEntryRecord] {
+private func call_OrsetUnion__vv(_ p0: [TodoPeerEntryRecord], _ p1: [TodoPeerEntryRecord]) throws(AlgorithmError) -> [TodoPeerEntryRecord] {
     let r = try OrsetUnion.orsetUnion(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) })
     return r.map { TodoPeerEntryRecord(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }
 }
 
-private func call_UtcFromLocal__vv(_ p0: [Int64], _ p1: [Int32], _ p2: Int64) throws -> Int64 {
+private func call_UtcFromLocal__vv(_ p0: [Int64], _ p1: [Int32], _ p2: Int64) throws(AlgorithmError) -> Int64 {
     let r = try UtcFromLocal.utcFromLocal(p0, p1, p2)
     return r
 }
@@ -702,13 +688,13 @@ public final class TodoPeerPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: TodoPeerPayloadTag = .none
-    var pendingRecordListChangePayload = TodoPeerRecordListChangePayload()
-    var pendingTodoAgendaPayload = TodoPeerTodoAgendaPayload()
-    var pendingTodoEditPayload = TodoPeerTodoEditPayload()
-    var pendingTodoJoinPayload = TodoPeerTodoJoinPayload()
-    var pendingTodoRolePayload = TodoPeerTodoRolePayload()
-    var pendingTodoRoomPayload = TodoPeerTodoRoomPayload()
-    var pendingTodoZonePayload = TodoPeerTodoZonePayload()
+    var pendingRecordListChangePayload: TodoPeerRecordListChangePayload!
+    var pendingTodoAgendaPayload: TodoPeerTodoAgendaPayload!
+    var pendingTodoEditPayload: TodoPeerTodoEditPayload!
+    var pendingTodoJoinPayload: TodoPeerTodoJoinPayload!
+    var pendingTodoRolePayload: TodoPeerTodoRolePayload!
+    var pendingTodoRoomPayload: TodoPeerTodoRoomPayload!
+    var pendingTodoZonePayload: TodoPeerTodoZonePayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -1188,57 +1174,57 @@ public final class TodoPeerPolicy: InvocablePolicy {
         switch event {
         case .recordListChange:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerRecordListChangePayload()
-            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
-            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
-            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
-            payload.ops = try ({ (sceValue: PayloadValue) throws -> [TodoPeerOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> TodoPeerOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> TodoPeerOpRecord in try TodoPeerOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let sceField0 = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            let sceField1 = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            let sceField2 = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [TodoPeerOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> TodoPeerOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> TodoPeerOpRecord in try TodoPeerOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            let payload = TodoPeerRecordListChangePayload(by: sceField0, wallTime: sceField1, counter: sceField2, ops: sceField3)
             pendingRecordListChangePayload = payload
             pendingPayloadTag = .recordListChange
         case .todoAgenda:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoAgendaPayload()
-            payload.id = try fields.unsigned("id")
-            payload.windowStart = try fields.signed64("windowStart")
-            payload.windowEnd = try fields.signed64("windowEnd")
-            payload.skip = try fields.unsigned("skip")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.signed64("windowStart")
+            let sceField2 = try fields.signed64("windowEnd")
+            let sceField3 = try fields.unsigned("skip")
+            let payload = TodoPeerTodoAgendaPayload(id: sceField0, windowStart: sceField1, windowEnd: sceField2, skip: sceField3)
             pendingTodoAgendaPayload = payload
             pendingPayloadTag = .todoAgenda
         case .todoEdit:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoEditPayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 32)
-            payload.now = try fields.signed64("now")
+            let sceField0 = try fields.unsigned("id")
+            let sceField1 = try fields.unsigned("field")
+            let sceField2 = try fields.signed64("value")
+            let sceField3 = try fields.text("text", bound: 32)
+            let sceField4 = try fields.signed64("now")
+            let payload = TodoPeerTodoEditPayload(id: sceField0, field: sceField1, value: sceField2, text: sceField3, now: sceField4)
             pendingTodoEditPayload = payload
             pendingPayloadTag = .todoEdit
         case .todoJoin:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoJoinPayload()
-            payload.node = try fields.unsigned64("node")
+            let sceField0 = try fields.unsigned64("node")
+            let payload = TodoPeerTodoJoinPayload(node: sceField0)
             pendingTodoJoinPayload = payload
             pendingPayloadTag = .todoJoin
         case .todoRole:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoRolePayload()
-            payload.node = try fields.unsigned64("node")
-            payload.role = try fields.unsigned("role")
+            let sceField0 = try fields.unsigned64("node")
+            let sceField1 = try fields.unsigned("role")
+            let payload = TodoPeerTodoRolePayload(node: sceField0, role: sceField1)
             pendingTodoRolePayload = payload
             pendingPayloadTag = .todoRole
         case .todoRoom:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoRoomPayload()
-            payload.values = try fields.unsigned("values")
+            let sceField0 = try fields.unsigned("values")
+            let payload = TodoPeerTodoRoomPayload(values: sceField0)
             pendingTodoRoomPayload = payload
             pendingPayloadTag = .todoRoom
         case .todoZone:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoZonePayload()
-            payload.zone = try fields.unsigned("zone")
-            payload.start = try fields.signed64("start")
-            payload.offset = try fields.signed("offset")
+            let sceField0 = try fields.unsigned("zone")
+            let sceField1 = try fields.signed64("start")
+            let sceField2 = try fields.signed("offset")
+            let payload = TodoPeerTodoZonePayload(zone: sceField0, start: sceField1, offset: sceField2)
             pendingTodoZonePayload = payload
             pendingPayloadTag = .todoZone
         default:
@@ -1466,7 +1452,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_EventRoster__v(self.vRoster, self.pendingTodoRolePayload.node, self.pendingTodoRolePayload.role) }), capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; self.vRoster = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_EventRoster__v(self.vRoster, self.pendingTodoRolePayload.node, self.pendingTodoRolePayload.role)), capacity: 64)); self.vRoster = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1479,7 +1465,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTodoEditPayload.text, capacity: 32); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='typed'>: an integer operation overflowed or failed")); return true }; self.vTyped = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTodoEditPayload.text, capacity: 32)); self.vTyped = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='typed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1489,7 +1475,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.pendingTodoEditPayload.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.pendingTodoEditPayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1522,7 +1508,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (self.vForbidden) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1540,7 +1526,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (o.element == self.vEntry.element) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vGone, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; self.vGone = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vGone, 1)); self.vGone = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1551,7 +1537,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (!self.vForbidden && self.vRoomValues > 0 && self.vGone == 0 && UInt32(truncatingIfNeeded: self.vValues.count) >= self.vRoomValues) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFull, 1)); self.vFull = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1565,7 +1551,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (!self.vForbidden) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; self.vStamp = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1602,7 +1588,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1621,7 +1607,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1646,7 +1632,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTodoEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTodoEditPayload.text, capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1665,7 +1651,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1740,7 +1726,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (!self.vAuthorized) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1799,7 +1785,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (self.vDot.nodeId != self.vNode) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1813,13 +1799,13 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vTaking, self.vTook); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; self.vOp = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTook, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; self.vTook = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTook, 1)); self.vTook = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1829,7 +1815,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.vOp.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1837,7 +1823,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (self.vOp.kind == 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vOp.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vOp.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1891,19 +1877,19 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1957,19 +1943,19 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueDrop__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2007,12 +1993,10 @@ public final class TodoPeerPolicy: InvocablePolicy {
                         sendParts.append(PayloadPair("counter", sceValue))
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = { () -> WireValue in if self.vTaking.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
-                        if !sceFailure.failed {
-                            appendFormParam(&sendForm, "ops", sceValue)
-                            sendParts.append(PayloadPair("ops", sceValue))
-                        } else {
+                        let sceValue: WireValue = (try { () throws(AlgorithmError) -> WireValue in if self.vTaking.count < 1 { throw AlgorithmError.precondition }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }())
+                        appendFormParam(&sendForm, "ops", sceValue)
+                        sendParts.append(PayloadPair("ops", sceValue))
+                    } catch {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
@@ -2020,7 +2004,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 break sceBlock
-                        }
                     }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
@@ -2284,13 +2267,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s1); self.vZoneStarts.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vZoneRows, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; self.vZoneRows = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vZoneRows, 1)); self.vZoneRows = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2302,7 +2285,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o1); self.vZoneOffsets.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2318,13 +2301,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s2); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s2); self.vZoneStarts.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vZoneRows, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; self.vZoneRows = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vZoneRows, 1)); self.vZoneRows = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2336,7 +2319,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o2); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o2); self.vZoneOffsets.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2352,13 +2335,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s3); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s3); self.vZoneStarts.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vZoneRows, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; self.vZoneRows = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vZoneRows, 1)); self.vZoneRows = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2370,7 +2353,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o3); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o3); self.vZoneOffsets.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2386,13 +2369,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s4); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts, s4); self.vZoneStarts.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vZoneRows, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; self.vZoneRows = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vZoneRows, 1)); self.vZoneRows = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='zoneRows'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2404,7 +2387,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o4); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets, o4); self.vZoneOffsets.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2415,7 +2398,7 @@ break sceBlock
                 if (self.vZoneRows == 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), self.pendingTodoAgendaPayload.windowStart, self.pendingTodoAgendaPayload.windowEnd, self.pendingTodoAgendaPayload.skip) }), capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='agenda'>: an integer operation overflowed or failed")); return true }; self.vAgenda = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), self.pendingTodoAgendaPayload.windowStart, self.pendingTodoAgendaPayload.windowEnd, self.pendingTodoAgendaPayload.skip)), capacity: 64)); self.vAgenda = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='agenda'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2425,7 +2408,7 @@ break sceBlock
                     _ = a
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRawCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='rawCount'>: an integer operation overflowed or failed")); return true }; self.vRawCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRawCount, 1)); self.vRawCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='rawCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2440,7 +2423,7 @@ break sceBlock
                 if (self.vZoneRows != 0) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), Checked.sub(sceFailure, self.pendingTodoAgendaPayload.windowStart, 86400000), Checked.add(sceFailure, self.pendingTodoAgendaPayload.windowEnd, 86400000), self.pendingTodoAgendaPayload.skip) }), capacity: 64); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='local'>: an integer operation overflowed or failed")); return true }; self.vLocal = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_EventAgenda__vv(self.vSched, self.vValues, UInt64(self.pendingTodoAgendaPayload.id), (try Checked.sub(self.pendingTodoAgendaPayload.windowStart, 86400000)), (try Checked.add(self.pendingTodoAgendaPayload.windowEnd, 86400000)), self.pendingTodoAgendaPayload.skip)), capacity: 64)); self.vLocal = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='local'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2450,7 +2433,7 @@ break sceBlock
                     _ = l
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRawCount, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='rawCount'>: an integer operation overflowed or failed")); return true }; self.vRawCount = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRawCount, 1)); self.vRawCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='rawCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2472,19 +2455,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.takeDefault(sceFailure, { try call_UtcFromLocal__vv(self.vZoneStarts, self.vZoneOffsets, Checked.div(sceFailure, l.start, 1000)) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; self.vUtcSec = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try call_UtcFromLocal__vv(self.vZoneStarts, self.vZoneOffsets, (try Checked.div(l.start, 1000)))); self.vUtcSec = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='utcSec'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vUtcSec, 1000), Checked.rem(sceFailure, l.start, 1000)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; self.vOcc.start = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add((try Checked.mul(self.vUtcSec, 1000)), (try Checked.rem(l.start, 1000)))); self.vOcc.start = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='occ.start'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.vOcc.start, Checked.sub(sceFailure, l.end, l.start)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='occ.end'>: an integer operation overflowed or failed")); return true }; self.vOcc.end = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.add(self.vOcc.start, (try Checked.sub(l.end, l.start)))); self.vOcc.end = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='occ.end'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2493,7 +2476,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="agenda">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vAgenda.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='agenda'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vAgenda, self.vOcc); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='agenda'>: an integer operation overflowed or failed")); return true }; self.vAgenda.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vAgenda.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='agenda'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vAgenda, self.vOcc); self.vAgenda.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2506,7 +2489,7 @@ break sceBlock
                 if (self.vRawCount == 64) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRawLast, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='agendaNext'>: an integer operation overflowed or failed")); return true }; self.vAgendaNext = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRawLast, 1)); self.vAgendaNext = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='agendaNext'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2524,14 +2507,14 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts1">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts1.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts1, self.pendingTodoZonePayload.start); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts1'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts1.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts1.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts1, self.pendingTodoZonePayload.start); self.vZoneStarts1.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets1">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets1.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets1, self.pendingTodoZonePayload.offset); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets1'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets1.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets1.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets1, self.pendingTodoZonePayload.offset); self.vZoneOffsets1.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2542,14 +2525,14 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts2">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts2.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts2, self.pendingTodoZonePayload.start); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts2'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts2.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts2.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts2, self.pendingTodoZonePayload.start); self.vZoneStarts2.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets2">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets2.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets2, self.pendingTodoZonePayload.offset); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets2'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets2.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets2.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets2, self.pendingTodoZonePayload.offset); self.vZoneOffsets2.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2560,14 +2543,14 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts3">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts3.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts3, self.pendingTodoZonePayload.start); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts3'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts3.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts3.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts3, self.pendingTodoZonePayload.start); self.vZoneStarts3.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets3">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets3.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets3, self.pendingTodoZonePayload.offset); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets3'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets3.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets3.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets3, self.pendingTodoZonePayload.offset); self.vZoneOffsets3.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2578,14 +2561,14 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneStarts4">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneStarts4.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts4, self.pendingTodoZonePayload.start); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts4'>: an integer operation overflowed or failed")); return true }; self.vZoneStarts4.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneStarts4.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneStarts4, self.pendingTodoZonePayload.start); self.vZoneStarts4.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="zoneOffsets4">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vZoneOffsets4.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets4, self.pendingTodoZonePayload.offset); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets4'>: an integer operation overflowed or failed")); return true }; self.vZoneOffsets4.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vZoneOffsets4.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vZoneOffsets4, self.pendingTodoZonePayload.offset); self.vZoneOffsets4.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2641,7 +2624,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

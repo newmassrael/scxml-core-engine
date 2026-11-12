@@ -96,9 +96,9 @@ enum StaticPayloadPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticPayloadDayPickedPayload {
-    var year: UInt16 = 0
-    var month: UInt8 = 0
-    var dayOfMonth: UInt8 = 0
+    var year: UInt16
+    var month: UInt8
+    var dayOfMonth: UInt8
 }
 
 
@@ -123,7 +123,7 @@ public final class StaticPayloadPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticPayloadPayloadTag = .none
-    var pendingDayPickedPayload = StaticPayloadDayPickedPayload()
+    var pendingDayPickedPayload: StaticPayloadDayPickedPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -395,10 +395,10 @@ public final class StaticPayloadPolicy: InvocablePolicy {
         switch event {
         case .dayPicked:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticPayloadDayPickedPayload()
-            payload.year = try fields.unsigned("year")
-            payload.month = try fields.unsigned("month")
-            payload.dayOfMonth = try fields.unsigned("dayOfMonth")
+            let sceField0 = try fields.unsigned("year")
+            let sceField1 = try fields.unsigned("month")
+            let sceField2 = try fields.unsigned("dayOfMonth")
+            let payload = StaticPayloadDayPickedPayload(year: sceField0, month: sceField1, dayOfMonth: sceField2)
             pendingDayPickedPayload = payload
             pendingPayloadTag = .dayPicked
         default:
@@ -525,7 +525,7 @@ public final class StaticPayloadPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.sub(sceFailure, self.pendingDayPickedPayload.year, 2000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='sinceEpoch'>: an integer operation overflowed or failed")); return true }; self.vSinceEpoch = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.sub(self.pendingDayPickedPayload.year, 2000)); self.vSinceEpoch = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='sinceEpoch'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -546,7 +546,7 @@ public final class StaticPayloadPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.sub(sceFailure, self.pendingDayPickedPayload.year, 2000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='sinceEpoch'>: an integer operation overflowed or failed")); return true }; self.vSinceEpoch = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.sub(self.pendingDayPickedPayload.year, 2000)); self.vSinceEpoch = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='sinceEpoch'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -556,7 +556,7 @@ public final class StaticPayloadPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticPayloadEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

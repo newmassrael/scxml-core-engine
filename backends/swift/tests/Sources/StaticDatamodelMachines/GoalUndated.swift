@@ -15,26 +15,13 @@
 import SceForgeRuntime
 
 public enum GoalUndated {
-    public static func goalUndated(_ goals: [SchemaGoalPayload]) throws -> UInt32 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func goalUndated(_ goals: [SchemaGoalPayload]) throws(AlgorithmError) -> UInt32 {
         var count: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for g in goals {
-            do {
-                let sceCond3 = g.day == nil
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    count = Checked.add(sceFailure, count, 1)
-                    try sceFailure.throwIfFailed()
-                }
+            if g.day == nil {
+                count = (try Checked.add(count, 1))
             }
         }
-        do {
-            let sceReturned: UInt32 = count
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return count
     }
 }

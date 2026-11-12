@@ -100,17 +100,17 @@ enum StaticSendParamsPayloadTag {
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticSendParamsEchoPayload {
-    var total: UInt32 = 0
-    var ok: Bool = false
-    var tag: String = ""
+    var total: UInt32
+    var ok: Bool
+    var tag: String
 }
 
 /// The typed `_event.data` payload of `partial` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct StaticSendParamsPartialPayload {
-    var total: UInt32 = 0
-    var part: UInt8 = 0
+    var total: UInt32
+    var part: UInt8
 }
 
 
@@ -135,8 +135,8 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticSendParamsPayloadTag = .none
-    var pendingEchoPayload = StaticSendParamsEchoPayload()
-    var pendingPartialPayload = StaticSendParamsPartialPayload()
+    var pendingEchoPayload: StaticSendParamsEchoPayload!
+    var pendingPartialPayload: StaticSendParamsPartialPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -457,17 +457,17 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
         switch event {
         case .echo:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticSendParamsEchoPayload()
-            payload.total = try fields.unsigned("total")
-            payload.ok = try fields.truth("ok")
-            payload.tag = try fields.text("tag", bound: 32)
+            let sceField0 = try fields.unsigned("total")
+            let sceField1 = try fields.truth("ok")
+            let sceField2 = try fields.text("tag", bound: 32)
+            let payload = StaticSendParamsEchoPayload(total: sceField0, ok: sceField1, tag: sceField2)
             pendingEchoPayload = payload
             pendingPayloadTag = .echo
         case .partial:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = StaticSendParamsPartialPayload()
-            payload.total = try fields.unsigned("total")
-            payload.part = try fields.unsigned("part")
+            let sceField0 = try fields.unsigned("total")
+            let sceField1 = try fields.unsigned("part")
+            let payload = StaticSendParamsPartialPayload(total: sceField0, part: sceField1)
             pendingPartialPayload = payload
             pendingPayloadTag = .partial
         default:
@@ -611,14 +611,11 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("total", sceValue))
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
+                        sendParts.append(PayloadPair("total", sceValue))
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=total> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     do {
                         let sceValue: WireValue = .truth(self.vCount > 2)
@@ -658,24 +655,18 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vCount, 2)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("total", sceValue))
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
+                        sendParts.append(PayloadPair("total", sceValue))
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=total> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.vSmall, self.vSmall)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("part", sceValue))
-                        } else {
+                        let sceValue: WireValue = .integer(Int64((try Checked.add(self.vSmall, self.vSmall))))
+                        sendParts.append(PayloadPair("part", sceValue))
+                    } catch {
                             engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=part> failed to evaluate"))
                             paramFailed = true
-                        }
                     }
                     let sendEventData = payloadJSON(sendParts)
                     do {
@@ -711,7 +702,7 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingEchoPayload.tag, capacity: 16); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='tag'>: an integer operation overflowed or failed")); return true }; self.vTag = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingEchoPayload.tag, capacity: 16)); self.vTag = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='tag'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -736,7 +727,7 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

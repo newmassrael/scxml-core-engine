@@ -15,185 +15,86 @@
 import SceForgeRuntime
 
 public enum MerkleDiff {
-    public static func merkleDiff(_ a: [MerkleNodePayload], _ b: [MerkleNodePayload]) throws -> MerkleDivergencePayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func merkleDiff(_ a: [MerkleNodePayload], _ b: [MerkleNodePayload]) throws(AlgorithmError) -> MerkleDivergencePayload {
         var rootA: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for rootOfA in a {
-            do {
-                let sceCond3 = rootOfA.depth == 0
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    rootA = rootOfA.hash
-                    try sceFailure.throwIfFailed()
-                }
+            if rootOfA.depth == 0 {
+                rootA = rootOfA.hash
             }
         }
         var rootB: UInt32 = 0
-        try sceFailure.throwIfFailed()
         for rootOfB in b {
-            do {
-                let sceCond3 = rootOfB.depth == 0
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    rootB = rootOfB.hash
-                    try sceFailure.throwIfFailed()
-                }
+            if rootOfB.depth == 0 {
+                rootB = rootOfB.hash
             }
         }
         var result: MerkleDivergencePayload = MerkleDivergencePayload(differs: rootA != rootB, millis: 0)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceCond2 = !result.differs
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                do {
-                    let sceReturned: MerkleDivergencePayload = result
-                    try sceFailure.throwIfFailed()
-                    return sceReturned
-                }
-            }
+        if !result.differs {
+            return result
         }
         var d: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var k: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var span: UInt64 = 205891132094649
-        try sceFailure.throwIfFailed()
         var descending: Bool = true
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = descending && d < 30
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
+        while descending && d < 30 {
             descending = false
-            try sceFailure.throwIfFailed()
             var started: Bool = false
-            try sceFailure.throwIfFailed()
             var last: UInt64 = 0
-            try sceFailure.throwIfFailed()
             var scanning: Bool = true
-            try sceFailure.throwIfFailed()
-            while true {
-                let sceCond3 = scanning
-                try sceFailure.throwIfFailed()
-                if !sceCond3 { break }
+            while scanning {
                 var found: Bool = false
-                try sceFailure.throwIfFailed()
                 var next: UInt64 = 0
-                try sceFailure.throwIfFailed()
                 for childOfA in a {
-                    do {
-                        let sceCond5 = UInt32(childOfA.depth) == Checked.add(sceFailure, d, 1) && (d == 0 || Checked.div(sceFailure, childOfA.prefix, 3) == k) && (!started || childOfA.prefix > last) && (!found || childOfA.prefix < next)
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            found = true
-                            try sceFailure.throwIfFailed()
-                            next = childOfA.prefix
-                            try sceFailure.throwIfFailed()
-                        }
+                    if (try Checked.and(UInt32(childOfA.depth) == (try Checked.add(d, 1)), { (try Checked.or(d == 0, { (try Checked.div(childOfA.prefix, 3)) == k })) })) && (!started || childOfA.prefix > last) && (!found || childOfA.prefix < next) {
+                        found = true
+                        next = childOfA.prefix
                     }
                 }
                 for childOfB in b {
-                    do {
-                        let sceCond5 = UInt32(childOfB.depth) == Checked.add(sceFailure, d, 1) && (d == 0 || Checked.div(sceFailure, childOfB.prefix, 3) == k) && (!started || childOfB.prefix > last) && (!found || childOfB.prefix < next)
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            found = true
-                            try sceFailure.throwIfFailed()
-                            next = childOfB.prefix
-                            try sceFailure.throwIfFailed()
-                        }
+                    if (try Checked.and(UInt32(childOfB.depth) == (try Checked.add(d, 1)), { (try Checked.or(d == 0, { (try Checked.div(childOfB.prefix, 3)) == k })) })) && (!started || childOfB.prefix > last) && (!found || childOfB.prefix < next) {
+                        found = true
+                        next = childOfB.prefix
                     }
                 }
                 scanning = found
-                try sceFailure.throwIfFailed()
-                do {
-                    let sceCond4 = found
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        var inA: Bool = false
-                        try sceFailure.throwIfFailed()
-                        var hashA: UInt32 = 0
-                        try sceFailure.throwIfFailed()
-                        for matchInA in a {
-                            do {
-                                let sceCond7 = UInt32(matchInA.depth) == Checked.add(sceFailure, d, 1) && matchInA.prefix == next
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    inA = true
-                                    try sceFailure.throwIfFailed()
-                                    hashA = matchInA.hash
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
+                if found {
+                    var inA: Bool = false
+                    var hashA: UInt32 = 0
+                    for matchInA in a {
+                        if UInt32(matchInA.depth) == (try Checked.add(d, 1)) && matchInA.prefix == next {
+                            inA = true
+                            hashA = matchInA.hash
                         }
-                        var inB: Bool = false
-                        try sceFailure.throwIfFailed()
-                        var hashB: UInt32 = 0
-                        try sceFailure.throwIfFailed()
-                        for matchInB in b {
-                            do {
-                                let sceCond7 = UInt32(matchInB.depth) == Checked.add(sceFailure, d, 1) && matchInB.prefix == next
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    inB = true
-                                    try sceFailure.throwIfFailed()
-                                    hashB = matchInB.hash
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
+                    }
+                    var inB: Bool = false
+                    var hashB: UInt32 = 0
+                    for matchInB in b {
+                        if UInt32(matchInB.depth) == (try Checked.add(d, 1)) && matchInB.prefix == next {
+                            inB = true
+                            hashB = matchInB.hash
                         }
-                        do {
-                            let sceCond6 = !inA || !inB
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                scanning = false
-                                try sceFailure.throwIfFailed()
-                            } else {
-                                do {
-                                    let sceCond8 = hashA != hashB
-                                    try sceFailure.throwIfFailed()
-                                    if sceCond8 {
-                                        scanning = false
-                                        try sceFailure.throwIfFailed()
-                                        descending = true
-                                        try sceFailure.throwIfFailed()
-                                        k = next
-                                        try sceFailure.throwIfFailed()
-                                    } else {
-                                        started = true
-                                        try sceFailure.throwIfFailed()
-                                        last = next
-                                        try sceFailure.throwIfFailed()
-                                    }
-                                }
-                            }
+                    }
+                    if !inA || !inB {
+                        scanning = false
+                    } else {
+                        if hashA != hashB {
+                            scanning = false
+                            descending = true
+                            k = next
+                        } else {
+                            started = true
+                            last = next
                         }
                     }
                 }
             }
-            do {
-                let sceCond3 = descending
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    d = Checked.add(sceFailure, d, 1)
-                    try sceFailure.throwIfFailed()
-                    span = Checked.div(sceFailure, span, 3)
-                    try sceFailure.throwIfFailed()
-                }
+            if descending {
+                d = (try Checked.add(d, 1))
+                span = (try Checked.div(span, 3))
             }
         }
-        let minute: Int64 = Checked.narrow(sceFailure, Checked.mul(sceFailure, k, span), to: Int64.self)
-        try sceFailure.throwIfFailed()
-        result.millis = Checked.mul(sceFailure, minute, 60000)
-        try sceFailure.throwIfFailed()
-        do {
-            let sceReturned: MerkleDivergencePayload = result
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        let minute: Int64 = (try Checked.narrow((try Checked.mul(k, span)), to: Int64.self))
+        result.millis = (try Checked.mul(minute, 60000))
+        return result
     }
 }

@@ -15,75 +15,34 @@
 import SceForgeRuntime
 
 public enum AclMembership {
-    public static func aclMembership(_ edges: [AclEdgePayload], _ user: UInt32) throws -> [UInt32] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func aclMembership(_ edges: [AclEdgePayload], _ user: UInt32) throws(AlgorithmError) -> [UInt32] {
         var found: [UInt32] = []
         found.reserveCapacity(256)
-        try sceFailure.throwIfFailed()
         var next: UInt32 = 0
-        try sceFailure.throwIfFailed()
         var current: UInt32 = user
-        try sceFailure.throwIfFailed()
         var more: Bool = user != 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = more
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
+        while more {
             for e in edges {
-                do {
-                    let sceCond4 = e.member == current && e.group != user && e.group != 0
-                    try sceFailure.throwIfFailed()
-                    if sceCond4 {
-                        var seen: Bool = false
-                        try sceFailure.throwIfFailed()
-                        var k: UInt32 = 0
-                        try sceFailure.throwIfFailed()
-                        while true {
-                            let sceCond6 = k < UInt32(truncatingIfNeeded: found.count)
-                            try sceFailure.throwIfFailed()
-                            if !sceCond6 { break }
-                            do {
-                                let sceCond7 = Checked.at(sceFailure, found, k, fallback: 0) == e.group
-                                try sceFailure.throwIfFailed()
-                                if sceCond7 {
-                                    seen = true
-                                    try sceFailure.throwIfFailed()
-                                }
-                            }
-                            k = Checked.add(sceFailure, k, 1)
-                            try sceFailure.throwIfFailed()
+                if e.member == current && e.group != user && e.group != 0 {
+                    var seen: Bool = false
+                    var k: UInt32 = 0
+                    while k < UInt32(truncatingIfNeeded: found.count) {
+                        if (try Checked.at(found, k)) == e.group {
+                            seen = true
                         }
-                        do {
-                            let sceCond6 = !seen
-                            try sceFailure.throwIfFailed()
-                            if sceCond6 {
-                                found.append(e.group)
-                                try sceFailure.throwIfFailed()
-                            }
-                        }
+                        k = (try Checked.add(k, 1))
+                    }
+                    if !seen {
+                        found.append(e.group)
                     }
                 }
             }
             more = next < UInt32(truncatingIfNeeded: found.count)
-            try sceFailure.throwIfFailed()
-            do {
-                let sceCond3 = more
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    current = Checked.at(sceFailure, found, next, fallback: 0)
-                    try sceFailure.throwIfFailed()
-                    next = Checked.add(sceFailure, next, 1)
-                    try sceFailure.throwIfFailed()
-                }
+            if more {
+                current = (try Checked.at(found, next))
+                next = (try Checked.add(next, 1))
             }
         }
-        do {
-            let sceReturned: [UInt32] = found
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return found
     }
 }

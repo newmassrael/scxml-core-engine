@@ -37,14 +37,13 @@ public enum ClockZoneResult {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:clock_zone_result:1\",\"x-sce-source-hash\":\"1f01cd741ca0d625188a4b5d3fc338154b34cfdf32194edda139c3bc09e0016b\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"zone_id\":{\"type\":\"string\",\"maxLength\":64,\"x-sce-max-bytes\":64},\"utc_offset_s\":{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}},\"required\":[\"error\",\"zone_id\",\"utc_offset_s\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct ClockZoneResultPayload: Equatable, Sendable, SceDefault {
-    public var error: String = ""
-    public var zone_id: String = ""
-    public var utc_offset_s: Int32 = 0
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct ClockZoneResultPayload: Equatable, Sendable {
+    public var error: String
+    public var zone_id: String
+    public var utc_offset_s: Int32
 
     public init(error: String, zone_id: String, utc_offset_s: Int32) {
         self.error = error

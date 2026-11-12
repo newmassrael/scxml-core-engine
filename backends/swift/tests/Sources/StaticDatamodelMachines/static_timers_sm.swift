@@ -544,7 +544,7 @@ public final class StaticTimersPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vTrace, 10), 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; self.vTrace = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add((try Checked.mul(self.vTrace, 10)), 1)); self.vTrace = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -554,7 +554,7 @@ public final class StaticTimersPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vTrace, 10), 2); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; self.vTrace = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add((try Checked.mul(self.vTrace, 10)), 2)); self.vTrace = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -564,7 +564,7 @@ public final class StaticTimersPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vTrace, 10), 4); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; self.vTrace = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add((try Checked.mul(self.vTrace, 10)), 4)); self.vTrace = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -574,7 +574,7 @@ public final class StaticTimersPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vTrace, 10), 3); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; self.vTrace = sceValue; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add((try Checked.mul(self.vTrace, 10)), 3)); self.vTrace = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticTimersEvent.errorExecution, message: "<assign location='trace'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

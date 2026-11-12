@@ -15,28 +15,14 @@
 import SceForgeRuntime
 
 public enum DayRepeat {
-    public static func dayRepeat(_ value: UInt8, _ count: UInt8) throws -> [UInt8] {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func dayRepeat(_ value: UInt8, _ count: UInt8) throws(AlgorithmError) -> [UInt8] {
         var out: [UInt8] = []
         out.reserveCapacity(4)
-        try sceFailure.throwIfFailed()
         var i: UInt8 = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = i < count
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
+        while i < count {
             out.append(value)
-            try sceFailure.throwIfFailed()
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
+            i = (try Checked.add(i, 1))
         }
-        do {
-            let sceReturned: [UInt8] = out
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return out
     }
 }

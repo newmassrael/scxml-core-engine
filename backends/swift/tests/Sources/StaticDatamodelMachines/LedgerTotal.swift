@@ -15,22 +15,12 @@
 import SceForgeRuntime
 
 public enum LedgerTotal {
-    public static func ledgerTotal(_ entries: [SchemaEntryPayload]) throws -> SchemaTotalPayload {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
+    public static func ledgerTotal(_ entries: [SchemaEntryPayload]) throws(AlgorithmError) -> SchemaTotalPayload {
         var t: SchemaTotalPayload = SchemaTotalPayload(count: 0, sum: 0)
-        try sceFailure.throwIfFailed()
         for e in entries {
-            t.count = Checked.add(sceFailure, t.count, 1)
-            try sceFailure.throwIfFailed()
-            t.sum = Checked.add(sceFailure, t.sum, e.amount)
-            try sceFailure.throwIfFailed()
+            t.count = (try Checked.add(t.count, 1))
+            t.sum = (try Checked.add(t.sum, e.amount))
         }
-        do {
-            let sceReturned: SchemaTotalPayload = t
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return t
     }
 }

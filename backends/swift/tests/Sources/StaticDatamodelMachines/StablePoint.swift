@@ -15,57 +15,25 @@
 import SceForgeRuntime
 
 public enum StablePoint {
-    public static func stablePoint(_ cursors: [UInt64], _ lastSeen: [Int64], _ now: Int64, _ maxIdle: Int64) throws -> UInt64 {
-        // A failure a checked operation records, thrown once the statement is done
-        // (SCE_FORGE.md §3.4.1).
-        let sceFailure = Failure()
-        do {
-            let sceCond2 = !(cursors.count == lastSeen.count)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+    public static func stablePoint(_ cursors: [UInt64], _ lastSeen: [Int64], _ now: Int64, _ maxIdle: Int64) throws(AlgorithmError) -> UInt64 {
+        if !(cursors.count == lastSeen.count) {
+            throw AlgorithmError.precondition
         }
-        do {
-            let sceCond2 = !(maxIdle >= 0)
-            try sceFailure.throwIfFailed()
-            if sceCond2 {
-                throw AlgorithmError.precondition
-            }
+        if !(maxIdle >= 0) {
+            throw AlgorithmError.precondition
         }
         var stable: UInt64 = 0
-        try sceFailure.throwIfFailed()
         var taking: Bool = false
-        try sceFailure.throwIfFailed()
         var i: UInt32 = 0
-        try sceFailure.throwIfFailed()
-        while true {
-            let sceCond2 = i < UInt32(truncatingIfNeeded: cursors.count)
-            try sceFailure.throwIfFailed()
-            if !sceCond2 { break }
-            do {
-                let sceCond3 = Checked.sub(sceFailure, now, Checked.at(sceFailure, lastSeen, i, fallback: 0)) <= maxIdle
-                try sceFailure.throwIfFailed()
-                if sceCond3 {
-                    do {
-                        let sceCond5 = !taking || Checked.at(sceFailure, cursors, i, fallback: 0) < stable
-                        try sceFailure.throwIfFailed()
-                        if sceCond5 {
-                            stable = Checked.at(sceFailure, cursors, i, fallback: 0)
-                            try sceFailure.throwIfFailed()
-                        }
-                    }
-                    taking = true
-                    try sceFailure.throwIfFailed()
+        while i < UInt32(truncatingIfNeeded: cursors.count) {
+            if (try Checked.sub(now, (try Checked.at(lastSeen, i)))) <= maxIdle {
+                if (try Checked.or(!taking, { (try Checked.at(cursors, i)) < stable })) {
+                    stable = (try Checked.at(cursors, i))
                 }
+                taking = true
             }
-            i = Checked.add(sceFailure, i, 1)
-            try sceFailure.throwIfFailed()
+            i = (try Checked.add(i, 1))
         }
-        do {
-            let sceReturned: UInt64 = stable
-            try sceFailure.throwIfFailed()
-            return sceReturned
-        }
+        return stable
     }
 }
