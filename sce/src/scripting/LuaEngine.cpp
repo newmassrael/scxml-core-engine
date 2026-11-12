@@ -1078,10 +1078,6 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
     // cue.
     offerToScope(*it->second, name);
 
-    // Track pre-initialized variables for invoke param/namelist support
-    // §scxml-6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables
-    it->second->preInitializedVars.insert(name);
-
     return ScriptResult::createSuccess(true);
 }
 
@@ -1199,15 +1195,6 @@ bool LuaEngine::hasVariable(const std::string &sessionId, const std::string &var
 
     lua_pop(L, pushCount);
     return true;
-}
-
-bool LuaEngine::isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const {
-    std::lock_guard<std::mutex> lock(sessionMutex_);
-    auto it = sessions_.find(sessionId);
-    if (it != sessions_.end()) {
-        return it->second->preInitializedVars.count(variableName) > 0;
-    }
-    return false;
 }
 
 // === SCXML System Variables ===

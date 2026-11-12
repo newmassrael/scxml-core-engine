@@ -69,8 +69,8 @@ mutation_case "a data item declaration never reaches the frontend's scope" <<'PY
 edit("sce/src/scripting/LuaEngine.cpp",
      """    offerToScope(*it->second, name);
 
-    // Track pre-initialized variables for invoke param/namelist support""",
-     """    // Track pre-initialized variables for invoke param/namelist support""")
+    return ScriptResult::createSuccess(true);""",
+     """    return ScriptResult::createSuccess(true);""")
 PY
 
 # ── The `<script>` half of the scope ────────────────────────────────

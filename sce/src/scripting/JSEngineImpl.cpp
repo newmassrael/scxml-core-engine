@@ -360,13 +360,6 @@ ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const s
 
     JS_FreeValue(ctx, global);
 
-    // Track pre-initialized variable for datamodel initialization optimization
-    // Thread-safe: protect access to SessionContext::preInitializedVars
-    {
-        std::lock_guard<std::mutex> lock(sessionsMutex_);
-        session->preInitializedVars.insert(name);
-    }
-
     SCE_LOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
     return ScriptResult::createSuccess();
 }

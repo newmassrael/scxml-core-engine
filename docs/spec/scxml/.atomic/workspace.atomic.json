@@ -10674,11 +10674,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::captureInvokeState",
           "kind": "implements"
@@ -12505,11 +12500,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::setVariableInternal",
-          "kind": "implements"
-        },
-        {
           "file": "backends/c/runtime/include/sce/invoke.h",
           "symbol": "sce_invoke_format_id",
           "kind": "implements"
@@ -12574,21 +12564,6 @@
         {
           "file": "sce/include/common/FileLoadingHelper.h",
           "symbol": "loadScxmlFile",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "DatamodelValidationHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "buildChildDatamodelSet",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "isVariableDeclaredInChild",
           "kind": "implements"
         },
         {
@@ -22694,6 +22669,36 @@
       "target_kind": "section",
       "target_id": "scxml-6.4",
       "reason": "ADR 0096 C++ step: LuaEngine's session creation moved into createSessionChecked, which reports the step that failed; LuaEngine no longer defines createSession (IScriptEngine's final wrapper does)."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.3",
+      "reason": "ADR 0098: the child start filters handed names; the header is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.3",
+      "reason": "ADR 0098: the child start filters handed names; the header is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.3",
+      "reason": "ADR 0098: the child start filters handed names; the header is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "ADR 0098: initializeAllDataItems declares handed values in place; initializeDataItem cites 6.4 no more"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.2",
+      "reason": "ADR 0098: the pre-initialized variable set is removed; setVariableInternal cites 6.4.2 no more"
     }
   ],
   "frames": {},

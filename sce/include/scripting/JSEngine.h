@@ -21,7 +21,6 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 // Forward declarations for QuickJS
@@ -194,13 +193,12 @@ public:
     std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
 
     /**
-     * @brief Check if a variable was pre-initialized (set before datamodel initialization)
+     * @brief Check if a variable is declared in the session
      * @param sessionId Session identifier
      * @param variableName Variable name to check
-     * @return true if variable was pre-initialized (e.g., by invoke data)
+     * @return true if the variable is declared, even when its value is undefined
      */
     bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     // === SCXML-specific Features ===
 
@@ -405,8 +403,6 @@ private:
         std::shared_ptr<Event> currentEvent;
         std::string sessionName;
         std::vector<IOProcessorDescriptor> ioProcessors;
-        std::unordered_set<std::string>
-            preInitializedVars;  // Variables set before datamodel initialization (e.g., invoke data)
         // SOLID: Single Responsibility - session management includes invoke relationships
         std::shared_ptr<class IEventRaiser> eventRaiser;
         // §scxml-5.10: Track _event object initialization for lazy binding

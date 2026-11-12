@@ -1231,15 +1231,6 @@ bool JSEngine::hasVariable(const std::string &sessionId, const std::string &vari
     return false;
 }
 
-bool JSEngine::isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const {
-    std::lock_guard<std::mutex> lock(sessionsMutex_);
-    auto it = sessions_.find(sessionId);
-    if (it == sessions_.end()) {
-        return false;
-    }
-    return it->second.preInitializedVars.find(variableName) != it->second.preInitializedVars.end();
-}
-
 // === Invoke Session Management Implementation ===
 
 void JSEngine::initializeEventRaiserService() {

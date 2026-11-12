@@ -1623,7 +1623,7 @@ on the queue it belongs to and taken in turn, never processed where it lands.
 
 | Category | Helpers | Dependency |
 |----------|---------|------------|
-| Pure validators | AssignHelper, ForeachValidator, DatamodelValidationHelper | stdlib only |
+| Pure validators | AssignHelper, ForeachValidator | stdlib only |
 | Shared computation | StringUtils, SCXMLConstants, EventTypeHelper, InPredicateHelper, EventMetadataHelper, SendHelper, SendSchedulingHelper, NamelistHelper, LogicalTimeScheduler | stdlib + LogMacros |
 | JSEngine-dependent | GuardHelper, DoneDataHelper, AssignmentExecutionHelper, FinalizeHelper, DataModelInitHelper, DataModelReadHelper | `scripting/IJSExecutionEngine` |
 | Runtime infrastructure | UniqueIdGenerator, UrlEncodingHelper, EventDataHelper, FileLoadingHelper | compiled (.cpp in sce_base/sce_runtime) |

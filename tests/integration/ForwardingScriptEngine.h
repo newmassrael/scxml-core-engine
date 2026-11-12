@@ -75,10 +75,6 @@ public:
         return inner_.hasVariable(sessionId, variableName);
     }
 
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override {
-        return inner_.isVariablePreInitialized(sessionId, variableName);
-    }
-
     std::future<::SCE::SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
                                                               const std::shared_ptr<::SCE::Event> &event) override {
         return inner_.setCurrentEvent(sessionId, event);

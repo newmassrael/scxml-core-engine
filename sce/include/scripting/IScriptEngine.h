@@ -197,14 +197,6 @@ public:
      */
     virtual bool hasVariable(const std::string &sessionId, const std::string &variableName) const = 0;
 
-    /**
-     * @brief Check if a variable was pre-initialized (set before datamodel initialization)
-     * @param sessionId Session identifier
-     * @param variableName Variable name to check
-     * @return true if variable was pre-initialized (e.g., by invoke data)
-     */
-    virtual bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const = 0;
-
     // === SCXML-specific Features ===
 
     /**

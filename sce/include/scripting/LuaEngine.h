@@ -91,7 +91,6 @@ public:
     std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                const std::string &xmlContent) override;
     bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                    const std::vector<IOProcessorDescriptor> &ioProcessors) override;
     std::future<SetCurrentEventResult> setCurrentEvent(const std::string &sessionId,
@@ -140,7 +139,6 @@ private:
         std::string parentSessionId;
         std::string sessionName;
         bool systemVarsInitialized = false;
-        std::unordered_set<std::string> preInitializedVars;
         std::unordered_set<std::string> declaredVars;  // Track all declared variables (Lua nil != undeclared)
 
         // The global names this session was BORN with — Lua's own standard
