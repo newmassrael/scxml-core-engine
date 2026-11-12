@@ -27,7 +27,7 @@ mod common;
 
 use common::repair::*;
 use common::*;
-use sce_rust_mesh::causal::{JournalRecord, Start};
+use sce_rust_mesh::causal::{JournalRecord, Replica, Start};
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::Engine;
 use sce_rust_world::{Outcome, World};
@@ -139,16 +139,46 @@ fn a_copy_restored_from_an_old_save_numbers_no_change_twice() {
     }
 }
 
-/// The old incarnation's column holds the stable cut where it stopped: its peers keep the
-/// changes it never said it took in, for the view change that lands later to settle, and do
-/// not forget them.
+/// The old incarnation's column holds the stable cut where it stopped. Bob makes a change
+/// once it has stopped, which carol takes in and it never does: its peers keep that change
+/// for the view change that lands later to settle, and do not forget it, while its own
+/// changes, which it said it took in by the contexts it tagged them with, are stable and let
+/// go. Red if the cut leaves the old incarnation out of the view (bob's change is then stable
+/// and forgotten) or takes the maximum over the view (likewise).
 #[test]
 fn an_old_incarnations_column_holds_the_stable_cut() {
     let mut world = a_device_lost_and_set_up_again(Again::NewIncarnation);
+    todo_set(&mut world, "bob", 4, DUE, 40);
+    world.advance_ms(10 * MINUTE);
+
+    let old = replica_of("alice", 0);
+    let after = replica_of("bob", 0);
     for who in ["bob", "carol"] {
+        assert_eq!(
+            delivered_of(&mut world, who, after),
+            1,
+            "{who} took in the change bob made after the old incarnation stopped"
+        );
         let layer = world.causal_layer(who, PEOPLE).expect("a layer");
-        assert!(
-            layer.log_len() > 0,
+        let cut = layer.stable_cut().expect("the cut of the view");
+        let column = |author: Replica| {
+            cut.iter()
+                .find(|entry| Replica::of(entry) == author)
+                .map_or(0, |entry| entry.seq)
+        };
+        assert_eq!(
+            column(old),
+            2,
+            "{who}'s cut does not stand where the old incarnation stopped"
+        );
+        assert_eq!(
+            column(after),
+            0,
+            "{who}'s cut passed a change the old incarnation never took in"
+        );
+        assert_eq!(
+            layer.log_len(),
+            1,
             "{who} forgot a change the old incarnation never said it took in"
         );
     }
