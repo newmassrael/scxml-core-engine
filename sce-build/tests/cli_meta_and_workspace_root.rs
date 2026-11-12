@@ -246,3 +246,60 @@ fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
          stderr:\n{stderr}",
     );
 }
+
+// ── #4: the batch commands' project root, as a generation names it ──
+//
+// A cached generation (ADR 0097) is run from the checkout's root with
+// `SCE_WORKSPACE_ROOT=.`, so that its key names no checkout's location. The
+// batch commands (`generate-w3c`, `generate-integration`) must read that
+// value against the directory they run in: falling through to the checkout
+// that built the binary reads that checkout's registry, which is outside
+// the generation's checkout and outside its key.
+
+#[test]
+fn a_relative_workspace_root_is_the_directory_the_run_starts_in() {
+    let checkout = tempfile::tempdir().expect("a checkout");
+    let registry = checkout.path().join("tests/w3c/conformance/fixtures.json");
+    std::fs::create_dir_all(registry.parent().unwrap()).expect("the registry's directory");
+    std::fs::write(
+        &registry,
+        r#"{
+  "version": 1,
+  "harnesses": { "simple": "Run the machine to completion." },
+  "fixtures": [
+    { "id": "9999", "summary": "a fixture only this checkout registers" }
+  ]
+}
+"#,
+    )
+    .expect("write the registry");
+    let document = checkout.path().join("resources/9999/test9999.scxml");
+    std::fs::create_dir_all(document.parent().unwrap()).expect("the fixture's directory");
+    std::fs::write(
+        &document,
+        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"pass\">\n\
+         <final id=\"pass\"/>\n\
+         </scxml>\n",
+    )
+    .expect("write the fixture");
+
+    let out = Command::new(sce_codegen_bin())
+        .current_dir(checkout.path())
+        .args(["generate-w3c", "-l", "rust", "--list"])
+        .env("SCE_WORKSPACE_ROOT", ".")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn sce-codegen generate-w3c --list");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "generate-w3c --list failed in a checkout of one fixture; stderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("W3C conformance registry: 1 fixtures") && stdout.contains("9999"),
+        "SCE_WORKSPACE_ROOT=. must name the checkout the run starts in, not the one that \
+         built this binary; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
