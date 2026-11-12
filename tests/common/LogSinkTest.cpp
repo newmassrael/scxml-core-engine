@@ -230,9 +230,16 @@ TEST(LogFormat, AFloatingPointValueIsItsShortestTextThatReadsBack) {
 // its own (a runner program's is its verdict lines, docs/SCE_TTCN3_LANE.md §4).
 // Each default backend is held to that: a message it writes is on the standard
 // error and nothing is on the standard output.
+//
+// What is held is the stream, so the backend is first told to write every level.
+// The level a backend starts at is not the same everywhere: SpdlogBackend starts
+// silent under Emscripten, where the page's script asks for a level
+// (setSpdlogLevel), and either backend starts at the level SPDLOG_LEVEL names.
 namespace {
 
 void expectOnTheStandardErrorAlone(SCE::ILoggerBackend &backend, const std::string &message) {
+    backend.setLevel(SCE::LogLevel::Trace);
+    ASSERT_TRUE(backend.shouldLog(SCE::LogLevel::Error));
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
     backend.log(SCE::LogLevel::Error, message, SCE::source_location::current());
