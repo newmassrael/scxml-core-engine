@@ -173,32 +173,20 @@ step_python_w3c() {
 }
 
 # ── go-integration: backends/go/tests/integration ───────────────────────
+#
+# The integration tree is declared (ADR 0097): every document, flag and package
+# of it is in tools/codegen/trees/go-integration.toml, and `materialize` writes
+# it as its actions produce it, removing a generated file no action produces
+# any more. The static datamodel is the step's one tree still written by a
+# script.
 step_go_integration() {
     require_codegen
 
     stage "Integration Go tree"
-    "$CODEGEN" generate-integration -l go
+    "$CODEGEN" materialize go-integration --into "$REPO_ROOT" --replace
 
-    stage "EventSchema native-lowering Go tree"
-    scripts/regen_event_schema_native_go.sh
     stage "Static datamodel Go tree"
     scripts/regen_static_datamodel_go.sh
-    stage "Native-action host-dispatch Go tree"
-    scripts/regen_native_action_go.sh
-    stage "Host-processor send Go trees"
-    scripts/regen_host_processor_go.sh
-
-    # The channels are held to a single scenario set by `ai_loop_channel_parity`,
-    # so a tree that went stale here would make one engine's answers about a
-    # document the others no longer generate from.
-    stage "AI loop example Go tree"
-    scripts/regen_ai_loop_go.sh
-    stage "Transition-domain witness Go tree"
-    scripts/regen_parallel_region_root_external_domain_go.sh
-    stage "Child-deadline document Go tree"
-    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh
-    stage "External-event budget document Go tree"
-    scripts/regen_external_chain_is_bounded_go.sh
 }
 
 # ── python-integration: backends/python/tests/integration (gitignored) ─

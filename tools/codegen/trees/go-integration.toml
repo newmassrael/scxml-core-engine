@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Go integration machines (ADR 0097): a package directory each under
+# backends/go/tests/integration, holding a document's machine and the machines
+# of the children it writes (`--children`, each joining its parent's package).
+# The static datamodel's directory is a tree of its own. The test files beside
+# the machines, and the integration package's doc.go, are written by hand.
+#
+# Regenerate with `scripts/materialize.sh go-integration`.
+
+[tree]
+name = "go-integration"
+roots = ["backends/go/tests/integration/*"]
+except = ["backends/go/tests/integration/static_datamodel"]
+
+# Every fixture of integration_resources: a directory holding the document of
+# its name. A document whose transitions compile to a function writes it as a
+# package of its own beside the machine (`<stem>_transition_function/`).
+[[generation]]
+each = { directories = "integration_resources/*", as = "stem", except = [
+    "a_host_names_its_origin_in_its_own_terms",
+    "an_event_no_processor_delivered_has_no_origin",
+] }
+arguments = ["generate", "integration_resources/{stem}/{stem}.scxml", "-l", "go", "-o", "{out}", "--children"]
+place = "backends/go/tests/integration/{stem}"
+keep = ["*_sm.go", "*_transition_function/*.go"]
+
+# Two stems are generated for a host that serves the `x-sce-host` processor or
+# invoker; their test drives that host, so the declaration is the build's and
+# stands here, beside the stems it applies to.
+[[generation]]
+arguments = [
+    "generate", "integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml",
+    "-l", "go", "-o", "{out}", "--children", "--host-invoker", "x-sce-host",
+]
+place = "backends/go/tests/integration/a_host_names_its_origin_in_its_own_terms"
+keep = ["*_sm.go"]
+
+[[generation]]
+arguments = [
+    "generate", "integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml",
+    "-l", "go", "-o", "{out}", "--children", "--host-processor", "x-sce-host",
+]
+place = "backends/go/tests/integration/an_event_no_processor_delivered_has_no_origin"
+keep = ["*_sm.go"]
+
+# The documents outside integration_resources. A stem there is a contract of
+# seven channels (C++ Interpreter, C++ AOT, Rust, Go, Python, Kotlin, C11)
+# that `integration_stem_registration` enforces, and each of these asks a
+# question of fewer engines:
+# - a_child_timer_is_a_deadline_of_its_parent asks a host's question, when
+#   the machine next needs a tick, which C11 and the C++ Interpreter do not
+#   expose;
+# - external_chain_is_bounded holds each engine to ARCHITECTURE.md
+#   "External-Event Budget", a driver at a time;
+# - parallel_region_root_external_domain, the external transition of a
+#   region root, has a driver on six of the seven channels.
+[[generation]]
+each = { list = [
+    "a_child_timer_is_a_deadline_of_its_parent",
+    "external_chain_is_bounded",
+    "parallel_region_root_external_domain",
+], as = "document" }
+arguments = ["generate", "tests/integration/{document}.scxml", "-l", "go", "-o", "{out}", "--children"]
+place = "backends/go/tests/integration/{document}"
+keep = ["*_sm.go"]
+
+# The AI supervision loop example, for a host serving `x-sce-host`. It is an
+# example, not a fixture: `ai_loop_channel_parity` holds every channel that
+# drives it to one scenario set.
+[[generation]]
+arguments = ["generate", "examples/ai_loop/ai_loop.scxml", "-l", "go", "-o", "{out}", "--children", "--host-processor", "x-sce-host"]
+place = "backends/go/tests/integration/ai_loop"
+keep = ["*_sm.go"]
+
+# The `<sce:action>` native host dispatch: the machine declares a host
+# interface of its actions and runs no script engine, and its test drives a
+# host implementation of it.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/statechart_native_action.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/statechart_native_action"
+keep = ["*_sm.go"]
+
+# The EventSchema native lowering: a typed `_event.data` guard lowered to a
+# comparison with no script engine, a package each, so the per-event inject
+# method is type-checked where its test calls it.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/statechart_minimal.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/event_schema_native"
+keep = ["*_sm.go"]
+
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/statechart_bytes.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/event_schema_bytes"
+keep = ["*_sm.go"]
+
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/event_schema/statechart_lifted.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/event_schema_lifted"
+keep = ["*_sm.go"]
+
+# The host-served Event I/O Processor and its invoker, a package per document,
+# each declared with the host surfaces its test serves. The declaration is the
+# point: without `--host-processor` the same `<send>` compiles to
+# error.execution, with it to a dispatch into the registry the host fills.
+[[generation]]
+each = { list = [
+    "statechart_host_processor",
+    "statechart_delayed_host_send",
+    "statechart_static_delayed_host_send",
+], as = "document" }
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "go", "-o", "{out}", "--host-processor", "x-sce-host"]
+place = "backends/go/tests/integration/{document}"
+keep = ["*_sm.go"]
+
+[[generation]]
+each = { list = [
+    "statechart_host_invoker",
+    "statechart_static_host_invoke",
+    "statechart_host_invoker_optional",
+], as = "document" }
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "go", "-o", "{out}", "--host-invoker", "x-sce-host"]
+place = "backends/go/tests/integration/{document}"
+keep = ["*_sm.go"]
+
+# The one document that needs both declarations.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml",
+    "-l", "go", "-o", "{out}", "--host-processor", "x-sce-host", "--host-invoker", "x-sce-host",
+]
+place = "backends/go/tests/integration/statechart_static_host_params"
+keep = ["*_sm.go"]
+
+# No host declaration: the build names the Mesh request's type itself.
+[[generation]]
+arguments = ["generate", "sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml", "-l", "go", "-o", "{out}"]
+place = "backends/go/tests/integration/statechart_static_mesh_request"
+keep = ["*_sm.go"]
