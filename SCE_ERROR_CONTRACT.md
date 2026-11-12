@@ -1786,7 +1786,7 @@ The same refusal answers every start:
 | Go | `Initialize() error`, which answers nil for a machine without a script engine (its policy's `NeedsScriptEngine` is `false`) | `*sce.ScriptSessionFailure { Stage ScriptSessionStage; Message string }` (`backends/go/runtime/script_session.go`), an `error` whose `Error()` is the sentence; `ScriptSessionStageCreate`, `ScriptSessionStageLibrary`, `ScriptSessionStageSystemVariables`; an engine's `CreateSession` names the `library` step by answering `*sce.ScriptLibraryNotLoaded`; `InitializeAsRoot` answers `RootStartNeedsParent` or an error that `errors.Is` `RootStartScriptSession` and `errors.As` the failure; `EnterAt` answers a `ConfigurationVerdict` whose `Rejection` is `ConfigurationScriptSessionUnavailable` and whose `ScriptSessionFailure` is the failure | landed |
 | Kotlin | `initialize()` and `start(scope)` throw `ScriptSessionUnavailableException`, which a machine without a script engine never throws; `start` establishes the session on the caller's thread, before it launches its coroutine | `com.sce.runtime.ScriptSessionFailure(stage: ScriptSessionStage, message: String)` (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScriptSession.kt`), whose `toString()` is the sentence, carried as `ScriptSessionUnavailableException.failure`; `ScriptSessionStage.CREATE`, `LIBRARY`, `SYSTEM_VARIABLES`, each `toString()` the step's name; an engine's `createSession` names the `library` step by throwing `ScriptLibraryNotLoadedException`; `initializeAsRoot` and `startAsRoot` answer `RootStartRefusal.ScriptSession(failure)` beside `RootStartRefusal.NeedsParent` (still spelt `RootStartRefusal.NEEDS_PARENT`); `enterAt` answers a `ConfigurationVerdict` whose `rejection` is `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and whose `scriptSessionFailure` is the failure | landed |
 | Python | `initialize()` raises `ScriptSessionUnavailable` before the run is marked running or its inbox opened; every Python machine is built over a script engine and makes its session at the start, so any start may raise it | `sce_runtime.ScriptSessionFailure(stage: ScriptSessionStage, message: str)` (`backends/python/runtime/sce_runtime/script_session.py`), a frozen dataclass whose `str()` is the sentence, carried as `ScriptSessionUnavailable.failure`; `ScriptSessionStage.CREATE`, `LIBRARY`, `SYSTEM_VARIABLES`, each `str()` and `.value` the step's name; an engine's `create_session` names the `library` step by raising `ScriptLibraryNotLoaded`; `initialize_as_root` answers `RootStartRefusal.ScriptSession(failure)` (the class `RootStartScriptSession`) beside `RootStartRefusal.NEEDS_PARENT` (the one value of `RootStartNeedsParent`, also spelt `RootStartRefusal.NeedsParent` for its class); `enter_at` answers a `ConfigurationVerdict` whose `rejection` is `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and whose `script_session_failure` is the failure | landed |
-| Swift | `initialize() throws` | `ScriptSessionFailure: Error` | pending |
+| Swift | `initialize() throws`, which throws a `ScriptSessionFailure` and nothing else, and never for a machine without a script engine (its policy's `establishScriptSession` answers nil); a child's `ChildEngine.initialize() throws` the same | `SceRuntime.ScriptSessionFailure { stage: ScriptSessionStage; message: String }` (`backends/swift/runtime/Sources/SceRuntime/ScriptSession.swift`), an `Error` that is `Equatable` and `Sendable`, whose `description` is the sentence; `ScriptSessionStage.create`, `.library`, `.systemVariables`, each `description` the step's name; the generated machine names the step by which of its three steps threw, with the engine's words (`LuaError.message`); `initializeAsRoot` throws `RootStartRefusal.scriptSession(failure)` beside `RootStartRefusal.needsParent`; `enterAt` answers `ConfigurationRejection.scriptSessionUnavailable(failure)` | landed |
 | C11 | `_init*` returns `<name>_start_status_t` (`warn_unused_result`) | `<NAME>_START_SCRIPT_SESSION_UNAVAILABLE` | pending |
 
 A backend marked pending still sets its session up as it did before
@@ -1879,3 +1879,26 @@ refused child's invoke in `Engine.refuse_child_start` with the
 (a generated machine over a double of the Lua engine that fails each step on
 request); mutation casefile
 `sce-build/tests/mutations/a_python_machine_whose_script_session_fails_does_not_start.cases`.
+
+Swift producer: `establishScriptSession` in
+`tools/codegen/templates/swift/script_engine.swift.jinja2`, a requirement of
+`StatePolicy` that a policy without a script engine answers nil for;
+`Engine.initialize`, `initializeAsRoot` and `enterAt` ask it before the run is
+marked running or its inbox opened, every start and not only one whose
+document declares `<data>`. The generated `initializeDataModel` then declares
+the `<data>`, a value the parent handed a variable taking the place of that
+`<data>`'s own, and runs the top-level `<script>`; what runs after the start
+reads the session through `scriptSession`, whose absence stops the process at
+a precondition. The child's start is `startChildSession` in
+`backends/swift/runtime/Sources/SceRuntime/Invoke.swift`, which the parent's
+generated start of the invoke asks, keeping no child when it answers false,
+and which raises the `error.execution` whose data is
+`ScriptSessionFailure.childStartRefusal`. Tests:
+`backends/swift/runtime/Tests/SceRuntimeTests/ScriptSessionFailureTests.swift`
+(the values a refusal hands its host, and the engine's half over a scripted
+policy) and
+`backends/swift/tests/Tests/IntegrationTests/AMachineWhoseScriptSessionFailsDoesNotStartTests.swift`
+(a generated machine whose steps are failed on request through
+`sceScriptSessionFault`, a seam the generated machine compiles into a debug
+build alone and a parent hands to its children); mutation casefile
+`sce-build/tests/mutations/a_swift_machine_whose_script_session_fails_does_not_start.cases`.
