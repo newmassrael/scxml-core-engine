@@ -1787,11 +1787,7 @@ The same refusal answers every start:
 | Kotlin | `initialize()` and `start(scope)` throw `ScriptSessionUnavailableException`, which a machine without a script engine never throws; `start` establishes the session on the caller's thread, before it launches its coroutine | `com.sce.runtime.ScriptSessionFailure(stage: ScriptSessionStage, message: String)` (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScriptSession.kt`), whose `toString()` is the sentence, carried as `ScriptSessionUnavailableException.failure`; `ScriptSessionStage.CREATE`, `LIBRARY`, `SYSTEM_VARIABLES`, each `toString()` the step's name; an engine's `createSession` names the `library` step by throwing `ScriptLibraryNotLoadedException`; `initializeAsRoot` and `startAsRoot` answer `RootStartRefusal.ScriptSession(failure)` beside `RootStartRefusal.NeedsParent` (still spelt `RootStartRefusal.NEEDS_PARENT`); `enterAt` answers a `ConfigurationVerdict` whose `rejection` is `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and whose `scriptSessionFailure` is the failure | landed |
 | Python | `initialize()` raises `ScriptSessionUnavailable` before the run is marked running or its inbox opened; every Python machine is built over a script engine and makes its session at the start, so any start may raise it | `sce_runtime.ScriptSessionFailure(stage: ScriptSessionStage, message: str)` (`backends/python/runtime/sce_runtime/script_session.py`), a frozen dataclass whose `str()` is the sentence, carried as `ScriptSessionUnavailable.failure`; `ScriptSessionStage.CREATE`, `LIBRARY`, `SYSTEM_VARIABLES`, each `str()` and `.value` the step's name; an engine's `create_session` names the `library` step by raising `ScriptLibraryNotLoaded`; `initialize_as_root` answers `RootStartRefusal.ScriptSession(failure)` (the class `RootStartScriptSession`) beside `RootStartRefusal.NEEDS_PARENT` (the one value of `RootStartNeedsParent`, also spelt `RootStartRefusal.NeedsParent` for its class); `enter_at` answers a `ConfigurationVerdict` whose `rejection` is `ConfigurationRejection.SCRIPT_SESSION_UNAVAILABLE` and whose `script_session_failure` is the failure | landed |
 | Swift | `initialize() throws`, which throws a `ScriptSessionFailure` and nothing else, and never for a machine without a script engine (its policy's `establishScriptSession` answers nil); a child's `ChildEngine.initialize() throws` the same | `SceRuntime.ScriptSessionFailure { stage: ScriptSessionStage; message: String }` (`backends/swift/runtime/Sources/SceRuntime/ScriptSession.swift`), an `Error` that is `Equatable` and `Sendable`, whose `description` is the sentence; `ScriptSessionStage.create`, `.library`, `.systemVariables`, each `description` the step's name; the generated machine names the step by which of its three steps threw, with the engine's words (`LuaError.message`); `initializeAsRoot` throws `RootStartRefusal.scriptSession(failure)` beside `RootStartRefusal.needsParent`; `enterAt` answers `ConfigurationRejection.scriptSessionUnavailable(failure)` | landed |
-| C11 | `_init*` returns `<name>_start_status_t` (`warn_unused_result`) | `<NAME>_START_SCRIPT_SESSION_UNAVAILABLE` | pending |
-
-A backend marked pending still sets its session up as it did before
-docs/adr/0096; its row moves to landed with the commit that carries its
-runtime, template, regenerated trees, tests and mutation casefile.
+| C11 | every `_init*` (`_init`, `_init_with_clock`, `_init_with_basic_http`, `_init_with_actions`, `_init_with_host_*`, `_init_with_parent`) returns `<name>_start_status_t`, declared `SCE_WARN_UNUSED` (`warn_unused_result`, `sce/portability.h`); `<NAME>_START_OK` is 0, and the enum holds `<NAME>_START_SCRIPT_SESSION_UNAVAILABLE` only for a machine with a script engine and `<NAME>_START_HOST_ACTIONS_INCOMPLETE` only for one that declares acts | `<NAME>_START_SCRIPT_SESSION_UNAVAILABLE`, the machine left cleared, not running and with no Lua state; `const sce_script_session_failure_t *<name>_script_session_failure(const <name>_t *)` reads `sce_script_session_failure_t { sce_script_session_stage_t stage; char message[SCE_MAX_SCRIPT_SESSION_MESSAGE_LEN]; }` (`sce/script_session.h`, 160 bytes by default, the engine's words cut to them), NULL when the start did not fail there; `SCE_SCRIPT_SESSION_STAGE_CREATE`, `_LIBRARY`, `_SYSTEM_VARIABLES`, named by `sce_script_session_stage_name`; `<name>_init_with_session_id` answers `SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE`; `<name>_init_at` answers `<NAME>_CONFIG_SCRIPT_SESSION_UNAVAILABLE` | landed |
 
 Rust producer: `do_initialize_data_model` in
 `tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2`, which the
@@ -1902,3 +1898,26 @@ policy) and
 `sceScriptSessionFault`, a seam the generated machine compiles into a debug
 build alone and a parent hands to its children); mutation casefile
 `sce-build/tests/mutations/a_swift_machine_whose_script_session_fails_does_not_start.cases`.
+
+C11 producer: `establish_script_session` in
+`tools/codegen/templates/c/state_machine.c.jinja2`, whose body is
+`lua_establish_session` in `tools/codegen/templates/c/scriptengine.jinja2`:
+the Lua state from the build's factory (`SCE_LUA_STATE_FACTORY`, a device's
+own allocator, `luaL_newstate` when the build names none), the standard
+libraries opened in a protected call, every chunk of the shared library run
+and its answer read, then the system variables bound, nothing raised in the
+machine for a step that fails. `_init_construct`, behind every `_init*`,
+`_init_with_session_id`, `_init_at` and the restore, and `_init_with_parent`,
+an invoked child's start, call it after the session's identity is written
+and before the machine is marked running, then declare the datamodel
+(`lua_declare_datamodel`: the `<data>`, the early-bound state `<data>` and
+the top-level `<script>`, in that order); the parameters a parent hands a
+child are applied after the child's initial configuration is entered, as
+before this ADR. A machine whose start was refused takes no event: its
+`_step` counts what the host raised as unseen. The child's start is
+`refuse_unstarted_child` in `tools/codegen/templates/c/invoke_methods.jinja2`,
+whose `error.execution` data names the invoke and the step. Test:
+`backends/c/tests/integration/test_a_machine_whose_script_session_fails_does_not_start.c`
+(the generated machine over the build's Lua, made by a factory that fails
+each step on request); mutation casefile
+`sce-build/tests/mutations/a_c11_machine_whose_script_session_fails_does_not_start.cases`.
