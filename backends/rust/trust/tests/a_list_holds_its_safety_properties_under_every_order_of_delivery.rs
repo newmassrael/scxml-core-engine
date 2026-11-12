@@ -538,17 +538,34 @@ fn a_changed_operation_is_taken_in_by_no_host() {
         for op in 0..world.ops.len() {
             let (event, data) = world.ops[op].clone();
             let mut value: Value = serde_json::from_str(&data).unwrap();
-            // Change one thing the author signed, or the signature, or where it stands in the chain.
-            let field = ["value", "wallTime", "sig", "seq", "prev", "mhh"][world.rng.below(6)];
-            let current = value[field].as_str().unwrap().to_string();
-            let changed = if field == "value" || field == "wallTime" || field == "seq" {
+            // Change one thing the author signed (the value of the change's write, or the change's
+            // time), or the signature, or where it stands in the chain. Each is named by where it
+            // stands in the operation as it travels: a change carries its writes under `ops`.
+            let (field, numeric) = [
+                ("/ops/0/value", true),
+                ("/wallTime", true),
+                ("/sig", false),
+                ("/seq", true),
+                ("/prev", false),
+                ("/mhh", false),
+            ][world.rng.below(6)];
+            let slot = value.pointer_mut(field).unwrap_or_else(|| {
+                panic!("seed {seed}: every change the world made carries `{field}`: {data}")
+            });
+            let current = slot
+                .as_str()
+                .unwrap_or_else(|| {
+                    panic!("seed {seed}: `{field}` travels as text in every operation: {data}")
+                })
+                .to_string();
+            let changed = if numeric {
                 (current.parse::<i64>().unwrap() + 1).to_string()
             } else {
                 let mut bytes = current.into_bytes();
                 bytes[0] = if bytes[0] == b'A' { b'B' } else { b'A' };
                 String::from_utf8(bytes).unwrap()
             };
-            value[field] = Value::String(changed);
+            *slot = Value::String(changed);
             for host in &world.hosts {
                 assert!(
                     host.take_operation(&event, &value.to_string()).is_err(),
