@@ -82,8 +82,9 @@ struct TraceTests {
         let schema = try parseJSON(try String(contentsOf: path, encoding: .utf8))
         #expect(
             schema.member("x-sce-schema-status") == JSONValue.text(testTraceSchemaStatus),
-            "schemas/sce-test-trace.v1.schema.json x-sce-schema-status disagrees with testTraceSchemaStatus; "
-                + "SCE_WIRE_CONTRACTS.md requires one commit to move both")
+            Comment(
+                rawValue: "schemas/sce-test-trace.v1.schema.json x-sce-schema-status disagrees with "
+                    + "testTraceSchemaStatus; SCE_WIRE_CONTRACTS.md requires one commit to move both"))
         let shape = schema.member("properties")?.member("schema")?.member("const")
         #expect(shape == JSONValue.text(testTraceSchema))
     }
