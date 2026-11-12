@@ -15,8 +15,14 @@
 #   an integer sum that wraps instead of being reported;
 #   a quotient whose MIN / -1 overflow is let through;
 #   a string measured in characters and not in UTF-8 bytes;
-#   an element read past the list that records no failure;
-#   a second failure that replaces the first.
+#   an element read past the list that answers the last element instead of failing;
+#   a short-circuit `and` that evaluates its right operand where its left already decides.
+#
+# Since docs/adr/0098 a failure is thrown and ends the expression, so the runtime no
+# longer records one or keeps the first of two: the language does. The last two cases
+# take away the decisions that remain the runtime's: that an index outside the list has
+# no element, and that a right operand that can fail is evaluated only where the left
+# one decides nothing.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -43,14 +49,14 @@ edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
      "        if UInt64(value.count) > UInt64(capacity) {")
 PY
 
-mutation_case "an element read past the list that records no failure" <<'PY'
+mutation_case "an element read past the list that answers the last element instead of failing" <<'PY'
 edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
-     "            f.fail(.outOfRange)\n            return T()",
-     "            return T()")
+     "        guard let index = Int(exactly: i), index >= 0, index < xs.count else {",
+     "        guard let index = Int(exactly: i).map({ min($0, xs.count - 1) }), index >= 0, index < xs.count else {")
 PY
 
-mutation_case "a second failure that replaces the first" <<'PY'
+mutation_case "a short-circuit and that evaluates its right operand where its left already decides" <<'PY'
 edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
-     "        if recorded == nil {",
-     "        if true {")
+     "        if !lhs {\n            return false\n        }\n        return try rhs()",
+     "        let right = try rhs()\n        return lhs && right")
 PY
