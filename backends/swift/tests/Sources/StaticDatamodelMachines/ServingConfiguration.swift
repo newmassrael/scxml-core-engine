@@ -6,12 +6,14 @@
 // Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
+import SceRuntime
 import SceTestProfile
 
 /// The test configuration `serving_configuration` (docs/SCE_TEST_PROFILE.md §11.6) as the
 /// profile's runtime reads it, the members of a caseless enum of the module as every unit's are:
-/// the configuration, the factory of its components' machines and the module parameters they
-/// read.
+/// the configuration, the factory of its components' machines, the module parameters they read,
+/// and the reader of the inputs a recorded trace carries on its system ports
+/// (docs/SCE_TTCN3_LANE.md §10.5).
 public enum ServingConfiguration {
     /// The configuration: the MTC's component type and each PTC's, the ports and timers each type
     /// declares, each `<sce:connect>` and each `<sce:map>`.
@@ -48,5 +50,17 @@ public enum ServingConfiguration {
     /// §11.5), each of which a suite that runs it gives a value.
     public static func moduleParameters() -> [String] {
         []
+    }
+
+    /// The reader of the inputs of a recorded trace (docs/SCE_TTCN3_LANE.md §10.2,
+    /// `SceTestProfile.InputReader`): the message an input of the record type `typeName` on the
+    /// system port `systemPort` carries, its value read from the canonical form.
+    ///
+    /// - Throws: `SceTestProfile.TraceRefusal` naming why, where the configuration has no such system
+    ///   port, the `in` list of its type does not name the type, or the value does not belong to it.
+    public static func input(systemPort: String, typeName: String, value: SceRuntime.JSONValue)
+        throws(SceTestProfile.TraceRefusal) -> SceTestProfile.Message
+    {
+        throw SceTestProfile.TraceRefusal.notAnInput(systemPort, typeName, [])
     }
 }

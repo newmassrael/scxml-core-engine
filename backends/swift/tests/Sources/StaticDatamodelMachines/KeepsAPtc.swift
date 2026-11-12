@@ -15,12 +15,14 @@ public enum KeepsAPtc {
     public static let name: String = "keeps_a_ptc"
 
     /// The entry the runner reads: the test case's name, its configuration and the machines of its
-    /// components, and the module parameters those components read.
+    /// components, the module parameters those components read, and the reader of the inputs a
+    /// recorded trace of it carries (docs/SCE_TTCN3_LANE.md §10.5).
     public static func testCase() -> SceTestProfile.TestCase {
         SceTestProfile.TestCase(
             name: Self.name,
             configuration: KeepingConfiguration.configuration(),
             machines: { componentType in KeepingConfiguration.machine(componentType) },
-            moduleParameters: KeepingConfiguration.moduleParameters())
+            moduleParameters: KeepingConfiguration.moduleParameters(),
+            inputs: KeepingConfiguration.input(systemPort:typeName:value:))
     }
 }

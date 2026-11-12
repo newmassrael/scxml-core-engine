@@ -15,12 +15,14 @@ public enum AnswersBeforeTheGuard {
     public static let name: String = "answers_before_the_guard"
 
     /// The entry the runner reads: the test case's name, its configuration and the machines of its
-    /// components, and the module parameters those components read.
+    /// components, the module parameters those components read, and the reader of the inputs a
+    /// recorded trace of it carries (docs/SCE_TTCN3_LANE.md §10.5).
     public static func testCase() -> SceTestProfile.TestCase {
         SceTestProfile.TestCase(
             name: Self.name,
             configuration: AskingConfiguration.configuration(),
             machines: { componentType in AskingConfiguration.machine(componentType) },
-            moduleParameters: AskingConfiguration.moduleParameters())
+            moduleParameters: AskingConfiguration.moduleParameters(),
+            inputs: AskingConfiguration.input(systemPort:typeName:value:))
     }
 }
