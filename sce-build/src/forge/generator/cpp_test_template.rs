@@ -339,13 +339,16 @@ impl CppReadingAt {
 /// C++ function infers no type from where its result goes. C++'s test profile
 /// matches no union yet, so the walk's refusal of one stands.
 ///
-/// No read binds a reference to what a call returns: a record's object is
-/// bound as the view `record()` returns by value (`CanonicalRecord`), a list's
-/// elements are iterated through the view `elements()` returns by value, a
-/// field read where it stands is handed straight to the reader of its form,
-/// and a value that may be absent is bound through the pointer to it. So no
-/// reference can outlive a temporary argument of the call that made it (GCC's
-/// `-Wdangling-reference`).
+/// No reference a read binds can outlive a temporary argument of the call
+/// that made it (GCC's `-Wdangling-reference`): a record's object is bound as
+/// the view `record()` returns by value (`CanonicalRecord`), a field read where
+/// it stands is handed straight to the reader of its form, and a value that
+/// may be absent is bound through the pointer to it. The one reference bound
+/// to what a call returns is the range of the loop over a list, the view
+/// `elements()` returns (`CanonicalList`). GCC checks a view as the reference
+/// it holds, so `record()` and `elements()` take by reference only the value
+/// the view points into, and the names of the fields and where the value
+/// stands, which the reader spells as literals, by value.
 pub(super) struct CppReading {
     /// The payload type of the record read.
     pub(super) payload: String,

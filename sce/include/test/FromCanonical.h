@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <string>
@@ -358,6 +359,14 @@ E openEnumerated(const Value &value, const Declared<E> &declared, E (*fromUnderl
 /// no reference returned from a call, so the only thing it can point into is
 /// the value read, which the caller holds, and never an argument the call was
 /// handed as a temporary (the names of the fields, where it stands).
+///
+/// A view is a reference of its own: binding one a call returned to a
+/// reference, as a range-based `for` binds the list it iterates, is checked as
+/// binding the reference the call returned (GCC's `-Wdangling-reference`). So
+/// a call that returns a view takes by reference only the value the view
+/// points into, and every other argument by value: the names of the fields
+/// as views of their literals, and where the value stands as a view of its
+/// text, which a refusal copies.
 class CanonicalRecord {
 public:
     explicit CanonicalRecord(const Value &object) : object_(&object) {}
@@ -396,14 +405,16 @@ private:
 
 /// A record whose fields are @p fields: an object, each member of which names
 /// one of them. Returns the view of the object, whose fields field() and
-/// optionalField() read.
-inline CanonicalRecord record(const Value &value, const std::vector<std::string> &fields, const std::string &what) {
+/// optionalField() read; only @p value is taken by reference, for the reason a
+/// CanonicalRecord gives.
+inline CanonicalRecord record(const Value &value, std::initializer_list<std::string_view> fields,
+                              std::string_view what) {
     if (!value.isObject()) {
-        throw detail::notA(value, what, "a record, which is an object of its fields");
+        throw detail::notA(value, std::string(what), "a record, which is an object of its fields");
     }
     for (const std::string &name : value.asObject().keys()) {
-        if (std::find(fields.begin(), fields.end(), name) == fields.end()) {
-            throw detail::refused(what, "'" + name + "' is no field of its record");
+        if (std::find(fields.begin(), fields.end(), std::string_view(name)) == fields.end()) {
+            throw detail::refused(std::string(what), "'" + name + "' is no field of its record");
         }
     }
     return CanonicalRecord(value);
@@ -427,15 +438,17 @@ inline const Value *optionalField(CanonicalRecord record, std::string_view id) {
 }
 
 /// The elements of a list of at least @p min and at most @p max elements, as
-/// a view of its array.
-inline CanonicalList elements(const Value &value, std::size_t min, std::size_t max, const std::string &what) {
+/// a view of its array; only @p value is taken by reference, for the reason a
+/// CanonicalRecord gives, since the loop that iterates the view binds it.
+inline CanonicalList elements(const Value &value, std::size_t min, std::size_t max, std::string_view what) {
     if (!value.isArray()) {
-        throw detail::notA(value, what, "a list, which is an array");
+        throw detail::notA(value, std::string(what), "a list, which is an array");
     }
     const SCE::Saved::JsonArray &items = value.asArray();
     if (items.size() < min || items.size() > max) {
-        throw detail::refused(what, "a list of " + std::to_string(items.size()) + " elements is outside its bounds, " +
-                                        std::to_string(min) + " to " + std::to_string(max));
+        throw detail::refused(std::string(what), "a list of " + std::to_string(items.size()) +
+                                                     " elements is outside its bounds, " + std::to_string(min) +
+                                                     " to " + std::to_string(max));
     }
     return CanonicalList(items);
 }
