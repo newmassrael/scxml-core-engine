@@ -55,10 +55,12 @@ PY
 # Re-aimed 2026-11-10: the refusing arm names rust too (ADR 0097); Python still moves
 # into it.
 # Re-aimed 2026-11-12: the refusing arm names go too (ADR 0097).
+# Re-aimed 2026-11-12: the refusing arm names kotlin too (ADR 0097), and rustfmt
+# gives it a block.
 mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     '        Language::Python => "_python",\n        // Swift is one sweep over every stem, not a script each: see\n        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.\n        Language::Swift => "",\n        Language::Rust | Language::Go | Language::Cpp | Language::C11 => error_format\n',
-     '        Language::Swift => "",\n        Language::Rust | Language::Go | Language::Cpp | Language::C11 | Language::Python => error_format\n')
+     '        Language::Python => "_python",\n        // Swift is one sweep over every stem, not a script each: see\n        // `scripts/regen_swift_integration.sh`. The suffix is never read for it.\n        Language::Swift => "",\n        Language::Rust | Language::Go | Language::Kotlin | Language::Cpp | Language::C11 => {\n',
+     '        Language::Swift => "",\n        Language::Rust | Language::Go | Language::Kotlin | Language::Cpp | Language::C11 | Language::Python => {\n')
 PY
 
 mutation_case "the refusal offers every backend instead of the route's own" <<'PY'
@@ -78,9 +80,10 @@ PY
 # Re-aimed 2026-11-10: the reason names rust too, whose integration tree is declared
 # (ADR 0097).
 # Re-aimed 2026-11-12: the reason names go beside rust.
+# Re-aimed 2026-11-12: the reason names kotlin beside them.
 mutation_case "a restricted route stops saying why it is restricted" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. rust and go are absent because their \\\n                 integration trees are declared in tools/codegen/trees/<language>-integration.toml \\\n                 and written by `sce-codegen materialize <language>-integration`{}",\n                emitless_sentence(". ", " too"),\n            )),',
+     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. rust, go and kotlin are absent because their \\\n                 integration trees are declared in tools/codegen/trees/<language>-integration.toml \\\n                 and written by `sce-codegen materialize <language>-integration`{}",\n                emitless_sentence(". ", " too"),\n            )),',
      '            LanguageRoute::GenerateIntegration => None,')
 PY
 
