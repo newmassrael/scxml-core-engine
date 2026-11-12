@@ -1,0 +1,150 @@
+# Mutation cases for docs/adr/0098 on the Kotlin channel: a value an invoke
+# hands its child is the initial value of the child's top-level <data> of that
+# id, declared in place of the <data>'s own, which is then not evaluated
+# (§scxml-6.4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_kotlin_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# The Kotlin start used to declare every <data> from its own value and then
+# overwrite each name the session held with the value handed under it: a
+# failing expression raised error.execution, an expression with an effect had
+# it, a state's early-bound <data> took the handed value, and a value the
+# session could not hold was dropped without a word. Each case below puts back
+# one piece of that shape, or of the order of the start, and names the test
+# that must go red. The oracle is
+# `AChildTakesAHandedValueInPlaceOfItsDataTest`, over the machines
+# `scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh`
+# commits from the document beside it in `backends/kotlin/tests/fixtures/`.
+#
+# The template reaches the tests only through the committed tree the
+# regeneration writes, so both halves are declared: the generated files are
+# compiled into the tests, and the command is what carries a mutated template
+# into them. They are declared by a pattern, so the parent and its in-line
+# child are both restored whatever the child's file is named.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.AChildTakesAHandedValueInPlaceOfItsDataTest'
+mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildTakesAHandedValueInPlaceOfItsDataTest.kt
+mutation_targets backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt
+mutation_targets tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2
+mutation_targets_glob 'backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_takes_a_handed_value_in_place_of_its_data/*Sm.kt'
+mutation_regen scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_kotlin.sh
+
+# ── The <data>'s own value is evaluated after the handed one ────────
+#
+# `declareHandedValue` declares the handed value and answers that none was
+# handed, so the <data>'s own expression runs too and overwrites it: the old
+# evaluate-and-overwrite with the two steps swapped, which a document still
+# sees. Killer: `a handed value is declared in place of the data's own, which
+# is not evaluated` (`failing`'s own expression raises, `effectful`'s changes
+# `effects`).
+
+mutation_case "a handed value is followed by the data's own" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
+     "            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return false\n")
+PY
+
+# ── The generated start never asks for a handed value ───────────────
+#
+# Each top-level <data> asks under a name no invoke hands, so every one takes
+# its own value and nothing is seeded. Killers: every assertion of `a handed
+# value is declared in place of the data's own, which is not evaluated`.
+
+mutation_case "the generated start asks for no handed value" <<'PY'
+edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
+     "        if (!declareHandedValue(engine, sid, \"{{ var.id }}\", {{ machine_name }}Event.Error.Execution)) {\n",
+     "        if (!declareHandedValue(engine, sid, \"{{ var.id }}_unhanded\", {{ machine_name }}Event.Error.Execution)) {\n")
+PY
+
+# ── A state's <data> takes a handed value ───────────────────────────
+#
+# The early-bound <data> of a state asks for a handed value as a top-level one
+# does, which is what seeding every name the session holds did. Killer: `a
+# handed value is declared in place of the data's own, which is not evaluated`
+# (`state_local` is `handed`, not `own`).
+
+mutation_case "an early-bound state data takes a handed value" <<'PY'
+edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
+     "{% if dm_var.expr %}\n        // State '{{ state_id }}' variable '{{ dm_var.id }}'\n        try {\n",
+     "{% if dm_var.expr %}\n        // State '{{ state_id }}' variable '{{ dm_var.id }}'\n        if (!declareHandedValue(engine, sid, \"{{ dm_var.id }}\", {{ machine_name }}Event.Error.Execution)) try {\n")
+PY
+
+# ── The top-level <data> are declared after the top-level <script> ──
+#
+# The script reads `failing` before it is declared, and the <data> declared
+# after it set `seen_by_script` back to its own value. Killer: `a handed value
+# is declared in place of the data's own, which is not evaluated`
+# (`seen_by_script` is `unset`, and the script's failure is an error).
+
+mutation_case "the top-level data are declared after the top-level script" <<'PY'
+edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
+     "{% for part in declared_parts %}\n        declareVariablesPart{{ loop.index0 }}(engine, sid)\n{% endfor %}\n",
+     "")
+edit("tools/codegen/templates/kotlin/scriptengine_helpers.kt.jinja2",
+     "        runDocumentScriptsPart{{ loop.index0 }}(engine, sid)\n{% endfor %}\n{% endif %}\n    }\n",
+     "        runDocumentScriptsPart{{ loop.index0 }}(engine, sid)\n{% endfor %}\n{% endif %}\n{% for part in declared_parts %}\n        declareVariablesPart{{ loop.index0 }}(engine, sid)\n{% endfor %}\n    }\n")
+PY
+
+# ── The datamodel is declared after the initial entry ───────────────
+#
+# The initial <onentry> reads `effectful` before it is declared, and the
+# declaration after it sets `seen_by_entry` back to its own value. Killer: `a
+# handed value is declared in place of the data's own, which is not
+# evaluated` (`seen_by_entry` is `unset`).
+
+mutation_case "the datamodel is declared after the initial entry" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        declareDatamodel()\n        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n",
+     "        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n        declareDatamodel()\n")
+PY
+
+# ── A value the session cannot hold is dropped without a word ───────
+#
+# Killer: `a handed value the session cannot hold is the error of its data`
+# (no error.execution).
+
+mutation_case "a refused handed value raises nothing" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n",
+     "        } catch (_: Exception) {\n        }\n")
+PY
+
+# ── A value the session cannot hold gives way to the <data>'s own ───
+#
+# The refusal answers that no value was handed, so the <data>'s own value is
+# declared instead. Killer: `a handed value the session cannot hold is the
+# error of its data` (`refused` holds its own string).
+
+mutation_case "a refused handed value falls back to the data's own" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n        }\n        return true\n",
+     "        } catch (_: Exception) {\n            raisePlatformError(failed, \"<data id='$id'> could not take the value its invoke handed it\")\n            return false\n        }\n        return true\n")
+PY
+
+# ── A value an engine keeps is handed as its handle ─────────────────
+#
+# The parent hands the child the handle QuickJS keeps an object it evaluated
+# behind, which the child's session refuses. Killer: `an object a parent hands
+# arrives whole on every engine` (on QuickJS, `record` is not whole and the
+# child raised error.execution).
+
+mutation_case "an engine-held value is handed as its handle" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        child.pendingInvokeParams = params.mapValues { (_, value) -> handedAcrossSessions(value) }\n",
+     "        child.pendingInvokeParams = params\n")
+PY
+
+# ── A number inside a copied value crosses as its text ──────────────
+#
+# Killer: `an object a parent hands arrives whole on every engine` (on QuickJS,
+# `record.inner.depth` is not the number 2).
+
+mutation_case "a number inside a copied value is kept as its text" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        is Json.Number -> json.text.toLongOrNull() ?: json.text.toDouble()\n",
+     "        is Json.Number -> json\n")
+PY
