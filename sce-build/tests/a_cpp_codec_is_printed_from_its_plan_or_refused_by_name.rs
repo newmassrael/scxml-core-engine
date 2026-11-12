@@ -236,13 +236,25 @@ fn owned(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The refusal a generation answers, spelled as its diagnostic prints; a
+/// generation that writes its output instead fails the test with `why`. The
+/// output is matched rather than taken by `expect_err`, which would need it to
+/// print itself.
+fn refusal_of<T, E: std::fmt::Debug>(generated: Result<T, E>, why: &str) -> String {
+    match generated {
+        Ok(_) => panic!("{why}"),
+        Err(refusal) => format!("{refusal:?}"),
+    }
+}
+
 /// Holds that the C++ backend refuses the codec at `path` by `form`, the first
 /// form of it the printer does not lower: its generation answers the codec's
 /// refusal, and writes nothing.
 fn assert_refused_by(path: &Path, form: &str) {
-    let refusal = compile_forge_file(path, Language::Cpp, &[], &ForgeCompileOptions::default())
-        .expect_err("a codec the C++ printer does not lower is not written");
-    let refusal = format!("{refusal:?}");
+    let refusal = refusal_of(
+        compile_forge_file(path, Language::Cpp, &[], &ForgeCompileOptions::default()),
+        "a codec the C++ printer does not lower is not written",
+    );
     assert!(
         refusal.contains("UnsupportedFeature") && refusal.contains(form),
         "{} is refused by `{form}`: {refusal}",
@@ -379,16 +391,17 @@ const MEASURE_REFUSED_BY: &str = "field 'reading': a `float32` field has no C++ 
 /// field, and nothing is written for it.
 #[test]
 fn a_codec_holding_a_number_cpp_has_no_type_for_is_refused_by_its_field() {
-    let refusal = compile_forge_from_string(
-        &measure_document(),
-        DocumentLabel {
-            identifier: "measure",
-            diagnostic_label: "measure.scxml",
-        },
-        Language::Cpp,
-    )
-    .expect_err("a float field has no C++ type");
-    let refusal = format!("{refusal:?}");
+    let refusal = refusal_of(
+        compile_forge_from_string(
+            &measure_document(),
+            DocumentLabel {
+                identifier: "measure",
+                diagnostic_label: "measure.scxml",
+            },
+            Language::Cpp,
+        ),
+        "a float field has no C++ type",
+    );
     assert!(
         refusal.contains("UnsupportedFeature")
             && refusal.contains(&format!("codec 'measure': {MEASURE_REFUSED_BY}")),
@@ -445,14 +458,15 @@ fn a_document_that_imports_a_codec_cpp_refuses_is_refused_for_it() {
 </scxml>"#,
     )
     .expect("write the validator");
-    let refusal = compile_forge_file(
-        &validator,
-        Language::Cpp,
-        &[],
-        &ForgeCompileOptions::default(),
-    )
-    .expect_err("a validator of a codec C++ refuses is not written");
-    let refusal = format!("{refusal:?}");
+    let refusal = refusal_of(
+        compile_forge_file(
+            &validator,
+            Language::Cpp,
+            &[],
+            &ForgeCompileOptions::default(),
+        ),
+        "a validator of a codec C++ refuses is not written",
+    );
     assert!(
         refusal.contains("UnsupportedFeature")
             && refusal.contains(&format!(
