@@ -5,8 +5,7 @@
 // Go half of the Rust module's own tests
 // (backends/rust/runtime/src/test/from_canonical.rs), each named after the Rust
 // case in Pascal case, with the same spellings and the same refusals. The Rust
-// case of a union has no twin, since Go lowers no union, and the one of a
-// field given twice has none, since no *sce.JSONObject holds one.
+// case of a field given twice has no twin, since no *sce.JSONObject holds one.
 
 package canonical
 
@@ -234,5 +233,41 @@ func TestAListIsReadWithinItsBounds(t *testing.T) {
 	_, err = ReadElements(nil, 0, 2, "l")
 	if got := reason(t, err); got != "l: null is not a list, which is an array" {
 		t.Errorf("null: %s", got)
+	}
+}
+
+// A union is one member named by its case; a case that holds no record is the
+// empty object.
+func TestAUnionIsOneMemberNamedByItsCase(t *testing.T) {
+	card := UnionCase("card", Record(Field("amount", Integer(uint32(1)))))
+	cases := []string{"card", "cash"}
+	variant, value, err := ReadUnionCase(card, cases, "p")
+	if err != nil || variant != "card" {
+		t.Fatalf("one member reads as %q, %v", variant, err)
+	}
+	if got := written(t, value); got != `{"amount":"1"}` {
+		t.Errorf("the case's value is %s", got)
+	}
+	_, value, err = ReadUnionCase(UnionCase("cash", nil), cases, "p")
+	if err != nil {
+		t.Fatalf("one member: %v", err)
+	}
+	if err := ReadNoRecord(value, "p"); err != nil {
+		t.Errorf("the empty object is a case that holds no record: %v", err)
+	}
+	if got := reason(t, ReadNoRecord(card, "p")); got != "p: a case that holds no record is the empty object" {
+		t.Errorf("a member: %s", got)
+	}
+	_, _, err = ReadUnionCase(parsed(t, `{"card":{},"cash":{}}`), cases, "p")
+	if got := reason(t, err); got != "p: a value of a union is an object of one member, and this one has 2" {
+		t.Errorf("two members: %s", got)
+	}
+	_, _, err = ReadUnionCase(UnionCase("cheque", nil), cases, "p")
+	if got := reason(t, err); got != "p: 'cheque' names no case of its union" {
+		t.Errorf("no case: %s", got)
+	}
+	_, _, err = ReadUnionCase([]any{}, cases, "p")
+	if got := reason(t, err); got != "p: an array is not a value of a union, which is an object of one member" {
+		t.Errorf("an array: %s", got)
 	}
 }

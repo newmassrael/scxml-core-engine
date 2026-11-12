@@ -32,7 +32,10 @@ import (
 //   - a record is an object of its fields by their declared ids, an absent
 //     field omitted, no field it does not declare;
 //   - a list is an array of its elements within its bounds, an absent element
-//     of a list of `optional<T>` null.
+//     of a list of `optional<T>` null;
+//   - a value of a union (docs/adr/0092) is an object of one member, named by
+//     the variant of its case and holding the case's record, or the empty
+//     object for a case that holds none.
 //
 // A value that does not belong to its type is refused with a *Refusal, naming
 // where it stands (`what`) and why, never converted. Which form a value takes
@@ -40,8 +43,8 @@ import (
 // a byte string and a list of `uint8` are one Go type: the generated reader of
 // a record (`Read<Record>` in the unit of a test configuration) calls these by
 // the walk its canonical writer is spelled by
-// (`forge::generator::test_template_walk::canonical_form`). Go lowers no union,
-// so no form of one is read here.
+// (`forge::generator::test_template_walk::canonical_form`), and builds a value
+// of a union by the constructor of the case ReadUnionCase answers.
 //
 // A JSON object names each member once, which sce.ParseJSON holds a text to and
 // a *sce.JSONObject cannot break, so no reader here refuses a field given
@@ -368,4 +371,38 @@ func ReadElements(value any, min, max int, what string) ([]any, error) {
 			fmt.Sprintf("a list of %d elements is outside its bounds, %d to %d", len(items), min, max))
 	}
 	return items, nil
+}
+
+// ReadUnionCase is a value of a union whose cases are variants: an object of
+// one member, named by one of them. It answers the variant of its case and the
+// case's value. A variant no case declares is refused here, so a reader that
+// switches on the variant read has a case for each declared one and needs none
+// for another.
+func ReadUnionCase(value any, variants []string, what string) (string, any, error) {
+	object, isObject := value.(*sce.JSONObject)
+	if !isObject {
+		return "", nil, notA(value, what, "a value of a union, which is an object of one member")
+	}
+	if object.Len() != 1 {
+		return "", nil, refused(what,
+			fmt.Sprintf("a value of a union is an object of one member, and this one has %d", object.Len()))
+	}
+	variant := object.Keys()[0]
+	for _, declared := range variants {
+		if declared == variant {
+			held, _ := object.Get(variant)
+			return variant, held, nil
+		}
+	}
+	return "", nil, refused(what, fmt.Sprintf("'%s' names no case of its union", variant))
+}
+
+// ReadNoRecord is the value of a case of a union that holds no record: the
+// empty object.
+func ReadNoRecord(value any, what string) error {
+	object, isObject := value.(*sce.JSONObject)
+	if !isObject || object.Len() != 0 {
+		return refused(what, "a case that holds no record is the empty object")
+	}
+	return nil
 }
