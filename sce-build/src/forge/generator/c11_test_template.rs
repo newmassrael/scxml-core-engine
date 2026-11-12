@@ -1000,7 +1000,7 @@ impl CanonicalForm for C11Reading {
         (name, bound)
     }
 
-    fn case_record(&self, bound: C11ReadingAt) -> C11ReadingAt {
+    fn case_record(&self, bound: C11ReadingAt, _record: &str) -> C11ReadingAt {
         bound
     }
 
