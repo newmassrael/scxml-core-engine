@@ -16,7 +16,7 @@
 // Fixture: integration_resources/parallel_self_transition_keeps_its_leaf/parallel_self_transition_keeps_its_leaf.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_self_transition_keeps_its_leaf_go.sh
+//   scripts/materialize.sh go-integration
 
 package parallel_self_transition_keeps_its_leaf
 

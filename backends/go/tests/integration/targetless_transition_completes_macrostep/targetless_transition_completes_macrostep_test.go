@@ -22,7 +22,7 @@
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_targetless_transition_completes_macrostep_go.sh
+//   scripts/materialize.sh go-integration
 
 package targetless_transition_completes_macrostep
 

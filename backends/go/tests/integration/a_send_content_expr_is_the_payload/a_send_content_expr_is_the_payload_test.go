@@ -8,7 +8,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_send_content_expr_is_the_payload_go.sh
+//	scripts/materialize.sh go-integration
 package a_send_content_expr_is_the_payload
 
 import (

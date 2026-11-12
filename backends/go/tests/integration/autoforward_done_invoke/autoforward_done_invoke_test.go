@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_done_invoke_go.sh
+//   scripts/materialize.sh go-integration
 
 package autoforward_done_invoke
 

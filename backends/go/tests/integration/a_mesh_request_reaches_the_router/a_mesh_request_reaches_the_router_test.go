@@ -8,7 +8,7 @@
 // a_mesh_request_reaches_the_router.scxml (canonical, shared with the other
 // channels).
 //
-// Regeneration: scripts/regen_a_mesh_request_reaches_the_router_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_mesh_request_reaches_the_router
 

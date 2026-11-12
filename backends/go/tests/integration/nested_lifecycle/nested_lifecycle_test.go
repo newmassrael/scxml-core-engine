@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / Rust / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_nested_lifecycle_go.sh
+//   scripts/materialize.sh go-integration
 
 package nested_lifecycle
 

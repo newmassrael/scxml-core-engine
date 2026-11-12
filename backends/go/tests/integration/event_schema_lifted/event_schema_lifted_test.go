@@ -8,7 +8,7 @@
 //
 // The committed SM (statechart_lifted_sm.go) is generated from
 // sce-build/tests/fixtures/event_schema/statechart_lifted.scxml
-// (regen: scripts/regen_event_schema_native_go.sh).
+// (regen: scripts/materialize.sh go-integration).
 //
 // A schema'd event's typed payload is filled by ONE producer: the generated
 // `StatechartLiftedRaiseJobCompleted` seam. Every other producer — `<send>` with `<param>`, an

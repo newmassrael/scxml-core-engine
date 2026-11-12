@@ -15,7 +15,7 @@
 // Fixture: integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_internal_queue_go.sh
+//   scripts/materialize.sh go-integration
 
 package autoforward_internal_queue
 

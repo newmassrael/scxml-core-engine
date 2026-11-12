@@ -36,7 +36,7 @@
 // have not been repaired yet.)
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_region_root_external_domain_go.sh
+//   scripts/materialize.sh go-integration
 
 package parallel_region_root_external_domain
 

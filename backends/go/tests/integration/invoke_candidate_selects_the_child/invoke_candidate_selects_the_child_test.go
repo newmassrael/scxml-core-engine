@@ -18,7 +18,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_invoke_candidate_selects_the_child_go.sh
+//	scripts/materialize.sh go-integration
 package invoke_candidate_selects_the_child
 
 import (

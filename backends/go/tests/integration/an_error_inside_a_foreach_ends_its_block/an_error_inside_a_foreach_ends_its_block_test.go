@@ -8,7 +8,7 @@
 // Fixture: integration_resources/an_error_inside_a_foreach_ends_its_block/an_error_inside_a_foreach_ends_its_block.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_an_error_inside_a_foreach_ends_its_block_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package an_error_inside_a_foreach_ends_its_block
 

@@ -3145,8 +3145,8 @@ sce_add_state_machine(
 # §scxml-G-7: `<sce:action>` native host dispatch, compiled for C++ from the
 # same document the Rust, Go, Kotlin, Python and C11 channels drive
 # (`tools/codegen/trees/rust-integration.toml`,
-# `scripts/regen_native_action_go.sh` and `scripts/regen_native_action_kotlin.sh`
-# commit the three that keep a tree).
+# `tools/codegen/trees/go-integration.toml` and
+# `scripts/regen_native_action_kotlin.sh` commit the three that keep a tree).
 #
 # No declaration flag here, unlike the three above, and that is the difference
 # between the two seams rather than an omission: a host-served `<send type>` is

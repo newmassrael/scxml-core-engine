@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / Rust / Kotlin / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_event_fields_go.sh
+//   scripts/materialize.sh go-integration
 
 package autoforward_event_fields
 

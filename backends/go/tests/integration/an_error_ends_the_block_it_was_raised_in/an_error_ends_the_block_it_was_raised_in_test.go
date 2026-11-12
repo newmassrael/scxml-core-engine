@@ -7,7 +7,7 @@
 // Fixture: integration_resources/an_error_ends_the_block_it_was_raised_in/an_error_ends_the_block_it_was_raised_in.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_an_error_ends_the_block_it_was_raised_in_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package an_error_ends_the_block_it_was_raised_in
 

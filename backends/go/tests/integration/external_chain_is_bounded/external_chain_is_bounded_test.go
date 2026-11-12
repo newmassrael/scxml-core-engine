@@ -29,7 +29,7 @@
 // tools/codegen/trees/rust-integration.toml states.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_external_chain_is_bounded_go.sh
+//   scripts/materialize.sh go-integration
 
 package external_chain_is_bounded
 

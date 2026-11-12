@@ -14,7 +14,7 @@
 // Fixture: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_data_arrives_as_sent_go.sh
+//   scripts/materialize.sh go-integration
 
 package event_data_arrives_as_sent
 

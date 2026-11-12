@@ -5,9 +5,9 @@
 # Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/parallel_region_root_external_domain/
 # from tests/integration/parallel_region_root_external_domain.scxml.
 #
-# The Kotlin half of the transition-domain witness. The Rust half is generated
-# from `tools/codegen/trees/rust-integration.toml`, the Go half
-# `scripts/regen_parallel_region_root_external_domain_go.sh`, the Python half
+# The Kotlin half of the transition-domain witness. The Rust and Go halves are
+# generated from `tools/codegen/trees/rust-integration.toml` and
+# `tools/codegen/trees/go-integration.toml`, the Python half
 # `..._python.sh`, and the two C++ drivers plus the C11 one build from the same
 # document through CMake.
 #

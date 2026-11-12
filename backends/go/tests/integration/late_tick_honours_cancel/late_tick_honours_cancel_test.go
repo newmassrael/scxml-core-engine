@@ -19,7 +19,7 @@
 // Fixture: integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_late_tick_honours_cancel_go.sh
+//   scripts/materialize.sh go-integration
 
 package late_tick_honours_cancel
 

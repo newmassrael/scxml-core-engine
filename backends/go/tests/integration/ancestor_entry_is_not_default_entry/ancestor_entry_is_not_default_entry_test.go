@@ -22,7 +22,7 @@
 // Fixture: integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_ancestor_entry_is_not_default_entry_go.sh
+//   scripts/materialize.sh go-integration
 
 package ancestor_entry_is_not_default_entry
 

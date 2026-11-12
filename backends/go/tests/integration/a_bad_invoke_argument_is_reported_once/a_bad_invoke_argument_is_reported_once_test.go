@@ -7,7 +7,7 @@
 // Fixture: integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_a_bad_invoke_argument_is_reported_once_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_bad_invoke_argument_is_reported_once
 

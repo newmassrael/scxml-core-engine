@@ -16,7 +16,7 @@
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_wildcard_in_document_order_go.sh
+//   scripts/materialize.sh go-integration
 
 package wildcard_in_document_order
 

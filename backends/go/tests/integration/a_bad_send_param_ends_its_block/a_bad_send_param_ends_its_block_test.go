@@ -11,7 +11,7 @@
 // Fixture: integration_resources/a_bad_send_param_ends_its_block/a_bad_send_param_ends_its_block.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_a_bad_send_param_ends_its_block_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_bad_send_param_ends_its_block
 

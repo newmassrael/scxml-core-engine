@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_internal_chain_is_bounded_go.sh
+//   scripts/materialize.sh go-integration
 
 package internal_chain_is_bounded
 

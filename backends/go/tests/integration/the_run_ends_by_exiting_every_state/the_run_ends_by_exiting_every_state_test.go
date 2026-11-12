@@ -13,7 +13,7 @@
 // Fixture: integration_resources/the_run_ends_by_exiting_every_state/the_run_ends_by_exiting_every_state.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_the_run_ends_by_exiting_every_state_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package the_run_ends_by_exiting_every_state
 

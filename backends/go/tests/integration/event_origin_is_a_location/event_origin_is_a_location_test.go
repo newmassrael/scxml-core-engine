@@ -29,7 +29,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_event_origin_is_a_location_go.sh
+//	scripts/materialize.sh go-integration
 package event_origin_is_a_location
 
 import (

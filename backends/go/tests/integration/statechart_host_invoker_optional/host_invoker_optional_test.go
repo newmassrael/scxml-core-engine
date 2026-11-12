@@ -7,8 +7,9 @@
 //
 // The committed machine in this directory is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml`
-// (regen: `scripts/regen_host_processor_go.sh`) and is built with NO script
-// engine: a `datamodel="sce-static"` machine holds its variables as fields.
+// (regen: `scripts/materialize.sh go-integration`) and is built with NO
+// script engine: a `datamodel="sce-static"` machine holds its variables as
+// fields.
 //
 // The host answers through the generated typed interface, so the record it hands
 // in holds each field that may be absent as `optional.Of[T]`; the engine delivers
@@ -28,8 +29,9 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 )
 
-// The type the fixture was compiled for; `scripts/regen_host_processor_go.sh`
-// passes the same string to the invoker declaration.
+// The type the fixture was compiled for;
+// `tools/codegen/trees/go-integration.toml` passes the same string to the
+// invoker declaration.
 const declaredType = "x-sce-host"
 
 type Engine = sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent]

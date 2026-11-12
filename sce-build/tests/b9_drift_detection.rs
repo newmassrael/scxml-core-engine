@@ -525,8 +525,9 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 // `compute_source_hash` recurses through the input root, so nesting
 // integration under `resources/` would fold the integration fixture
 // into the W3C source-hash domain. Distinct drift contexts demand
-// distinct top-level dirs. Regen via
-// `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`.
+// distinct top-level dirs. Regen via `scripts/materialize.sh rust-integration`,
+// `scripts/regen_donedata_local_invoke_kotlin.sh` and
+// `scripts/materialize.sh go-integration`.
 //
 // Python is intentionally skipped: `backends/python/bindings/tests/` runs the
 // pybind11 → C++ Interpreter channel, so no donedata SM is codegen'd

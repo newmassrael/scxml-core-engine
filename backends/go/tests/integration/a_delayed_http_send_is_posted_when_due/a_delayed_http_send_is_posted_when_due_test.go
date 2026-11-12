@@ -9,7 +9,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_delayed_http_send_is_posted_when_due_go.sh
+//	scripts/materialize.sh go-integration
 package a_delayed_http_send_is_posted_when_due
 
 import (

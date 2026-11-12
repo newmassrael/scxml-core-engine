@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_typed_reader_names_go.sh
+//   scripts/materialize.sh go-integration
 
 package typed_reader_names
 

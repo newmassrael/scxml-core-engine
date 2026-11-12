@@ -6,8 +6,9 @@
 # from tests/integration/parallel_region_root_external_domain.scxml.
 #
 # The Python half of the transition-domain witness. The Rust and Go halves are
-# `scripts/regen_parallel_region_root_external_domain{,_go}.sh`, and the two C++
-# drivers build from the same document through CMake.
+# generated from `tools/codegen/trees/rust-integration.toml` and
+# `tools/codegen/trees/go-integration.toml`, and the two C++ drivers build from
+# the same document through CMake.
 #
 # The source is NOT under `integration_resources/`, and that is deliberate.
 # A stem there is a seven-channel contract that `integration_stem_registration.rs`

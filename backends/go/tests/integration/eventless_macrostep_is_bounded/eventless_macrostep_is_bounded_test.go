@@ -23,7 +23,7 @@
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_eventless_macrostep_is_bounded_go.sh
+//   scripts/materialize.sh go-integration
 
 package eventless_macrostep_is_bounded
 

@@ -16,7 +16,7 @@
 // Fixture: integration_resources/unseen_event_is_reported/unseen_event_is_reported.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_unseen_event_is_reported_go.sh
+//   scripts/materialize.sh go-integration
 
 package unseen_event_is_reported
 

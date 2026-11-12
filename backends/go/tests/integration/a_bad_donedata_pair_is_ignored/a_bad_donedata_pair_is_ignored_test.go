@@ -12,7 +12,7 @@
 // Fixture: integration_resources/a_bad_donedata_pair_is_ignored/a_bad_donedata_pair_is_ignored.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_a_bad_donedata_pair_is_ignored_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_bad_donedata_pair_is_ignored
 

@@ -11,7 +11,7 @@
 // Fixture: integration_resources/late_data_binds_on_first_entry/late_data_binds_on_first_entry.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_late_data_binds_on_first_entry_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package late_data_binds_on_first_entry
 

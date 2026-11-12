@@ -19,7 +19,7 @@
 // tools/codegen/trees/rust-integration.toml states.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh
+//   scripts/materialize.sh go-integration
 
 package a_child_timer_is_a_deadline_of_its_parent
 

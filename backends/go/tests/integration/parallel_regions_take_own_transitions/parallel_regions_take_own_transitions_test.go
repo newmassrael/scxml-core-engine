@@ -19,7 +19,7 @@
 // Fixture: integration_resources/parallel_regions_take_own_transitions/parallel_regions_take_own_transitions.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_regions_take_own_transitions_go.sh
+//   scripts/materialize.sh go-integration
 
 package parallel_regions_take_own_transitions
 

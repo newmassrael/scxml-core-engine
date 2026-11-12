@@ -8,7 +8,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_target_expression_is_routed_as_its_literal_is_go.sh
+//	scripts/materialize.sh go-integration
 package a_target_expression_is_routed_as_its_literal_is
 
 import (

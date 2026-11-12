@@ -12,7 +12,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_hybrid_invoke_carries_its_arguments_go.sh
+//	scripts/materialize.sh go-integration
 package a_hybrid_invoke_carries_its_arguments
 
 import (

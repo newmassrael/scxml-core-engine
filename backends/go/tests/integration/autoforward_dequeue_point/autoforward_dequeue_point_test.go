@@ -17,7 +17,7 @@
 // Fixture: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_dequeue_point_go.sh
+//   scripts/materialize.sh go-integration
 
 package autoforward_dequeue_point
 

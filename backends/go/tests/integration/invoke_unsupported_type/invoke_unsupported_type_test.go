@@ -17,7 +17,7 @@
 // Fixture: integration_resources/invoke_unsupported_type/invoke_unsupported_type.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_unsupported_type_go.sh
+//   scripts/materialize.sh go-integration
 
 package invoke_unsupported_type
 

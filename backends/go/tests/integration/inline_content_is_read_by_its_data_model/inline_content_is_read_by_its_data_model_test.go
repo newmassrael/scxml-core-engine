@@ -14,7 +14,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_inline_content_is_read_by_its_data_model_go.sh
+//   scripts/materialize.sh go-integration
 
 package inline_content_is_read_by_its_data_model
 

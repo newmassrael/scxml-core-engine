@@ -13,7 +13,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_assignment_keeps_the_document_it_is_given_go.sh
+//   scripts/materialize.sh go-integration
 
 package an_assignment_keeps_the_document_it_is_given
 

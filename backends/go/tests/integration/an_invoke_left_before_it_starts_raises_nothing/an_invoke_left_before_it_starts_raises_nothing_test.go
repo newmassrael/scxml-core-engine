@@ -11,7 +11,7 @@
 // Fixture: integration_resources/an_invoke_left_before_it_starts_raises_nothing/an_invoke_left_before_it_starts_raises_nothing.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_an_invoke_left_before_it_starts_raises_nothing_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package an_invoke_left_before_it_starts_raises_nothing
 

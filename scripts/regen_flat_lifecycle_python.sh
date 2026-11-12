@@ -12,7 +12,7 @@
 # docs/SCE_TRANSITION_FUNCTION.md), which Python generates as a module of its own
 # beside the machine's.
 #
-# Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
+# Unlike the committed Rust / Kotlin / Go trees, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under
 # `backends/python/tests/generated/`) — CI runs this script before pytest so the
 # committed source tree never carries the SCE-GENERATED Python files.

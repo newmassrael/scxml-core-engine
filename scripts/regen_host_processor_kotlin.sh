@@ -65,8 +65,8 @@ done
 # `step()` and this one can only be driven with `tick()`: folding them together
 # would put a clock under every assertion the first one makes, and a fixture
 # measuring two things cannot say which of them broke. Its own directory
-# because a Kotlin package is a directory, like the Go half,
-# scripts/regen_host_processor_go.sh.
+# because a Kotlin package is a directory, like the Go half in
+# tools/codegen/trees/go-integration.toml.
 DELAYED_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_delayed_host_send.scxml"
 DELAYED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_delayed_host_send"
 DELAYED_TMP="$(mktemp -d)"

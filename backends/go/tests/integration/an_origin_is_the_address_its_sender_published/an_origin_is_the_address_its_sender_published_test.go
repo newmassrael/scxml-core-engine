@@ -10,7 +10,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_an_origin_is_the_address_its_sender_published_go.sh
+//	scripts/materialize.sh go-integration
 package an_origin_is_the_address_its_sender_published
 
 import (

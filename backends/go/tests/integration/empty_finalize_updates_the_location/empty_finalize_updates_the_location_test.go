@@ -19,7 +19,7 @@
 // Fixture: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml
 //
 // Regeneration:
-//   scripts/regen_empty_finalize_updates_the_location_go.sh
+//   scripts/materialize.sh go-integration
 
 package empty_finalize_updates_the_location
 

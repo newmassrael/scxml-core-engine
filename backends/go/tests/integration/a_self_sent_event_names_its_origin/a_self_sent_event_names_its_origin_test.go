@@ -8,7 +8,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_self_sent_event_names_its_origin_go.sh
+//	scripts/materialize.sh go-integration
 package a_self_sent_event_names_its_origin
 
 import (

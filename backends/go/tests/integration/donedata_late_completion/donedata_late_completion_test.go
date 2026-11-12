@@ -24,7 +24,7 @@
 // Fixture: integration_resources/donedata_late_completion/donedata_late_completion.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_donedata_late_completion_go.sh
+//   scripts/materialize.sh go-integration
 
 package donedata_late_completion
 

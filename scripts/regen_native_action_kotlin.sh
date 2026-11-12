@@ -8,8 +8,9 @@
 #
 # The Kotlin tree of the fixture whose Rust tree
 # `tools/codegen/trees/rust-integration.toml` declares. Its own
-# directory because a Kotlin package is a directory, the same constraint the Go
-# tree states in `regen_native_action_go.sh`.
+# directory because a Kotlin package is a directory, the same constraint that
+# gives the Go tree a directory of its own in
+# `tools/codegen/trees/go-integration.toml`.
 #
 # `SCE_KOTLIN_GENERATED_ROOT` moves the tree, as in every Kotlin regen script:
 # the `w3c-kotlin` gate writes the stems it drives into an overlay of its own.

@@ -20,7 +20,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_session_ids_are_distinct_go.sh
+//	scripts/materialize.sh go-integration
 package session_ids_are_distinct
 
 import (

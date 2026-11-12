@@ -4,10 +4,11 @@
 // Package integration anchors SCE Go integration-fixture state
 // machines.
 //
-// Every `<stem>/*_sm.go` and `<stem>/*_test.go` under
-// `backends/go/tests/integration/<stem>/` is regenerated from a canonical
-// fixture at `integration_resources/<stem>/<stem>.scxml` by
-// `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`. The
+// Every `<stem>/*_sm.go` under `backends/go/tests/integration/<stem>/` is
+// regenerated from a canonical fixture at
+// `integration_resources/<stem>/<stem>.scxml` by
+// `scripts/materialize.sh go-integration`, as the tree manifest
+// `tools/codegen/trees/go-integration.toml` declares. The
 // `integration/` parent dir is the Go counterpart to Rust's
 // `backends/rust/tests/src/integration/` and Kotlin's
 // `com.sce.integration` package — its sibling

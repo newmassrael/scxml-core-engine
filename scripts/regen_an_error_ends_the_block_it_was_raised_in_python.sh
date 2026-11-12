@@ -11,7 +11,7 @@
 # keeps SCE Mesh §9.6.6 rule 1's adjacent synth-invoke children out of the
 # canonical fixture root during the codegen run.
 #
-# Unlike the Rust / Kotlin / Go regen scripts, the Python generated tree is
+# Unlike the committed Rust / Kotlin / Go trees, the Python generated tree is
 # `.gitignored` (mirroring the W3C IRP Python pattern under
 # `backends/python/tests/generated/`) — CI runs this script before pytest so
 # the committed source tree never carries the SCE-GENERATED Python files.

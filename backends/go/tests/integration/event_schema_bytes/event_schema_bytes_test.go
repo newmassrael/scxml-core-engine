@@ -7,7 +7,7 @@
 //
 // The committed SM (statechart_bytes_sm.go) is generated from
 // sce-build/tests/fixtures/event_schema/statechart_bytes.scxml
-// (regen: scripts/regen_event_schema_native_go.sh). Go forbids `==` on a
+// (regen: scripts/materialize.sh go-integration). Go forbids `==` on a
 // `[]byte` slice, so the guard `cond="_event.data.raw === 'ack'"` lowers to
 // `string(p.pending….raw) == "ack"` — a conversion this test really exercises
 // at runtime (a non-match must NOT fire). No `ScriptEngine` is attached: a

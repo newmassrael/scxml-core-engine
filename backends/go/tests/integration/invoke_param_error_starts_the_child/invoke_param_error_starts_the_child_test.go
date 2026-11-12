@@ -18,7 +18,7 @@
 // (canonical, shared with the other channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_param_error_starts_the_child_go.sh
+//   scripts/materialize.sh go-integration
 
 package invoke_param_error_starts_the_child
 

@@ -12,7 +12,7 @@
 // Fixture: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_a_child_may_send_many_events_in_one_tick_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_child_may_send_many_events_in_one_tick
 

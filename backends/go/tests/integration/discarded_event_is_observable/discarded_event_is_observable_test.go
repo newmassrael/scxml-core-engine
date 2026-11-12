@@ -22,7 +22,7 @@
 // Fixture: integration_resources/discarded_event_is_observable/discarded_event_is_observable.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_discarded_event_is_observable_go.sh
+//   scripts/materialize.sh go-integration
 
 package discarded_event_is_observable
 

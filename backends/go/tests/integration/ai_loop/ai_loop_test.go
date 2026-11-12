@@ -31,7 +31,7 @@
 // Fixture: examples/ai_loop/ai_loop.scxml
 //
 // Regeneration (after example or template edit):
-//   scripts/regen_ai_loop_go.sh
+//   scripts/materialize.sh go-integration
 
 package ai_loop
 
@@ -44,8 +44,8 @@ import (
 )
 
 // The processor type the tree beside this file was generated for.
-// `scripts/regen_ai_loop_go.sh` passes this same string to `--host-processor`,
-// and the C++ and Rust channels register the same one.
+// `tools/codegen/trees/go-integration.toml` passes this same string to
+// `--host-processor`, and the C++ and Rust channels register the same one.
 const declaredType = "x-sce-host"
 
 // loop is an engine and the policy it was built over. The policy is where the

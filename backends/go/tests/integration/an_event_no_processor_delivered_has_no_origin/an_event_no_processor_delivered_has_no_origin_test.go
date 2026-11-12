@@ -12,7 +12,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_an_event_no_processor_delivered_has_no_origin_go.sh
+//	scripts/materialize.sh go-integration
 package an_event_no_processor_delivered_has_no_origin
 
 import (

@@ -9,9 +9,9 @@
 //
 // The committed machine in this directory is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml`
-// (regen: `scripts/regen_host_processor_go.sh`) and is built with NO script
-// engine: its variables are fields, and a `<param>` that needed an engine to be
-// read would not have one to ask.
+// (regen: `scripts/materialize.sh go-integration`) and is built with NO
+// script engine: its variables are fields, and a `<param>` that needed an
+// engine to be read would not have one to ask.
 //
 // What this holds is the value on the wire. The run `bump`, `go` changes every
 // variable before the send and the invoke read it, so a copy taken at start-up
@@ -28,8 +28,9 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 )
 
-// The type the fixture was compiled for; `scripts/regen_host_processor_go.sh`
-// passes the same string to both declarations.
+// The type the fixture was compiled for;
+// `tools/codegen/trees/go-integration.toml` passes the same string to both
+// declarations.
 const declaredType = "x-sce-host"
 
 type Engine = sce.Engine[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent]

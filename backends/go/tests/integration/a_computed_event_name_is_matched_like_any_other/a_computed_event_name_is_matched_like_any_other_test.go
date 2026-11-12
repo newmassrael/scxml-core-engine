@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / Rust / Kotlin / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_computed_event_name_is_matched_like_any_other_go.sh
+//   scripts/materialize.sh go-integration
 
 package a_computed_event_name_is_matched_like_any_other
 

@@ -12,7 +12,7 @@
 # processor implements, so W3C SCXML 6.4.1 classification completes
 # before any child document would be resolved and codegen emits no child.
 #
-# Unlike the Rust / Kotlin / Go regen scripts, the Python generated
+# Unlike the committed Rust / Kotlin / Go trees, the Python generated
 # tree is `.gitignored` (mirroring the W3C IRP Python pattern under
 # `backends/python/tests/generated/`) — CI runs this script before pytest
 # so the committed source tree never carries the SCE-GENERATED Python

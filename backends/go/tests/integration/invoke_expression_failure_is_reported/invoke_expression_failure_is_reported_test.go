@@ -16,7 +16,7 @@
 // Fixture: integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_expression_failure_is_reported_go.sh
+//   scripts/materialize.sh go-integration
 
 package invoke_expression_failure_is_reported
 

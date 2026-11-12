@@ -16,7 +16,7 @@
 // Fixture: integration_resources/event_descriptor_spellings_agree/event_descriptor_spellings_agree.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_descriptor_spellings_agree_go.sh
+//   scripts/materialize.sh go-integration
 
 package event_descriptor_spellings_agree
 

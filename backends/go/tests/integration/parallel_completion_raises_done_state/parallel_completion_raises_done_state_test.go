@@ -15,7 +15,7 @@
 // Fixture: integration_resources/parallel_completion_raises_done_state/parallel_completion_raises_done_state.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_completion_raises_done_state_go.sh
+//   scripts/materialize.sh go-integration
 
 package parallel_completion_raises_done_state
 

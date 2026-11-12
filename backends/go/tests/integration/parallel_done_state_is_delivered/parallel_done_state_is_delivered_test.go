@@ -18,7 +18,7 @@
 // Fixture: integration_resources/parallel_done_state_is_delivered/parallel_done_state_is_delivered.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_done_state_is_delivered_go.sh
+//   scripts/materialize.sh go-integration
 
 package parallel_done_state_is_delivered
 

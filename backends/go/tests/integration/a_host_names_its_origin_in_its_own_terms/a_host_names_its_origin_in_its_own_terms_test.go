@@ -11,7 +11,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_host_names_its_origin_in_its_own_terms_go.sh
+//	scripts/materialize.sh go-integration
 package a_host_names_its_origin_in_its_own_terms
 
 import (

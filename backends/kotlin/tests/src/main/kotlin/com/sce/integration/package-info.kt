@@ -6,7 +6,7 @@
  *
  * Every `*Sm.kt` under `com.sce.integration.<stem>` is regenerated from
  * a canonical fixture at `integration_resources/<stem>/<stem>.scxml`
- * by `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`. The
+ * by the stem's `scripts/regen_<stem>_kotlin.sh`. The
  * `com.sce.integration` package is the Kotlin counterpart to Rust's
  * `backends/rust/tests/src/integration/` and Go's `backends/go/tests/integration/`
  * — its sibling `com.sce.generated` is reserved for the W3C IRP

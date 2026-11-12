@@ -13,7 +13,7 @@
 // Fixture: integration_resources/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_onexit_runs_before_the_state_leaves_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package onexit_runs_before_the_state_leaves
 

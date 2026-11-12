@@ -20,7 +20,7 @@
 // Fixture: integration_resources/undecodable_payload_is_reported/undecodable_payload_is_reported.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_undecodable_payload_is_reported_go.sh
+//   scripts/materialize.sh go-integration
 
 package undecodable_payload_is_reported
 

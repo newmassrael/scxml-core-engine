@@ -7,7 +7,7 @@
 // Fixture: integration_resources/a_bad_send_argument_discards_its_message/a_bad_send_argument_discards_its_message.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_a_bad_send_argument_discards_its_message_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package a_bad_send_argument_discards_its_message
 

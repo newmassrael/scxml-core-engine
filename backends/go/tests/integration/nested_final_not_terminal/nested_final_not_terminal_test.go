@@ -18,7 +18,7 @@
 // Fixture: integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_nested_final_not_terminal_go.sh
+//   scripts/materialize.sh go-integration
 
 package nested_final_not_terminal
 

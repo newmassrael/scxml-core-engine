@@ -19,7 +19,7 @@
 // Fixture: integration_resources/xml_data_is_a_dom_tree/xml_data_is_a_dom_tree.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_xml_data_is_a_dom_tree_go.sh
+//   scripts/materialize.sh go-integration
 
 package xml_data_is_a_dom_tree
 

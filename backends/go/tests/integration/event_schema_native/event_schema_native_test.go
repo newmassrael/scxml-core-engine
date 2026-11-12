@@ -7,7 +7,7 @@
 //
 // The committed SM (statechart_minimal_sm.go) is generated from
 // sce-build/tests/fixtures/event_schema/statechart_minimal.scxml
-// (regen: scripts/regen_event_schema_native_go.sh). Because it compiles as
+// (regen: scripts/materialize.sh go-integration). Because it compiles as
 // part of this package, the generated payload struct, the type-erased
 // `TypedPayload` carrier round-trip, and the per-event `StatechartMinimalRaiseJobCompleted`
 // inject seam are really type-checked.

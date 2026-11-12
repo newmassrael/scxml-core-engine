@@ -10,7 +10,7 @@
 // Fixture: integration_resources/cancelling_an_invoke_raises_nothing/cancelling_an_invoke_raises_nothing.scxml
 // (canonical, shared with the C++ / C11 / Rust / Kotlin / Python channels).
 //
-// Regeneration: scripts/regen_cancelling_an_invoke_raises_nothing_go.sh
+// Regeneration: scripts/materialize.sh go-integration
 
 package cancelling_an_invoke_raises_nothing
 

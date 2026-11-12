@@ -21,7 +21,7 @@
 // Fixture: integration_resources/host_event_reaches_the_child/host_event_reaches_the_child.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_event_reaches_the_child_go.sh
+//   scripts/materialize.sh go-integration
 
 package host_event_reaches_the_child
 

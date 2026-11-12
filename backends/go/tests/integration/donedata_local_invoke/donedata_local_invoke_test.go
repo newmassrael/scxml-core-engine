@@ -17,7 +17,7 @@
 // Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_donedata_local_invoke_go.sh
+//   scripts/materialize.sh go-integration
 
 package donedata_local_invoke
 

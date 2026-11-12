@@ -9,7 +9,7 @@
 //
 // Regeneration (after fixture or template edit):
 //
-//	scripts/regen_a_send_reaches_only_what_its_target_names_go.sh
+//	scripts/materialize.sh go-integration
 package a_send_reaches_only_what_its_target_names
 
 import (
