@@ -1853,6 +1853,19 @@ SCE_WARN_UNUSED
 */
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* §scxml-6.4 (docs/adr/0098): start this machine as the child of an invoke,
+   when it does not address its parent (one that may is started through
+   `_init_with_parent`). The same start as `_init`, its first macrostep
+   included, on `clock`, the parent's time (`sce_clock_following`), and with
+   `handed`, every value the invoke hands the child, NULL for none
+   (`sce_handed_values_t`, sce/script_session.h): a top-level `<data>` whose id
+   names one is declared with it in place of its own value, before the
+   top-level `<script>`, the entry walk and the first macrostep run. The
+   values are read during this call only. It answers as `_init` does. */
+SCE_WARN_UNUSED
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_invoked({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock,
+                                                       const sce_handed_values_t *handed);
 {% endif %}
 
 /* docs/adr/0096: why the last start of this machine could not establish its
@@ -1957,14 +1970,20 @@ SCE_WARN_UNUSED
    parent keeps it, so a send to the location the parent publishes reaches the
    parent as `#_parent` does (§scxml-C-1). It answers as `_init` does: a child
    whose script session cannot be established is not started, and its parent
-   keeps no child and raises error.execution for the invoke (docs/adr/0096). */
+   keeps no child and raises error.execution for the invoke (docs/adr/0096).
+   `handed` holds every value the invoke hands the child, NULL for none
+   (`sce_handed_values_t`, sce/script_session.h): a top-level `<data>` whose
+   id names one is declared with it in place of its own value, before the
+   top-level `<script>` and the entry walk run (§scxml-6.4, docs/adr/0098).
+   The values are read during this call only. */
 SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
                                        const char *parent_session_id,
                                        sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
-                                       sce_clock_t clock);
+                                       sce_clock_t clock,
+                                       const sce_handed_values_t *handed);
 {% endif %}
 {% if static_datamodel %}
 /* §scxml-6.4.1: the two steps a parent starts a `datamodel="sce-static"` child

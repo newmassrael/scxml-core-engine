@@ -362,13 +362,40 @@
    established: its top-level <data> (W3C SCXML 5.2, 5.3), the state-local
    <data> of an early-bound document, and its top-level <script> (W3C SCXML
    5.8), in that order. A failure here is the document's, and raises
-   error.execution as a failing expression anywhere does. A child started by
-   its parent applies the `<param>` and `namelist` values it was handed after
-   this, once its initial configuration is entered (`invoke_seed_child`). #}
+   error.execution as a failing expression anywhere does.
+
+   §scxml-6.4 (docs/adr/0098): the start that declares it holds `handed`, the
+   values an invoke handed this machine (NULL for a start no invoke made). A
+   top-level <data> whose id names one is declared with that value in place of
+   its own: its expr, src or content is not evaluated, raises nothing and has
+   no effect. One the session cannot hold is the <data>'s initialization
+   error. State-local <data> never takes a handed value, and a handed name no
+   top-level <data> declares is never added. So the top-level <script>, every
+   `<onentry>` and every condition of the first macrostep read what was
+   handed. #}
 {% macro lua_declare_datamodel() %}
         {# W3C SCXML 5.2: the document's top-level <datamodel>, one data object
            per <data> it wraps, each a global of this session's engine. #}
+        {% if not model.variables %}
+        /* §scxml-6.4: no top-level <data>, so no handed value is taken. */
+        (void)handed;
+        {% endif %}
         {% for var in model.variables %}
+        switch (take_handed_value(sm->L, handed, "{{ var.id | escape_c }}")) {
+        case HANDED_VALUE_TAKEN:
+            /* §scxml-6.4: <data id="{{ var.id }}"> is declared with the value
+               its invoke handed it, in place of its own. */
+{{ lua_set_document_global_top(var.id) }}
+            break;
+        case HANDED_VALUE_UNHELD:
+            /* §scxml-6.4 + §scxml-5.3: a value handed for <data id="{{ var.id }}">
+               that this session cannot hold is the <data>'s initialization
+               error. It is left without a value, and its own is not tried. */
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                {{ reason("data_unstored", var.id) }});
+            break;
+        case HANDED_VALUE_NONE: {
         {% if var.expr %}
         /* W3C SCXML 5.3: <data id="{{ var.id }}" expr="{{ var.expr }}">.
            On expression failure the data element is left undefined (lua nil)
@@ -418,6 +445,9 @@
 {{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
         {% endif %}
         {% endif %}
+            break;
+        }
+        }
         {% endfor %}
         {% if model.binding == 'early' %}
         {# W3C SCXML 5.3 early binding (default per parser.rs:378 unwrap_or("early")):
@@ -1111,69 +1141,190 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
-{# W3C SCXML 6.4 (test226/240/241/243/244/245/276): cross-Lua-state value
-   transfer for `<invoke><param>` / `<invoke namelist>`. Parent's
-   `execute_pending_invokes` evaluates the expression (for params) or reads
-   the global (for namelist) on its own `lua_State` so the value lands on
-   `src_L`'s top of stack; this macro copies that top value to `dst_L`'s
-   global table under `dst_name` and pops the source slot.
+{# §scxml-6.4 (docs/adr/0098): how a child takes a value its invoke handed it,
+   emitted as static functions of a machine that has a script engine and
+   top-level <data> (state_machine.c.jinja2), and called once per top-level
+   <data> by `lua_declare_datamodel`.
 
-   C11 evaluates parent-side and transfers the value because each generated
-   SM owns a dedicated `lua_State` per `_init`, so a string that names a
-   parent-side variable would be undefined in the child's state. §scxml-6.4.3
-   asks for exactly that — the VALUE of the `<param>` element becomes the
-   matching child `<data>`'s initial value.
+   Each machine owns its own Lua state, so a value crosses from the parent's
+   session to the child's by copy, and the parent evaluates every argument in
+   its own session (a name of the parent's means nothing in the child's). The
+   value is copied whole, as §scxml-6.4 hands it: nil, a boolean, a number
+   (an integer stays one, and a non-finite number crosses as it is, which no
+   Lua source could spell), a string with every byte, and a table with every
+   entry, nested tables copied in turn. A table the shared Lua shows through a
+   view (`_scxml_readonly`: `_event`, an `_ioprocessors` entry) is walked
+   through its `__pairs`, so a view arrives with what it shows. Two references
+   to one table arrive as two equal tables: the sessions share nothing.
 
-   cpp passed the param's expr STRING to the child's script engine so the
-   child re-evaluated it in its own context, until the fixture
-   `integration_resources/invoke_param_seeds_declared_child_data/` made the
-   two answers differ. For literal-expression W3C tests (all of test226/240
-   /241/243/244/245/276 use `expr="1"` or namelist names that resolve to
-   integers) both shapes converge on the same observable child datamodel,
-   which is why that divergence survived every suite.
+   The copy runs inside a protected call on the child's state, so a value the
+   child cannot hold, for any reason, is one answer: past
+   `SCE_MAX_HANDED_VALUE_DEPTH` or `SCE_MAX_HANDED_VALUE_ENTRIES`
+   (sce/script_session.h), of a kind no datamodel value is (a function, a
+   userdata, or a table key that is neither a string nor a number), or out of
+   the child's memory. The parent's stack is put back to where the copy found
+   it whatever the copy did. The walk of the parent's tables runs its own
+   protected calls on the parent's state. #}
+{% macro lua_take_handed_value_functions() %}
+/* §scxml-6.4: what a start found for one top-level <data> among the values its
+   invoke handed it. */
+typedef enum handed_value_e {
+    /* Nothing is handed under the <data>'s id: it takes its own value. */
+    HANDED_VALUE_NONE,
+    /* The handed value is at the top of the session's stack, to be declared in
+       place of the <data>'s own. */
+    HANDED_VALUE_TAKEN,
+    /* A value is handed under the id and this session cannot hold it. */
+    HANDED_VALUE_UNHELD
+} handed_value_t;
 
-   Type dispatch covers the W3C corpus param/namelist value types: integer
-   / float (Lua number, distinguished via lua_isinteger so 0 stays an int
-   in the child datamodel), string, boolean. Non-primitives (table /
-   function / userdata) collapse to nil — no fixture in the W3C corpus
-   passes those; the first one forces a typed-payload helper. nil and
-   none transfer as nil. The pop on `src_L` keeps the parent's stack
-   balanced for sibling-param iteration.
+/* One copy of a handed value: the parent's state it is read from, where on its
+   stack, and the entries copied so far, counted across every level. */
+typedef struct handed_copy_s {
+    lua_State *from;
+    int index;
+    size_t entries;
+} handed_copy_t;
 
-   §scxml-5.10: the child's variable is named by the document, so it is
-   stored through `set_document_global`, protected; a name the child's shared
-   globals refuse (a system variable's) is a value that could not be given,
-   raised on the parent as error.execution like a `<param>` that could not be
-   read, and the child starts one pair short. #}
-{% macro lua_xfer_top_to_child(src_L, dst_L, dst_name) %}
-        {
-            int _xfer_t = lua_type({{ src_L }}, -1);
-            if (_xfer_t == LUA_TBOOLEAN) {
-                lua_pushboolean({{ dst_L }}, lua_toboolean({{ src_L }}, -1));
-            } else if (_xfer_t == LUA_TNUMBER) {
-                if (lua_isinteger({{ src_L }}, -1)) {
-                    lua_pushinteger({{ dst_L }}, lua_tointeger({{ src_L }}, -1));
-                } else {
-                    lua_pushnumber({{ dst_L }}, lua_tonumber({{ src_L }}, -1));
-                }
-            } else if (_xfer_t == LUA_TSTRING) {
-                size_t _xfer_len = 0;
-                const char *_xfer_s = lua_tolstring({{ src_L }}, -1, &_xfer_len);
-                if (_xfer_s != NULL) {
-                    lua_pushlstring({{ dst_L }}, _xfer_s, _xfer_len);
-                } else {
-                    lua_pushnil({{ dst_L }});
-                }
-            } else {
-                lua_pushnil({{ dst_L }});
-            }
-            if (!set_document_global({{ dst_L }}, "{{ dst_name | escape_c }}")) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    {{ reason("invoke_child_ungiven", dst_name) }});
-            }
-            lua_pop({{ src_L }}, 1);
+/* The step a plain table is walked by: `next`, raw, as `pairs` walks a table
+   with no `__pairs`. Answers the next key and value, or nil at the end. */
+SCE_SM_FN static int handed_raw_next(lua_State *L) {
+    lua_settop(L, 2);
+    if (lua_next(L, 1) != 0) {
+        return 2;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+SCE_SM_FN static bool copy_handed_value(handed_copy_t *copy, int index, lua_State *to, int depth);
+
+/* Push on `to` a new table holding every entry of the table at `index` of the
+   parent's stack, `depth` tables deep in the value. False when the value
+   cannot be held; what it leaves on either stack is the caller's to drop. */
+SCE_SM_FN static bool copy_handed_table(handed_copy_t *copy, int index, lua_State *to, int depth) {
+    lua_State *from = copy->from;
+    /* The walk holds three values and one step pushes three more, which come
+       back as a key and a value; the copy holds the table, a key and a value. */
+    if (depth >= (int)SCE_MAX_HANDED_VALUE_DEPTH || !lua_checkstack(from, 6) || !lua_checkstack(to, 3)) {
+        return false;
+    }
+    index = lua_absindex(from, index);
+    if (luaL_getmetafield(from, index, "__pairs") != LUA_TNIL) {
+        lua_pushvalue(from, index);
+        if (lua_pcall(from, 1, 3, 0) != LUA_OK) {
+            return false;
         }
+    } else {
+        lua_pushcfunction(from, handed_raw_next);
+        lua_pushvalue(from, index);
+        lua_pushnil(from);
+    }
+    /* The walk: its step function, its state and its control, the last key. */
+    const int walk = lua_gettop(from) - 2;
+    lua_newtable(to);
+    for (;;) {
+        lua_pushvalue(from, walk);
+        lua_pushvalue(from, walk + 1);
+        lua_pushvalue(from, walk + 2);
+        if (lua_pcall(from, 2, 2, 0) != LUA_OK) {
+            return false;
+        }
+        const int key = lua_gettop(from) - 1;
+        if (lua_isnil(from, key)) {
+            break;
+        }
+        /* An ECMAScript array or object is keyed by numbers and strings. */
+        const int key_type = lua_type(from, key);
+        if (key_type != LUA_TNUMBER && key_type != LUA_TSTRING) {
+            return false;
+        }
+        copy->entries += 1u;
+        if (copy->entries > (size_t)SCE_MAX_HANDED_VALUE_ENTRIES) {
+            return false;
+        }
+        if (!copy_handed_value(copy, key, to, depth + 1) || !copy_handed_value(copy, key + 1, to, depth + 1)) {
+            return false;
+        }
+        lua_rawset(to, -3);
+        /* The key is the walk's next control. */
+        lua_pop(from, 1);
+        lua_replace(from, walk + 2);
+    }
+    lua_settop(from, walk - 1);
+    return true;
+}
+
+/* Push on `to` the value at `index` of the parent's stack, `depth` tables deep
+   in the handed value. False when the value cannot be held. */
+SCE_SM_FN static bool copy_handed_value(handed_copy_t *copy, int index, lua_State *to, int depth) {
+    lua_State *from = copy->from;
+    switch (lua_type(from, index)) {
+    case LUA_TNIL:
+        lua_pushnil(to);
+        return true;
+    case LUA_TBOOLEAN:
+        lua_pushboolean(to, lua_toboolean(from, index));
+        return true;
+    case LUA_TNUMBER:
+        if (lua_isinteger(from, index)) {
+            lua_pushinteger(to, lua_tointeger(from, index));
+        } else {
+            lua_pushnumber(to, lua_tonumber(from, index));
+        }
+        return true;
+    case LUA_TSTRING: {
+        size_t length = 0u;
+        const char *text = lua_tolstring(from, index, &length);
+        lua_pushlstring(to, text, length);
+        return true;
+    }
+    case LUA_TTABLE:
+        return copy_handed_table(copy, index, to, depth);
+    default:
+        return false;
+    }
+}
+
+/* The copy, run as the function of a protected call on the child's state: its
+   one argument is the `handed_copy_t`. Answers the copy, or raises, which
+   unwinds whatever the copy had pushed. */
+SCE_SM_FN static int copy_handed_value_protected(lua_State *to) {
+    handed_copy_t *copy = (handed_copy_t *)lua_touserdata(to, 1);
+    if (!copy_handed_value(copy, copy->index, to, 0)) {
+        return luaL_error(to, "the handed value cannot be held");
+    }
+    return 1;
+}
+
+/* §scxml-6.4: take the value handed under `name`, the top-level <data> id
+   being declared, onto the top of `L`. The last value handed under a name is
+   the one taken, as each would have replaced the one before it. */
+SCE_SM_FN static handed_value_t take_handed_value(lua_State *L, const sce_handed_values_t *handed, const char *name) {
+    if (handed == NULL || handed->from == NULL) {
+        return HANDED_VALUE_NONE;
+    }
+    for (size_t i = handed->count; i > 0u; --i) {
+        const sce_handed_value_t *value = &handed->values[i - 1u];
+        if (strcmp(value->name, name) != 0) {
+            continue;
+        }
+        handed_copy_t copy = {handed->from, value->index, 0u};
+        const int from_top = lua_gettop(handed->from);
+        lua_pushcfunction(L, copy_handed_value_protected);
+        lua_pushlightuserdata(L, &copy);
+        const bool held = lua_pcall(L, 1, 1, 0) == LUA_OK;
+        /* Whatever the walk left on the parent's stack, the parent's handed
+           values stay where it put them. */
+        lua_settop(handed->from, from_top);
+        if (!held) {
+            lua_pop(L, 1);
+            return HANDED_VALUE_UNHELD;
+        }
+        return HANDED_VALUE_TAKEN;
+    }
+    return HANDED_VALUE_NONE;
+}
 {% endmacro %}
 
 {# W3C SCXML 5.5 + 6.3.1 donedata carry out of a machine's script engine.

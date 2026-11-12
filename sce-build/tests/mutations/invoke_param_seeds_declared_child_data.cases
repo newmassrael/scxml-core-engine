@@ -46,7 +46,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_invoke_param_seeds_declared_child_data)$'
-mutation_targets sce/src/runtime/InvokeExecutor.cpp sce/src/runtime/DataModelInitializer.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_targets sce/src/runtime/InvokeExecutor.cpp sce/src/runtime/DataModelInitializer.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/scriptengine.jinja2
 mutation_oracles tests/integration/InvokeParamSeedsDeclaredChildDataTest.cpp tests/integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp backends/c/tests/integration/test_invoke_param_seeds_declared_child_data.c
 
 # ── C++ Interpreter: which session evaluates ───────────────────────
@@ -125,29 +125,46 @@ edit("tools/codegen/templates/invoke_methods.jinja2",
      """                                static_cast<void>(__sce_nl);""")
 PY
 
-# ── C11: which session evaluates ───────────────────────────────────
+# ── C11: whose value the child declares ────────────────────────────
 #
-# This backend has evaluated parent-side from the start, and its template
-# comment says why: each generated SM owns its own `lua_State`, so a
-# parent-side name is undefined in the child's. Pointing the chunk at the
-# child's state makes it find the child's `token` instead.
+# This backend evaluates parent-side, because each generated SM owns its own
+# `lua_State` and a parent-side name means nothing in the child's, and since
+# docs/adr/0098 the child's start takes the value before it declares its
+# datamodel. A child that takes nothing declares its own `<data>` values, so
+# the shadowed phase finds `seen` at the child's own `'unset'`.
+# Killer: `failShadowSeedLost`.
 
-mutation_case "the c11 engine evaluates an invoke param in the child lua state" <<'PY'
-edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """            if (luaL_dostring(sm->L,
-                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""",
-     """            if (luaL_dostring({{ child_L }},
-                "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {""")
+mutation_case "the c11 child declares its own value in place of the one handed" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """    for (size_t i = handed->count; i > 0u; --i) {""",
+     """    for (size_t i = 0u; i > 0u; --i) {""")
 PY
 
 # ── C11: which names are added ─────────────────────────────────────
 #
-# The filter this backend has always had, removed. Its `<data>` default is
-# overwritten by `_init` afterwards for declared names, so the only phase
-# that moves is the one asking about a name the child does not declare.
+# The child decides what it keeps (docs/adr/0098): only a handed name its
+# top-level `<data>` declares is declared. The mutant has the child also
+# declare every handed name after its own, so the name it never declared
+# becomes a variable of its datamodel.
+# Killer: `failUnmatchedParamEnteredTheChild`.
 
-mutation_case "the c11 engine transfers an invoke param the child never declared" <<'PY'
-edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """            {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}""",
-     """            {% set child_keeps = child.child_needs_script_engine %}""")
+mutation_case "the c11 child adds a handed name it never declared" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """            break;
+        }
+        }
+        {% endfor %}
+        {% if model.binding == 'early' %}""",
+     """            break;
+        }
+        }
+        {% endfor %}
+        {% if model.variables %}
+        for (size_t _leak = 0u; handed != NULL && _leak < handed->count; ++_leak) {
+            if (take_handed_value(sm->L, handed, handed->values[_leak].name) == HANDED_VALUE_TAKEN) {
+                (void)set_document_global(sm->L, handed->values[_leak].name);
+            }
+        }
+        {% endif %}
+        {% if model.binding == 'early' %}""")
 PY

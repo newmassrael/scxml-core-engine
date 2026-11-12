@@ -603,10 +603,6 @@ pub const REASONS: &[Reason] = &[
         row: "invoke_document_undeclared_named",
         text: "<invoke srcexpr='{0}'> evaluated to a document it did not declare",
     },
-    Reason {
-        row: "invoke_child_ungiven",
-        text: "<invoke> could not give the child '{0}'",
-    },
     // A host-run invocation's deadline the machine cannot read, raised by the
     // one start path every invocation shares: the quotes are the invocation's
     // type and id, the document's texts, and the deadline's text, at the bound

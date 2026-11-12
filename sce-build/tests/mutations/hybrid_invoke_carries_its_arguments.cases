@@ -29,9 +29,9 @@ mutation_oracles tests/integration/AHybridInvokeCarriesItsArgumentsAotTest.cpp b
 #
 # The candidate keeps its engine but loses its `<data>` list, so every
 # argument is evaluated and none is kept — `paramsOk` and `namelistOk` stay 0
-# on the C11 channel. The C++ AOT no longer reads the list: it hands every
-# argument and the candidate's own start chooses (docs/adr/0098), so its
-# oracle stays green here and the C11 one is the killer.
+# on the C11 channel. Neither the C++ AOT nor a C11 parent reads the list any
+# more: each hands every argument and the candidate's own start chooses
+# (docs/adr/0098), so no oracle here is red when the list is lost.
 
 mutation_case "a candidate's declared names are not recorded" <<'PY'
 edit("sce-build/src/parser.rs",
@@ -87,10 +87,17 @@ PY
 
 # ── C11: the same two ──────────────────────────────────────────────
 
-mutation_case "C11 seeds a candidate by the invoke's own metadata" <<'PY'
+# Since docs/adr/0098 a C11 parent hands every argument and the candidate
+# keeps what its own top-level `<data>` declares, so there is no metadata of
+# the parent's to confuse. The shape left to lose is the hand-over itself: the
+# arguments are evaluated and the record handed lists none of them, so the
+# candidate the value chose keeps its own values and `paramsOk` and
+# `namelistOk` stay 0.
+
+mutation_case "C11 hands a candidate none of the arguments it evaluated" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}""",
-     """{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}""")
+     """            const sce_handed_values_t _handed = {sm->L, _handed_values, _handed_count};""",
+     """            const sce_handed_values_t _handed = {sm->L, _handed_values, 0u};""")
 PY
 
 mutation_case "C11 starts a candidate whose namelist cannot be read" <<'PY'

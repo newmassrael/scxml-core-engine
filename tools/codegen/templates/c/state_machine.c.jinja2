@@ -768,6 +768,12 @@ SCE_SM_FN static bool script_session_failed({{ csym_prefix }}{{ model.name }}_t 
 SCE_SM_FN static bool establish_script_session({{ csym_prefix }}{{ model.name }}_t *sm) {
 {{ se.lua_establish_session() }}
 }
+{% if model.variables %}
+
+/* §scxml-6.4 (docs/adr/0098): the values an invoke hands this machine, taken
+   by the start that declares its top-level <data> (`lua_declare_datamodel`). */
+{{ se.lua_take_handed_value_functions() }}
+{% endif %}
 {% endif %}
 {% if model.needs_event_scheduler %}
 
@@ -6268,11 +6274,16 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
    posting to it (docs/adr/0084, D2 as amended at step 10).
 
    `session_id` is the id the host gives a root (docs/adr/0045), NULL for none,
-   in which case the machine draws its own. #}
+   in which case the machine draws its own.
+
+   `handed` holds the values the invoke that starts this machine hands it,
+   taken between establishing the session and declaring the datamodel
+   (§scxml-6.4, docs/adr/0098); NULL for every other start. #}
 SCE_SM_FN static sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm, bool keep_tree_inboxes,
                                                        const char *session_id{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
-                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                                       const char *basic_http_access_uri,
+                                                       const sce_handed_values_t *handed{% endif %}{% if model.host_processor_types %},
                                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
                                                        const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
@@ -6454,11 +6465,11 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_enter({{ csym_prefi
        event — so the first event raised in an `<onentry>` block cannot race
        ahead of the source state's eventless `<transition>` (test503/505/506
        force this), and an autoforward child is live for every event
-       `<onentry>` queued on the way in. Top-level fixtures only — child SMs
-       (which declare `<send target="#_parent">` and emit
-       `_init_with_parent` instead) defer macrostep stabilisation to the
-       parent's invoke helper, which runs it after stamping parent-routing
-       fields and applying `<param>` / `namelist` overrides. */
+       `<onentry>` queued on the way in. A child started through `_init_invoked`
+       runs it here too, over the values it was handed, which its datamodel
+       already holds (§scxml-6.4). A child that may address its parent is
+       started through `_init_with_parent` instead, which leaves the
+       macrostep to the parent's invoke helper. */
     run_main_event_loop(sm);
 {% if model.needs_event_scheduler %}
     end_turn(sm, _turn_opened);
@@ -6467,13 +6478,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_enter({{ csym_prefi
 
 SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
-                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                                       const char *basic_http_access_uri,
+                                                       const sce_handed_values_t *handed{% endif %}{% if model.host_processor_types %},
                                                        const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
                                                        const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
                                                        bool accept_simulated{% endif %}) {
     /* No id is given here, so the machine draws its own (docs/adr/0045). */
-    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %});
+    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri, handed{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %});
 {% if model.needs_script_engine %}
     /* docs/adr/0096: nothing was entered, and the machine says which step of
        its script session failed (`_script_session_failure`). */
@@ -6511,7 +6523,7 @@ SCE_SM_FN sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_sessio
     if (session_id == NULL) {
         return SCE_START_REFUSAL_SESSION_ID_EMPTY;
     }
-    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, session_id{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{{ simulated_refused }});
+    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, session_id{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri, NULL{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{{ simulated_refused }});
     if (refused != SCE_START_REFUSAL_NONE) {
         return refused;
     }
@@ -6581,7 +6593,7 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     }
 
 {% if has_native_actions or model.needs_script_engine %}
-    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %}{{ simulated_refused }});
+    const sce_start_refusal_t refused = {{ csym_prefix }}{{ model.name }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri, NULL{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %}{{ simulated_refused }});
 {% if model.needs_script_engine %}
     /* docs/adr/0096: the session is established before the machine is stood
        in the configuration, and one that cannot be leaves it in none. */
@@ -6613,7 +6625,7 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
 {% if has_native_actions %}
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const {{ native_actions_interface }} *actions) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{{ simulated_refused }});
 }
 {% if takes_simulated_host %}
 
@@ -6623,12 +6635,29 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_actions({{ c
    and cannot be reached by a flag that happens to be true. */
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const {{ native_actions_interface }} *actions) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions, true);
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions, true);
 }
 {% endif %}
 {% else %}
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+}
+
+/* §scxml-6.4 (docs/adr/0098): the start a parent gives this machine when it
+   invokes it and the machine does not address its parent. See the header. The
+   same start as `_init`, on the parent's clock, with the values the invoke
+   handed taken before the datamodel is declared. */
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_invoked({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock,
+                                                                  const sce_handed_values_t *handed) {
+{% if not model.needs_event_scheduler %}
+    /* No `<send delay>`, so no time to measure. */
+    (void)clock;
+{% endif %}
+{% if not model.needs_script_engine %}
+    /* No script engine, so no datamodel to take a handed value into. */
+    (void)handed;
+{% endif %}
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL, handed{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 }
 {% endif %}
 
@@ -6647,7 +6676,7 @@ SCE_SM_FN const sce_script_session_failure_t *{{ csym_prefix }}{{ model.name }}_
 {% if model.needs_event_scheduler %}
 
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% endif %}
 {% if model.host_processor_types %}
@@ -6655,7 +6684,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csy
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
@@ -6675,7 +6704,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_ho
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% endif %}
 {% endif %}
@@ -6692,7 +6721,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_ho
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
@@ -6703,7 +6732,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_ho
                                   sce_clock_t clock,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% endif %}
 {% if model.host_processor_types %}
@@ -6716,7 +6745,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_surface
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
@@ -6725,7 +6754,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_ho
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% endif %}
 {% endif %}
@@ -7622,7 +7651,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ c
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                       const char *basic_http_access_uri{% if has_native_actions %},
                                                                       const {{ native_actions_interface }} *actions{% endif %}) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri, NULL{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{{ simulated_refused }}{% endif %});
 }
 {% endif %}
 {% if model.may_address_parent %}
@@ -7631,13 +7660,18 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_parent({{ cs
                                        const char *parent_session_id,
                                        sce_parent_dispatch_fn dispatch,
                                        const char *invoke_id,
-                                       sce_clock_t clock) {
+                                       sce_clock_t clock,
+                                       const sce_handed_values_t *handed) {
     memset(sm, 0, sizeof(*sm));
     build_inbox(sm);
 {% if model.needs_event_scheduler %}
     sm->clock = clock;
 {% else %}
     (void)clock;
+{% endif %}
+{% if not model.needs_script_engine %}
+    /* No script engine, so no datamodel to take a handed value into. */
+    (void)handed;
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_issue_session_identity(sm, NULL);
     /* W3C SCXML 6.4: Stamp parent-routing BEFORE the entry walk so
@@ -7673,19 +7707,19 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_parent({{ cs
     {% if model.needs_script_engine %}
     /* W3C SCXML 5.2, 5.3, 5.8: declare the datamodel in the session just
        established, before any <onentry> body runs (those bodies may
-       reference datamodel vars). */
+       reference datamodel vars). §scxml-6.4: a top-level <data> the invoke
+       handed a value for is declared with it, in place of its own, so the
+       top-level <script> and the entry walk below read what was handed. */
 {{ se.lua_declare_datamodel() }}
     {% endif %}
     /* §scxml-D-interpret: the initial configuration is the entry set of the
        document's initial transition, entered by §scxml-D-enterStates. */
     enter_initial_configuration(sm);
-    /* W3C SCXML 6.4: macrostep stabilisation deferred to the parent's
-       `execute_pending_invokes` — it runs `<param>` / `namelist`
-       overrides after the entry walk and only then drives the eventless
-       loop via repeated `_step` calls. Running it here would evaluate
-       eventless transitions against the still-default child datamodel
-       (test226/240/241/243/244/245/276 depend on the override-then-step
-       order). */
+    /* W3C SCXML 6.4: the macrostep that completes the entry is the parent's
+       to drive (`execute_pending_invokes`), by repeated `_step` calls up to
+       its bound, as it drives a `sce-static` child after `_invoked_enter`:
+       a child that addresses its parent is driven on until it ends or the
+       bound is reached, which its parent decides and not this start. */
 {% if model.needs_event_scheduler %}
     end_turn(sm, _turn_opened);
 {% endif %}
@@ -7729,11 +7763,11 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_begin({{ csym_prefix }}
        copied in by the construction before the entry walk. A NULL or incomplete
        one is refused FIRST, so the child's storage is as the parent left it and
        the parent can report the start as failed. */
-    if ({{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %}) != SCE_START_REFUSAL_NONE) {
+    if ({{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions{% if has_native_duties %}, accept_simulated{% elif takes_simulated_host %}, false{% endif %}) != SCE_START_REFUSAL_NONE) {
         return false;
     }
 {% else %}
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm, true, NULL{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 {% if model.may_address_parent %}
     /* W3C SCXML 6.4: the parent-routing fields are stamped before the entry
@@ -8646,7 +8680,7 @@ SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self
        location in: the run ends in error (P13), the reason in its log, and the machine is neither
        constructed nor entered, so its `release` tears down storage the construction never touched. */
     const sce_start_refusal_t refused =
-        {{ P }}_init_construct(sm, false, sce_test_context_name(context){% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+        {{ P }}_init_construct(sm, false, sce_test_context_name(context){% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
     if (refused != SCE_START_REFUSAL_NONE) {
         sce_test_context_error(context, sce_start_refusal_text(refused));
         return;

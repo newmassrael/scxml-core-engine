@@ -136,56 +136,61 @@
             }
 {% endmacro %}
 
-{# ── §scxml-6.4.1 + §scxml-6.4.3: the invoke's arguments, into one child ──
-   `child` describes the session being started — the invoke itself for a
-   static child, the chosen candidate for a hybrid one — and `child_L` is that
-   child's `lua_State`. The arguments are the invoke's and are evaluated
-   whatever the child is; only which names the child KEEPS depends on it, so a
-   candidate is given exactly the names its own top-level `<data>` declares.
-   `se` is the script-engine macro module the including template imported. #}
-{% macro invoke_seed_child(invoke_info, child, child_L, model, csym_prefix, se) %}
-            {% if model.needs_script_engine and (invoke_info.params or (child.child_needs_script_engine and invoke_info.namelist)) %}
-            /* W3C SCXML 6.4.1 (test226/240/241/243/244/245/276):
-               `<param>` and `namelist` value passing. Evaluate each
-               param's `expr` (or read each namelist name's binding)
-               on the parent's `lua_State` so the value lands on
-               `sm->L`'s top of stack, then transfer to the child's
-               `lua_State` as a global under the param/namelist name —
-               overriding the `<data expr=...>` defaults that the
-               child's `_init` already seeded. C11 evaluates
-               parent-side because each generated SM owns its own Lua
-               state and a parent-side variable name is undefined in
-               the child's state.
+{# ── §scxml-6.4 + §scxml-5.7: the invoke's arguments, handed to its child ──
+   docs/adr/0098. The parent evaluates every `<param>` and reads every
+   `namelist` name in its own session, raising each failure (§scxml-5.7.1),
+   and hands the child every value it evaluated; the child's start keeps the
+   ones its top-level `<data>` declares, declaring each in place of the
+   `<data>`'s own value, before its datamodel's other declarations, its
+   top-level `<script>` and its entry walk (`lua_declare_datamodel`). The
+   parent does not ask which names the child declares: that is the child's to
+   answer, from its own document.
 
-               The cpp backend transferred the expr STRING for
-               re-evaluation in the child's engine until the fixture
-               `integration_resources/invoke_param_seeds_declared_child_data/`
-               separated the two: for literal exprs — the entire W3C
-               corpus param/namelist surface — both shapes converge on
-               the same observable, which is why the divergence lived
-               as long as it did. It now passes the value, so this
-               backend's shape and cpp's are the same shape.
+   Each machine owns its own Lua state, so a name of the parent's means nothing
+   in the child's: the parent evaluates, and the child copies the value whole.
+   The values stay on the parent's stack, where they were evaluated, listed in
+   `_handed`, a record of the invoke site (`sce_handed_values_t`,
+   sce/script_session.h), and are dropped (`release_handed_arguments`) once
+   the child's start has returned. Nothing is allocated for them.
 
-               Names not declared in the child's `<datamodel>` skip
-               the transfer (test245: namelist Var2 with no child
-               <data id="Var2"> stays unbound). §scxml-6.4.3 requires
-               it — "if the names do not match, the Processor MUST NOT
-               add the value ... to the invoked session's data model" —
-               and cpp decides the same question at codegen time now,
-               having reached it through the runtime
-               `DatamodelValidationHelper::isVariableDeclaredInChild`
-               on its namelist arm alone. */
-            {% if invoke_info.params %}
+   Emitted when this machine has a script engine and the invoke has an
+   argument, which `handed_arguments_ref` and `release_handed_arguments` ask
+   in the same words; otherwise the child is started with NULL.
+
+   `held` false is the shape for a `sce-static` child, which takes its values
+   natively (`seed_static_child`): each `<param>` is still evaluated, and its
+   failure raised, because an argument is the invoke's whatever the child
+   keeps, and the value is dropped at once. #}
+{% macro hand_arguments(invoke_info, model, csym_prefix, held) %}
+            {% if model.needs_script_engine and (invoke_info.params or (held and invoke_info.namelist)) %}
+            {% set _names = invoke_info.namelist.split() if (held and invoke_info.namelist) else [] %}
+            {% set _count = (invoke_info.params | length) + (_names | length) %}
+            {% if held %}
+            /* §scxml-6.4: the invoke's arguments, evaluated here and held on
+               this machine's stack until the child's start has taken them. */
+            const int _handed_base = lua_gettop(sm->L);
+            sce_handed_value_t _handed_values[{{ _count }}];
+            size_t _handed_count = 0u;
+            if (!lua_checkstack(sm->L, {{ _count }})) {
+                /* No room on this machine's stack to hold the arguments: the
+                   invoke cannot start its child. */
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    {{ reason("invoke_child_start_refused", invoke_info.invoke_id) }});
+{% endif %}
+                continue;
+            }
+            {% endif %}
             {% for param in invoke_info.params %}
             {# §scxml-5.7: the value comes from 'expr' or, failing that,
                'location' — a location expression, read as its value; both
                empty is `location=""`, a location that names nothing. The
                <param> is an argument of this <invoke> whether or not the
                child declares `name` or runs a script engine, so it is
-               evaluated — and its failure raised — either way; §scxml-6.4.3
-               decides only what the child keeps. #}
+               evaluated — and its failure raised — either way; the child
+               decides what it keeps. #}
             {% set param_source = param.expr or param.location %}
-            {% set child_keeps = child.child_needs_script_engine and child.child_datamodel_vars and param.name in child.child_datamodel_vars %}
             {% if not param_source %}
             /* `<param name="{{ param.name }}" location=""/>` names no location. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
@@ -195,10 +200,12 @@
             /* `<param name="{{ param.name }}"/>` */
             if (luaL_dostring(sm->L,
                 "return ({{ param_source | to_lua_expr | escape_c }})") == 0) {
-            {% if child_keeps %}
-{{ se.lua_xfer_top_to_child("sm->L", child_L, param.name) }}
+            {% if held %}
+                _handed_values[_handed_count].name = "{{ param.name | escape_c }}";
+                _handed_values[_handed_count].index = lua_gettop(sm->L);
+                ++_handed_count;
             {% else %}
-                /* §scxml-6.4.3: `{{ param.name }}` is not kept by the child. */
+                /* The `sce-static` child takes its values natively. */
                 lua_pop(sm->L, 1);
             {% endif %}
             } else {
@@ -220,16 +227,33 @@
             }
             {% endif %}
             {% endfor %}
-            {% endif %}
-            {% if invoke_info.namelist and child.child_needs_script_engine %}
-            {% for ns_name in invoke_info.namelist.split() %}
-            {% if child.child_datamodel_vars and ns_name in child.child_datamodel_vars %}
-            /* namelist `{{ ns_name }}` */
-            lua_getglobal(sm->L, "{{ ns_name }}");
-{{ se.lua_xfer_top_to_child("sm->L", child_L, ns_name) }}
-            {% endif %}
+            {% for ns_name in _names %}
+            /* §scxml-6.4.1: namelist `{{ ns_name }}`, the value stored at the
+               location. `invoke_namelist_guard` has refused a name this
+               document does not declare. */
+            lua_getglobal(sm->L, "{{ ns_name | escape_c }}");
+            _handed_values[_handed_count].name = "{{ ns_name | escape_c }}";
+            _handed_values[_handed_count].index = lua_gettop(sm->L);
+            ++_handed_count;
             {% endfor %}
+            {% if held %}
+            const sce_handed_values_t _handed = {sm->L, _handed_values, _handed_count};
             {% endif %}
+            {% endif %}
+{% endmacro %}
+
+{# Whether `hand_arguments` with `held` true declares `_handed` for this invoke:
+   a machine with a script engine, and an invoke with an argument. Kept in step
+   with its first condition. #}
+{% macro handed_arguments_ref(invoke_info, model) -%}
+{{ '&_handed' if (model.needs_script_engine and (invoke_info.params or invoke_info.namelist)) else 'NULL' }}
+{%- endmacro %}
+
+{# Drop the values `hand_arguments` held, once the child's start has returned:
+   whether it started or not, it read them during the call and keeps none. #}
+{% macro release_handed_arguments(invoke_info, model) %}
+            {% if model.needs_script_engine and (invoke_info.params or invoke_info.namelist) %}
+            lua_settop(sm->L, _handed_base);
             {% endif %}
 {% endmacro %}
 
@@ -828,18 +852,17 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 continue;
             }
 {% endif %}
-            {% elif invoke_info.child_has_send_to_parent %}
+            {% else %}
+{{ hand_arguments(invoke_info, model, csym_prefix, true) }}
+            {% if invoke_info.child_has_send_to_parent %}
             /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
                BEFORE the configuration entry walk by passing them
                through `_init_with_parent`. `<onentry><send target="#_parent">`
                in the child runs during `enter_initial_configuration` inside
                this call, so a NULL `parent_dispatch` would silently
-               drop the event. Fixtures whose child only routes to
-               `#_parent` from inside `<transition>` bodies (test226/
-               240/241/243/244/245/276) are unaffected by the stamp
-               ordering — those sends fire later from the macrostep
-               loop below — but the unified `_init_with_parent` entry
-               point keeps a single child-SM init shape. */
+               drop the event. The invoke's arguments go in by the same
+               call, taken before the child declares its datamodel
+               (§scxml-6.4). */
             const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
                 {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_parent(
                     &sm->child_{{ invoke_info.field_suffix }},
@@ -847,17 +870,18 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     sm->session_id,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                     p->invoke_id,
-                    {{ child_clock_c }});
-{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
-            {% elif invoke_info.child_needs_event_scheduler and model.needs_event_scheduler %}
-            /* §scxml-6.4: the child's `<send delay>`s wait on this machine's
-               clock, installed before its entry walk arms any of them. */
-            const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
-                {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_clock(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }});
-{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
+                    {{ child_clock_c }},
+                    {{ handed_arguments_ref(invoke_info, model) }});
             {% else %}
+            /* §scxml-6.4: the child is started on this machine's clock, which
+               its `<send delay>`s wait on, with the invoke's arguments taken
+               before it declares its datamodel; its first macrostep runs
+               inside this call, over what it was handed. */
             const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
-                {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init_invoked(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }},
+                                                                        {{ handed_arguments_ref(invoke_info, model) }});
+            {% endif %}
+{{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             {% endif %}
             sm->child_{{ invoke_info.field_suffix }}_active = true;
@@ -867,8 +891,8 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                carry an `invoke_id` slot (test247-shape children with
                no `<send target="#_parent">`). */
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
-{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
             {% if invoke_info.child_is_static %}
+{{ hand_arguments(invoke_info, model, csym_prefix, false) }}
 {{ seed_static_child('sm->child_' ~ invoke_info.field_suffix, invoke_info.params, [], model, csym_prefix) }}
 {% if model.host_processor_types %}
             {
@@ -1085,6 +1109,10 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 }
 {% endif %}
 {% else %}
+                /* §scxml-6.4: the invoke's arguments are handed to whichever
+                   candidate the value chose, and the candidate keeps the ones
+                   its own top-level `<data>` declares. */
+{{ hand_arguments(invoke_info, model, csym_prefix, true) }}
                 const {{ csym_prefix }}{{ candidate.stem }}_start_status_t _child_started =
                     {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
                         &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
@@ -1092,13 +1120,15 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                         sm->session_id,
                         {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                         p->invoke_id,
-                        {{ child_clock_c }});
+                        {{ child_clock_c }},
+                        {{ handed_arguments_ref(invoke_info, model) }});
+{{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(candidate.stem, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), invoke_info, model, csym_prefix) }}
 {% endif %}
                 sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_active = true;
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
-{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}
 {% if candidate.child_is_static %}
+{{ hand_arguments(invoke_info, model, csym_prefix, false) }}
 {{ seed_static_child("sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.seeds, candidate.unkept, model, csym_prefix) }}
 {% if model.host_processor_types %}
                 {
@@ -1160,12 +1190,14 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                walk and the immediate-final raise below fires
                `done.invoke` synchronously). */
 {{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
+{{ hand_arguments(invoke_info, model, csym_prefix, true) }}
             const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
-                {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init_invoked(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }},
+                                                                        {{ handed_arguments_ref(invoke_info, model) }});
+{{ release_handed_arguments(invoke_info, model) }}
 {{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             sm->child_{{ invoke_info.field_suffix }}_active = true;
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
-{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}
             if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
