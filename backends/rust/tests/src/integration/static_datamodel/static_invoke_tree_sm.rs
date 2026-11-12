@@ -566,6 +566,7 @@ impl StaticInvokeTreePolicy {
         let answers: u32 = 0;
         let reports: u32 = 0;
         let stamps: u32 = 0;
+
         Self {
             answers,
             reports,
@@ -634,18 +635,27 @@ impl StaticInvokeTreePolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeTreeInvokeParams) {
-        if let Some(value) = params.answers {
-            self.answers = value;
-        }
-        if let Some(value) = params.reports {
-            self.reports = value;
-        }
-        if let Some(value) = params.stamps {
-            self.stamps = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeTreeInvokeParams) {
+        let answers: u32 = match handed.answers {
+            Some(value) => value,
+            None => 0,
+        };
+        let reports: u32 = match handed.reports {
+            Some(value) => value,
+            None => 0,
+        };
+        let stamps: u32 = match handed.stamps {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.answers = answers;
+        self.reports = reports;
+        self.stamps = stamps;
     }
 
     /// W3C SCXML 5.2: what the published `answers` datamodel variable

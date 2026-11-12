@@ -796,6 +796,7 @@ impl StatechartHostInvokerOptionalPolicy {
             ::sce_rust_runtime::portable::sce_text!(16, "");
         let hit_known: bool = false;
         let hit_true: bool = false;
+
         Self {
             pending_payload: StatechartHostInvokerOptionalPayload::default(),
             at,
@@ -871,45 +872,71 @@ impl StatechartHostInvokerOptionalPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StatechartHostInvokerOptionalInvokeParams) {
-        if params.at.is_some() {
-            self.at = params.at;
-        }
-        if params.label.is_some() {
-            self.label = params.label;
-        }
-        if params.hit.is_some() {
-            self.hit = params.hit;
-        }
-        if let Some(value) = params.answered {
-            self.answered = value;
-        }
-        if let Some(value) = params.rows_seen {
-            self.rows_seen = value;
-        }
-        if let Some(value) = params.total_seen {
-            self.total_seen = value;
-        }
-        if let Some(value) = params.at_present {
-            self.at_present = value;
-        }
-        if let Some(value) = params.at_value {
-            self.at_value = value;
-        }
-        if let Some(value) = params.label_present {
-            self.label_present = value;
-        }
-        if let Some(value) = params.label_value {
-            self.label_value = value;
-        }
-        if let Some(value) = params.hit_known {
-            self.hit_known = value;
-        }
-        if let Some(value) = params.hit_true {
-            self.hit_true = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StatechartHostInvokerOptionalInvokeParams) {
+        let at: Option<i64> = if handed.at.is_some() { handed.at } else { None };
+        let label: Option<::sce_rust_runtime::portable::SceString<16>> = if handed.label.is_some() {
+            handed.label
+        } else {
+            None
+        };
+        let hit: Option<bool> = if handed.hit.is_some() {
+            handed.hit
+        } else {
+            None
+        };
+        let answered: u8 = match handed.answered {
+            Some(value) => value,
+            None => 0,
+        };
+        let rows_seen: u8 = match handed.rows_seen {
+            Some(value) => value,
+            None => 0,
+        };
+        let total_seen: u64 = match handed.total_seen {
+            Some(value) => value,
+            None => 0,
+        };
+        let at_present: bool = match handed.at_present {
+            Some(value) => value,
+            None => false,
+        };
+        let at_value: i64 = match handed.at_value {
+            Some(value) => value,
+            None => 0,
+        };
+        let label_present: bool = match handed.label_present {
+            Some(value) => value,
+            None => false,
+        };
+        let label_value: ::sce_rust_runtime::portable::SceString<16> = match handed.label_value {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let hit_known: bool = match handed.hit_known {
+            Some(value) => value,
+            None => false,
+        };
+        let hit_true: bool = match handed.hit_true {
+            Some(value) => value,
+            None => false,
+        };
+
+        self.at = at;
+        self.label = label;
+        self.hit = hit;
+        self.answered = answered;
+        self.rows_seen = rows_seen;
+        self.total_seen = total_seen;
+        self.at_present = at_present;
+        self.at_value = at_value;
+        self.label_present = label_present;
+        self.label_value = label_value;
+        self.hit_known = hit_known;
+        self.hit_true = hit_true;
     }
 
     /// W3C SCXML 5.2: what the published `answered` datamodel variable

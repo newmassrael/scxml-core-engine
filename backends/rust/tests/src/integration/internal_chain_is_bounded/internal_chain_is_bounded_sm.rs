@@ -310,10 +310,10 @@ pub struct InternalChainIsBoundedPolicy {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -466,7 +466,7 @@ impl InternalChainIsBoundedPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -593,94 +593,188 @@ impl InternalChainIsBoundedPolicy {
         }
         self.script_engine_initialized = true;
 
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
-        // W3C SCXML 5.2/5.3: Initialize 'pokes' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "pokes", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='pokes'> expr failed to evaluate",
-            ));
+        // W3C SCXML 5.3.3 + §scxml-6.4 (docs/adr/0098): declare the top-level
+        // datamodel variables in document order (with error events), each one
+        // the invoking session handed a value under its id declared with that
+        // value in place of its own. Only these take a handed value: the
+        // state `<data>` below never does, and a value handed under a name no
+        // top-level `<data>` declares is dropped with `handed` at the end of
+        // this start, never added to the datamodel. So the top-level
+        // `<script>` below and the first macrostep read the handed values.
+        let mut handed = std::mem::take(&mut self.handed_values);
+        // §scxml-6.4: 'pokes' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("pokes") {
+            if let Err(e) = se.set_variable(&sid, "pokes", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='pokes'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='pokes'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'pokes' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "pokes", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='pokes'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'laps' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "laps", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='laps'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'laps' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("laps") {
+            if let Err(e) = se.set_variable(&sid, "laps", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='laps'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='laps'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'laps' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "laps", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='laps'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'links' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "links", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='links'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'links' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("links") {
+            if let Err(e) = se.set_variable(&sid, "links", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='links'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='links'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'links' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "links", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='links'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'beats' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "beats", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='beats'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'beats' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("beats") {
+            if let Err(e) = se.set_variable(&sid, "beats", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='beats'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='beats'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'beats' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "beats", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='beats'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'alts' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "alts", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='alts'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'alts' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("alts") {
+            if let Err(e) = se.set_variable(&sid, "alts", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='alts'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='alts'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'alts' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "alts", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='alts'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'ignores' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "ignores", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='ignores'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'ignores' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("ignores") {
+            if let Err(e) = se.set_variable(&sid, "ignores", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='ignores'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='ignores'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'ignores' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "ignores", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='ignores'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'pending' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "pending", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                InternalChainIsBoundedEvent::ErrorExecution,
-                "<data id='pending'> expr failed to evaluate",
-            ));
-        }
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its
-        // `<data>` gave, and before the top-level `<script>` below, which runs
-        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
-        // is initialized, then the global script element is executed). The
-        // parent hands them before this session's start
-        // (`set_param_value_in_script_engine`) and this session applies them,
-        // so the child's session is made by the child.
-        for (name, value) in std::mem::take(&mut self.pending_params) {
-            let _ = se.set_variable(&sid, &name, value);
+        // §scxml-6.4: 'pending' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("pending") {
+            if let Err(e) = se.set_variable(&sid, "pending", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='pending'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='pending'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'pending' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "pending", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    InternalChainIsBoundedEvent::ErrorExecution,
+                    "<data id='pending'> expr failed to evaluate",
+                ));
+            }
         }
 
         Ok(())
@@ -783,12 +877,14 @@ impl InternalChainIsBoundedPolicy {
         }
     }
 
-    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`do_initialize_data_model`): the parent does not
-    // make this session's script session on its own stack (docs/adr/0096).
+    // §scxml-6.4: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start (`do_initialize_data_model`) takes the value as the initial
+    // value of the top-level `<data>` of that name, in place of its own, or
+    // drops it when it declares none (docs/adr/0098). The parent does not
+    // make this session's script session on its own stack (docs/adr/0096),
+    // and does not decide which names this session keeps.
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -798,12 +894,8 @@ impl InternalChainIsBoundedPolicy {
     // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.pending_params.push((name.to_string(), value));
+    pub fn hand_value(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
+        self.handed_values.hand(name, value);
     }
 }
 

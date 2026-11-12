@@ -898,6 +898,7 @@ impl PresencePeerPolicy {
         let fresh: bool = false;
         let lost: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: PresencePeerPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -972,36 +973,69 @@ impl PresencePeerPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: PresencePeerInvokeParams) {
-        if let Some(value) = params.node {
-            self.node = value;
-        }
-        if let Some(value) = params.hub {
-            self.hub = value;
-        }
-        if let Some(value) = params.ttl {
-            self.ttl = value;
-        }
-        if let Some(value) = params.lease {
-            self.lease = value;
-        }
-        if let Some(value) = params.serial {
-            self.serial = value;
-        }
-        if let Some(value) = params.known {
-            self.known = value;
-        }
-        if let Some(value) = params.fresh {
-            self.fresh = value;
-        }
-        if let Some(value) = params.lost {
-            self.lost = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: PresencePeerInvokeParams) {
+        let node: u32 = match handed.node {
+            Some(value) => value,
+            None => 0,
+        };
+        let hub: bool = match handed.hub {
+            Some(value) => value,
+            None => false,
+        };
+        let ttl: u32 = match handed.ttl {
+            Some(value) => value,
+            None => 0,
+        };
+        let lease: u32 = match handed.lease {
+            Some(value) => value,
+            None => 0,
+        };
+        let online: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let rebuilt: ::sce_rust_runtime::portable::BoundedList<PresencePeerSeenRecord, 128> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let entry: PresencePeerSeenRecord = PresencePeerSeenRecord {
+            client: 0,
+            last: 0,
+            gen: 0,
+        };
+        let serial: u32 = match handed.serial {
+            Some(value) => value,
+            None => 0,
+        };
+        let known: bool = match handed.known {
+            Some(value) => value,
+            None => false,
+        };
+        let fresh: bool = match handed.fresh {
+            Some(value) => value,
+            None => false,
+        };
+        let lost: u32 = match handed.lost {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.node = node;
+        self.hub = hub;
+        self.ttl = ttl;
+        self.lease = lease;
+        self.online = online;
+        self.rebuilt = rebuilt;
+        self.entry = entry;
+        self.serial = serial;
+        self.known = known;
+        self.fresh = fresh;
+        self.lost = lost;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `node` datamodel variable

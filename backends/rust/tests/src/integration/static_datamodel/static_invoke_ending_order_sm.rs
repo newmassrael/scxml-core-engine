@@ -586,6 +586,7 @@ impl<A: StaticInvokeEndingOrderActions + 'static> StaticInvokeEndingOrderPolicy<
         let heard: u32 = 0;
         let stamped_at: u32 = 0;
         let answer_at: u32 = 0;
+
         Self {
             actions,
             heard,
@@ -664,18 +665,27 @@ impl<A: StaticInvokeEndingOrderActions + 'static> StaticInvokeEndingOrderPolicy<
         &self.actions
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeEndingOrderInvokeParams) {
-        if let Some(value) = params.heard {
-            self.heard = value;
-        }
-        if let Some(value) = params.stamped_at {
-            self.stamped_at = value;
-        }
-        if let Some(value) = params.answer_at {
-            self.answer_at = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeEndingOrderInvokeParams) {
+        let heard: u32 = match handed.heard {
+            Some(value) => value,
+            None => 0,
+        };
+        let stamped_at: u32 = match handed.stamped_at {
+            Some(value) => value,
+            None => 0,
+        };
+        let answer_at: u32 = match handed.answer_at {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.heard = heard;
+        self.stamped_at = stamped_at;
+        self.answer_at = answer_at;
     }
 
     /// W3C SCXML 5.2: what the published `stamped_at` datamodel variable

@@ -528,6 +528,7 @@ impl StaticSendTypePolicy {
         );
         let landed: u32 = 0;
         let refused: u32 = 0;
+
         Self {
             kind,
             landed,
@@ -591,18 +592,30 @@ impl StaticSendTypePolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendTypeInvokeParams) {
-        if let Some(value) = params.kind {
-            self.kind = value;
-        }
-        if let Some(value) = params.landed {
-            self.landed = value;
-        }
-        if let Some(value) = params.refused {
-            self.refused = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendTypeInvokeParams) {
+        let kind: ::sce_rust_runtime::portable::SceString<64> = match handed.kind {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(
+                64,
+                "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+            ),
+        };
+        let landed: u32 = match handed.landed {
+            Some(value) => value,
+            None => 0,
+        };
+        let refused: u32 = match handed.refused {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.kind = kind;
+        self.landed = landed;
+        self.refused = refused;
     }
 
     /// W3C SCXML 5.2: what the published `landed` datamodel variable

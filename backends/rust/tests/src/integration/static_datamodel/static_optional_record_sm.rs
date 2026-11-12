@@ -802,6 +802,7 @@ impl StaticOptionalRecordPolicy {
         let known: bool = false;
         let absent: bool = false;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticOptionalRecordPayload::default(),
             pick,
@@ -873,27 +874,55 @@ impl StaticOptionalRecordPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticOptionalRecordInvokeParams) {
-        if let Some(value) = params.title {
-            self.title = value;
-        }
-        if let Some(value) = params.count {
-            self.count = value;
-        }
-        if let Some(value) = params.shown {
-            self.shown = value;
-        }
-        if let Some(value) = params.known {
-            self.known = value;
-        }
-        if let Some(value) = params.absent {
-            self.absent = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticOptionalRecordInvokeParams) {
+        let pick: Option<StaticOptionalRecordItemRecord> = None;
+        let found: Option<StaticOptionalRecordItemRecord> = None;
+        let draft: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord {
+            id: 0,
+            title: ::sce_rust_runtime::portable::sce_text!(16, "draft"),
+            count: 0,
+        };
+        let items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalRecordItemRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let title: ::sce_rust_runtime::portable::SceString<16> = match handed.title {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let count: i32 = match handed.count {
+            Some(value) => value,
+            None => 0,
+        };
+        let shown: i32 = match handed.shown {
+            Some(value) => value,
+            None => 0,
+        };
+        let known: bool = match handed.known {
+            Some(value) => value,
+            None => false,
+        };
+        let absent: bool = match handed.absent {
+            Some(value) => value,
+            None => false,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.pick = pick;
+        self.found = found;
+        self.draft = draft;
+        self.items = items;
+        self.title = title;
+        self.count = count;
+        self.shown = shown;
+        self.known = known;
+        self.absent = absent;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `pick` datamodel variable

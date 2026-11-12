@@ -263,10 +263,10 @@ pub struct ASendContentExprIsThePayloadPolicy {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -437,7 +437,7 @@ impl ASendContentExprIsThePayloadPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -565,108 +565,216 @@ impl ASendContentExprIsThePayloadPolicy {
         }
         self.script_engine_initialized = true;
 
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
-        // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "obj", "{}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='obj'> expr failed to evaluate",
-            ));
+        // W3C SCXML 5.3.3 + §scxml-6.4 (docs/adr/0098): declare the top-level
+        // datamodel variables in document order (with error events), each one
+        // the invoking session handed a value under its id declared with that
+        // value in place of its own. Only these take a handed value: the
+        // state `<data>` below never does, and a value handed under a name no
+        // top-level `<data>` declares is dropped with `handed` at the end of
+        // this start, never added to the datamodel. So the top-level
+        // `<script>` below and the first macrostep read the handed values.
+        let mut handed = std::mem::take(&mut self.handed_values);
+        // §scxml-6.4: 'obj' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("obj") {
+            if let Err(e) = se.set_variable(&sid, "obj", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='obj'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='obj'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "obj", "{}",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='obj'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'numberOk' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "numberOk", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='numberOk'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'numberOk' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("numberOk") {
+            if let Err(e) = se.set_variable(&sid, "numberOk", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='numberOk'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='numberOk'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'numberOk' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "numberOk", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='numberOk'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'objectOk' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "objectOk", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='objectOk'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'objectOk' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("objectOk") {
+            if let Err(e) = se.set_variable(&sid, "objectOk", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='objectOk'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='objectOk'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'objectOk' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "objectOk", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='objectOk'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'textOk' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "textOk", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='textOk'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'textOk' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("textOk") {
+            if let Err(e) = se.set_variable(&sid, "textOk", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='textOk'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='textOk'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'textOk' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "textOk", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='textOk'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "errors", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='errors'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'errors' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("errors") {
+            if let Err(e) = se.set_variable(&sid, "errors", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='errors'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='errors'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "errors", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='errors'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'badArrived' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "badArrived",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='badArrived'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'badArrived' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("badArrived") {
+            if let Err(e) = se.set_variable(&sid, "badArrived", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='badArrived'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='badArrived'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'badArrived' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "badArrived",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='badArrived'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'badEmpty' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "badEmpty", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='badEmpty'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'badEmpty' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("badEmpty") {
+            if let Err(e) = se.set_variable(&sid, "badEmpty", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='badEmpty'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='badEmpty'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'badEmpty' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "badEmpty", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='badEmpty'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterBad' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "afterBad", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                ASendContentExprIsThePayloadEvent::ErrorExecution,
-                "<data id='afterBad'> expr failed to evaluate",
-            ));
-        }
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its
-        // `<data>` gave, and before the top-level `<script>` below, which runs
-        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
-        // is initialized, then the global script element is executed). The
-        // parent hands them before this session's start
-        // (`set_param_value_in_script_engine`) and this session applies them,
-        // so the child's session is made by the child.
-        for (name, value) in std::mem::take(&mut self.pending_params) {
-            let _ = se.set_variable(&sid, &name, value);
+        // §scxml-6.4: 'afterBad' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterBad") {
+            if let Err(e) = se.set_variable(&sid, "afterBad", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterBad'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='afterBad'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterBad' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "afterBad", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    "<data id='afterBad'> expr failed to evaluate",
+                ));
+            }
         }
 
         Ok(())
@@ -769,12 +877,14 @@ impl ASendContentExprIsThePayloadPolicy {
         }
     }
 
-    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`do_initialize_data_model`): the parent does not
-    // make this session's script session on its own stack (docs/adr/0096).
+    // §scxml-6.4: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start (`do_initialize_data_model`) takes the value as the initial
+    // value of the top-level `<data>` of that name, in place of its own, or
+    // drops it when it declares none (docs/adr/0098). The parent does not
+    // make this session's script session on its own stack (docs/adr/0096),
+    // and does not decide which names this session keeps.
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -784,12 +894,8 @@ impl ASendContentExprIsThePayloadPolicy {
     // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.pending_params.push((name.to_string(), value));
+    pub fn hand_value(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
+        self.handed_values.hand(name, value);
     }
 }
 

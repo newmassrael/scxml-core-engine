@@ -757,6 +757,7 @@ impl SyncClientPolicy {
         let discarded: u32 = 0;
         let pages: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: SyncClientPayload::default(),
             by_token,
@@ -827,36 +828,57 @@ impl SyncClientPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: SyncClientInvokeParams) {
-        if let Some(value) = params.by_token {
-            self.by_token = value;
-        }
-        if let Some(value) = params.full_listing {
-            self.full_listing = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.retry_at {
-            self.retry_at = value;
-        }
-        if let Some(value) = params.deleted {
-            self.deleted = value;
-        }
-        if let Some(value) = params.uploaded {
-            self.uploaded = value;
-        }
-        if let Some(value) = params.discarded {
-            self.discarded = value;
-        }
-        if let Some(value) = params.pages {
-            self.pages = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: SyncClientInvokeParams) {
+        let by_token: bool = match handed.by_token {
+            Some(value) => value,
+            None => false,
+        };
+        let full_listing: bool = match handed.full_listing {
+            Some(value) => value,
+            None => true,
+        };
+        let outcome: u8 = match handed.outcome {
+            Some(value) => value,
+            None => 0,
+        };
+        let retry_at: i64 = match handed.retry_at {
+            Some(value) => value,
+            None => 0,
+        };
+        let deleted: u32 = match handed.deleted {
+            Some(value) => value,
+            None => 0,
+        };
+        let uploaded: u32 = match handed.uploaded {
+            Some(value) => value,
+            None => 0,
+        };
+        let discarded: u32 = match handed.discarded {
+            Some(value) => value,
+            None => 0,
+        };
+        let pages: u32 = match handed.pages {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.by_token = by_token;
+        self.full_listing = full_listing;
+        self.outcome = outcome;
+        self.retry_at = retry_at;
+        self.deleted = deleted;
+        self.uploaded = uploaded;
+        self.discarded = discarded;
+        self.pages = pages;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `byToken` datamodel variable

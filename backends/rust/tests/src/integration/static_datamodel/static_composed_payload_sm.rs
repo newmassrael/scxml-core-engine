@@ -841,6 +841,7 @@ impl StaticComposedPayloadPolicy {
         let late: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
             ::sce_rust_runtime::portable::BoundedList::new();
         let refusals: u32 = 0;
+
         Self {
             pending_payload: StaticComposedPayloadPayload::default(),
             item_count,
@@ -912,36 +913,61 @@ impl StaticComposedPayloadPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticComposedPayloadInvokeParams) {
-        if let Some(value) = params.item_count {
-            self.item_count = value;
-        }
-        if let Some(value) = params.tag_count {
-            self.tag_count = value;
-        }
-        if let Some(value) = params.word_count {
-            self.word_count = value;
-        }
-        if let Some(value) = params.id_sum {
-            self.id_sum = value;
-        }
-        if let Some(value) = params.cell_sum {
-            self.cell_sum = value;
-        }
-        if let Some(value) = params.cell {
-            self.cell = value;
-        }
-        if let Some(value) = params.first_tags {
-            self.first_tags = value;
-        }
-        if params.first_maybe.is_some() {
-            self.first_maybe = params.first_maybe;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticComposedPayloadInvokeParams) {
+        let item_count: u32 = match handed.item_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let tag_count: u32 = match handed.tag_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let word_count: u32 = match handed.word_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let id_sum: u32 = match handed.id_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let cell_sum: u32 = match handed.cell_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let cell: u8 = match handed.cell {
+            Some(value) => value,
+            None => 0,
+        };
+        let first_tags: u32 = match handed.first_tags {
+            Some(value) => value,
+            None => 0,
+        };
+        let first_maybe: Option<u16> = if handed.first_maybe.is_some() {
+            handed.first_maybe
+        } else {
+            None
+        };
+        let late: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.item_count = item_count;
+        self.tag_count = tag_count;
+        self.word_count = word_count;
+        self.id_sum = id_sum;
+        self.cell_sum = cell_sum;
+        self.cell = cell;
+        self.first_tags = first_tags;
+        self.first_maybe = first_maybe;
+        self.late = late;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `item_count` datamodel variable

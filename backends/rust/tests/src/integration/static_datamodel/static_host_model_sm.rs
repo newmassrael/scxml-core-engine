@@ -1258,6 +1258,7 @@ impl StaticHostModelPolicy {
         let answer_tokens: u32 = 0;
         let answer: Option<StaticHostModelAnswerRecord> = None;
         let why: Option<StaticHostModelLiftRefusalRecord> = None;
+
         Self {
             pending_payload: StaticHostModelPayload::default(),
             prompt,
@@ -1333,39 +1334,66 @@ impl StaticHostModelPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostModelInvokeParams) {
-        if let Some(value) = params.prompt {
-            self.prompt = value;
-        }
-        if let Some(value) = params.max_tokens {
-            self.max_tokens = value;
-        }
-        if let Some(value) = params.temperature_milli {
-            self.temperature_milli = value;
-        }
-        if let Some(value) = params.calls {
-            self.calls = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.finish {
-            self.finish = value;
-        }
-        if let Some(value) = params.constrained {
-            self.constrained = value;
-        }
-        if let Some(value) = params.answered_by {
-            self.answered_by = value;
-        }
-        if let Some(value) = params.prompt_tokens {
-            self.prompt_tokens = value;
-        }
-        if let Some(value) = params.answer_tokens {
-            self.answer_tokens = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostModelInvokeParams) {
+        let prompt: ::sce_rust_runtime::portable::SceString<8192> = match handed.prompt {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8192, ""),
+        };
+        let max_tokens: u32 = match handed.max_tokens {
+            Some(value) => value,
+            None => 0,
+        };
+        let temperature_milli: u16 = match handed.temperature_milli {
+            Some(value) => value,
+            None => 0,
+        };
+        let calls: u32 = match handed.calls {
+            Some(value) => value,
+            None => 0,
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let finish: ::sce_rust_runtime::portable::SceString<16> = match handed.finish {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let constrained: bool = match handed.constrained {
+            Some(value) => value,
+            None => false,
+        };
+        let answered_by: ::sce_rust_runtime::portable::SceString<128> = match handed.answered_by {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(128, ""),
+        };
+        let prompt_tokens: u32 = match handed.prompt_tokens {
+            Some(value) => value,
+            None => 0,
+        };
+        let answer_tokens: u32 = match handed.answer_tokens {
+            Some(value) => value,
+            None => 0,
+        };
+        let answer: Option<StaticHostModelAnswerRecord> = None;
+        let why: Option<StaticHostModelLiftRefusalRecord> = None;
+
+        self.prompt = prompt;
+        self.max_tokens = max_tokens;
+        self.temperature_milli = temperature_milli;
+        self.calls = calls;
+        self.outcome = outcome;
+        self.finish = finish;
+        self.constrained = constrained;
+        self.answered_by = answered_by;
+        self.prompt_tokens = prompt_tokens;
+        self.answer_tokens = answer_tokens;
+        self.answer = answer;
+        self.why = why;
     }
 
     /// W3C SCXML 5.2: what the published `calls` datamodel variable

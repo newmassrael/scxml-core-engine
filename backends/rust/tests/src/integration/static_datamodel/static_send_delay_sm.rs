@@ -526,6 +526,7 @@ impl StaticSendDelayPolicy {
         let wait: u32 = 100;
         let beats: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             wait,
             beats,
@@ -589,18 +590,27 @@ impl StaticSendDelayPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendDelayInvokeParams) {
-        if let Some(value) = params.wait {
-            self.wait = value;
-        }
-        if let Some(value) = params.beats {
-            self.beats = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendDelayInvokeParams) {
+        let wait: u32 = match handed.wait {
+            Some(value) => value,
+            None => 100,
+        };
+        let beats: u32 = match handed.beats {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.wait = wait;
+        self.beats = beats;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `wait` datamodel variable

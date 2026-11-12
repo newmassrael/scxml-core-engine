@@ -690,6 +690,7 @@ impl StaticPayloadBytesPolicy {
         let matches: u32 = 0;
         let misses: u32 = 0;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticPayloadBytesPayload::default(),
             last,
@@ -758,21 +759,43 @@ impl StaticPayloadBytesPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticPayloadBytesInvokeParams) {
-        if let Some(value) = params.size {
-            self.size = value;
-        }
-        if let Some(value) = params.matches {
-            self.matches = value;
-        }
-        if let Some(value) = params.misses {
-            self.misses = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticPayloadBytesInvokeParams) {
+        let last: StaticPayloadBytesFramedRecord = StaticPayloadBytesFramedRecord {
+            sensor: 1,
+            frame: ::sce_rust_runtime::portable::sce_bytes!(8, b"ab"),
+        };
+        let held: ::sce_rust_runtime::portable::SceBytes<4> =
+            ::sce_rust_runtime::portable::sce_bytes!(4, b"z");
+        let frames: ::sce_rust_runtime::portable::BoundedList<StaticPayloadBytesFramedRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let size: u32 = match handed.size {
+            Some(value) => value,
+            None => 0,
+        };
+        let matches: u32 = match handed.matches {
+            Some(value) => value,
+            None => 0,
+        };
+        let misses: u32 = match handed.misses {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.last = last;
+        self.held = held;
+        self.frames = frames;
+        self.size = size;
+        self.matches = matches;
+        self.misses = misses;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `last` datamodel variable

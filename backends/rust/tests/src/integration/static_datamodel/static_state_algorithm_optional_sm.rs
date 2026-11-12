@@ -781,6 +781,7 @@ impl StaticStateAlgorithmOptionalPolicy {
         let undated: u32 = 0;
         let total: i64 = 0;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticStateAlgorithmOptionalPayload::default(),
             goals,
@@ -850,27 +851,56 @@ impl StaticStateAlgorithmOptionalPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticStateAlgorithmOptionalInvokeParams) {
-        if let Some(value) = params.today {
-            self.today = value;
-        }
-        if params.first.is_some() {
-            self.first = params.first;
-        }
-        if params.left.is_some() {
-            self.left = params.left;
-        }
-        if let Some(value) = params.undated {
-            self.undated = value;
-        }
-        if let Some(value) = params.total {
-            self.total = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticStateAlgorithmOptionalInvokeParams) {
+        let goals: ::sce_rust_runtime::portable::BoundedList<
+            StaticStateAlgorithmOptionalGoalRecord,
+            4,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let draft: StaticStateAlgorithmOptionalGoalRecord =
+            StaticStateAlgorithmOptionalGoalRecord {
+                id: 0,
+                day: None,
+                weight: 0,
+            };
+        let today: i64 = match handed.today {
+            Some(value) => value,
+            None => 100,
+        };
+        let first: Option<i64> = if handed.first.is_some() {
+            handed.first
+        } else {
+            None
+        };
+        let left: Option<i64> = if handed.left.is_some() {
+            handed.left
+        } else {
+            Some(0)
+        };
+        let undated: u32 = match handed.undated {
+            Some(value) => value,
+            None => 0,
+        };
+        let total: i64 = match handed.total {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.goals = goals;
+        self.draft = draft;
+        self.today = today;
+        self.first = first;
+        self.left = left;
+        self.undated = undated;
+        self.total = total;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `goals` datamodel variable

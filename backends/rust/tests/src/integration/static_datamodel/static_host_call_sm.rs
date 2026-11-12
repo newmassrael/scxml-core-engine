@@ -556,6 +556,7 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPolicy<A> {
         let attempts: u32 = 0;
         let due: Option<i32> = None;
         let urgent: Option<bool> = None;
+
         Self {
             actions,
             attempts,
@@ -629,18 +630,29 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPolicy<A> {
         &self.actions
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostCallInvokeParams) {
-        if let Some(value) = params.attempts {
-            self.attempts = value;
-        }
-        if params.due.is_some() {
-            self.due = params.due;
-        }
-        if params.urgent.is_some() {
-            self.urgent = params.urgent;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostCallInvokeParams) {
+        let attempts: u32 = match handed.attempts {
+            Some(value) => value,
+            None => 0,
+        };
+        let due: Option<i32> = if handed.due.is_some() {
+            handed.due
+        } else {
+            None
+        };
+        let urgent: Option<bool> = if handed.urgent.is_some() {
+            handed.urgent
+        } else {
+            None
+        };
+
+        self.attempts = attempts;
+        self.due = due;
+        self.urgent = urgent;
     }
 }
 

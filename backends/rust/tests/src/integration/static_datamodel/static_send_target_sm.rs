@@ -536,6 +536,7 @@ impl StaticSendTargetPolicy {
             ::sce_rust_runtime::portable::sce_text!(24, "#_internal");
         let landed: u32 = 0;
         let refused: u32 = 0;
+
         Self {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             route,
@@ -600,18 +601,27 @@ impl StaticSendTargetPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendTargetInvokeParams) {
-        if let Some(value) = params.route {
-            self.route = value;
-        }
-        if let Some(value) = params.landed {
-            self.landed = value;
-        }
-        if let Some(value) = params.refused {
-            self.refused = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendTargetInvokeParams) {
+        let route: ::sce_rust_runtime::portable::SceString<24> = match handed.route {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, "#_internal"),
+        };
+        let landed: u32 = match handed.landed {
+            Some(value) => value,
+            None => 0,
+        };
+        let refused: u32 = match handed.refused {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.route = route;
+        self.landed = landed;
+        self.refused = refused;
     }
 
     /// W3C SCXML 5.2: what the published `landed` datamodel variable

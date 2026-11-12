@@ -637,6 +637,7 @@ impl StaticForeachPolicy {
         let visited: u32 = 0;
         let finished: u32 = 0;
         let errors: u32 = 0;
+
         Self {
             picked,
             total,
@@ -705,30 +706,50 @@ impl StaticForeachPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticForeachInvokeParams) {
-        if let Some(value) = params.total {
-            self.total = value;
-        }
-        if let Some(value) = params.weighted {
-            self.weighted = value;
-        }
-        if let Some(value) = params.small {
-            self.small = value;
-        }
-        if let Some(value) = params.crossings {
-            self.crossings = value;
-        }
-        if let Some(value) = params.visited {
-            self.visited = value;
-        }
-        if let Some(value) = params.finished {
-            self.finished = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticForeachInvokeParams) {
+        let picked: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let total: u32 = match handed.total {
+            Some(value) => value,
+            None => 0,
+        };
+        let weighted: u32 = match handed.weighted {
+            Some(value) => value,
+            None => 0,
+        };
+        let small: u8 = match handed.small {
+            Some(value) => value,
+            None => 0,
+        };
+        let crossings: u32 = match handed.crossings {
+            Some(value) => value,
+            None => 0,
+        };
+        let visited: u32 = match handed.visited {
+            Some(value) => value,
+            None => 0,
+        };
+        let finished: u32 = match handed.finished {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.picked = picked;
+        self.total = total;
+        self.weighted = weighted;
+        self.small = small;
+        self.crossings = crossings;
+        self.visited = visited;
+        self.finished = finished;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `picked` datamodel variable

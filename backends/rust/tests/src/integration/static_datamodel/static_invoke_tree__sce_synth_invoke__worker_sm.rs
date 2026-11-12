@@ -844,6 +844,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
         let steps: u32 = 0;
         let helper_id: ::sce_rust_runtime::portable::SceString<64> =
             ::sce_rust_runtime::portable::sce_text!(64, "");
+
         Self {
             last,
             pick,
@@ -915,21 +916,39 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeTreeSceSynthInvokeWorkerInvokeParams) {
-        if let Some(value) = params.pick {
-            self.pick = value;
-        }
-        if let Some(value) = params.base {
-            self.base = value;
-        }
-        if let Some(value) = params.steps {
-            self.steps = value;
-        }
-        if let Some(value) = params.helper_id {
-            self.helper_id = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeTreeSceSynthInvokeWorkerInvokeParams) {
+        let last: StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord =
+            StaticInvokeTreeSceSynthInvokeWorkerRevisedRecord {
+                level: 0,
+                layout: StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum::Month,
+                urgent: false,
+            };
+        let pick: ::sce_rust_runtime::portable::SceString<48> = match handed.pick {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(48, "static_hybrid_watcher.scxml"),
+        };
+        let base: u32 = match handed.base {
+            Some(value) => value,
+            None => 7,
+        };
+        let steps: u32 = match handed.steps {
+            Some(value) => value,
+            None => 0,
+        };
+        let helper_id: ::sce_rust_runtime::portable::SceString<64> = match handed.helper_id {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+
+        self.last = last;
+        self.pick = pick;
+        self.base = base;
+        self.steps = steps;
+        self.helper_id = helper_id;
     }
 
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 'second' to macrostep end

@@ -469,6 +469,7 @@ pub struct StaticInvokeOptionalSceSynthInvokeFitsPolicy {
 impl StaticInvokeOptionalSceSynthInvokeFitsPolicy {
     fn build(session_id: String) -> Self {
         let label: Option<::sce_rust_runtime::portable::SceString<4>> = None;
+
         Self {
             label,
             session_id: Some(session_id),
@@ -530,12 +531,18 @@ impl StaticInvokeOptionalSceSynthInvokeFitsPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeOptionalSceSynthInvokeFitsInvokeParams) {
-        if params.label.is_some() {
-            self.label = params.label;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeOptionalSceSynthInvokeFitsInvokeParams) {
+        let label: Option<::sce_rust_runtime::portable::SceString<4>> = if handed.label.is_some() {
+            handed.label
+        } else {
+            None
+        };
+
+        self.label = label;
     }
 }
 

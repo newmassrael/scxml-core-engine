@@ -508,6 +508,7 @@ pub struct StaticInvokePolicy {
 impl StaticInvokePolicy {
     fn build(session_id: String) -> Self {
         let completed: u32 = 0;
+
         Self {
             completed,
             session_id: Some(session_id),
@@ -574,12 +575,17 @@ impl StaticInvokePolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeInvokeParams) {
-        if let Some(value) = params.completed {
-            self.completed = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeInvokeParams) {
+        let completed: u32 = match handed.completed {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.completed = completed;
     }
 
     /// W3C SCXML 5.2: what the published `completed` datamodel variable

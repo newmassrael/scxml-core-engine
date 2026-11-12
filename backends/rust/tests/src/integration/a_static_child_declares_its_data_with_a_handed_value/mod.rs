@@ -1,0 +1,6 @@
+// GENERATED -- DO NOT EDIT (sce-codegen materialize rust-integration)
+
+mod a_static_child_declares_its_data_with_a_handed_value__sce_synth_invoke__worker_sm;
+pub use a_static_child_declares_its_data_with_a_handed_value__sce_synth_invoke__worker_sm::*;
+mod a_static_child_declares_its_data_with_a_handed_value_sm;
+pub use a_static_child_declares_its_data_with_a_handed_value_sm::*;

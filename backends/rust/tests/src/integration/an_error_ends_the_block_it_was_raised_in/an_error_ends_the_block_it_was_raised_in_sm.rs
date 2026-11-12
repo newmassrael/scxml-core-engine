@@ -258,10 +258,10 @@ pub struct AnErrorEndsTheBlockItWasRaisedInPolicy {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -693,7 +693,7 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -823,328 +823,674 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         }
         self.script_engine_initialized = true;
 
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
-        // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "errors", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='errors'> expr failed to evaluate",
-            ));
+        // W3C SCXML 5.3.3 + §scxml-6.4 (docs/adr/0098): declare the top-level
+        // datamodel variables in document order (with error events), each one
+        // the invoking session handed a value under its id declared with that
+        // value in place of its own. Only these take a handed value: the
+        // state `<data>` below never does, and a value handed under a name no
+        // top-level `<data>` declares is dropped with `handed` at the end of
+        // this start, never added to the datamodel. So the top-level
+        // `<script>` below and the first macrostep read the handed values.
+        let mut handed = std::mem::take(&mut self.handed_values);
+        // §scxml-6.4: 'errors' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("errors") {
+            if let Err(e) = se.set_variable(&sid, "errors", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='errors'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='errors'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "errors", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='errors'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterAssign' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterAssign",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterAssign'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterAssign' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterAssign") {
+            if let Err(e) = se.set_variable(&sid, "afterAssign", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterAssign'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterAssign'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterAssign' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterAssign",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterAssign'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterScript' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterScript",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterScript'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterScript' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterScript") {
+            if let Err(e) = se.set_variable(&sid, "afterScript", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterScript'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterScript'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterScript' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterScript",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterScript'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterLog' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "afterLog", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterLog'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterLog' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterLog") {
+            if let Err(e) = se.set_variable(&sid, "afterLog", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterLog'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterLog'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterLog' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "afterLog", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterLog'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterCancel' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterCancel",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterCancel'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterCancel' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterCancel") {
+            if let Err(e) = se.set_variable(&sid, "afterCancel", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterCancel'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterCancel'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterCancel' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterCancel",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterCancel'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterIfInner' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterIfInner",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterIfInner'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterIfInner' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterIfInner") {
+            if let Err(e) = se.set_variable(&sid, "afterIfInner", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterIfInner'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIfInner'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterIfInner' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterIfInner",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIfInner'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "afterIf", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterIf'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterIf' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterIf") {
+            if let Err(e) = se.set_variable(&sid, "afterIf", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterIf'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIf'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterIf' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "afterIf", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIf'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'ifThen' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "ifThen", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='ifThen'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'ifThen' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("ifThen") {
+            if let Err(e) = se.set_variable(&sid, "ifThen", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='ifThen'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='ifThen'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'ifThen' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "ifThen", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='ifThen'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'ifElse' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "ifElse", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='ifElse'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'ifElse' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("ifElse") {
+            if let Err(e) = se.set_variable(&sid, "ifElse", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='ifElse'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='ifElse'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'ifElse' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "ifElse", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='ifElse'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterIfCond' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterIfCond",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterIfCond'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterIfCond' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterIfCond") {
+            if let Err(e) = se.set_variable(&sid, "afterIfCond", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterIfCond'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIfCond'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterIfCond' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterIfCond",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterIfCond'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'elseifThen' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "elseifThen",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='elseifThen'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'elseifThen' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("elseifThen") {
+            if let Err(e) = se.set_variable(&sid, "elseifThen", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='elseifThen'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='elseifThen'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'elseifThen' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "elseifThen",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='elseifThen'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'elseifElse' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "elseifElse",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='elseifElse'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'elseifElse' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("elseifElse") {
+            if let Err(e) = se.set_variable(&sid, "elseifElse", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='elseifElse'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='elseifElse'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'elseifElse' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "elseifElse",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='elseifElse'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterElseifCond' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterElseifCond",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterElseifCond'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterElseifCond' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterElseifCond") {
+            if let Err(e) = se.set_variable(&sid, "afterElseifCond", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterElseifCond'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterElseifCond'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterElseifCond' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterElseifCond",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterElseifCond'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterNestedIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterNestedIf",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterNestedIf'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterNestedIf' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterNestedIf") {
+            if let Err(e) = se.set_variable(&sid, "afterNestedIf", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterNestedIf'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterNestedIf'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterNestedIf' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterNestedIf",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterNestedIf'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterOuterIf' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterOuterIf",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterOuterIf'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterOuterIf' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterOuterIf") {
+            if let Err(e) = se.set_variable(&sid, "afterOuterIf", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterOuterIf'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterOuterIf'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterOuterIf' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterOuterIf",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterOuterIf'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterSingle' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterSingle",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterSingle'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterSingle' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterSingle") {
+            if let Err(e) = se.set_variable(&sid, "afterSingle", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterSingle'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterSingle'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterSingle' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterSingle",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterSingle'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'afterTrans' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se,
-            &sid,
-            "afterTrans",
-            "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='afterTrans'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'afterTrans' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("afterTrans") {
+            if let Err(e) = se.set_variable(&sid, "afterTrans", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='afterTrans'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterTrans'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'afterTrans' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se,
+                &sid,
+                "afterTrans",
+                "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='afterTrans'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'initRan' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "initRan", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='initRan'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'initRan' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("initRan") {
+            if let Err(e) = se.set_variable(&sid, "initRan", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='initRan'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='initRan'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'initRan' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "initRan", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='initRan'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'pairs' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "pairs", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='pairs'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'pairs' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("pairs") {
+            if let Err(e) = se.set_variable(&sid, "pairs", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='pairs'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='pairs'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'pairs' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "pairs", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='pairs'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'sum' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "sum", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='sum'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'sum' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("sum") {
+            if let Err(e) = se.set_variable(&sid, "sum", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='sum'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='sum'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'sum' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "sum", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='sum'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'outer' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "outer", "{1, 2}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='outer'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'outer' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("outer") {
+            if let Err(e) = se.set_variable(&sid, "outer", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='outer'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='outer'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'outer' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "outer", "{1, 2}",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='outer'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'inner' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "inner", "{10, 20}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='inner'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'inner' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("inner") {
+            if let Err(e) = se.set_variable(&sid, "inner", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='inner'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='inner'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'inner' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "inner", "{10, 20}",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='inner'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'o' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "o", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='o'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'o' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("o") {
+            if let Err(e) = se.set_variable(&sid, "o", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='o'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='o'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'o' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "o", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='o'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'i' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "i", "0",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='i'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'i' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("i") {
+            if let Err(e) = se.set_variable(&sid, "i", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='i'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='i'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'i' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "i", "0",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='i'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "obj", "{}",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
-                "<data id='obj'> expr failed to evaluate",
-            ));
-        }
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its
-        // `<data>` gave, and before the top-level `<script>` below, which runs
-        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
-        // is initialized, then the global script element is executed). The
-        // parent hands them before this session's start
-        // (`set_param_value_in_script_engine`) and this session applies them,
-        // so the child's session is made by the child.
-        for (name, value) in std::mem::take(&mut self.pending_params) {
-            let _ = se.set_variable(&sid, &name, value);
+        // §scxml-6.4: 'obj' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("obj") {
+            if let Err(e) = se.set_variable(&sid, "obj", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='obj'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='obj'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'obj' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "obj", "{}",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    AnErrorEndsTheBlockItWasRaisedInEvent::ErrorExecution,
+                    "<data id='obj'> expr failed to evaluate",
+                ));
+            }
         }
 
         Ok(())
@@ -1247,12 +1593,14 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
         }
     }
 
-    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`do_initialize_data_model`): the parent does not
-    // make this session's script session on its own stack (docs/adr/0096).
+    // §scxml-6.4: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start (`do_initialize_data_model`) takes the value as the initial
+    // value of the top-level `<data>` of that name, in place of its own, or
+    // drops it when it declares none (docs/adr/0098). The parent does not
+    // make this session's script session on its own stack (docs/adr/0096),
+    // and does not decide which names this session keeps.
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -1262,12 +1610,8 @@ impl AnErrorEndsTheBlockItWasRaisedInPolicy {
     // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.pending_params.push((name.to_string(), value));
+    pub fn hand_value(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
+        self.handed_values.hand(name, value);
     }
 }
 

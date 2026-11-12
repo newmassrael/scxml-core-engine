@@ -249,10 +249,10 @@ pub struct Test279Policy {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -315,7 +315,7 @@ impl Test279Policy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -441,7 +441,16 @@ impl Test279Policy {
         }
         self.script_engine_initialized = true;
 
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.3.3 + §scxml-6.4 (docs/adr/0098): declare the top-level
+        // datamodel variables in document order (with error events), each one
+        // the invoking session handed a value under its id declared with that
+        // value in place of its own. Only these take a handed value: the
+        // state `<data>` below never does, and a value handed under a name no
+        // top-level `<data>` declares is dropped with `handed` at the end of
+        // this start, never added to the datamodel. So the top-level
+        // `<script>` below and the first macrostep read the handed values.
+        // No top-level `<data>`, so nothing handed is taken.
+        self.handed_values = sce_rust_runtime::helpers::invoke_processing::HandedValues::default();
 
         // W3C SCXML 5.3: Early binding - Initialize state s1 datamodel variables
         // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s1)
@@ -453,18 +462,6 @@ impl Test279Policy {
                 Test279Event::ErrorExecution,
                 "<data id='Var1'> expr failed to evaluate",
             ));
-        }
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its
-        // `<data>` gave, and before the top-level `<script>` below, which runs
-        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
-        // is initialized, then the global script element is executed). The
-        // parent hands them before this session's start
-        // (`set_param_value_in_script_engine`) and this session applies them,
-        // so the child's session is made by the child.
-        for (name, value) in std::mem::take(&mut self.pending_params) {
-            let _ = se.set_variable(&sid, &name, value);
         }
 
         Ok(())
@@ -567,12 +564,14 @@ impl Test279Policy {
         }
     }
 
-    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`do_initialize_data_model`): the parent does not
-    // make this session's script session on its own stack (docs/adr/0096).
+    // §scxml-6.4: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start (`do_initialize_data_model`) takes the value as the initial
+    // value of the top-level `<data>` of that name, in place of its own, or
+    // drops it when it declares none (docs/adr/0098). The parent does not
+    // make this session's script session on its own stack (docs/adr/0096),
+    // and does not decide which names this session keeps.
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -582,12 +581,8 @@ impl Test279Policy {
     // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.pending_params.push((name.to_string(), value));
+    pub fn hand_value(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
+        self.handed_values.hand(name, value);
     }
 }
 

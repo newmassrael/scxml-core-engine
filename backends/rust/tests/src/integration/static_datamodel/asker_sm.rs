@@ -531,6 +531,7 @@ impl AskerPolicy {
     fn build(session_id: String) -> Self {
         let job: u32 = 7;
         let answered: u32 = 0;
+
         Self {
             pending_payload: AskerPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -606,15 +607,22 @@ impl AskerPolicy {
             .expect("a test component's context is bound before its machine starts")
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: AskerInvokeParams) {
-        if let Some(value) = params.job {
-            self.job = value;
-        }
-        if let Some(value) = params.answered {
-            self.answered = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: AskerInvokeParams) {
+        let job: u32 = match handed.job {
+            Some(value) => value,
+            None => 7,
+        };
+        let answered: u32 = match handed.answered {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.job = job;
+        self.answered = answered;
     }
 }
 

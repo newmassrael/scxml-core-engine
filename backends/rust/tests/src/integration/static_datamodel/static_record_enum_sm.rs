@@ -743,6 +743,7 @@ impl StaticRecordEnumPolicy {
         let weeks: u32 = 0;
         let flips: u32 = 0;
         let leads: u32 = 0;
+
         Self {
             shown,
             seen,
@@ -808,18 +809,35 @@ impl StaticRecordEnumPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordEnumInvokeParams) {
-        if let Some(value) = params.weeks {
-            self.weeks = value;
-        }
-        if let Some(value) = params.flips {
-            self.flips = value;
-        }
-        if let Some(value) = params.leads {
-            self.leads = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordEnumInvokeParams) {
+        let shown: StaticRecordEnumViewRecord = StaticRecordEnumViewRecord {
+            layout: StaticRecordEnumViewModeEnum::Month,
+            zoom: 1,
+        };
+        let seen: ::sce_rust_runtime::portable::BoundedList<StaticRecordEnumViewRecord, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let weeks: u32 = match handed.weeks {
+            Some(value) => value,
+            None => 0,
+        };
+        let flips: u32 = match handed.flips {
+            Some(value) => value,
+            None => 0,
+        };
+        let leads: u32 = match handed.leads {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.shown = shown;
+        self.seen = seen;
+        self.weeks = weeks;
+        self.flips = flips;
+        self.leads = leads;
     }
 
     /// W3C SCXML 5.2: what the published `shown` datamodel variable

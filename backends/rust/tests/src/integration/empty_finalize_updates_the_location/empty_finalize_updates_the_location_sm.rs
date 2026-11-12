@@ -298,10 +298,10 @@ pub struct EmptyFinalizeUpdatesTheLocationPolicy {
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
-    // §scxml-6.4.3: the invoke params the parent handed this session, which
-    // its start applies once its session is established and its `<data>`
-    // initialized.
-    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
+    // §scxml-6.4 + docs/adr/0098: the values the invoking session handed this
+    // one, which its start takes as the initial values of the top-level
+    // `<data>` of their names.
+    handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -421,7 +421,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: Some(session_id),
             script_engine_initialized: false,
-            pending_params: Vec::new(),
+            handed_values: sce_rust_runtime::helpers::invoke_processing::HandedValues::default(),
             basic_http_access_uri: String::new(),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
@@ -560,50 +560,88 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
         }
         self.script_engine_initialized = true;
 
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
-        // W3C SCXML 5.2/5.3: Initialize 'tally' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "tally", "1",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                "<data id='tally'> expr failed to evaluate",
-            ));
+        // W3C SCXML 5.3.3 + §scxml-6.4 (docs/adr/0098): declare the top-level
+        // datamodel variables in document order (with error events), each one
+        // the invoking session handed a value under its id declared with that
+        // value in place of its own. Only these take a handed value: the
+        // state `<data>` below never does, and a value handed under a name no
+        // top-level `<data>` declares is dropped with `handed` at the end of
+        // this start, never added to the datamodel. So the top-level
+        // `<script>` below and the first macrostep read the handed values.
+        let mut handed = std::mem::take(&mut self.handed_values);
+        // §scxml-6.4: 'tally' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("tally") {
+            if let Err(e) = se.set_variable(&sid, "tally", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='tally'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='tally'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'tally' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "tally", "1",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='tally'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'guard' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "guard", "1",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                "<data id='guard'> expr failed to evaluate",
-            ));
+        // §scxml-6.4: 'guard' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("guard") {
+            if let Err(e) = se.set_variable(&sid, "guard", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='guard'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='guard'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'guard' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "guard", "1",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='guard'> expr failed to evaluate",
+                ));
+            }
         }
 
-        // W3C SCXML 5.2/5.3: Initialize 'keeper' from expr (global)
-        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
-            se, &sid, "keeper", "3",
-        ) {
-            ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
-                EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                "<data id='keeper'> expr failed to evaluate",
-            ));
-        }
-
-        // §scxml-6.4.3: the invoke params the parent handed this session, applied
-        // after the `<data>` above so that each overrides the default its
-        // `<data>` gave, and before the top-level `<script>` below, which runs
-        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
-        // is initialized, then the global script element is executed). The
-        // parent hands them before this session's start
-        // (`set_param_value_in_script_engine`) and this session applies them,
-        // so the child's session is made by the child.
-        for (name, value) in std::mem::take(&mut self.pending_params) {
-            let _ = se.set_variable(&sid, &name, value);
+        // §scxml-6.4: 'keeper' takes the value its invoke handed under its id, if one did
+        if let Some(value) = handed.take("keeper") {
+            if let Err(e) = se.set_variable(&sid, "keeper", value) {
+                ::sce_rust_runtime::sce_log_error!(
+                    "<data id='keeper'> could not hold the value its invoke handed it: {}",
+                    e
+                );
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='keeper'> could not hold the value its invoke handed it",
+                ));
+            }
+        } else {
+            // W3C SCXML 5.2/5.3: Initialize 'keeper' from expr (global)
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+                se, &sid, "keeper", "3",
+            ) {
+                ::sce_rust_runtime::sce_log_error!("global: {}", e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                    EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    "<data id='keeper'> expr failed to evaluate",
+                ));
+            }
         }
 
         Ok(())
@@ -706,12 +744,14 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
         }
     }
 
-    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
-    // produced for an `<invoke>` `<param>` or namelist location, to seed the
-    // `<data>` of that name. The parent calls it before this session's start,
-    // and the start applies it once the session is established and its
-    // `<data>` initialized (`do_initialize_data_model`): the parent does not
-    // make this session's script session on its own stack (docs/adr/0096).
+    // §scxml-6.4: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location. The parent
+    // calls it before this session's start, for every name it evaluated, and
+    // the start (`do_initialize_data_model`) takes the value as the initial
+    // value of the top-level `<data>` of that name, in place of its own, or
+    // drops it when it declares none (docs/adr/0098). The parent does not
+    // make this session's script session on its own stack (docs/adr/0096),
+    // and does not decide which names this session keeps.
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -721,12 +761,8 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
     // an `<invoke>` `<param expr="1/0"/>` arrived as nothing at all. The
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
-    pub fn set_param_value_in_script_engine(
-        &mut self,
-        name: &str,
-        value: sce_rust_runtime::ScriptValue,
-    ) {
-        self.pending_params.push((name.to_string(), value));
+    pub fn hand_value(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
+        self.handed_values.hand(name, value);
     }
 
     // W3C SCXML 6.4: Defer the start of invoke 'inv_absent' of state 'absentPhase' to macrostep end
@@ -876,20 +912,17 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // session from the child, as `#_parent` does (docs/adr/0090).
                 child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
-                // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.1: hand the child the validated namelist values;
+                // its start takes those its top-level `<data>` declare (§scxml-6.4)
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let child_vars: &[&str] = &["guard"];
-                    if child_vars.contains(&"guard") {
-                        if let Ok(val) = se.evaluate_expression(&sid, "guard") {
-                            // §scxml-6.4.1: "the value stored at the location
-                            // is the value" — so the value crosses, not a
-                            // rendering of it.
-                            child_policy.set_param_value_in_script_engine("guard", val);
-                        }
+                    if let Ok(val) = se.evaluate_expression(&sid, "guard") {
+                        // §scxml-6.4.1: "the value stored at the location is
+                        // the value" — so the value crosses, not a rendering
+                        // of it.
+                        child_policy.hand_value("guard", val);
                     }
                 }
 
@@ -1004,20 +1037,17 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // session from the child, as `#_parent` does (docs/adr/0090).
                 child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
-                // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.1: hand the child the validated namelist values;
+                // its start takes those its top-level `<data>` declare (§scxml-6.4)
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let child_vars: &[&str] = &["tally"];
-                    if child_vars.contains(&"tally") {
-                        if let Ok(val) = se.evaluate_expression(&sid, "tally") {
-                            // §scxml-6.4.1: "the value stored at the location
-                            // is the value" — so the value crosses, not a
-                            // rendering of it.
-                            child_policy.set_param_value_in_script_engine("tally", val);
-                        }
+                    if let Ok(val) = se.evaluate_expression(&sid, "tally") {
+                        // §scxml-6.4.1: "the value stored at the location is
+                        // the value" — so the value crosses, not a rendering
+                        // of it.
+                        child_policy.hand_value("tally", val);
                     }
                 }
 
@@ -1131,20 +1161,17 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 // session from the child, as `#_parent` does (docs/adr/0090).
                 child_policy.parent_session_id = self.session_id.clone().unwrap_or_default();
 
-                // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
-                // W3C SCXML 6.4.3: Only set if variable is declared in child's datamodel
+                // W3C SCXML 6.4.1: hand the child the validated namelist values;
+                // its start takes those its top-level `<data>` declare (§scxml-6.4)
                 {
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let child_vars: &[&str] = &["keeper"];
-                    if child_vars.contains(&"keeper") {
-                        if let Ok(val) = se.evaluate_expression(&sid, "keeper") {
-                            // §scxml-6.4.1: "the value stored at the location
-                            // is the value" — so the value crosses, not a
-                            // rendering of it.
-                            child_policy.set_param_value_in_script_engine("keeper", val);
-                        }
+                    if let Ok(val) = se.evaluate_expression(&sid, "keeper") {
+                        // §scxml-6.4.1: "the value stored at the location is
+                        // the value" — so the value crosses, not a rendering
+                        // of it.
+                        child_policy.hand_value("keeper", val);
                     }
                 }
 

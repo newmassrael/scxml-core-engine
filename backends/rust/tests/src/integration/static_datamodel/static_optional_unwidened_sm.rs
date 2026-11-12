@@ -1067,6 +1067,7 @@ impl StaticOptionalUnwidenedPolicy {
         let fallbacks: u32 = 0;
         let errors: u32 = 0;
         let huge: i64 = 4294967296;
+
         Self {
             due,
             other,
@@ -1151,66 +1152,125 @@ impl StaticOptionalUnwidenedPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticOptionalUnwidenedInvokeParams) {
-        if let Some(value) = params.due {
-            self.due = value;
-        }
-        if let Some(value) = params.other {
-            self.other = value;
-        }
-        if let Some(value) = params.title {
-            self.title = value;
-        }
-        if let Some(value) = params.days {
-            self.days = value;
-        }
-        if let Some(value) = params.following {
-            self.following = value;
-        }
-        if let Some(value) = params.late {
-            self.late = value;
-        }
-        if let Some(value) = params.early {
-            self.early = value;
-        }
-        if let Some(value) = params.label {
-            self.label = value;
-        }
-        if let Some(value) = params.kept {
-            self.kept = value;
-        }
-        if let Some(value) = params.listed {
-            self.listed = value;
-        }
-        if let Some(value) = params.missing {
-            self.missing = value;
-        }
-        if let Some(value) = params.same {
-            self.same = value;
-        }
-        if let Some(value) = params.absent {
-            self.absent = value;
-        }
-        if let Some(value) = params.status_done {
-            self.status_done = value;
-        }
-        if let Some(value) = params.echoed {
-            self.echoed = value;
-        }
-        if let Some(value) = params.echo_title {
-            self.echo_title = value;
-        }
-        if let Some(value) = params.fallbacks {
-            self.fallbacks = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
-        if let Some(value) = params.huge {
-            self.huge = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticOptionalUnwidenedInvokeParams) {
+        let due: i64 = match handed.due {
+            Some(value) => value,
+            None => 12,
+        };
+        let other: i64 = match handed.other {
+            Some(value) => value,
+            None => 7,
+        };
+        let title: ::sce_rust_runtime::portable::SceString<16> = match handed.title {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "later"),
+        };
+        let status: StaticOptionalUnwidenedStatusEnum =
+            StaticOptionalUnwidenedStatusEnum::InProgress;
+        let item: StaticOptionalUnwidenedDueRecord = StaticOptionalUnwidenedDueRecord {
+            id: 2,
+            due: 3,
+            title: ::sce_rust_runtime::portable::sce_text!(16, "first"),
+            status: StaticOptionalUnwidenedStatusEnum::Open,
+        };
+        let items: ::sce_rust_runtime::portable::BoundedList<StaticOptionalUnwidenedDueRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let days: i64 = match handed.days {
+            Some(value) => value,
+            None => 0,
+        };
+        let following: i64 = match handed.following {
+            Some(value) => value,
+            None => 0,
+        };
+        let late: bool = match handed.late {
+            Some(value) => value,
+            None => false,
+        };
+        let early: bool = match handed.early {
+            Some(value) => value,
+            None => false,
+        };
+        let label: ::sce_rust_runtime::portable::SceString<16> = match handed.label {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let plain: StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnum::Open;
+        let kept: i64 = match handed.kept {
+            Some(value) => value,
+            None => 0,
+        };
+        let listed: i64 = match handed.listed {
+            Some(value) => value,
+            None => 0,
+        };
+        let missing: u32 = match handed.missing {
+            Some(value) => value,
+            None => 0,
+        };
+        let same: bool = match handed.same {
+            Some(value) => value,
+            None => false,
+        };
+        let absent: bool = match handed.absent {
+            Some(value) => value,
+            None => false,
+        };
+        let status_done: bool = match handed.status_done {
+            Some(value) => value,
+            None => false,
+        };
+        let echoed: i64 = match handed.echoed {
+            Some(value) => value,
+            None => 0,
+        };
+        let echo_title: ::sce_rust_runtime::portable::SceString<16> = match handed.echo_title {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "echo"),
+        };
+        let echo_status: StaticOptionalUnwidenedStatusEnum =
+            StaticOptionalUnwidenedStatusEnum::Done;
+        let fallbacks: u32 = match handed.fallbacks {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+        let huge: i64 = match handed.huge {
+            Some(value) => value,
+            None => 4294967296,
+        };
+
+        self.due = due;
+        self.other = other;
+        self.title = title;
+        self.status = status;
+        self.item = item;
+        self.items = items;
+        self.days = days;
+        self.following = following;
+        self.late = late;
+        self.early = early;
+        self.label = label;
+        self.plain = plain;
+        self.kept = kept;
+        self.listed = listed;
+        self.missing = missing;
+        self.same = same;
+        self.absent = absent;
+        self.status_done = status_done;
+        self.echoed = echoed;
+        self.echo_title = echo_title;
+        self.echo_status = echo_status;
+        self.fallbacks = fallbacks;
+        self.errors = errors;
+        self.huge = huge;
     }
 
     /// W3C SCXML 5.2: what the published `due` datamodel variable

@@ -811,6 +811,7 @@ impl StaticStateAlgorithmPolicy {
         let idsum: u32 = 0;
         let large: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: StaticStateAlgorithmPayload::default(),
             entries,
@@ -879,18 +880,39 @@ impl StaticStateAlgorithmPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticStateAlgorithmInvokeParams) {
-        if let Some(value) = params.idsum {
-            self.idsum = value;
-        }
-        if let Some(value) = params.large {
-            self.large = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticStateAlgorithmInvokeParams) {
+        let entries: ::sce_rust_runtime::portable::BoundedList<StaticStateAlgorithmEntryRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let total: StaticStateAlgorithmTotalRecord =
+            StaticStateAlgorithmTotalRecord { count: 0, sum: 0 };
+        let last: StaticStateAlgorithmEntryRecord =
+            StaticStateAlgorithmEntryRecord { id: 0, amount: 0 };
+        let ids: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let idsum: u32 = match handed.idsum {
+            Some(value) => value,
+            None => 0,
+        };
+        let large: u32 = match handed.large {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.entries = entries;
+        self.total = total;
+        self.last = last;
+        self.ids = ids;
+        self.idsum = idsum;
+        self.large = large;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `entries` datamodel variable

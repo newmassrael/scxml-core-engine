@@ -1642,6 +1642,7 @@ impl StaticUnionPolicy {
         let refusals: u32 = 0;
         let lifted: Option<StaticUnionUnionShapeUnion> = None;
         let lift_why: Option<StaticUnionLiftRefusalRecord> = None;
+
         Self {
             pending_payload: StaticUnionPayload::default(),
             built,
@@ -1719,42 +1720,81 @@ impl StaticUnionPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticUnionInvokeParams) {
-        if let Some(value) = params.radius {
-            self.radius = value;
-        }
-        if let Some(value) = params.width {
-            self.width = value;
-        }
-        if let Some(value) = params.height {
-            self.height = value;
-        }
-        if let Some(value) = params.labels {
-            self.labels = value;
-        }
-        if let Some(value) = params.points {
-            self.points = value;
-        }
-        if let Some(value) = params.dots {
-            self.dots = value;
-        }
-        if let Some(value) = params.many_radius {
-            self.many_radius = value;
-        }
-        if let Some(value) = params.many_width {
-            self.many_width = value;
-        }
-        if let Some(value) = params.many_shapes {
-            self.many_shapes = value;
-        }
-        if let Some(value) = params.maybe_width {
-            self.maybe_width = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticUnionInvokeParams) {
+        let built: StaticUnionUnionShapeUnion =
+            StaticUnionUnionShapeUnion::Rect(StaticUnionRectRecord {
+                width: 1,
+                height: 2,
+            });
+        let kept: Option<StaticUnionUnionShapeUnion> = None;
+        let last_kind: StaticUnionKindEnum = StaticUnionKindEnum::Dot;
+        let radius: u16 = match handed.radius {
+            Some(value) => value,
+            None => 0,
+        };
+        let width: u16 = match handed.width {
+            Some(value) => value,
+            None => 0,
+        };
+        let height: u16 = match handed.height {
+            Some(value) => value,
+            None => 0,
+        };
+        let labels: u32 = match handed.labels {
+            Some(value) => value,
+            None => 0,
+        };
+        let points: u32 = match handed.points {
+            Some(value) => value,
+            None => 0,
+        };
+        let dots: u32 = match handed.dots {
+            Some(value) => value,
+            None => 0,
+        };
+        let many_radius: u16 = match handed.many_radius {
+            Some(value) => value,
+            None => 0,
+        };
+        let many_width: u16 = match handed.many_width {
+            Some(value) => value,
+            None => 0,
+        };
+        let many_shapes: u32 = match handed.many_shapes {
+            Some(value) => value,
+            None => 0,
+        };
+        let maybe_width: u16 = match handed.maybe_width {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+        let lifted: Option<StaticUnionUnionShapeUnion> = None;
+        let lift_why: Option<StaticUnionLiftRefusalRecord> = None;
+
+        self.built = built;
+        self.kept = kept;
+        self.last_kind = last_kind;
+        self.radius = radius;
+        self.width = width;
+        self.height = height;
+        self.labels = labels;
+        self.points = points;
+        self.dots = dots;
+        self.many_radius = many_radius;
+        self.many_width = many_width;
+        self.many_shapes = many_shapes;
+        self.maybe_width = maybe_width;
+        self.refusals = refusals;
+        self.lifted = lifted;
+        self.lift_why = lift_why;
     }
 
     /// W3C SCXML 5.2: what the published `built` datamodel variable

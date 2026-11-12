@@ -788,6 +788,7 @@ impl StaticHostHttpPolicy {
             ::sce_rust_runtime::portable::sce_text!(4096, "");
         let response_body: ::sce_rust_runtime::portable::SceString<16384> =
             ::sce_rust_runtime::portable::sce_text!(16384, "");
+
         Self {
             pending_payload: StaticHostHttpPayload::default(),
             method,
@@ -859,33 +860,56 @@ impl StaticHostHttpPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostHttpInvokeParams) {
-        if let Some(value) = params.method {
-            self.method = value;
-        }
-        if let Some(value) = params.url {
-            self.url = value;
-        }
-        if let Some(value) = params.request_headers {
-            self.request_headers = value;
-        }
-        if let Some(value) = params.request_body {
-            self.request_body = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.status {
-            self.status = value;
-        }
-        if let Some(value) = params.response_headers {
-            self.response_headers = value;
-        }
-        if let Some(value) = params.response_body {
-            self.response_body = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostHttpInvokeParams) {
+        let method: ::sce_rust_runtime::portable::SceString<8> = match handed.method {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8, ""),
+        };
+        let url: ::sce_rust_runtime::portable::SceString<2048> = match handed.url {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(2048, ""),
+        };
+        let request_headers: ::sce_rust_runtime::portable::SceString<2048> =
+            match handed.request_headers {
+                Some(value) => value,
+                None => ::sce_rust_runtime::portable::sce_text!(2048, ""),
+            };
+        let request_body: ::sce_rust_runtime::portable::SceString<16384> = match handed.request_body
+        {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16384, ""),
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let status: u16 = match handed.status {
+            Some(value) => value,
+            None => 0,
+        };
+        let response_headers: ::sce_rust_runtime::portable::SceString<4096> =
+            match handed.response_headers {
+                Some(value) => value,
+                None => ::sce_rust_runtime::portable::sce_text!(4096, ""),
+            };
+        let response_body: ::sce_rust_runtime::portable::SceString<16384> =
+            match handed.response_body {
+                Some(value) => value,
+                None => ::sce_rust_runtime::portable::sce_text!(16384, ""),
+            };
+
+        self.method = method;
+        self.url = url;
+        self.request_headers = request_headers;
+        self.request_body = request_body;
+        self.outcome = outcome;
+        self.status = status;
+        self.response_headers = response_headers;
+        self.response_body = response_body;
     }
 
     /// W3C SCXML 5.2: what the published `outcome` datamodel variable

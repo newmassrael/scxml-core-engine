@@ -635,6 +635,7 @@ impl StaticInvokeOptionalPolicy {
             ::sce_rust_runtime::portable::sce_text!(8, "abcdefgh");
         let completed: u32 = 0;
         let errors: u32 = 0;
+
         Self {
             size,
             label,
@@ -721,27 +722,45 @@ impl StaticInvokeOptionalPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeOptionalInvokeParams) {
-        if params.size.is_some() {
-            self.size = params.size;
-        }
-        if params.label.is_some() {
-            self.label = params.label;
-        }
-        if params.nosize.is_some() {
-            self.nosize = params.nosize;
-        }
-        if let Some(value) = params.lengthy {
-            self.lengthy = value;
-        }
-        if let Some(value) = params.completed {
-            self.completed = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeOptionalInvokeParams) {
+        let size: Option<i32> = if handed.size.is_some() {
+            handed.size
+        } else {
+            Some(7)
+        };
+        let label: Option<::sce_rust_runtime::portable::SceString<8>> = if handed.label.is_some() {
+            handed.label
+        } else {
+            Some(::sce_rust_runtime::portable::sce_text!(8, "abc"))
+        };
+        let nosize: Option<i32> = if handed.nosize.is_some() {
+            handed.nosize
+        } else {
+            None
+        };
+        let lengthy: ::sce_rust_runtime::portable::SceString<8> = match handed.lengthy {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8, "abcdefgh"),
+        };
+        let completed: u32 = match handed.completed {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.size = size;
+        self.label = label;
+        self.nosize = nosize;
+        self.lengthy = lengthy;
+        self.completed = completed;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `completed` datamodel variable

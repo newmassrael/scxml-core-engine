@@ -701,6 +701,7 @@ impl StaticRecordListPolicy {
             ::sce_rust_runtime::portable::BoundedList::new();
         let total: u32 = 0;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticRecordListPayload::default(),
             draft,
@@ -768,15 +769,40 @@ impl StaticRecordListPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordListInvokeParams) {
-        if let Some(value) = params.total {
-            self.total = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordListInvokeParams) {
+        let draft: StaticRecordListDayRecord = StaticRecordListDayRecord {
+            year: 2026,
+            month: 1,
+            dayOfMonth: 1,
+        };
+        let last: StaticRecordListDayRecord = StaticRecordListDayRecord {
+            year: 2000,
+            month: 1,
+            dayOfMonth: 1,
+        };
+        let days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let copies: ::sce_rust_runtime::portable::BoundedList<StaticRecordListDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let total: u32 = match handed.total {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.draft = draft;
+        self.last = last;
+        self.days = days;
+        self.copies = copies;
+        self.total = total;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `draft` datamodel variable

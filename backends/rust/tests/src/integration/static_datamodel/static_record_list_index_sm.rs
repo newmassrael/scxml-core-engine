@@ -750,6 +750,7 @@ impl StaticRecordListIndexPolicy {
         let sum: u32 = 0;
         let ordered: bool = false;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: StaticRecordListIndexPayload::default(),
             draft,
@@ -820,27 +821,57 @@ impl StaticRecordListIndexPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordListIndexInvokeParams) {
-        if let Some(value) = params.cursor {
-            self.cursor = value;
-        }
-        if let Some(value) = params.day {
-            self.day = value;
-        }
-        if let Some(value) = params.year {
-            self.year = value;
-        }
-        if let Some(value) = params.sum {
-            self.sum = value;
-        }
-        if let Some(value) = params.ordered {
-            self.ordered = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordListIndexInvokeParams) {
+        let draft: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord {
+            year: 2026,
+            month: 1,
+            dayOfMonth: 1,
+        };
+        let picked: StaticRecordListIndexDayRecord = StaticRecordListIndexDayRecord {
+            year: 2000,
+            month: 1,
+            dayOfMonth: 1,
+        };
+        let days: ::sce_rust_runtime::portable::BoundedList<StaticRecordListIndexDayRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let cursor: i32 = match handed.cursor {
+            Some(value) => value,
+            None => 0,
+        };
+        let day: u8 = match handed.day {
+            Some(value) => value,
+            None => 0,
+        };
+        let year: u16 = match handed.year {
+            Some(value) => value,
+            None => 0,
+        };
+        let sum: u32 = match handed.sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let ordered: bool = match handed.ordered {
+            Some(value) => value,
+            None => false,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.draft = draft;
+        self.picked = picked;
+        self.days = days;
+        self.cursor = cursor;
+        self.day = day;
+        self.year = year;
+        self.sum = sum;
+        self.ordered = ordered;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `picked` datamodel variable

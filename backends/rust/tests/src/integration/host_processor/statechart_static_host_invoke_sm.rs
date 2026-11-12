@@ -555,6 +555,7 @@ impl StatechartStaticHostInvokePolicy {
         let place: ::sce_rust_runtime::portable::SceString<16> =
             ::sce_rust_runtime::portable::sce_text!(16, "job://report");
         let seen: u32 = 0;
+
         Self {
             job,
             label,
@@ -621,21 +622,32 @@ impl StatechartStaticHostInvokePolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StatechartStaticHostInvokeInvokeParams) {
-        if let Some(value) = params.job {
-            self.job = value;
-        }
-        if let Some(value) = params.label {
-            self.label = value;
-        }
-        if let Some(value) = params.place {
-            self.place = value;
-        }
-        if let Some(value) = params.seen {
-            self.seen = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StatechartStaticHostInvokeInvokeParams) {
+        let job: u32 = match handed.job {
+            Some(value) => value,
+            None => 7,
+        };
+        let label: ::sce_rust_runtime::portable::SceString<16> = match handed.label {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "report"),
+        };
+        let place: ::sce_rust_runtime::portable::SceString<16> = match handed.place {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "job://report"),
+        };
+        let seen: u32 = match handed.seen {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.job = job;
+        self.label = label;
+        self.place = place;
+        self.seen = seen;
     }
 
     /// W3C SCXML 5.2: what the published `seen` datamodel variable

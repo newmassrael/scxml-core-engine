@@ -582,6 +582,7 @@ impl StaticSendIdlocationPolicy {
         let first_fired: u32 = 0;
         let second_fired: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             first,
             second,
@@ -648,27 +649,42 @@ impl StaticSendIdlocationPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendIdlocationInvokeParams) {
-        if let Some(value) = params.first {
-            self.first = value;
-        }
-        if let Some(value) = params.second {
-            self.second = value;
-        }
-        if let Some(value) = params.scale {
-            self.scale = value;
-        }
-        if let Some(value) = params.first_fired {
-            self.first_fired = value;
-        }
-        if let Some(value) = params.second_fired {
-            self.second_fired = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendIdlocationInvokeParams) {
+        let first: ::sce_rust_runtime::portable::SceString<32> = match handed.first {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(32, ""),
+        };
+        let second: ::sce_rust_runtime::portable::SceString<32> = match handed.second {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(32, ""),
+        };
+        let scale: u32 = match handed.scale {
+            Some(value) => value,
+            None => 3,
+        };
+        let first_fired: u32 = match handed.first_fired {
+            Some(value) => value,
+            None => 0,
+        };
+        let second_fired: u32 = match handed.second_fired {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.first = first;
+        self.second = second;
+        self.scale = scale;
+        self.first_fired = first_fired;
+        self.second_fired = second_fired;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `first_fired` datamodel variable

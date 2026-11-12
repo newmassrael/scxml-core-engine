@@ -945,6 +945,7 @@ impl StaticComposedSendPolicy {
         let counted_deliveries: u32 = 0;
         let counted_sum: u32 = 0;
         let counted_hops: u8 = 0;
+
         Self {
             pending_payload: StaticComposedSendPayload::default(),
             deliveries,
@@ -1020,45 +1021,79 @@ impl StaticComposedSendPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticComposedSendInvokeParams) {
-        if let Some(value) = params.deliveries {
-            self.deliveries = value;
-        }
-        if let Some(value) = params.item_count {
-            self.item_count = value;
-        }
-        if let Some(value) = params.tag_count {
-            self.tag_count = value;
-        }
-        if let Some(value) = params.id_sum {
-            self.id_sum = value;
-        }
-        if let Some(value) = params.cell_sum {
-            self.cell_sum = value;
-        }
-        if let Some(value) = params.level_count {
-            self.level_count = value;
-        }
-        if params.first_maybe.is_some() {
-            self.first_maybe = params.first_maybe;
-        }
-        if let Some(value) = params.late_sum {
-            self.late_sum = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
-        if let Some(value) = params.counted_deliveries {
-            self.counted_deliveries = value;
-        }
-        if let Some(value) = params.counted_sum {
-            self.counted_sum = value;
-        }
-        if let Some(value) = params.counted_hops {
-            self.counted_hops = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticComposedSendInvokeParams) {
+        let deliveries: u32 = match handed.deliveries {
+            Some(value) => value,
+            None => 0,
+        };
+        let item_count: u32 = match handed.item_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let tag_count: u32 = match handed.tag_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let id_sum: u32 = match handed.id_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let cell_sum: u32 = match handed.cell_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let level_count: u32 = match handed.level_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let first_maybe: Option<u16> = if handed.first_maybe.is_some() {
+            handed.first_maybe
+        } else {
+            None
+        };
+        let late_sum: u32 = match handed.late_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let late: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+        let held: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let counted_deliveries: u32 = match handed.counted_deliveries {
+            Some(value) => value,
+            None => 0,
+        };
+        let counted_sum: u32 = match handed.counted_sum {
+            Some(value) => value,
+            None => 0,
+        };
+        let counted_hops: u8 = match handed.counted_hops {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.deliveries = deliveries;
+        self.item_count = item_count;
+        self.tag_count = tag_count;
+        self.id_sum = id_sum;
+        self.cell_sum = cell_sum;
+        self.level_count = level_count;
+        self.first_maybe = first_maybe;
+        self.late_sum = late_sum;
+        self.late = late;
+        self.refusals = refusals;
+        self.held = held;
+        self.counted_deliveries = counted_deliveries;
+        self.counted_sum = counted_sum;
+        self.counted_hops = counted_hops;
     }
 
     /// W3C SCXML 5.2: what the published `deliveries` datamodel variable

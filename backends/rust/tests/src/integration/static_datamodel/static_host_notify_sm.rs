@@ -1202,6 +1202,7 @@ impl StaticHostNotifyPolicy {
         let status: ::sce_rust_runtime::portable::SceString<16> =
             ::sce_rust_runtime::portable::sce_text!(16, "");
         let existed: bool = false;
+
         Self {
             pending_payload: StaticHostNotifyPayload::default(),
             id,
@@ -1273,33 +1274,52 @@ impl StaticHostNotifyPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostNotifyInvokeParams) {
-        if let Some(value) = params.id {
-            self.id = value;
-        }
-        if let Some(value) = params.title {
-            self.title = value;
-        }
-        if let Some(value) = params.body {
-            self.body = value;
-        }
-        if let Some(value) = params.at_ms {
-            self.at_ms = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.permission {
-            self.permission = value;
-        }
-        if let Some(value) = params.status {
-            self.status = value;
-        }
-        if let Some(value) = params.existed {
-            self.existed = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostNotifyInvokeParams) {
+        let id: ::sce_rust_runtime::portable::SceString<64> = match handed.id {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let title: ::sce_rust_runtime::portable::SceString<128> = match handed.title {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(128, ""),
+        };
+        let body: ::sce_rust_runtime::portable::SceString<512> = match handed.body {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(512, ""),
+        };
+        let at_ms: i64 = match handed.at_ms {
+            Some(value) => value,
+            None => 0,
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let permission: ::sce_rust_runtime::portable::SceString<16> = match handed.permission {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let status: ::sce_rust_runtime::portable::SceString<16> = match handed.status {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, ""),
+        };
+        let existed: bool = match handed.existed {
+            Some(value) => value,
+            None => false,
+        };
+
+        self.id = id;
+        self.title = title;
+        self.body = body;
+        self.at_ms = at_ms;
+        self.outcome = outcome;
+        self.permission = permission;
+        self.status = status;
+        self.existed = existed;
     }
 
     /// W3C SCXML 5.2: what the published `outcome` datamodel variable

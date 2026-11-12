@@ -594,6 +594,7 @@ impl StatechartStaticMeshRequestPolicy {
         let answered: u32 = 0;
         let failed: u32 = 0;
         let refused: u32 = 0;
+
         Self {
             load,
             label,
@@ -662,27 +663,42 @@ impl StatechartStaticMeshRequestPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StatechartStaticMeshRequestInvokeParams) {
-        if let Some(value) = params.load {
-            self.load = value;
-        }
-        if let Some(value) = params.label {
-            self.label = value;
-        }
-        if let Some(value) = params.peer {
-            self.peer = value;
-        }
-        if let Some(value) = params.answered {
-            self.answered = value;
-        }
-        if let Some(value) = params.failed {
-            self.failed = value;
-        }
-        if let Some(value) = params.refused {
-            self.refused = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StatechartStaticMeshRequestInvokeParams) {
+        let load: u32 = match handed.load {
+            Some(value) => value,
+            None => 3,
+        };
+        let label: ::sce_rust_runtime::portable::SceString<16> = match handed.label {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "idle"),
+        };
+        let peer: ::sce_rust_runtime::portable::SceString<16> = match handed.peer {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "#motor"),
+        };
+        let answered: u32 = match handed.answered {
+            Some(value) => value,
+            None => 0,
+        };
+        let failed: u32 = match handed.failed {
+            Some(value) => value,
+            None => 0,
+        };
+        let refused: u32 = match handed.refused {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.load = load;
+        self.label = label;
+        self.peer = peer;
+        self.answered = answered;
+        self.failed = failed;
+        self.refused = refused;
     }
 
     /// W3C SCXML 5.2: what the published `answered` datamodel variable

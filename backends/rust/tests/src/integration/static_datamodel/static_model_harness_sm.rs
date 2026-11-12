@@ -1698,6 +1698,7 @@ impl StaticModelHarnessPolicy {
             ::sce_rust_runtime::portable::sce_text!(24, "");
         let answer: Option<StaticModelHarnessAnswerRecord> = None;
         let why: Option<StaticModelHarnessLiftRefusalRecord> = None;
+
         Self {
             pending_payload: StaticModelHarnessPayload::default(),
             offered,
@@ -1772,27 +1773,59 @@ impl StaticModelHarnessPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticModelHarnessInvokeParams) {
-        if let Some(value) = params.request {
-            self.request = value;
-        }
-        if let Some(value) = params.prompt {
-            self.prompt = value;
-        }
-        if let Some(value) = params.said {
-            self.said = value;
-        }
-        if let Some(value) = params.offered_ok {
-            self.offered_ok = value;
-        }
-        if let Some(value) = params.attempts {
-            self.attempts = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticModelHarnessInvokeParams) {
+        let offered: ::sce_rust_runtime::portable::BoundedList<u32, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let request: ::sce_rust_runtime::portable::SceString<512> = match handed.request {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(512, ""),
+        };
+        let prompt: ::sce_rust_runtime::portable::SceString<8192> = match handed.prompt {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8192, ""),
+        };
+        let said: ::sce_rust_runtime::portable::SceString<4096> = match handed.said {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(4096, ""),
+        };
+        let offered_ok: bool = match handed.offered_ok {
+            Some(value) => value,
+            None => false,
+        };
+        let refused: StaticModelHarnessRefusalRecord = StaticModelHarnessRefusalRecord {
+            code: StaticModelHarnessHarnessCodeEnum::NotJson,
+            path: ::sce_rust_runtime::portable::sce_text!(256, ""),
+        };
+        let refusals: ::sce_rust_runtime::portable::BoundedList<
+            StaticModelHarnessRefusalRecord,
+            3,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let attempts: u32 = match handed.attempts {
+            Some(value) => value,
+            None => 0,
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let answer: Option<StaticModelHarnessAnswerRecord> = None;
+        let why: Option<StaticModelHarnessLiftRefusalRecord> = None;
+
+        self.offered = offered;
+        self.request = request;
+        self.prompt = prompt;
+        self.said = said;
+        self.offered_ok = offered_ok;
+        self.refused = refused;
+        self.refusals = refusals;
+        self.attempts = attempts;
+        self.outcome = outcome;
+        self.answer = answer;
+        self.why = why;
     }
 
     /// W3C SCXML 5.2: what the published `offered` datamodel variable

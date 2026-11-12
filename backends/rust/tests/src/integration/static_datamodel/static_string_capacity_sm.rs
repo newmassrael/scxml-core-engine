@@ -574,6 +574,7 @@ impl StaticStringCapacityPolicy {
         let copied: u32 = 0;
         let measured: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             title,
             body,
@@ -639,24 +640,37 @@ impl StaticStringCapacityPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticStringCapacityInvokeParams) {
-        if let Some(value) = params.title {
-            self.title = value;
-        }
-        if let Some(value) = params.body {
-            self.body = value;
-        }
-        if let Some(value) = params.copied {
-            self.copied = value;
-        }
-        if let Some(value) = params.measured {
-            self.measured = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticStringCapacityInvokeParams) {
+        let title: ::sce_rust_runtime::portable::SceString<4> = match handed.title {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(4, "ab"),
+        };
+        let body: ::sce_rust_runtime::portable::SceString<16> = match handed.body {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "hello"),
+        };
+        let copied: u32 = match handed.copied {
+            Some(value) => value,
+            None => 0,
+        };
+        let measured: u32 = match handed.measured {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.title = title;
+        self.body = body;
+        self.copied = copied;
+        self.measured = measured;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `title` datamodel variable

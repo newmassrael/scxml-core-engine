@@ -487,6 +487,7 @@ impl StaticInvokeOptionalSceSynthInvokeGivenPolicy {
     fn build(session_id: String) -> Self {
         let size: Option<i32> = None;
         let label: Option<::sce_rust_runtime::portable::SceString<8>> = None;
+
         Self {
             size,
             label,
@@ -549,15 +550,24 @@ impl StaticInvokeOptionalSceSynthInvokeGivenPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticInvokeOptionalSceSynthInvokeGivenInvokeParams) {
-        if params.size.is_some() {
-            self.size = params.size;
-        }
-        if params.label.is_some() {
-            self.label = params.label;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticInvokeOptionalSceSynthInvokeGivenInvokeParams) {
+        let size: Option<i32> = if handed.size.is_some() {
+            handed.size
+        } else {
+            None
+        };
+        let label: Option<::sce_rust_runtime::portable::SceString<8>> = if handed.label.is_some() {
+            handed.label
+        } else {
+            None
+        };
+
+        self.size = size;
+        self.label = label;
     }
 }
 

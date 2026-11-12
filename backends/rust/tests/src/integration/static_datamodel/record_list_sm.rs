@@ -3352,6 +3352,7 @@ impl RecordListPolicy {
             counter: 0,
             nodeId: 0,
         };
+
         Self {
             pending_payload: RecordListPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -3476,105 +3477,320 @@ impl RecordListPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: RecordListInvokeParams) {
-        if let Some(value) = params.node {
-            self.node = value;
-        }
-        if let Some(value) = params.journal {
-            self.journal = value;
-        }
-        if let Some(value) = params.share_id {
-            self.share_id = value;
-        }
-        if let Some(value) = params.share_field {
-            self.share_field = value;
-        }
-        if let Some(value) = params.was_live {
-            self.was_live = value;
-        }
-        if let Some(value) = params.present {
-            self.present = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
-        if let Some(value) = params.room_values {
-            self.room_values = value;
-        }
-        if let Some(value) = params.full {
-            self.full = value;
-        }
-        if let Some(value) = params.denied {
-            self.denied = value;
-        }
-        if let Some(value) = params.forbidden {
-            self.forbidden = value;
-        }
-        if let Some(value) = params.authorized {
-            self.authorized = value;
-        }
-        if let Some(value) = params.announce {
-            self.announce = value;
-        }
-        if let Some(value) = params.announced {
-            self.announced = value;
-        }
-        if let Some(value) = params.listed {
-            self.listed = value;
-        }
-        if let Some(value) = params.ordinal {
-            self.ordinal = value;
-        }
-        if let Some(value) = params.holding {
-            self.holding = value;
-        }
-        if let Some(value) = params.closing_now {
-            self.closing_now = value;
-        }
-        if let Some(value) = params.spoiled {
-            self.spoiled = value;
-        }
-        if let Some(value) = params.probing {
-            self.probing = value;
-        }
-        if let Some(value) = params.gone {
-            self.gone = value;
-        }
-        if let Some(value) = params.writes {
-            self.writes = value;
-        }
-        if let Some(value) = params.covered {
-            self.covered = value;
-        }
-        if let Some(value) = params.named_id {
-            self.named_id = value;
-        }
-        if let Some(value) = params.named_field {
-            self.named_field = value;
-        }
-        if let Some(value) = params.took {
-            self.took = value;
-        }
-        if let Some(value) = params.restoring {
-            self.restoring = value;
-        }
-        if let Some(value) = params.tentative {
-            self.tentative = value;
-        }
-        if let Some(value) = params.closing_command {
-            self.closing_command = value;
-        }
-        if let Some(value) = params.closed_ops {
-            self.closed_ops = value;
-        }
-        if let Some(value) = params.provisional_found {
-            self.provisional_found = value;
-        }
-        if let Some(value) = params.withdraw_from {
-            self.withdraw_from = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: RecordListInvokeParams) {
+        let node: u64 = match handed.node {
+            Some(value) => value,
+            None => 0,
+        };
+        let journal: bool = match handed.journal {
+            Some(value) => value,
+            None => true,
+        };
+        let clock: RecordListHlcRecord = RecordListHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let stamp: RecordListHlcRecord = RecordListHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let dot: RecordListHlcRecord = RecordListHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let adds: ::sce_rust_runtime::portable::BoundedList<RecordListEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let one: ::sce_rust_runtime::portable::BoundedList<RecordListEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let entry: RecordListEntryRecord = RecordListEntryRecord {
+            element: 0,
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let values: ::sce_rust_runtime::portable::BoundedList<RecordListValueRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let held: RecordListValueRecord = RecordListValueRecord {
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let share_id: u32 = match handed.share_id {
+            Some(value) => value,
+            None => 0,
+        };
+        let share_field: u16 = match handed.share_field {
+            Some(value) => value,
+            None => 0,
+        };
+        let was_live: bool = match handed.was_live {
+            Some(value) => value,
+            None => false,
+        };
+        let present: bool = match handed.present {
+            Some(value) => value,
+            None => false,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+        let room_values: u32 = match handed.room_values {
+            Some(value) => value,
+            None => 0,
+        };
+        let full: u32 = match handed.full {
+            Some(value) => value,
+            None => 0,
+        };
+        let roster: ::sce_rust_runtime::portable::BoundedList<RecordListMemberRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let denied: u32 = match handed.denied {
+            Some(value) => value,
+            None => 0,
+        };
+        let forbidden: bool = match handed.forbidden {
+            Some(value) => value,
+            None => false,
+        };
+        let authorized: bool = match handed.authorized {
+            Some(value) => value,
+            None => true,
+        };
+        let announce: bool = match handed.announce {
+            Some(value) => value,
+            None => false,
+        };
+        let announced: u32 = match handed.announced {
+            Some(value) => value,
+            None => 0,
+        };
+        let moved: ::sce_rust_runtime::portable::BoundedList<u64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let listed: bool = match handed.listed {
+            Some(value) => value,
+            None => false,
+        };
+        let live: ::sce_rust_runtime::portable::BoundedList<RecordListValueRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let ordinal: u32 = match handed.ordinal {
+            Some(value) => value,
+            None => 0,
+        };
+        let empty: RecordListValueRecord = RecordListValueRecord {
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let staged: ::sce_rust_runtime::portable::BoundedList<RecordListStagedRecord, 32> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let staging: RecordListStagedRecord = RecordListStagedRecord {
+            kind: 0,
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+        };
+        let holding: bool = match handed.holding {
+            Some(value) => value,
+            None => false,
+        };
+        let closing_now: i64 = match handed.closing_now {
+            Some(value) => value,
+            None => 0,
+        };
+        let spoiled: bool = match handed.spoiled {
+            Some(value) => value,
+            None => false,
+        };
+        let probing: bool = match handed.probing {
+            Some(value) => value,
+            None => false,
+        };
+        let gone: u32 = match handed.gone {
+            Some(value) => value,
+            None => 0,
+        };
+        let writes: u32 = match handed.writes {
+            Some(value) => value,
+            None => 0,
+        };
+        let covered: bool = match handed.covered {
+            Some(value) => value,
+            None => false,
+        };
+        let probe: RecordListRefusalEnum = RecordListRefusalEnum::ChangeTooLarge;
+        let spoiled_for: RecordListRefusalEnum = RecordListRefusalEnum::ChangeTooLarge;
+        let named_id: u32 = match handed.named_id {
+            Some(value) => value,
+            None => 0,
+        };
+        let named_field: u16 = match handed.named_field {
+            Some(value) => value,
+            None => 0,
+        };
+        let named_kind: RecordListCommandEnum = RecordListCommandEnum::Edit;
+        let taking: ::sce_rust_runtime::portable::BoundedList<RecordListOpRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let took: u32 = match handed.took {
+            Some(value) => value,
+            None => 0,
+        };
+        let op: RecordListOpRecord = RecordListOpRecord {
+            kind: 0,
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let restoring: bool = match handed.restoring {
+            Some(value) => value,
+            None => false,
+        };
+        let tentative: bool = match handed.tentative {
+            Some(value) => value,
+            None => false,
+        };
+        let closing_command: u64 = match handed.closing_command {
+            Some(value) => value,
+            None => 0,
+        };
+        let offered: ::sce_rust_runtime::portable::BoundedList<RecordListOpRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let offered_at: RecordListHlcRecord = RecordListHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let refused_for: RecordListRefusalEnum = RecordListRefusalEnum::PeerRefused;
+        let closed_ops: u32 = match handed.closed_ops {
+            Some(value) => value,
+            None => 0,
+        };
+        let closed_for: Option<RecordListRefusalEnum> = None;
+        let closed_at: RecordListHlcRecord = RecordListHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let provisional: ::sce_rust_runtime::portable::BoundedList<RecordListProvisionalRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let provisional_kept: ::sce_rust_runtime::portable::BoundedList<
+            RecordListProvisionalRecord,
+            8,
+        > = ::sce_rust_runtime::portable::BoundedList::new();
+        let standing: RecordListProvisionalRecord = RecordListProvisionalRecord {
+            wallTime: 0,
+            counter: 0,
+            command: 0,
+            id: 0,
+            field: 0,
+            kind: RecordListCommandEnum::Edit,
+        };
+        let provisional_found: bool = match handed.provisional_found {
+            Some(value) => value,
+            None => false,
+        };
+        let withdraw_from: u32 = match handed.withdraw_from {
+            Some(value) => value,
+            None => 0,
+        };
+        let undo: ::sce_rust_runtime::portable::BoundedList<RecordListUndoRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let undo_kept: ::sce_rust_runtime::portable::BoundedList<RecordListUndoRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let undoing: RecordListUndoRecord = RecordListUndoRecord {
+            atWallTime: 0,
+            atCounter: 0,
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+
+        self.node = node;
+        self.journal = journal;
+        self.clock = clock;
+        self.stamp = stamp;
+        self.dot = dot;
+        self.adds = adds;
+        self.one = one;
+        self.entry = entry;
+        self.values = values;
+        self.held = held;
+        self.share_id = share_id;
+        self.share_field = share_field;
+        self.was_live = was_live;
+        self.present = present;
+        self.refusals = refusals;
+        self.room_values = room_values;
+        self.full = full;
+        self.roster = roster;
+        self.denied = denied;
+        self.forbidden = forbidden;
+        self.authorized = authorized;
+        self.announce = announce;
+        self.announced = announced;
+        self.moved = moved;
+        self.listed = listed;
+        self.live = live;
+        self.ordinal = ordinal;
+        self.empty = empty;
+        self.staged = staged;
+        self.staging = staging;
+        self.holding = holding;
+        self.closing_now = closing_now;
+        self.spoiled = spoiled;
+        self.probing = probing;
+        self.gone = gone;
+        self.writes = writes;
+        self.covered = covered;
+        self.probe = probe;
+        self.spoiled_for = spoiled_for;
+        self.named_id = named_id;
+        self.named_field = named_field;
+        self.named_kind = named_kind;
+        self.taking = taking;
+        self.took = took;
+        self.op = op;
+        self.restoring = restoring;
+        self.tentative = tentative;
+        self.closing_command = closing_command;
+        self.offered = offered;
+        self.offered_at = offered_at;
+        self.refused_for = refused_for;
+        self.closed_ops = closed_ops;
+        self.closed_for = closed_for;
+        self.closed_at = closed_at;
+        self.provisional = provisional;
+        self.provisional_kept = provisional_kept;
+        self.standing = standing;
+        self.provisional_found = provisional_found;
+        self.withdraw_from = withdraw_from;
+        self.undo = undo;
+        self.undo_kept = undo_kept;
+        self.undoing = undoing;
     }
 
     /// W3C SCXML 5.2: what the published `node` datamodel variable

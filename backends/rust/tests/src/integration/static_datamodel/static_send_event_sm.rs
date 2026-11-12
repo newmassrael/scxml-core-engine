@@ -568,6 +568,7 @@ impl StaticSendEventPolicy {
         let pings: u32 = 0;
         let pongs: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             name,
             scale,
@@ -633,24 +634,37 @@ impl StaticSendEventPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendEventInvokeParams) {
-        if let Some(value) = params.name {
-            self.name = value;
-        }
-        if let Some(value) = params.scale {
-            self.scale = value;
-        }
-        if let Some(value) = params.pings {
-            self.pings = value;
-        }
-        if let Some(value) = params.pongs {
-            self.pongs = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendEventInvokeParams) {
+        let name: ::sce_rust_runtime::portable::SceString<16> = match handed.name {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "ping"),
+        };
+        let scale: u32 = match handed.scale {
+            Some(value) => value,
+            None => 3,
+        };
+        let pings: u32 = match handed.pings {
+            Some(value) => value,
+            None => 0,
+        };
+        let pongs: u32 = match handed.pongs {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.name = name;
+        self.scale = scale;
+        self.pings = pings;
+        self.pongs = pongs;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `pings` datamodel variable

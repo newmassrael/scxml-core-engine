@@ -655,6 +655,7 @@ impl StaticRecordCallPolicy {
         let large: u32 = 0;
         let debts: u32 = 0;
         let peaks: u32 = 0;
+
         Self {
             pending_payload: StaticRecordCallPayload::default(),
             best,
@@ -720,18 +721,29 @@ impl StaticRecordCallPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordCallInvokeParams) {
-        if let Some(value) = params.large {
-            self.large = value;
-        }
-        if let Some(value) = params.debts {
-            self.debts = value;
-        }
-        if let Some(value) = params.peaks {
-            self.peaks = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordCallInvokeParams) {
+        let best: StaticRecordCallEntryRecord = StaticRecordCallEntryRecord { id: 0, amount: 0 };
+        let large: u32 = match handed.large {
+            Some(value) => value,
+            None => 0,
+        };
+        let debts: u32 = match handed.debts {
+            Some(value) => value,
+            None => 0,
+        };
+        let peaks: u32 = match handed.peaks {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.best = best;
+        self.large = large;
+        self.debts = debts;
+        self.peaks = peaks;
     }
 
     /// W3C SCXML 5.2: what the published `best` datamodel variable

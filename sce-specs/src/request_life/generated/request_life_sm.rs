@@ -958,6 +958,7 @@ impl RequestLifePolicy {
         let outcome: ::sce_rust_runtime::portable::SceString<64> =
             ::sce_rust_runtime::portable::sce_text!(64, "");
         let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
+
         Self {
             pending_payload: RequestLifePayload::default(),
             holder,
@@ -1024,21 +1025,34 @@ impl RequestLifePolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: RequestLifeInvokeParams) {
-        if let Some(value) = params.holder {
-            self.holder = value;
-        }
-        if let Some(value) = params.attempt {
-            self.attempt = value;
-        }
-        if let Some(value) = params.expires_at {
-            self.expires_at = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: RequestLifeInvokeParams) {
+        let holder: ::sce_rust_runtime::portable::SceString<64> = match handed.holder {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let attempt: u32 = match handed.attempt {
+            Some(value) => value,
+            None => 0,
+        };
+        let expires_at: u64 = match handed.expires_at {
+            Some(value) => value,
+            None => 0,
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<64> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
+
+        self.holder = holder;
+        self.attempt = attempt;
+        self.expires_at = expires_at;
+        self.outcome = outcome;
+        self.verdict = verdict;
     }
 
     /// W3C SCXML 5.2: what the published `holder` datamodel variable

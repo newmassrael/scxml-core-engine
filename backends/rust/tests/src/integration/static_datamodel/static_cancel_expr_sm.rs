@@ -568,6 +568,7 @@ impl StaticCancelExprPolicy {
         let a_fired: u32 = 0;
         let b_fired: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             which,
             scale,
@@ -633,24 +634,37 @@ impl StaticCancelExprPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticCancelExprInvokeParams) {
-        if let Some(value) = params.which {
-            self.which = value;
-        }
-        if let Some(value) = params.scale {
-            self.scale = value;
-        }
-        if let Some(value) = params.a_fired {
-            self.a_fired = value;
-        }
-        if let Some(value) = params.b_fired {
-            self.b_fired = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticCancelExprInvokeParams) {
+        let which: ::sce_rust_runtime::portable::SceString<8> = match handed.which {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8, "a"),
+        };
+        let scale: u32 = match handed.scale {
+            Some(value) => value,
+            None => 3,
+        };
+        let a_fired: u32 = match handed.a_fired {
+            Some(value) => value,
+            None => 0,
+        };
+        let b_fired: u32 = match handed.b_fired {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.which = which;
+        self.scale = scale;
+        self.a_fired = a_fired;
+        self.b_fired = b_fired;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `a_fired` datamodel variable

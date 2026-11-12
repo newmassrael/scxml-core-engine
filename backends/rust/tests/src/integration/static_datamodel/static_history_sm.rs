@@ -647,6 +647,7 @@ pub struct StaticHistoryPolicy {
 impl StaticHistoryPolicy {
     fn build(session_id: String) -> Self {
         let resumed: u8 = 0;
+
         Self {
             resumed,
             session_id: Some(session_id),
@@ -708,12 +709,17 @@ impl StaticHistoryPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHistoryInvokeParams) {
-        if let Some(value) = params.resumed {
-            self.resumed = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHistoryInvokeParams) {
+        let resumed: u8 = match handed.resumed {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.resumed = resumed;
     }
 
     /// W3C SCXML 5.2: what the published `resumed` datamodel variable

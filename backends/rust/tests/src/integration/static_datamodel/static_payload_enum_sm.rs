@@ -666,6 +666,7 @@ impl StaticPayloadEnumPolicy {
         let zoom: u8 = 0;
         let agenda: bool = false;
         let shown: u32 = 0;
+
         Self {
             pending_payload: StaticPayloadEnumPayload::default(),
             layout,
@@ -731,18 +732,29 @@ impl StaticPayloadEnumPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticPayloadEnumInvokeParams) {
-        if let Some(value) = params.zoom {
-            self.zoom = value;
-        }
-        if let Some(value) = params.agenda {
-            self.agenda = value;
-        }
-        if let Some(value) = params.shown {
-            self.shown = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticPayloadEnumInvokeParams) {
+        let layout: StaticPayloadEnumViewModeEnum = StaticPayloadEnumViewModeEnum::Month;
+        let zoom: u8 = match handed.zoom {
+            Some(value) => value,
+            None => 0,
+        };
+        let agenda: bool = match handed.agenda {
+            Some(value) => value,
+            None => false,
+        };
+        let shown: u32 = match handed.shown {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.layout = layout;
+        self.zoom = zoom;
+        self.agenda = agenda;
+        self.shown = shown;
     }
 
     /// W3C SCXML 5.2: what the published `layout` datamodel variable

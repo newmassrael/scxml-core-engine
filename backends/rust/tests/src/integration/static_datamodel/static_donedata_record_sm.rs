@@ -606,6 +606,7 @@ impl StaticDonedataRecordPolicy {
             layout: StaticDonedataRecordViewModeEnum::Day,
             zoom: 2,
         };
+
         Self {
             shown,
             session_id: Some(session_id),

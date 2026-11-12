@@ -698,6 +698,7 @@ impl StaticListIndexPolicy {
         let room: bool = false;
         let count: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: StaticListIndexPayload::default(),
             picked,
@@ -768,33 +769,55 @@ impl StaticListIndexPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticListIndexInvokeParams) {
-        if let Some(value) = params.cursor {
-            self.cursor = value;
-        }
-        if let Some(value) = params.under {
-            self.under = value;
-        }
-        if let Some(value) = params.first {
-            self.first = value;
-        }
-        if let Some(value) = params.last {
-            self.last = value;
-        }
-        if let Some(value) = params.ordered {
-            self.ordered = value;
-        }
-        if let Some(value) = params.room {
-            self.room = value;
-        }
-        if let Some(value) = params.count {
-            self.count = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticListIndexInvokeParams) {
+        let picked: ::sce_rust_runtime::portable::BoundedList<u8, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let cursor: i32 = match handed.cursor {
+            Some(value) => value,
+            None => 0,
+        };
+        let under: u8 = match handed.under {
+            Some(value) => value,
+            None => 0,
+        };
+        let first: u8 = match handed.first {
+            Some(value) => value,
+            None => 0,
+        };
+        let last: u8 = match handed.last {
+            Some(value) => value,
+            None => 0,
+        };
+        let ordered: bool = match handed.ordered {
+            Some(value) => value,
+            None => false,
+        };
+        let room: bool = match handed.room {
+            Some(value) => value,
+            None => false,
+        };
+        let count: u32 = match handed.count {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.picked = picked;
+        self.cursor = cursor;
+        self.under = under;
+        self.first = first;
+        self.last = last;
+        self.ordered = ordered;
+        self.room = room;
+        self.count = count;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `picked` datamodel variable

@@ -583,6 +583,7 @@ impl StaticListAssignPolicy {
         let count: u32 = 0;
         let size: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             shown,
             first,
@@ -649,21 +650,38 @@ impl StaticListAssignPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticListAssignInvokeParams) {
-        if let Some(value) = params.first {
-            self.first = value;
-        }
-        if let Some(value) = params.count {
-            self.count = value;
-        }
-        if let Some(value) = params.size {
-            self.size = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticListAssignInvokeParams) {
+        let shown: ::sce_rust_runtime::portable::BoundedList<u8, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let first: u8 = match handed.first {
+            Some(value) => value,
+            None => 10,
+        };
+        let few: ::sce_rust_runtime::portable::BoundedList<u8, 4> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let count: u32 = match handed.count {
+            Some(value) => value,
+            None => 0,
+        };
+        let size: u32 = match handed.size {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.shown = shown;
+        self.first = first;
+        self.few = few;
+        self.count = count;
+        self.size = size;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `shown` datamodel variable

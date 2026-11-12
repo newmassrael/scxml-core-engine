@@ -588,6 +588,7 @@ impl StaticReal32Policy {
         let samples: ::sce_rust_runtime::portable::BoundedList<f32, 3> =
             ::sce_rust_runtime::portable::BoundedList::new();
         let total: f32 = 0.0;
+
         Self {
             level,
             tenth,
@@ -654,24 +655,40 @@ impl StaticReal32Policy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticReal32InvokeParams) {
-        if let Some(value) = params.level {
-            self.level = value;
-        }
-        if let Some(value) = params.tenth {
-            self.tenth = value;
-        }
-        if let Some(value) = params.drift {
-            self.drift = value;
-        }
-        if let Some(value) = params.wide {
-            self.wide = value;
-        }
-        if let Some(value) = params.total {
-            self.total = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticReal32InvokeParams) {
+        let level: f32 = match handed.level {
+            Some(value) => value,
+            None => 16777216.0,
+        };
+        let tenth: f32 = match handed.tenth {
+            Some(value) => value,
+            None => 0.1,
+        };
+        let drift: f32 = match handed.drift {
+            Some(value) => value,
+            None => 0.0,
+        };
+        let wide: f64 = match handed.wide {
+            Some(value) => value,
+            None => 0.0,
+        };
+        let samples: ::sce_rust_runtime::portable::BoundedList<f32, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let total: f32 = match handed.total {
+            Some(value) => value,
+            None => 0.0,
+        };
+
+        self.level = level;
+        self.tenth = tenth;
+        self.drift = drift;
+        self.wide = wide;
+        self.samples = samples;
+        self.total = total;
     }
 
     /// W3C SCXML 5.2: what the published `level` datamodel variable

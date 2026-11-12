@@ -523,6 +523,7 @@ impl StaticStringLiteralPolicy {
         let held: ::sce_rust_runtime::portable::SceString<32> =
             ::sce_rust_runtime::portable::sce_text!(32, "a\"b");
         let measured: u32 = 0;
+
         Self {
             held,
             measured,
@@ -585,15 +586,22 @@ impl StaticStringLiteralPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticStringLiteralInvokeParams) {
-        if let Some(value) = params.held {
-            self.held = value;
-        }
-        if let Some(value) = params.measured {
-            self.measured = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticStringLiteralInvokeParams) {
+        let held: ::sce_rust_runtime::portable::SceString<32> = match handed.held {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(32, "a\"b"),
+        };
+        let measured: u32 = match handed.measured {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.held = held;
+        self.measured = measured;
     }
 
     /// W3C SCXML 5.2: what the published `held` datamodel variable

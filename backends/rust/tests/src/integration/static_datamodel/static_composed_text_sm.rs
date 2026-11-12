@@ -846,6 +846,7 @@ impl StaticComposedTextPolicy {
         let blob_bytes: u32 = 0;
         let blobs_ab: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: StaticComposedTextPayload::default(),
             note_is_ab,
@@ -917,39 +918,62 @@ impl StaticComposedTextPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticComposedTextInvokeParams) {
-        if let Some(value) = params.note_is_ab {
-            self.note_is_ab = value;
-        }
-        if let Some(value) = params.note_len {
-            self.note_len = value;
-        }
-        if let Some(value) = params.first_label_is_ab {
-            self.first_label_is_ab = value;
-        }
-        if let Some(value) = params.labels_ab {
-            self.labels_ab = value;
-        }
-        if let Some(value) = params.first_tags_ab {
-            self.first_tags_ab = value;
-        }
-        if let Some(value) = params.words_ab {
-            self.words_ab = value;
-        }
-        if let Some(value) = params.last_label {
-            self.last_label = value;
-        }
-        if let Some(value) = params.blob_bytes {
-            self.blob_bytes = value;
-        }
-        if let Some(value) = params.blobs_ab {
-            self.blobs_ab = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticComposedTextInvokeParams) {
+        let note_is_ab: bool = match handed.note_is_ab {
+            Some(value) => value,
+            None => false,
+        };
+        let note_len: u32 = match handed.note_len {
+            Some(value) => value,
+            None => 0,
+        };
+        let first_label_is_ab: bool = match handed.first_label_is_ab {
+            Some(value) => value,
+            None => false,
+        };
+        let labels_ab: u32 = match handed.labels_ab {
+            Some(value) => value,
+            None => 0,
+        };
+        let first_tags_ab: u32 = match handed.first_tags_ab {
+            Some(value) => value,
+            None => 0,
+        };
+        let words_ab: u32 = match handed.words_ab {
+            Some(value) => value,
+            None => 0,
+        };
+        let last_label: ::sce_rust_runtime::portable::SceString<8> = match handed.last_label {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(8, ""),
+        };
+        let blob_bytes: u32 = match handed.blob_bytes {
+            Some(value) => value,
+            None => 0,
+        };
+        let blobs_ab: u32 = match handed.blobs_ab {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.note_is_ab = note_is_ab;
+        self.note_len = note_len;
+        self.first_label_is_ab = first_label_is_ab;
+        self.labels_ab = labels_ab;
+        self.first_tags_ab = first_tags_ab;
+        self.words_ab = words_ab;
+        self.last_label = last_label;
+        self.blob_bytes = blob_bytes;
+        self.blobs_ab = blobs_ab;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `note_is_ab` datamodel variable

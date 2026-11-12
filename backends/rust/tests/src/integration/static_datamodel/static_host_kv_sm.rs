@@ -1222,6 +1222,7 @@ impl StaticHostKvPolicy {
         let next_found: bool = false;
         let next: ::sce_rust_runtime::portable::SceString<256> =
             ::sce_rust_runtime::portable::sce_text!(256, "");
+
         Self {
             pending_payload: StaticHostKvPayload::default(),
             key,
@@ -1296,42 +1297,67 @@ impl StaticHostKvPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostKvInvokeParams) {
-        if let Some(value) = params.key {
-            self.key = value;
-        }
-        if let Some(value) = params.value {
-            self.value = value;
-        }
-        if let Some(value) = params.after {
-            self.after = value;
-        }
-        if let Some(value) = params.prefix {
-            self.prefix = value;
-        }
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.found {
-            self.found = value;
-        }
-        if let Some(value) = params.got {
-            self.got = value;
-        }
-        if let Some(value) = params.replaced {
-            self.replaced = value;
-        }
-        if let Some(value) = params.existed {
-            self.existed = value;
-        }
-        if let Some(value) = params.next_found {
-            self.next_found = value;
-        }
-        if let Some(value) = params.next {
-            self.next = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostKvInvokeParams) {
+        let key: ::sce_rust_runtime::portable::SceString<256> = match handed.key {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(256, ""),
+        };
+        let value: ::sce_rust_runtime::portable::SceString<4096> = match handed.value {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(4096, ""),
+        };
+        let after: ::sce_rust_runtime::portable::SceString<256> = match handed.after {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(256, ""),
+        };
+        let prefix: ::sce_rust_runtime::portable::SceString<256> = match handed.prefix {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(256, ""),
+        };
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let found: bool = match handed.found {
+            Some(value) => value,
+            None => false,
+        };
+        let got: ::sce_rust_runtime::portable::SceString<4096> = match handed.got {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(4096, ""),
+        };
+        let replaced: bool = match handed.replaced {
+            Some(value) => value,
+            None => false,
+        };
+        let existed: bool = match handed.existed {
+            Some(value) => value,
+            None => false,
+        };
+        let next_found: bool = match handed.next_found {
+            Some(value) => value,
+            None => false,
+        };
+        let next: ::sce_rust_runtime::portable::SceString<256> = match handed.next {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(256, ""),
+        };
+
+        self.key = key;
+        self.value = value;
+        self.after = after;
+        self.prefix = prefix;
+        self.outcome = outcome;
+        self.found = found;
+        self.got = got;
+        self.replaced = replaced;
+        self.existed = existed;
+        self.next_found = next_found;
+        self.next = next;
     }
 
     /// W3C SCXML 5.2: what the published `outcome` datamodel variable

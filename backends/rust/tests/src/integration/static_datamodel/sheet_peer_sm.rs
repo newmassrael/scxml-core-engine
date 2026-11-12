@@ -1821,6 +1821,7 @@ impl SheetPeerPolicy {
         let no_number: i64 = 0;
         let orphans: u32 = 0;
         let refusals: u32 = 0;
+
         Self {
             pending_payload: SheetPeerPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -1903,33 +1904,107 @@ impl SheetPeerPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: SheetPeerInvokeParams) {
-        if let Some(value) = params.node {
-            self.node = value;
-        }
-        if let Some(value) = params.hub {
-            self.hub = value;
-        }
-        if let Some(value) = params.lamport {
-            self.lamport = value;
-        }
-        if let Some(value) = params.new_key {
-            self.new_key = value;
-        }
-        if let Some(value) = params.no_key {
-            self.no_key = value;
-        }
-        if let Some(value) = params.no_number {
-            self.no_number = value;
-        }
-        if let Some(value) = params.orphans {
-            self.orphans = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: SheetPeerInvokeParams) {
+        let node: u64 = match handed.node {
+            Some(value) => value,
+            None => 0,
+        };
+        let hub: bool = match handed.hub {
+            Some(value) => value,
+            None => false,
+        };
+        let clock: SheetPeerHlcRecord = SheetPeerHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let stamp: SheetPeerHlcRecord = SheetPeerHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let cells: ::sce_rust_runtime::portable::BoundedList<SheetPeerLwwCellRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let rows: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let gone: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaNodeRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let gone_cols: ::sce_rust_runtime::portable::BoundedList<SheetPeerRgaGoneRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let trail: ::sce_rust_runtime::portable::BoundedList<i64, 768> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let shown: ::sce_rust_runtime::portable::BoundedList<SheetPeerShownRecord, 256> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let write: SheetPeerLwwCellRecord = SheetPeerLwwCellRecord {
+            row: 0,
+            col: 0,
+            value: 0,
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+            op: 0,
+            aRef: false,
+            aRow: 0,
+            aCol: 0,
+            aVal: 0,
+            bRef: false,
+            bRow: 0,
+            bCol: 0,
+            bVal: 0,
+        };
+        let placed: SheetPeerRgaNodeRecord = SheetPeerRgaNodeRecord { key: 0, after: 0 };
+        let removal: SheetPeerRgaGoneRecord = SheetPeerRgaGoneRecord { key: 0, by: 0 };
+        let lamport: u64 = match handed.lamport {
+            Some(value) => value,
+            None => 0,
+        };
+        let new_key: u64 = match handed.new_key {
+            Some(value) => value,
+            None => 0,
+        };
+        let no_key: u64 = match handed.no_key {
+            Some(value) => value,
+            None => 0,
+        };
+        let no_number: i64 = match handed.no_number {
+            Some(value) => value,
+            None => 0,
+        };
+        let orphans: u32 = match handed.orphans {
+            Some(value) => value,
+            None => 0,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.node = node;
+        self.hub = hub;
+        self.clock = clock;
+        self.stamp = stamp;
+        self.cells = cells;
+        self.rows = rows;
+        self.gone = gone;
+        self.cols = cols;
+        self.gone_cols = gone_cols;
+        self.trail = trail;
+        self.shown = shown;
+        self.write = write;
+        self.placed = placed;
+        self.removal = removal;
+        self.lamport = lamport;
+        self.new_key = new_key;
+        self.no_key = no_key;
+        self.no_number = no_number;
+        self.orphans = orphans;
+        self.refusals = refusals;
     }
 
     /// W3C SCXML 5.2: what the published `node` datamodel variable

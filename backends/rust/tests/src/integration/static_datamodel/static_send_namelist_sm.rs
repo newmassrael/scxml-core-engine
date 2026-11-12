@@ -703,6 +703,7 @@ impl StaticSendNamelistPolicy {
         let received: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum::Month;
         let level: u8 = 0;
         let deliveries: u32 = 0;
+
         Self {
             pending_payload: StaticSendNamelistPayload::default(),
             layout,
@@ -769,18 +770,31 @@ impl StaticSendNamelistPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticSendNamelistInvokeParams) {
-        if let Some(value) = params.zoom {
-            self.zoom = value;
-        }
-        if let Some(value) = params.level {
-            self.level = value;
-        }
-        if let Some(value) = params.deliveries {
-            self.deliveries = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticSendNamelistInvokeParams) {
+        let layout: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum::Week;
+        let zoom: u8 = match handed.zoom {
+            Some(value) => value,
+            None => 3,
+        };
+        let received: StaticSendNamelistViewModeEnum = StaticSendNamelistViewModeEnum::Month;
+        let level: u8 = match handed.level {
+            Some(value) => value,
+            None => 0,
+        };
+        let deliveries: u32 = match handed.deliveries {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.layout = layout;
+        self.zoom = zoom;
+        self.received = received;
+        self.level = level;
+        self.deliveries = deliveries;
     }
 
     /// W3C SCXML 5.2: what the published `layout` datamodel variable

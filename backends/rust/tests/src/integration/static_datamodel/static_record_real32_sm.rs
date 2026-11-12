@@ -601,6 +601,7 @@ impl StaticRecordReal32Policy {
         };
         let sum: f32 = 0.0;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticRecordReal32Payload::default(),
             last,
@@ -665,15 +666,27 @@ impl StaticRecordReal32Policy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordReal32InvokeParams) {
-        if let Some(value) = params.sum {
-            self.sum = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordReal32InvokeParams) {
+        let last: StaticRecordReal32Reading32Record = StaticRecordReal32Reading32Record {
+            sensor: 1,
+            value: 0.5,
+        };
+        let sum: f32 = match handed.sum {
+            Some(value) => value,
+            None => 0.0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.last = last;
+        self.sum = sum;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `last` datamodel variable

@@ -467,6 +467,7 @@ pub struct StaticInvokeOptionalSceSynthInvokeReplacedPolicy {
 impl StaticInvokeOptionalSceSynthInvokeReplacedPolicy {
     fn build(session_id: String) -> Self {
         let size: Option<i32> = Some(3);
+
         Self {
             size,
             session_id: Some(session_id),
@@ -528,15 +529,21 @@ impl StaticInvokeOptionalSceSynthInvokeReplacedPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
     pub fn accept_params(
         &mut self,
-        params: StaticInvokeOptionalSceSynthInvokeReplacedInvokeParams,
+        handed: StaticInvokeOptionalSceSynthInvokeReplacedInvokeParams,
     ) {
-        if params.size.is_some() {
-            self.size = params.size;
-        }
+        let size: Option<i32> = if handed.size.is_some() {
+            handed.size
+        } else {
+            Some(3)
+        };
+
+        self.size = size;
     }
 }
 

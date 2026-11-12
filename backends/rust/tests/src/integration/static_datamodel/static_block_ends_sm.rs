@@ -640,6 +640,7 @@ impl StaticBlockEndsPolicy {
         let after_branch: u8 = 0;
         let after_ok: u8 = 0;
         let errors: u8 = 0;
+
         Self {
             a,
             b,
@@ -710,39 +711,62 @@ impl StaticBlockEndsPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticBlockEndsInvokeParams) {
-        if let Some(value) = params.a {
-            self.a = value;
-        }
-        if let Some(value) = params.b {
-            self.b = value;
-        }
-        if let Some(value) = params.after_assign {
-            self.after_assign = value;
-        }
-        if let Some(value) = params.then_ran {
-            self.then_ran = value;
-        }
-        if let Some(value) = params.else_ran {
-            self.else_ran = value;
-        }
-        if let Some(value) = params.after_if {
-            self.after_if = value;
-        }
-        if let Some(value) = params.in_branch {
-            self.in_branch = value;
-        }
-        if let Some(value) = params.after_branch {
-            self.after_branch = value;
-        }
-        if let Some(value) = params.after_ok {
-            self.after_ok = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticBlockEndsInvokeParams) {
+        let a: u8 = match handed.a {
+            Some(value) => value,
+            None => 250,
+        };
+        let b: u8 = match handed.b {
+            Some(value) => value,
+            None => 0,
+        };
+        let after_assign: u8 = match handed.after_assign {
+            Some(value) => value,
+            None => 0,
+        };
+        let then_ran: u8 = match handed.then_ran {
+            Some(value) => value,
+            None => 0,
+        };
+        let else_ran: u8 = match handed.else_ran {
+            Some(value) => value,
+            None => 0,
+        };
+        let after_if: u8 = match handed.after_if {
+            Some(value) => value,
+            None => 0,
+        };
+        let in_branch: u8 = match handed.in_branch {
+            Some(value) => value,
+            None => 0,
+        };
+        let after_branch: u8 = match handed.after_branch {
+            Some(value) => value,
+            None => 0,
+        };
+        let after_ok: u8 = match handed.after_ok {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u8 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.a = a;
+        self.b = b;
+        self.after_assign = after_assign;
+        self.then_ran = then_ran;
+        self.else_ran = else_ran;
+        self.after_if = after_if;
+        self.in_branch = in_branch;
+        self.after_branch = after_branch;
+        self.after_ok = after_ok;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `a` datamodel variable

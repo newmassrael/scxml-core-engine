@@ -1700,6 +1700,7 @@ impl RecordListParentPolicy {
         let refused_count: u32 = 0;
         let pending_count: u32 = 0;
         let confirmed_count: u32 = 0;
+
         Self {
             pending_payload: RecordListParentPayload::default(),
             told,
@@ -1774,21 +1775,59 @@ impl RecordListParentPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: RecordListParentInvokeParams) {
-        if let Some(value) = params.told {
-            self.told = value;
-        }
-        if let Some(value) = params.refused_count {
-            self.refused_count = value;
-        }
-        if let Some(value) = params.pending_count {
-            self.pending_count = value;
-        }
-        if let Some(value) = params.confirmed_count {
-            self.confirmed_count = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: RecordListParentInvokeParams) {
+        let told: u32 = match handed.told {
+            Some(value) => value,
+            None => 0,
+        };
+        let shown: RecordListParentToldRecord = RecordListParentToldRecord {
+            id: 0,
+            field: 0,
+            count: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let others: ::sce_rust_runtime::portable::BoundedList<RecordListParentToldValueRecord, 8> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let other: RecordListParentToldValueRecord = RecordListParentToldValueRecord {
+            id: 0,
+            field: 0,
+            ordinal: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let refused: Option<RecordListParentRefusedRecord> = None;
+        let refused_count: u32 = match handed.refused_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let pending_count: u32 = match handed.pending_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let confirmed_count: u32 = match handed.confirmed_count {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.told = told;
+        self.shown = shown;
+        self.others = others;
+        self.other = other;
+        self.refused = refused;
+        self.refused_count = refused_count;
+        self.pending_count = pending_count;
+        self.confirmed_count = confirmed_count;
     }
 
     /// W3C SCXML 5.2: what the published `told` datamodel variable

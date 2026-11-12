@@ -769,6 +769,7 @@ impl StaticHostClockPolicy {
         let zone_id: ::sce_rust_runtime::portable::SceString<64> =
             ::sce_rust_runtime::portable::sce_text!(64, "");
         let utc_offset_s: i32 = 0;
+
         Self {
             pending_payload: StaticHostClockPayload::default(),
             outcome,
@@ -837,24 +838,37 @@ impl StaticHostClockPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticHostClockInvokeParams) {
-        if let Some(value) = params.outcome {
-            self.outcome = value;
-        }
-        if let Some(value) = params.utc_ms {
-            self.utc_ms = value;
-        }
-        if let Some(value) = params.monotonic_ms {
-            self.monotonic_ms = value;
-        }
-        if let Some(value) = params.zone_id {
-            self.zone_id = value;
-        }
-        if let Some(value) = params.utc_offset_s {
-            self.utc_offset_s = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticHostClockInvokeParams) {
+        let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(24, ""),
+        };
+        let utc_ms: i64 = match handed.utc_ms {
+            Some(value) => value,
+            None => 0,
+        };
+        let monotonic_ms: i64 = match handed.monotonic_ms {
+            Some(value) => value,
+            None => 0,
+        };
+        let zone_id: ::sce_rust_runtime::portable::SceString<64> = match handed.zone_id {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(64, ""),
+        };
+        let utc_offset_s: i32 = match handed.utc_offset_s {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.outcome = outcome;
+        self.utc_ms = utc_ms;
+        self.monotonic_ms = monotonic_ms;
+        self.zone_id = zone_id;
+        self.utc_offset_s = utc_offset_s;
     }
 
     /// W3C SCXML 5.2: what the published `outcome` datamodel variable

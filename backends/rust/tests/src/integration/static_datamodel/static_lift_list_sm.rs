@@ -851,6 +851,7 @@ impl StaticLiftListPolicy {
         let why: Option<StaticLiftListLiftRefusalRecord> = None;
         let lifts: u32 = 0;
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticLiftListPayload::default(),
             answer,
@@ -916,15 +917,26 @@ impl StaticLiftListPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticLiftListInvokeParams) {
-        if let Some(value) = params.lifts {
-            self.lifts = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticLiftListInvokeParams) {
+        let answer: Option<StaticLiftListPlanRecord> = None;
+        let why: Option<StaticLiftListLiftRefusalRecord> = None;
+        let lifts: u32 = match handed.lifts {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.answer = answer;
+        self.why = why;
+        self.lifts = lifts;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `answer` datamodel variable

@@ -739,6 +739,7 @@ impl StaticWireEnumPolicy {
         };
         let received: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum::Month;
         let deliveries: u32 = 0;
+
         Self {
             pending_payload: StaticWireEnumPayload::default(),
             layout,
@@ -804,12 +805,26 @@ impl StaticWireEnumPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticWireEnumInvokeParams) {
-        if let Some(value) = params.deliveries {
-            self.deliveries = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticWireEnumInvokeParams) {
+        let layout: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum::Week;
+        let shown: StaticWireEnumViewRecord = StaticWireEnumViewRecord {
+            layout: StaticWireEnumViewModeEnum::Day,
+            zoom: 2,
+        };
+        let received: StaticWireEnumViewModeEnum = StaticWireEnumViewModeEnum::Month;
+        let deliveries: u32 = match handed.deliveries {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.layout = layout;
+        self.shown = shown;
+        self.received = received;
+        self.deliveries = deliveries;
     }
 
     /// W3C SCXML 5.2: what the published `layout` datamodel variable

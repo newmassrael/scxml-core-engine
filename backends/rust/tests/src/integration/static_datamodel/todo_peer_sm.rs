@@ -2628,6 +2628,7 @@ impl TodoPeerPolicy {
             counter: 0,
             nodeId: 0,
         };
+
         Self {
             pending_payload: TodoPeerPayload::default(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
@@ -2733,63 +2734,255 @@ impl TodoPeerPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: TodoPeerInvokeParams) {
-        if let Some(value) = params.node {
-            self.node = value;
-        }
-        if let Some(value) = params.typed {
-            self.typed = value;
-        }
-        if let Some(value) = params.was_live {
-            self.was_live = value;
-        }
-        if let Some(value) = params.present {
-            self.present = value;
-        }
-        if let Some(value) = params.refusals {
-            self.refusals = value;
-        }
-        if let Some(value) = params.agenda_next {
-            self.agenda_next = value;
-        }
-        if let Some(value) = params.zone_rows {
-            self.zone_rows = value;
-        }
-        if let Some(value) = params.split {
-            self.split = value;
-        }
-        if let Some(value) = params.raw_count {
-            self.raw_count = value;
-        }
-        if let Some(value) = params.raw_last {
-            self.raw_last = value;
-        }
-        if let Some(value) = params.utc_sec {
-            self.utc_sec = value;
-        }
-        if let Some(value) = params.room_values {
-            self.room_values = value;
-        }
-        if let Some(value) = params.full {
-            self.full = value;
-        }
-        if let Some(value) = params.gone {
-            self.gone = value;
-        }
-        if let Some(value) = params.denied {
-            self.denied = value;
-        }
-        if let Some(value) = params.forbidden {
-            self.forbidden = value;
-        }
-        if let Some(value) = params.authorized {
-            self.authorized = value;
-        }
-        if let Some(value) = params.took {
-            self.took = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: TodoPeerInvokeParams) {
+        let node: u64 = match handed.node {
+            Some(value) => value,
+            None => 0,
+        };
+        let clock: TodoPeerHlcRecord = TodoPeerHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let stamp: TodoPeerHlcRecord = TodoPeerHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let dot: TodoPeerHlcRecord = TodoPeerHlcRecord {
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let adds: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let one: ::sce_rust_runtime::portable::BoundedList<TodoPeerEntryRecord, 1024> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let entry: TodoPeerEntryRecord = TodoPeerEntryRecord {
+            element: 0,
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let values: ::sce_rust_runtime::portable::BoundedList<TodoPeerValueRecord, 512> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let typed: ::sce_rust_runtime::portable::SceString<32> = match handed.typed {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(32, ""),
+        };
+        let held: TodoPeerValueRecord = TodoPeerValueRecord {
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+        let was_live: bool = match handed.was_live {
+            Some(value) => value,
+            None => false,
+        };
+        let present: bool = match handed.present {
+            Some(value) => value,
+            None => false,
+        };
+        let refusals: u32 = match handed.refusals {
+            Some(value) => value,
+            None => 0,
+        };
+        let agenda: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let local: ::sce_rust_runtime::portable::BoundedList<TodoPeerOccurrenceRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let occ: TodoPeerOccurrenceRecord = TodoPeerOccurrenceRecord {
+            id: 0,
+            start: 0,
+            end: 0,
+            nth: 0,
+            conflict: 0,
+        };
+        let agenda_next: u32 = match handed.agenda_next {
+            Some(value) => value,
+            None => 0,
+        };
+        let zone_starts1: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets1: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts2: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets2: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts3: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets3: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts4: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets4: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_starts: ::sce_rust_runtime::portable::BoundedList<i64, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_offsets: ::sce_rust_runtime::portable::BoundedList<i32, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let zone_rows: u32 = match handed.zone_rows {
+            Some(value) => value,
+            None => 0,
+        };
+        let split: bool = match handed.split {
+            Some(value) => value,
+            None => false,
+        };
+        let sched: TodoPeerScheduleRecord = TodoPeerScheduleRecord {
+            zone: 0,
+            start: -1,
+            length: 0,
+            freq: 0,
+            interval: 1,
+            days: 0,
+            count: 0,
+            until: 0,
+            bymonth: 0,
+            mdPos: 0,
+            mdNeg: 0,
+            invalid: 0,
+            op0: 0,
+            op1: 0,
+            op2: 0,
+            op3: 0,
+            op4: 0,
+            op5: 0,
+            op6: 0,
+            on0: 0,
+            on1: 0,
+            on2: 0,
+            on3: 0,
+            on4: 0,
+            on5: 0,
+            on6: 0,
+            spPos: 0,
+            spNeg: 0,
+            wkst: 1,
+            wnPos: 0,
+            wnNeg: 0,
+            yd0: 0,
+            yd1: 0,
+            yd2: 0,
+            yd3: 0,
+            yd4: 0,
+            yd5: 0,
+            ydn0: 0,
+            ydn1: 0,
+            ydn2: 0,
+            ydn3: 0,
+            ydn4: 0,
+            ydn5: 0,
+            gone: 0,
+            flag: 0,
+        };
+        let raw_count: u32 = match handed.raw_count {
+            Some(value) => value,
+            None => 0,
+        };
+        let raw_last: u32 = match handed.raw_last {
+            Some(value) => value,
+            None => 0,
+        };
+        let utc_sec: i64 = match handed.utc_sec {
+            Some(value) => value,
+            None => 0,
+        };
+        let room_values: u32 = match handed.room_values {
+            Some(value) => value,
+            None => 0,
+        };
+        let full: u32 = match handed.full {
+            Some(value) => value,
+            None => 0,
+        };
+        let gone: u32 = match handed.gone {
+            Some(value) => value,
+            None => 0,
+        };
+        let roster: ::sce_rust_runtime::portable::BoundedList<TodoPeerMemberRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let denied: u32 = match handed.denied {
+            Some(value) => value,
+            None => 0,
+        };
+        let forbidden: bool = match handed.forbidden {
+            Some(value) => value,
+            None => false,
+        };
+        let authorized: bool = match handed.authorized {
+            Some(value) => value,
+            None => true,
+        };
+        let taking: ::sce_rust_runtime::portable::BoundedList<TodoPeerOpRecord, 64> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let took: u32 = match handed.took {
+            Some(value) => value,
+            None => 0,
+        };
+        let op: TodoPeerOpRecord = TodoPeerOpRecord {
+            kind: 0,
+            id: 0,
+            field: 0,
+            value: 0,
+            text: ::sce_rust_runtime::portable::sce_text!(96, ""),
+            wallTime: 0,
+            counter: 0,
+            nodeId: 0,
+        };
+
+        self.node = node;
+        self.clock = clock;
+        self.stamp = stamp;
+        self.dot = dot;
+        self.adds = adds;
+        self.one = one;
+        self.entry = entry;
+        self.values = values;
+        self.typed = typed;
+        self.held = held;
+        self.was_live = was_live;
+        self.present = present;
+        self.refusals = refusals;
+        self.agenda = agenda;
+        self.local = local;
+        self.occ = occ;
+        self.agenda_next = agenda_next;
+        self.zone_starts1 = zone_starts1;
+        self.zone_offsets1 = zone_offsets1;
+        self.zone_starts2 = zone_starts2;
+        self.zone_offsets2 = zone_offsets2;
+        self.zone_starts3 = zone_starts3;
+        self.zone_offsets3 = zone_offsets3;
+        self.zone_starts4 = zone_starts4;
+        self.zone_offsets4 = zone_offsets4;
+        self.zone_starts = zone_starts;
+        self.zone_offsets = zone_offsets;
+        self.zone_rows = zone_rows;
+        self.split = split;
+        self.sched = sched;
+        self.raw_count = raw_count;
+        self.raw_last = raw_last;
+        self.utc_sec = utc_sec;
+        self.room_values = room_values;
+        self.full = full;
+        self.gone = gone;
+        self.roster = roster;
+        self.denied = denied;
+        self.forbidden = forbidden;
+        self.authorized = authorized;
+        self.taking = taking;
+        self.took = took;
+        self.op = op;
     }
 
     /// W3C SCXML 5.2: what the published `node` datamodel variable

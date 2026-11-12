@@ -693,6 +693,7 @@ impl StaticRecordStringPolicy {
         let labels: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3> =
             ::sce_rust_runtime::portable::BoundedList::new();
         let errors: u32 = 0;
+
         Self {
             pending_payload: StaticRecordStringPayload::default(),
             last,
@@ -758,15 +759,30 @@ impl StaticRecordStringPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticRecordStringInvokeParams) {
-        if let Some(value) = params.note {
-            self.note = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticRecordStringInvokeParams) {
+        let last: StaticRecordStringLabelledRecord = StaticRecordStringLabelledRecord {
+            sensor: 1,
+            label: ::sce_rust_runtime::portable::sce_text!(8, "a"),
+        };
+        let note: ::sce_rust_runtime::portable::SceString<16> = match handed.note {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "hello"),
+        };
+        let labels: ::sce_rust_runtime::portable::BoundedList<StaticRecordStringLabelledRecord, 3> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let errors: u32 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.last = last;
+        self.note = note;
+        self.labels = labels;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `last` datamodel variable

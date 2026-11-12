@@ -510,6 +510,7 @@ impl StaticBlockEndsListPolicy {
             ::sce_rust_runtime::portable::BoundedList::new();
         let after_append: u8 = 0;
         let errors: u8 = 0;
+
         Self {
             picked,
             after_append,
@@ -573,15 +574,25 @@ impl StaticBlockEndsListPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticBlockEndsListInvokeParams) {
-        if let Some(value) = params.after_append {
-            self.after_append = value;
-        }
-        if let Some(value) = params.errors {
-            self.errors = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticBlockEndsListInvokeParams) {
+        let picked: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let after_append: u8 = match handed.after_append {
+            Some(value) => value,
+            None => 0,
+        };
+        let errors: u8 = match handed.errors {
+            Some(value) => value,
+            None => 0,
+        };
+
+        self.picked = picked;
+        self.after_append = after_append;
+        self.errors = errors;
     }
 
     /// W3C SCXML 5.2: what the published `picked` datamodel variable

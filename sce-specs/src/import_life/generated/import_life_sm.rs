@@ -664,6 +664,7 @@ pub struct ImportLifePolicy {
 impl ImportLifePolicy {
     fn build(session_id: String) -> Self {
         let verdict: ImportLifeVerdictEnum = ImportLifeVerdictEnum::Unanswered;
+
         Self {
             pending_payload: ImportLifePayload::default(),
             verdict,

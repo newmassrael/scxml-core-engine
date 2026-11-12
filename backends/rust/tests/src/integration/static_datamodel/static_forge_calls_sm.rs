@@ -951,6 +951,7 @@ impl StaticForgeCallsPolicy {
         let customer: ::sce_rust_runtime::portable::SceString<16> =
             ::sce_rust_runtime::portable::sce_text!(16, "anna");
         let known: bool = false;
+
         Self {
             gear,
             ratio,
@@ -1025,45 +1026,76 @@ impl StaticForgeCallsPolicy {
         Self::build(session_id)
     }
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: StaticForgeCallsInvokeParams) {
-        if let Some(value) = params.gear {
-            self.gear = value;
-        }
-        if let Some(value) = params.ratio {
-            self.ratio = value;
-        }
-        if let Some(value) = params.code {
-            self.code = value;
-        }
-        if let Some(value) = params.misses {
-            self.misses = value;
-        }
-        if let Some(value) = params.level {
-            self.level = value;
-        }
-        if let Some(value) = params.offset {
-            self.offset = value;
-        }
-        if let Some(value) = params.accepted {
-            self.accepted = value;
-        }
-        if let Some(value) = params.rpm {
-            self.rpm = value;
-        }
-        if let Some(value) = params.limit {
-            self.limit = value;
-        }
-        if let Some(value) = params.highs {
-            self.highs = value;
-        }
-        if let Some(value) = params.customer {
-            self.customer = value;
-        }
-        if let Some(value) = params.known {
-            self.known = value;
-        }
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: StaticForgeCallsInvokeParams) {
+        let gear: u8 = match handed.gear {
+            Some(value) => value,
+            None => 0,
+        };
+        let ratio: i32 = match handed.ratio {
+            Some(value) => value,
+            None => 0,
+        };
+        let code: i32 = match handed.code {
+            Some(value) => value,
+            None => 0,
+        };
+        let misses: u32 = match handed.misses {
+            Some(value) => value,
+            None => 0,
+        };
+        let level: i32 = match handed.level {
+            Some(value) => value,
+            None => 0,
+        };
+        let offset: i32 = match handed.offset {
+            Some(value) => value,
+            None => 0,
+        };
+        let accepted: bool = match handed.accepted {
+            Some(value) => value,
+            None => false,
+        };
+        let rpm: u16 = match handed.rpm {
+            Some(value) => value,
+            None => 0,
+        };
+        let limit: f64 = match handed.limit {
+            Some(value) => value,
+            None => 0.0,
+        };
+        let highs: u32 = match handed.highs {
+            Some(value) => value,
+            None => 0,
+        };
+        let phase: StaticForgeCallsStatusEnum = StaticForgeCallsStatusEnum::Open;
+        let weight: StaticForgeCallsLevelEnum = StaticForgeCallsLevelEnum::Light;
+        let customer: ::sce_rust_runtime::portable::SceString<16> = match handed.customer {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(16, "anna"),
+        };
+        let known: bool = match handed.known {
+            Some(value) => value,
+            None => false,
+        };
+
+        self.gear = gear;
+        self.ratio = ratio;
+        self.code = code;
+        self.misses = misses;
+        self.level = level;
+        self.offset = offset;
+        self.accepted = accepted;
+        self.rpm = rpm;
+        self.limit = limit;
+        self.highs = highs;
+        self.phase = phase;
+        self.weight = weight;
+        self.customer = customer;
+        self.known = known;
     }
 
     /// W3C SCXML 5.2: what the published `gear` datamodel variable
