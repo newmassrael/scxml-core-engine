@@ -462,9 +462,9 @@ public final class StaticSchemaPendingPolicy: InvocablePolicy {
         switch event {
         case .signalRaised:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"urgent\":true}")
-            let sceField0 = try { () throws -> StaticSchemaPendingSignalLevelEnum in let name = try fields.text("level"); guard let variant = StaticSchemaPendingSignalLevelEnum(declaredName: name) else { throw try fields.field("level").unknownVariant(name, alias: "SignalLevel") }; return variant }()
-            let sceField1 = try fields.unsigned("count")
-            let sceField2 = try fields.truth("urgent")
+            let sceField0: StaticSchemaPendingSignalLevelEnum = try { () throws -> StaticSchemaPendingSignalLevelEnum in let name = try fields.text("level"); guard let variant = StaticSchemaPendingSignalLevelEnum(declaredName: name) else { throw try fields.field("level").unknownVariant(name, alias: "SignalLevel") }; return variant }()
+            let sceField1: UInt16 = try fields.unsigned("count")
+            let sceField2: Bool = try fields.truth("urgent")
             let payload = StaticSchemaPendingSignalRaisedPayload(level: sceField0, count: sceField1, urgent: sceField2)
             pendingSignalRaisedPayload = payload
             pendingPayloadTag = .signalRaised

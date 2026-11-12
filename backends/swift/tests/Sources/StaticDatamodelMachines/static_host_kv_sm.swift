@@ -643,57 +643,57 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeDel:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.truth("existed")
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("existed")
             let payload = StaticHostKvDoneInvokeDelPayload(error: sceField0, existed: sceField1)
             pendingDoneInvokeDelPayload = payload
             pendingPayloadTag = .doneInvokeDel
         case .doneInvokeGet:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.truth("found")
-            let sceField2 = try fields.text("value", bound: 4096)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("found")
+            let sceField2: String = try fields.text("value", bound: 4096)
             let payload = StaticHostKvDoneInvokeGetPayload(error: sceField0, found: sceField1, value: sceField2)
             pendingDoneInvokeGetPayload = payload
             pendingPayloadTag = .doneInvokeGet
         case .doneInvokePut:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.truth("replaced")
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("replaced")
             let payload = StaticHostKvDoneInvokePutPayload(error: sceField0, replaced: sceField1)
             pendingDoneInvokePutPayload = payload
             pendingPayloadTag = .doneInvokePut
         case .doneInvokeWalk:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.truth("found")
-            let sceField2 = try fields.text("key", bound: 256)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("found")
+            let sceField2: String = try fields.text("key", bound: 256)
             let payload = StaticHostKvDoneInvokeWalkPayload(error: sceField0, found: sceField1, key: sceField2)
             pendingDoneInvokeWalkPayload = payload
             pendingPayloadTag = .doneInvokeWalk
         case .hostKvDeleteRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("key", bound: 256)
+            let sceField0: String = try fields.text("key", bound: 256)
             let payload = StaticHostKvHostKvDeleteRequestPayload(key: sceField0)
             pendingHostKvDeleteRequestPayload = payload
             pendingPayloadTag = .hostKvDeleteRequest
         case .hostKvGetRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("key", bound: 256)
+            let sceField0: String = try fields.text("key", bound: 256)
             let payload = StaticHostKvHostKvGetRequestPayload(key: sceField0)
             pendingHostKvGetRequestPayload = payload
             pendingPayloadTag = .hostKvGetRequest
         case .hostKvNextKeyRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("after", bound: 256)
-            let sceField1 = try fields.text("prefix", bound: 256)
+            let sceField0: String = try fields.text("after", bound: 256)
+            let sceField1: String = try fields.text("prefix", bound: 256)
             let payload = StaticHostKvHostKvNextKeyRequestPayload(after: sceField0, prefix: sceField1)
             pendingHostKvNextKeyRequestPayload = payload
             pendingPayloadTag = .hostKvNextKeyRequest
         case .hostKvPutRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("key", bound: 256)
-            let sceField1 = try fields.text("value", bound: 4096)
+            let sceField0: String = try fields.text("key", bound: 256)
+            let sceField1: String = try fields.text("value", bound: 4096)
             let payload = StaticHostKvHostKvPutRequestPayload(key: sceField0, value: sceField1)
             pendingHostKvPutRequestPayload = payload
             pendingPayloadTag = .hostKvPutRequest

@@ -457,16 +457,16 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
         switch event {
         case .echo:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("total")
-            let sceField1 = try fields.truth("ok")
-            let sceField2 = try fields.text("tag", bound: 32)
+            let sceField0: UInt32 = try fields.unsigned("total")
+            let sceField1: Bool = try fields.truth("ok")
+            let sceField2: String = try fields.text("tag", bound: 32)
             let payload = StaticSendParamsEchoPayload(total: sceField0, ok: sceField1, tag: sceField2)
             pendingEchoPayload = payload
             pendingPayloadTag = .echo
         case .partial:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("total")
-            let sceField1 = try fields.unsigned("part")
+            let sceField0: UInt32 = try fields.unsigned("total")
+            let sceField1: UInt8 = try fields.unsigned("part")
             let payload = StaticSendParamsPartialPayload(total: sceField0, part: sceField1)
             pendingPartialPayload = payload
             pendingPayloadTag = .partial

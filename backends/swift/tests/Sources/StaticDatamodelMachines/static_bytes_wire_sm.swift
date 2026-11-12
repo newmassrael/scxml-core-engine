@@ -426,15 +426,15 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
         switch event {
         case .framedRelayed:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("sensor")
-            let sceField1 = try fields.bytes("frame", capacity: 8)
+            let sceField0: UInt8 = try fields.unsigned("sensor")
+            let sceField1: [UInt8] = try fields.bytes("frame", capacity: 8)
             let payload = StaticBytesWireFramedRelayedPayload(sensor: sceField0, frame: sceField1)
             pendingFramedRelayedPayload = payload
             pendingPayloadTag = .framedRelayed
         case .framedTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("sensor")
-            let sceField1 = try fields.bytes("frame", capacity: 8)
+            let sceField0: UInt8 = try fields.unsigned("sensor")
+            let sceField1: [UInt8] = try fields.bytes("frame", capacity: 8)
             let payload = StaticBytesWireFramedTakenPayload(sensor: sceField0, frame: sceField1)
             pendingFramedTakenPayload = payload
             pendingPayloadTag = .framedTaken

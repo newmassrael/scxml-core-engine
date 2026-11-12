@@ -469,19 +469,19 @@ public final class StaticHostHttpPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeFetch:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.unsigned("status")
-            let sceField2 = try fields.text("headers", bound: 4096)
-            let sceField3 = try fields.text("body", bound: 16384)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: UInt16 = try fields.unsigned("status")
+            let sceField2: String = try fields.text("headers", bound: 4096)
+            let sceField3: String = try fields.text("body", bound: 16384)
             let payload = StaticHostHttpDoneInvokeFetchPayload(error: sceField0, status: sceField1, headers: sceField2, body: sceField3)
             pendingDoneInvokeFetchPayload = payload
             pendingPayloadTag = .doneInvokeFetch
         case .hostHttpFetchRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("method", bound: 8)
-            let sceField1 = try fields.text("url", bound: 2048)
-            let sceField2 = try fields.text("headers", bound: 2048)
-            let sceField3 = try fields.text("body", bound: 16384)
+            let sceField0: String = try fields.text("method", bound: 8)
+            let sceField1: String = try fields.text("url", bound: 2048)
+            let sceField2: String = try fields.text("headers", bound: 2048)
+            let sceField3: String = try fields.text("body", bound: 16384)
             let payload = StaticHostHttpHostHttpFetchRequestPayload(method: sceField0, url: sceField1, headers: sceField2, body: sceField3)
             pendingHostHttpFetchRequestPayload = payload
             pendingPayloadTag = .hostHttpFetchRequest

@@ -460,9 +460,9 @@ public final class StaticSchemaRevisionPolicy: InvocablePolicy {
         switch event {
         case .readingRevised:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"layout\":\"week\",\"urgent\":true}")
-            let sceField0 = try fields.unsigned("level")
-            let sceField1 = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField2 = try fields.truth("urgent")
+            let sceField0: UInt8 = try fields.unsigned("level")
+            let sceField1: StaticSchemaRevisionViewModeEnum = try { () throws -> StaticSchemaRevisionViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSchemaRevisionViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField2: Bool = try fields.truth("urgent")
             let payload = StaticSchemaRevisionReadingRevisedPayload(level: sceField0, layout: sceField1, urgent: sceField2)
             pendingReadingRevisedPayload = payload
             pendingPayloadTag = .readingRevised

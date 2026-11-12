@@ -529,12 +529,12 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
         switch event {
         case .recordListRefused:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\",\"withdrawn\":false}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
-            let sceField3 = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
-            let sceField4 = try fields.unsigned64("command")
-            let sceField5 = try fields.truth("withdrawn")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: StaticPayloadEnumUnimportedRecordCommandEnum = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            let sceField3: StaticPayloadEnumUnimportedWhyEnum = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
+            let sceField4: UInt64 = try fields.unsigned64("command")
+            let sceField5: Bool = try fields.truth("withdrawn")
             let payload = StaticPayloadEnumUnimportedRecordListRefusedPayload(id: sceField0, field: sceField1, kind: sceField2, reason: sceField3, command: sceField4, withdrawn: sceField5)
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused

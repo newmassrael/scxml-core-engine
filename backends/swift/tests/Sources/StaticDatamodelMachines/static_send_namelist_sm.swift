@@ -459,8 +459,8 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField1 = try fields.unsigned("zoom")
+            let sceField0: StaticSendNamelistViewModeEnum = try { () throws -> StaticSendNamelistViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendNamelistViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1: UInt8 = try fields.unsigned("zoom")
             let payload = StaticSendNamelistViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

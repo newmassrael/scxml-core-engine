@@ -970,25 +970,25 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeGen:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("text", bound: 4096)
-            let sceField2 = try fields.truth("constrained")
-            let sceField3 = try fields.text("model", bound: 128)
-            let sceField4 = try fields.unsigned("prompt_tokens")
-            let sceField5 = try fields.unsigned("answer_tokens")
-            let sceField6 = try fields.text("finish", bound: 16)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("text", bound: 4096)
+            let sceField2: Bool = try fields.truth("constrained")
+            let sceField3: String = try fields.text("model", bound: 128)
+            let sceField4: UInt32 = try fields.unsigned("prompt_tokens")
+            let sceField5: UInt32 = try fields.unsigned("answer_tokens")
+            let sceField6: String = try fields.text("finish", bound: 16)
             let payload = StaticModelHarnessDoneInvokeGenPayload(error: sceField0, text: sceField1, constrained: sceField2, model: sceField3, prompt_tokens: sceField4, answer_tokens: sceField5, finish: sceField6)
             pendingDoneInvokeGenPayload = payload
             pendingPayloadTag = .doneInvokeGen
         case .harnessOffer:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
+            let sceField0: UInt32 = try fields.unsigned("id")
             let payload = StaticModelHarnessHarnessOfferPayload(id: sceField0)
             pendingHarnessOfferPayload = payload
             pendingPayloadTag = .harnessOffer
         case .harnessStart:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("request", bound: 512)
+            let sceField0: String = try fields.text("request", bound: 512)
             let payload = StaticModelHarnessHarnessStartPayload(request: sceField0)
             pendingHarnessStartPayload = payload
             pendingPayloadTag = .harnessStart

@@ -405,9 +405,9 @@ public final class StaticOptionalWidenedPolicy: InvocablePolicy {
         switch event {
         case .dueWidened:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"remind\":null}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.optional("due") { fields in try fields.signed64("due") }
-            let sceField2 = try fields.optional("remind") { fields in try fields.signed64("remind") }
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int64? = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField2: Int64? = try fields.optional("remind") { fields in try fields.signed64("remind") }
             let payload = StaticOptionalWidenedDueWidenedPayload(id: sceField0, due: sceField1, remind: sceField2)
             pendingDueWidenedPayload = payload
             pendingPayloadTag = .dueWidened

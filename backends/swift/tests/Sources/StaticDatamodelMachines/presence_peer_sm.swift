@@ -577,44 +577,44 @@ public final class PresencePeerPolicy: InvocablePolicy {
         switch event {
         case .presenceAlive:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("client")
-            let sceField1 = try fields.signed64("at")
+            let sceField0: UInt32 = try fields.unsigned("client")
+            let sceField1: Int64 = try fields.signed64("at")
             let payload = PresencePeerPresenceAlivePayload(client: sceField0, at: sceField1)
             pendingPresenceAlivePayload = payload
             pendingPayloadTag = .presenceAlive
         case .presenceBeat:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.signed64("now")
+            let sceField0: Int64 = try fields.signed64("now")
             let payload = PresencePeerPresenceBeatPayload(now: sceField0)
             pendingPresenceBeatPayload = payload
             pendingPayloadTag = .presenceBeat
         case .presenceExpire:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("gen")
+            let sceField0: UInt32 = try fields.unsigned("gen")
             let payload = PresencePeerPresenceExpirePayload(gen: sceField0)
             pendingPresenceExpirePayload = payload
             pendingPayloadTag = .presenceExpire
         case .presenceJoin:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("node")
-            let sceField1 = try fields.truth("hub")
-            let sceField2 = try fields.unsigned("ttl")
-            let sceField3 = try fields.unsigned("slack")
+            let sceField0: UInt32 = try fields.unsigned("node")
+            let sceField1: Bool = try fields.truth("hub")
+            let sceField2: UInt32 = try fields.unsigned("ttl")
+            let sceField3: UInt32 = try fields.unsigned("slack")
             let payload = PresencePeerPresenceJoinPayload(node: sceField0, hub: sceField1, ttl: sceField2, slack: sceField3)
             pendingPresenceJoinPayload = payload
             pendingPayloadTag = .presenceJoin
         case .presenceLeft:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("client")
-            let sceField1 = try fields.signed64("last")
+            let sceField0: UInt32 = try fields.unsigned("client")
+            let sceField1: Int64 = try fields.signed64("last")
             let payload = PresencePeerPresenceLeftPayload(client: sceField0, last: sceField1)
             pendingPresenceLeftPayload = payload
             pendingPayloadTag = .presenceLeft
         case .presenceSeen:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("client")
-            let sceField1 = try fields.signed64("last")
-            let sceField2 = try fields.unsigned("gen")
+            let sceField0: UInt32 = try fields.unsigned("client")
+            let sceField1: Int64 = try fields.signed64("last")
+            let sceField2: UInt32 = try fields.unsigned("gen")
             let payload = PresencePeerPresenceSeenPayload(client: sceField0, last: sceField1, gen: sceField2)
             pendingPresenceSeenPayload = payload
             pendingPayloadTag = .presenceSeen

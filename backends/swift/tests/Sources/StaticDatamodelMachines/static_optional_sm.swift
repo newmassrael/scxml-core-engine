@@ -708,18 +708,18 @@ public final class StaticOptionalPolicy: InvocablePolicy {
         switch event {
         case .dueSent:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.optional("due") { fields in try fields.signed64("due") }
-            let sceField1 = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
-            let sceField2 = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let sceField0: Int64? = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField1: String? = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
+            let sceField2: StaticOptionalStatusEnum? = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
             let payload = StaticOptionalDueSentPayload(due: sceField0, title: sceField1, status: sceField2)
             pendingDueSentPayload = payload
             pendingPayloadTag = .dueSent
         case .dueSet:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.optional("due") { fields in try fields.signed64("due") }
-            let sceField2 = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
-            let sceField3 = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int64? = try fields.optional("due") { fields in try fields.signed64("due") }
+            let sceField2: String? = try fields.optional("title") { fields in try fields.text("title", bound: 16) }
+            let sceField3: StaticOptionalStatusEnum? = try fields.optional("status") { fields in try { () throws -> StaticOptionalStatusEnum in let name = try fields.text("status"); guard let variant = StaticOptionalStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }() }
             let payload = StaticOptionalDueSetPayload(id: sceField0, due: sceField1, title: sceField2, status: sceField3)
             pendingDueSetPayload = payload
             pendingPayloadTag = .dueSet
@@ -1104,7 +1104,7 @@ public final class StaticOptionalPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.coalesce(self.vDue, { (try Checked.mul(self.vHuge, self.vHuge)) })); self.vDays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try Checked.coalesce(self.vDue, { () throws(AlgorithmError) -> Int64 in (try Checked.mul(self.vHuge, self.vHuge)) })); self.vDays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalEvent.errorExecution, message: "<assign location='days'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

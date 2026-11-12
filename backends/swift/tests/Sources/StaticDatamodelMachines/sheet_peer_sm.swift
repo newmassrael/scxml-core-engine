@@ -945,106 +945,106 @@ public final class SheetPeerPolicy: InvocablePolicy {
         switch event {
         case .sheetAddCol:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("after")
+            let sceField0: UInt64 = try fields.unsigned64("after")
             let payload = SheetPeerSheetAddColPayload(after: sceField0)
             pendingSheetAddColPayload = payload
             pendingPayloadTag = .sheetAddCol
         case .sheetAddRow:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("after")
+            let sceField0: UInt64 = try fields.unsigned64("after")
             let payload = SheetPeerSheetAddRowPayload(after: sceField0)
             pendingSheetAddRowPayload = payload
             pendingPayloadTag = .sheetAddRow
         case .sheetCell:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("row")
-            let sceField1 = try fields.unsigned64("col")
-            let sceField2 = try fields.signed64("value")
-            let sceField3 = try fields.signed64("wallTime")
-            let sceField4 = try fields.unsigned("counter")
-            let sceField5 = try fields.unsigned64("nodeId")
-            let sceField6 = try fields.unsigned("op")
-            let sceField7 = try fields.truth("aRef")
-            let sceField8 = try fields.unsigned64("aRow")
-            let sceField9 = try fields.unsigned64("aCol")
-            let sceField10 = try fields.signed64("aVal")
-            let sceField11 = try fields.truth("bRef")
-            let sceField12 = try fields.unsigned64("bRow")
-            let sceField13 = try fields.unsigned64("bCol")
-            let sceField14 = try fields.signed64("bVal")
+            let sceField0: UInt64 = try fields.unsigned64("row")
+            let sceField1: UInt64 = try fields.unsigned64("col")
+            let sceField2: Int64 = try fields.signed64("value")
+            let sceField3: Int64 = try fields.signed64("wallTime")
+            let sceField4: UInt32 = try fields.unsigned("counter")
+            let sceField5: UInt64 = try fields.unsigned64("nodeId")
+            let sceField6: UInt8 = try fields.unsigned("op")
+            let sceField7: Bool = try fields.truth("aRef")
+            let sceField8: UInt64 = try fields.unsigned64("aRow")
+            let sceField9: UInt64 = try fields.unsigned64("aCol")
+            let sceField10: Int64 = try fields.signed64("aVal")
+            let sceField11: Bool = try fields.truth("bRef")
+            let sceField12: UInt64 = try fields.unsigned64("bRow")
+            let sceField13: UInt64 = try fields.unsigned64("bCol")
+            let sceField14: Int64 = try fields.signed64("bVal")
             let payload = SheetPeerSheetCellPayload(row: sceField0, col: sceField1, value: sceField2, wallTime: sceField3, counter: sceField4, nodeId: sceField5, op: sceField6, aRef: sceField7, aRow: sceField8, aCol: sceField9, aVal: sceField10, bRef: sceField11, bRow: sceField12, bCol: sceField13, bVal: sceField14)
             pendingSheetCellPayload = payload
             pendingPayloadTag = .sheetCell
         case .sheetCol:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("key")
-            let sceField1 = try fields.unsigned64("after")
+            let sceField0: UInt64 = try fields.unsigned64("key")
+            let sceField1: UInt64 = try fields.unsigned64("after")
             let payload = SheetPeerSheetColPayload(key: sceField0, after: sceField1)
             pendingSheetColPayload = payload
             pendingPayloadTag = .sheetCol
         case .sheetDropCol:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("col")
+            let sceField0: UInt64 = try fields.unsigned64("col")
             let payload = SheetPeerSheetDropColPayload(col: sceField0)
             pendingSheetDropColPayload = payload
             pendingPayloadTag = .sheetDropCol
         case .sheetDropRow:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("row")
+            let sceField0: UInt64 = try fields.unsigned64("row")
             let payload = SheetPeerSheetDropRowPayload(row: sceField0)
             pendingSheetDropRowPayload = payload
             pendingPayloadTag = .sheetDropRow
         case .sheetEdit:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("row")
-            let sceField1 = try fields.unsigned64("col")
-            let sceField2 = try fields.signed64("value")
-            let sceField3 = try fields.signed64("now")
+            let sceField0: UInt64 = try fields.unsigned64("row")
+            let sceField1: UInt64 = try fields.unsigned64("col")
+            let sceField2: Int64 = try fields.signed64("value")
+            let sceField3: Int64 = try fields.signed64("now")
             let payload = SheetPeerSheetEditPayload(row: sceField0, col: sceField1, value: sceField2, now: sceField3)
             pendingSheetEditPayload = payload
             pendingPayloadTag = .sheetEdit
         case .sheetFormula:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("row")
-            let sceField1 = try fields.unsigned64("col")
-            let sceField2 = try fields.unsigned("op")
-            let sceField3 = try fields.truth("aRef")
-            let sceField4 = try fields.unsigned64("aRow")
-            let sceField5 = try fields.unsigned64("aCol")
-            let sceField6 = try fields.signed64("aVal")
-            let sceField7 = try fields.truth("bRef")
-            let sceField8 = try fields.unsigned64("bRow")
-            let sceField9 = try fields.unsigned64("bCol")
-            let sceField10 = try fields.signed64("bVal")
-            let sceField11 = try fields.signed64("now")
+            let sceField0: UInt64 = try fields.unsigned64("row")
+            let sceField1: UInt64 = try fields.unsigned64("col")
+            let sceField2: UInt8 = try fields.unsigned("op")
+            let sceField3: Bool = try fields.truth("aRef")
+            let sceField4: UInt64 = try fields.unsigned64("aRow")
+            let sceField5: UInt64 = try fields.unsigned64("aCol")
+            let sceField6: Int64 = try fields.signed64("aVal")
+            let sceField7: Bool = try fields.truth("bRef")
+            let sceField8: UInt64 = try fields.unsigned64("bRow")
+            let sceField9: UInt64 = try fields.unsigned64("bCol")
+            let sceField10: Int64 = try fields.signed64("bVal")
+            let sceField11: Int64 = try fields.signed64("now")
             let payload = SheetPeerSheetFormulaPayload(row: sceField0, col: sceField1, op: sceField2, aRef: sceField3, aRow: sceField4, aCol: sceField5, aVal: sceField6, bRef: sceField7, bRow: sceField8, bCol: sceField9, bVal: sceField10, now: sceField11)
             pendingSheetFormulaPayload = payload
             pendingPayloadTag = .sheetFormula
         case .sheetGone:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("key")
-            let sceField1 = try fields.unsigned64("by")
+            let sceField0: UInt64 = try fields.unsigned64("key")
+            let sceField1: UInt64 = try fields.unsigned64("by")
             let payload = SheetPeerSheetGonePayload(key: sceField0, by: sceField1)
             pendingSheetGonePayload = payload
             pendingPayloadTag = .sheetGone
         case .sheetGoneCol:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("key")
-            let sceField1 = try fields.unsigned64("by")
+            let sceField0: UInt64 = try fields.unsigned64("key")
+            let sceField1: UInt64 = try fields.unsigned64("by")
             let payload = SheetPeerSheetGoneColPayload(key: sceField0, by: sceField1)
             pendingSheetGoneColPayload = payload
             pendingPayloadTag = .sheetGoneCol
         case .sheetJoin:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("node")
-            let sceField1 = try fields.truth("hub")
+            let sceField0: UInt64 = try fields.unsigned64("node")
+            let sceField1: Bool = try fields.truth("hub")
             let payload = SheetPeerSheetJoinPayload(node: sceField0, hub: sceField1)
             pendingSheetJoinPayload = payload
             pendingPayloadTag = .sheetJoin
         case .sheetRow:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("key")
-            let sceField1 = try fields.unsigned64("after")
+            let sceField0: UInt64 = try fields.unsigned64("key")
+            let sceField1: UInt64 = try fields.unsigned64("after")
             let payload = SheetPeerSheetRowPayload(key: sceField0, after: sceField1)
             pendingSheetRowPayload = payload
             pendingPayloadTag = .sheetRow
@@ -2194,7 +2194,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 }
 
                 var ifCondFailed6 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_10"
                 do {
@@ -2247,7 +2247,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
                 var ifCondFailed7 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetRowPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_11"
                 do {
@@ -2656,7 +2656,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
                 }
 
                 var ifCondFailed12 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 1 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_20"
                 do {
@@ -2709,7 +2709,7 @@ public final class SheetPeerPolicy: InvocablePolicy {
 
 
                 var ifCondFailed13 = false
-                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(self.vHub, { () throws(AlgorithmError) -> Bool in (try Checked.rem(self.pendingSheetColPayload.key, 256)) != 2 })) } catch { engine.raise(EventWithMetadata.platformError(SheetPeerEvent.errorExecution, message: "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false } }()) {
 
                 // W3C SCXML 6.2: send id="__send_21"
                 do {

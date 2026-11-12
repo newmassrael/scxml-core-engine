@@ -685,7 +685,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
 
 
                 var ifCondFailed3 = false
-                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: row.tags.count) > 0, { (try Checked.at(row.tags, 0)).utf8.elementsEqual("ab".utf8) })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: row.tags.count) > 0, { () throws(AlgorithmError) -> Bool in (try Checked.at(row.tags, 0)).utf8.elementsEqual("ab".utf8) })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false } }()) {
 
 
                 if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstTagsAb, 1)); self.vFirstTagsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {

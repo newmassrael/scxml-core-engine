@@ -395,9 +395,9 @@ public final class StaticPayloadPolicy: InvocablePolicy {
         switch event {
         case .dayPicked:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("year")
-            let sceField1 = try fields.unsigned("month")
-            let sceField2 = try fields.unsigned("dayOfMonth")
+            let sceField0: UInt16 = try fields.unsigned("year")
+            let sceField1: UInt8 = try fields.unsigned("month")
+            let sceField2: UInt8 = try fields.unsigned("dayOfMonth")
             let payload = StaticPayloadDayPickedPayload(year: sceField0, month: sceField1, dayOfMonth: sceField2)
             pendingDayPickedPayload = payload
             pendingPayloadTag = .dayPicked

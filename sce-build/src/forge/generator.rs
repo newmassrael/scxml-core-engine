@@ -8482,8 +8482,11 @@ fn swift_entry_payload(
         field_lines.push_str(&format!("    var {}: {ty}\n", f.id));
         // Each field into a local of its own, and the payload built whole from
         // them once every one is read (docs/adr/0098, section 4).
+        // Each local names its field's type: a reader generic over the width the
+        // schema declares takes it from the binding, since the initializer that
+        // names the field reads the local only afterwards.
         reads.push_str(&format!(
-            "            let sceField{index} = {}\n",
+            "            let sceField{index}: {ty} = {}\n",
             swift_payload_reader(f, static_enums)
         ));
         fields_read.push(format!("{}: sceField{index}", f.id));
@@ -8580,6 +8583,8 @@ fn swift_composed_payload(
     // the type checker would have to solve together; the payload is built whole by
     // the initializer of every member once all are read, no member holding a value
     // nobody wrote (docs/adr/0098, section 4).
+    // Each reader is a closure whose signature names the type it returns, so
+    // the local takes its type from the reader.
     let locals: String = readers
         .iter()
         .enumerate()

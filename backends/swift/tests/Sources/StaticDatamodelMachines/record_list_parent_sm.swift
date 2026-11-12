@@ -1036,116 +1036,116 @@ public final class RecordListParentPolicy: InvocablePolicy {
             pendingPayloadTag = .recordListChange
         case .recordListClear:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try fields.signed64("now")
-            let sceField3 = try fields.truth("more")
-            let sceField4 = try fields.unsigned64("command")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: Int64 = try fields.signed64("now")
+            let sceField3: Bool = try fields.truth("more")
+            let sceField4: UInt64 = try fields.unsigned64("command")
             let payload = RecordListParentRecordListClearPayload(id: sceField0, field: sceField1, now: sceField2, more: sceField3, command: sceField4)
             pendingRecordListClearPayload = payload
             pendingPayloadTag = .recordListClear
         case .recordListConfirm:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.signed64("wallTime")
-            let sceField1 = try fields.unsigned("counter")
-            let sceField2 = try fields.unsigned64("command")
+            let sceField0: Int64 = try fields.signed64("wallTime")
+            let sceField1: UInt32 = try fields.unsigned("counter")
+            let sceField2: UInt64 = try fields.unsigned64("command")
             let payload = RecordListParentRecordListConfirmPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListConfirmPayload = payload
             pendingPayloadTag = .recordListConfirm
         case .recordListEdit:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"more\":false,\"command\":\"0\"}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try fields.signed64("value")
-            let sceField3 = try fields.text("text", bound: 32)
-            let sceField4 = try fields.signed64("now")
-            let sceField5 = try fields.truth("more")
-            let sceField6 = try fields.unsigned64("command")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: Int64 = try fields.signed64("value")
+            let sceField3: String = try fields.text("text", bound: 32)
+            let sceField4: Int64 = try fields.signed64("now")
+            let sceField5: Bool = try fields.truth("more")
+            let sceField6: UInt64 = try fields.unsigned64("command")
             let payload = RecordListParentRecordListEditPayload(id: sceField0, field: sceField1, value: sceField2, text: sceField3, now: sceField4, more: sceField5, command: sceField6)
             pendingRecordListEditPayload = payload
             pendingPayloadTag = .recordListEdit
         case .recordListJoin:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"journal\":true}")
-            let sceField0 = try fields.unsigned64("node")
-            let sceField1 = try fields.truth("journal")
+            let sceField0: UInt64 = try fields.unsigned64("node")
+            let sceField1: Bool = try fields.truth("journal")
             let payload = RecordListParentRecordListJoinPayload(node: sceField0, journal: sceField1)
             pendingRecordListJoinPayload = payload
             pendingPayloadTag = .recordListJoin
         case .recordListRefused:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\",\"withdrawn\":false}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
-            let sceField3 = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }()
-            let sceField4 = try fields.unsigned64("command")
-            let sceField5 = try fields.truth("withdrawn")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: RecordListParentRecordCommandEnum = try { () throws -> RecordListParentRecordCommandEnum in let name = try fields.text("kind"); guard let variant = RecordListParentRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
+            let sceField3: RecordListParentRecordRefusalEnum = try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }()
+            let sceField4: UInt64 = try fields.unsigned64("command")
+            let sceField5: Bool = try fields.truth("withdrawn")
             let payload = RecordListParentRecordListRefusedPayload(id: sceField0, field: sceField1, kind: sceField2, reason: sceField3, command: sceField4, withdrawn: sceField5)
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         case .recordListRegister:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try fields.unsigned("count")
-            let sceField3 = try fields.signed64("value")
-            let sceField4 = try fields.text("text", bound: 96)
-            let sceField5 = try fields.signed64("wallTime")
-            let sceField6 = try fields.unsigned("counter")
-            let sceField7 = try fields.unsigned64("nodeId")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: UInt32 = try fields.unsigned("count")
+            let sceField3: Int64 = try fields.signed64("value")
+            let sceField4: String = try fields.text("text", bound: 96)
+            let sceField5: Int64 = try fields.signed64("wallTime")
+            let sceField6: UInt32 = try fields.unsigned("counter")
+            let sceField7: UInt64 = try fields.unsigned64("nodeId")
             let payload = RecordListParentRecordListRegisterPayload(id: sceField0, field: sceField1, count: sceField2, value: sceField3, text: sceField4, wallTime: sceField5, counter: sceField6, nodeId: sceField7)
             pendingRecordListRegisterPayload = payload
             pendingPayloadTag = .recordListRegister
         case .recordListRetire:
             let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\"}")
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.signed64("now")
-            let sceField2 = try fields.truth("more")
-            let sceField3 = try fields.unsigned64("command")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int64 = try fields.signed64("now")
+            let sceField2: Bool = try fields.truth("more")
+            let sceField3: UInt64 = try fields.unsigned64("command")
             let payload = RecordListParentRecordListRetirePayload(id: sceField0, now: sceField1, more: sceField2, command: sceField3)
             pendingRecordListRetirePayload = payload
             pendingPayloadTag = .recordListRetire
         case .recordListRole:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("node")
-            let sceField1 = try fields.unsigned("role")
+            let sceField0: UInt64 = try fields.unsigned64("node")
+            let sceField1: UInt8 = try fields.unsigned("role")
             let payload = RecordListParentRecordListRolePayload(node: sceField0, role: sceField1)
             pendingRecordListRolePayload = payload
             pendingPayloadTag = .recordListRole
         case .recordListRoom:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("values")
-            let sceField1 = try fields.unsigned("history")
-            let sceField2 = try fields.unsigned("digest")
+            let sceField0: UInt32 = try fields.unsigned("values")
+            let sceField1: UInt32 = try fields.unsigned("history")
+            let sceField2: UInt32 = try fields.unsigned("digest")
             let payload = RecordListParentRecordListRoomPayload(values: sceField0, history: sceField1, digest: sceField2)
             pendingRecordListRoomPayload = payload
             pendingPayloadTag = .recordListRoom
         case .recordListValue:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try fields.unsigned("ordinal")
-            let sceField3 = try fields.signed64("value")
-            let sceField4 = try fields.text("text", bound: 96)
-            let sceField5 = try fields.signed64("wallTime")
-            let sceField6 = try fields.unsigned("counter")
-            let sceField7 = try fields.unsigned64("nodeId")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: UInt32 = try fields.unsigned("ordinal")
+            let sceField3: Int64 = try fields.signed64("value")
+            let sceField4: String = try fields.text("text", bound: 96)
+            let sceField5: Int64 = try fields.signed64("wallTime")
+            let sceField6: UInt32 = try fields.unsigned("counter")
+            let sceField7: UInt64 = try fields.unsigned64("nodeId")
             let payload = RecordListParentRecordListValuePayload(id: sceField0, field: sceField1, ordinal: sceField2, value: sceField3, text: sceField4, wallTime: sceField5, counter: sceField6, nodeId: sceField7)
             pendingRecordListValuePayload = payload
             pendingPayloadTag = .recordListValue
         case .recordListVerdict:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.signed64("wallTime")
-            let sceField1 = try fields.unsigned("counter")
-            let sceField2 = try { () throws -> RecordListParentRecordOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListParentRecordOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "record_outcome") }; return variant }()
-            let sceField3 = try fields.optional("reason") { fields in try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }() }
+            let sceField0: Int64 = try fields.signed64("wallTime")
+            let sceField1: UInt32 = try fields.unsigned("counter")
+            let sceField2: RecordListParentRecordOutcomeEnum = try { () throws -> RecordListParentRecordOutcomeEnum in let name = try fields.text("outcome"); guard let variant = RecordListParentRecordOutcomeEnum(declaredName: name) else { throw try fields.field("outcome").unknownVariant(name, alias: "record_outcome") }; return variant }()
+            let sceField3: RecordListParentRecordRefusalEnum? = try fields.optional("reason") { fields in try { () throws -> RecordListParentRecordRefusalEnum in let name = try fields.text("reason"); guard let variant = RecordListParentRecordRefusalEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "record_refusal") }; return variant }() }
             let payload = RecordListParentRecordListVerdictPayload(wallTime: sceField0, counter: sceField1, outcome: sceField2, reason: sceField3)
             pendingRecordListVerdictPayload = payload
             pendingPayloadTag = .recordListVerdict
         case .recordListWithdraw:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.signed64("wallTime")
-            let sceField1 = try fields.unsigned("counter")
-            let sceField2 = try fields.unsigned64("command")
+            let sceField0: Int64 = try fields.signed64("wallTime")
+            let sceField1: UInt32 = try fields.unsigned("counter")
+            let sceField2: UInt64 = try fields.unsigned64("command")
             let payload = RecordListParentRecordListWithdrawPayload(wallTime: sceField0, counter: sceField1, command: sceField2)
             pendingRecordListWithdrawPayload = payload
             pendingPayloadTag = .recordListWithdraw

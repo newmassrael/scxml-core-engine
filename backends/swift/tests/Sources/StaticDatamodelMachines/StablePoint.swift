@@ -27,7 +27,7 @@ public enum StablePoint {
         var i: UInt32 = 0
         while i < UInt32(truncatingIfNeeded: cursors.count) {
             if (try Checked.sub(now, (try Checked.at(lastSeen, i)))) <= maxIdle {
-                if (try Checked.or(!taking, { (try Checked.at(cursors, i)) < stable })) {
+                if (try Checked.or(!taking, { () throws(AlgorithmError) -> Bool in (try Checked.at(cursors, i)) < stable })) {
                     stable = (try Checked.at(cursors, i))
                 }
                 taking = true

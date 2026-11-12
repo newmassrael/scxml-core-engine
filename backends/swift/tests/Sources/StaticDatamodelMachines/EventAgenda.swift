@@ -61,7 +61,7 @@ public enum EventAgenda {
                 if freq == 3 || freq == 4 {
                     let pty: Int64 = freq == 3 ? (try Checked.div((try Checked.add(months0, (try Checked.mul(p, every)))), 12)) : (try Checked.add(y0, (try Checked.mul(p, every))))
                     let ptm: Int64 = freq == 3 ? (try Checked.add((try Checked.rem((try Checked.add(months0, (try Checked.mul(p, every)))), 12)), 1)) : 1
-                    let pleap: Bool = (try Checked.or((try Checked.and((try Checked.rem(pty, 4)) == 0, { (try Checked.rem(pty, 100)) != 0 })), { (try Checked.rem(pty, 400)) == 0 }))
+                    let pleap: Bool = (try Checked.or((try Checked.and((try Checked.rem(pty, 4)) == 0, { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 100)) != 0 })), { () throws(AlgorithmError) -> Bool in (try Checked.rem(pty, 400)) == 0 }))
                     let pcy: Int64 = ptm <= 2 ? (try Checked.sub(pty, 1)) : pty
                     let pcera: Int64 = (try Checked.div(pcy, 400))
                     let pcyoe: Int64 = (try Checked.sub(pcy, (try Checked.mul(pcera, 400))))
@@ -70,7 +70,7 @@ public enum EventAgenda {
                     ps = (try Checked.sub((try Checked.add((try Checked.sub((try Checked.add((try Checked.add((try Checked.mul(pcera, 146097)), (try Checked.mul(pcyoe, 365)))), (try Checked.div(pcyoe, 4)))), (try Checked.div(pcyoe, 100)))), pcdoy)), 719468))
                     plen = freq == 4 ? (pleap ? 366 : 365) : (ptm == 2 ? (pleap ? 29 : 28) : (ptm == 4 || ptm == 6 || ptm == 9 || ptm == 11 ? 30 : 31))
                 }
-                if (try Checked.or(ps >= endDay, { (try Checked.and(until > 0, { (try Checked.mul(ps, day)) > until })) })) {
+                if (try Checked.or(ps >= endDay, { () throws(AlgorithmError) -> Bool in (try Checked.and(until > 0, { () throws(AlgorithmError) -> Bool in (try Checked.mul(ps, day)) > until })) })) {
                     going = false
                 } else {
                     var n: Int64 = 0
@@ -89,7 +89,7 @@ public enum EventAgenda {
                             rank = (try Checked.add(rank, 1))
                             var keep: Bool = true
                             if hasSP {
-                                keep = (try Checked.or(rank <= 62 && ((s.spPos >> rank) & 1) == 1, { (try Checked.and((try Checked.add((try Checked.sub(n, rank)), 1)) <= 62, { ((s.spNeg >> (try Checked.add((try Checked.sub(n, rank)), 1))) & 1) == 1 })) }))
+                                keep = (try Checked.or(rank <= 62 && ((s.spPos >> rank) & 1) == 1, { () throws(AlgorithmError) -> Bool in (try Checked.and((try Checked.add((try Checked.sub(n, rank)), 1)) <= 62, { () throws(AlgorithmError) -> Bool in ((s.spNeg >> (try Checked.add((try Checked.sub(n, rank)), 1))) & 1) == 1 })) }))
                             }
                             if keep && dd >= startDay {
                                 let occStart: Int64 = (try Checked.add((try Checked.mul(dd, day)), timeOfDay))

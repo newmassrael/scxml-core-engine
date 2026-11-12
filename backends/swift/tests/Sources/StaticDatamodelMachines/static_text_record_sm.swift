@@ -452,9 +452,9 @@ public final class StaticTextRecordPolicy: InvocablePolicy {
         switch event {
         case .textSlot:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("slot")
-            let sceField1 = try fields.signed64("version")
-            let sceField2 = try fields.text("text", bound: 32)
+            let sceField0: UInt32 = try fields.unsigned("slot")
+            let sceField1: Int64 = try fields.signed64("version")
+            let sceField2: String = try fields.text("text", bound: 32)
             let payload = StaticTextRecordTextSlotPayload(slot: sceField0, version: sceField1, text: sceField2)
             pendingTextSlotPayload = payload
             pendingPayloadTag = .textSlot

@@ -471,8 +471,8 @@ public final class StaticWholePayloadPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try { () throws -> StaticWholePayloadViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWholePayloadViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField1 = try fields.unsigned("zoom")
+            let sceField0: StaticWholePayloadViewModeEnum = try { () throws -> StaticWholePayloadViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWholePayloadViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1: UInt8 = try fields.unsigned("zoom")
             let payload = StaticWholePayloadViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

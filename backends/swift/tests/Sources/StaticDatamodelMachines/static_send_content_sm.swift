@@ -489,15 +489,15 @@ public final class StaticSendContentPolicy: InvocablePolicy {
         switch event {
         case .viewRelayed:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try { () throws -> StaticSendContentViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendContentViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField1 = try fields.unsigned("zoom")
+            let sceField0: StaticSendContentViewModeEnum = try { () throws -> StaticSendContentViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendContentViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1: UInt8 = try fields.unsigned("zoom")
             let payload = StaticSendContentViewRelayedPayload(layout: sceField0, zoom: sceField1)
             pendingViewRelayedPayload = payload
             pendingPayloadTag = .viewRelayed
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try { () throws -> StaticSendContentViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendContentViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField1 = try fields.unsigned("zoom")
+            let sceField0: StaticSendContentViewModeEnum = try { () throws -> StaticSendContentViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticSendContentViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1: UInt8 = try fields.unsigned("zoom")
             let payload = StaticSendContentViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

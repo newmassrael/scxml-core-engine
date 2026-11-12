@@ -488,9 +488,9 @@ public final class StaticStateAlgorithmOptionalPolicy: InvocablePolicy {
         switch event {
         case .goalAdded:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.optional("day") { fields in try fields.signed64("day") }
-            let sceField2 = try fields.signed("weight")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int64? = try fields.optional("day") { fields in try fields.signed64("day") }
+            let sceField2: Int32 = try fields.signed("weight")
             let payload = StaticStateAlgorithmOptionalGoalAddedPayload(id: sceField0, day: sceField1, weight: sceField2)
             pendingGoalAddedPayload = payload
             pendingPayloadTag = .goalAdded

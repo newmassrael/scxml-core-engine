@@ -432,15 +432,15 @@ public final class StaticWireWidePolicy: InvocablePolicy {
         switch event {
         case .wideIn:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("big")
-            let sceField1 = try fields.signed64("small")
+            let sceField0: UInt64 = try fields.unsigned64("big")
+            let sceField1: Int64 = try fields.signed64("small")
             let payload = StaticWireWideWideInPayload(big: sceField0, small: sceField1)
             pendingWideInPayload = payload
             pendingPayloadTag = .wideIn
         case .wideRelayed:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("big")
-            let sceField1 = try fields.signed64("small")
+            let sceField0: UInt64 = try fields.unsigned64("big")
+            let sceField1: Int64 = try fields.signed64("small")
             let payload = StaticWireWideWideRelayedPayload(big: sceField0, small: sceField1)
             pendingWideRelayedPayload = payload
             pendingPayloadTag = .wideRelayed

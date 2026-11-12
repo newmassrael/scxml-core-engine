@@ -31,7 +31,7 @@ public enum UtcFromLocal {
                 }
             }
             let u: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, k)))))
-            if (try Checked.and(u >= (try Checked.at(starts, k)), { (try Checked.or((try Checked.add(k, 1)) == n, { u < (try Checked.at(starts, (try Checked.add(k, 1)))) })) })) {
+            if (try Checked.and(u >= (try Checked.at(starts, k)), { () throws(AlgorithmError) -> Bool in (try Checked.or((try Checked.add(k, 1)) == n, { () throws(AlgorithmError) -> Bool in u < (try Checked.at(starts, (try Checked.add(k, 1)))) })) })) {
                 return u
             }
             k = (try Checked.add(k, 1))
@@ -39,7 +39,7 @@ public enum UtcFromLocal {
         var g: UInt32 = 1
         while g < n {
             let before: Int64 = (try Checked.sub(local, Int64((try Checked.at(offsets, (try Checked.sub(g, 1)))))))
-            if (try Checked.and(before >= (try Checked.at(starts, g)), { (try Checked.sub(local, Int64((try Checked.at(offsets, g))))) < (try Checked.at(starts, g)) })) {
+            if (try Checked.and(before >= (try Checked.at(starts, g)), { () throws(AlgorithmError) -> Bool in (try Checked.sub(local, Int64((try Checked.at(offsets, g))))) < (try Checked.at(starts, g)) })) {
                 return before
             }
             g = (try Checked.add(g, 1))

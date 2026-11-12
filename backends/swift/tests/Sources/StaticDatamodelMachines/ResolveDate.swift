@@ -23,7 +23,7 @@ public enum ResolveDate {
             return (try DaysFromCivil.daysFromCivil(expression.provenAbsolute.year, expression.provenAbsolute.month, expression.provenAbsolute.day))
         }
         if expression.kind == DateKind.monthDay {
-            if !((try Checked.and(expression.provenMonthDay.day >= 1, { expression.provenMonthDay.day <= (try DaysInMonth.daysInMonth(2000, expression.provenMonthDay.month)) }))) {
+            if !((try Checked.and(expression.provenMonthDay.day >= 1, { () throws(AlgorithmError) -> Bool in expression.provenMonthDay.day <= (try DaysInMonth.daysInMonth(2000, expression.provenMonthDay.month)) }))) {
                 throw AlgorithmError.precondition
             }
             let dayToday: CivilDatePayload = (try CivilFromDays.civilFromDays(today))

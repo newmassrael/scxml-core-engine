@@ -416,8 +416,8 @@ public final class StaticRecordReal32Policy: InvocablePolicy {
         switch event {
         case .reading32Taken:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("sensor")
-            let sceField1 = try fields.float32("value")
+            let sceField0: UInt8 = try fields.unsigned("sensor")
+            let sceField1: Float = try fields.float32("value")
             let payload = StaticRecordReal32Reading32TakenPayload(sensor: sceField0, value: sceField1)
             pendingReading32TakenPayload = payload
             pendingPayloadTag = .reading32Taken

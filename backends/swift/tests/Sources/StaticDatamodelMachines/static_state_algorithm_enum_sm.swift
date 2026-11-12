@@ -537,15 +537,15 @@ public final class StaticStateAlgorithmEnumPolicy: InvocablePolicy {
         switch event {
         case .itemAdded:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: StaticStateAlgorithmEnumStatusEnum = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             let payload = StaticStateAlgorithmEnumItemAddedPayload(id: sceField0, status: sceField1)
             pendingItemAddedPayload = payload
             pendingPayloadTag = .itemAdded
         case .itemMoved:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: StaticStateAlgorithmEnumStatusEnum = try { () throws -> StaticStateAlgorithmEnumStatusEnum in let name = try fields.text("status"); guard let variant = StaticStateAlgorithmEnumStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             let payload = StaticStateAlgorithmEnumItemMovedPayload(id: sceField0, status: sceField1)
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved

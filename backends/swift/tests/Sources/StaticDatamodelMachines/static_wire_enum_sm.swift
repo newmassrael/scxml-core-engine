@@ -477,8 +477,8 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
         switch event {
         case .viewShown:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
-            let sceField1 = try fields.unsigned("zoom")
+            let sceField0: StaticWireEnumViewModeEnum = try { () throws -> StaticWireEnumViewModeEnum in let name = try fields.text("layout"); guard let variant = StaticWireEnumViewModeEnum(declaredName: name) else { throw try fields.field("layout").unknownVariant(name, alias: "ViewMode") }; return variant }()
+            let sceField1: UInt8 = try fields.unsigned("zoom")
             let payload = StaticWireEnumViewShownPayload(layout: sceField0, zoom: sceField1)
             pendingViewShownPayload = payload
             pendingPayloadTag = .viewShown

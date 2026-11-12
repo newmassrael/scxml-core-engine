@@ -439,7 +439,7 @@ public final class CoordinatorPolicy: InvocablePolicy {
         switch event {
         case .jobRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("job")
+            let sceField0: UInt32 = try fields.unsigned("job")
             let payload = CoordinatorJobRequestPayload(job: sceField0)
             pendingJobRequestPayload = payload
             pendingPayloadTag = .jobRequest

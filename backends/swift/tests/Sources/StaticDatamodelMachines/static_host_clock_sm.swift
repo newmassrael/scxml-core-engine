@@ -473,17 +473,17 @@ public final class StaticHostClockPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeNow:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.signed64("utc_ms")
-            let sceField2 = try fields.signed64("monotonic_ms")
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Int64 = try fields.signed64("utc_ms")
+            let sceField2: Int64 = try fields.signed64("monotonic_ms")
             let payload = StaticHostClockDoneInvokeNowPayload(error: sceField0, utc_ms: sceField1, monotonic_ms: sceField2)
             pendingDoneInvokeNowPayload = payload
             pendingPayloadTag = .doneInvokeNow
         case .doneInvokeZone:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("zone_id", bound: 64)
-            let sceField2 = try fields.signed("utc_offset_s")
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("zone_id", bound: 64)
+            let sceField2: Int32 = try fields.signed("utc_offset_s")
             let payload = StaticHostClockDoneInvokeZonePayload(error: sceField0, zone_id: sceField1, utc_offset_s: sceField2)
             pendingDoneInvokeZonePayload = payload
             pendingPayloadTag = .doneInvokeZone

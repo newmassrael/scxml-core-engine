@@ -19,7 +19,7 @@ public enum AddMonths {
         if !(month >= 1 && month <= 12) {
             throw AlgorithmError.precondition
         }
-        if !((try Checked.and(day >= 1, { day <= (try DaysInMonth.daysInMonth(year, month)) }))) {
+        if !((try Checked.and(day >= 1, { () throws(AlgorithmError) -> Bool in day <= (try DaysInMonth.daysInMonth(year, month)) }))) {
             throw AlgorithmError.precondition
         }
         let yr: Int64 = Int64(year)

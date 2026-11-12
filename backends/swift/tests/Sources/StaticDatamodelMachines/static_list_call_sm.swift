@@ -432,8 +432,8 @@ public final class StaticListCallPolicy: InvocablePolicy {
         switch event {
         case .ledgerEntry:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.signed("amount")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int32 = try fields.signed("amount")
             let payload = StaticListCallLedgerEntryPayload(id: sceField0, amount: sceField1)
             pendingLedgerEntryPayload = payload
             pendingPayloadTag = .ledgerEntry

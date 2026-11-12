@@ -21,14 +21,14 @@ public enum SheetApply {
         var value: Int64 = 0
         var fault: UInt8 = 0
         if op == 2 {
-            if (try Checked.or((try Checked.and(b > 0, { a > (try Checked.sub(top, b)) })), { (try Checked.and(b < 0, { a < (try Checked.sub(bottom, b)) })) })) {
+            if (try Checked.or((try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.sub(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.sub(bottom, b)) })) })) {
                 fault = 3
             } else {
                 value = (try Checked.add(a, b))
             }
         } else {
             if op == 3 {
-                if (try Checked.or((try Checked.and(b < 0, { a > (try Checked.add(top, b)) })), { (try Checked.and(b > 0, { a < (try Checked.add(bottom, b)) })) })) {
+                if (try Checked.or((try Checked.and(b < 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.add(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.add(bottom, b)) })) })) {
                     fault = 3
                 } else {
                     value = (try Checked.sub(a, b))
@@ -38,7 +38,7 @@ public enum SheetApply {
                     if a == 0 || b == 0 {
                         value = 0
                     } else {
-                        if (try Checked.or((try Checked.or((try Checked.or((try Checked.and(a > 0 && b > 0, { a > (try Checked.div(top, b)) })), { (try Checked.and(a > 0 && b < 0, { b < (try Checked.div(bottom, a)) })) })), { (try Checked.and(a < 0 && b > 0, { a < (try Checked.div(bottom, b)) })) })), { (try Checked.and(a < 0 && b < 0, { b < (try Checked.div(top, a)) })) })) {
+                        if (try Checked.or((try Checked.or((try Checked.or((try Checked.and(a > 0 && b > 0, { () throws(AlgorithmError) -> Bool in a > (try Checked.div(top, b)) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a > 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(bottom, a)) })) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a < 0 && b > 0, { () throws(AlgorithmError) -> Bool in a < (try Checked.div(bottom, b)) })) })), { () throws(AlgorithmError) -> Bool in (try Checked.and(a < 0 && b < 0, { () throws(AlgorithmError) -> Bool in b < (try Checked.div(top, a)) })) })) {
                             fault = 3
                         } else {
                             value = (try Checked.mul(a, b))

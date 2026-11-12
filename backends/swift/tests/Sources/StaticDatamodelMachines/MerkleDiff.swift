@@ -45,13 +45,13 @@ public enum MerkleDiff {
                 var found: Bool = false
                 var next: UInt64 = 0
                 for childOfA in a {
-                    if (try Checked.and(UInt32(childOfA.depth) == (try Checked.add(d, 1)), { (try Checked.or(d == 0, { (try Checked.div(childOfA.prefix, 3)) == k })) })) && (!started || childOfA.prefix > last) && (!found || childOfA.prefix < next) {
+                    if (try Checked.and(UInt32(childOfA.depth) == (try Checked.add(d, 1)), { () throws(AlgorithmError) -> Bool in (try Checked.or(d == 0, { () throws(AlgorithmError) -> Bool in (try Checked.div(childOfA.prefix, 3)) == k })) })) && (!started || childOfA.prefix > last) && (!found || childOfA.prefix < next) {
                         found = true
                         next = childOfA.prefix
                     }
                 }
                 for childOfB in b {
-                    if (try Checked.and(UInt32(childOfB.depth) == (try Checked.add(d, 1)), { (try Checked.or(d == 0, { (try Checked.div(childOfB.prefix, 3)) == k })) })) && (!started || childOfB.prefix > last) && (!found || childOfB.prefix < next) {
+                    if (try Checked.and(UInt32(childOfB.depth) == (try Checked.add(d, 1)), { () throws(AlgorithmError) -> Bool in (try Checked.or(d == 0, { () throws(AlgorithmError) -> Bool in (try Checked.div(childOfB.prefix, 3)) == k })) })) && (!started || childOfB.prefix > last) && (!found || childOfB.prefix < next) {
                         found = true
                         next = childOfB.prefix
                     }

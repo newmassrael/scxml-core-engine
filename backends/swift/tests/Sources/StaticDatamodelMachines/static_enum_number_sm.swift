@@ -457,14 +457,14 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
         switch event {
         case .itemMoved:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: StaticEnumNumberStatusEnum = try { () throws -> StaticEnumNumberStatusEnum in let name = try fields.text("status"); guard let variant = StaticEnumNumberStatusEnum(declaredName: name) else { throw try fields.field("status").unknownVariant(name, alias: "Status") }; return variant }()
             let payload = StaticEnumNumberItemMovedPayload(id: sceField0, status: sceField1)
             pendingItemMovedPayload = payload
             pendingPayloadTag = .itemMoved
         case .statusNumber:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.signed64("number")
+            let sceField0: Int64 = try fields.signed64("number")
             let payload = StaticEnumNumberStatusNumberPayload(number: sceField0)
             pendingStatusNumberPayload = payload
             pendingPayloadTag = .statusNumber

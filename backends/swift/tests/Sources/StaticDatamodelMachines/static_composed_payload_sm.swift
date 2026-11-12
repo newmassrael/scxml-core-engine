@@ -689,7 +689,7 @@ public final class StaticComposedPayloadPolicy: InvocablePolicy {
                 }
 
                 var ifCondFailed1 = false
-                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.grid.count) > 1, { UInt32(truncatingIfNeeded: (try Checked.at(self.pendingBatchSentPayload.grid, 1)).count) > 0 })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedPayloadEvent.errorExecution, message: "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed")); ifCondFailed1 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.grid.count) > 1, { () throws(AlgorithmError) -> Bool in UInt32(truncatingIfNeeded: (try Checked.at(self.pendingBatchSentPayload.grid, 1)).count) > 0 })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedPayloadEvent.errorExecution, message: "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed")); ifCondFailed1 = true; return false } }()) {
 
 
                 if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at((try Checked.at(self.pendingBatchSentPayload.grid, 1)), 0)); self.vCell = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedPayloadEvent.errorExecution, message: "<assign location='cell'>: an integer operation overflowed or failed")); return true }; return false }()) {

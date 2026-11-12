@@ -1183,47 +1183,47 @@ public final class TodoPeerPolicy: InvocablePolicy {
             pendingPayloadTag = .recordListChange
         case .todoAgenda:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.signed64("windowStart")
-            let sceField2 = try fields.signed64("windowEnd")
-            let sceField3 = try fields.unsigned("skip")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: Int64 = try fields.signed64("windowStart")
+            let sceField2: Int64 = try fields.signed64("windowEnd")
+            let sceField3: UInt32 = try fields.unsigned("skip")
             let payload = TodoPeerTodoAgendaPayload(id: sceField0, windowStart: sceField1, windowEnd: sceField2, skip: sceField3)
             pendingTodoAgendaPayload = payload
             pendingPayloadTag = .todoAgenda
         case .todoEdit:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.unsigned("field")
-            let sceField2 = try fields.signed64("value")
-            let sceField3 = try fields.text("text", bound: 32)
-            let sceField4 = try fields.signed64("now")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: UInt16 = try fields.unsigned("field")
+            let sceField2: Int64 = try fields.signed64("value")
+            let sceField3: String = try fields.text("text", bound: 32)
+            let sceField4: Int64 = try fields.signed64("now")
             let payload = TodoPeerTodoEditPayload(id: sceField0, field: sceField1, value: sceField2, text: sceField3, now: sceField4)
             pendingTodoEditPayload = payload
             pendingPayloadTag = .todoEdit
         case .todoJoin:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("node")
+            let sceField0: UInt64 = try fields.unsigned64("node")
             let payload = TodoPeerTodoJoinPayload(node: sceField0)
             pendingTodoJoinPayload = payload
             pendingPayloadTag = .todoJoin
         case .todoRole:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned64("node")
-            let sceField1 = try fields.unsigned("role")
+            let sceField0: UInt64 = try fields.unsigned64("node")
+            let sceField1: UInt8 = try fields.unsigned("role")
             let payload = TodoPeerTodoRolePayload(node: sceField0, role: sceField1)
             pendingTodoRolePayload = payload
             pendingPayloadTag = .todoRole
         case .todoRoom:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("values")
+            let sceField0: UInt32 = try fields.unsigned("values")
             let payload = TodoPeerTodoRoomPayload(values: sceField0)
             pendingTodoRoomPayload = payload
             pendingPayloadTag = .todoRoom
         case .todoZone:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("zone")
-            let sceField1 = try fields.signed64("start")
-            let sceField2 = try fields.signed("offset")
+            let sceField0: UInt8 = try fields.unsigned("zone")
+            let sceField1: Int64 = try fields.signed64("start")
+            let sceField2: Int32 = try fields.signed("offset")
             let payload = TodoPeerTodoZonePayload(zone: sceField0, start: sceField1, offset: sceField2)
             pendingTodoZonePayload = payload
             pendingPayloadTag = .todoZone

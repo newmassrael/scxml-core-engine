@@ -35,7 +35,7 @@ public enum MerklePrune {
             while kept && d >= 1 {
                 var after: UInt32 = 0
                 for y in nodes {
-                    if (try Checked.and(UInt32(y.depth) == d, { (try Checked.or(d == 1, { (try Checked.div(y.prefix, 3)) == (try Checked.div(p, 3)) })) })) && y.prefix > p {
+                    if (try Checked.and(UInt32(y.depth) == d, { () throws(AlgorithmError) -> Bool in (try Checked.or(d == 1, { () throws(AlgorithmError) -> Bool in (try Checked.div(y.prefix, 3)) == (try Checked.div(p, 3)) })) })) && y.prefix > p {
                         after = (try Checked.add(after, 1))
                     }
                 }

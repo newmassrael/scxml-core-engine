@@ -535,24 +535,24 @@ public final class SyncClientPolicy: InvocablePolicy {
         switch event {
         case .syncPage:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.truth("more")
+            let sceField0: Bool = try fields.truth("more")
             let payload = SyncClientSyncPagePayload(more: sceField0)
             pendingSyncPagePayload = payload
             pendingPayloadTag = .syncPage
         case .syncResponse:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("kind")
-            let sceField1 = try fields.signed("status")
-            let sceField2 = try fields.truth("create")
-            let sceField3 = try fields.truth("davError")
-            let sceField4 = try fields.signed64("now")
-            let sceField5 = try fields.signed64("retryAfter")
+            let sceField0: UInt8 = try fields.unsigned("kind")
+            let sceField1: Int32 = try fields.signed("status")
+            let sceField2: Bool = try fields.truth("create")
+            let sceField3: Bool = try fields.truth("davError")
+            let sceField4: Int64 = try fields.signed64("now")
+            let sceField5: Int64 = try fields.signed64("retryAfter")
             let payload = SyncClientSyncResponsePayload(kind: sceField0, status: sceField1, create: sceField2, davError: sceField3, now: sceField4, retryAfter: sceField5)
             pendingSyncResponsePayload = payload
             pendingPayloadTag = .syncResponse
         case .syncStart:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.truth("byToken")
+            let sceField0: Bool = try fields.truth("byToken")
             let payload = SyncClientSyncStartPayload(byToken: sceField0)
             pendingSyncStartPayload = payload
             pendingPayloadTag = .syncStart

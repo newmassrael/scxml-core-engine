@@ -917,7 +917,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
         switch event {
         case .shapeSaid:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("text", bound: 96)
+            let sceField0: String = try fields.text("text", bound: 96)
             let payload = StaticUnionShapeSaidPayload(text: sceField0)
             pendingShapeSaidPayload = payload
             pendingPayloadTag = .shapeSaid

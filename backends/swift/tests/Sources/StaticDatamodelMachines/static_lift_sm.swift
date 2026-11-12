@@ -606,13 +606,13 @@ public final class StaticLiftPolicy: InvocablePolicy {
         switch event {
         case .textGiven:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("text", bound: 512)
+            let sceField0: String = try fields.text("text", bound: 512)
             let payload = StaticLiftTextGivenPayload(text: sceField0)
             pendingTextGivenPayload = payload
             pendingPayloadTag = .textGiven
         case .textKept:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("text", bound: 512)
+            let sceField0: String = try fields.text("text", bound: 512)
             let payload = StaticLiftTextKeptPayload(text: sceField0)
             pendingTextKeptPayload = payload
             pendingPayloadTag = .textKept

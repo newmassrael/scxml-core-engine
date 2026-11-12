@@ -83,6 +83,16 @@ pub(crate) fn throwing(call: &str) -> String {
     format!("{THROWING_MARK}{call})")
 }
 
+/// A closure of no argument whose body `body` can fail, its failure typed: Swift
+/// infers a closure's thrown type as `any Error` even where the parameter it is
+/// handed to names one (typed throws, SE-0413, leaves closure inference to a later
+/// feature), so the signature is written out, with its result where it can be
+/// named (`result`) and inferred from the one expression where it cannot.
+fn failing_closure(body: &str, result: Option<&str>) -> String {
+    let result = result.map(|ty| format!(" -> {ty}")).unwrap_or_default();
+    format!("{{ () throws(AlgorithmError){result} in {body} }}")
+}
+
 /// How [`throwing`] opens a call it marks.
 const THROWING_MARK: &str = "(try ";
 
@@ -309,8 +319,10 @@ fn swift_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Stri
             // A fallback that can fail is evaluated only where the value is absent,
             // through the runtime's coalesce, which keeps the failure's type.
             if throws(fallback) {
+                let result = nameable_type(whole.ty);
                 return Ok(throwing(&format!(
-                    "Checked.coalesce({read}, {{ {default} }})"
+                    "Checked.coalesce({read}, {})",
+                    failing_closure(&default, result.as_deref())
                 )));
             }
             format!(
@@ -598,7 +610,8 @@ fn binary(op: BinOp, left: &TypedExpr, right: &TypedExpr) -> Result<String, Refu
     if matches!(op, BinOp::And | BinOp::Or) && throws(right) {
         let helper = if op == BinOp::And { "and" } else { "or" };
         return Ok(throwing(&format!(
-            "Checked.{helper}({l_raw}, {{ {r_raw} }})"
+            "Checked.{helper}({l_raw}, {})",
+            failing_closure(&r_raw, Some("Bool"))
         )));
     }
     let l = swift_operand(left, op, true, l_raw);
@@ -798,11 +811,13 @@ mod tests {
         ctx.receives_failures = true;
         assert_eq!(
             spell("flag && count + 1 > 3", &ctx),
-            "(try Checked.and(flag, { (try Checked.add(count, 1)) > 3 }))"
+            "(try Checked.and(flag, { () throws(AlgorithmError) -> Bool in (try \
+             Checked.add(count, 1)) > 3 }))"
         );
         assert_eq!(
             spell("flag || count + 1 > 3", &ctx),
-            "(try Checked.or(flag, { (try Checked.add(count, 1)) > 3 }))"
+            "(try Checked.or(flag, { () throws(AlgorithmError) -> Bool in (try \
+             Checked.add(count, 1)) > 3 }))"
         );
         assert_eq!(
             spell("count + 1 > 3 && flag", &ctx),

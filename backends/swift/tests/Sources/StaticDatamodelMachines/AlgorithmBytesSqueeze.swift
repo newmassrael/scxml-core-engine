@@ -20,7 +20,7 @@ public enum AlgorithmBytesSqueeze {
         out.reserveCapacity(16)
         for b in data {
             let n: UInt32 = UInt32(truncatingIfNeeded: out.count)
-            if (try Checked.or(n == 0, { (try Checked.at(out, (try Checked.sub(n, 1)))) != b })) {
+            if (try Checked.or(n == 0, { () throws(AlgorithmError) -> Bool in (try Checked.at(out, (try Checked.sub(n, 1)))) != b })) {
                 out.append(b)
             }
         }

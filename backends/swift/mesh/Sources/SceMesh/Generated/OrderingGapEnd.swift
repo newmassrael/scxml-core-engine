@@ -19,7 +19,7 @@ public enum OrderingGapEnd {
         var resume: UInt64 = next
         var first: Bool = true
         for slot in pending {
-            if (try Checked.and(first && slot.seq != next, { (try Checked.sub(now, slot.arrivedAtMs)) >= timeoutMs })) {
+            if (try Checked.and(first && slot.seq != next, { () throws(AlgorithmError) -> Bool in (try Checked.sub(now, slot.arrivedAtMs)) >= timeoutMs })) {
                 resume = slot.seq
             }
             first = false

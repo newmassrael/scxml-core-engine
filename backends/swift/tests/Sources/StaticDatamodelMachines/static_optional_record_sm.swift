@@ -513,9 +513,9 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
         switch event {
         case .itemPicked:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("id")
-            let sceField1 = try fields.text("title", bound: 16)
-            let sceField2 = try fields.signed("count")
+            let sceField0: UInt32 = try fields.unsigned("id")
+            let sceField1: String = try fields.text("title", bound: 16)
+            let sceField2: Int32 = try fields.signed("count")
             let payload = StaticOptionalRecordItemPickedPayload(id: sceField0, title: sceField1, count: sceField2)
             pendingItemPickedPayload = payload
             pendingPayloadTag = .itemPicked

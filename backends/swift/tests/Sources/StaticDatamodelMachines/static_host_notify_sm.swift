@@ -621,51 +621,51 @@ public final class StaticHostNotifyPolicy: InvocablePolicy {
         switch event {
         case .doneInvokeAsk:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("state", bound: 16)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("state", bound: 16)
             let payload = StaticHostNotifyDoneInvokeAskPayload(error: sceField0, state: sceField1)
             pendingDoneInvokeAskPayload = payload
             pendingPayloadTag = .doneInvokeAsk
         case .doneInvokeCancel:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.truth("existed")
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("existed")
             let payload = StaticHostNotifyDoneInvokeCancelPayload(error: sceField0, existed: sceField1)
             pendingDoneInvokeCancelPayload = payload
             pendingPayloadTag = .doneInvokeCancel
         case .doneInvokeFar:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("status", bound: 16)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("status", bound: 16)
             let payload = StaticHostNotifyDoneInvokeFarPayload(error: sceField0, status: sceField1)
             pendingDoneInvokeFarPayload = payload
             pendingPayloadTag = .doneInvokeFar
         case .doneInvokePost:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("status", bound: 16)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("status", bound: 16)
             let payload = StaticHostNotifyDoneInvokePostPayload(error: sceField0, status: sceField1)
             pendingDoneInvokePostPayload = payload
             pendingPayloadTag = .doneInvokePost
         case .doneInvokePrompt:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("error", bound: 24)
-            let sceField1 = try fields.text("state", bound: 16)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: String = try fields.text("state", bound: 16)
             let payload = StaticHostNotifyDoneInvokePromptPayload(error: sceField0, state: sceField1)
             pendingDoneInvokePromptPayload = payload
             pendingPayloadTag = .doneInvokePrompt
         case .hostNotifyCancelRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("id", bound: 64)
+            let sceField0: String = try fields.text("id", bound: 64)
             let payload = StaticHostNotifyHostNotifyCancelRequestPayload(id: sceField0)
             pendingHostNotifyCancelRequestPayload = payload
             pendingPayloadTag = .hostNotifyCancelRequest
         case .hostNotifyPostRequest:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.text("id", bound: 64)
-            let sceField1 = try fields.text("title", bound: 128)
-            let sceField2 = try fields.text("body", bound: 512)
-            let sceField3 = try fields.signed64("at_ms")
+            let sceField0: String = try fields.text("id", bound: 64)
+            let sceField1: String = try fields.text("title", bound: 128)
+            let sceField2: String = try fields.text("body", bound: 512)
+            let sceField3: Int64 = try fields.signed64("at_ms")
             let payload = StaticHostNotifyHostNotifyPostRequestPayload(id: sceField0, title: sceField1, body: sceField2, at_ms: sceField3)
             pendingHostNotifyPostRequestPayload = payload
             pendingPayloadTag = .hostNotifyPostRequest

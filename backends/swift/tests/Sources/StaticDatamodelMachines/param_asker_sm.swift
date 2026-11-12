@@ -434,8 +434,8 @@ public final class ParamAskerPolicy: InvocablePolicy {
         switch event {
         case .jobReply:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("job")
-            let sceField1 = try fields.unsigned("code")
+            let sceField0: UInt32 = try fields.unsigned("job")
+            let sceField1: UInt32 = try fields.unsigned("code")
             let payload = ParamAskerJobReplyPayload(job: sceField0, code: sceField1)
             pendingJobReplyPayload = payload
             pendingPayloadTag = .jobReply

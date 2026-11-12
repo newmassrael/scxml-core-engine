@@ -492,8 +492,8 @@ public final class StaticRecordStringPolicy: InvocablePolicy {
         switch event {
         case .labelledTaken:
             let fields = try PayloadFields.decode(metadata.data)
-            let sceField0 = try fields.unsigned("sensor")
-            let sceField1 = try fields.text("label", bound: 8)
+            let sceField0: UInt8 = try fields.unsigned("sensor")
+            let sceField1: String = try fields.text("label", bound: 8)
             let payload = StaticRecordStringLabelledTakenPayload(sensor: sceField0, label: sceField1)
             pendingLabelledTakenPayload = payload
             pendingPayloadTag = .labelledTaken
