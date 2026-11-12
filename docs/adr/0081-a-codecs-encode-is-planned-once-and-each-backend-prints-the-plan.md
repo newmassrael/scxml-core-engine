@@ -803,6 +803,26 @@ old encode, the old encode and its templates are removed in the same landing.
    none; and of `forge_source_round_trip`, the frames, inputs and refusal of `some_arms_say` and
    `every_arm_says`. What stays is a parent writing `N` and `M` from the arm whatever its value states of them: a
    case states a value as its decode presents it, so no case states a header that says otherwise than the arm.
+
+   *The forty-second C++ landing, 2026-11-13:* a list on one side of a gate held to the law its entries say their
+   inputs by (docs/adr/0065 §6 R4b, R8), which the fortieth landing left refused by name, enters the printer
+   together with its cases (§5). No document used it, so the new resource `codec_repeat_flag_group` is that shape:
+   the elements of a repeat handed a flag of the codec's own carrier (`head.W`) as the input they say, on the side
+   of `head.L` that also holds `level`, the other side holding `note`. Each arm that holds such a list holds it as
+   the value holds one alone, a `SCE::Forge::Lawful` of its law, and the law is defined before the arms' classes.
+   The encode derives the bound flag from the start of the list it kept off the arm the value holds, and keeps the
+   bit the value presents where the value holds the other arm; the decode holds the list it read to the law from
+   the flag the frame gave, before it makes the arm. What the printer does not read off an arm stays refused by
+   name, narrower than before (`cpp_source::grouped_law_forms`): a list whose law is over an input of the codec's
+   own, which the value says by the list's start and which the printer reads off a source through the list's own
+   accessor, as the Rust printer does, while a group's member is read off its arm; and a list held to a law that
+   shares its count with another (R5), which an arm holds as one `Aligned` of the two. No document uses either,
+   and the census holds both refusals. `binary_model.py` already read the shape, a lawful list stated in its arm
+   as `{"start", "entries"}`; its page now says where the bound flag is derived and where it is the value's own.
+   The catalog gains 7 sources and no refused case: the encode is total, the count held within its field by the
+   list's bound. Kotlin, Go, Python and C11 compile the codec as they compile every codec whose cases are `sources`
+   alone, and Swift where its generator writes it; the codec joins the set the Rust, C++, Kotlin, Go, Python and
+   C11 backends each compile (`entries_that_take_a_flag_compile_on_every_backend`).
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

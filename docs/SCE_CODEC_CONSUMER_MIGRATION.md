@@ -1568,6 +1568,20 @@ templates is regenerated after it. No codec of the repository changes: each was 
   codec is refused for it too, naming the alias it imports the codec under.
 - A C++ CBOR map's struct is the printed class, as it already was for every map: nothing changes for a consumer.
 
+## A printed C++ codec holds a list held to its law in the arm of a gate (ADR 0081 step 4)
+
+Landing: the commits that add this section. No codec of the repository changes: none used the form, which the
+section above names among the refused ones (`codec_repeat_flag_group` of the resources is the one that does now).
+
+- A list on one side of a gate whose entries say the input it hands them is printed: the arm that holds it holds
+  it as a `SCE::Forge::Lawful` of the list's law, as the value holds such a list alone, made by
+  `make(start, list)`, which is empty where an entry says other than its place asks. The flag bound to every
+  entry is derived from the start where the value holds that arm, and is the bit the value presents where it
+  holds another: drop the code that set it.
+- Two forms of it stay refused, each by a clause of its own: a list whose law is over an input of the codec's own
+  (`a list on one side of a gate, held to the law its entries say the codec's own input <name> by`), and a list
+  held to a law that shares its count with another list a gate decides.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
