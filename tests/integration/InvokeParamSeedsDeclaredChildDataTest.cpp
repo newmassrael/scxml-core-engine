@@ -8,7 +8,7 @@
 // ship in production — Interpreter for embedded hosting, AOT for codegen
 // consumers — so each is held to the clause independently against one
 // canonical fixture. `InvokeExecutor` evaluates each param in the invoking
-// session and calls `setInvokeDataVariable` with the resulting VALUE, and it
+// session and hands the child the resulting VALUE (`setHandedValues`), and it
 // did so before the AOT template did — the divergence this fixture found was
 // inside one language, on the other engine. This test is the half that says
 // the Interpreter is the reference rather than assuming it.

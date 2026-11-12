@@ -69,16 +69,6 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     std::string src = item->getSrc();
     std::string content = item->getContent();
 
-    // §scxml-6.4: Check if variable was pre-initialized (e.g., by invoke namelist/param)
-    // Skip this check for late binding value assignment (assignValue=true with late binding)
-    // because late binding creates variables as undefined first, then assigns values on state entry
-    bool isLateBindingAssignment = assignValue && model_ && (model_->getBinding() == "late");
-
-    if (!isLateBindingAssignment && scriptEngine_.isVariablePreInitialized(sessionId_, id)) {
-        SCE_LOG_INFO("DataModelInitializer: Skipping initialization for '{}' - pre-initialized by invoke data", id);
-        return;
-    }
-
     // §scxml-B-2-2: Late binding creates variables with undefined at init, assigns values on state entry
     if (!assignValue) {
         // Create variable with undefined value (both early and late binding)
@@ -275,7 +265,24 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     }
 }
 
-void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
+void DataModelInitializer::declareHandedValue(const std::string &id, const ScriptValue &value) {
+    auto declared = scriptEngine_.setVariable(sessionId_, id, value).get();
+    if (!SCE::ScriptResultUtils::isSuccess(declared)) {
+        // §scxml-5.3: the handed value is this <data>'s initial value, so a
+        // value the session cannot hold fails its initialization as a failing
+        // expr would: error.execution, and the variable is left unbound.
+        const std::string message =
+            "the value handed for <data id='" + id + "'> could not be declared: " + declared.getErrorMessage();
+        SCE_LOG_ERROR("DataModelInitializer: {}", message);
+        if (eventRaiser_) {
+            eventRaiser_->raiseEvent("error.execution", message);
+        }
+        return;
+    }
+    SCE_LOG_DEBUG("DataModelInitializer: Declared '{}' with the value its invoking session handed", id);
+}
+
+void DataModelInitializer::initializeAllDataItems(const std::string &binding, const HandedValues &handedValues) {
     if (!model_) {
         SCE_LOG_DEBUG("DataModelInitializer: No model available for data model initialization");
         return;
@@ -297,7 +304,31 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
     // elements are created now but the values wait for first entry of their state.
     bool shouldAssignValue = BindingHelper::shouldAssignValueAtDocumentLoad(binding);
 
+    // §scxml-6.4: the value handed under a name, the last one when the name was
+    // handed more than once.
+    const auto handedValueFor = [&handedValues](const std::string &id) -> const ScriptValue * {
+        const ScriptValue *handed = nullptr;
+        for (const auto &[name, value] : handedValues) {
+            if (name == id) {
+                handed = &value;
+            }
+        }
+        return handed;
+    };
+
     for (const auto &dataInfo : allDataItems) {
+        // §scxml-6.4: a top-level item (empty stateId) whose id the invoking
+        // session handed a value for takes that value as its initial value, in
+        // place of its own: its expr, src or content is not evaluated, so it
+        // raises nothing and has no effect. A state's item never takes one, and
+        // a handed name no top-level item declares is never declared at all
+        // (docs/adr/0098).
+        if (dataInfo.stateId.empty() && dataInfo.dataItem) {
+            if (const ScriptValue *handed = handedValueFor(dataInfo.dataItem->getId())) {
+                declareHandedValue(dataInfo.dataItem->getId(), *handed);
+                continue;
+            }
+        }
         // Always call initializeDataItem (handles expr/src/content/undefined)
         // The assignValue flag controls whether to evaluate expr/src/content or use undefined.
         // A top-level item (empty stateId) belongs to the <scxml> element, which

@@ -159,6 +159,21 @@ public:
      */
     void setBasicHttpAccessUri(const std::string &accessUri);
 
+    /**
+     * @brief Hand this session the values the session invoking it evaluated
+     *
+     * §scxml-6.4: one value for each `<param>` and `namelist` location of the
+     * `<invoke>`, whatever this document declares. The start that follows
+     * decides what to take: a value whose name is the id of a top-level
+     * `<data>` is that `<data>`'s initial value, declared in place of its own,
+     * and every other value is dropped. Consumed by the next start.
+     *
+     * Must be called before the session starts.
+     *
+     * @param values Name and value, in the order the invoking session handed them
+     */
+    void setHandedValues(DataModelInitializer::HandedValues values);
+
     ~StateMachine();
 
     /**
@@ -1205,7 +1220,9 @@ private:
     IScriptEngine &scriptEngine_;
     std::string sessionId_;
     std::string basicHttpAccessUri_;  // Inbound BasicHTTP endpoint, empty when none is deployed
-    std::string lastLoadError_;       // Parser error detail from loadSCXMLFromString
+    // §scxml-6.4: the values the invoking session handed, until the start takes them
+    DataModelInitializer::HandedValues handedValues_;
+    std::string lastLoadError_;  // Parser error detail from loadSCXMLFromString
     std::string currentEventData_;
     bool jsEnvironmentReady_ = false;
     /// A run has used the script session and it has not been released yet:

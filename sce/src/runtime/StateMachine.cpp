@@ -2162,8 +2162,13 @@ bool StateMachine::setupJSEnvironment() {
     dataModelInit_ = std::make_unique<DataModelInitializer>(model_, sessionId_, scriptEngine_);
     dataModelInit_->setEventRaiser(eventRaiser_);
     if (model_) {
-        dataModelInit_->initializeAllDataItems(model_->getBinding());
+        // §scxml-6.4: the values the invoking session handed are the initial
+        // values of the top-level <data> they name, declared in their place
+        // before any state <data> and the top-level <script>; the start takes
+        // them once, and drops what names no top-level <data>.
+        dataModelInit_->initializeAllDataItems(model_->getBinding(), handedValues_);
     }
+    handedValues_.clear();
 
     // Initialize ActionExecutor and ExecutionContext (needed for script execution)
     if (!initializeActionExecutor()) {
@@ -2919,6 +2924,12 @@ void StateMachine::setSessionFilePath(const std::string &filePath) {
 void StateMachine::setBasicHttpAccessUri(const std::string &accessUri) {
     basicHttpAccessUri_ = accessUri;
     SCE_LOG_DEBUG("StateMachine: BasicHTTP access URI for session {}: {}", sessionId_, accessUri);
+}
+
+void StateMachine::setHandedValues(DataModelInitializer::HandedValues values) {
+    handedValues_ = std::move(values);
+    SCE_LOG_DEBUG("StateMachine: {} value(s) handed to session {} by its invoking session", handedValues_.size(),
+                  sessionId_);
 }
 
 void StateMachine::deferInvokeExecution(const std::string &stateId,

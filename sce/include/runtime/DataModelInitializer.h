@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include "SCXMLTypes.h"
 #include "model/IDataModelItem.h"
 #include "model/SCXMLModel.h"
 #include "runtime/IEventRaiser.h"
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace SCE {
@@ -37,6 +39,13 @@ public:
         std::string stateId;  // Empty for top-level datamodel, state ID for state-level data
         std::shared_ptr<IDataModelItem> dataItem;
     };
+
+    /**
+     * @brief The values the session that invoked this one handed it, name and value, in the order handed
+     *
+     * A name handed more than once means the last value handed under it.
+     */
+    using HandedValues = std::vector<std::pair<std::string, ScriptValue>>;
 
     /**
      * @brief Construct with required dependencies
@@ -81,9 +90,17 @@ public:
      *
      * Uses BindingHelper to determine early vs late binding strategy.
      *
+     * A top-level item whose id `handedValues` names is declared with the
+     * value handed for it in place of its own, whose expr, src or content is
+     * then not evaluated; a value the session cannot hold is that item's
+     * initialization error. A state's item never takes a handed value, and a
+     * handed name that is the id of no top-level item is not declared.
+     *
      * @param binding Binding mode string ("early" or "late")
+     * @param handedValues The values the invoking session handed this one;
+     *        empty for a session nothing invoked
      */
-    void initializeAllDataItems(const std::string &binding);
+    void initializeAllDataItems(const std::string &binding, const HandedValues &handedValues = {});
 
     /**
      * @brief §scxml-5.3: Initialize state data on first entry (late binding)
@@ -96,6 +113,14 @@ public:
     void initializeStateDataOnEntry(const std::string &stateId);
 
 private:
+    /**
+     * @brief Declare the top-level item `id` with the value handed for it
+     *
+     * Raises error.execution and leaves the item undeclared when the session
+     * cannot hold the value, as an item whose own value failed is left.
+     */
+    void declareHandedValue(const std::string &id, const ScriptValue &value);
+
     IScriptEngine &scriptEngine_;
     std::shared_ptr<SCXMLModel> model_;
     std::string sessionId_;

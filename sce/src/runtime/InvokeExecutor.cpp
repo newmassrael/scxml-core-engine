@@ -4,7 +4,6 @@
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
 #include "common/AssignmentExecutionHelper.h"
-#include "common/DatamodelValidationHelper.h"
 #include "common/DocumentStem.h"
 #include "common/EventDataHelper.h"
 #include "common/LogToLogger.h"
@@ -624,19 +623,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     }
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Successfully loaded SCXML content for invoke: {}", invokeid);
 
-    // §scxml-6.4: Set invoke data AFTER loading but BEFORE starting
-    // This ensures namelist/param values override child's datamodel initial values
-
-    // §scxml-6.4: Get child's datamodel variable names for validation
-    // "If the name of a param element or the key of a namelist item do not match the name of a data
-    // element in the invoked process, the Processor MUST NOT add the value to the invoked session's data model"
-    std::set<std::string> childDatamodelVars;
-    auto childModel = session.smContext->get()->getModel();
-    if (childModel) {
-        childDatamodelVars = childModel->getDataModelVariableNames();
-        SCE_LOG_DEBUG("SCXMLInvokeHandler: Child session {} has {} datamodel variables", childSessionId,
-                      childDatamodelVars.size());
-    }
+    // §scxml-6.4: the values of this <invoke>'s namelist and <param>s,
+    // evaluated here in the invoking session and handed to the child before
+    // its start, every one of them. The child's start alone decides which it
+    // takes: a value whose name is the id of one of its top-level <data> is
+    // that <data>'s initial value in place of its own, and it adds no other
+    // (`DataModelInitializer::initializeAllDataItems`, docs/adr/0098).
+    DataModelInitializer::HandedValues handedValues;
 
     // §scxml-6.4: an argument of this <invoke> that cannot be read costs
     // error.execution on the parent's internal queue.
@@ -685,19 +678,12 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 return "";
             }
 
-            // §scxml-6.4: Only set variable if it exists in child's datamodel
-            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
-            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars)) {
-                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping namelist variable '{}' - not defined in child's datamodel",
-                              varName);
-                continue;
-            }
-
-            setInvokeDataVariable(childSessionId, varName, result.getInternalValue(), "namelist");
+            handedValues.emplace_back(varName, result.getInternalValue());
         }
     }
 
-    // §scxml-6.4: Set up invoke parameters in child session data model
+    // §scxml-6.4: the <param>s, after the namelist, so a name both carry is
+    // the <param>'s value in the child.
     const auto &params = invoke->getParams();
     for (const auto &[name, expr, location] : params) {
         if (!name.empty()) {
@@ -745,16 +731,14 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 continue;
             }
 
-            // §scxml-6.4.3: the child keeps only the values its own <data> declares.
-            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
-            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
-                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
-                continue;
-            }
-
-            setInvokeDataVariable(childSessionId, name, result.getInternalValue(), "param");
+            handedValues.emplace_back(name, result.getInternalValue());
         }
     }
+
+    // §scxml-6.4.3: handed whatever the child declares; its start keeps each
+    // only for a top-level <data> of the same name.
+    SCE_LOG_DEBUG("SCXMLInvokeHandler: Handing {} value(s) to child session {}", handedValues.size(), childSessionId);
+    session.smContext->get()->setHandedValues(std::move(handedValues));
 
     // Add session to activeSessions_
     activeSessions_.emplace(invokeid, std::move(session));
@@ -944,12 +928,6 @@ bool SCXMLInvokeHandler::isInvokeActive(const std::string &invokeid) const {
 
 std::string SCXMLInvokeHandler::getType() const {
     return "scxml";
-}
-
-void SCXMLInvokeHandler::setInvokeDataVariable(const std::string &childSessionId, const std::string &varName,
-                                               const ScriptValue &value, const std::string &source) {
-    scriptEngine_.setVariable(childSessionId, varName, value);
-    SCE_LOG_INFO("SCXMLInvokeHandler: Set {} variable '{}' in child session", source, varName);
 }
 
 bool SCXMLInvokeHandler::shouldFilterCancelledInvokeEvent(const std::string &childSessionId) const {

@@ -46,7 +46,7 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^(IntegrationTests|c11_integration_invoke_param_seeds_declared_child_data)$'
-mutation_targets sce/src/runtime/InvokeExecutor.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
+mutation_targets sce/src/runtime/InvokeExecutor.cpp sce/src/runtime/DataModelInitializer.cpp tools/codegen/templates/invoke_methods.jinja2 tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/c/invoke_methods.jinja2
 mutation_oracles tests/integration/InvokeParamSeedsDeclaredChildDataTest.cpp tests/integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp backends/c/tests/integration/test_invoke_param_seeds_declared_child_data.c
 
 # ── C++ Interpreter: which session evaluates ───────────────────────
@@ -66,18 +66,20 @@ PY
 
 # ── C++ Interpreter: which names are added ─────────────────────────
 #
-# Dropping the declared-name filter on the param loop. The namelist loop
-# above keeps its own copy of this check, so only the param phase moves —
-# which is what makes the anchor unambiguous between the two.
+# The parent hands every name it evaluated and the child's start keeps those
+# its top-level <data> declare (docs/adr/0098). The mutant declares every
+# handed value before the start walks its <data>, so `nowhere` becomes a
+# variable of the child.
 
 mutation_case "the interpreter adds an invoke param the child never declared" <<'PY'
-edit("sce/src/runtime/InvokeExecutor.cpp",
-     """            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
-                SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
-                continue;
-            }
-""",
-     """""")
+edit("sce/src/runtime/DataModelInitializer.cpp",
+     """    for (const auto &dataInfo : allDataItems) {
+        // §scxml-6.4: a top-level item (empty stateId) whose id the invoking""",
+     """    for (const auto &[leakedName, leakedValue] : handedValues) {
+        static_cast<void>(scriptEngine_.setVariable(sessionId_, leakedName, leakedValue).get());
+    }
+    for (const auto &dataInfo : allDataItems) {
+        // §scxml-6.4: a top-level item (empty stateId) whose id the invoking""")
 PY
 
 # ── C++ AOT: which session evaluates ───────────────────────────────

@@ -12,8 +12,10 @@
 # puts back one piece of an order the decision rules out, and names the
 # assertion that must go red. The oracle is
 # tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml,
-# run by its AOT driver (and its Interpreter driver, which these templates do
-# not reach).
+# run by its AOT driver for the template cases and by its Interpreter driver
+# for the engine cases. The Interpreter's parent filtered the same way, and
+# its child skipped any <data> a variable of that name already stood for in
+# the session, whatever its depth.
 #
 # The machines are generated when the tests are built, so there is no
 # committed tree to regenerate: the build is what carries a mutated template
@@ -23,8 +25,8 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
-mutation_targets tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/invoke_methods.jinja2
-mutation_oracles tests/integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp tests/integration/AHandedValueRefusingEngine.h tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml
+mutation_targets tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/invoke_methods.jinja2 sce/src/runtime/DataModelInitializer.cpp sce/src/runtime/StateMachine.cpp sce/src/runtime/InvokeExecutor.cpp
+mutation_oracles tests/integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp tests/integration/AChildTakesAHandedValueInPlaceOfItsDataTest.cpp tests/integration/AHandedValueRefusingEngine.h tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml
 
 # ── The own value is evaluated, then overwritten ────────────────────
 #
@@ -154,4 +156,98 @@ mutation_case "the cpp aot parent hands its child no param value" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
      """                                {{ slot }}->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());""",
      """                                static_cast<void>(__sce_param);""")
+PY
+
+# ── Interpreter: the own value is evaluated, then overwritten ──────
+#
+# Killers: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
+# whose `errors_seen === 0` and `effects_seen === 0` find the own exprs run.
+
+mutation_case "the interpreter child evaluates a handed data's own value first" <<'PY'
+edit("sce/src/runtime/DataModelInitializer.cpp",
+     """                declareHandedValue(dataInfo.dataItem->getId(), *handed);
+                continue;""",
+     """                initializeDataItem(dataInfo.dataItem, true);
+                declareHandedValue(dataInfo.dataItem->getId(), *handed);
+                continue;""")
+PY
+
+# ── Interpreter: a state's <data> takes a handed value ─────────────
+#
+# Killer: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
+# whose `local_seen === 'own local'` finds the handed value.
+
+mutation_case "the interpreter child seeds a state's data" <<'PY'
+edit("sce/src/runtime/DataModelInitializer.cpp",
+     """        if (dataInfo.stateId.empty() && dataInfo.dataItem) {""",
+     """        if (dataInfo.dataItem) {""")
+PY
+
+# ── Interpreter: a name no top-level <data> declares is added ───────
+#
+# Killer: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
+# whose `stranger_seen === 'undefined'` and `stray_seen === 'undefined'` find
+# the variables.
+
+mutation_case "the interpreter child declares a handed name it does not declare" <<'PY'
+edit("sce/src/runtime/DataModelInitializer.cpp",
+     """    for (const auto &dataInfo : allDataItems) {
+        // §scxml-6.4: a top-level item (empty stateId) whose id the invoking""",
+     """    for (const auto &[leakedName, leakedValue] : handedValues) {
+        static_cast<void>(scriptEngine_.setVariable(sessionId_, leakedName, leakedValue).get());
+    }
+    for (const auto &dataInfo : allDataItems) {
+        // §scxml-6.4: a top-level item (empty stateId) whose id the invoking""")
+PY
+
+# ── Interpreter: a value the session cannot hold is a log line ──────
+#
+# Killer: the Interpreter's `AHandedValueTheSessionCannotHoldFailsItsData`,
+# whose `errors_seen === 1` finds no error.execution.
+
+mutation_case "the interpreter child raises nothing for a handed value it cannot hold" <<'PY'
+edit("sce/src/runtime/DataModelInitializer.cpp",
+     """        SCE_LOG_ERROR("DataModelInitializer: {}", message);
+        if (eventRaiser_) {
+            eventRaiser_->raiseEvent("error.execution", message);
+        }
+        return;""",
+     """        SCE_LOG_ERROR("DataModelInitializer: {}", message);
+        return;""")
+PY
+
+# ── Interpreter: the handed values arrive after the top-level script ─
+#
+# The start declares every <data> from its own value, and the handed values
+# are written once the top-level <script> has run: the script reads `raising`
+# unbound, and the Interpreter rejects a document whose top-level script fails,
+# so the child never starts.
+# Killer: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
+# whose parent never halts.
+
+mutation_case "the interpreter child declares a handed value after its top-level script" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        dataModelInit_->initializeAllDataItems(model_->getBinding(), handedValues_);
+    }
+    handedValues_.clear();""",
+     """        dataModelInit_->initializeAllDataItems(model_->getBinding());
+    }""")
+edit("sce/src/runtime/StateMachine.cpp",
+     """    // Pass EventDispatcher to ActionExecutor if it was set before initialization""",
+     """    for (const auto &[handedName, handedValue] : handedValues_) {
+        static_cast<void>(scriptEngine_.setVariable(sessionId_, handedName, handedValue).get());
+    }
+    handedValues_.clear();
+    // Pass EventDispatcher to ActionExecutor if it was set before initialization""")
+PY
+
+# ── Interpreter: the parent hands nothing ──────────────────────────
+#
+# Killer: the Interpreter's `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`,
+# whose `raising_seen` finds the <data> unbound.
+
+mutation_case "the interpreter parent hands its child nothing" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     """    session.smContext->get()->setHandedValues(std::move(handedValues));""",
+     """    static_cast<void>(handedValues);""")
 PY

@@ -6820,6 +6820,11 @@
           "file": "sce-build/src/model.rs",
           "symbol": "Variable",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/DataModelInitializer.cpp",
+          "symbol": "DataModelInitializer::declareHandedValue",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11890,6 +11895,26 @@
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::createSessionChecked",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "setHandedValues",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "handedValues_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/DataModelInitializer.cpp",
+          "symbol": "DataModelInitializer::initializeAllDataItems",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::setupJSEnvironment",
           "kind": "implements"
         }
       ],
