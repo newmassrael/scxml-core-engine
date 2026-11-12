@@ -18,13 +18,15 @@
 //
 // W3C 6.4.1 namelist undeclared-variable filter: parent's Var2=3
 // IS in the parent datamodel, but the child has no `<data id="Var2"/>`.
-// Per W3C 6.4 (and cpp's `DatamodelValidationHelper::isVariableDeclaredInChild`
-// filter), the namelist push must be skipped — the child's Var2 stays
-// unbound (Lua nil). Child's `conf:isBound="2"` cond therefore evaluates
-// false, the default transition fires → `success` → parent reaches pass.
-// If the codegen-time filter (child_datamodel_vars membership check)
-// were missing, Var2 would be set to 3 in the child, isBound=true, and
-// the failure path would reach the parent → fail.
+// Per W3C 6.4 a name that matches no top-level `<data>` of the child is
+// not added to its datamodel (docs/adr/0098). The parent hands the child
+// Var2=3 all the same; the child's start declares a handed value only in
+// place of a top-level `<data>` whose id it names, and declares nothing
+// for Var2 — the child's Var2 stays unbound (Lua nil). Child's
+// `conf:isBound="2"` cond therefore evaluates false, the default
+// transition fires → `success` → parent reaches pass. If the child set
+// every handed name, Var2 would be set to 3 in the child, isBound=true,
+// and the failure path would reach the parent → fail.
 //
 // The lowering this fixture shares with related fixtures is described in
 // test_226.c.
