@@ -333,8 +333,12 @@ KOTLIN_TREE_FOR_LANGUAGE=""
 kotlin_tree_for_language() {
     local language="$1" tree="$LOG/tree-$1"
     if [ ! -d "$tree" ]; then
-        "$(sce_gate_codegen)" generate-w3c -l kotlin --script-engine "$language" \
-            --output-dir "$tree" >/dev/null \
+        # The W3C tree as its manifest declares it (tools/codegen/trees/
+        # kotlin-w3c.toml), for this language: the generations the committed
+        # tree is written by, each given `--script-engine`, cached apart from
+        # the committed tree's own (ADR 0097).
+        "$(sce_gate_codegen)" materialize kotlin-w3c --script-engine "$language" \
+            --into "$tree" >/dev/null \
             || sce_gate_fail "generating the Kotlin W3C machines for --script-engine $language"
 
         # The overlay replaces the MACHINES and keeps the committed JUnit
@@ -368,44 +372,38 @@ kotlin_tree_for_language() {
         [ -d "$machines" ] \
             || sce_gate_fail "the $language generation wrote no machines under $machines"
         if diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then
-            sce_gate_fail "\`generate-w3c --script-engine $language\` produced machines identical to the committed $COMMITTED_LANGUAGE ones, so the selection did not reach the templates. Running this pair would hand the $language engine $COMMITTED_LANGUAGE and report it as $language coverage."
+            sce_gate_fail "\`materialize kotlin-w3c --script-engine $language\` produced machines identical to the committed $COMMITTED_LANGUAGE ones, so the selection did not reach the templates. Running this pair would hand the $language engine $COMMITTED_LANGUAGE and report it as $language coverage."
         fi
 
-        # ── The integration stems, which `generate-w3c` does not emit ─────
+        # ── The integration machines, which the W3C tree does not hold ────
         #
-        # `generate-w3c` covers `com/sce/generated` and stops there. The other
-        # 41 committed machine directories are integration stems, emitted by
-        # per-stem regen scripts, and they follow the DEFAULT script-engine
-        # language — so on a row whose language is not the committed one they
-        # are the mis-supply the check below refuses.
+        # The W3C tree covers `com/sce/generated` and stops there. The
+        # directories of `com/sce/integration` follow the DEFAULT script-engine
+        # language too — so on a row whose language is not the committed one
+        # they are the mis-supply the check below refuses.
         #
-        # ⚠ TWO halves, and both are derived rather than listed.
-        # `generate-integration` enumerates `integration_resources/`, which is
-        # 34 of them; the rest keep their fixture somewhere else
-        # (`examples/ai_loop/ai_loop.scxml`, a `--host-processor` flag the
-        # fan-out cannot carry) and are reachable only as their own scripts.
-        # Naming those would be a list to keep current, so the split is asked
-        # of the tree: a script whose stem has no `integration_resources/`
-        # directory is one the fan-out did not drive.
-        #
-        # ⚠⚠ And the producers are found by WHAT THEY WRITE, not by what they
-        # are called. Measured 2026-08-30: the per-document script that then
-        # regenerated `native_action` emitted the Rust, Go AND Kotlin trees from
-        # one script, so a glob over `regen_*_kotlin.sh` missed
-        # `com/sce/integration/statechart_native_action`
+        # ⚠ TWO halves. The integration tree is declared
+        # (tools/codegen/trees/kotlin-integration.toml) and written here for
+        # this language the way the W3C tree is. A generation whose manifest
+        # names its engine keeps it in every variant: its document is written
+        # for that engine, and its test hands the machine one that reads it.
+        local kt_root="$tree/backends/kotlin/tests/src/main/kotlin"
+        "$(sce_gate_codegen)" materialize kotlin-integration --script-engine "$language" \
+            --into "$tree" >/dev/null \
+            || sce_gate_fail "generating the Kotlin integration machines for --script-engine $language"
+
+        # The rest of the directory is still written by scripts (the static
+        # datamodel's machines), and those producers are found by WHAT THEY
+        # WRITE, not by what they are called. Measured 2026-08-30: the
+        # per-document script that then regenerated `native_action` emitted the
+        # Rust, Go AND Kotlin trees from one script, so a glob over
+        # `regen_*_kotlin.sh` missed `com/sce/integration/statechart_native_action`
         # — which would leave exactly one directory in the committed language
         # and hang this suite for the same reason the whole block exists.
-        local kt_root="$tree/backends/kotlin/tests/src/main/kotlin"
-        "$(sce_gate_codegen)" generate-integration -l kotlin \
-            --script-engine "$language" --output-dir "$kt_root" >/dev/null \
-            || sce_gate_fail "generating the Kotlin integration stems for --script-engine $language"
-
-        local producer stem
+        local producer
         for producer in scripts/regen_*.sh; do
             grep -q 'backends/kotlin/tests/src/main/kotlin}\?/com/sce/integration' "$producer" \
                 || continue
-            stem="$(basename "$producer" .sh)"; stem="${stem#regen_}"; stem="${stem%_kotlin}"
-            [ -d "integration_resources/$stem" ] && continue
             SCE_SCRIPT_ENGINE="$language" SCE_SCRIPT_ENGINE_FOR=kotlin \
             SCE_KOTLIN_GENERATED_ROOT="$kt_root" \
                 bash "$producer" >/dev/null \

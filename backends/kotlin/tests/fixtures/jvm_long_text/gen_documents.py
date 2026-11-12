@@ -138,8 +138,8 @@ def static_document() -> str:
   kotlinc moves out of its recipe), and the final's <donedata> inline content
   the done event's data. JvmLongTextTest reads each back.
 
-  Kotlin compile+run gate: scripts/regen_jvm_long_text_kotlin.sh commits the
-  generated machine, and JvmLongTextTest.kt drives it.
+  Kotlin compile+run gate: tools/codegen/trees/kotlin-integration.toml declares
+  the generated machine, and JvmLongTextTest.kt drives it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="run" datamodel="sce-static" name="jvm_long_text_static">
@@ -185,8 +185,8 @@ def ecmascript_document() -> str:
   event's data, and `fromDone` a final's <donedata> inline content read back
   from the done event. JvmLongTextTest reads each back.
 
-  Kotlin compile+run gate: scripts/regen_jvm_long_text_kotlin.sh commits the
-  generated machine, and JvmLongTextTest.kt drives it.
+  Kotlin compile+run gate: tools/codegen/trees/kotlin-integration.toml declares
+  the generated machine, and JvmLongTextTest.kt drives it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" initial="run" datamodel="ecmascript" name="jvm_long_text_ecmascript">

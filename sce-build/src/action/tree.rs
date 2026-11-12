@@ -361,6 +361,39 @@ impl TreeManifest {
     }
 }
 
+/// The argument by which a generation chooses the language its machines hand
+/// their script engine (`generate --script-engine`, `generate-w3c
+/// --script-engine`).
+const SCRIPT_ENGINE_ARGUMENT: &str = "--script-engine";
+
+impl ExpandedTree {
+    /// This tree as a host whose script engine reads `language` compiles it:
+    /// every generation that leaves the language to its backend's default is
+    /// also given `--script-engine <language>`, and the children it writes
+    /// inherit that from their parent's run.
+    ///
+    /// The variant is a configuration of the whole tree rather than of one
+    /// generation, since a machine handed text in a language its engine does
+    /// not read does not fail, it hangs (`scripts/gates/w3c-kotlin.sh`). A
+    /// generation whose manifest names its engine keeps it: its document is
+    /// written for that engine, and its test hands the machine one that reads
+    /// it whatever the host's default. Every action is keyed by its arguments,
+    /// so the variant's are cached apart from the tree's own.
+    pub fn for_script_engine(mut self, language: &str) -> Self {
+        for placed in &mut self.generations {
+            let arguments = &mut placed.generation.arguments;
+            let names_its_engine = arguments.iter().any(|a| {
+                a == SCRIPT_ENGINE_ARGUMENT || a.starts_with(&format!("{SCRIPT_ENGINE_ARGUMENT}="))
+            });
+            if !names_its_engine {
+                arguments.push(SCRIPT_ENGINE_ARGUMENT.to_string());
+                arguments.push(language.to_string());
+            }
+        }
+        self
+    }
+}
+
 /// What a pattern matches.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -554,6 +587,73 @@ mod tests {
             placed,
             vec![("in/a/a.scxml", "out/a"), ("in/b/b.scxml", "out/b")]
         );
+    }
+
+    #[test]
+    fn a_script_engine_variant_gives_every_generation_its_engine() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("in/b")).unwrap();
+        fs::create_dir_all(tmp.path().join("in/a")).unwrap();
+        let manifest: TreeManifest = toml::from_str(
+            r#"
+            [tree]
+            name = "t"
+            roots = ["out"]
+
+            [[generation]]
+            each = { directories = "in/*", as = "stem" }
+            arguments = ["generate", "in/{stem}/{stem}.scxml", "-l", "kotlin", "-o", "{out}"]
+            place = "out/{stem}"
+
+            [[generation]]
+            arguments = ["generate-w3c", "-l", "kotlin", "--output-dir", "{out}"]
+            place = ""
+            "#,
+        )
+        .unwrap();
+        let tree = manifest.expand(tmp.path()).unwrap();
+        let plain: Vec<Vec<String>> = tree
+            .generations
+            .iter()
+            .map(|g| g.generation.arguments.clone())
+            .collect();
+
+        let variant = tree.for_script_engine("lua");
+        assert_eq!(variant.generations.len(), plain.len());
+        for (placed, before) in variant.generations.iter().zip(&plain) {
+            let (kept, added) = placed.generation.arguments.split_at(before.len());
+            assert_eq!(kept, before.as_slice());
+            assert_eq!(added, ["--script-engine", "lua"]);
+        }
+    }
+
+    /// A generation that names its engine in the manifest is written for that
+    /// engine and keeps it in every variant; given a second `--script-engine`,
+    /// the generator would refuse the run for a repeated option.
+    #[test]
+    fn a_script_engine_variant_keeps_the_engine_a_generation_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        for fixed in [
+            r#"["generate", "a.scxml", "-l", "kotlin", "--script-engine", "ecmascript", "-o", "{out}"]"#,
+            r#"["generate", "a.scxml", "-l", "kotlin", "--script-engine=ecmascript", "-o", "{out}"]"#,
+        ] {
+            let manifest: TreeManifest = toml::from_str(&format!(
+                r#"
+                [tree]
+                name = "t"
+                roots = ["out"]
+
+                [[generation]]
+                arguments = {fixed}
+                place = "out"
+                "#
+            ))
+            .unwrap();
+            let tree = manifest.expand(tmp.path()).unwrap();
+            let before = tree.generations[0].generation.arguments.clone();
+            let variant = tree.for_script_engine("lua");
+            assert_eq!(variant.generations[0].generation.arguments, before);
+        }
     }
 
     /// A rule whose set is empty declares nothing, which is a defect of the

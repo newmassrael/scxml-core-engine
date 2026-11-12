@@ -134,8 +134,8 @@ const CHANNELS: &[Channel] = &[
         engine: "Kotlin AOT",
         driver: "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AiLoopTest.kt",
         scenario: r"@Test\s+fun\s+(\w+)\s*\(",
-        generator: "scripts/regen_ai_loop_kotlin.sh",
-        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+        generator: "tools/codegen/trees/kotlin-integration.toml",
+        names_document: "\"generate\", \"examples/ai_loop/ai_loop.scxml\", \"-l\", \"kotlin\"",
     },
     Channel {
         engine: "Python AOT",

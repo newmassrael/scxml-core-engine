@@ -32,7 +32,7 @@
 mutation_gradle . :sce-kotlin-tests:test --tests 'com.sce.integration.StaticHostParamsTest'
 mutation_targets tools/codegen/templates/kotlin/actions/send.kt.jinja2
 mutation_targets backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_static_host_params/statechart_static_host_paramsSm.kt
-mutation_regen scripts/regen_host_processor_kotlin.sh
+mutation_regen scripts/materialize.sh kotlin-integration
 mutation_oracles backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticHostParamsTest.kt sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── A value that cannot be computed is the empty string ────────────

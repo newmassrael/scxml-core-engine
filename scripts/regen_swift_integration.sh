@@ -6,10 +6,10 @@
 # integration_resources/, for every stem the Swift backend lowers.
 #
 # The Swift channel of the integration fixtures, the twin of the per-stem
-# `scripts/regen_<stem>_kotlin.sh` scripts and of `generate-integration -l kotlin` that runs
-# them. Swift has one script for every stem instead of one per stem, because what a stem script
-# does for Kotlin is staging the fixture so synth-invoke children land outside the canonical
-# root, parent generate, per-child generate with `--parent-stem` and a package prefix to keep the
+# `scripts/regen_<stem>_python.sh` scripts and of the Kotlin tree that
+# tools/codegen/trees/kotlin-integration.toml declares. Swift has one script for every stem
+# instead of a generation each, because what a Kotlin generation needs is a package of its own
+# per stem, with its children joining it (`--children`, `--kotlin-package-prefix`), to keep the
 # integration and W3C package roots apart; and Swift needs none of it. `generate -l swift` writes a
 # child's machine next to its parent's, and every type is named for its document, so the
 # machines of every stem are files of ONE SwiftPM target without a namespace of their own.

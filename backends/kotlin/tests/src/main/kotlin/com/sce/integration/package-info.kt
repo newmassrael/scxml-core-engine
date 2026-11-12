@@ -4,9 +4,11 @@
 /**
  * SCE Kotlin integration fixture state machines.
  *
- * Every `*Sm.kt` under `com.sce.integration.<stem>` is regenerated from
- * a canonical fixture at `integration_resources/<stem>/<stem>.scxml`
- * by the stem's `scripts/regen_<stem>_kotlin.sh`. The
+ * Every `*Sm.kt` under `com.sce.integration.<stem>` is generated from
+ * a canonical fixture at `integration_resources/<stem>/<stem>.scxml`,
+ * or from a document `tools/codegen/trees/kotlin-integration.toml` names
+ * elsewhere, as that manifest declares (`scripts/materialize.sh
+ * kotlin-integration`). The
  * `com.sce.integration` package is the Kotlin counterpart to Rust's
  * `backends/rust/tests/src/integration/` and Go's `backends/go/tests/integration/`
  * — its sibling `com.sce.generated` is reserved for the W3C IRP

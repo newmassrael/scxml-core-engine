@@ -98,46 +98,21 @@ step_rust_tests() {
 # packages under com/sce/generated, beside the W3C machines. Its machines have
 # their own directory, com/sce/integration/static_datamodel, beside the
 # integration stems.
+#
+# The W3C and integration trees are declared (ADR 0097): every document, flag
+# and package of them is in tools/codegen/trees/kotlin-w3c.toml and
+# kotlin-integration.toml, and `materialize` writes each as its actions produce
+# it, removing a generated file no action produces any more. The static
+# datamodel is the step's one tree still written by a script.
 step_kotlin_tests() {
     require_codegen
 
-    stage "W3C Kotlin tree"
-    "$CODEGEN" generate-w3c -l kotlin
+    stage "W3C and integration Kotlin trees"
+    "$CODEGEN" materialize kotlin-w3c --into "$REPO_ROOT" --replace
+    "$CODEGEN" materialize kotlin-integration --into "$REPO_ROOT" --replace
 
-    stage "Integration Kotlin tree"
-    "$CODEGEN" generate-integration -l kotlin
-
-    stage "EventSchema native-lowering Kotlin tree"
-    scripts/regen_event_schema_native_kotlin.sh
     stage "Static datamodel Kotlin tree"
     scripts/regen_static_datamodel_kotlin.sh
-    stage "Native-action host-dispatch Kotlin tree"
-    scripts/regen_native_action_kotlin.sh
-
-    # Called here rather than only by hand: nothing else reaches it — the
-    # `w3c-kotlin` gate regenerates only the W3C and `generate-integration` trees —
-    # so the committed Kotlin host-processor trees could drift with nothing to say
-    # so. Naming it here is what puts them under `regen-reproduces`.
-    stage "Host-processor send Kotlin trees"
-    scripts/regen_host_processor_kotlin.sh
-
-    # Same reason as the Kotlin host-processor trees above: a committed Kotlin tree
-    # this script does not know about could drift with nothing to say so.
-    stage "AI loop example Kotlin tree"
-    scripts/regen_ai_loop_kotlin.sh
-    stage "Transition-domain witness Kotlin tree"
-    scripts/regen_parallel_region_root_external_domain_kotlin.sh
-    stage "Child-deadline document Kotlin tree"
-    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
-    stage "External-event budget document Kotlin tree"
-    scripts/regen_external_chain_is_bounded_kotlin.sh
-
-    # The two documents whose texts are past one JVM class-file constant sit outside
-    # `integration_resources/` for the arity reason, with their own cause: the limit
-    # they reach is the class file's, so only the Kotlin channel has a question to
-    # ask of them. The `generate-integration` fan-out never sees them.
-    stage "Long-text documents Kotlin trees"
-    scripts/regen_jvm_long_text_kotlin.sh
 }
 
 # ── kotlin-method-size: the module of the JVM method-size document ──────

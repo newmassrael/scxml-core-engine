@@ -1710,7 +1710,7 @@ fn a_kotlin_candidates_in_line_child_is_generated_into_its_parents_package() {
 // gate (skipped when kotlinc or the jar is absent — the same toolchain-missing
 // behaviour as `smoke_kotlin`). The real compile+run is the committed
 // integration gate `sce-kotlin-tests` `EventSchemaNativeTest` (regen:
-// scripts/regen_event_schema_native_kotlin.sh).
+// scripts/materialize.sh kotlin-integration).
 #[test]
 fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
     let scratch = reset_scratch("kotlin_statechart");

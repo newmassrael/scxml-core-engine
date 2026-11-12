@@ -6143,19 +6143,11 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_donedata_local_invoke_kotlin.sh",
-          "kind": "references"
-        },
-        {
           "file": "tools/codegen/templates/c/scriptengine.jinja2",
           "kind": "references"
         },
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_autoforward_event_fields_kotlin.sh",
           "kind": "references"
         },
         {
@@ -6167,47 +6159,7 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_autoforward_done_invoke_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_autoforward_internal_queue_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_autoforward_dequeue_point_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_nested_final_not_terminal_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_invoke_precedes_external_dequeue_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_invoke_precedes_dequeue_midrun_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_donedata_late_completion_kotlin.sh",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/tests/codegen_hash_root_gate.rs",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_send_param_payload_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_invoke_param_seeds_declared_child_data_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_host_event_reaches_the_child_kotlin.sh",
           "kind": "references"
         },
         {
@@ -6216,10 +6168,6 @@
         },
         {
           "file": "sce-build/tests/mutations/the_regen_lane_starts_on_what_it_reproduces.cases",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_event_descriptor_spellings_agree_kotlin.sh",
           "kind": "references"
         },
         {
@@ -6253,10 +6201,6 @@
           "kind": "references"
         },
         {
-          "file": "scripts/regen_wildcard_in_document_order_kotlin.sh",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "committed_generated_files_carry_the_current_header_shape",
           "kind": "references"
@@ -6264,14 +6208,6 @@
         {
           "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "header_keys",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_an_event_keeps_the_name_it_was_sent_under_kotlin.sh",
-          "kind": "references"
-        },
-        {
-          "file": "scripts/regen_a_computed_event_name_is_matched_like_any_other_kotlin.sh",
           "kind": "references"
         },
         {
@@ -7618,6 +7554,102 @@
       "target_kind": "section",
       "target_id": "synth-6.2.6",
       "reason": "ADR 0097: the Go integration tree is declared in tools/codegen/trees/go-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "ADR 0097: the Kotlin integration tree is declared in tools/codegen/trees/kotlin-integration.toml; the per-stem script is deleted"
     }
   ],
   "frames": {},

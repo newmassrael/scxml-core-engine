@@ -2252,7 +2252,7 @@ struct GenerateArgs {
     ///
     /// Authoring workflows that stage the input file into a
     /// temporary directory before generation (e.g.
-    /// `scripts/regen_donedata_local_invoke_kotlin.sh`, which copies a
+    /// `scripts/regen_static_datamodel_kotlin.sh`, which copies a
     /// tracked fixture into `mktemp -d` so synth-invoke children
     /// don't pollute the source tree) must point this back at
     /// the canonical input root, otherwise the embedded
@@ -2923,18 +2923,17 @@ enum Commands {
     /// Batch generate W3C test state machines and test classes
     GenerateW3c(Box<GenerateW3cArgs>),
     /// Batch generate integration-fixture state machines for the backends
-    /// whose integration tree is not yet declared (Kotlin / Python / Swift)
-    /// from canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
+    /// whose integration tree is not yet declared (Python / Swift) from
+    /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
     ///
     /// Parallel to `generate-w3c` but reads from
     /// `integration_resources/` (separate §synth-6.2.6 input-root from W3C
     /// `resources/`) and emits into each backend's integration tree:
-    ///   - Kotlin:  `backends/kotlin/tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
     ///   - Python:  `backends/python/tests/integration/<stem>/`              (.gitignored, CI regen)
     ///   - Swift:   `backends/swift/tests/Sources/IntegrationMachines/`      (committed, one sweep)
     ///
-    /// The Rust and Go trees are declared (ADR 0097) and written by
-    /// `materialize rust-integration` and `materialize go-integration`.
+    /// The Rust, Go and Kotlin trees are declared (ADR 0097) and written by
+    /// `materialize <language>-integration`.
     ///
     /// Swift is one sweep over every stem the backend lowers
     /// (`scripts/regen_swift_integration.sh`), so `--stem` is refused for it.
@@ -2965,20 +2964,9 @@ enum Commands {
         /// It reaches the per-stem scripts through `SCE_SCRIPT_ENGINE`, which
         /// `scripts/lib/sce_codegen.sh` reads where every one of them already
         /// asks for the binary — so the selection lives in ONE place instead
-        /// of in each script's own `generate` invocation. Thirty-eight command
-        /// lines carrying one decision is the drift that seam has already paid
-        /// for.
+        /// of in each script's own `generate` invocation.
         #[arg(long, value_name = "LANG")]
         script_engine: Option<String>,
-        /// Where the artefacts land, replacing the committed source root.
-        ///
-        /// ⚠ Without it these scripts write IN PLACE, which is what a
-        /// committed tree wants and what a caller asking for the OTHER
-        /// script-engine language must not do: `scripts/gates/w3c-kotlin.sh`
-        /// needs one tree per engine/language pair and cannot get it by
-        /// dirtying the tree it is checking.
-        #[arg(long, value_name = "DIR")]
-        output_dir: Option<String>,
     },
     /// Read metadata.txt description field
     ReadMetadata {
@@ -4086,6 +4074,12 @@ enum Commands {
         /// by hand beside it stay.
         #[arg(long)]
         replace: bool,
+        /// Write the tree a host whose script engine reads `LANG` compiles:
+        /// every generation of it that leaves the language to its backend is
+        /// also given `--script-engine LANG`, and is cached apart from the
+        /// tree's own. A generation whose manifest names its engine keeps it.
+        #[arg(long = "script-engine", value_name = "LANG")]
+        script_engine: Option<String>,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
@@ -4520,12 +4514,10 @@ fn main() {
             language,
             stem,
             script_engine,
-            output_dir,
         } => cmd_generate_integration(
             &language,
             stem.as_deref(),
             script_engine.as_deref(),
-            output_dir.as_deref(),
             error_format,
         ),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
@@ -4757,7 +4749,14 @@ fn main() {
             tree,
             into,
             replace,
-        } => cmd_materialize(&tree, &into, replace, error_format),
+            script_engine,
+        } => cmd_materialize(
+            &tree,
+            &into,
+            replace,
+            script_engine.as_deref(),
+            error_format,
+        ),
         Commands::Addr2Sce {
             sourcemap_dir,
             symbol,
@@ -14027,26 +14026,23 @@ fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat)
 // ── Subcommand: generate-integration ───────────────────────────
 
 /// Batch integration-fixture regeneration for the backends whose
-/// integration tree is still written by a script each (Kotlin,
-/// Python) or by one sweep (Swift). Parallel to `generate-w3c` but
-/// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures.
+/// integration tree is still written by a script each (Python) or by one
+/// sweep (Swift). Parallel to `generate-w3c` but scoped to
+/// `integration_resources/<stem>/<stem>.scxml` fixtures.
 ///
 /// Each `<stem>` is dispatched to the matching backend's regen script
-/// (`scripts/regen_<stem>{_kotlin,_python}.sh`); those scripts
-/// encode the per-language TMP staging + `--input-root` override +
-/// post-processing (Kotlin `// Source:` rewrite, Kotlin
-/// `--kotlin-package-prefix com.sce.integration`).
+/// (`scripts/regen_<stem>_python.sh`); those scripts encode the per-language
+/// TMP staging + `--input-root` override + post-processing.
 ///
-/// Rust and Go are not served: their integration trees are declared
-/// (`tools/codegen/trees/{rust,go}-integration.toml`, ADR 0097) and written by
-/// `materialize`. Build-time backends (cpp / c11) are not
+/// Rust, Go and Kotlin are not served: their integration trees are declared
+/// (`tools/codegen/trees/{rust,go,kotlin}-integration.toml`, ADR 0097) and
+/// written by `materialize`. Build-time backends (cpp / c11) are not
 /// served either — they emit at CMake time without a committed tree, so
 /// there is nothing for `generate-integration` to drive.
 fn cmd_generate_integration(
     language: &str,
     stem: Option<&str>,
     script_engine: Option<&str>,
-    output_dir: Option<&str>,
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -14065,39 +14061,20 @@ fn cmd_generate_integration(
     // received nothing structured for the one route whose restriction is
     // real, and the sentence was a third copy of the set to keep current.
     let script_suffix = match lang {
-        Language::Kotlin => "_kotlin",
         Language::Python => "_python",
         // Swift is one sweep over every stem, not a script each: see
         // `scripts/regen_swift_integration.sh`. The suffix is never read for it.
         Language::Swift => "",
-        Language::Rust | Language::Go | Language::Cpp | Language::C11 => error_format
-            .emit_and_exit(
+        Language::Rust | Language::Go | Language::Kotlin | Language::Cpp | Language::C11 => {
+            error_format.emit_and_exit(
                 &CliError::UnsupportedLanguage {
                     lang: lang.canonical_name().to_string(),
                     route: LanguageRoute::GenerateIntegration,
                 },
                 "",
-            ),
+            )
+        }
     };
-
-    // ⚠ `--output-dir` is wired for Kotlin and for nothing else, so it is
-    // REFUSED elsewhere rather than ignored. Only the Kotlin stem scripts read
-    // `SCE_KOTLIN_GENERATED_ROOT`; a Go or Python run that accepted the flag
-    // would write in place and report success, which is the failure mode a
-    // caller reaches for this flag precisely to avoid — it would dirty the
-    // tree it was trying to leave alone, and say nothing.
-    if output_dir.is_some() && lang != Language::Kotlin {
-        cli_exit(CliError::ScxmlGenerate {
-            stage: "generate-integration",
-            detail: format!(
-                "--output-dir is honoured by the Kotlin stem scripts alone, and \
-                 `{}` was asked for. The other backends' scripts write into their \
-                 committed tree; accepting the flag for them would dirty that tree \
-                 and report success",
-                lang.canonical_name()
-            ),
-        });
-    }
 
     let project_root = find_project_root();
     let integration_root = project_root.join("integration_resources");
@@ -14164,12 +14141,11 @@ fn cmd_generate_integration(
         }
         let mut command = std::process::Command::new("bash");
         command.arg(script).current_dir(&project_root);
-        // The two selections reach the stem script as environment rather than
-        // as arguments, and that is the point rather than a shortcut: the
-        // script decides its own `generate` command line, and 38 of them do.
-        // `SCE_SCRIPT_ENGINE` is read once, by the codegen locator every one
-        // of them already sources; `SCE_KOTLIN_GENERATED_ROOT` opens the one
-        // line each of them spells the same way.
+        // The selection reaches the stem script as environment rather than as
+        // an argument, and that is the point rather than a shortcut: the
+        // script decides its own `generate` command line. `SCE_SCRIPT_ENGINE`
+        // is read once, by the codegen locator every one of them already
+        // sources.
         if let Some(engine) = script_engine {
             command.env("SCE_SCRIPT_ENGINE", engine);
             // ⚠ And WHICH backend it applies to, because a stem script may emit
@@ -14178,9 +14154,6 @@ fn cmd_generate_integration(
             // emits ECMAScript. Without this scope the selection reached all
             // three and the generator refused the first one it did not fit.
             command.env("SCE_SCRIPT_ENGINE_FOR", lang.canonical_name());
-        }
-        if let Some(dir) = output_dir {
-            command.env("SCE_KOTLIN_GENERATED_ROOT", dir);
         }
         let status = command.status().unwrap_or_else(|e| {
             cli_exit(CliError::ReadInput {
@@ -14954,7 +14927,13 @@ fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
 /// (ADR 0097), through this machine's action cache, and say on stderr how
 /// many actions the cache answered and how many ran. With `replace`, also
 /// remove the generated files under the tree's roots that it did not write.
-fn cmd_materialize(tree: &str, into: &Path, replace: bool, error_format: ErrorFormat) {
+fn cmd_materialize(
+    tree: &str,
+    into: &Path,
+    replace: bool,
+    script_engine: Option<&str>,
+    error_format: ErrorFormat,
+) {
     use sce_build::action::{generation, identity, materialize, store, tree as trees};
     let fail = |detail: String| -> ! {
         error_format.emit_and_exit(
@@ -14981,6 +14960,10 @@ fn cmd_materialize(tree: &str, into: &Path, replace: bool, error_format: ErrorFo
     });
     let expanded = trees::tree(&root, tree)
         .and_then(|manifest| manifest.expand(&root))
+        .map(|expanded| match script_engine {
+            Some(language) => expanded.for_script_engine(language),
+            None => expanded,
+        })
         .unwrap_or_else(|e| fail(e.to_string()));
     let report = materialize::materialize(&generator, &store, &expanded, into)
         .unwrap_or_else(|e| fail(e.to_string()));

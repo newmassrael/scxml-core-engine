@@ -320,6 +320,11 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "`generate-integration` route",
         Why::Design("its integration tree is declared (tools/codegen/trees/go-integration.toml, ADR 0097) and written by `materialize go-integration`"),
     ),
+    (
+        Language::Kotlin,
+        "`generate-integration` route",
+        Why::Design("its integration tree is declared (tools/codegen/trees/kotlin-integration.toml, ADR 0097) and written by `materialize kotlin-integration`"),
+    ),
     // The script-engine seam (docs/SCE_LUA_TRANSLATION_SEAM.md).
     (
         Language::Rust,

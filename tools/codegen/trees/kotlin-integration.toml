@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Kotlin integration machines (ADR 0097): a package directory each under
+# com/sce/integration, `com.sce.integration.<document>`, holding a document's
+# machine and the machines of the children it writes (`--children`, each
+# joining its parent's package). The static datamodel's directory is a tree of
+# its own. The tests that drive the machines, and the integration package's
+# package-info.kt, are written by hand.
+#
+# Regenerate with `scripts/materialize.sh kotlin-integration`. The w3c-kotlin
+# gate writes the same tree for each script-engine language it runs
+# (`materialize kotlin-integration --script-engine <language>`).
+
+[tree]
+name = "kotlin-integration"
+roots = ["backends/kotlin/tests/src/main/kotlin/com/sce/integration/*"]
+except = ["backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_datamodel"]
+
+# Every fixture of integration_resources: a directory holding the document of
+# its name. A document whose transitions compile to a function writes it
+# beside the machine (`<stem>TransitionFunction.kt`).
+[[generation]]
+each = { directories = "integration_resources/*", as = "stem", except = [
+    "a_host_names_its_origin_in_its_own_terms",
+    "an_event_no_processor_delivered_has_no_origin",
+] }
+arguments = [
+    "generate", "integration_resources/{stem}/{stem}.scxml", "-l", "kotlin", "-o", "{out}", "--children",
+    "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{stem}"
+keep = ["*Sm.kt", "*TransitionFunction.kt"]
+
+# Two stems are generated for a host that serves the `x-sce-host` processor or
+# invoker; their test drives that host, so the declaration is the build's and
+# stands here, beside the stems it applies to.
+[[generation]]
+arguments = [
+    "generate", "integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml",
+    "-l", "kotlin", "-o", "{out}", "--children", "--kotlin-package-prefix", "com.sce.integration",
+    "--host-invoker", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_host_names_its_origin_in_its_own_terms"
+keep = ["*Sm.kt"]
+
+[[generation]]
+arguments = [
+    "generate", "integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml",
+    "-l", "kotlin", "-o", "{out}", "--children", "--kotlin-package-prefix", "com.sce.integration",
+    "--host-processor", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/an_event_no_processor_delivered_has_no_origin"
+keep = ["*Sm.kt"]
+
+# The documents outside integration_resources. A stem there is a contract of
+# seven channels (C++ Interpreter, C++ AOT, Rust, Go, Python, Kotlin, C11)
+# that `integration_stem_registration` enforces, and each of these asks a
+# question of fewer engines:
+# - a_child_timer_is_a_deadline_of_its_parent asks a host's question, when
+#   the machine next needs a tick, which C11 and the C++ Interpreter do not
+#   expose;
+# - external_chain_is_bounded holds each engine to ARCHITECTURE.md
+#   "External-Event Budget", a driver at a time;
+# - parallel_region_root_external_domain, the external transition of a
+#   region root, has a driver on six of the seven channels.
+[[generation]]
+each = { list = [
+    "a_child_timer_is_a_deadline_of_its_parent",
+    "external_chain_is_bounded",
+    "parallel_region_root_external_domain",
+], as = "document" }
+arguments = [
+    "generate", "tests/integration/{document}.scxml", "-l", "kotlin", "-o", "{out}", "--children",
+    "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{document}"
+keep = ["*Sm.kt"]
+
+# The AI supervision loop example, for a host serving `x-sce-host`. It is an
+# example, not a fixture: `ai_loop_channel_parity` holds every channel that
+# drives it to one scenario set.
+[[generation]]
+arguments = [
+    "generate", "examples/ai_loop/ai_loop.scxml", "-l", "kotlin", "-o", "{out}", "--children",
+    "--kotlin-package-prefix", "com.sce.integration", "--host-processor", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/ai_loop"
+keep = ["*Sm.kt"]
+
+# The EventSchema native lowering, and the `<sce:action>` native host
+# dispatch: a typed `_event.data` guard lowered to a comparison, and a machine
+# that declares a host interface of its actions, a package each, so what the
+# machine exposes is type-checked where its test calls it.
+[[generation]]
+each = { list = [
+    "statechart_minimal",
+    "statechart_bytes",
+    "statechart_lifted",
+    "statechart_native_action",
+], as = "document" }
+arguments = [
+    "generate", "sce-build/tests/fixtures/event_schema/{document}.scxml", "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{document}"
+keep = ["*Sm.kt"]
+
+# The host-served Event I/O Processor and its invoker, a package per document,
+# each declared with the host surfaces its test serves. The declaration is the
+# point: without `--host-processor` the same `<send>` compiles to
+# error.execution, with it to a dispatch into the registry the host fills.
+[[generation]]
+each = { list = [
+    "statechart_host_processor",
+    "statechart_delayed_host_send",
+    "statechart_static_delayed_host_send",
+], as = "document" }
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration", "--host-processor", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{document}"
+keep = ["*Sm.kt"]
+
+[[generation]]
+each = { list = [
+    "statechart_host_invoker",
+    "statechart_static_host_invoke",
+    "statechart_host_invoker_optional",
+], as = "document" }
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/{document}.scxml", "-l", "kotlin", "-o", "{out}",
+    "--kotlin-package-prefix", "com.sce.integration", "--host-invoker", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/{document}"
+keep = ["*Sm.kt"]
+
+# The one document that needs both declarations.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml",
+    "-l", "kotlin", "-o", "{out}", "--kotlin-package-prefix", "com.sce.integration",
+    "--host-processor", "x-sce-host", "--host-invoker", "x-sce-host",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_static_host_params"
+keep = ["*Sm.kt"]
+
+# No host declaration: the build names the Mesh request's type itself.
+[[generation]]
+arguments = [
+    "generate", "sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml",
+    "-l", "kotlin", "-o", "{out}", "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_static_mesh_request"
+keep = ["*Sm.kt"]
+
+# The two documents whose texts pass the 65,535 bytes of modified UTF-8 one
+# JVM class-file constant holds, at every place the Kotlin backend writes
+# document text as an expression (gen_documents.py beside them says why). The
+# question belongs to the JVM's class file, which only the Kotlin channel
+# compiles to, so they are not stems. The second is written for an ECMAScript
+# engine and names it, so its
+# machine hands its engine ECMAScript in every script-engine variant of this
+# tree; the Lua engine reads it through its ECMAScript adapter, and a machine
+# lowered to Lua would be refused by the Rhino and QuickJS engines
+# (`acceptsLanguage`).
+[[generation]]
+arguments = [
+    "generate", "backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_static.scxml",
+    "-l", "kotlin", "-o", "{out}", "--kotlin-package-prefix", "com.sce.integration",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/jvm_long_text_static"
+keep = ["*Sm.kt"]
+
+[[generation]]
+arguments = [
+    "generate", "backends/kotlin/tests/fixtures/jvm_long_text/jvm_long_text_ecmascript.scxml",
+    "-l", "kotlin", "-o", "{out}", "--kotlin-package-prefix", "com.sce.integration",
+    "--script-engine", "ecmascript",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/jvm_long_text_ecmascript"
+keep = ["*Sm.kt"]

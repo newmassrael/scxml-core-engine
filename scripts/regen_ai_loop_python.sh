@@ -5,11 +5,10 @@
 # Regenerate backends/python/tests/integration/ai_loop/ from the worked example
 # at examples/ai_loop/ai_loop.scxml.
 #
-# The Python half of what the Rust and Go generations of the same example
-# (tools/codegen/trees/rust-integration.toml and
-# tools/codegen/trees/go-integration.toml) and `scripts/regen_ai_loop_kotlin.sh`
-# do, and it exists for the reason the headers of the Go driver and the Kotlin
-# script name: a clause asserted in one channel is
+# The Python half of what the Rust, Go and Kotlin generations of the same
+# example (tools/codegen/trees/rust-integration.toml, go-integration.toml and
+# kotlin-integration.toml) do, and it exists for the reason the header of the
+# Go driver names: a clause asserted in one channel is
 # that engine's word for the document rather than the document's own.
 # `sce-build/tests/ai_loop_channel_parity.rs` holds every registered channel to
 # the same scenario set, and this script is how the Python one gets a machine to

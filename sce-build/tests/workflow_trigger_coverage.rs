@@ -1792,12 +1792,12 @@ fn the_filter_matcher_separates_the_two_wildcards() {
     assert!(!filter_matches("a/**", "a"));
     // A wildcard inside a segment stays inside it.
     assert!(filter_matches(
-        "scripts/regen_event_schema_native*.sh",
-        "scripts/regen_event_schema_native_kotlin.sh"
+        "scripts/regen_static_datamodel*.sh",
+        "scripts/regen_static_datamodel_kotlin.sh"
     ));
     assert!(!filter_matches(
-        "scripts/regen_event_schema_native*.sh",
-        "scripts/x/regen_event_schema_native_kotlin.sh"
+        "scripts/regen_static_datamodel*.sh",
+        "scripts/x/regen_static_datamodel_kotlin.sh"
     ));
     // A literal pattern matches only itself.
     assert!(filter_matches(

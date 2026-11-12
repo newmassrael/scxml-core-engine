@@ -526,7 +526,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 // integration under `resources/` would fold the integration fixture
 // into the W3C source-hash domain. Distinct drift contexts demand
 // distinct top-level dirs. Regen via `scripts/materialize.sh rust-integration`,
-// `scripts/regen_donedata_local_invoke_kotlin.sh` and
+// `scripts/materialize.sh kotlin-integration` and
 // `scripts/materialize.sh go-integration`.
 //
 // Python is intentionally skipped: `backends/python/bindings/tests/` runs the
@@ -578,7 +578,7 @@ fn verify_passes_on_real_committed_kotlin_donedata_tree() {
          failure here means \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing the donedata generated dir. Run \
-         `scripts/regen_donedata_local_invoke_kotlin.sh` and commit the \
+         `scripts/materialize.sh kotlin-integration` and commit the \
          result. stderr:\n{stderr}"
     );
 }

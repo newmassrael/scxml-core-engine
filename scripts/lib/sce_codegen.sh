@@ -58,12 +58,14 @@ sce_codegen_path() {
 # Wrap a resolved binary so every `generate` it is asked for names a
 # script-engine language, and print the wrapper's path.
 #
-# `generate-integration` dispatches to 38 per-stem regen scripts, and each one
-# spells its own `sce-codegen generate` invocation — some of them twice, for a
+# `generate-integration` dispatches to per-stem regen scripts, and the
+# w3c-kotlin gate to the scripts that still write its tree; each one spells its
+# own `sce-codegen generate` invocation — some of them twice, for a
 # synth-invoke child. Threading a `--script-engine` flag through all of them
-# would put ONE decision in 38 places, which is the drift this repository has
-# already paid for in this exact seam. They share one thing, and it is the
-# binary this file resolves for them, so that is where the selection goes.
+# would put ONE decision in every one of them, which is the drift this
+# repository has already paid for in this exact seam. They share one thing, and
+# it is the binary this file resolves for them, so that is where the selection
+# goes. A declared tree takes the selection as `materialize --script-engine`.
 #
 # ⚠ It rewrites `generate` and nothing else. `verify-generator` — which this
 # file itself calls, and `cmake/SCEFindCodegen.cmake` calls at configure time —
