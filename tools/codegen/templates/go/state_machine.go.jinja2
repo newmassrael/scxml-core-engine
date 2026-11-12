@@ -1016,9 +1016,6 @@ func new{{ machine_name }}Policy(actions {{ native_actions_interface }}, acceptS
 			"build it with NewSimulated{{ machine_name }}Policy to run it on a recorder or a test double on purpose")
 	}
 {% endif %}
-	return {{ machine_name }}Policy{
-		actions: actions,
-		acceptSimulatedHost: acceptSimulatedHost,
 {% else %}
 // New{{ machine_name }}Policy creates a new policy with default values.
 {% if has_native_actions %}
@@ -1028,12 +1025,31 @@ func new{{ machine_name }}Policy(actions {{ native_actions_interface }}, acceptS
 // initial state's `<onentry>` can already perform an act — this is the one
 // call every host has to make, so it is where the requirement belongs.
 func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ machine_name }}Policy {
-	return {{ machine_name }}Policy{
-		actions: actions,
 {% else %}
 func New{{ machine_name }}Policy() {{ machine_name }}Policy {
-	return {{ machine_name }}Policy{
 {% endif %}
+{% endif %}
+{# §scxml-5.3: the variables are declared in document order, so an initial
+   value reads a variable declared before it by its field name
+   (`StaticTarget::initial_field_ref`), as a local here: the composite literal
+   below cannot name one of its own fields. A module parameter has no initial
+   value of its document's (docs/SCE_TEST_PROFILE.md §11.5); the component
+   reads the run's value into it before the machine starts, so it starts at a
+   value nothing reads (`module_parameter_starts`: its type's zero, or an
+   enum's first variant). #}
+{% for field in static_fields %}
+{% if field.module_parameter %}
+	var {{ field.name }} {{ field.ty }} = {{ module_parameter_starts[field.id] }}
+{% else %}
+	var {{ field.name }} {{ field.ty }} = {{ field.init }}
+{% endif %}
+{% endfor %}
+	return {{ machine_name }}Policy{
+{% if accepts_simulated_host %}
+		actions: actions,
+		acceptSimulatedHost: acceptSimulatedHost,
+{% elif has_native_actions %}
+		actions: actions,
 {% endif %}
 {# docs/adr/0045, "Questions the owner answered" 2: a root is never without an
    id, the host gives it or it is drawn. Every `sce-static` root binds one,
@@ -1046,16 +1062,8 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 {% endif %}
-{# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
-   its document's; the component reads the run's value into it before the
-   machine starts, so it starts at a value nothing reads
-   (`module_parameter_starts`: its type's zero, or an enum's first variant). #}
 {% for field in static_fields %}
-{% if field.module_parameter %}
-		{{ field.name }}: {{ module_parameter_starts[field.id] }},
-{% else %}
-		{{ field.name }}: {{ field.init }},
-{% endif %}
+		{{ field.name }}: {{ field.name }},
 {% endfor %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 		activeStates: make([]{{ machine_name }}State, 0),
