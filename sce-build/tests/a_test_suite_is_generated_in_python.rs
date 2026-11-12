@@ -321,8 +321,8 @@ fn trace_forms_dir() -> PathBuf {
 /// `from_underlying`, a list of optional elements and an optional field each by
 /// its runtime reader with the read as a lambda, a list of records by a
 /// comprehension whose record binds its own object, a byte string by its hex.
-/// Python lowers no union, so the configuration whose record holds one is
-/// refused by the union's name.
+/// Python's test profile matches no union yet, so the configuration whose
+/// record holds one is refused by the union's name.
 #[test]
 fn a_configuration_reads_a_record_of_every_form() {
     let forms = file_at(

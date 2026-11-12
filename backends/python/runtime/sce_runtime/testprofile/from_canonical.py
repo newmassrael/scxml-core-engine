@@ -330,8 +330,9 @@ def union_case(value: Any, variants: Sequence[str], what: str) -> Tuple[str, Any
     A variant no case declares is refused here, so a reader that chooses by the
     variant read has a branch for each declared one and needs none for another.
 
-    Python lowers no union (``codegen_matrix::UNION_BACKENDS``), so no
-    generated reader calls this yet; it reads the form ``canonical.union_case``
+    Python's test profile matches no union yet
+    (``codegen_matrix::TEST_PROFILE_UNION_BACKENDS``), so no generated reader
+    calls this yet; it reads the form ``canonical.union_case``
     writes, which a host's own reader of a union reads with."""
     if not isinstance(value, dict):
         raise _not_a(value, what, "a value of a union, which is an object of one member")
