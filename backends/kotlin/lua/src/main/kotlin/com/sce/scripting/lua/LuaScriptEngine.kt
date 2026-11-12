@@ -91,6 +91,15 @@ class LuaScriptEngine : ScxmlScriptEngine {
 
     private data class Session(
         val handle: Long,  // lua_State pointer
+        /** The id the session was created under ([createSession]). */
+        val id: String,
+        /**
+         * The `_name` the session was bound with ([setupSystemVariables]),
+         * which for a generated machine is its document's name (§scxml-5.10).
+         * Null until the system variables are bound, and for a session a
+         * caller made without binding them.
+         */
+        var name: String? = null,
         var stateQueryCallback: ((String) -> Boolean)? = null,
         val declaredVars: MutableSet<String> = mutableSetOf(),
         val activeRefs: MutableSet<Int> = mutableSetOf(),
@@ -147,18 +156,27 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * identically is not a measurement, which is why the census records the
      * frontend's SUCCESSES too: the ceiling is meaningless without a positive
      * control saying the path ran at all.
+     *
+     * ⚠⚠ Each line names the SESSION that asked, between the kind and the
+     * text: `outcome`, `kind`, the session's `_name` (its id when it was
+     * never bound one), then the text. A text alone said that some case
+     * reached it and never which, so a declared refusal that went missing
+     * from one run could not tell a case that stopped asking from a case
+     * whose scope already held the name. The gate prints a missing entry's
+     * lines by session for that reason.
      */
-    private fun recordLowering(outcome: String, kind: String, text: String) {
+    private fun recordLowering(outcome: String, kind: String, session: Session, text: String) {
         val path = System.getProperty(LOWERING_CENSUS_PROPERTY) ?: return
+        val producer = (session.name ?: session.id).replace('\t', ' ').replace('\n', ' ')
         synchronized(LuaScriptEngine::class.java) {
-            java.io.File(path).appendText("$outcome\t$kind\t$text\n")
+            java.io.File(path).appendText("$outcome\t$kind\t$producer\t$text\n")
         }
     }
 
     override fun createSession(sessionId: String) {
         val handle = LuaNative.newState()
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
-        val session = Session(handle)
+        val session = Session(handle = handle, id = sessionId)
         sessions[sessionId] = session
         // A creation that fails keeps no session (docs/adr/0096): a library
         // chunk that does not load is a [ScriptLibraryNotLoadedException], and
@@ -199,6 +217,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
         val L = session.handle
+        session.name = machineName
 
         // §scxml-5.10: each bound read-only, through [bindSystemVariable].
         LuaNative.pushString(L, sessionId)
@@ -312,8 +331,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
             expr.text
         } else {
             session.loweringScope.lowerValue(expr.text)
-                ?.also { recordLowering("frontend", "value", expr.text) }
-                ?: refusedToLower(expr, "value", "expression")
+                ?.also { recordLowering("frontend", "value", session, expr.text) }
+                ?: refusedToLower(expr, "value", "expression", session)
         }
 
     /**
@@ -330,8 +349,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
             expr.text
         } else {
             session.loweringScope.lowerCondition(expr.text)
-                ?.also { recordLowering("frontend", "cond", expr.text) }
-                ?: refusedToLower(expr, "cond", "condition")
+                ?.also { recordLowering("frontend", "cond", session, expr.text) }
+                ?: refusedToLower(expr, "cond", "condition", session)
         }
 
     /**
@@ -348,8 +367,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
             location.text
         } else {
             session.loweringScope.lowerLocation(location.text)
-                ?.also { recordLowering("frontend", "location", location.text) }
-                ?: refusedToLower(location, "location", "assignment target")
+                ?.also { recordLowering("frontend", "location", session, location.text) }
+                ?: refusedToLower(location, "location", "assignment target", session)
         }
 
     /**
@@ -366,8 +385,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
             script.text
         } else {
             session.loweringScope.lowerScript(script.text)
-                ?.also { recordLowering("frontend", "script", script.text) }
-                ?: refusedToLower(script, "script", "script")
+                ?.also { recordLowering("frontend", "script", session, script.text) }
+                ?: refusedToLower(script, "script", "script", session)
         }
 
     /**
@@ -387,8 +406,8 @@ class LuaScriptEngine : ScxmlScriptEngine {
      * directions by `scripts/gates/w3c-kotlin.sh`: an undeclared refusal is
      * red, and so is a declared one nothing produces.
      */
-    private fun refusedToLower(source: ScriptSource, kind: String, role: String): Nothing {
-        recordLowering("refused", kind, source.source)
+    private fun refusedToLower(source: ScriptSource, kind: String, role: String, session: Session): Nothing {
+        recordLowering("refused", kind, session, source.source)
         throw ScriptEngineException(
             "SCE's ECMAScript frontend does not accept this $role: ${source.source}",
         )

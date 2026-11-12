@@ -186,6 +186,10 @@ KOTLIN_TEST_SOURCES="backends/kotlin/tests/src/test/kotlin"
 # successes are what separates them: on this suite it answers tens of thousands
 # of times, so anything near zero means the census did not happen.
 FRONTEND_FLOOR=1000
+# One line per lowering, tab-separated: outcome (`frontend` or `refused`),
+# kind, the session that asked (its `_name`, which for a W3C machine is its
+# document's name), then the text, which may itself hold a tab and so is read
+# with `cut -f4-`.
 CENSUS="$LOG/lowering-census.tsv"
 REPORTS="backends/kotlin/tests/build/test-results/test"
 
@@ -859,7 +863,7 @@ PY
 )" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, why it is a refusal rather than a gap, and the producers that reach it — each of which must resolve to a fixture $FIXTURES_JSON registers or a test class under $KOTLIN_TEST_SOURCES. An entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
 
 declared_refusals="$(printf '%s\n' "$declared_rows" | cut -f2-)"
-observed_refusals="$(grep '^refused' "$CENSUS" | cut -f3- | sort -u || true)"
+observed_refusals="$(grep '^refused' "$CENSUS" | cut -f4- | sort -u || true)"
 
 undeclared="$(comm -23 \
     <(printf '%s\n' "$observed_refusals" | grep -v '^$' | sort -u) \
@@ -876,7 +880,73 @@ unseen="$(comm -13 \
 if [ -n "$unseen" ]; then
     printf '%s\n' "declared refusals this run never produced:" >&2
     printf '%s\n' "$unseen" >&2
-    sce_gate_fail "$REFUSALS_JSON declares $(printf '%s\n' "$unseen" | wc -l) refusal(s) this run did not produce. Remove them — a list that keeps an entry nothing reaches cannot be trusted in the other direction either, and each one it keeps is a case a reader believes is still exercised"
+    # ⚠ What the census says about each one, by session, before the verdict.
+    #
+    # Run 43153245334 (e7358568a1, 2026-11-12) reported `Var1` unseen with
+    # test307 registered and passing on every row, and nothing between it and
+    # the green run before it touched the producer. A census of texts alone
+    # could not say whether test307 lowered `Var1` (its scope already held the
+    # name), refused it without the line arriving, or never asked. Each line
+    # now names its session, and this prints, for each unseen text, every
+    # session that lowered or refused it, and every line its fixture
+    # producers' sessions left. It is a reading, not a verdict: it never
+    # changes the outcome below, which is why its own failure is ignored.
+    python3 - "$CENSUS" "$REFUSALS_JSON" "$unseen" <<'PY' || true
+import collections
+import json
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+census, refusals, unseen = sys.argv[1], sys.argv[2], sys.argv[3].splitlines()
+producers_of = {
+    entry["text"]: entry.get("produced_by", [])
+    for entry in json.load(open(refusals, encoding="utf-8"))["refusals"]
+}
+
+# A text may span lines (a `<script>` body); only a line that opens a record
+# is one, and its fourth field onward is the text's first line.
+rows = []
+with open(census, encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        parts = line.rstrip("\n").split("\t", 3)
+        if len(parts) == 4 and parts[0] in ("frontend", "refused"):
+            rows.append(parts)
+
+
+def session_of(fixture):
+    # A session's `_name` is its document's `name` attribute, or the name the
+    # generator gives a document that declares none, which is its file stem.
+    document = pathlib.Path("resources") / fixture / f"test{fixture}.scxml"
+    try:
+        declared = ET.parse(document).getroot().get("name")
+    except (OSError, ET.ParseError):
+        declared = None
+    return declared or f"test{fixture}"
+
+
+for text in unseen:
+    if not text:
+        continue
+    print(f"census lines carrying {text!r}, by outcome, kind and session:", file=sys.stderr)
+    carrying = collections.Counter((o, k, s) for o, k, s, t in rows if t == text)
+    if not carrying:
+        print("  none: no session lowered or refused this text", file=sys.stderr)
+    for (outcome, kind, session), count in sorted(carrying.items()):
+        print(f"  {outcome} {kind} {session} x{count}", file=sys.stderr)
+    for name in producers_of.get(text, []):
+        if not name.isdigit():
+            print(f"  producer {name} is a test class: its sessions carry the names it binds",
+                  file=sys.stderr)
+            continue
+        session = session_of(name)
+        own = collections.Counter((o, k, t) for o, k, s, t in rows if s == session)
+        print(f"  session {session!r} (fixture {name}) left {sum(own.values())} census line(s):",
+              file=sys.stderr)
+        for (outcome, kind, line_text), count in own.most_common(15):
+            print(f"    {outcome} {kind} {line_text!r} x{count}", file=sys.stderr)
+PY
+    sce_gate_fail "$REFUSALS_JSON declares $(printf '%s\n' "$unseen" | wc -l) refusal(s) this run did not produce. Read the census lines above before removing any: a producer that is still registered and LOWERED the text was handed a scope that held a name it should not have, which is a defect to find rather than an entry to drop. Otherwise remove them — a list that keeps an entry nothing reaches cannot be trusted in the other direction either, and each one it keeps is a case a reader believes is still exercised"
 fi
 
 # ⚠⚠ THE RATCHET, and it is over the half that can actually reach zero.
