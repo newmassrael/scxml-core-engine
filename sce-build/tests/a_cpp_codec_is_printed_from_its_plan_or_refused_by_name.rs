@@ -516,10 +516,10 @@ fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_refused() {
         codec_document(
             "holder",
             r#"<sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
-    <sce:flag-bind input="wide" source="w"/>
+    <sce:flag-bind input="wide" source="handed_wide"/>
   </sce:import>
   <sce:flag-inputs>
-    <sce:flag-input name="w" width="1"/>
+    <sce:flag-input name="handed_wide" width="1"/>
   </sce:flag-inputs>"#,
             r#"<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
       <sce:flag name="L" bit="0"/>
@@ -536,7 +536,7 @@ fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_refused() {
     assert_refused_by(
         &holder,
         "codec 'holder': field 'entries': a list on one side of a gate, held to the law its \
-         entries say the codec's own input `w` by, has no C++ lowering",
+         entries say the codec's own input `handed_wide` by, has no C++ lowering",
     );
 }
 
