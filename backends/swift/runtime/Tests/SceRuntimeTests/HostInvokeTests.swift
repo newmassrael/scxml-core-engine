@@ -54,7 +54,11 @@ private func makeHostEngine() -> (Engine<ScriptedPolicy>, RecordingInvoker) {
     } catch {
         Issue.record("the test invoker was refused: \(error)")
     }
-    try engine.initialize()
+    do {
+        try engine.initialize()
+    } catch {
+        Issue.record("the machine did not start: \(error)")
+    }
     return (engine, invoker)
 }
 
