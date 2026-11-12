@@ -42,33 +42,27 @@ fn swift_of(document: &str) -> String {
 fn a_list_of_numbers_is_a_local_array_the_body_appends_to() {
     let code = swift_of(&format!("{FIXTURES}/algorithm_day_run.scxml"));
     assert!(
-        code.contains("func dayRun(_ first: UInt8, _ count: UInt8) throws -> [UInt8]"),
+        code.contains(
+            "func dayRun(_ first: UInt8, _ count: UInt8) throws(AlgorithmError) -> [UInt8]"
+        ),
         "{code}"
     );
     assert!(code.contains("var out: [UInt8] = []"), "{code}");
     // The capacity the document declares is reserved, as the C++ buffer's is.
     assert!(code.contains("out.reserveCapacity(8)"), "{code}");
     // The element is the value of the checked sum, narrowed to the element's type
-    // by the sum itself.
+    // by the sum itself; a sum that overflows throws before anything is appended.
     assert!(
-        code.contains("out.append(Checked.add(sceFailure, first, i))"),
+        code.contains("out.append((try Checked.add(first, i)))"),
         "{code}"
     );
 }
 
 #[test]
-fn the_buffer_is_returned_as_the_value_the_failure_is_read_before() {
+fn the_buffer_is_returned_as_it_is_since_a_failure_has_already_left() {
     let code = swift_of(&format!("{FIXTURES}/algorithm_day_run.scxml"));
-    let computed = code
-        .find("let sceReturned: [UInt8] = out")
-        .expect("the list is computed into a local, as any may-fail return is");
-    let check = code[computed..]
-        .find("try sceFailure.throwIfFailed()")
-        .expect("the failure is read");
-    let returned = code[computed..]
-        .find("return sceReturned")
-        .expect("the local is returned");
-    assert!(check < returned, "{code}");
+    assert!(code.contains("return out"), "{code}");
+    assert!(!code.contains("sceFailure"), "{code}");
 }
 
 #[test]
@@ -77,7 +71,7 @@ fn a_list_of_records_holds_the_schemas_struct() {
     assert!(
         code.contains(
             "func ledgerAdd(_ entries: [SchemaEntryPayload], _ id: UInt32, _ amount: Int32) \
-             throws -> [SchemaEntryPayload]"
+             throws(AlgorithmError) -> [SchemaEntryPayload]"
         ),
         "{code}"
     );

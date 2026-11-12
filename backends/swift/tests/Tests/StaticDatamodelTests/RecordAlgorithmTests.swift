@@ -11,7 +11,7 @@ import XCTest
 final class RecordAlgorithmTests: XCTestCase {
     func testAScalarIsReadFromARecord() {
         XCTAssertEqual(LedgerAmount.ledgerAmount(SchemaEntryPayload(id: 1, amount: -7)), -7)
-        XCTAssertEqual(LedgerAmount.ledgerAmount(SchemaEntryPayload()), 0)
+        XCTAssertEqual(LedgerAmount.ledgerAmount(SchemaEntryPayload(id: 2, amount: 0)), 0)
     }
 
     func testTheLaterVersionWinsAndItsTextIsTaken() {

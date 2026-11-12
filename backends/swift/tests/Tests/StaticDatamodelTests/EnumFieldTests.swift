@@ -7,20 +7,21 @@ import XCTest
 
 // A record whose field is a value of an enum, and the algorithms that take and give
 // one (`scripts/regen_static_datamodel_swift.sh`): the field and the parameter are the
-// unit the enum document is written as (`EnumItemStatus`), and a record that has not
-// been written is at the first case of it.
+// unit the enum document is written as (`EnumItemStatus`), and a record is built whole,
+// its status the one it is given (docs/adr/0098: no case stands for a value nobody
+// wrote).
 final class EnumFieldTests: XCTestCase {
     private func item(_ id: UInt32, _ status: EnumItemStatus) -> SchemaItemPayload {
         SchemaItemPayload(id: id, status: status)
     }
 
-    func testARecordNotWrittenIsAtTheFirstCaseOfItsEnum() {
-        let zero = SchemaItemPayload()
-        XCTAssertEqual(zero.id, 0)
+    func testARecordHoldsTheCaseItIsBuiltWith() {
+        let built = item(4, .inProgress)
+        XCTAssertEqual(built.id, 4)
+        XCTAssertEqual(built.status, .inProgress)
         // `open` is the first variant the document declares, not the lowest number or
         // the one named first by Swift's own ordering of cases.
-        XCTAssertEqual(zero.status, EnumItemStatus.allCases[0])
-        XCTAssertEqual(zero.status, .open)
+        XCTAssertEqual(EnumItemStatus.allCases[0], .open)
     }
 
     func testAStatusIsReplacedOnTheItemOfTheGivenId() throws {

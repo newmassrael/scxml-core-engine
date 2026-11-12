@@ -16,9 +16,11 @@ final class OptionalAlgorithmTests: XCTestCase {
         SchemaGoalPayload(id: id, day: day, weight: weight)
     }
 
-    func testARecordNotWrittenHasNoDay() {
-        XCTAssertNil(SchemaGoalPayload().day)
-        XCTAssertEqual(SchemaGoalPayload().id, 0)
+    // A day that may be absent is absent only where the record is built with none:
+    // no value stands for a field nobody wrote (docs/adr/0098, section 4).
+    func testARecordBuiltWithNoDayHasNoDay() {
+        XCTAssertNil(goal(1, nil).day)
+        XCTAssertEqual(goal(1, nil).id, 1)
     }
 
     func testTheGoalsWithNoDayAreCounted() throws {

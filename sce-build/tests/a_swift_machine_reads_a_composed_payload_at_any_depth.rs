@@ -190,15 +190,14 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
     holds(
         &code,
         &[
-            "struct BatchReaderBatchSentPayload {\n    var items: [BatchReaderItemRecord] = []\n    \
-             var grid: [[UInt8]] = []\n    var levels: [BatchReaderSignalLevelEnum] = []\n    \
-             var maybe: [UInt16?] = []\n    var spare: [UInt8]? = nil\n    var note: String = \
-             \"\"\n    var late: [UInt8] = []\n}",
-            "public struct BatchReaderItemRecord: Equatable, Sendable, SceDefault {\n    public \
-             var id: UInt32 = 0\n    public var amount: Int64 = 0\n    public var label: String \
-             = \"\"\n    public var level: BatchReaderSignalLevelEnum = \
-             BatchReaderSignalLevelEnum.allCases[0]\n    public var due: Int64? = nil\n    public \
-             var blob: [UInt8] = []\n    public var tags: [String] = []\n\n    public init() {}\n",
+            "struct BatchReaderBatchSentPayload {\n    var items: [BatchReaderItemRecord]\n    \
+             var grid: [[UInt8]]\n    var levels: [BatchReaderSignalLevelEnum]\n    \
+             var maybe: [UInt16?]\n    var spare: [UInt8]?\n    var note: String\n    \
+             var late: [UInt8]\n}",
+            "public struct BatchReaderItemRecord: Equatable, Sendable {\n    public \
+             var id: UInt32\n    public var amount: Int64\n    public var label: String\n    \
+             public var level: BatchReaderSignalLevelEnum\n    public var due: Int64?\n    public \
+             var blob: [UInt8]\n    public var tags: [String]\n\n",
             "    public init(id: UInt32, amount: Int64, label: String, level: \
              BatchReaderSignalLevelEnum, due: Int64?, blob: [UInt8], tags: [String]) {\n",
         ],
@@ -226,8 +225,8 @@ const GUARD_ONLY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 /// Pinned by the import of `state_machine.swift.jinja2`
-/// (`tools/codegen/templates/swift/`): a record the machine declares is the
-/// forge runtime's `SceDefault`, so a machine that holds no variable and only
+/// (`tools/codegen/templates/swift/`): a machine that holds a typed value reads
+/// it through the forge runtime, so a machine that holds no variable and only
 /// reads a payload that names a record imports the forge runtime too.
 #[test]
 fn a_machine_of_no_variable_imports_the_runtime_its_records_name() {
@@ -235,7 +234,7 @@ fn a_machine_of_no_variable_imports_the_runtime_its_records_name() {
     holds(
         &code,
         &[
-            "public struct BatchGuardItemRecord: Equatable, Sendable, SceDefault {\n",
+            "public struct BatchGuardItemRecord: Equatable, Sendable {\n",
             "\nimport SceForgeRuntime\n",
         ],
     );
@@ -247,8 +246,9 @@ fn a_machine_of_no_variable_imports_the_runtime_its_records_name() {
 /// the lift's statements `swift_composed_payload` writes
 /// (`sce-build/src/forge/generator.rs`), and `composed_defaults_wire`
 /// (`sce-build/src/forge/schema_revision.rs`): each field read by one runtime
-/// call per constructor into the payload, a text held to its bound at the top
-/// level too, a list the second revision added read as empty.
+/// call per constructor into a local of its own and the payload built whole from
+/// them, a text held to its bound at the top level too, a list the second
+/// revision added read as empty.
 #[test]
 fn the_lift_reads_each_field_by_its_type_at_every_depth() {
     let code = reader_machine();
@@ -256,7 +256,7 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
         &code,
         &[
             r#"let fields = try PayloadFields.decode(metadata.data, defaults: "{\"late\":[]}")"#,
-            "            payload.items = try ({ (sceValue: PayloadValue) throws -> \
+            "            let sceField0 = try ({ (sceValue: PayloadValue) throws -> \
              [BatchReaderItemRecord] in try sceValue.list(bound: 3, { (sceValue: PayloadValue) \
              throws -> BatchReaderItemRecord in try sceValue.record({ (sceFields: PayloadFields) \
              throws -> BatchReaderItemRecord in try BatchReaderItemRecord(id: ({ (sceValue: \
@@ -277,20 +277,24 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
             "tags: ({ (sceValue: PayloadValue) throws -> [String] in try sceValue.list(bound: 4, \
              { (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 8) }) \
              })(sceFields.field(\"tags\"))) }) }) })(fields.field(\"items\"))\n",
-            "            payload.grid = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try \
+            "            let sceField1 = try ({ (sceValue: PayloadValue) throws -> [[UInt8]] in try \
              sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> [UInt8] in try \
              sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try \
              sceValue.unsigned() }) }) })(fields.field(\"grid\"))\n",
-            "            payload.maybe = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try \
+            "            let sceField3 = try ({ (sceValue: PayloadValue) throws -> [UInt16?] in try \
              sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt16? in try \
              sceValue.optional({ (sceValue: PayloadValue) throws -> UInt16 in try \
              sceValue.unsigned() }) }) })(fields.field(\"maybe\"))\n",
-            "            payload.spare = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try \
+            "            let sceField4 = try ({ (sceValue: PayloadValue) throws -> [UInt8]? in try \
              sceValue.optional({ (sceValue: PayloadValue) throws -> [UInt8] in try \
              sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try \
              sceValue.unsigned() }) }) })(fields.field(\"spare\"))\n",
-            "            payload.note = try ({ (sceValue: PayloadValue) throws -> String in try \
+            "            let sceField5 = try ({ (sceValue: PayloadValue) throws -> String in try \
              sceValue.text(bound: 4) })(fields.field(\"note\"))\n",
+            // Built whole once every field is read (docs/adr/0098, section 4).
+            "            let payload = BatchReaderBatchSentPayload(items: sceField0, grid: \
+             sceField1, levels: sceField2, maybe: sceField3, spare: sceField4, note: sceField5, \
+             late: sceField6)\n",
         ],
     );
 }
@@ -342,10 +346,9 @@ fn the_inject_seam_checks_what_it_is_handed_and_writes_it_as_its_json() {
 
 /// Pinned by the loop over a list a place holds (`walked_place`,
 /// `sce-build/src/forge/static_lowering.rs`), `SwiftTarget::foreach_loop`, and
-/// the checked read of an element (`element_fallback`,
-/// `sce-build/src/forge/expr/swift.rs`): a record element stands at its zero
-/// where the index is outside the list, and an element that may be absent at
-/// its absence.
+/// the checked read of an element (`sce-build/src/forge/expr/swift.rs`): an
+/// element of any type is read by the one checked read, which throws an index
+/// outside the list and answers no value in its place (docs/adr/0098).
 #[test]
 fn the_reads_lower_at_any_depth() {
     let code = reader_machine();
@@ -354,26 +357,24 @@ fn the_reads_lower_at_any_depth() {
         &[
             " in self.pendingBatchSentPayload.items.enumerated()",
             " in self.pendingBatchSentPayload.grid",
-            "Checked.atDefault(sceFailure, self.pendingBatchSentPayload.items, ",
-            "Checked.at(sceFailure, self.pendingBatchSentPayload.maybe, ",
-            "fallback: nil)",
+            "(try Checked.at(self.pendingBatchSentPayload.items, ",
+            "(try Checked.at(self.pendingBatchSentPayload.maybe, ",
         ],
     );
+    assert!(!code.contains("fallback:"), "{code}");
 }
 
-/// Pinned by `element_fallback` (`sce-build/src/forge/expr/swift.rs`): an
-/// element of a list of lists, read by its index, stands as the empty list
-/// where the index is outside the list.
+/// Pinned by the checked read of an element (`sce-build/src/forge/expr/swift.rs`):
+/// an element of a list of lists is read as any element is, and no empty list
+/// stands where the index is outside the list.
 #[test]
-fn an_element_of_a_list_of_lists_falls_back_to_the_empty_list() {
+fn an_element_of_a_list_of_lists_is_read_by_the_one_checked_read() {
     let code = fixture_machine("static_composed_payload.scxml");
     holds(
         &code,
-        &[
-            "Checked.at(sceFailure, self.pendingBatchSentPayload.grid, ",
-            "fallback: [])",
-        ],
+        &["(try Checked.at(self.pendingBatchSentPayload.grid, "],
     );
+    assert!(!code.contains("fallback:"), "{code}");
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),

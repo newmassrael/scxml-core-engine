@@ -127,20 +127,14 @@
             // MUST place error.execution in the internal event queue and use the empty string
             // as the value of the <content> element."
             do {
-{% if state.donedata.native_content_value_fails %}
-                let sceFailure = Failure()
-                let doneValue: WireValue = {{ state.donedata.native_content_value }}
-                if sceFailure.failed {
-{% if 'error.execution' in model.events %}
-                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <content expr> failed to evaluate"))
-{% endif %}
-                    doneEventData = WireValue.text("").json
-                } else {
-                    doneEventData = doneValue.json
-                }
-{% else %}
                 let doneValue: WireValue = {{ state.donedata.native_content_value }}
                 doneEventData = doneValue.json
+{% if state.donedata.native_content_value_fails %}
+            } catch {
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <content expr> failed to evaluate"))
+{% endif %}
+                doneEventData = WireValue.text("").json
 {% endif %}
             }
 {% elif state.donedata.content.kind == "inline_text" and (state.donedata.content.text | inline_content_reading(model.datamodel)).kind != "expression" %}
@@ -180,20 +174,13 @@
 {% set param_expr = param.expr if param.expr is not none else param.location %}
 {% if param.native_value %}
             do {
-{% if param.native_fails %}
-                let sceFailure = Failure()
-{% endif %}
                 let sceValue: WireValue = {{ param.native_value }}
-{% if param.native_fails %}
-                if !sceFailure.failed {
-                    doneParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
-                } else {
-{% if 'error.execution' in model.events %}
-                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <param name={{ param.name | escape_swift }}> failed to evaluate"))
-{% endif %}
-                }
-{% else %}
                 doneParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% if param.native_fails %}
+            } catch {
+{% if 'error.execution' in model.events %}
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <param name={{ param.name | escape_swift }}> failed to evaluate"))
+{% endif %}
 {% endif %}
             }
 {% elif ecmascript_datamodel and not param_expr %}

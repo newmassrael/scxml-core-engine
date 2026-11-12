@@ -11,23 +11,17 @@
                 _ = engine.cancelEvent(sendID: "{{ action.sendid | escape_swift }}")
 {% elif action.native_sendid %}
                 do {
-{% if action.native_sendid_fails %}
-                    let sceFailure = Failure()
-{% endif %}
                     let cancelSendID = {{ action.native_sendid }}
+                    _ = engine.cancelEvent(sendID: cancelSendID)
 {% if action.native_sendid_fails %}
-                    if sceFailure.failed {
+{# docs/adr/0098: the id that failed is thrown before anything is cancelled. #}
+                } catch {
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
-                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
-                    } else {
-                        _ = engine.cancelEvent(sendID: cancelSendID)
-                    }
-{% else %}
-                    _ = engine.cancelEvent(sendID: cancelSendID)
 {% endif %}
                 }
 {% elif ecmascript_datamodel and action.sendidexpr %}

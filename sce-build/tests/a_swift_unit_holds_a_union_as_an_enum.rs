@@ -13,9 +13,8 @@
 //!   of one module never share a top-level name.
 //! * `event_shapes_minimal.scxml`, whose fields hold the union alone, in a list
 //!   and optionally, generates a payload struct that names the enum at each
-//!   depth. A field that holds the union directly has no value to start at
-//!   (the amendment of 2026-11-07), so the payload is built whole and is no
-//!   `SceDefault`.
+//!   depth. No field holds a value nobody wrote (docs/adr/0098, section 4), so
+//!   the payload is built whole by its initializer of every field.
 //! * The units, with the enum and the records they name, type-check together
 //!   under `swiftc` with a file that builds every case, reads one through its
 //!   `proven` read and matches a value exhaustively.
@@ -127,17 +126,18 @@ fn a_payload_names_the_enum_at_every_depth_and_is_built_whole() {
     for fragment in [
         "public struct EventShapesMinimalPayload: Equatable, Sendable {",
         "    public var one: UnionShapeMinimal\n",
-        "    public var many: [UnionShapeMinimal] = []\n",
-        "    public var maybe: UnionShapeMinimal? = nil\n",
-        "public init(one: UnionShapeMinimal, many: [UnionShapeMinimal] = [], maybe: UnionShapeMinimal? = nil) {",
+        "    public var many: [UnionShapeMinimal]\n",
+        "    public var maybe: UnionShapeMinimal?\n",
+        "public init(one: UnionShapeMinimal, many: [UnionShapeMinimal], maybe: UnionShapeMinimal?) {",
         "public static let manyMaxCount: UInt32 = 3\n",
     ] {
         position(&text, fragment);
     }
-    // No value of the union to start at, so no zero payload either: no
-    // conformance to `SceDefault` and no `init()` that would stand for one.
-    assert!(!text.contains("Sendable, SceDefault"), "{text}");
+    // No type has a zero: no `init()` that would stand for one, and no field
+    // starts at a value nobody wrote.
     assert!(!text.contains("public init() {}"), "{text}");
+    assert!(!text.contains("= []"), "{text}");
+    assert!(!text.contains("= nil"), "{text}");
 }
 
 /// A file that uses every part of the union's unit: a case of each kind built,
@@ -171,10 +171,10 @@ func sent() -> EventShapesMinimalPayload {
 }
 "#;
 
-/// The part of the forge runtime a unit names: the protocol a payload of a
-/// field that has a zero conforms to. A stand-in module is enough to type-check
+/// The part of the forge runtime a unit may name: the failure a may-fail
+/// algorithm throws (docs/adr/0098). A stand-in module is enough to type-check
 /// the units against; the runtime's own tests hold the real one.
-const RUNTIME_STAND_IN: &str = "public protocol SceDefault {\n    init()\n}\n";
+const RUNTIME_STAND_IN: &str = "public enum AlgorithmError: Error {\n    case overflow\n}\n";
 
 #[test]
 fn the_swift_of_a_union_and_the_payload_that_holds_it_type_checks() {

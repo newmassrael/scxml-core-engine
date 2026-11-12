@@ -59,8 +59,8 @@ fn a_byte_read_of_a_body_that_may_fail_is_a_checked_read() {
     let code =
         swift_of("stdlib/text/utf8_length.scxml").expect("a byte string parameter is written");
     assert!(
-        code.contains("Checked.at(sceFailure, data, i, fallback: 0)"),
-        "an index outside the bytes fails and is not read: {code}"
+        code.contains("(try Checked.at(data, i))"),
+        "an index outside the bytes throws and is not read: {code}"
     );
 }
 

@@ -98,36 +98,6 @@ pub(crate) use swift::{
     swift_unit_union_read, SWIFT_UNION_KIND,
 };
 
-/// Whether a value of `ty`, written in the scope `within` names, has no value to
-/// start at: a union has none (docs/adr/0092, amendment of 2026-11-07), and a
-/// record with a member that has none has none either. A list and a value that may
-/// be absent start empty and absent, whatever they hold. What holds such a value
-/// is built whole, by every member, wherever a backend gives a record a value at
-/// its zero ([`ComposedSpelling::record_starts_at_zero`]).
-pub fn holds_no_zero(
-    ty: &ValueType,
-    within: Option<&str>,
-    records: &dyn RecordEnv,
-) -> Result<bool, String> {
-    Ok(match ty {
-        ValueType::Union { .. } => true,
-        ValueType::Record { alias } => {
-            let held = records.record(within, alias)?;
-            for field in &held.schema.fields {
-                if holds_no_zero(&field.sce_type, Some(held.alias), records)? {
-                    return Ok(true);
-                }
-            }
-            false
-        }
-        ValueType::Scalar(_)
-        | ValueType::Text { .. }
-        | ValueType::Bytes { .. }
-        | ValueType::List { .. }
-        | ValueType::Optional { .. } => false,
-    })
-}
-
 /// An enum as a machine holds it: the name the statechart holds it by, the
 /// type it is declared as, and each variant's declared name with the
 /// identifier the type gives it, in the enum's order.
@@ -602,14 +572,6 @@ pub trait ComposedSpelling {
     /// its readers where they are read, and answers none.
     fn take_functions(&self) -> Vec<String> {
         Vec::new()
-    }
-    /// Whether a record of this backend starts every member at its zero (a Swift
-    /// record is `SceDefault`, which a checked read of an element not there
-    /// answers), so a record that holds a member with no zero ([`holds_no_zero`])
-    /// cannot be declared. A backend that builds a record whole only (Rust) has
-    /// no such record to refuse.
-    fn record_starts_at_zero(&self) -> bool {
-        false
     }
     /// The type a value of the union whose document is named `name` is held
     /// in (docs/adr/0092, section 7).

@@ -46,14 +46,11 @@ final class CallAlgorithmTests: XCTestCase {
         _ row: UInt64, _ col: UInt64, wall: Int64, counter: UInt32 = 0, node: UInt64 = 1,
         value: Int64 = 0
     ) -> LwwCellPayload {
-        var c = LwwCellPayload()
-        c.row = row
-        c.col = col
-        c.value = value
-        c.wallTime = wall
-        c.counter = counter
-        c.nodeId = node
-        return c
+        // Built whole, every field written: a unit has no value nobody wrote
+        // (docs/adr/0098, section 4). A cell of a plain value has no formula.
+        LwwCellPayload(
+            row: row, col: col, value: value, wallTime: wall, counter: counter, nodeId: node,
+            op: 0, aRef: false, aRow: 0, aCol: 0, aVal: 0, bRef: false, bRow: 0, bCol: 0, bVal: 0)
     }
 
     // A write to a cell is kept where its timestamp is the later, by the callee that

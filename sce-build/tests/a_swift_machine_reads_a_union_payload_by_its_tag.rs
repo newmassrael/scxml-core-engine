@@ -6,16 +6,16 @@
 //! `sce-build/tests/fixtures/static_datamodel/static_union.scxml`:
 //!
 //! * The payload struct holds the union as the machine's own enum, in a list and
-//!   optionally. A union has no value to start at, so a payload that holds one
-//!   directly is built whole by the initializer of every member and the policy's
-//!   view of it holds nothing until a delivery sets it.
+//!   optionally. No member holds a value nobody wrote (docs/adr/0098, section 4),
+//!   so the payload is built whole by the initializer of every member and the
+//!   policy's view of it holds nothing until a delivery sets it.
 //! * Each read is spelled by the cases the tests leave: the tag by its property,
 //!   a field of the one case left through that case's proven read, and a field
 //!   two cases share through its accessor.
 //! * The machine's saved form writes a union as its tag beside its case.
-//! * An index read of a list of unions is refused by name, since a Swift
-//!   machine answers an index outside a list with its element type's zero, which
-//!   a union does not have; the Rust machine reads it.
+//! * An index read of a list of unions is read as on every lane: the runtime's
+//!   checked read throws an index outside the list and answers no union in its
+//!   place (docs/adr/0098, section 5).
 //!
 //! What the generated machine does at run time is held by the scenario
 //! `static_union.json`, replayed over the committed machine by
@@ -71,8 +71,8 @@ fn the_payload_holds_the_union_in_the_machines_own_enum_built_whole() {
             &format!("public enum {UNION}: Equatable, Sendable {{"),
             "struct StaticUnionShapesSentPayload {",
             &format!("    var one: {UNION}\n"),
-            &format!("    var many: [{UNION}] = []"),
-            &format!("    var maybe: {UNION}? = nil"),
+            &format!("    var many: [{UNION}]\n"),
+            &format!("    var maybe: {UNION}?\n"),
             // The policy's view holds nothing until a delivery sets it.
             "    var pendingShapesSentPayload: StaticUnionShapesSentPayload!",
             "let payload = StaticUnionShapesSentPayload(one: sceField0, many: sceField1, maybe: sceField2)",
@@ -147,8 +147,9 @@ fn indexed_reader() -> String {
     )
 }
 
-/// The indexed reader, written beside the documents it imports.
-fn compile_indexed(language: Language) -> Result<(), String> {
+/// The indexed reader, written beside the documents it imports, as the text of
+/// every file it generates.
+fn compile_indexed(language: Language) -> Result<String, String> {
     let dir = tempfile::tempdir().expect("tempdir");
     for entry in std::fs::read_dir(fixtures()).expect("the fixtures are listed") {
         let entry = entry.expect("an entry");
@@ -163,23 +164,29 @@ fn compile_indexed(language: Language) -> Result<(), String> {
         &find_template_dir_for(language),
         language,
     )
-    .map(|_| ())
+    .map(|output| {
+        output
+            .files
+            .into_iter()
+            .map(|(_, code)| code)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
     .map_err(|e| format!("{e:?}"))
 }
 
-/// Pinned by `reject_zeroless_element_reads` (`sce-build/src/forge/expr.rs`): the
-/// Swift machine has no value to answer an index outside a list of unions, so
-/// the read is refused where it is written and not left to the Swift compiler,
-/// which the generated `Checked.atDefault` would fail.
+/// Pinned by the checked index read of the Swift expression lowering
+/// (`sce-build/src/forge/expr/swift.rs`): an element at an index is read by the
+/// runtime's `Checked.at`, which throws an index outside the list and answers no
+/// value in its place, so a list of unions is read as a list of numbers is
+/// (docs/adr/0098, section 5), on Swift as on Rust.
 #[test]
-fn an_index_read_of_a_list_of_unions_is_refused_on_swift_and_read_on_rust() {
-    let refusal = compile_indexed(Language::Swift)
-        .expect_err("Swift has no zero of a union to answer an index outside the list");
-    for says in [
-        "an index read of a list whose elements are unions",
-        "<foreach>",
-    ] {
-        assert!(refusal.contains(says), "expected `{says}` in: {refusal}");
-    }
+fn an_index_read_of_a_list_of_unions_is_read_on_swift_as_on_rust() {
+    let code =
+        compile_indexed(Language::Swift).expect("Swift reads the tag of an element at an index");
+    holds(
+        &code,
+        &["(try Checked.at(self.pendingShapesSentPayload.many, 0)).kind"],
+    );
     compile_indexed(Language::Rust).expect("Rust reads the tag of an element at an index");
 }

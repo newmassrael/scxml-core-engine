@@ -52,14 +52,13 @@ fn a_callee_is_a_member_of_the_enum_its_own_unit_declares() {
 #[test]
 fn a_callee_that_may_fail_has_its_failure_passed_on() {
     let code = swift_of("stdlib/time/add_months.scxml").expect("a may-fail call is written");
-    // The callee throws; the caller records it in its own `Failure` under the
-    // callee's name, which the statement around the call then throws.
+    // The callee throws; its failure is the caller's under the callee's own name by
+    // `try` alone, and no value stands in for it (docs/adr/0098).
     assert!(
-        code.contains(
-            "Checked.take(sceFailure, fallback: 0, { try DaysInMonth.daysInMonth(year, month) })"
-        ),
+        code.contains("(try DaysInMonth.daysInMonth(year, month))"),
         "{code}"
     );
+    assert!(!code.contains("Checked.take"), "{code}");
 }
 
 const DOCUMENT_HEAD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

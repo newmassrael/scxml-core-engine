@@ -257,7 +257,10 @@ fn a_value_that_cannot_be_computed_is_left_out_and_reported() {
         "static_invoke_string.scxml",
         "static_invoke_string_sm.swift",
     );
-    holds_each(&code, &["if sceFailure.failed {", "could not be read"]);
+    // The value is thrown where it fails, and the `catch` reports it with nothing
+    // handed on (docs/adr/0098).
+    holds_each(&code, &["} catch {", "could not be read"]);
+    assert!(!code.contains("sceFailure"), "{code}");
 }
 
 /// An `<invoke srcexpr>` starts the candidate its value names: the value is reduced to a
@@ -293,7 +296,7 @@ fn an_argument_the_candidate_keeps_nowhere_is_evaluated_and_left_out() {
     holds_each(
         &code,
         &[
-            "let _: WireValue = .integer(Int64(Checked.mul(sceFailure, self.vBase, 2000000000)))",
+            "let _: WireValue = .integer(Int64((try Checked.mul(self.vBase, 2000000000))))",
             "could not be read",
         ],
     );

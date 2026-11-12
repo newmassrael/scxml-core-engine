@@ -9,11 +9,11 @@ import XCTest
 // (`scripts/regen_static_datamodel_swift.sh`): the struct the schema's fields are,
 // and the constants a host names the event by.
 final class EventSchemaUnitTests: XCTestCase {
-    func testAPayloadStartsAtTheZeroOfEveryField() {
-        let payload = SchemaEntryPayload()
-        XCTAssertEqual(payload.id, 0)
-        XCTAssertEqual(payload.amount, 0)
-        XCTAssertEqual(SchemaFramedPayload().frame, [])
+    func testAPayloadHoldsTheFieldsItIsBuiltWith() {
+        // No field holds a value nobody wrote (docs/adr/0098, section 4).
+        let framed = SchemaFramedPayload(sensor: 3, frame: [1, 2])
+        XCTAssertEqual(framed.sensor, 3)
+        XCTAssertEqual(framed.frame, [1, 2])
     }
 
     func testAPayloadIsBuiltWholeFromItsFieldsInTheSchemasOrder() {

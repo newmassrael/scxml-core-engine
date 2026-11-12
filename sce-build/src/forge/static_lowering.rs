@@ -8079,23 +8079,6 @@ fn declare_composed(
             None => {
                 let ty = spelling.record_type(alias);
                 if declarations.declared.insert(ty.clone()) {
-                    // A union has no value to start at (docs/adr/0092, amendment of
-                    // 2026-11-07), so a record that holds one cannot start every
-                    // member at its zero, as a record of a backend that does must.
-                    let no_zero = composed::holds_no_zero(
-                        &crate::forge::value_type::ValueType::Record {
-                            alias: alias.clone(),
-                        },
-                        None,
-                        &records,
-                    )
-                    .map_err(refused)?;
-                    if no_zero && spelling.record_starts_at_zero() {
-                        return Err(refused(format!(
-                            "the record `{alias}` holds a union, a value with no zero, and a {lang} \
-                             record starts every member at its zero"
-                        )));
-                    }
                     let members = composed::record_members(alias, &records, &enums, &*spelling)
                         .map_err(refused)?;
                     // A value a host makes is held to every bound where it is
@@ -17322,12 +17305,12 @@ pub fn lower_c11(
 /// Swift: a variable is a stored property of the machine's policy class, set by
 /// the machine's own statements.
 ///
-/// The failure of a checked operation is a value, as in Go and C++: a helper of
-/// `Checked` records it in the statement's `sceFailure` and yields zero, so a value
-/// that can fail is computed into a local first and written only when it did not.
-/// The statement is a closure called where it stands, answering whether it failed,
-/// which the dispatcher acts on by leaving the labelled block it stands in
-/// (§scxml-4.9).
+/// The failure of a checked operation is no value (docs/adr/0098): a helper of
+/// `Checked` throws it, as Rust's `?` returns it, so nothing after it is evaluated
+/// and the write that would have taken the value is never reached. The statement
+/// is a closure called where it stands that catches the failure and answers
+/// whether there was one, which the dispatcher acts on by leaving the labelled
+/// block it stands in (§scxml-4.9).
 ///
 /// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`, `In()`
 /// and a call of an imported algorithm of scalars; every construct past those is
@@ -17596,13 +17579,15 @@ impl StaticTarget for SwiftTarget {
     fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
         Some(value.to_string())
     }
-    // The element is read by the runtime's checked read of a list of values with a zero,
-    // which records an index outside the list as the failure the statement ends at and
-    // answers the record at its zero: the machine's record is `SceDefault`, and a list of
-    // records is an `Array` of the machine's own struct, so the element is the record
-    // whole, and a copy of it as a struct is ([`Self::record_copy`]).
+    // The element is read by the runtime's checked read, which throws an index outside
+    // the list as the failure the statement ends at and answers no record in its place
+    // (docs/adr/0098): a list of records is an `Array` of the machine's own struct, so
+    // the element is the record whole, and a copy of it as a struct is
+    // ([`Self::record_copy`]).
     fn record_at(&self, list: &str, index: &str) -> Option<String> {
-        Some(format!("Checked.atDefault(sceFailure, {list}, {index})"))
+        Some(crate::forge::expr::swift::throwing(&format!(
+            "Checked.at({list}, {index})"
+        )))
     }
     // A record is a struct, a value held inside the optional, so a field of the present
     // one is written by taking the record out by the one function a proven read is spelled
@@ -17616,32 +17601,39 @@ impl StaticTarget for SwiftTarget {
         ))
     }
     // `Optional.map`, over a closure with an argument of its own: the present value is
-    // bound where the value is present, and a statement that fails inside it records the
-    // failure in the one `sceFailure` of the block, as every expression of it does.
+    // bound where the value is present. A closure whose body throws makes the `map`
+    // throw what it throws (`throws(E)`), so the `map` is then itself a throwing call,
+    // its failure the statement's as every expression of it is.
     fn optional_map(
         &self,
         value: &str,
         _present: &str,
         map: &dyn Fn(&str) -> String,
     ) -> Option<String> {
-        Some(format!(
-            "({value}).map {{ ({SWIFT_PRESENT}) in {} }}",
-            map(SWIFT_PRESENT)
-        ))
+        let body = map(SWIFT_PRESENT);
+        let mapped = format!("({value}).map {{ ({SWIFT_PRESENT}) in {body} }}");
+        Some(if crate::forge::expr::swift::holds_throwing(&body) {
+            crate::forge::expr::swift::throwing(&mapped)
+        } else {
+            mapped
+        })
     }
     // What an adapter gave back as a list: held to the bound of the variable that
     // takes it, which a list the algorithm built may exceed (an `Array` grows).
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
-        format!("Checked.within(sceFailure, {value}, capacity: {capacity})")
+        crate::forge::expr::swift::throwing(&format!(
+            "Checked.within({value}, capacity: {capacity})"
+        ))
     }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
     // returns. It spells what an algorithm over numbers, truth values, values of an
     // enum (which cross as the variant of the same declared name), records of those and
     // lists of them, handed in or taken back, is called with. An algorithm that may
-    // fail is called with `try` and the adapter `throws` what it throws, which the call
-    // of the adapter records (`Checked.takeDefault`). A value that may be absent
-    // returns `None`, which refuses the call by name until it is spelled.
+    // fail is called with `try` and the adapter throws what it throws, typed, which
+    // the call of the adapter passes on as any throwing call (docs/adr/0098). A value
+    // that may be absent returns `None`, which refuses the call by name until it is
+    // spelled.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
         use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
         let value = spec.callee.value.as_ref()?;
@@ -17845,7 +17837,7 @@ impl StaticTarget for SwiftTarget {
             _ => return None,
         };
         let (throws, attempt) = if spec.callee.may_fail {
-            (" throws", "try ")
+            (" throws(AlgorithmError)", "try ")
         } else {
             ("", "")
         };
@@ -18080,23 +18072,16 @@ impl StaticTarget for SwiftTarget {
                 EntryType::Scalar(_) => present,
             }
         };
-        // Every field has a value at its zero, so the record is `SceDefault`: the value
-        // that stands where a checked read of a list element that is not there has none
-        // to answer, and the one `init()` a record is built whole from. The zero of a
-        // field that may be absent is its absence.
+        // No field holds a value before it is written: the record is built whole by
+        // its initializer of every field (docs/adr/0098, section 4).
         let fields: String = schema
             .fields
             .iter()
             .map(|field| {
-                let held = held_of(field);
-                let zero = match (&field.sce_type, field.sce_type.present_type()) {
-                    (EntryType::Optional { .. }, _) => "nil".to_string(),
-                    (_, SceType::Enum(_)) => format!("{held}.allCases[0]"),
-                    (_, other) => crate::forge::generator::swift_zero_value(other).to_string(),
-                };
                 format!(
-                    "    public var {}: {held} = {zero}\n",
-                    self.record_field(&field.id)
+                    "    public var {}: {}\n",
+                    self.record_field(&field.id),
+                    held_of(field)
                 )
             })
             .collect();
@@ -18158,8 +18143,7 @@ impl StaticTarget for SwiftTarget {
             .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
-             public struct {ty}: Equatable, Sendable, SceDefault {{\n{fields}\n\
-             \x20   public init() {{}}\n\n\
+             public struct {ty}: Equatable, Sendable {{\n{fields}\n\
              \x20   public init({params}) {{\n{assigns}\x20   }}\n\n\
              \x20   /// This value as a saved state writes it.\n\
              \x20   public func toSaved() -> JSONValue {{\n\
@@ -18295,13 +18279,15 @@ impl StaticTarget for SwiftTarget {
     fn list_empty(&self) -> String {
         "[]".to_string()
     }
-    // The bound a string variable keeps, counted in UTF-8 bytes
-    // (`Checked.bounded`, which records the failure and answers the empty text).
+    // The bound a string variable keeps, counted in UTF-8 bytes (`Checked.bounded`,
+    // which throws a capacity failure and answers no text in its place).
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
-        format!("Checked.bounded(sceFailure, {value}, capacity: {capacity})")
+        crate::forge::expr::swift::throwing(&format!(
+            "Checked.bounded({value}, capacity: {capacity})"
+        ))
     }
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        format!("Checked.bounded(sceFailure, {value}, capacity: {capacity})")
+        self.bounded_string(value, capacity)
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -18309,7 +18295,7 @@ impl StaticTarget for SwiftTarget {
     // An algorithm's list is an `Array` of its element, which is the machine's own, held to the
     // variable's bound by the one function the adapters hold a list to it with.
     fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
-        format!("Checked.within(sceFailure, {value}, capacity: {capacity})")
+        self.state_list_within("", value, capacity)
     }
     // The count is the engine's the action is handed.
     fn fresh_send_id(&self) -> String {
@@ -18447,19 +18433,27 @@ impl StaticTarget for SwiftTarget {
         target: &str,
         capacity: u32,
         value: &str,
-        _value_can_fail: bool,
+        value_can_fail: bool,
         overflow: &str,
         failed: &str,
     ) -> String {
-        format!(
-            "{{ () -> Bool in let sceFailure = Failure(); \
-             if {target}.count >= {capacity} {{ {} }}; \
-             let sceValue = Checked.element(of: {target}, {value}); \
-             if sceFailure.failed {{ {} }}; \
-             {target}.append(sceValue); return false }}()",
-            Self::then(&[overflow, "return true"]),
-            Self::then(&[failed, "return true"]),
-        )
+        let room = format!(
+            "if {target}.count >= {capacity} {{ {} }}",
+            Self::then(&[overflow, "return true"])
+        );
+        let appended = format!(
+            "let sceValue = Checked.element(of: {target}, {value}); {target}.append(sceValue)"
+        );
+        if value_can_fail {
+            // The append is in the `do` after the value, so a value that throws
+            // appends nothing (docs/adr/0098).
+            format!(
+                "{{ () -> Bool in {room}; do {{ {appended} }} catch {{ {} }}; return false }}()",
+                Self::then(&[failed, "return true"]),
+            )
+        } else {
+            format!("{{ () -> Bool in {room}; {appended}; return false }}()")
+        }
     }
     fn clear(&self, target: &str) -> String {
         format!("{target}.removeAll()")
@@ -18491,14 +18485,13 @@ impl StaticTarget for SwiftTarget {
             filters::escape_swift(message.to_string())
         )
     }
-    // The runtime's checked helpers record a failure in `sceFailure` and answer a
-    // zero, so a statement that wrote its value would write that zero. The
-    // expression is a closure called where it stands, answering whether it failed,
-    // so the dispatcher can end its block as it does for any error.
+    // The runtime's checked helpers throw a failure and answer nothing (docs/adr/0098),
+    // so the statement stops where its value failed and writes nothing. The expression
+    // is a closure called where it stands that catches the failure and answers whether
+    // there was one, so the dispatcher can end its block as it does for any error.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String {
         format!(
-            "{{ () -> Bool in let sceFailure = Failure(); {statement}; \
-             if sceFailure.failed {{ {} }}; return false }}()",
+            "{{ () -> Bool in do {{ {statement} }} catch {{ {} }}; return false }}()",
             Self::then(&[failed, "return true"])
         )
     }
@@ -18514,11 +18507,13 @@ impl StaticTarget for SwiftTarget {
         let annotation = crate::forge::expr::swift::nameable_type(ty)
             .map(|name| format!(": {name}"))
             .unwrap_or_default();
+        // The write is in the `do` after the value, so a value that throws writes
+        // nothing: the variable keeps what it held by Swift's own rule.
         format!(
-            "{{ () -> Bool in let sceFailure = Failure(); let sceValue{annotation} = {value}; \
-             if sceFailure.failed {{ {} }}; {}; return false }}()",
+            "{{ () -> Bool in do {{ let sceValue{annotation} = {value}; {} }} \
+             catch {{ {} }}; return false }}()",
+            write("sceValue"),
             Self::then(&[failed, "return true"]),
-            write("sceValue")
         )
     }
     // Only a host call's arguments reach here, and its one spelling is
@@ -18526,10 +18521,10 @@ impl StaticTarget for SwiftTarget {
     fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
         unreachable!("a Swift host call is received through receiving_host_call")
     }
-    // A failed checked operation is a value, so the call could not be stopped after
-    // its arguments were evaluated: each is computed into a local first, and the
-    // host is called only when none of them failed. A block of its own, so two
-    // calls in one scope do not declare the same locals.
+    // Each argument is computed into a local first and the host is called after them
+    // in the same `do`, so an argument that throws calls nothing; the `catch` raises
+    // in the call's place and the block goes on. A block of its own, so two calls in
+    // one scope do not declare the same locals.
     fn receiving_host_call(
         &self,
         _statement: &str,
@@ -18553,16 +18548,14 @@ impl StaticTarget for SwiftTarget {
             .collect();
         let names: Vec<String> = (0..args.len()).map(|i| format!("sceArg{i}")).collect();
         format!(
-            "do {{ let sceFailure = Failure(); {locals}\
-             if sceFailure.failed {{ {} }} else {{ {callee}({}) }} }}",
+            "do {{ {locals}{callee}({}) }} catch {{ {} }}",
+            names.join(", "),
             Self::then(&[failed]),
-            names.join(", ")
         )
     }
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
         format!(
-            "{{ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = {value}; \
-             if sceFailure.failed {{ {} }}; return sceValue }}()",
+            "{{ () -> Bool in do {{ return {value} }} catch {{ {} }} }}()",
             Self::then(&[failed, flag, "return false"])
         )
     }

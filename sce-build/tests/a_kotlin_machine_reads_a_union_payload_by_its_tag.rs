@@ -208,11 +208,10 @@ fn indexed_reader() -> String {
     )
 }
 
-/// Pinned by the Swift-only refusal of an index read of a list of unions
-/// (`reject_zeroless_element_reads`, `sce-build/src/forge/expr.rs`): a Kotlin
-/// machine reads an element at an index through the runtime's checked read,
-/// which fails the statement for an index outside the list and answers no
-/// zero, so it reads the tag of an element of a list of unions.
+/// Pinned by the Kotlin checked index read: a Kotlin machine reads an element at
+/// an index through the runtime's checked read, which fails the statement for an
+/// index outside the list and answers no value in its place (docs/adr/0098), so
+/// it reads the tag of an element of a list of unions.
 #[test]
 fn an_index_read_of_a_list_of_unions_is_read_on_kotlin() {
     let dir = tempfile::tempdir().expect("tempdir");

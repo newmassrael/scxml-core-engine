@@ -3,13 +3,14 @@
 
 // The integer arithmetic contract's runtime half: see SCE_FORGE.md §3.4.1.
 //
-// An algorithm that declares `<sce:return may-fail="true">` throws, and the generator
-// lowers each of its integer `+ - * / %` and unary `-` to one of the `Checked`
-// helpers. A helper computes the operation at the declared width, or records why it
-// has no value there in the algorithm's `Failure` and yields 0; the generated body
-// checks that record after every statement and throws it. No helper traps: Swift
-// traps on an overflow and on a division by zero, so each is refused before it
-// happens.
+// A failure is not a value (docs/adr/0098): an operation the contract says has no
+// result throws its `AlgorithmError` and answers nothing, so nothing after it in the
+// expression is evaluated and no value of any type stands in for it. An algorithm
+// that declares `<sce:return may-fail="true">` is `throws(AlgorithmError)`, and the
+// generator lowers each of its integer `+ - * / %` and unary `-` to one of the
+// `Checked` helpers, called with `try`; a machine catches the failure where the
+// statement stands and raises `error.execution`. No helper traps: Swift traps on an
+// overflow and on a division by zero, so each is refused before it happens.
 //
 // Swift's own operators are not used for the checked operations because they trap,
 // and the wrapping ones (`&+`) answer a value the contract says does not exist. The
@@ -54,219 +55,123 @@ public enum AlgorithmError: Error, Sendable, Equatable, CustomStringConvertible 
     }
 }
 
-/// The first failure a body's checked operations recorded. Later ones are kept out:
-/// the statement that failed first is the one the caller learns of, whatever else the
-/// same expression evaluated after it.
-///
-/// A class, not a struct passed `inout`: a call that may fail is a closure that reads
-/// the same record its checked arguments write, and Swift refuses two accesses of one
-/// `inout` that overlap (`Checked.take(&f) { … Checked.add(&f, …) … }`). A reference has
-/// no exclusive access to give up, so a failure is recorded wherever in an expression
-/// the operation that failed stands.
-public final class Failure {
-    private var recorded: AlgorithmError?
-
-    public init() {}
-
-    /// Records `error` unless a failure is already recorded.
-    public func fail(_ error: AlgorithmError) {
-        if recorded == nil {
-            recorded = error
-        }
-    }
-
-    /// Whether a failure is recorded.
-    public var failed: Bool {
-        recorded != nil
-    }
-
-    /// The recorded failure; nil when there is none.
-    public var error: AlgorithmError? {
-        recorded
-    }
-
-    /// Throws the recorded failure, if there is one.
-    public func throwIfFailed() throws {
-        if let recorded {
-            throw recorded
-        }
-    }
-}
-
-/// A type that has a value of every field at its zero: what stands where a checked read
-/// of an element that does not exist (`Checked.atDefault`) has no value to answer.
-public protocol SceDefault {
-    init()
-}
-
-// The values a machine's adapter answers where a call that may fail has no value to
-// give: the zero of every type a variable holds, which `init()` of each already is.
-extension Int8: SceDefault {}
-extension Int16: SceDefault {}
-extension Int32: SceDefault {}
-extension Int64: SceDefault {}
-extension UInt8: SceDefault {}
-extension UInt16: SceDefault {}
-extension UInt32: SceDefault {}
-extension UInt64: SceDefault {}
-extension Float: SceDefault {}
-extension Double: SceDefault {}
-extension Bool: SceDefault {}
-extension String: SceDefault {}
-/// The empty list, whatever it holds.
-extension Array: SceDefault {}
-
 /// The checked integer operations, by the width of the type they are called at.
 public enum Checked {
-    /// `a + b` at the width of `T`, or 0 and an overflow.
-    public static func add<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
+    /// `a + b` at the width of `T`, or an overflow.
+    public static func add<T: FixedWidthInteger>(_ a: T, _ b: T) throws(AlgorithmError) -> T {
         let (value, overflow) = a.addingReportingOverflow(b)
         if overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return value
     }
 
-    /// `a - b` at the width of `T`, or 0 and an overflow.
-    public static func sub<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
+    /// `a - b` at the width of `T`, or an overflow.
+    public static func sub<T: FixedWidthInteger>(_ a: T, _ b: T) throws(AlgorithmError) -> T {
         let (value, overflow) = a.subtractingReportingOverflow(b)
         if overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return value
     }
 
-    /// `a * b` at the width of `T`, or 0 and an overflow.
-    public static func mul<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
+    /// `a * b` at the width of `T`, or an overflow.
+    public static func mul<T: FixedWidthInteger>(_ a: T, _ b: T) throws(AlgorithmError) -> T {
         let (value, overflow) = a.multipliedReportingOverflow(by: b)
         if overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return value
     }
 
-    /// `a / b` truncated toward zero, or 0 and a division by zero, or 0 and an
-    /// overflow for `MIN / -1`.
-    public static func div<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
+    /// `a / b` truncated toward zero, or a division by zero, or an overflow for
+    /// `MIN / -1`.
+    public static func div<T: FixedWidthInteger>(_ a: T, _ b: T) throws(AlgorithmError) -> T {
         if b == 0 {
-            f.fail(.divideByZero)
-            return 0
+            throw .divideByZero
         }
         let (value, overflow) = a.dividedReportingOverflow(by: b)
         if overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return value
     }
 
-    /// `a % b` with the dividend's sign, or 0 and a division by zero. A remainder
-    /// whose quotient overflows has no value either: `MIN % -1` fails as `MIN / -1`
-    /// does, on every backend.
-    public static func rem<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
+    /// `a % b` with the dividend's sign, or a division by zero. A remainder whose
+    /// quotient overflows has no value either: `MIN % -1` fails as `MIN / -1` does, on
+    /// every backend.
+    public static func rem<T: FixedWidthInteger>(_ a: T, _ b: T) throws(AlgorithmError) -> T {
         if b == 0 {
-            f.fail(.divideByZero)
-            return 0
+            throw .divideByZero
         }
         if a.dividedReportingOverflow(by: b).overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return a.remainderReportingOverflow(dividingBy: b).partialValue
     }
 
-    /// `-a` at the width of `T`, or 0 and an overflow.
-    public static func neg<T: FixedWidthInteger>(_ f: Failure, _ a: T) -> T {
+    /// `-a` at the width of `T`, or an overflow.
+    public static func neg<T: FixedWidthInteger>(_ a: T) throws(AlgorithmError) -> T {
         let (value, overflow) = T.zero.subtractingReportingOverflow(a)
         if overflow {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return value
     }
 
-    /// A value stored where a narrower integer type is declared is the same value,
-    /// or 0 and an overflow when the type cannot hold it: never a wrapped one.
+    /// A value stored where a narrower integer type is declared is the same value, or
+    /// an overflow when the type cannot hold it: never a wrapped one.
     public static func narrow<From: BinaryInteger, To: FixedWidthInteger>(
-        _ f: Failure,
         _ value: From,
         to type: To.Type
-    ) -> To {
+    ) throws(AlgorithmError) -> To {
         guard let narrowed = To(exactly: value) else {
-            f.fail(.overflow)
-            return 0
+            throw .overflow
         }
         return narrowed
     }
 
     /// `value` when it holds no more than `capacity` bytes (the bound a string
-    /// variable of a sce-static machine declares, counted in UTF-8 bytes) and the
-    /// empty text with a capacity failure recorded otherwise.
+    /// variable of a sce-static machine declares, counted in UTF-8 bytes), and a
+    /// capacity failure otherwise.
     ///
     /// Counted in bytes, as every backend counts them, so a machine holds the same
     /// value wherever it runs. A Swift `String.count` is grapheme clusters, which two
     /// characters of four bytes each would make two against a bound of four.
-    public static func bounded(_ f: Failure, _ value: String, capacity: UInt32) -> String {
+    public static func bounded(_ value: String, capacity: UInt32) throws(AlgorithmError) -> String {
         if UInt64(value.utf8.count) > UInt64(capacity) {
-            f.fail(.capacityExceeded)
-            return ""
+            throw .capacityExceeded
         }
         return value
     }
 
-    /// `bounded` for a byte string: a copy of `value` when it holds no more than
-    /// `capacity` bytes, and the empty value with a capacity failure recorded
-    /// otherwise (docs/adr/0005, decision 2).
-    public static func bounded(_ f: Failure, _ value: [UInt8], capacity: UInt32) -> [UInt8] {
+    /// `bounded` for a byte string: `value` when it holds no more than `capacity`
+    /// bytes, and a capacity failure otherwise (docs/adr/0005, decision 2).
+    public static func bounded(_ value: [UInt8], capacity: UInt32) throws(AlgorithmError) -> [UInt8] {
         if UInt64(value.count) > UInt64(capacity) {
-            f.fail(.capacityExceeded)
-            return []
+            throw .capacityExceeded
         }
         return value
     }
 
     /// `items` when it holds no more than `capacity` elements (the bound a list
-    /// variable of a sce-static machine declares) and an empty list with a capacity
-    /// failure recorded otherwise. A list an algorithm returns may hold more than the
-    /// bound it declared on a backend whose lists grow, and a machine holds the same
-    /// list wherever it runs, so the list it takes is held to its own.
-    public static func within<T>(_ f: Failure, _ items: [T], capacity: UInt32) -> [T] {
+    /// variable of a sce-static machine declares), and a capacity failure otherwise.
+    /// A list an algorithm returns may hold more than the bound it declared on a
+    /// backend whose lists grow, and a machine holds the same list wherever it runs,
+    /// so the list it takes is held to its own.
+    public static func within<T>(_ items: [T], capacity: UInt32) throws(AlgorithmError) -> [T] {
         if UInt64(items.count) > UInt64(capacity) {
-            f.fail(.capacityExceeded)
-            return []
+            throw .capacityExceeded
         }
         return items
     }
 
-    /// The element of `xs` at `i`, or `fallback` and an out-of-range failure when `i`
-    /// is below 0 or not below the length: never a trap.
-    public static func at<T, I: BinaryInteger>(
-        _ f: Failure,
-        _ xs: [T],
-        _ i: I,
-        fallback: @autoclosure () -> T
-    ) -> T {
+    /// The element of `xs` at `i`, or an out-of-range failure when `i` is below 0 or
+    /// not below the length: never a trap, and no value of `T` in its place, so an
+    /// element of any type is read alike (a union's included, docs/adr/0098).
+    public static func at<T, I: BinaryInteger>(_ xs: [T], _ i: I) throws(AlgorithmError) -> T {
         guard let index = Int(exactly: i), index >= 0, index < xs.count else {
-            f.fail(.outOfRange)
-            return fallback()
-        }
-        return xs[index]
-    }
-
-    /// The element of `xs` at `i`, or the element type's default and an out-of-range
-    /// failure when `i` is below 0 or not below the length: `at` for an element no
-    /// literal can name, a record a machine declares with a value of every field.
-    public static func atDefault<T: SceDefault, I: BinaryInteger>(
-        _ f: Failure,
-        _ xs: [T],
-        _ i: I
-    ) -> T {
-        guard let index = Int(exactly: i), index >= 0, index < xs.count else {
-            f.fail(.outOfRange)
-            return T()
+            throw .outOfRange
         }
         return xs[index]
     }
@@ -278,64 +183,60 @@ public enum Checked {
         value
     }
 
-    /// `value`, or an out-of-range failure thrown for a reading that found nothing: the
-    /// shape an enum's `fromUnderlying` answers (a number no variant declares), which a
-    /// call that may fail passes on through `take`.
-    public static func found<T>(_ value: T?) throws -> T {
+    /// `value`, or an out-of-range failure for a reading that found nothing: the
+    /// shape an enum's `fromUnderlying` answers (a number no variant declares).
+    public static func found<T>(_ value: T?) throws(AlgorithmError) -> T {
         guard let value else {
-            throw AlgorithmError.outOfRange
+            throw .outOfRange
         }
         return value
     }
 
-    /// `take` of a call that answers an enum: the first case stands where it failed,
-    /// the one value of the type that can be named without naming the type.
-    public static func takeCase<T: CaseIterable>(_ f: Failure, _ call: () throws -> T) -> T {
-        do {
-            return try call()
-        } catch let error as AlgorithmError {
-            f.fail(error)
-            guard let first = T.allCases.first else {
-                preconditionFailure("Checked.takeCase: an enum with no case")
-            }
-            return first
-        } catch {
-            preconditionFailure(
-                "Checked.takeCase: a may-fail reading threw an error that is not an AlgorithmError: \(error)"
-            )
+    /// `lhs && rhs` where `rhs` can fail: `rhs` is evaluated only where `lhs` holds,
+    /// and its failure is the expression's. Spelled here rather than through the
+    /// standard library's `&&`, whose `rethrows` need not keep the failure's type.
+    public static func and(
+        _ lhs: Bool,
+        _ rhs: () throws(AlgorithmError) -> Bool
+    ) throws(AlgorithmError) -> Bool {
+        if !lhs {
+            return false
         }
+        return try rhs()
     }
 
-    /// `take` of a call that answers a value of a type with a zero (`SceDefault`): a
-    /// record, a list, a number, a string. The call is a machine's adapter of an
-    /// algorithm that takes or returns a record or a list, whose type the expression
-    /// that calls it cannot name, so the type names its own zero.
-    public static func takeDefault<T: SceDefault>(_ f: Failure, _ call: () throws -> T) -> T {
-        do {
-            return try call()
-        } catch let error as AlgorithmError {
-            f.fail(error)
-            return T()
-        } catch {
-            preconditionFailure(
-                "Checked.takeDefault: a may-fail algorithm threw an error that is not an AlgorithmError: \(error)"
-            )
+    /// `lhs || rhs` where `rhs` can fail: `rhs` is evaluated only where `lhs` does not
+    /// hold.
+    public static func or(
+        _ lhs: Bool,
+        _ rhs: () throws(AlgorithmError) -> Bool
+    ) throws(AlgorithmError) -> Bool {
+        if lhs {
+            return true
         }
+        return try rhs()
     }
 
-    /// A call to another may-fail algorithm: its value, or `fallback` with its
-    /// failure recorded in the caller's `Failure` under the callee's own name, which
-    /// the statement around it throws.
-    public static func take<T>(_ f: Failure, fallback: @autoclosure () -> T, _ call: () throws -> T) -> T {
-        do {
-            return try call()
-        } catch let error as AlgorithmError {
-            f.fail(error)
-            return fallback()
-        } catch {
-            preconditionFailure(
-                "Checked.take: a may-fail algorithm threw an error that is not an AlgorithmError: \(error)"
-            )
+    /// `value ?? fallback` where `fallback` can fail: `fallback` is evaluated only
+    /// where `value` is absent (docs/adr/0055, section 2).
+    public static func coalesce<T>(
+        _ value: T?,
+        _ fallback: () throws(AlgorithmError) -> T
+    ) throws(AlgorithmError) -> T {
+        if let value {
+            return value
         }
+        return try fallback()
+    }
+
+    /// `coalesce` where the fallback may be absent too, so the whole is.
+    public static func coalesce<T>(
+        _ value: T?,
+        _ fallback: () throws(AlgorithmError) -> T?
+    ) throws(AlgorithmError) -> T? {
+        if let value {
+            return value
+        }
+        return try fallback()
     }
 }

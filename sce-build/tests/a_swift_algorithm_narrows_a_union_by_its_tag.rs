@@ -114,10 +114,10 @@ func dot() -> UnionShapeMinimal {
 }
 "#;
 
-/// The part of the forge runtime a unit names: the protocol a payload of a
-/// field that has a zero conforms to. A stand-in module is enough to type-check
-/// the units against; the runtime's own tests hold the real one.
-const RUNTIME_STAND_IN: &str = "public protocol SceDefault {\n    init()\n}\n";
+/// The part of the forge runtime a unit or an algorithm may name: the failure a
+/// may-fail algorithm throws (docs/adr/0098). A stand-in module is enough to
+/// type-check the units against; the runtime's own tests hold the real one.
+const RUNTIME_STAND_IN: &str = "public enum AlgorithmError: Error {\n    case overflow\n}\n";
 
 /// The algorithms beside a file that calls each, type-checked with the union's
 /// unit and the units it names: the reads, the build, the returns and the closed

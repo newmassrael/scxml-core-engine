@@ -5,67 +5,71 @@ import Testing
 
 @testable import SceForgeRuntime
 
-// Each failure the contract names is reported by its contract name, and every value
-// that fits comes back unchanged. The cases are those of
+// Each failure the contract names is thrown by its contract name and answers no value,
+// and every value that fits comes back unchanged (docs/adr/0098). The cases are those of
 // backends/go/forge-runtime/algorithm/algorithm_test.go.
+
+/// What `body` completed with: its value, or the failure it threw.
+private func outcome<T>(_ body: () throws(AlgorithmError) -> T) -> Result<T, AlgorithmError> {
+    do throws(AlgorithmError) {
+        return .success(try body())
+    } catch {
+        return .failure(error)
+    }
+}
 
 private struct Case: Sendable {
     var name: String
-    var run: @Sendable (Failure) -> Int64
-    var want: Int64
+    var run: @Sendable () throws(AlgorithmError) -> Int64
+    var want: Int64?
     var fail: String?
 }
 
 private let cases: [Case] = [
-    Case(name: "max sum", run: { Int64(Checked.add($0, UInt32.max - 1, 1)) }, want: Int64(UInt32.max), fail: nil),
-    Case(name: "sum past max", run: { Int64(Checked.add($0, UInt32.max, 1)) }, want: 0, fail: "overflow"),
-    Case(name: "below zero", run: { Int64(Checked.sub($0, UInt8(0), 1)) }, want: 0, fail: "overflow"),
-    Case(name: "product past max", run: { Int64(Checked.mul($0, Int16(256), 128)) }, want: 0, fail: "overflow"),
-    Case(name: "truncated", run: { Int64(Checked.div($0, Int32(-7), 2)) }, want: -3, fail: nil),
-    Case(name: "dividend sign", run: { Int64(Checked.rem($0, Int32(-7), 3)) }, want: -1, fail: nil),
-    Case(name: "divide by zero", run: { Int64(Checked.div($0, UInt8(1), 0)) }, want: 0, fail: "divide-by-zero"),
-    Case(name: "remainder by zero", run: { Checked.rem($0, Int64(1), 0) }, want: 0, fail: "divide-by-zero"),
-    Case(name: "MIN / -1", run: { Int64(Checked.div($0, Int8.min, -1)) }, want: 0, fail: "overflow"),
-    Case(name: "MIN % -1", run: { Int64(Checked.rem($0, Int8.min, -1)) }, want: 0, fail: "overflow"),
-    Case(name: "-MIN", run: { Int64(Checked.neg($0, Int32.min)) }, want: 0, fail: "overflow"),
-    Case(name: "negate", run: { Int64(Checked.neg($0, Int32(5))) }, want: -5, fail: nil),
-    Case(name: "negate a nonzero unsigned", run: { Int64(Checked.neg($0, UInt8(1))) }, want: 0, fail: "overflow"),
-    Case(name: "negate zero unsigned", run: { Int64(Checked.neg($0, UInt8(0))) }, want: 0, fail: nil),
-    Case(name: "64-bit product", run: { Checked.mul($0, Int64.max, 2) }, want: 0, fail: "overflow"),
-    Case(name: "64-bit sum", run: { Checked.add($0, Int64.max, 1) }, want: 0, fail: "overflow"),
-    Case(name: "64-bit difference", run: { Checked.sub($0, Int64.min, 1) }, want: 0, fail: "overflow"),
-    Case(name: "unsigned 64-bit sum", run: { Int64(truncatingIfNeeded: Checked.add($0, UInt64.max, 1)) }, want: 0, fail: "overflow"),
-    Case(name: "unsigned 64-bit exact", run: { Int64(truncatingIfNeeded: Checked.add($0, UInt64.max - 1, 1)) }, want: -1, fail: nil),
+    Case(name: "max sum", run: { Int64(try Checked.add(UInt32.max - 1, 1)) }, want: Int64(UInt32.max)),
+    Case(name: "sum past max", run: { Int64(try Checked.add(UInt32.max, 1)) }, fail: "overflow"),
+    Case(name: "below zero", run: { Int64(try Checked.sub(UInt8(0), 1)) }, fail: "overflow"),
+    Case(name: "product past max", run: { Int64(try Checked.mul(Int16(256), 128)) }, fail: "overflow"),
+    Case(name: "truncated", run: { Int64(try Checked.div(Int32(-7), 2)) }, want: -3),
+    Case(name: "dividend sign", run: { Int64(try Checked.rem(Int32(-7), 3)) }, want: -1),
+    Case(name: "divide by zero", run: { Int64(try Checked.div(UInt8(1), 0)) }, fail: "divide-by-zero"),
+    Case(name: "remainder by zero", run: { try Checked.rem(Int64(1), 0) }, fail: "divide-by-zero"),
+    Case(name: "MIN / -1", run: { Int64(try Checked.div(Int8.min, -1)) }, fail: "overflow"),
+    Case(name: "MIN % -1", run: { Int64(try Checked.rem(Int8.min, -1)) }, fail: "overflow"),
+    Case(name: "-MIN", run: { Int64(try Checked.neg(Int32.min)) }, fail: "overflow"),
+    Case(name: "negate", run: { Int64(try Checked.neg(Int32(5))) }, want: -5),
+    Case(name: "negate a nonzero unsigned", run: { Int64(try Checked.neg(UInt8(1))) }, fail: "overflow"),
+    Case(name: "negate zero unsigned", run: { Int64(try Checked.neg(UInt8(0))) }, want: 0),
+    Case(name: "64-bit product", run: { try Checked.mul(Int64.max, 2) }, fail: "overflow"),
+    Case(name: "64-bit sum", run: { try Checked.add(Int64.max, 1) }, fail: "overflow"),
+    Case(name: "64-bit difference", run: { try Checked.sub(Int64.min, 1) }, fail: "overflow"),
+    Case(name: "unsigned 64-bit sum", run: { Int64(truncatingIfNeeded: try Checked.add(UInt64.max, 1)) }, fail: "overflow"),
+    Case(name: "unsigned 64-bit exact", run: { Int64(truncatingIfNeeded: try Checked.add(UInt64.max - 1, 1)) }, want: -1),
 ]
 
 @Test(arguments: cases.map(\.name))
 func eachFailureIsNamedAndEveryValuePasses(name: String) throws {
     let c = try #require(cases.first { $0.name == name })
-    let f = Failure()
-    let got = c.run(f)
-    if let fail = c.fail {
-        #expect(f.error?.contractName == fail, "\(name): got \(got), want failure \(fail)")
-        #expect(got == 0, "\(name): a failed operation yields 0")
-    } else {
-        #expect(!f.failed, "\(name): failed with \(String(describing: f.error))")
+    switch outcome(c.run) {
+    case .success(let got):
+        #expect(c.fail == nil, "\(name): answered \(got), want failure \(c.fail ?? "")")
         #expect(got == c.want, "\(name)")
+    case .failure(let error):
+        #expect(error.contractName == c.fail, "\(name): failed with \(error)")
     }
 }
 
-// The first failure is the one the caller learns of.
-@Test func theFirstFailureIsKept() {
-    let f = Failure()
-    _ = Checked.div(f, Int32(1), 0)
-    _ = Checked.add(f, Int32.max, 1)
-    #expect(f.error == .divideByZero)
-    #expect(throws: AlgorithmError.divideByZero) { try f.throwIfFailed() }
-}
-
-@Test func aBodyThatRecordedNothingThrowsNothing() throws {
-    let f = Failure()
-    #expect(Checked.add(f, 2, 3) == 5)
-    try f.throwIfFailed()
-    #expect(f.error == nil)
+// The first failure in evaluation order is the one the caller learns of, and nothing
+// after it is evaluated: no value stands in for it to compute on.
+@Test func theFirstFailureEndsTheExpression() {
+    var evaluatedAfter = false
+    let got = outcome { () throws(AlgorithmError) -> Int32 in
+        let a = try Checked.div(Int32(1), 0)
+        evaluatedAfter = true
+        return try Checked.add(a, Int32.max)
+    }
+    #expect(got == .failure(.divideByZero))
+    #expect(!evaluatedAfter)
 }
 
 @Test func everyFailureHasTheNameTheContractGivesIt() {
@@ -75,25 +79,15 @@ func eachFailureIsNamedAndEveryValuePasses(name: String) throws {
     #expect(names == ["overflow", "divide-by-zero", "capacity-exceeded", "precondition", "out-of-range"])
 }
 
-// A value stored where a narrower integer type is declared is the same value, or 0 and
-// an overflow when the type cannot hold it, and never a wrapped one.
+// A value stored where a narrower integer type is declared is the same value, or an
+// overflow when the type cannot hold it, and never a wrapped one.
 @Test func aNarrowingKeepsTheValueOrRefusesItAndNeverWraps() {
-    let f = Failure()
-    #expect(Checked.narrow(f, Int64(200), to: UInt8.self) == 200)
-    #expect(Checked.narrow(f, UInt64(127), to: Int8.self) == 127)
-    #expect(!f.failed)
-    #expect(Checked.narrow(f, Int64(256), to: UInt8.self) == 0)
-    #expect(f.error == .overflow)
-
-    let g = Failure()
-    #expect(Checked.narrow(g, Int64(-1), to: UInt32.self) == 0)
-    #expect(g.error == .overflow)
-    let h = Failure()
-    #expect(Checked.narrow(h, UInt64.max, to: Int64.self) == 0)
-    #expect(h.error == .overflow)
-    let i = Failure()
-    #expect(Checked.narrow(i, Int64(-129), to: Int8.self) == 0)
-    #expect(i.error == .overflow)
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(Int64(200), to: UInt8.self) } == .success(200))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(UInt64(127), to: Int8.self) } == .success(127))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(Int64(256), to: UInt8.self) } == .failure(.overflow))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(Int64(-1), to: UInt32.self) } == .failure(.overflow))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(UInt64.max, to: Int64.self) } == .failure(.overflow))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.narrow(Int64(-129), to: Int8.self) } == .failure(.overflow))
 }
 
 // A string is held to its UTF-8 bytes: two characters of four bytes fit a bound of four
@@ -101,132 +95,77 @@ func eachFailureIsNamedAndEveryValuePasses(name: String) throws {
 private struct BoundCase {
     var value: String
     var capacity: UInt32
-    var want: String
-    var fail: Bool
+    var fits: Bool
 }
 
 @Test(arguments: [
-    BoundCase(value: "abcd", capacity: 4, want: "abcd", fail: false),
-    BoundCase(value: "abcde", capacity: 4, want: "", fail: true),
-    BoundCase(value: "\u{E9}\u{E9}", capacity: 4, want: "\u{E9}\u{E9}", fail: false),
-    BoundCase(value: "\u{E9}\u{E9}", capacity: 3, want: "", fail: true),
-    BoundCase(value: "\u{E9}\u{20AC}", capacity: 4, want: "", fail: true),
-    BoundCase(value: "", capacity: 1, want: "", fail: false),
+    BoundCase(value: "abcd", capacity: 4, fits: true),
+    BoundCase(value: "abcde", capacity: 4, fits: false),
+    BoundCase(value: "\u{E9}\u{E9}", capacity: 4, fits: true),
+    BoundCase(value: "\u{E9}\u{E9}", capacity: 3, fits: false),
+    BoundCase(value: "\u{E9}\u{20AC}", capacity: 4, fits: false),
+    BoundCase(value: "", capacity: 1, fits: true),
     // One grapheme cluster, several bytes: `String.count` is 1.
-    BoundCase(value: "e\u{301}", capacity: 2, want: "", fail: true),
+    BoundCase(value: "e\u{301}", capacity: 2, fits: false),
 ])
 private func aStringIsHeldToItsBytes(c: BoundCase) {
-    let f = Failure()
-    let got = Checked.bounded(f, c.value, capacity: c.capacity)
-    #expect(f.failed == c.fail)
-    #expect(got == c.want)
-    if c.fail {
-        #expect(f.error == .capacityExceeded)
-    }
+    let got = outcome { () throws(AlgorithmError) in try Checked.bounded(c.value, capacity: c.capacity) }
+    #expect(got == (c.fits ? .success(c.value) : .failure(.capacityExceeded)))
 }
 
 @Test func aByteStringIsHeldToItsBytes() {
-    for (value, capacity, fail) in [
-        (Array("abcd".utf8), UInt32(4), false),
-        (Array("abcde".utf8), 4, true),
-        ([0xE9, 0xFF, 0x80, 0x00], 4, false),
-        (Array("\u{E9}".utf8), 1, true),
-        ([], 1, false),
+    for (value, capacity, fits) in [
+        (Array("abcd".utf8), UInt32(4), true),
+        (Array("abcde".utf8), 4, false),
+        ([0xE9, 0xFF, 0x80, 0x00], 4, true),
+        (Array("\u{E9}".utf8), 1, false),
+        ([], 1, true),
     ] as [([UInt8], UInt32, Bool)] {
-        let f = Failure()
-        let got = Checked.bounded(f, value, capacity: capacity)
-        #expect(f.failed == fail, "\(value) held to \(capacity)")
-        #expect(got == (fail ? [] : value))
-        if fail {
-            #expect(f.error == .capacityExceeded)
-        }
+        let got = outcome { () throws(AlgorithmError) in try Checked.bounded(value, capacity: capacity) }
+        #expect(got == (fits ? .success(value) : .failure(.capacityExceeded)), "\(value) held to \(capacity)")
     }
 }
 
 @Test func aListIsHeldToItsOwnBound() {
-    let f = Failure()
-    #expect(Checked.within(f, [1, 2, 3], capacity: 3) == [1, 2, 3])
-    #expect(!f.failed)
-    #expect(Checked.within(f, [1, 2, 3, 4], capacity: 3).isEmpty)
-    #expect(f.error == .capacityExceeded)
+    #expect(outcome { () throws(AlgorithmError) in try Checked.within([1, 2, 3], capacity: 3) } == .success([1, 2, 3]))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.within([1, 2, 3, 4], capacity: 3) } == .failure(.capacityExceeded))
 }
 
 @Test func anIndexOutsideTheCollectionIsAFailureAndNeverATrap() {
-    let f = Failure()
     let xs: [UInt8] = [10, 20, 30]
-    #expect(Checked.at(f, xs, Int64(2), fallback: 0) == 30)
-    #expect(Checked.at(f, xs, UInt64(0), fallback: 0) == 10)
-    #expect(!f.failed)
-    #expect(Checked.at(f, xs, Int64(3), fallback: 99) == 99)
-    #expect(f.error == .outOfRange)
-    let g = Failure()
-    #expect(Checked.at(g, xs, Int64(-1), fallback: 7) == 7)
-    #expect(g.error == .outOfRange)
-    let h = Failure()
-    #expect(Checked.at(h, xs, UInt64.max, fallback: 7) == 7)
-    #expect(h.error == .outOfRange)
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(xs, Int64(2)) } == .success(30))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(xs, UInt64(0)) } == .success(10))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(xs, Int64(3)) } == .failure(.outOfRange))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(xs, Int64(-1)) } == .failure(.outOfRange))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(xs, UInt64.max) } == .failure(.outOfRange))
 }
 
-// A call to another may-fail algorithm is its value, or its failure recorded in the
-// caller's Failure under the callee's own name.
-@Test func takePassesACalleeFailureOn() {
-    func callee(_ fail: Bool) throws -> UInt32 {
+/// A sum type with no value to start at: the element type the old checked read could
+/// not answer for (docs/adr/0098, section 5).
+private enum Shape: Equatable {
+    case point
+    case circle(radius: UInt32)
+}
+
+// An element of any type is read alike, a sum type's included, since no value of the
+// type stands where the index is outside the list.
+@Test func anElementOfASumTypeIsReadAndAnIndexOutsideItsListFails() {
+    let shapes: [Shape] = [.point, .circle(radius: 3)]
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(shapes, UInt8(1)) } == .success(.circle(radius: 3)))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.at(shapes, Int32(2)) } == .failure(.outOfRange))
+}
+
+// A call to another may-fail algorithm is its value, or its failure under the callee's
+// own name, passed on by `try` alone.
+@Test func aCalleeFailureIsTheCallersUnrenamed() {
+    func callee(_ fail: Bool) throws(AlgorithmError) -> UInt32 {
         if fail {
-            throw AlgorithmError.divideByZero
+            throw .divideByZero
         }
         return 7
     }
-    let f = Failure()
-    #expect(Checked.take(f, fallback: 0) { try callee(false) } == 7)
-    #expect(!f.failed)
-    #expect(Checked.take(f, fallback: 0) { try callee(true) } == 0)
-    #expect(f.error == .divideByZero)
-}
-
-private struct Row: SceDefault, Equatable {
-    var id: UInt32 = 0
-    init() {}
-    init(id: UInt32) { self.id = id }
-}
-
-// An element of a list that is not there is an out-of-range failure and the element
-// type's default, for a type no literal can name.
-@Test func atDefaultAnswersTheDefaultAndFailsForAnIndexOutsideTheList() {
-    let f = Failure()
-    let rows = [Row(id: 4), Row(id: 9)]
-    #expect(Checked.atDefault(f, rows, UInt8(1)) == Row(id: 9))
-    #expect(!f.failed)
-    #expect(Checked.atDefault(f, rows, Int32(2)) == Row())
-    #expect(f.error == .outOfRange)
-    let g = Failure()
-    #expect(Checked.atDefault(g, rows, Int64(-1)) == Row())
-    #expect(g.error == .outOfRange)
-}
-
-// A call of a machine's adapter, which answers a record, a list or a number whose type
-// the call's expression cannot name, is its value or the type's own zero with the
-// failure recorded: the value of a record that has none, an empty list, a 0.
-@Test func takeDefaultAnswersTheZeroOfTheTypeAndRecordsTheFailure() {
-    func adapter<T>(_ value: T, fails: Bool) throws -> T {
-        if fails {
-            throw AlgorithmError.overflow
-        }
-        return value
-    }
-    let f = Failure()
-    #expect(Checked.takeDefault(f) { try adapter(Row(id: 4), fails: false) } == Row(id: 4))
-    #expect(Checked.takeDefault(f) { try adapter([UInt8(1), 2], fails: false) } == [1, 2])
-    #expect(Checked.takeDefault(f) { try adapter(UInt32(9), fails: false) } == 9)
-    #expect(!f.failed)
-    #expect(Checked.takeDefault(f) { try adapter(Row(id: 4), fails: true) } == Row())
-    #expect(f.error == .overflow)
-    let g = Failure()
-    #expect(Checked.takeDefault(g) { try adapter([Row(id: 1)], fails: true) } == [])
-    #expect(g.error == .overflow)
-    let h = Failure()
-    #expect(Checked.takeDefault(h) { try adapter(Int32(-3), fails: true) } == 0)
-    #expect(Checked.takeDefault(h) { try adapter("text", fails: true) } == "")
-    #expect(Checked.takeDefault(h) { try adapter(true, fails: true) } == false)
+    #expect(outcome { () throws(AlgorithmError) in try callee(false) + 1 } == .success(8))
+    #expect(outcome { () throws(AlgorithmError) in try callee(true) + 1 } == .failure(.divideByZero))
 }
 
 private enum Level: UInt8, CaseIterable {
@@ -234,13 +173,34 @@ private enum Level: UInt8, CaseIterable {
     case high = 7
 }
 
-// A reading that found no variant is an out-of-range failure, which a call that may
-// fail passes on, and an enum's first case stands where it failed.
-@Test func foundThrowsOutOfRangeForAReadingThatFoundNothingAndTakeCaseNamesTheFirstCase() throws {
-    #expect(try Checked.found(Level(rawValue: 7)) == .high)
-    let f = Failure()
-    #expect(Checked.takeCase(f) { try Checked.found(Level(rawValue: 7)) } == .high)
-    #expect(!f.failed)
-    #expect(Checked.takeCase(f) { try Checked.found(Level(rawValue: 3)) } == .low)
-    #expect(f.error == .outOfRange)
+// A reading that found no variant is an out-of-range failure, and no case stands in for
+// it.
+@Test func foundThrowsOutOfRangeForAReadingThatFoundNothing() {
+    #expect(outcome { () throws(AlgorithmError) in try Checked.found(Level(rawValue: 7)) } == .success(.high))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.found(Level(rawValue: 3)) } == .failure(.outOfRange))
+}
+
+// The right operand of a short-circuit that can fail is evaluated only where the left
+// one decides nothing, so its failure is the expression's only there.
+@Test func aShortCircuitEvaluatesItsRightOperandOnlyWhereTheLeftDecidesNothing() {
+    let failing = { () throws(AlgorithmError) -> Bool in try Checked.div(Int32(1), 0) > 0 }
+    #expect(outcome { () throws(AlgorithmError) in try Checked.and(false, failing) } == .success(false))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.and(true, failing) } == .failure(.divideByZero))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.or(true, failing) } == .success(true))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.or(false, failing) } == .failure(.divideByZero))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.and(true) { true } } == .success(true))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.or(false) { false } } == .success(false))
+}
+
+// A fallback that can fail is evaluated only where the value is absent, and one that may
+// be absent leaves the whole absent.
+@Test func aCoalesceEvaluatesItsFallbackOnlyWhereTheValueIsAbsent() {
+    let failing = { () throws(AlgorithmError) -> UInt8 in try Checked.add(UInt8.max, 1) }
+    let present: UInt8? = 4
+    let absent: UInt8? = nil
+    #expect(outcome { () throws(AlgorithmError) in try Checked.coalesce(present, failing) } == .success(4))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.coalesce(absent, failing) } == .failure(.overflow))
+    #expect(outcome { () throws(AlgorithmError) in try Checked.coalesce(absent) { () throws(AlgorithmError) -> UInt8 in 9 } } == .success(9))
+    let maybe = { () throws(AlgorithmError) -> UInt8? in nil }
+    #expect(outcome { () throws(AlgorithmError) in try Checked.coalesce(absent, maybe) } == .success(nil))
 }

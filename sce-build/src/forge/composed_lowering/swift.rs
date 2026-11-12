@@ -474,52 +474,6 @@ pub(crate) fn swift_raise_checks(
     Ok(checks)
 }
 
-impl SwiftComposed<'_> {
-    /// The value a member of the type `ty` holds before anything is written
-    /// to it, `ty` one of the types this spelling holds a value in
-    /// ([`machine_type`]): `nil` for a value that may be absent (a type that
-    /// ends in `?`, which is its outermost constructor), the empty list for a
-    /// list or a byte string (one that opens with `[`), the scalar's own zero
-    /// ([`crate::forge::generator::swift_zero_value`]), a record of the
-    /// machine at its zero (`<Machine><Alias>Record()`, which is
-    /// `SceDefault`), and the first case of the machine's enum, the one other
-    /// type a value is held in. What a record's member and a payload's member
-    /// start at, and what a checked read of an element that is not there
-    /// answers for a record that holds one (`Checked.atDefault`).
-    pub(crate) fn zero_of(&self, ty: &str) -> String {
-        if ty.ends_with('?') {
-            return "nil".to_string();
-        }
-        if ty.starts_with('[') {
-            return "[]".to_string();
-        }
-        let scalars = [
-            SceType::Uint8,
-            SceType::Uint16,
-            SceType::Uint32,
-            SceType::Uint64,
-            SceType::Int8,
-            SceType::Int16,
-            SceType::Int32,
-            SceType::Int64,
-            SceType::Float32,
-            SceType::Float64,
-            SceType::Bool,
-            SceType::String,
-        ];
-        if let Some(scalar) = scalars
-            .iter()
-            .find(|scalar| crate::forge::generator::swift_type(scalar) == ty)
-        {
-            return crate::forge::generator::swift_zero_value(scalar).to_string();
-        }
-        if ty.starts_with(self.machine) && ty.ends_with("Record") {
-            return format!("{ty}()");
-        }
-        format!("{ty}.allCases[0]")
-    }
-}
-
 impl ComposedSpelling for SwiftComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::swift_type(ty).to_string()
@@ -554,9 +508,8 @@ impl ComposedSpelling for SwiftComposed<'_> {
     // A struct of the schema's fields in the schema's order, each named as the
     // schema names it, which is how a read names it, and built whole by the
     // initializer of every field, which a host calls with the labels in that
-    // order. Every member starts at its zero ([`SwiftComposed::zero_of`]), so
-    // the record is `SceDefault`: what a checked read of an element of a list
-    // of it answers where the index is outside the list. A Swift struct has no
+    // order: no member holds a value nobody wrote (docs/adr/0098, section 4), so a
+    // record that holds a union is built as any other. A Swift struct has no
     // constructor that could refuse a value, so the raise seam that takes one
     // holds it to every bound its type declares before it sends it
     // (docs/adr/0086, section 5.4), and no check is declared beside it.
@@ -569,31 +522,23 @@ impl ComposedSpelling for SwiftComposed<'_> {
     ) -> String {
         let members: String = fields
             .iter()
-            .map(|(id, ty)| format!("    public var {id}: {ty} = {}\n", self.zero_of(ty)))
+            .map(|(id, ty)| format!("    public var {id}: {ty}\n"))
             .collect();
-        // A record of no fields is built by the one initializer of none.
-        let whole = if fields.is_empty() {
-            String::new()
-        } else {
-            let params: Vec<String> = fields
-                .iter()
-                .map(|(id, ty)| format!("{id}: {ty}"))
-                .collect();
-            let assigns: String = fields
-                .iter()
-                .map(|(id, _)| format!("        self.{id} = {id}\n"))
-                .collect();
-            format!(
-                "\n    public init({}) {{\n{assigns}    }}\n",
-                params.join(", ")
-            )
-        };
+        let params: Vec<String> = fields
+            .iter()
+            .map(|(id, ty)| format!("{id}: {ty}"))
+            .collect();
+        let assigns: String = fields
+            .iter()
+            .map(|(id, _)| format!("        self.{id} = {id}\n"))
+            .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` value that holds a composed\n\
              /// value (docs/adr/0086), built whole from its fields in the schema's order; a\n\
              /// raise seam holds it to every bound its type declares before it sends it.\n\
-             public struct {ty}: Equatable, Sendable, SceDefault {{\n{members}\n\
-             \x20   public init() {{}}\n{whole}}}"
+             public struct {ty}: Equatable, Sendable {{\n{members}\n\
+             \x20   public init({}) {{\n{assigns}    }}\n}}",
+            params.join(", ")
         )
     }
 
@@ -771,14 +716,15 @@ impl ComposedSpelling for SwiftComposed<'_> {
             SwiftCarrier::Wire => format!("WireValue.composed({written})"),
         }
     }
-    // The count held first, by the `sceFailure` a `<send>` declares for a
-    // param that can fail and reads after it, then the list written.
+    // The count held first, a list short of it thrown as a precondition failure
+    // the `<send>` catches for a param that can fail (docs/adr/0098), then the
+    // list written.
     fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
-        Some(format!(
-            "{{ () -> WireValue in if {}.count < {least} {{ sceFailure.fail(.precondition) }}; \
-             return {sent} }}()",
+        Some(crate::forge::expr::swift::throwing(&format!(
+            "{{ () throws(AlgorithmError) -> WireValue in if {}.count < {least} {{ \
+             throw AlgorithmError.precondition }}; return {sent} }}()",
             held.text
-        ))
+        )))
     }
 
     fn copy_binding(&self) -> &'static str {
@@ -818,10 +764,6 @@ impl ComposedSpelling for SwiftComposed<'_> {
         )
     }
 
-    // Every member of a Swift record starts at its zero ([`SwiftComposed::zero_of`]).
-    fn record_starts_at_zero(&self) -> bool {
-        true
-    }
     // The record's saved form, an object of its fields keyed by their ids in the
     // schema's order, each written and read as its type says
     // ([`swift_saved_write`], [`swift_saved_read`]): what a variable that holds the
@@ -1183,21 +1125,6 @@ mod tests {
         );
     }
 
-    /// A union has no value to start at (docs/adr/0092, amendment of 2026-11-07),
-    /// and what holds one directly or through a record is built whole: a list and
-    /// a value that may be absent start empty and absent, whatever they hold.
-    #[test]
-    fn a_swift_value_holds_no_zero_where_a_union_is_in_it() {
-        let shapes = shapes();
-        let holds = |text: &str| holds_no_zero(&ty(text), None, &shapes).expect("judged");
-        assert!(holds("union:Shape"));
-        assert!(!holds("optional<union:Shape>"));
-        assert!(!holds("list<union:Shape>[2]"));
-        assert!(!holds("record:Radius"));
-        assert!(!holds("uint16"));
-        assert!(SWIFT.record_starts_at_zero());
-    }
-
     /// The head of a Swift reader that answers `ty`, as the tests below spell
     /// what they expect of one.
     fn head(ty: &str) -> String {
@@ -1206,9 +1133,10 @@ mod tests {
 
     /// The Swift row of section 7.1: no type carries a bound, a value that may
     /// be absent is `T?` over its type, a record is the machine's struct, at
-    /// any depth; every member of a record starts at its zero, and no check is
-    /// declared beside it, since a Swift struct has no constructor that could
-    /// refuse a value.
+    /// any depth; a record is built whole by its initializer, no member holding
+    /// a value nobody wrote (docs/adr/0098, section 4), and no check is declared
+    /// beside it, since a Swift struct has no constructor that could refuse a
+    /// value.
     #[test]
     fn a_swift_machine_holds_each_constructor_in_its_own_type_at_any_depth() {
         let held = held();
@@ -1230,13 +1158,12 @@ mod tests {
         let def = SWIFT.record_def("MItemRecord", "Item", &members, &checks);
         assert!(
             def.ends_with(
-                "public struct MItemRecord: Equatable, Sendable, SceDefault {\n    \
-                 public var id: UInt32 = 0\n    \
-                 public var level: MLevelEnum = MLevelEnum.allCases[0]\n    \
-                 public var due: Int64? = nil\n    \
-                 public var blob: [UInt8] = []\n    \
-                 public var tags: [String] = []\n\n    \
-                 public init() {}\n\n    \
+                "public struct MItemRecord: Equatable, Sendable {\n    \
+                 public var id: UInt32\n    \
+                 public var level: MLevelEnum\n    \
+                 public var due: Int64?\n    \
+                 public var blob: [UInt8]\n    \
+                 public var tags: [String]\n\n    \
                  public init(id: UInt32, level: MLevelEnum, due: Int64?, blob: [UInt8], tags: \
                  [String]) {\n        \
                  self.id = id\n        \
@@ -1248,21 +1175,6 @@ mod tests {
             ),
             "{def}"
         );
-    }
-
-    /// The zero of each type the spelling holds a value in, read off the
-    /// outermost constructor: absent, the empty list, the scalar's zero, a
-    /// record of the machine at its zero and the first case of an enum.
-    #[test]
-    fn a_swift_member_starts_at_the_zero_of_its_type() {
-        assert_eq!(SWIFT.zero_of("[UInt8]?"), "nil");
-        assert_eq!(SWIFT.zero_of("[UInt16?]"), "[]");
-        assert_eq!(SWIFT.zero_of("UInt32"), "0");
-        assert_eq!(SWIFT.zero_of("Double"), "0.0");
-        assert_eq!(SWIFT.zero_of("Bool"), "false");
-        assert_eq!(SWIFT.zero_of("String"), "\"\"");
-        assert_eq!(SWIFT.zero_of("MItemRecord"), "MItemRecord()");
-        assert_eq!(SWIFT.zero_of("MLevelEnum"), "MLevelEnum.allCases[0]");
     }
 
     /// One closure of the value per constructor, naming the type it answers,
@@ -1418,8 +1330,8 @@ mod tests {
         assert_eq!(
             SWIFT.send_counted(&Held::place("taking"), "ops", 1, "W".to_string()),
             Some(
-                "{ () -> WireValue in if taking.count < 1 { sceFailure.fail(.precondition) }; \
-                 return W }()"
+                "(try { () throws(AlgorithmError) -> WireValue in if taking.count < 1 { throw \
+                 AlgorithmError.precondition }; return W }())"
                     .to_string()
             )
         );

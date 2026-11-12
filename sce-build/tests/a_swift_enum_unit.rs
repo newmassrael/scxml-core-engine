@@ -77,13 +77,17 @@ fn a_value_is_named_and_converted_by_what_the_document_declares() {
 }
 
 #[test]
-fn a_field_of_an_enum_is_the_unit_of_the_enum_at_its_first_case() {
+fn a_field_of_an_enum_is_the_unit_of_the_enum_and_starts_at_no_case() {
     let code = swift_of("sce-build/tests/fixtures/static_datamodel/schema_item.scxml")
         .expect("a schema whose field is an enum is written");
+    // No case stands for a value nobody wrote (docs/adr/0098, section 4): the field
+    // is written by the initializer, as every field is.
     assert!(
-        code.contains("public var status: EnumItemStatus = EnumItemStatus.allCases[0]"),
+        code.contains("public var status: EnumItemStatus\n"),
         "{code}"
     );
+    assert!(!code.contains("allCases[0]"), "{code}");
+    assert!(!code.contains("public init() {}"), "{code}");
     // The memberwise initializer takes the field in the enum's type.
     assert!(
         code.contains("public init(id: UInt32, status: EnumItemStatus)"),
@@ -97,7 +101,7 @@ fn an_algorithm_takes_a_value_of_an_enum_as_the_unit_of_the_enum() {
         swift_of("sce-build/tests/fixtures/static_datamodel/algorithm_item_status_set.scxml")
             .expect("an algorithm over an enum is written");
     assert!(
-        code.contains("_ status: EnumItemStatus) throws -> [SchemaItemPayload]"),
+        code.contains("_ status: EnumItemStatus) throws(AlgorithmError) -> [SchemaItemPayload]"),
         "{code}"
     );
 }

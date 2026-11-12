@@ -15,8 +15,12 @@
 //   integer arithmetic contract (SCE_FORGE.md §3.4.1) leaves an operation
 //   unchecked the analysis has proved it cannot reach either, so the operator is
 //   written as it is; every operation that can is a `Checked` helper
-//   (`SceForgeRuntime`), which records the failure in `sceFailure` and yields 0, as
-//   the Go and C++ ones do.
+//   (`SceForgeRuntime`), which throws its `AlgorithmError` and answers nothing, as
+//   Rust's `?` does: a failure is not a value, and no value of any type stands in
+//   for it (docs/adr/0098). A throwing call is written `(try …)` where it stands
+//   ([`throwing`]), and a short-circuit whose right operand throws is the
+//   runtime's own (`Checked.and`, `Checked.or`, `Checked.coalesce`), not the
+//   standard library's `rethrows` operator.
 //
 // * A conversion between integer widths is written `T(truncatingIfNeeded:)` where
 //   it can narrow or change sign — the two's-complement wrap every other backend
@@ -69,31 +73,39 @@ pub(crate) fn nameable_type(ty: InferredType) -> Option<String> {
     })
 }
 
-/// A value of `ty` that stands where a checked operation that failed answers, the
-/// zero its helpers yield — or `None` for a type with no zero to name.
-pub(super) fn zero_of(ty: InferredType) -> Option<&'static str> {
-    Some(match ty {
-        InferredType::Int { .. } | InferredType::UntypedInt => "0",
-        InferredType::Float { .. } | InferredType::UntypedFloat => "0.0",
-        InferredType::Bool => "false",
-        InferredType::Str => "\"\"",
-        InferredType::Bytes => "[]",
-        _ => return None,
-    })
+/// `call`, a call that can throw, marked where it stands: the one spelling of a
+/// throwing call in Swift (docs/adr/0098, section 3.2). The parentheses let it
+/// stand as any operand, Swift refusing a bare `try` to the right of a binary
+/// operator, and the mark is on the call itself, so a closure that holds one
+/// throws by its own body and an expression that holds none has no `try` over
+/// nothing.
+pub(crate) fn throwing(call: &str) -> String {
+    format!("{THROWING_MARK}{call})")
 }
 
-/// The value a checked index read of an element of `ty` answers where the index
-/// is outside the list: a scalar's zero ([`zero_of`]), the absence of an element
-/// that may be absent, and the empty list for an element that is itself a list,
-/// as the elements of a list a composed payload holds are at any depth
-/// (docs/adr/0086, section 6.1). `None` for an element with no such value to
-/// name.
-fn element_fallback(ty: InferredType) -> Option<&'static str> {
-    zero_of(ty).or(match ty {
-        InferredType::Optional(_) => Some("nil"),
-        InferredType::List(_) => Some("[]"),
-        _ => None,
-    })
+/// How [`throwing`] opens a call it marks.
+const THROWING_MARK: &str = "(try ";
+
+/// Whether `text`, Swift this lowering wrote, holds a call that can throw: every one
+/// is spelled by [`throwing`], so the mark is in the text exactly where one is. A
+/// construct that wraps text it did not type (a closure over a statement's own
+/// expression) asks this to know whether it throws in turn. A string literal that
+/// happens to hold the mark makes the answer `true` for text that cannot throw,
+/// which costs a `try` over nothing (a warning) and never a call left unmarked.
+pub(crate) fn holds_throwing(text: &str) -> bool {
+    text.contains(THROWING_MARK)
+}
+
+/// Whether evaluating `expr` can fail (SCE_FORGE.md §3.4.1): it is, or holds, a
+/// checked operation or a call of a `may-fail` algorithm. Every other node is a
+/// read, a literal or an operator that cannot fail, which the lowering admitted
+/// only where the analysis proved it.
+fn throws(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Checked { .. } => true,
+        ExprKind::Call { fails: true, .. } => true,
+        _ => expr.children().into_iter().any(throws),
+    }
 }
 
 /// The precedence of an operator as the other emitters read it: ECMAScript's own
@@ -294,6 +306,13 @@ fn swift_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Stri
         OptionalForm::Otherwise { value, fallback } => {
             let read = emit(value, InferredType::Unknown)?;
             let default = emit(fallback, whole.ty)?;
+            // A fallback that can fail is evaluated only where the value is absent,
+            // through the runtime's coalesce, which keeps the failure's type.
+            if throws(fallback) {
+                return Ok(throwing(&format!(
+                    "Checked.coalesce({read}, {{ {default} }})"
+                )));
+            }
             format!(
                 "{} ?? {}",
                 swift_operand(value, BinOp::Coalesce, true, read),
@@ -444,35 +463,18 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 wrap_postfix(source, emit(source, InferredType::Unknown)?)
             )
         }
-        // SCE_FORGE.md §3.4.1: an index read through `Checked.at`, which answers
-        // `fallback` and records an out-of-range failure rather than trap.
+        // SCE_FORGE.md §3.4.1: an index read through `Checked.at`, which throws an
+        // out-of-range failure rather than trap, and answers nothing in its place, so
+        // an element of any type is read alike (docs/adr/0098, section 5).
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
             right: Some(index),
-        } => {
-            match element_fallback(expr.ty) {
-                Some(zero) => format!(
-                    "Checked.at(sceFailure, {}, {}, fallback: {zero})",
-                    emit(left, InferredType::Unknown)?,
-                    emit(index, InferredType::Unknown)?,
-                ),
-                // An element the lattice does not type is a record, which a machine
-                // declares with a value of every field (`SceDefault`): that value stands
-                // where the read failed.
-                None if expr.ty == InferredType::Unknown => format!(
-                    "Checked.atDefault(sceFailure, {}, {})",
-                    emit(left, InferredType::Unknown)?,
-                    emit(index, InferredType::Unknown)?,
-                ),
-                None => {
-                    return Err(unsupported(
-                        format!("a checked index read of {}", expr.ty.describe()),
-                        expr,
-                    ))
-                }
-            }
-        }
+        } => throwing(&format!(
+            "Checked.at({}, {})",
+            emit(left, InferredType::Unknown)?,
+            emit(index, InferredType::Unknown)?,
+        )),
         ExprKind::Checked {
             op: CheckedOp::Narrow,
             left,
@@ -484,11 +486,11 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                     expr,
                 ));
             };
-            format!(
-                "Checked.narrow(sceFailure, {}, to: {}.self)",
+            throwing(&format!(
+                "Checked.narrow({}, to: {}.self)",
                 emit(left, left.ty)?,
                 int_type(signed, bits)
-            )
+            ))
         }
         // SCE_FORGE.md §3.4.1: the helper of the operation, generic in the width it
         // is called at, so both operands are spelled at the operation's own type.
@@ -502,11 +504,11 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                     first = format!("{}({first})", int_type(signed, bits));
                 }
             }
-            let mut operands = vec!["sceFailure".to_string(), first];
+            let mut operands = vec![first];
             if let Some(right) = right {
                 operands.push(emit(right, expr.ty)?);
             }
-            format!("Checked.{}({})", op.helper(), operands.join(", "))
+            throwing(&format!("Checked.{}({})", op.helper(), operands.join(", ")))
         }
     })
 }
@@ -589,6 +591,15 @@ fn binary(op: BinOp, left: &TypedExpr, right: &TypedExpr) -> Result<String, Refu
                 "{signed}(truncatingIfNeeded: {unsigned}(truncatingIfNeeded: {l_raw}) >> {r_raw})"
             ));
         }
+    }
+    // A right operand that can fail is evaluated only where the left one decides
+    // nothing, through the runtime's short-circuit, which keeps the failure's type
+    // where the standard library's `rethrows` operator need not.
+    if matches!(op, BinOp::And | BinOp::Or) && throws(right) {
+        let helper = if op == BinOp::And { "and" } else { "or" };
+        return Ok(throwing(&format!(
+            "Checked.{helper}({l_raw}, {{ {r_raw} }})"
+        )));
     }
     let l = swift_operand(left, op, true, l_raw);
     let r = swift_operand(right, op, false, r_raw);
@@ -754,20 +765,48 @@ mod tests {
     }
 
     /// An integer operation of a body that receives failures is a `Checked` helper
-    /// that records the failure instead of trapping, at the width of the operation.
+    /// that throws its failure instead of trapping, at the width of the operation,
+    /// marked `try` where it stands (docs/adr/0098).
     #[test]
-    fn a_checked_operation_records_its_failure_in_the_body() {
+    fn a_checked_operation_throws_its_failure_where_it_stands() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("count", int(false, 32));
         ctx.insert_var("step", int(false, 32));
         ctx.receives_failures = true;
         assert_eq!(
             emit_in("count + step", &ctx, int(false, 32)).unwrap(),
-            "Checked.add(sceFailure, count, step)"
+            "(try Checked.add(count, step))"
         );
         assert_eq!(
             emit_in("count - 1", &ctx, int(false, 32)).unwrap(),
-            "Checked.sub(sceFailure, count, 1)"
+            "(try Checked.sub(count, 1))"
+        );
+        assert_eq!(
+            emit_in("(count + step) * 2", &ctx, int(false, 32)).unwrap(),
+            "(try Checked.mul((try Checked.add(count, step)), 2))"
+        );
+    }
+
+    /// The right operand of `&&` and `||` that can fail is evaluated through the
+    /// runtime's short-circuit; one that cannot keeps Swift's own operator, so no
+    /// `try` covers nothing.
+    #[test]
+    fn a_short_circuit_whose_right_operand_can_fail_is_the_runtimes() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("count", int(false, 32));
+        ctx.insert_var("flag", InferredType::Bool);
+        ctx.receives_failures = true;
+        assert_eq!(
+            spell("flag && count + 1 > 3", &ctx),
+            "(try Checked.and(flag, { (try Checked.add(count, 1)) > 3 }))"
+        );
+        assert_eq!(
+            spell("flag || count + 1 > 3", &ctx),
+            "(try Checked.or(flag, { (try Checked.add(count, 1)) > 3 }))"
+        );
+        assert_eq!(
+            spell("count + 1 > 3 && flag", &ctx),
+            "(try Checked.add(count, 1)) > 3 && flag"
         );
     }
 

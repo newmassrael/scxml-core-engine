@@ -2,9 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // An algorithm that declares `<sce:return may-fail="true">` (SCE_FORGE.md §3.4.1),
-// written for Swift: the function `throws`, every integer operation is a checked
-// helper that records its failure, the body reads that record after each statement
-// and throws it, and a `<sce:require>` that does not hold throws the precondition.
+// written for Swift: the function `throws(AlgorithmError)`, every integer operation
+// is a checked helper that throws its failure where it happens, marked `try` where it
+// stands, and a `<sce:require>` that does not hold throws the precondition. A failure
+// is not a value (docs/adr/0098): nothing is recorded, and nothing after it runs.
 
 use std::path::{Path, PathBuf};
 
@@ -37,38 +38,28 @@ fn swift_of(document: &str) -> Result<String, String> {
 }
 
 #[test]
-fn a_may_fail_function_throws_and_checks_its_arithmetic() {
+fn a_may_fail_function_throws_its_typed_failure_where_an_operation_fails() {
     let code = swift_of("sce-build/tests/fixtures/static_datamodel/algorithm_ledger_ids.scxml")
         .expect("a may-fail algorithm over a list is written");
     assert!(
-        code.contains("func ledgerIds(_ ids: [UInt32]) throws -> UInt32"),
+        code.contains("func ledgerIds(_ ids: [UInt32]) throws(AlgorithmError) -> UInt32"),
         "{code}"
     );
-    assert!(code.contains("let sceFailure = Failure()"), "{code}");
-    // The sum is the runtime's checked one, which records an overflow and yields 0.
-    assert!(
-        code.contains("sum = Checked.add(sceFailure, sum, id)"),
-        "{code}"
-    );
+    // The sum is the runtime's checked one, which throws an overflow and answers no
+    // value in its place.
+    assert!(code.contains("sum = (try Checked.add(sum, id))"), "{code}");
     assert!(code.contains("import SceForgeRuntime"), "{code}");
 }
 
 #[test]
-fn a_failure_is_read_after_each_statement_and_before_a_value_is_returned() {
+fn no_failure_is_recorded_and_none_is_read_back_after_a_statement() {
     let code = swift_of("sce-build/tests/fixtures/static_datamodel/algorithm_ledger_ids.scxml")
         .expect("written");
-    let throws = code.matches("try sceFailure.throwIfFailed()").count();
-    // After the local's initializer, after the loop's statement, and before the
-    // value is handed back.
-    assert_eq!(throws, 3, "{code}");
-    let value = code
-        .find("let sceReturned: UInt32 = sum")
-        .expect("the value is computed into a local first");
-    let check = code[value..]
-        .find("try sceFailure.throwIfFailed()")
-        .expect("and the failure is read before it is returned");
-    let returned = code[value..].find("return sceReturned").expect("returned");
-    assert!(check < returned, "{code}");
+    for gone in ["sceFailure", "Failure()", "throwIfFailed", "sceReturned"] {
+        assert!(!code.contains(gone), "`{gone}` in:\n{code}");
+    }
+    // The value is returned as it is computed: a failure in it has already left.
+    assert!(code.contains("return sum"), "{code}");
 }
 
 #[test]
@@ -78,28 +69,19 @@ fn a_precondition_that_does_not_hold_throws_it() {
         code.contains("throw AlgorithmError.precondition"),
         "a `<sce:require>` is a thrown precondition: {code}"
     );
-    // A condition is computed in a block of its own, so two `if`s of one scope do
-    // not declare it twice, and its failure is read before it decides a branch.
-    assert!(code.contains("let sceCond"), "{code}");
+    // A condition decides its branch where it is written: a failure in it throws
+    // before any branch runs, so it is no local of its own.
+    assert!(!code.contains("let sceCond"), "{code}");
 }
 
 #[test]
-fn a_loop_condition_is_computed_every_pass_and_a_failure_in_it_is_thrown() {
+fn a_loop_condition_that_can_fail_is_the_loops_own_condition() {
     let code = swift_of("stdlib/time/utc_from_local.scxml").expect("a loop is written");
-    assert!(code.contains("while true {"), "{code}");
-    // The condition is read at the top of every pass, its failure thrown before it
-    // decides whether the loop goes on.
-    let head = code.find("while true {").expect("a loop");
-    let rest = &code[head..];
-    let cond = rest.find("let sceCond").expect("its condition is a local");
-    let check = rest
-        .find("try sceFailure.throwIfFailed()")
-        .expect("its failure is read");
-    let leave = rest
-        .find("{ break }")
-        .expect("and it leaves when the condition is false");
-    assert!(cond < check && check < leave, "{code}");
+    // The condition is read at the top of every pass by the loop itself; a failure in
+    // it throws before it decides whether the loop goes on.
+    assert!(!code.contains("while true {"), "{code}");
+    assert!(code.contains("while "), "{code}");
     // An element is read by its index through the runtime's checked read, which
-    // records an out-of-range index instead of trapping.
-    assert!(code.contains("Checked.at(sceFailure,"), "{code}");
+    // throws an out-of-range index instead of trapping.
+    assert!(code.contains("(try Checked.at("), "{code}");
 }

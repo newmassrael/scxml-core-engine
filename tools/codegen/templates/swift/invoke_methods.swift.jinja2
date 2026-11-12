@@ -42,15 +42,12 @@
 {% for param in seeded %}
 {{ indent }}do {
 {% if param.native_fails %}
-{{ indent }}    let sceFailure = Failure()
 {{ indent }}    let sceValue: {{ param.native_seed_type }} = {{ param.native_seed }}
-{{ indent }}    if sceFailure.failed {
+{{ indent }}    seed.v{{ param.name | to_pascal_case }} = sceValue
+{{ indent }}} catch {
 {% if 'error.execution' in model.events %}
-{{ indent }}        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
+{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
 {% endif %}
-{{ indent }}    } else {
-{{ indent }}        seed.v{{ param.name | to_pascal_case }} = sceValue
-{{ indent }}    }
 {% else %}
 {{ indent }}    seed.v{{ param.name | to_pascal_case }} = {{ param.native_seed }}
 {% endif %}
@@ -61,13 +58,11 @@
 {% for param in unkept %}
 {% if param.native_value and param.native_fails %}
 {{ indent }}do {
-{{ indent }}    let sceFailure = Failure()
 {{ indent }}    let _: WireValue = {{ param.native_value }}
-{{ indent }}    if sceFailure.failed {
+{{ indent }}} catch {
 {% if 'error.execution' in model.events %}
-{{ indent }}        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
+{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
 {% endif %}
-{{ indent }}    }
 {{ indent }}}
 {% endif %}
 {% endfor %}
@@ -355,15 +350,13 @@
 {% elif invoke_info.native_src_fails %}
         let sceSelected: String
         do {
-            let sceFailure = Failure()
             let sceValue: String = {{ invoke_info.native_src }}
-            if sceFailure.failed {
-{% if 'error.execution' in model.events %}
-                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
-{% endif %}
-                return
-            }
             sceSelected = documentStem(sceValue)
+        } catch {
+{% if 'error.execution' in model.events %}
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
+{% endif %}
+            return
         }
 {% else %}
         let sceSelected = documentStem({{ invoke_info.native_src }})
@@ -596,27 +589,17 @@
    a checked operation that overflows: the evaluation that failed, which refuses the request
    as any value its field cannot hold. #}
         do {
-{% if param.native_fails %}
-            let sceFailure = Failure()
-{% endif %}
             let sceValue: WireValue = {{ param.native_value }}
-{% if param.native_fails %}
-            if sceFailure.failed {
-{% if 'error.execution' in model.events %}
-                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> cannot be its request field: it failed to evaluate"))
-{% endif %}
-                requestRefused = true
-            } else {
-                appendFormParam(&hostParams, "{{ param.name | escape_swift }}", sceValue)
-{% if not param.envelope_metadata %}
-                hostParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
-{% endif %}
-            }
-{% else %}
             appendFormParam(&hostParams, "{{ param.name | escape_swift }}", sceValue)
 {% if not param.envelope_metadata %}
             hostParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
+{% if param.native_fails %}
+        } catch {
+{% if 'error.execution' in model.events %}
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> cannot be its request field: it failed to evaluate"))
+{% endif %}
+            requestRefused = true
 {% endif %}
         }
 {% endif %}
@@ -637,15 +620,13 @@
         let {{ variable }}: String
         do {
 {% if fails %}
-            let sceFailure = Failure()
             let sceValue: String = {{ value }}
-            if sceFailure.failed {
-{% if 'error.execution' in model.events %}
-                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> {{ attribute }} failed to evaluate"))
-{% endif %}
-                return
-            }
             {{ variable }} = sceValue
+        } catch {
+{% if 'error.execution' in model.events %}
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> {{ attribute }} failed to evaluate"))
+{% endif %}
+            return
 {% else %}
             {{ variable }} = {{ value }}
 {% endif %}

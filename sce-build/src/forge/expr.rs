@@ -91,8 +91,9 @@ pub enum ExprTarget {
     /// the transform fixtures exercise.
     C,
     /// Swift. Every integer type is the language's own fixed-width one, a checked
-    /// operation is `Checked.<op>(sceFailure, …)` of the forge runtime, and a
-    /// string is compared over its UTF-8 bytes (`expr/swift.rs`).
+    /// operation is `(try Checked.<op>(…))` of the forge runtime, which throws its
+    /// failure (docs/adr/0098), and a string is compared over its UTF-8 bytes
+    /// (`expr/swift.rs`).
     Swift,
     /// ECMAScript, spelled for the Interpreter's script engine: the lowering
     /// that lets a `datamodel="sce-static"` document run there
@@ -874,9 +875,6 @@ fn resolve_then_rename(
             | ExprTarget::C
     ) {
         lower_union_reads(ast, ctx, &ctx.proven, target)?;
-    }
-    if matches!(target, ExprTarget::Swift) {
-        reject_zeroless_element_reads(ast, ctx)?;
     }
     // A C string is a bounded buffer: a join of strings the data model sizes is
     // written into one the lowering sizes, and one it cannot size is refused at
@@ -1674,42 +1672,6 @@ fn lower_union_reads(
             .into_iter()
             .try_for_each(|child| lower_union_reads(child, ctx, facts, target)),
     }
-}
-
-/// Refuse, for the Swift machine, an index read of a list whose elements are
-/// unions, or unions that may be absent. A Swift machine reads an element of a
-/// list through a checked read that records an index outside the list as the
-/// failure the statement ends at and answers the element type's zero
-/// (`Checked.atDefault`, a `SceDefault`); a union has no value to start at
-/// (docs/adr/0092, amendment of 2026-11-07), so there is none to answer, and the
-/// read would be Swift that does not compile. A loop over the list reads each
-/// element where it is, with no index outside it.
-fn reject_zeroless_element_reads(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
-    use crate::forge::value_type::ValueType;
-    if let ExprKind::Index { object, .. } = &expr.kind {
-        let element = place_path(object)
-            .and_then(|path| ctx.value_of(&path))
-            .and_then(|place| place.element());
-        let holds_union = |ty: &ValueType| match ty {
-            ValueType::Union { .. } => true,
-            ValueType::Optional { elem } => matches!(**elem, ValueType::Union { .. }),
-            _ => false,
-        };
-        if element.is_some_and(|element| holds_union(&element.ty)) {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "an index read of a list whose elements are unions: a Swift machine \
-                            answers an index outside a list with its element type's zero, and a \
-                            union has none (docs/adr/0092, amendment of 2026-11-07); read the \
-                            elements in a <foreach>"
-                    .to_string(),
-                observed: None,
-            }
-            .at(expr.span.clone()));
-        }
-    }
-    expr.children()
-        .into_iter()
-        .try_for_each(|child| reject_zeroless_element_reads(child, ctx))
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or
@@ -11194,41 +11156,11 @@ pub(crate) fn pass_failure_on(
             };
             format!("scealgorithm.Take[{value}](&sceFailure)({call})")
         }
-        // The callee throws its failure; `Checked.take` records it in the body's
-        // `sceFailure` under the callee's own name, which the statement around it
-        // throws, and answers the zero of the value's type in its place.
-        // A call of an adapter a statechart declares for an algorithm that takes or
-        // returns a record or a list answers in the statechart's own types, which this
-        // layer cannot spell: the answer's type names its own zero (`SceDefault`).
-        ExprTarget::Swift if symbol.starts_with(SWIFT_STATE_ADAPTER_PREFIX) => {
-            format!("Checked.takeDefault(sceFailure, {{ try {call} }})")
-        }
-        // A call that answers a value that may be absent stands at the absence where it
-        // failed, the one value of the type `T?` that needs no `T` to name it.
-        ExprTarget::Swift if ty.is_optional() => {
-            format!("Checked.take(sceFailure, fallback: nil, {{ try {call} }})")
-        }
-        ExprTarget::Swift => match swift::zero_of(ty.strip_quantity()) {
-            Some(zero) => format!("Checked.take(sceFailure, fallback: {zero}, {{ try {call} }})"),
-            // A value the lattice does not type is a variant of an enum, whose zero is
-            // its first case: the one value of the type that can be named without
-            // naming the type.
-            None if ty == InferredType::Unknown => {
-                format!("Checked.takeCase(sceFailure, {{ try {call} }})")
-            }
-            // A record and a list name no zero here, and the type the place holds
-            // it in does: `SceDefault`, which the unit of a record and an `Array`
-            // conform to.
-            None if matches!(ty, InferredType::Record(_) | InferredType::List(_)) => {
-                format!("Checked.takeDefault(sceFailure, {{ try {call} }})")
-            }
-            None => {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: format!("a may-fail call returning {}", ty.describe()),
-                    observed: None,
-                })
-            }
-        },
+        // The callee throws its failure, which is the caller's by `try` alone: no
+        // value of any type stands where it failed (docs/adr/0098), so a call that
+        // answers a record, a list, an enum or a union is spelled as one that
+        // answers a number.
+        ExprTarget::Swift => swift::throwing(call),
         ExprTarget::Python => call.to_string(),
         // A failure is a throw, which passes itself on as Python's does: the
         // expression that called the algorithm fails as an overflow of its own

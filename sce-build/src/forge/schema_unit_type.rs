@@ -239,30 +239,6 @@ fn c11_mangle(ty: &ValueType, names: &dyn UnitNames) -> String {
     }
 }
 
-/// The value a Swift unit's field of the composed type `ty` holds until it is
-/// written: an empty list, nothing, or a record at its own zero. A union has
-/// none (docs/adr/0092, amendment of 2026-11-07: no case is the zero of the
-/// others), so a field that holds one directly answers the empty text, and its
-/// unit is built whole by its memberwise initialiser and is no `SceDefault`.
-pub(crate) fn swift_zero(ty: &ValueType, names: &dyn UnitNames) -> Result<String, String> {
-    Ok(match ty {
-        ValueType::List { .. } => "[]".to_string(),
-        ValueType::Optional { .. } => "nil".to_string(),
-        ValueType::Record { alias } => format!(
-            "{}()",
-            names.record(alias).ok_or_else(|| {
-                format!("`record:{alias}` names no event schema the document imports")
-            })?
-        ),
-        ValueType::Union { .. } => String::new(),
-        ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
-            return Err(format!(
-                "`{ty}` is one entry, which the unit spells where it spells every entry"
-            ))
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -479,19 +455,6 @@ mod tests {
             )
             .expect("spelled"),
             "sce_opt_record_ItemPayload_t"
-        );
-    }
-
-    #[test]
-    fn a_swift_field_starts_empty_absent_or_at_its_records_zero() {
-        assert_eq!(swift_zero(&read("list<uint8>[2]"), &Names), Ok("[]".into()));
-        assert_eq!(
-            swift_zero(&read("optional<list<uint8>[2]>"), &Names),
-            Ok("nil".into())
-        );
-        assert_eq!(
-            swift_zero(&read("record:Item"), &Names),
-            Ok("ItemPayload_t()".into())
         );
     }
 }

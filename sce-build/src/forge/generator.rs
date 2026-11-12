@@ -3859,7 +3859,7 @@ fn composed_schema_field(
     field: &SchemaField,
     c11: &mut crate::forge::schema_unit_type::C11Declarations,
 ) -> Result<serde_json::Value, ForgeError> {
-    use crate::forge::schema_unit_type::{swift_zero, unit_type};
+    use crate::forge::schema_unit_type::unit_type;
     let refused = |why: String| {
         ForgeError::from(GenerateError::unsupported(format!(
             "the field `{}`: {why}",
@@ -3867,18 +3867,6 @@ fn composed_schema_field(
         )))
     };
     let spelled = unit_type(l.lang, &field.sce_type, names, c11).map_err(refused)?;
-    // The value a field starts at is a Swift struct's alone, and asked only
-    // there: a type another backend spells (a union on Kotlin) has no Swift
-    // zero to refuse it by.
-    let zero = match l.lang {
-        crate::generator::Language::Swift => swift_zero(&field.sce_type, names).map_err(refused)?,
-        crate::generator::Language::Rust
-        | crate::generator::Language::Cpp
-        | crate::generator::Language::Kotlin
-        | crate::generator::Language::Go
-        | crate::generator::Language::Python
-        | crate::generator::Language::C11 => String::new(),
-    };
     Ok(serde_json::json!({
         "id": field.id,
         "cpp_type": spelled,
@@ -3888,7 +3876,6 @@ fn composed_schema_field(
         "swift_type": spelled,
         "py_type": spelled,
         "c_type": spelled,
-        "swift_zero": zero,
         "go_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Go),
         "rs_field_name": event_schema_field_ident(&field.id, crate::generator::Language::Rust),
     }))
@@ -4306,14 +4293,6 @@ fn render_event_schema(
             let spelled = |plain: std::borrow::Cow<'static, str>| {
                 held.clone().map_or(plain, std::borrow::Cow::Owned)
             };
-            // A field that may be absent is at nothing until written, whatever its
-            // element is. Any other is at the zero of its type, or an enum's first
-            // case: the unit of the enum the schema imports names it.
-            let swift_zero = match (&f.sce_type, f.sce_type.present_type()) {
-                (EntryType::Optional { .. }, _) => "nil".to_string(),
-                (EntryType::Scalar(_), SceType::Enum(_)) => format!("{resolved}.allCases[0]"),
-                (EntryType::Scalar(_), present) => swift_zero_value(present).to_string(),
-            };
             Ok(serde_json::json!({
                 "id": f.id,
                 "cpp_type": spelled(cpp_type),
@@ -4323,7 +4302,6 @@ fn render_event_schema(
                 "swift_type": spelled(resolved.clone()),
                 "py_type": spelled(resolved),
                 "c_type": spelled(c_type),
-                "swift_zero": swift_zero,
                 "go_field_name": go_field_name,
                 "rs_field_name": rs_field_name,
             }))
@@ -4399,15 +4377,6 @@ fn render_event_schema(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("payload_struct_name".into(), payload_struct_name.into());
-    // A Swift payload whose field holds a union directly has no value to start
-    // that field at (docs/adr/0092, amendment of 2026-11-07), so the struct is
-    // built whole by its memberwise initialiser and is no `SceDefault`.
-    ctx.insert(
-        "swift_zeroless".into(),
-        (_lang == crate::generator::Language::Swift
-            && fields.iter().any(|f| f["swift_zero"] == ""))
-        .into(),
-    );
     ctx.insert("event_name".into(), m.event_name.clone().into());
     // The event name and the revision as typed constants of the unit, which a host
     // that stamps what it sends (a command log, a wire record) names instead of
@@ -8461,20 +8430,15 @@ pub(crate) fn swift_payload_pair(f: &EntryField) -> String {
 /// What the Swift typed channel holds and reads of one event's payload
 /// ([`build_swift_event_payload`]).
 struct SwiftPayloadParts {
-    /// The payload struct's members, one line each, each at its zero.
+    /// The payload struct's members, one line each, none with a value before it is
+    /// written (docs/adr/0098, section 4).
     field_lines: String,
     /// The inject seam's parameters, `<id>: <type>` each.
     params: Vec<String>,
-    /// The lift's statements that read each member out of the decoded
-    /// `fields` into `payload`, one line each, throwing the first refusal.
-    /// For a payload that holds no zero ([`Self::zeroless`]) they declare
-    /// `payload` too, built whole after every member is read.
+    /// The lift's statements that read each member out of the decoded `fields`
+    /// into a local of its own, one line each, throwing the first refusal, and
+    /// then declare `payload`, built whole by the initializer of every member.
     reads: String,
-    /// Whether a member of the struct has no value to start at (a union,
-    /// docs/adr/0092, amendment of 2026-11-07), so the struct is built whole by
-    /// the initializer of every member: it has no `init()`, and the policy's view
-    /// of it holds nothing until a delivery sets it.
-    zeroless: bool,
     /// The JSON of the defaults of the fields a later revision added, or
     /// `None` for a schema that added none.
     defaults: Option<String>,
@@ -8502,41 +8466,39 @@ fn swift_entry_payload(
     let mut reads = String::new();
     let mut params = Vec::new();
     let mut inits = Vec::new();
+    let mut fields_read = Vec::new();
     let mut pairs = Vec::new();
-    for f in &schema.fields {
-        let (ty, zero) = match f.sce_type.present_type() {
-            // The first case stands where the struct holds nothing yet.
-            SceType::Enum(r) => {
-                let ty = static_enum_of(static_enums, &r.alias).ty.clone();
-                let zero = format!("{ty}.allCases[0]");
-                (ty, zero)
-            }
-            present => (
-                swift_type(present).to_string(),
-                swift_zero_value(present).to_string(),
-            ),
+    for (index, f) in schema.fields.iter().enumerate() {
+        let ty = match f.sce_type.present_type() {
+            SceType::Enum(r) => static_enum_of(static_enums, &r.alias).ty.clone(),
+            present => swift_type(present).to_string(),
         };
         // A field that may be absent is the optional type over its present
-        // value's, and holds nothing yet as absent (docs/adr/0055).
-        let (ty, zero) = match &f.sce_type {
-            EntryType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
-            EntryType::Scalar(_) => (ty, zero),
+        // value's (docs/adr/0055).
+        let ty = match &f.sce_type {
+            EntryType::Optional { .. } => format!("{ty}?"),
+            EntryType::Scalar(_) => ty,
         };
-        field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
+        field_lines.push_str(&format!("    var {}: {ty}\n", f.id));
+        // Each field into a local of its own, and the payload built whole from
+        // them once every one is read (docs/adr/0098, section 4).
         reads.push_str(&format!(
-            "            payload.{} = {}\n",
-            f.id,
+            "            let sceField{index} = {}\n",
             swift_payload_reader(f, static_enums)
         ));
+        fields_read.push(format!("{}: sceField{index}", f.id));
         params.push(format!("{}: {ty}", f.id));
         inits.push(format!("{0}: {0}", f.id));
         pairs.push(swift_payload_pair(f));
     }
+    reads.push_str(&format!(
+        "            let payload = {struct_name}({})\n",
+        fields_read.join(", ")
+    ));
     SwiftPayloadParts {
         field_lines,
         params,
         reads,
-        zeroless: false,
         defaults: crate::forge::schema_revision::defaults_wire(schema),
         prelude: String::new(),
         typed_payload: format!("{struct_name}({})", inits.join(", ")),
@@ -8613,55 +8575,30 @@ fn swift_composed_payload(
     ));
     let checks = composed::swift_raise_checks(held, &records)
         .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
-    // Each member read into the payload by its own reader, a closure of the value
-    // the field's name holds.
-    //
-    // A member that has no value to start at (a union, docs/adr/0092, amendment of
-    // 2026-11-07, or a record that holds one) makes the struct built whole: each
-    // member is read into a local of its own, so no one statement is a nest of every
-    // reader the type checker would have to solve together, and the payload is
-    // built by the initializer of every member once all are read.
-    let no_zero: Vec<bool> = held
-        .schema
-        .fields
+    // Each member read by its own reader, a closure of the value the field's name
+    // holds, into a local of its own, so no one statement is a nest of every reader
+    // the type checker would have to solve together; the payload is built whole by
+    // the initializer of every member once all are read, no member holding a value
+    // nobody wrote (docs/adr/0098, section 4).
+    let locals: String = readers
         .iter()
-        .map(|field| {
-            composed::holds_no_zero(&field.sce_type, Some(held.alias), &records)
-                .unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+        .enumerate()
+        .map(|(index, (id, read))| {
+            format!(
+                "            let sceField{index} = try ({read})(fields.field(\"{}\"))\n",
+                filters::escape_swift(id.clone())
+            )
         })
         .collect();
-    let zeroless = no_zero.iter().any(|no_zero| *no_zero);
-    let reads: String = if zeroless {
-        let locals: String = readers
-            .iter()
-            .enumerate()
-            .map(|(index, (id, read))| {
-                format!(
-                    "            let sceField{index} = try ({read})(fields.field(\"{}\"))\n",
-                    filters::escape_swift(id.clone())
-                )
-            })
-            .collect();
-        let inits: Vec<String> = readers
-            .iter()
-            .enumerate()
-            .map(|(index, (id, _))| format!("{id}: sceField{index}"))
-            .collect();
-        format!(
-            "{locals}            let payload = {struct_name}({})\n",
-            inits.join(", ")
-        )
-    } else {
-        readers
-            .iter()
-            .map(|(id, read)| {
-                format!(
-                    "            payload.{id} = try ({read})(fields.field(\"{}\"))\n",
-                    filters::escape_swift(id.clone())
-                )
-            })
-            .collect()
-    };
+    let built: Vec<String> = readers
+        .iter()
+        .enumerate()
+        .map(|(index, (id, _))| format!("{id}: sceField{index}"))
+        .collect();
+    let reads = format!(
+        "{locals}            let payload = {struct_name}({})\n",
+        built.join(", ")
+    );
     let mut prelude: String = checks
         .iter()
         .map(|check| format!("        {check}\n"))
@@ -8677,21 +8614,13 @@ fn swift_composed_payload(
     SwiftPayloadParts {
         field_lines: members
             .iter()
-            .zip(&no_zero)
-            .map(|((id, ty), no_zero)| {
-                if *no_zero {
-                    format!("    var {id}: {ty}\n")
-                } else {
-                    format!("    var {id}: {ty} = {}\n", spelling.zero_of(ty))
-                }
-            })
+            .map(|(id, ty)| format!("    var {id}: {ty}\n"))
             .collect(),
         params: members
             .iter()
             .map(|(id, ty)| format!("{id}: {ty}"))
             .collect(),
         reads,
-        zeroless,
         defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
         prelude,
         typed_payload: PAYLOAD_LOCAL.to_string(),
@@ -8751,7 +8680,6 @@ pub fn build_swift_event_payload(
             field_lines,
             params,
             reads,
-            zeroless,
             defaults,
             prelude,
             typed_payload,
@@ -8768,16 +8696,10 @@ pub fn build_swift_event_payload(
             ),
             None => "try PayloadFields.decode(metadata.data)".to_string(),
         };
-        // A payload that holds no zero declares itself in its reads, built whole.
-        let declare = if zeroless {
-            String::new()
-        } else {
-            format!("            var payload = {struct_name}()\n")
-        };
+        // The reads declare the payload, built whole once every member is read.
         lift_cases.push_str(&format!(
             "        case .{case}:\n\
              \x20           let fields = {decode}\n\
-             {declare}\
              {reads}\
              \x20           {field} = payload\n\
              \x20           pendingPayloadTag = .{case}\n"
@@ -8789,14 +8711,12 @@ pub fn build_swift_event_payload(
              /// values to the inject seam below.\n\
              struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
-        // The policy's view of a payload that holds no zero is set by every delivery
-        // before anything reads it, and holds nothing until then: an implicitly
-        // unwrapped optional, which a read of a member needs no unwrapping of.
-        if zeroless {
-            policy_fields.push_str(&format!("    var {field}: {struct_name}!\n"));
-        } else {
-            policy_fields.push_str(&format!("    var {field} = {struct_name}()\n"));
-        }
+        // The policy's view of a payload is set by every delivery before anything
+        // reads it, and is absent until then, never a payload nobody sent
+        // (docs/adr/0098, section 4): an implicitly unwrapped optional, which a read
+        // of a member, made only where the tag names this event, needs no unwrapping
+        // of.
+        policy_fields.push_str(&format!("    var {field}: {struct_name}!\n"));
         populate_cases.push_str(&format!(
             "        case let payload as {struct_name}:\n\
              \x20           pendingPayloadTag = .{case}\n\
@@ -42386,9 +42306,6 @@ fn lower_algorithm_stmt(
                     // paren wrap (`unused_parens`, and Swift's own style).
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
-                        Language::Swift if channel.checks_conditions() => {
-                            channel.swift_while_header(pad, &cond_lowered, indent)
-                        }
                         Language::Swift => format!("{pad}while {cond_lowered} {{\n"),
                         Language::Go if channel.checks_conditions() => {
                             channel.go_for_header(pad, &cond_lowered, indent)
@@ -44312,14 +44229,12 @@ impl ReturnChannel<'_> {
     }
 
     /// Whether failures are recorded and read back after each statement,
-    /// rather than leaving the expression that failed.
+    /// rather than leaving the expression that failed: the state-passing
+    /// backends of docs/adr/0098, section 2. Swift throws (`try`), as Rust's `?`
+    /// returns, so no statement of its body runs after a failure.
     fn records_failures(&self) -> bool {
         use crate::generator::Language;
-        self.may_fail
-            && matches!(
-                self.lang,
-                Language::Cpp | Language::C11 | Language::Go | Language::Swift
-            )
+        self.may_fail && matches!(self.lang, Language::Cpp | Language::C11 | Language::Go)
     }
 
     /// C11's statement that leaves a body whose append ran past its buffer's
@@ -44389,19 +44304,8 @@ impl ReturnChannel<'_> {
                 ty = self.value_type,
                 check = self.check(&format!("{pad}    ")),
             ),
-            // Computed into a local first, because computing it can fail: the
-            // failure is thrown in its place, and the value is returned only when
-            // none is recorded. A block of its own, so two returns of a body do not
-            // declare the local twice.
-            Language::Swift if self.may_fail => format!(
-                "{pad}do {{\n\
-                 {pad}    let sceReturned: {ty} = {value}\n\
-                 {check}\
-                 {pad}    return sceReturned\n\
-                 {pad}}}\n",
-                ty = self.value_type,
-                check = self.check(&format!("{pad}    ")),
-            ),
+            // A Swift value that fails throws where it fails (docs/adr/0098), so it
+            // is returned as it is computed.
             Language::Python | Language::Kotlin | Language::Go | Language::Swift => {
                 format!("{pad}return {value}\n")
             }
@@ -44434,12 +44338,6 @@ impl ReturnChannel<'_> {
                  {pad}    return sceValue, sceFailure.Err()\n\
                  {pad}}}\n"
             ),
-            // The body's `Failure`, thrown once a statement leaves one in it: the
-            // runtime's checked helpers record a failure and yield 0, so the value of
-            // the statement that failed is never read.
-            Language::Swift if self.may_fail => {
-                format!("{pad}try sceFailure.throwIfFailed()\n")
-            }
             Language::Rust
             | Language::Cpp
             | Language::Kotlin
@@ -44491,22 +44389,6 @@ impl ReturnChannel<'_> {
         )
     }
 
-    /// The Swift `if` head for `cond` and the brace it leaves open: the condition is
-    /// computed in a `do` block of its own for the reason [`Self::c11_if_header`]
-    /// gives, a failure in it is thrown, and only a value decides which branch runs.
-    fn swift_if_header(&self, pad: &str, cond: &str, depth: usize) -> (String, String) {
-        (
-            format!(
-                "{pad}do {{\n\
-                 {pad}    let sceCond{depth} = {cond}\n\
-                 {check}\
-                 {pad}    if sceCond{depth} {{\n",
-                check = self.check(&format!("{pad}    ")),
-            ),
-            format!("{pad}}}\n"),
-        )
-    }
-
     /// The C++ `if` header for `cond`, computed before the branch: a failure
     /// in it is returned, and only a value decides which branch runs. The
     /// name carries the nesting depth, so an inner `if` does not shadow it.
@@ -44528,18 +44410,6 @@ impl ReturnChannel<'_> {
              {pad}    const bool sce_cond{depth}_ = {cond};\n\
              {check}\
              {pad}    if (!sce_cond{depth}_) break;\n",
-            check = self.check(&format!("{pad}    ")),
-        )
-    }
-
-    /// The Swift loop head for `cond`, computed at the top of every pass for the
-    /// reason [`Self::cpp_if_header`] gives; the caller closes the `while`.
-    fn swift_while_header(&self, pad: &str, cond: &str, depth: usize) -> String {
-        format!(
-            "{pad}while true {{\n\
-             {pad}    let sceCond{depth} = {cond}\n\
-             {check}\
-             {pad}    if !sceCond{depth} {{ break }}\n",
             check = self.check(&format!("{pad}    ")),
         )
     }
@@ -44573,13 +44443,6 @@ impl ReturnChannel<'_> {
             }
             Language::Go if self.checks_conditions() => {
                 (self.go_if_header(pad, cond, indent), String::new(), indent)
-            }
-            // Swift has no `if` initializer either: the condition is computed in a
-            // block of its own, so two `if`s of one scope do not declare it twice,
-            // and the `if` sits one level in.
-            Language::Swift if self.checks_conditions() => {
-                let (open, close) = self.swift_if_header(pad, cond, indent);
-                (open, close, indent + 1)
             }
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
                 (format!("{pad}if ({cond}) {{\n"), String::new(), indent)

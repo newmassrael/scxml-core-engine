@@ -21,8 +21,9 @@ import SceRuntime
 {% if model.needs_script_engine %}
 import SceLua
 {% endif %}
-{# A record the machine declares is `SceDefault`, which the forge runtime declares, whether
-   a variable or only an event's payload holds it (docs/adr/0086). #}
+{# A machine that holds a typed value reads and writes it through the forge runtime
+   (`Checked`, `SceOptional`), whether a variable or only an event's payload holds it
+   (docs/adr/0086). #}
 {% if static_fields or static_type_defs %}
 import SceForgeRuntime
 {% endif %}

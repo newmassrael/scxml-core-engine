@@ -225,13 +225,14 @@
                     var sendEventName = ""
                     if sendArgError.isEmpty {
 {% if action.native_event_fails %}
-                        let sceFailure = Failure()
-{% endif %}
-                        sendEventName = {{ event_value }}
-{% if action.native_event_fails %}
-                        if sceFailure.failed {
+{# docs/adr/0098: a failure is thrown, and the name it would have computed stays unwritten. #}
+                        do {
+                            sendEventName = {{ event_value }}
+                        } catch {
                             sendEventName = ""
                         }
+{% else %}
+                        sendEventName = {{ event_value }}
 {% endif %}
                         if sendEventName.isEmpty {
                             sendArgError = "<send> eventexpr could not be evaluated to an event name"
@@ -249,13 +250,8 @@
                     var sendTargetKnown = false
                     if sendArgError.isEmpty {
 {% if action.native_target_fails %}
-                        let sceFailure = Failure()
-{% endif %}
-                        let sceRoute = {{ action.native_target }}
-{% if action.native_target_fails %}
-                        if sceFailure.failed {
-                            sendArgError = "<send> targetexpr could not be evaluated"
-                        } else {
+                        do {
+                            let sceRoute = {{ action.native_target }}
                             switch sceRoute {
                             case {% for entry in action.targets %}"{{ entry | escape_swift }}"{{ ", " if not loop.last }}{% endfor %}:
                                 sendTarget = sceRoute
@@ -263,8 +259,11 @@
                             default:
                                 break
                             }
+                        } catch {
+                            sendArgError = "<send> targetexpr could not be evaluated"
                         }
 {% else %}
+                        let sceRoute = {{ action.native_target }}
                         switch sceRoute {
                         case {% for entry in action.targets %}"{{ entry | escape_swift }}"{{ ", " if not loop.last }}{% endfor %}:
                             sendTarget = sceRoute
@@ -318,18 +317,18 @@
                         // operation that fails, or a value that is no time, is the argument
                         // error, and the message is not scheduled under some default wait.
 {% if action.native_delay_fails %}
-                        let sceFailure = Failure()
-{% endif %}
-                        let sceDelay = {{ delay_value }}
-{% if action.native_delay_fails %}
-                        if sceFailure.failed {
+                        do {
+                            let sceDelay = {{ delay_value }}
+                            if let ms = parseDelayToMs(sceDelay) {
+                                sendDelayMs = ms
+                            } else {
+                                sendArgError = "<send> delayexpr is not a CSS2 time"
+                            }
+                        } catch {
                             sendArgError = "<send> delayexpr could not be evaluated"
-                        } else if let ms = parseDelayToMs(sceDelay) {
-                            sendDelayMs = ms
-                        } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
                         }
 {% else %}
+                        let sceDelay = {{ delay_value }}
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
@@ -393,22 +392,18 @@
 {% endif %}
 {% elif param.native_value %}
 {# The value is the `WireValue` the pair's JSON is written from. A checked operation that
-   overflows records its failure and answers a zero: the evaluation that failed, reported,
-   and the pair left out (§scxml-5.7.1) while the message still goes. #}
+   overflows throws its failure and answers nothing (docs/adr/0098): the evaluation that
+   failed, reported, and the pair left out (§scxml-5.7.1) while the message still goes. #}
                     do {
-{% if param.native_fails %}
-                        let sceFailure = Failure()
-{% endif %}
                         let sceValue: WireValue = {{ param.native_value }}
-{% if param.native_fails %}
-                        if !sceFailure.failed {
 {% if is_http or host_form %}
-                            appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
+                        appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
 {% endif %}
 {% if not is_http %}
-                            sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+                        sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
-                        } else {
+{% if param.native_fails %}
+                    } catch {
 {% if param.native_send_least %}
 {# docs/adr/0086, section 15.6 (`Param::native_send_least`): the failure is the
    list falling short of the lower count of the field it is sent as. That is not
@@ -430,14 +425,6 @@
                             engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
 {% endif %}
                             paramFailed = true
-{% endif %}
-                        }
-{% else %}
-{% if is_http or host_form %}
-                        appendFormParam(&sendForm, "{{ param.name | escape_swift }}", sceValue)
-{% endif %}
-{% if not is_http %}
-                        sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
 {% endif %}
 {% endif %}
                     }
@@ -516,9 +503,10 @@
                     // the empty string as the value of the <content> element."
 {% if action.native_content_value_fails %}
                     var paramFailed = false
-                    let sceFailure = Failure()
-                    var contentValue: WireValue = {{ action.native_content_value }}
-                    if sceFailure.failed {
+                    let contentValue: WireValue
+                    do {
+                        contentValue = {{ action.native_content_value }}
+                    } catch {
 {% if 'error.execution' in model.events %}
                         engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> contentexpr failed to evaluate"))
 {% endif %}
