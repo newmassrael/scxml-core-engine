@@ -1350,6 +1350,44 @@ fn rust_template_sizes_the_internal_queue_by_what_the_document_can_raise() {
     }
 }
 
+/// A document whose typed payload guard is lowered natively and whose error
+/// handler takes `error.execution` raises nothing for itself: the door answers
+/// a delivery it refuses with `error.execution` in its place and never queues
+/// it (docs/adr/0086, section 4.2), and a guard over a payload the door
+/// admitted cannot fail. So the transition on `error.execution` takes no event
+/// the internal queue can hold, and the depth is `0` (docs/adr/0076). The
+/// committed `statechart_lifted` machine the Rust event-schema tests drive is
+/// this one, and a test build holds every internal raise to its bound.
+#[test]
+fn a_typed_payload_door_with_an_error_handler_keeps_an_internal_queue_of_no_slots() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/event_schema/statechart_lifted.scxml");
+    let code = rust_output(&path).expect("statechart_lifted generates for Rust");
+    // The shape this pins: a transition on `error.execution`, and the typed
+    // guard lowered to a comparison of the payload with no script engine.
+    assert!(
+        code.contains("StatechartLiftedEvent::ErrorExecution"),
+        "the document takes error.execution:\n{code}"
+    );
+    assert!(
+        code.contains("matches!(&self.pending_payload"),
+        "the payload guard is lowered natively:\n{code}"
+    );
+    assert!(
+        code.contains("type InternalQueue = sce_rust_runtime::EventQueue<Self::Payload, 0>;"),
+        "a refused delivery is answered in place and nothing else raises, so the \
+         internal queue keeps no slots:\n{code}"
+    );
+    assert!(
+        code.contains("const INTERNAL_QUEUE_BOUND: Option<usize> = Some(0);"),
+        "a test build holds every internal raise to the depth of no slots:\n{code}"
+    );
+    assert!(
+        code.contains("// Proven depth 0:"),
+        "the policy states the case that gave the depth:\n{code}"
+    );
+}
+
 #[test]
 fn rust_template_elides_parent_external_queue_field_under_no_std() {
     let model = parse(PLAIN_FSM, "plain_nostd_pq");
