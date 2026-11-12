@@ -2836,6 +2836,13 @@ impl<P: StatePolicy> Engine<P> {
     /// is the one that has to stop it. Only the engine's own error events are
     /// refused: an author's `<raise>` inside an error handler is the document
     /// doing its job and rides the queue like any other.
+    ///
+    /// The internal queue's depth is what the generator proves the document
+    /// raises for itself (docs/adr/0076), and a test build holds every call to
+    /// it. An event a host delivers is not one of those: it belongs on the
+    /// external queue, through [`raise_external_with_meta`](Self::raise_external_with_meta)
+    /// or its siblings, and on a machine whose depth is proven a host's call
+    /// here can overflow a bare-metal queue.
     pub fn raise(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         // §scxml-3.12.2 names the error events this refuses; the clause itself
         // is silent on a handler that fails, which is why the ceiling is a
@@ -2863,7 +2870,8 @@ impl<P: StatePolicy> Engine<P> {
             assert!(
                 self.internal_queue.queued().count() < bound,
                 "the internal queue would hold more events than the bound the generator proved \
-                 for this document ({bound}): the analysis undercounts (docs/adr/0076)"
+                 for this document ({bound}): the analysis undercounts, or a host raised an \
+                 event here that belongs on the external queue (docs/adr/0076)"
             );
         }
         // No drain of the inbox here, unlike `enqueue_external` (docs/adr/0084,
