@@ -58,8 +58,8 @@ func TestAnInvokeParamCarriesTheInvokingSessionsValue(t *testing.T) {
 				"child has no shadow to find. "+
 				"FailUnmatchedParamEnteredTheChild: a `<param>` naming no top-level "+
 				"`<data>` of the child became a variable there anyway — the clause "+
-				"forbids adding it; on this channel that filter is the "+
-				"`HasVariable` guard in the child's `InitializeDataModel`. "+
+				"forbids adding it; on this channel the child's `InitializeDataModel` "+
+				"takes a handed value only for the ids of its top-level `<data>`. "+
 				"FailShadowSeedLost / FailDeclaredParamLost / FailNamelistValueLost: "+
 				"the child saw neither the parent's value nor a shadow, so its own "+
 				"`<data>` default stood — nothing was seeded at all.",

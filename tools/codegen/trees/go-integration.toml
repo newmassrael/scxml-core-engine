@@ -66,6 +66,19 @@ arguments = ["generate", "tests/integration/{document}.scxml", "-l", "go", "-o",
 place = "backends/go/tests/integration/{document}"
 keep = ["*_sm.go"]
 
+# A document of the Go channel alone, written beside its test: how a child
+# takes the values its invoke hands it (docs/adr/0098). The canonical fixture
+# of that ADR joins integration_resources once every channel seeds the same
+# way; until then this one holds the Go channel to it.
+[[generation]]
+arguments = [
+    "generate",
+    "backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data/a_go_child_takes_a_handed_value_in_place_of_its_data.scxml",
+    "-l", "go", "-o", "{out}", "--children",
+]
+place = "backends/go/tests/integration/a_go_child_takes_a_handed_value_in_place_of_its_data"
+keep = ["*_sm.go"]
+
 # The AI supervision loop example, for a host serving `x-sce-host`. It is an
 # example, not a fixture: `ai_loop_channel_parity` holds every channel that
 # drives it to one scenario set.

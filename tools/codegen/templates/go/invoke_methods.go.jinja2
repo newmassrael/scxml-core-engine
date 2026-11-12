@@ -100,11 +100,14 @@
 
     `child` describes the session being started — the invoke itself for a
     static child, the chosen candidate for a hybrid one. The arguments are
-    the invoke's and are evaluated whatever the child is. Which names the
-    child KEEPS is not decided here: `SetParamValueInScriptEngine` defers to
-    the child's `InitializeDataModel`, which applies a pending value only when
-    `HasVariable` says the child declared it — so a candidate keeps exactly
-    the names its own `<data>` declares.
+    the invoke's and are evaluated whatever the child is, each failure raised
+    here, and every name evaluated is handed over. Which names the child KEEPS
+    is not decided here (docs/adr/0098): `SetParamValueInScriptEngine` hands
+    the value to the child's `InitializeDataModel`, which declares it as the
+    initial value of the top-level `<data>` it names, from the ids that child
+    was generated with, and drops a name no top-level `<data>` of it carries —
+    so a candidate keeps exactly the names its own top-level `<data>` declares,
+    and a parent is generated without its child's datamodel in view.
 #}
 {% macro invoke_seed_child(invoke_info, child, model, machine_name) %}
 {% if invoke_info.namelist and child.child_needs_script_engine %}

@@ -134,44 +134,68 @@ func (p *{{ machine_name }}Policy) establishScriptSession() *sce.ScriptSessionFa
 // It is the one place a session is made (establishScriptSession), and a
 // session that cannot be established is its answer: nothing of the datamodel is
 // touched and the start is refused (docs/adr/0096). The order after it is the
-// document's: its `<data>`, then the invoke params its parent handed it, then
-// its top-level `<script>`.
+// document's (docs/adr/0098): its top-level `<data>`, each taking the value an
+// invoking session handed for it in place of its own; the early-bound `<data>`
+// of its states; its top-level `<script>`. The initial configuration is
+// entered after this returns, so its `<onentry>` reads the handed values too.
 func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) *sce.ScriptSessionFailure {
 	if !p.scriptEngineInitialized {
 		if failure := p.establishScriptSession(); failure != nil {
 			return failure
 		}
 	}
+{# `engine` and `sessionID` are declared only when a declaration below reads
+   them: Go refuses a local nothing reads, and a machine that runs a script
+   engine for its conditions alone declares no `<data>` and runs no
+   `<script>`. #}
+{% set reads_session = namespace(any=false) %}
+{% if model.variables or model.global_scripts %}{% set reads_session.any = true %}{% endif %}
+{% if model.binding == 'early' %}{% for state_id, state in model.states | dictsort %}{% if state.datamodel %}{% set reads_session.any = true %}{% endif %}{% endfor %}{% endif %}
+{% if reads_session.any %}
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
+{% endif %}
 
 	// `_sessionid` and `_name` are bound by `establishScriptSession`, through
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
+	// §scxml-6.4: the values the invoking session handed this one
+	// (`SetParamValueInScriptEngine`), taken by this start and by no later
+	// one. Which of them this session keeps is its own to decide, from the
+	// ids of its top-level `<data>`, written below when it was generated: a
+	// name none of them carries is not added, and a state's `<data>` never
+	// takes a handed value, whatever its id.
+{% if model.variables %}
+	handed := p.handedValues
+{% endif %}
+	p.handedValues = nil
+
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
 {% for var in model.variables %}
+	if value, wasHanded := handed["{{ var.id }}"]; wasHanded {
+		// §scxml-6.4: {{ var.id }} takes the handed value as its initial
+		// value; its own is not evaluated.
+		p.declareHandedValue(eng, engine, sessionID, "{{ var.id }}", value)
+	} else {
 {% if var.src %}
 {% set src_file = var.src | replace("file:", "") %}
-	// W3C SCXML 5.3.1: Load {{ var.id }} from src="{{ var.src }}"
-	{
+		// W3C SCXML 5.3.1: Load {{ var.id }} from src="{{ var.src }}"
 		basePath := filepath.Join("..", "..", "..", "..", "..", "{{ model.scxml_base_path }}")
 		if srcData, err := sce.LoadFileContent(filepath.Join(basePath, "{{ src_file }}")); err == nil {
 			sce.InitializeVariableFromContent(engine, sessionID, "{{ var.id }}", srcData)
 		}
-	}
 {% elif var.expr %}
 {% set is_function_expr = (var.expr | trim) is startingwith('function') %}
 {% if is_function_expr %}
-	// W3C SCXML B.2: Function expression for {{ var.id }}
-	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
+		// W3C SCXML B.2: Function expression for {{ var.id }}
+		if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> function expression failed"))
+			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> function expression failed"))
 {% endif %}
-	}
+		}
 {% else %}
-	// W3C SCXML 5.2/5.3: Initialize {{ var.id }} from expr="{{ var.expr }}"
-	{
+		// W3C SCXML 5.2/5.3: Initialize {{ var.id }} from expr="{{ var.expr }}"
 		result, err := engine.EvaluateExpression(sessionID, `{{ var.expr | to_lua_expr }}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
@@ -181,27 +205,25 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% endif %}
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
 		}
-	}
 {% endif %}
 {% elif var.content %}
 {% if (var.content | trim) is startingwith('<') %}
-	// W3C SCXML B.2: XML inline content for {{ var.id }}
-	_ = engine.SetVariableAsDOM(sessionID, "{{ var.id }}", `{{ var.content }}`)
+		// W3C SCXML B.2: XML inline content for {{ var.id }}
+		_ = engine.SetVariableAsDOM(sessionID, "{{ var.id }}", `{{ var.content }}`)
 {% else %}
-	// W3C SCXML B.2: Inline content for {{ var.id }} (eval with string fallback)
-	{
+		// W3C SCXML B.2: Inline content for {{ var.id }} (eval with string fallback)
 		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_data_content }}`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
 		} else {
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", `{{ var.content | normalize_ws }}`)
 		}
-	}
 {% endif %}
 {% elif var.type == 'runtime' %}
-	// W3C SCXML 5.2: Runtime variable {{ var.id }} (init to nil)
-	_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
+		// W3C SCXML 5.2: Runtime variable {{ var.id }} (init to nil)
+		_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
 {% endif %}
+	}
 {% endfor %}
 
 {% if model.binding == 'early' %}
@@ -214,24 +236,6 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% endif %}
 {% endfor %}
 {% endif %}
-
-	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
-	// `<data>` default this block just seeded, and only for a name the child
-	// declares ("if the names do not match, the Processor MUST NOT add the
-	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule. They are applied
-	// before the top-level `<script>`, which reads the datamodel the invocation
-	// started it with. The parent hands them before this session's start
-	// (`SetParamValueInScriptEngine`) and this session applies them, so a
-	// child's session is made by the child.
-	if len(p.pendingParams) > 0 {
-		for paramName, paramValue := range p.pendingParams {
-			if engine.HasVariable(sessionID, paramName) {
-				_ = engine.SetVariable(sessionID, paramName, paramValue)
-			}
-		}
-		p.pendingParams = nil
-	}
 
 {% if model.global_scripts %}
 	// W3C SCXML 5.8: Execute global scripts at document load time
@@ -407,24 +411,43 @@ func (p *{{ machine_name }}Policy) getVariable(name string) interface{} {
 	return result
 }
 
-// SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
-// application after datamodel init (§scxml-6.4.3).
+// SetParamValueInScriptEngine hands this machine, before its start, the value
+// an invoking session evaluated for one `<param>` or `namelist` name
+// (§scxml-6.4). The invoking session hands every name it evaluated; this
+// machine's start (InitializeDataModel) decides which it keeps, from the ids
+// of its own top-level `<data>`, and declares each kept one as that `<data>`'s
+// initial value in place of its own (docs/adr/0098). Nothing is written to the
+// script session here: the session is the child's own, established by its
+// start (docs/adr/0096).
 //
-// Params are applied by InitializeDataModel after the `<data>` and before the
-// top-level `<script>`, overriding the `<data>` default only for names the
-// child declares, so the session they are applied in is the child's own,
-// established by its start (docs/adr/0096). The value crosses as a
-// value: this took the parent's value rendered as Lua source and
-// re-evaluated it here until 2026-08-21, which survived every value a test
-// had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
-// non-finite number as `+Inf`, which is not a Lua expression, so an
+// The value crosses as a value: this took the parent's value rendered as Lua
+// source and re-evaluated it here until 2026-08-21, which survived every value
+// a test had tried and lost the ones Lua cannot spell — `ToScriptLiteral`
+// renders a non-finite number as `+Inf`, which is not a Lua expression, so an
 // `<invoke>` `<param expr="1/0"/>` arrived as nothing at all.
 func (p *{{ machine_name }}Policy) SetParamValueInScriptEngine(name string, value interface{}) {
-	if p.pendingParams == nil {
-		p.pendingParams = make(map[string]interface{})
+	if p.handedValues == nil {
+		p.handedValues = make(map[string]interface{})
 	}
-	p.pendingParams[name] = value
+	p.handedValues[name] = value
 }
+{% if model.variables %}
+
+// declareHandedValue declares the top-level `<data>` name with the value an
+// invoking session handed for it (§scxml-6.4), in place of the `<data>`'s own
+// `expr`, `src` or content, which is not evaluated. A value the session cannot
+// hold is the error of that `<data>`'s initialization (§scxml-5.3):
+// error.execution, and the `<data>` is left as one whose own expression failed
+// is left, unset (docs/adr/0098).
+func (p *{{ machine_name }}Policy) declareHandedValue(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
+	if err := engine.SetVariable(sessionID, name, value); err != nil {
+{% if 'error.execution' in model.events %}
+		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+{% endif %}
+		_ = engine.SetVariable(sessionID, name, nil)
+	}
+}
+{% endif %}
 {% else %}
 // No script engine needed for this state machine, so it has no script session
 // to fail and its start is never refused for one.
