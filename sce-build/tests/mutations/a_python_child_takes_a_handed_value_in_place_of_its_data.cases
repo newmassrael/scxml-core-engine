@@ -1,0 +1,185 @@
+# Mutation cases for docs/adr/0098 on the Python channel: a value an `<invoke>`
+# hands its child is the initial value of the child's top-level `<data>` of
+# that name, in place of the `<data>`'s own (§scxml-6.4).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_python_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# The child used to evaluate every `<data>` and then write over it what its
+# parent handed, and the parent used to drop at generation the names it knew
+# the child did not declare. Each case below puts back one piece of that shape,
+# or one step further from the rule, and names the test that must go red. The
+# oracle is a document whose `<parallel>` runs one child per question, each
+# landing its region in a `<final>` named for what the child saw.
+#
+# The Python machines are generated and gitignored, so the regeneration runs
+# after each case and is what carries a mutated template into the tests. The
+# edits to the runtime are read from disk on every run.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/a_child_takes_a_handed_value_in_place_of_its_data/
+mutation_regen scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/policy.py tools/codegen/templates/python/scriptengine_helpers.py.jinja2 tools/codegen/templates/python/invoke_methods.py.jinja2
+mutation_oracles backends/python/tests/integration/a_child_takes_a_handed_value_in_place_of_its_data/test_a_child_takes_a_handed_value_in_place_of_its_data_aot.py
+
+# ── Evaluate the data's own value, then write the handed one over it ───
+#
+# The shape every backend but one had: every top-level `<data>` is evaluated,
+# and a handed value overwrites it afterwards.
+# Killers: `test_a_handed_value_takes_the_place_of_data_whose_own_value_would_fail`
+# (the child raises `error.execution` for `nothing.deep`) and
+# `test_a_handed_value_takes_the_place_of_data_whose_own_value_has_an_effect`
+# (`effects` is assigned).
+
+mutation_case "a seeded top-level data evaluates its own value first" <<'PY'
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """        if {{ var.id | py_string_literal }} in _handed:
+            self._declare_data(
+                engine, {{ var.id | py_string_literal }}, _handed[{{ var.id | py_string_literal }}]
+            )
+        else:
+""",
+     """        if True:
+""")
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """{% endfor %}
+{% if model.binding != 'late' %}
+""",
+     """{% endfor %}
+{% if model.variables %}
+        for _name, _val in _handed.items():
+            if _name in ({% for var in model.variables %}{{ var.id | py_string_literal }}, {% endfor %}):
+                self._declare_data(engine, _name, _val)
+{% endif %}
+{% if model.binding != 'late' %}
+""")
+PY
+
+# ── The handed value arrives after the top-level script ──────────────
+#
+# The own value is still not evaluated, but the handed one is declared only
+# once the top-level `<script>` has run, so the script reads a `<data>` that is
+# not there yet.
+# Killer: `test_the_top_level_script_and_the_initial_onentry_read_the_handed_value`,
+# whose child's script saw no `greeting`.
+
+mutation_case "a handed value is declared after the top-level script" <<'PY'
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """            self._declare_data(
+                engine, {{ var.id | py_string_literal }}, _handed[{{ var.id | py_string_literal }}]
+            )
+        else:
+""",
+     """            pass
+        else:
+""")
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """                engine, "a top-level <script> failed to execute"
+            )
+{% endfor %}
+{% endif %}
+""",
+     """                engine, "a top-level <script> failed to execute"
+            )
+{% endfor %}
+{% if model.variables %}
+        for _name, _val in _handed.items():
+            if _name in ({% for var in model.variables %}{{ var.id | py_string_literal }}, {% endfor %}):
+                self._declare_data(engine, _name, _val)
+{% endif %}
+{% endif %}
+""")
+PY
+
+# ── State-local data takes a handed value ────────────────────────────
+#
+# The early-bound state `<data>` is seeded too, as the Go and Kotlin children
+# did by asking whether the session holds the variable.
+# Killer: `test_a_state_local_data_keeps_its_own_value_under_a_handed_name`,
+# whose child's `localName` holds the parent's value.
+
+mutation_case "an early-bound state-local data takes a handed value" <<'PY'
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """        self._take_handed_values()
+{% endif %}
+""",
+     """        _handed = self._take_handed_values()
+{% endif %}
+""")
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """        self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
+{% elif var.src %}
+{% set _src_content_local""",
+     """        self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
+        if {{ var.id | py_string_literal }} in _handed:
+            self._declare_data(engine, {{ var.id | py_string_literal }}, _handed[{{ var.id | py_string_literal }}])
+{% elif var.src %}
+{% set _src_content_local""")
+PY
+
+# ── The child adds every name it is handed ───────────────────────────
+#
+# The parent no longer filters, so a child that takes every name adds the ones
+# it never declared.
+# Killers: `test_a_handed_param_naming_no_top_level_data_is_not_added`,
+# `test_a_handed_namelist_value_is_taken_whole_and_an_undeclared_one_is_not_added`
+# and `test_a_start_takes_the_values_handed_to_it_once`, whose
+# `undeclaredName` reads.
+
+mutation_case "the child adds a handed name it does not declare" <<'PY'
+edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
+     """        _handed = self._take_handed_values()
+{% else %}
+""",
+     """        _handed = self._take_handed_values()
+        for _name, _val in _handed.items():
+            engine._script_engine.set_variable(self._session_id, _name, _val)
+{% else %}
+""")
+PY
+
+# ── A start does not consume what it was handed ──────────────────────
+#
+# Killer: `test_a_start_takes_the_values_handed_to_it_once`, whose second
+# start finds `stray` still holding the value the first start was handed.
+
+mutation_case "a second start takes the values the first was handed" <<'PY'
+edit("backends/python/runtime/sce_runtime/policy.py",
+     """        handed = self._handed_values or {}
+        self._handed_values = None
+        return handed
+""",
+     """        handed = self._handed_values or {}
+        return handed
+""")
+PY
+
+# ── The parent hands nothing ─────────────────────────────────────────
+#
+# Killers: every case whose child expects a value: `failing` lands in
+# `failingLost`, `effect` in `effectLost`, `strayCase` in `strayLost`,
+# `namelistCase` in `namelistLost`, `whole` in `wholeBroken` and `ordered` in
+# `orderedLate`.
+
+mutation_case "the parent hands its child nothing" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     """                _child_policy.hand_values(_handed)
+""",
+     """                _child_policy.hand_values({})
+""")
+PY
+
+# ── The parent drops a namelist value ────────────────────────────────
+#
+# Killer: `test_a_handed_namelist_value_is_taken_whole_and_an_undeclared_one_is_not_added`,
+# whose child's `record` keeps its own `null`.
+
+mutation_case "the parent evaluates a namelist name and hands nothing" <<'PY'
+edit("tools/codegen/templates/python/invoke_methods.py.jinja2",
+     """                    _handed[{{ vname | py_string_literal }}] = (
+""",
+     """                    _namelist_value = (
+""")
+PY
