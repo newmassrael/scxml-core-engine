@@ -772,6 +772,37 @@ old encode, the old encode and its templates are removed in the same landing.
    embeds one, and of a validator that imports one. Two tests that still read the template's C++ text of a parent
    that derives a variant's tag, and of a variant with a gated arm, read the printed text: the switch over the
    alternative the body holds, each case at its index counted per build.
+
+   *The forty-first C++ landing, 2026-11-12:* the caller-tag family enters the catalog together with its
+   reading (§5), as the thirty-ninth landing said it would. Its ten documents move from the Rust arm's fixtures
+   (`backends/rust/forge-conformance/fixtures`) to the resources: a variant with no tag of its own
+   (`codec_source_leaf`) and a parent that holds its tag in a flag (`codec_source_parent_tag`); a variant every
+   arm of which says the flag input it is handed, one arm at the other polarity (`codec_every_arm_says`, its arms
+   `codec_every_arm_says_near` and `codec_every_arm_says_far`, its parent `codec_every_arm_says_parent`); one that
+   hands the input to one arm of two (`codec_some_arms_say`, its arm `codec_some_arms_say_plain` that reads no
+   input, its parent `codec_some_arms_say_parent`); and a codec that hands its own input on to such a body
+   (`codec_some_arms_say_forward`). `binary_model.py` reads them as the page does. The value presents the arm and
+   no tag; the caller hands the decode the arm's tag, a byte, after the flag inputs, as it hands a flag input, and
+   a case states it as `tag`, the tag of the arm the source holds. A parent names the flag that holds the tag
+   (`<sce:variant-dispatch>`), derives it from the arm the body holds masked to the flag's bits, the value's own
+   where a gate leaves the body out, and hands the decode what it read there. A flag a parent binds to an input
+   every arm says (docs/adr/0065 §6 R4d) is derived from the arm, as a body's is; one bound to an input some arm is
+   not handed, or says in some values only (R4e), is the value's own, held to the arm where the arm says it, and
+   the encode refuses a value whose flag says otherwise (`present-if-mismatch`), as R4e's landing left it.
+   SCE_FORGE.md said a parent derives such a flag and did not describe `<sce:variant-dispatch>`; it now says both.
+   Such a variant held as an arm or as the entries of a list, or embedded with no flag to read its tag from, is
+   refused by name. The catalog gains 39 sources and 2 refused cases. Both case printers read the tag in one place
+   (`rust_source::case_tag`), which refuses a tag that is not the one of the arm the source holds and a tag stated
+   for a codec whose variant takes none: the decode is handed it after the flag inputs, and the value made and the
+   value decoded both answer it (Rust `{Codec}Wire::tag_of`, C++ `tag()`); a caller-tag variant is no longer
+   refused by name by the literal. Kotlin, Go, Python and C11 compile the ten as they compile every codec whose
+   cases are `sources` alone, their encodes not printing the plan, and Swift where its generator writes them.
+   The hand tests the cases now state are gone: `caller_tag_variant_generated_test`, which held the frames, the
+   leaf's tag and the refusal; the forwarded input of `positional_forms_generated_test`, which the cases of
+   `codec_some_arms_say_forward` hand both ways in the arm that reads none, so that arm's answer can only be
+   none; and of `forge_source_round_trip`, the frames, inputs and refusal of `some_arms_say` and
+   `every_arm_says`. What stays is a parent writing `N` and `M` from the arm whatever its value states of them: a
+   case states a value as its decode presents it, so no case states a header that says otherwise than the arm.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
