@@ -1199,6 +1199,11 @@ mutation_snapshot() {
 
 mutation_restore() {
     local f
+    # A restore is a write like any other. Cut off mid-copy it leaves a file
+    # that is neither the original nor a mutation the record holds, so it is
+    # bracketed the same way a case body is: without that, a later invocation
+    # would read the half-copied file as a tree that moved on and leave it.
+    mutation_inflight_writing
     while IFS= read -r f; do
         [[ -n "$f" ]] || continue
         # Into the existing file, so its mode survives: a gate script restored
@@ -1207,6 +1212,7 @@ mutation_restore() {
         cp "$WORK/snapshot/$f" "$f"
         touch "$f"
     done < <(mutation_all_targets)
+    mutation_inflight_written
 }
 
 mutation_restore_quiet() {
@@ -1249,18 +1255,30 @@ mutation_run_artifacts() { : > "$MUTATION_UNREADABLE"; "mutation_${MUTATION_RUNN
 # command and its last lines, for the caller to print under the case's own
 # verdict header — a bridge that refused is a fact about the mutation, not
 # about the harness, so it is reported where that mutation is named.
+#
+# A bridge writes generated files, and a generated file can be a declared
+# target, so the run is bracketed for the in-flight record as a case body is: a
+# bridge killed mid-write leaves bytes no recorded hash names, and what a
+# completed one wrote while a mutation stood is part of that mutation. With no
+# bridge declared nothing is written, and the two record updates are skipped.
 MUTATION_REGEN_ERROR=""
 mutation_regenerate() {
-    local cmd out
+    local cmd out rc=0
     MUTATION_REGEN_ERROR=""
+    (( ${#MUTATION_REGEN_CMDS[@]} > 0 )) || return 0
+    mutation_inflight_writing
     while IFS= read -r cmd; do
         [[ -n "$cmd" ]] || continue
         if ! out="$(cd "$SCE_REPO_ROOT" && bash -c "$cmd" 2>&1)"; then
             MUTATION_REGEN_ERROR="$cmd"$'\n'"$(printf '%s\n' "$out" | tail -10)"
-            return 1
+            rc=1
+            break
         fi
     done < <(printf '%s\n' ${MUTATION_REGEN_CMDS[@]+"${MUTATION_REGEN_CMDS[@]}"} |
                  mutation_unique)
+    # On a refusal too: whatever the bridge wrote before it stopped is on disk.
+    mutation_inflight_written
+    return "$rc"
 }
 
 # What the last build printed, for the one place a build failure is terminal
@@ -3893,6 +3911,13 @@ mutation_case() {
     # Before the edit, so a round killed during this case is recoverable as
     # THIS case rather than as "somewhere in this casefile".
     mutation_inflight_case "$label"
+    # And unsettled, until the edit's hashes are recorded just below the body:
+    # a round killed mid-edit leaves bytes its record cannot name. `--check`
+    # edits copies and writes nothing, so its record stays settled — which is
+    # what lets a killed `--check` under a re-synced checkout be cleared.
+    if [[ "$MUTATION_MODE" != "check" ]]; then
+        mutation_inflight_writing
+    fi
 
     printf '%s\n' "$body" > "$WORK/case.py"
     local applied=0
@@ -3972,6 +3997,13 @@ exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), {"edit": edit})
 if _check_only and all(open(path).read() == copy for path, copy in _copies.items()):
     sys.exit(3)
 PY
+    # What the body wrote, recorded before anything else runs, so the window in
+    # which the tree holds bytes the record cannot name closes with the body.
+    # Whatever its status: a body that failed on its second edit has already
+    # written its first.
+    if [[ "$MUTATION_MODE" != "check" ]]; then
+        mutation_inflight_written
+    fi
     if (( applied == 3 )); then
         mutation_verdict INCONCLUSIVE "$label" \
             "the case body left every target byte-identical —

@@ -301,8 +301,19 @@ PY
 # the killed process's memory. So the name is written down, before a file is
 # touched, under the same root and for the same reason as a verdict.
 #
+# A dead round's record is not proof that the tree still holds its mutation: a
+# checkout path can be re-synced to a newer tree, whose files differ from the
+# round's originals for that reason alone. Measured 2026-11-12 on a build
+# machine, a bx slot reused under a killed `--check`'s record: every later run
+# at that path refused, all 559 casefiles. So the record also carries the hash
+# of every write the round made into a declared file, and a dead round whose
+# record names none of the tree's bytes is cleared, not refused. That account
+# is only complete when every writer is bracketed by `mutation_inflight_writing`
+# and `mutation_inflight_written`; a record left unsettled between the two
+# proves nothing, and the old answer (restore, or refuse) stands.
+#
 # The record's mechanics are in `scripts/lib/mutation_inflight.py`, whose header
-# carries the measurement; the four functions below are how a round reaches it.
+# carries the measurements; the functions below are how a round reaches it.
 
 # Plain-text stand-ins for the three helpers `scripts/mutate` defines further
 # down its own file. It redefines them with colour once it reaches them, so
@@ -390,6 +401,25 @@ mutation_inflight_case() {
     [[ -n "${MUTATION_INFLIGHT_RECORD:-}" ]] || return 0
     python3 "$(mutation_inflight_tool)" case \
         --record "$MUTATION_INFLIGHT_RECORD" --label "$1"
+}
+
+# The round is about to write into its declared files: a case body's edit, a
+# bridge's regeneration, a restore. Until `mutation_inflight_written` the tree
+# may hold bytes of this round's that no recorded hash names, and a round killed
+# there must not be read as a tree that moved on — so the record says it is
+# unsettled, which keeps the old answer for it.
+mutation_inflight_writing() {
+    [[ -n "${MUTATION_INFLIGHT_RECORD:-}" ]] || return 0
+    python3 "$(mutation_inflight_tool)" writing --record "$MUTATION_INFLIGHT_RECORD"
+}
+
+# The write is done: record the hash of every declared file that is no longer
+# the original, which is what lets a later invocation check the claim "its
+# mutation is still here" instead of assuming it. Called as soon after the write
+# as the caller can, because that gap is the window an unsettled record covers.
+mutation_inflight_written() {
+    [[ -n "${MUTATION_INFLIGHT_RECORD:-}" ]] || return 0
+    python3 "$(mutation_inflight_tool)" written --record "$MUTATION_INFLIGHT_RECORD"
 }
 
 # Close the record, once the tree it named is back. Non-zero when it is not —

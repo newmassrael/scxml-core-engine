@@ -22,8 +22,14 @@
 //   - a snapshot that did not survive must be NAMED, not guessed at. A
 //     `git checkout` here would put back HEAD, which is not what a round
 //     starting from a dirty tree began with;
-//   - and a round that ended without putting the tree back must keep its
-//     record, or the harness deletes the evidence of its own failure.
+//   - a round that ended without putting the tree back must keep its
+//     record, or the harness deletes the evidence of its own failure;
+//   - and a file that differs from what a dead round started from is not, by
+//     that alone, its mutation. Measured 2026-11-12 on a build machine: a bx
+//     slot re-synced to a newer tree under a killed `--check`'s record refused
+//     all 559 casefiles. The record names the bytes the round wrote, and a
+//     tree holding none of them has moved on — while a tree holding one, or a
+//     record that cannot say, is still restored or refused as before.
 //
 // The library is driven the way `scripts/mutate` drives it, so what is measured
 // is the code that runs in a round and not a copy of it.
@@ -32,6 +38,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tempfile::{tempdir, TempDir};
 
 fn repo_root() -> PathBuf {
@@ -117,15 +125,23 @@ impl Round {
     /// is running, or a shell that exits the moment it has written — an
     /// abandoned round, exactly.
     fn open(&self, alive: bool) -> PathBuf {
+        self.open_as(alive, "run", &["f.txt"])
+    }
+
+    /// The same, for a round of the given mode over the given targets. A full
+    /// round marks its record unsettled before the case body writes, as
+    /// `mutation_case` does; a `--check` edits copies and does not.
+    fn open_as(&self, alive: bool, mode: &str, targets: &[&str]) -> PathBuf {
         let pid = if alive {
             format!("{}", std::process::id())
         } else {
             "$$".to_string()
         };
         let script = format!(
-            "printf 'f.txt\\n' | bash -c 'exec python3 {tool} open \
-             --dir {dir} --repo {repo} --casefile demo.cases --mode run \
+            "printf '%s\\n' {targets} | bash -c 'exec python3 {tool} open \
+             --dir {dir} --repo {repo} --casefile demo.cases --mode {mode} \
              --tree deadbeef --work {work} --snapshot {work}/snapshot --pid {pid}'",
+            targets = targets.join(" "),
             tool = tool(),
             dir = self.records.display(),
             repo = self.repo.display(),
@@ -147,11 +163,39 @@ impl Round {
             ),
         );
         assert!(ok, "naming the case failed: {out}");
+        if mode != "check" {
+            self.tell(&record, "writing");
+        }
         record
     }
 
+    /// One of the record's per-write subcommands, as a round calls it.
+    fn tell(&self, record: &Path, command: &str) {
+        let (out, ok) = sh(
+            &self.repo,
+            &format!("python3 {} {command} --record {}", tool(), record.display()),
+        );
+        assert!(ok, "`{command}` failed: {out}");
+    }
+
+    /// The bytes on disk change, and nothing records it: a round killed between
+    /// its write and `written`, or another hand entirely.
     fn mutate(&self) {
         fs::write(self.repo.join("f.txt"), "MUTATED\n").expect("apply the mutation");
+    }
+
+    /// A full round's case body: the write, then the record of what it wrote.
+    fn apply(&self, record: &Path) {
+        self.mutate();
+        self.tell(record, "written");
+    }
+
+    /// What a reused checkout path does under a dead round's record: the tree
+    /// is re-synced to a newer commit, which changed the file for its own
+    /// reasons, and the round's scratch is long gone.
+    fn move_on(&self) {
+        fs::write(self.repo.join("f.txt"), "a newer tree\n").expect("move the tree on");
+        fs::remove_dir_all(&self.work).expect("lose the snapshot");
     }
 
     fn target(&self) -> String {
@@ -222,8 +266,8 @@ fn the_in_flight_record_does_not_move_with_the_harness_that_runs_the_round() {
 #[test]
 fn a_killed_rounds_mutation_is_put_back_from_its_own_snapshot() {
     let round = Round::new();
-    round.open(false);
-    round.mutate();
+    let record = round.open(false);
+    round.apply(&record);
     assert_eq!(round.target(), "MUTATED\n", "the setup did not mutate");
 
     let (report, ok) = round.recover();
@@ -261,8 +305,8 @@ fn a_round_that_is_still_running_is_left_alone() {
     let round = Round::new();
     // The record carries this test process's pid, so the round it names is
     // running by construction.
-    round.open(true);
-    round.mutate();
+    let record = round.open(true);
+    round.apply(&record);
 
     let (report, ok) = round.recover();
 
@@ -306,9 +350,13 @@ fn a_round_that_is_still_running_is_left_alone() {
 
 #[test]
 fn a_snapshot_that_did_not_survive_is_named_rather_than_guessed_at() {
+    // The workstation half of the 2026-11-12 measurement: a round killed before
+    // a reboot keeps its mutation on disk while the reboot wipes the snapshot
+    // under /tmp. The file holds the very bytes the round recorded writing, so
+    // this is the round's mutation and not a tree that moved on.
     let round = Round::new();
-    round.open(false);
-    round.mutate();
+    let record = round.open(false);
+    round.apply(&record);
     fs::remove_dir_all(&round.work).expect("lose the snapshot");
 
     let (report, ok) = round.recover();
@@ -326,6 +374,11 @@ fn a_snapshot_that_did_not_survive_is_named_rather_than_guessed_at() {
     assert!(
         report.contains("f.txt") && report.contains("demo.cases"),
         "the refusal did not name what is still mutated:\n{report}"
+    );
+    assert!(
+        report.contains("its mutation is still here"),
+        "the file holds a mutation the round recorded writing, and the refusal \
+         did not say so:\n{report}"
     );
     assert_eq!(
         round.records_left(),
@@ -456,4 +509,257 @@ fn a_round_that_did_not_put_the_tree_back_keeps_its_record() {
         "the clean close left its own record behind (the one still here is the \
          refused one from the first half)"
     );
+}
+
+fn sha(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
+fn read_record(record: &Path) -> Value {
+    let text = fs::read_to_string(record).expect("read the record");
+    serde_json::from_str(&text).expect("the record is JSON")
+}
+
+#[test]
+fn a_round_records_the_bytes_its_writes_left() {
+    let round = Round::new();
+    let record = round.open(false);
+
+    // Unsettled from the moment the case body is about to write: a round
+    // killed there leaves bytes no hash in the record names.
+    let opened = read_record(&record);
+    assert_eq!(
+        opened["schema"], 2,
+        "the record does not say it carries lists"
+    );
+    assert_eq!(
+        opened["settled"], false,
+        "a round about to write still claims its record accounts for the tree"
+    );
+
+    round.apply(&record);
+    let applied = read_record(&record);
+    assert_eq!(
+        applied["settled"], true,
+        "a write that was recorded left the record unsettled, so it can never \
+         prove anything"
+    );
+    assert_eq!(
+        applied["targets"][0]["mutated"],
+        serde_json::json!([sha("MUTATED\n")]),
+        "the record does not name the bytes the round's write left: {applied}"
+    );
+
+    // A restore writes the original back, which is not a mutation; and the
+    // list only grows, because the earlier mutation is still the round's own.
+    fs::write(round.repo.join("f.txt"), "original\n").expect("restore by hand");
+    round.tell(&record, "written");
+    let restored = read_record(&record);
+    assert_eq!(
+        restored["targets"][0]["mutated"],
+        serde_json::json!([sha("MUTATED\n")]),
+        "a restore was recorded as a mutation, or dropped the one before it: \
+         {restored}"
+    );
+}
+
+#[test]
+fn a_tree_that_moved_on_under_a_dead_round_is_left_alone() {
+    let round = Round::new();
+    let record = round.open(false);
+    round.apply(&record);
+    round.move_on();
+
+    let (report, ok) = round.recover();
+
+    assert!(
+        ok,
+        "a tree holding none of a dead round's bytes was refused, which is the \
+         2026-11-12 measurement: 559 casefiles refused at a reused path:\n{report}"
+    );
+    assert_eq!(
+        round.target(),
+        "a newer tree\n",
+        "a file the round never wrote was written over:\n{report}"
+    );
+    assert_eq!(
+        round.records_left(),
+        0,
+        "the record of a round whose mutation is gone was kept, so every later \
+         run refuses again"
+    );
+    assert!(
+        report.contains("no longer in the tree")
+            && report.contains("demo.cases")
+            && report.contains("f.txt"),
+        "the record was cleared without saying whose it was and why:\n{report}"
+    );
+}
+
+#[test]
+fn a_killed_check_does_not_hold_the_tree_that_replaced_it() {
+    // The record exactly as measured: a `--check` writes nothing into the tree,
+    // so its record is settled with every list empty, and a newer tree synced
+    // into the same path differs from the originals for its own reasons.
+    let round = Round::new();
+    round.open_as(false, "check", &["f.txt"]);
+    round.move_on();
+
+    let (report, ok) = round.recover();
+
+    assert!(
+        ok,
+        "a dead `--check` refused a tree it never wrote:\n{report}"
+    );
+    assert_eq!(
+        round.target(),
+        "a newer tree\n",
+        "the newer tree was written over"
+    );
+    assert_eq!(
+        round.records_left(),
+        0,
+        "the dead `--check`'s record was kept"
+    );
+}
+
+#[test]
+fn a_record_from_before_the_lists_cannot_prove_the_tree_moved_on() {
+    let round = Round::new();
+    let record = round.open(false);
+    round.apply(&record);
+    // What the record looked like before it named what the round wrote.
+    let mut old = read_record(&record);
+    old["schema"] = serde_json::json!(1);
+    old.as_object_mut().expect("an object").remove("settled");
+    for target in old["targets"].as_array_mut().expect("a list") {
+        target.as_object_mut().expect("an object").remove("mutated");
+    }
+    fs::write(&record, old.to_string()).expect("write the old record");
+    round.move_on();
+
+    let (report, ok) = round.recover();
+
+    assert!(
+        !ok,
+        "a record that cannot tell its mutation from a newer tree waved the \
+         tree through:\n{report}"
+    );
+    assert_eq!(round.target(), "a newer tree\n", "the file was guessed at");
+    assert_eq!(round.records_left(), 1, "the old record was dropped");
+    assert!(
+        report.contains("f.txt") && report.contains("before rounds recorded"),
+        "the refusal did not say what it could not tell, or why:\n{report}"
+    );
+}
+
+#[test]
+fn a_round_killed_between_its_write_and_its_record_still_refuses() {
+    // The window `writing` exists for: the bytes are on disk and no hash names
+    // them yet. Read as a tree that moved on, a mutation would stay in the tree
+    // with its record cleared — the failure this whole file exists to stop.
+    let round = Round::new();
+    round.open(false);
+    round.mutate();
+    fs::remove_dir_all(&round.work).expect("lose the snapshot");
+
+    let (report, ok) = round.recover();
+
+    assert!(
+        !ok,
+        "a write the record had not caught up with was read as a tree that \
+         moved on:\n{report}"
+    );
+    assert_eq!(round.target(), "MUTATED\n", "the file was guessed at");
+    assert_eq!(round.records_left(), 1, "the record was dropped");
+    assert!(
+        report.contains("middle of a write"),
+        "the refusal did not say why the record could not tell:\n{report}"
+    );
+}
+
+#[test]
+fn one_recorded_mutation_puts_back_every_file_that_moved() {
+    // f.txt holds the recorded mutation; g.txt differs from its original by
+    // bytes no write recorded. The round's work is in this tree, so the record
+    // cannot vouch that g.txt's change is not part of it, and both go back.
+    let round = Round::new();
+    fs::write(round.repo.join("g.txt"), "second\n").expect("write the second target");
+    fs::write(round.work.join("snapshot/g.txt"), "second\n").expect("snapshot it");
+    let record = round.open_as(false, "run", &["f.txt", "g.txt"]);
+    round.apply(&record);
+    fs::write(round.repo.join("g.txt"), "unrecorded\n").expect("change it unrecorded");
+
+    let (report, ok) = round.recover();
+
+    assert!(ok, "a repair it could make was refused:\n{report}");
+    assert_eq!(round.target(), "original\n", "the recorded mutation stayed");
+    assert_eq!(
+        fs::read_to_string(round.repo.join("g.txt")).expect("read the second target"),
+        "second\n",
+        "a file was left changed beside a mutation the round recorded, so a \
+         write the record did not bracket outlives the repair:\n{report}"
+    );
+    assert_eq!(round.records_left(), 0, "the record outlived the repair");
+}
+
+#[test]
+fn the_shell_wrappers_bracket_a_write_and_clear_a_dead_round_the_tree_outgrew() {
+    let round = Round::new();
+    // A full round through the functions `scripts/mutate` calls, killed after
+    // its write was recorded: the shell exits without closing the record.
+    let open = format!(
+        "set -euo pipefail; source {lib}; \
+         mutation_inflight_open demo.cases run {work} {work}/snapshot 'f.txt'; \
+         mutation_inflight_case 'a demo case'; \
+         mutation_inflight_writing; \
+         printf 'MUTATED\\n' > f.txt; \
+         mutation_inflight_written; \
+         echo OPENED",
+        lib = library(),
+        work = round.work.display(),
+    );
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&open)
+        .current_dir(&round.repo)
+        .env("HOME", round.home.path())
+        .env("SCE_MUTATION_INFLIGHT_DIR", &round.records)
+        .output()
+        .expect("drive the shell wrappers");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("OPENED"),
+        "the wrappers failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(round.records_left(), 1, "the round left no record");
+
+    round.move_on();
+    let recover = format!(
+        "set -euo pipefail; source {lib}; \
+         if mutation_inflight_recover; then echo RECOVERED; else echo REFUSED; fi",
+        lib = library(),
+    );
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&recover)
+        .current_dir(&round.repo)
+        .env("HOME", round.home.path())
+        .env("SCE_MUTATION_INFLIGHT_DIR", &round.records)
+        .output()
+        .expect("drive the shell wrappers");
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+
+    assert!(
+        report.contains("RECOVERED"),
+        "a tree holding none of the round's recorded bytes was refused:\n{report}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        round.target(),
+        "a newer tree\n",
+        "the newer tree was written over"
+    );
+    assert_eq!(round.records_left(), 0, "the dead round's record was kept");
 }

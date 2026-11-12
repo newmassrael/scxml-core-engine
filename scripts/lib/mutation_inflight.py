@@ -28,9 +28,41 @@ session in it: the same argument and the same root as the verdict ledger's.
 The record is removed once the restore is done AND verified, so the records
 still present are exactly the rounds that did not finish.
 
-Four subcommands. `open` and `case` are called by a round, `close` from its
-EXIT trap, and `recover` by the NEXT invocation of the harness — which is the
-one that pays this file's debts, because it is the one that is still alive.
+A file that differs from the bytes a dead round started from is not, by that
+alone, a file that holds the round's mutation: the tree may have moved on
+under the same path. Measured 2026-11-12 on a build machine: a bx slot is a
+checkout path that is reused, re-synced to a newer tree, and a prepush unit
+killed mid `--check` left a record whose two targets the newer tree had
+changed and whose snapshot lived in a scratch directory already gone. Every
+later run at that path refused, and `mutation-cases` refused all 559
+casefiles, over a claim ("its mutation is still here") nothing had checked.
+
+So the record also says what the round's mutation IS. After every write a
+round makes into a declared file, the hash of what each file now holds, where
+it differs from the original, joins that target's `mutated` list. A dead
+round's record proves the tree holds none of its bytes when no file that
+differs from the original holds any hash in those lists: the tree moved on,
+and the record is cleared without a file being touched. Anything short of
+that proof keeps the old answer, restore or refuse:
+
+  - a write the record has not caught up with (a case body mid-edit, a bridge
+    mid-regeneration, a restore mid-copy) leaves bytes in no list, so a round
+    marks itself `settled: false` before each write and `true` after it, and
+    an unsettled record proves nothing;
+  - a record from before the lists existed (schema 1) proves nothing;
+  - and one file holding a recorded mutation means the round's work is in the
+    tree, so EVERY differing file is put back, not that one alone: a writer
+    the record does not bracket would otherwise leave its half behind.
+
+Not a rule on `boot_id`, which would be simpler and wrong: on a workstation a
+round killed before a reboot leaves its mutation on disk while the reboot
+wipes the snapshot under /tmp, and refusing is right there. The hashes tell
+the two apart; a boot does not.
+
+Six subcommands. `open`, `case`, `writing` and `written` are called by a
+round, `close` from its EXIT trap, and `recover` by the NEXT invocation of the
+harness — which is the one that pays this file's debts, because it is the one
+that is still alive.
 
 Output is tagged so the caller can speak in its own voice: each report line is
 `<R|G|D><TAB><text>`, for the caller's red, green and dim. Exit status is 0
@@ -152,6 +184,14 @@ def describe(record):
     return what
 
 
+def current_hash(path):
+    """The sha256 of a file's bytes, or None when it cannot be read."""
+    try:
+        return sha256(path)
+    except OSError:
+        return None
+
+
 def outstanding(record):
     """The declared paths whose bytes are not the ones the round started from.
 
@@ -162,13 +202,57 @@ def outstanding(record):
     left = []
     for target in record.get("targets") or []:
         path, want = target.get("path"), target.get("sha256")
-        try:
-            have = sha256(path)
-        except OSError:
-            have = None
-        if have != want:
+        if current_hash(path) != want:
             left.append(path)
     return left
+
+
+def proves_tree_moved_on(record, left):
+    """Does this record prove that none of its round's bytes are in the tree?
+
+    `left` is what `outstanding` found: the files that are not the bytes the
+    round started from. Each of them differs either because the round's
+    mutation is in it or because the tree moved on under the same path, and
+    only the round's own account of what it wrote can say which. So the answer
+    is yes only when that account is complete and names none of them:
+
+      - the record has the lists at all (schema 2; a schema 1 record was
+        written before they existed);
+      - the round was settled when it died, so every byte it had written by
+        then is in a list;
+      - and no file in `left` holds a hash its target's list carries.
+
+    A single file holding a recorded mutation is a no for the whole tree: the
+    round's work is in it, and the caller then puts back every differing file,
+    because a write this record did not bracket would leave its half behind.
+    """
+    if why_unproven(record) is not None:
+        return False
+    for target in record.get("targets") or []:
+        if target.get("path") in left and not isinstance(target.get("mutated"), list):
+            return False
+    return not holding_recorded_mutation(record, left)
+
+
+def why_unproven(record):
+    """Why this record's lists cannot prove a tree moved on, or None if they can."""
+    schema = record.get("schema")
+    if not isinstance(schema, int) or schema < 2:
+        return "it was written before rounds recorded what they wrote"
+    if record.get("settled") is not True:
+        return "it died in the middle of a write its record had not caught up with"
+    return None
+
+
+def holding_recorded_mutation(record, left):
+    """The files in `left` whose bytes are a mutation the round recorded."""
+    held = []
+    for target in record.get("targets") or []:
+        path = target.get("path")
+        mutated = target.get("mutated")
+        if path in left and isinstance(mutated, list) and current_hash(path) in mutated:
+            held.append(path)
+    return held
 
 
 def discard_scratch(record):
@@ -235,7 +319,7 @@ def cmd_open(args):
     for line in sys.stdin.read().splitlines():
         if not line:
             continue
-        targets.append({"path": line, "sha256": sha256(line)})
+        targets.append({"path": line, "sha256": sha256(line), "mutated": []})
     os.makedirs(args.dir, exist_ok=True)
     handle, staging = tempfile.mkstemp(prefix="round-", suffix=".json.new", dir=args.dir)
     os.close(handle)
@@ -243,7 +327,11 @@ def cmd_open(args):
     write_record(
         record,
         {
-            "schema": 1,
+            # 2: each target carries `mutated`, and the record `settled`.
+            # Nothing written yet, so the tree holds the original bytes and
+            # nothing else of this round's: settled from the start.
+            "schema": 2,
+            "settled": True,
             "pid": args.pid,
             "starttime": start_time(args.pid),
             "boot_id": boot_id(),
@@ -276,6 +364,58 @@ def cmd_case(args):
     except (OSError, ValueError):
         return 0
     record["case"] = args.label
+    write_record(args.record, record)
+    return 0
+
+
+def cmd_writing(args):
+    """Say the round is about to write into its declared files.
+
+    From here until `written`, the tree may hold bytes of this round's that no
+    hash in the record names yet: half an edit, a bridge's partial output, a
+    restore cut off mid-copy. A round killed in that window cannot be told
+    apart from a tree that moved on, so the record stops claiming it can.
+
+    Silent on a record that cannot be read, as `case` is: the record left
+    behind then still says what it said, and an unsettled record is the
+    direction that refuses rather than the one that waves a tree through.
+    """
+    try:
+        record = load(args.record)
+    except (OSError, ValueError):
+        return 0
+    record["settled"] = False
+    write_record(args.record, record)
+    return 0
+
+
+def cmd_written(args):
+    """Record what the round's writes left in its declared files.
+
+    Every target whose bytes are not the original ones now holds bytes this
+    round wrote, and their hash joins that target's `mutated` list. Restored
+    files hash to the original and add nothing, so the same call closes a
+    restore as well as an edit. The lists only grow: a later case's mutation
+    does not make an earlier one any less the round's own.
+
+    Called as soon after the write as the harness can, because the window
+    between a write and this call is the one an unsettled record covers.
+    """
+    try:
+        record = load(args.record)
+    except (OSError, ValueError):
+        return 0
+    for target in record.get("targets") or []:
+        have = current_hash(target.get("path"))
+        mutated = target.get("mutated")
+        if not isinstance(mutated, list):
+            mutated = []
+        if have is not None and have != target.get("sha256") and have not in mutated:
+            mutated.append(have)
+        target["mutated"] = mutated
+    # The schema is left as `open` wrote it. A schema 1 record has no account
+    # of the writes made before this call, so it must go on proving nothing.
+    record["settled"] = True
     write_record(args.record, record)
     return 0
 
@@ -403,6 +543,24 @@ def handle_abandoned(path, record):
              " mutation behind: %s" % describe(record))
         return True
 
+    # These files are not what the round started from, and that alone does
+    # not say the round's mutation is in them: the path may hold a newer tree.
+    # Measured 2026-11-12, a bx slot re-synced over a killed `--check`'s
+    # record, which then refused every casefile run at that path. The record's
+    # own hashes of what the round wrote are what can tell; when they prove the
+    # tree holds none of it, nothing here is the round's to put back.
+    if proves_tree_moved_on(record, left):
+        retire(path)
+        discard_scratch(record)
+        emit(TAG_DIM, "cleared the record of a round that died, whose mutation is"
+             " no longer in the tree: %s" % describe(record))
+        emit(TAG_DIM, "  %d declared file(s) differ from what it started from and"
+             " hold none of the bytes it wrote," % len(left))
+        emit(TAG_DIM, "  so the tree moved on since; they are left as they are:")
+        for moved in left:
+            emit(TAG_DIM, "    %s" % moved)
+        return True
+
     snapshot = record.get("snapshot") or ""
     restorable, unreachable = [], []
     for target in record.get("targets") or []:
@@ -418,10 +576,21 @@ def handle_abandoned(path, record):
         unreachable.append(target["path"])
 
     if unreachable:
-        emit(TAG_RED, "a mutation round was killed in this tree and its mutation is"
-             " still here:")
-        for still_there in left:
-            emit(TAG_RED, "  %s" % still_there)
+        if holding_recorded_mutation(record, left):
+            emit(TAG_RED, "a mutation round was killed in this tree and its mutation"
+                 " is still here:")
+            for still_there in left:
+                emit(TAG_RED, "  %s" % still_there)
+        else:
+            emit(TAG_RED, "a mutation round was killed in this tree, and these files"
+                 " are not what it started from:")
+            for still_there in left:
+                emit(TAG_RED, "  %s" % still_there)
+            emit(TAG_RED, "its record cannot say whether that is its mutation or a"
+                 " tree that moved on:")
+            emit(TAG_RED, "  %s" % (why_unproven(record)
+                                    or "a file it lists carries no record of its"
+                                    " writes"))
         emit(TAG_RED, "the round was %s" % describe(record))
         emit(TAG_RED, "and the bytes it started from are not where it said they would"
              " be:")
@@ -481,6 +650,14 @@ def main(argv):
     case.add_argument("--record", required=True)
     case.add_argument("--label", required=True)
     case.set_defaults(func=cmd_case)
+
+    writing = sub.add_parser("writing", help="the round is about to write the tree")
+    writing.add_argument("--record", required=True)
+    writing.set_defaults(func=cmd_writing)
+
+    written = sub.add_parser("written", help="record what the round's writes left")
+    written.add_argument("--record", required=True)
+    written.set_defaults(func=cmd_written)
 
     close = sub.add_parser("close", help="remove the record once the tree is back")
     close.add_argument("--record", required=True)
