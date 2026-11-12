@@ -489,7 +489,12 @@ public final class StaticChildHostHybridPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "work", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["work"] = nil
+            return
+        }
         sceInvokeChildWork = sceStarted
         sceInvokeStemWork = sceSelected
         sceSettleInvokeWork(engine: engine)

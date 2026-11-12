@@ -412,7 +412,12 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "inv_watch", document: documentStem("#autoforward_done_invoke__sce_synth_invoke__inv_watch"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "inv_watch", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["inv_watch"] = nil
+            return
+        }
         sceInvokeChildInvWatch = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -472,7 +477,12 @@ public final class AutoforwardDoneInvokePolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "inv_short", document: documentStem("#autoforward_done_invoke__sce_synth_invoke__inv_short"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "inv_short", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["inv_short"] = nil
+            return
+        }
         sceInvokeChildInvShort = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

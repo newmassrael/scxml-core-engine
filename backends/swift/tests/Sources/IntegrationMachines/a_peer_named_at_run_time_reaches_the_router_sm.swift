@@ -317,9 +317,9 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     // Script engine (W3C SCXML 5.3, 5.9, 5.10; SceLua)
     // ------------------------------------------------------------------
 
-    /// The Lua session this machine's expressions run in. Made on first use, and made again
-    /// whenever the datamodel is initialised: a restore reaches `initializeDataModel` again and
-    /// starts from the document's own values.
+    /// The Lua session this machine's expressions run in. Made by `establishScriptSession`, which
+    /// every start runs before anything else, and made again by each later start, which starts
+    /// from the document's own values. Nil before the first start and after a start it refused.
     private var lua: LuaState?
 
     /// The address the host's BasicHTTP listener answers on for this machine (W3C SCXML C.2), which
@@ -353,24 +353,73 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// `bindCurrentEvent` hands it to the session (§scxml-5.10).
     private var pendingEventMetadata = EventMetadata()
 
-    /// The session, with the ECMAScript library loaded and `_sessionid`, `_name` and
-    /// `_ioprocessors` bound (§scxml-5.10).
-    private func ensureLua() throws -> LuaState {
-        if let lua {
-            return lua
+    /// Establishes the session (docs/adr/0096): creates the Lua state, loads the ECMAScript library
+    /// into it and binds `_sessionid`, `_name` and `_ioprocessors` (§scxml-5.10), in that order.
+    /// The engine asks it first in every start, before the run is marked running and before
+    /// anything is entered, and it is the one place a session is made. Answers nil once the session
+    /// is held, or the step that failed with the engine's words: a state made by a step before the
+    /// one that failed is released with this frame, and none is held, so the start is refused and
+    /// the next start makes the session from nothing.
+    public func establishScriptSession() -> ScriptSessionFailure? {
+        lua = nil
+        let session: LuaState
+        do {
+            try sceScriptSessionFaultInjected(at: .create)
+            session = try LuaState()
+        } catch {
+            return ScriptSessionFailure(stage: .create, message: LuaError.message(of: error))
         }
-        let session = try LuaState()
-        try session.loadEcmaScriptLibrary()
-        try session.bindSession(
-            LuaSession(
-                sessionID: sessionID,
-                name: "a_peer_named_at_run_time_reaches_the_router",
-                scxmlLocation: scxmlProcessorLocation(sessionID: sessionID),
-                basicHTTPLocation: basicHTTPAccessURI.isEmpty ? nil : basicHTTPAccessURI
-            ))
+        do {
+            try sceScriptSessionFaultInjected(at: .library)
+            try session.loadEcmaScriptLibrary()
+        } catch {
+            return ScriptSessionFailure(stage: .library, message: LuaError.message(of: error))
+        }
+        do {
+            try sceScriptSessionFaultInjected(at: .systemVariables)
+            try session.bindSession(
+                LuaSession(
+                    sessionID: sessionID,
+                    name: "a_peer_named_at_run_time_reaches_the_router",
+                    scxmlLocation: scxmlProcessorLocation(sessionID: sessionID),
+                    basicHTTPLocation: basicHTTPAccessURI.isEmpty ? nil : basicHTTPAccessURI
+                ))
+        } catch {
+            return ScriptSessionFailure(stage: .systemVariables, message: LuaError.message(of: error))
+        }
         lua = session
-        return session
+        return nil
     }
+
+    /// The session the start established. Every start establishes it before anything here can
+    /// run, and a start whose session could not be established runs nothing (docs/adr/0096), so a
+    /// session asked for with none held is a defect of the generated code and not a failure a host
+    /// can meet: it stops the process, in a release build too, rather than run an expression over
+    /// no session.
+    private var scriptSession: LuaState {
+        guard let lua else {
+            preconditionFailure("the script session of APeerNamedAtRunTimeReachesTheRouter was asked for before a start established it")
+        }
+        return lua
+    }
+
+#if DEBUG
+    /// Asked before each step of establishing a session (docs/adr/0096), with the id of the session
+    /// being established and the step: an answer of true fails that step as a failure of the engine
+    /// would, which a real Lua state does only when it cannot allocate. The way a test reaches the
+    /// refusal of a start. A parent hands it to every child it starts that runs a script engine, so
+    /// a test reaches a child's refusal too. A debug build's alone: a release build has no way to
+    /// fail a session on request.
+    var sceScriptSessionFault: ((_ sessionID: String, _ stage: ScriptSessionStage) -> Bool)?
+
+    private func sceScriptSessionFaultInjected(at stage: ScriptSessionStage) throws {
+        if sceScriptSessionFault?(sessionID, stage) == true {
+            throw LuaError.runtime("the step '\(stage)' was failed on request")
+        }
+    }
+#else
+    private func sceScriptSessionFaultInjected(at stage: ScriptSessionStage) throws {}
+#endif
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
@@ -383,8 +432,8 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// a Lua identifier. An initialiser that fails raises `error.execution` and leaves the
     /// variable nil.
     private func defineData(_ id: String, as expression: String?, orText fallback: String? = nil, engine: Engine<APeerNamedAtRunTimeReachesTheRouterPolicy>) {
+        let session = scriptSession
         do {
-            let session = try ensureLua()
             if let seed = invokeSeeds[id] {
                 // W3C SCXML 6.4.1: the value the parent handed this variable replaces its own.
                 switch seed {
@@ -410,7 +459,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError("<data id='\(id)'> expr failed to evaluate", engine: engine)
-            _ = try? lua?.setGlobal(id, .nilValue)
+            _ = try? session.setGlobal(id, .nilValue)
         }
     }
 
@@ -425,7 +474,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// A chunk that raises is the caller's `error.execution`.
     private func executeScript(_ source: String, name: String) -> Bool {
         do {
-            try ensureLua().execute(source, name: name)
+            try scriptSession.execute(source, name: name)
             return true
         } catch {
             return false
@@ -437,7 +486,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// What a `<log expr>` shows and what a `<send>`'s computed event, target and delay say.
     private func evaluateText(_ expression: String) -> String? {
         do {
-            if case .string(let text) = try ensureLua().evaluate("_scxml_tostring(\(expression))", name: "=log") {
+            if case .string(let text) = try scriptSession.evaluate("_scxml_tostring(\(expression))", name: "=log") {
                 return text
             }
             return nil
@@ -457,7 +506,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
             "local source = \(array); if not _isArray(source) then error('<foreach> array is not an array') end; "
                 + "local copy = {}; for i = 1, #source do copy[i] = source[i] end; \(slot) = copy",
             name: "=foreach")
-        guard copied, case .integer(let count)? = try? ensureLua().evaluate("#\(slot)", name: "=foreach") else {
+        guard copied, case .integer(let count)? = try? scriptSession.evaluate("#\(slot)", name: "=foreach") else {
             return nil
         }
         return Int(count)
@@ -482,7 +531,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// function) is `null`, and an expression that cannot be run is nil (the caller's `error.execution`).
     private func evaluateJSON(_ expression: String) -> String? {
         do {
-            if case .string(let text) = try ensureLua().evaluate("JSON.stringify(\(expression))", name: "=value") {
+            if case .string(let text) = try scriptSession.evaluate("JSON.stringify(\(expression))", name: "=value") {
                 return text
             }
             return "null"
@@ -496,8 +545,8 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// object, an array, `undefined`) is its JSON, because JSON writes `Infinity` as `null`
     /// (`LuaSeed`). An expression that cannot be run is nil (the caller's `error.execution`).
     private func evaluateSeed(_ expression: String) -> LuaSeed? {
+        let session = scriptSession
         do {
-            let session = try ensureLua()
             // One evaluation: an expression with a side effect (`n++`) must run once, so its value
             // is kept in a global the kind and the value are then read from.
             try session.defineGlobal("_scxml_seed_value", as: expression, chunkName: "=seed")
@@ -522,8 +571,8 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
     /// The expression is run once, so one with a side effect (`n++`) takes effect once and both
     /// spellings are the same value. One that cannot be run is nil (the caller's `error.execution`).
     private func evaluateWire(_ expression: String) -> (text: String, json: String)? {
+        let session = scriptSession
         do {
-            let session = try ensureLua()
             try session.defineGlobal("_scxml_wire_value", as: expression, chunkName: "=wire")
             defer { try? session.setGlobal("_scxml_wire_value", .nilValue) }
             guard case .string(let text) = try session.evaluate("_scxml_tostring(_scxml_wire_value)", name: "=wire") else {
@@ -541,9 +590,10 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
 
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited; late binding
-    /// declares a state's own on its first entry (`executeEntryActions`).
+    /// declares a state's own on its first entry (`executeEntryActions`). Runs in the session the
+    /// start established just before it (`establishScriptSession`); a value the parent handed a
+    /// variable takes the place of its `<data>`'s own, and the top-level scripts run last.
     public func initializeDataModel(engine: Engine<APeerNamedAtRunTimeReachesTheRouterPolicy>) {
-        lua = nil
         pendingEventMetadata = EventMetadata()
         defineData("peer", as: "\"#hmi\"", engine: engine)
         defineData("here", as: "\"#_internal\"", engine: engine)
@@ -566,7 +616,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
         let metadata = pendingEventMetadata
         let name = metadata.name.isEmpty ? getEventName(event) : metadata.name
         do {
-            let reading = try ensureLua().bindCurrentEvent(
+            let reading = try scriptSession.bindCurrentEvent(
                 LuaEvent(
                     name: name,
                     type: metadata.eventType.description,
@@ -623,7 +673,7 @@ public final class APeerNamedAtRunTimeReachesTheRouterPolicy: InvocablePolicy {
         engine: Engine<APeerNamedAtRunTimeReachesTheRouterPolicy>
     ) -> Bool {
         do {
-            return try ensureLua().evaluateCondition(condition, chunkName: "=cond")
+            return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
             raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
             failed = true

@@ -524,7 +524,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "given", document: documentStem("#static_invoke_optional__sce_synth_invoke__given"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "given", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["given"] = nil
+            return
+        }
         sceInvokeChildGiven = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -598,7 +603,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "lifted", document: documentStem("#static_invoke_optional__sce_synth_invoke__lifted"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "lifted", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["lifted"] = nil
+            return
+        }
         sceInvokeChildLifted = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -666,7 +676,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "absent", document: documentStem("#static_invoke_optional__sce_synth_invoke__absent"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "absent", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["absent"] = nil
+            return
+        }
         sceInvokeChildAbsent = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -731,7 +746,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "replaced", document: documentStem("#static_invoke_optional__sce_synth_invoke__replaced"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "replaced", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["replaced"] = nil
+            return
+        }
         sceInvokeChildReplaced = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -802,7 +822,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "over", document: documentStem("#static_invoke_optional__sce_synth_invoke__over"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "over", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["over"] = nil
+            return
+        }
         sceInvokeChildOver = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -873,7 +898,12 @@ public final class StaticInvokeOptionalPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "fits", document: documentStem("#static_invoke_optional__sce_synth_invoke__fits"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "fits", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["fits"] = nil
+            return
+        }
         sceInvokeChildFits = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

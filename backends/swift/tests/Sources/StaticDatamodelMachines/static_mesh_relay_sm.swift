@@ -355,7 +355,12 @@ public final class StaticMeshRelayPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "inner", document: documentStem("#static_mesh_relay__sce_synth_invoke__inner"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "inner", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["inner"] = nil
+            return
+        }
         sceInvokeChildInner = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

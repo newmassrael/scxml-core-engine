@@ -1238,7 +1238,12 @@ public final class RecordListParentPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "list", document: documentStem("#record_list_parent__sce_synth_invoke__list"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "list", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["list"] = nil
+            return
+        }
         sceInvokeChildList = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

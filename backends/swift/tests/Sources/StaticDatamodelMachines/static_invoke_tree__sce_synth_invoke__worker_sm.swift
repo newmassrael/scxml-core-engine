@@ -587,7 +587,12 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "_invoke_0", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["_invoke_0"] = nil
+            return
+        }
         sceInvokeChildInvoke0 = sceStarted
         sceInvokeStemInvoke0 = sceSelected
         sceSettleInvokeInvoke0(engine: engine)

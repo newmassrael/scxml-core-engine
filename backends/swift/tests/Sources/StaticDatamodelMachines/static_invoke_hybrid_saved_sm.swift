@@ -447,7 +447,12 @@ public final class StaticInvokeHybridSavedPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "watch", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["watch"] = nil
+            return
+        }
         sceInvokeChildWatch = sceStarted
         sceInvokeStemWatch = sceSelected
         sceSettleInvokeWatch(engine: engine)

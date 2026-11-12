@@ -449,7 +449,12 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "control", document: documentStem("#static_invoke_params__sce_synth_invoke__control"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "control", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["control"] = nil
+            return
+        }
         sceInvokeChildControl = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -514,7 +519,12 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "watcher", document: documentStem("#static_invoke_params__sce_synth_invoke__watcher"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "watcher", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["watcher"] = nil
+            return
+        }
         sceInvokeChildWatcher = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -582,7 +592,12 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "worker", document: documentStem("#static_invoke_params__sce_synth_invoke__worker"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "worker", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["worker"] = nil
+            return
+        }
         sceInvokeChildWorker = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

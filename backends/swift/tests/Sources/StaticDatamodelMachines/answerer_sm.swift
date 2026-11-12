@@ -544,7 +544,13 @@ public final class AnswererComponent: SceTestProfile.ComponentMachine {
             // registration refuses.
             preconditionFailure("the test profile's doors are no reserved processor type: \(error)")
         }
-        machine.initialize()
+        // A test component runs no script engine (`test_component::rules::refuse_script_engine`),
+        // so its start has no script session to fail and is never refused (docs/adr/0096).
+        do {
+            try machine.initialize()
+        } catch {
+            preconditionFailure("a test component runs no script engine, and its start was refused: \(error)")
+        }
         sceMachine = machine
     }
 

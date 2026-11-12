@@ -481,7 +481,12 @@ public final class StaticChildHostPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "worker", document: documentStem("#static_child_host__sce_synth_invoke__worker"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "worker", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["worker"] = nil
+            return
+        }
         sceInvokeChildWorker = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.

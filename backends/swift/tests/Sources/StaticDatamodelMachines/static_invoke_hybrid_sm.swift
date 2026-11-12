@@ -597,7 +597,12 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "first_run", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["first_run"] = nil
+            return
+        }
         sceInvokeChildFirstRun = sceStarted
         sceInvokeStemFirstRun = sceSelected
         sceSettleInvokeFirstRun(engine: engine)
@@ -710,7 +715,12 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "lossy_run", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["lossy_run"] = nil
+            return
+        }
         sceInvokeChildLossyRun = sceStarted
         sceInvokeStemLossyRun = sceSelected
         sceSettleInvokeLossyRun(engine: engine)
@@ -807,7 +817,12 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "missing_run", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["missing_run"] = nil
+            return
+        }
         sceInvokeChildMissingRun = sceStarted
         sceInvokeStemMissingRun = sceSelected
         sceSettleInvokeMissingRun(engine: engine)
@@ -920,7 +935,12 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             autoforward: false,
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "second_run", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["second_run"] = nil
+            return
+        }
         sceInvokeChildSecondRun = sceStarted
         sceInvokeStemSecondRun = sceSelected
         sceSettleInvokeSecondRun(engine: engine)

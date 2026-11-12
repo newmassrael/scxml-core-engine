@@ -449,7 +449,12 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "fits", document: documentStem("#static_invoke_string__sce_synth_invoke__fits"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "fits", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["fits"] = nil
+            return
+        }
         sceInvokeChildFits = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -520,7 +525,12 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "over", document: documentStem("#static_invoke_string__sce_synth_invoke__over"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "over", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["over"] = nil
+            return
+        }
         sceInvokeChildOver = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -591,7 +601,12 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "wide", document: documentStem("#static_invoke_string__sce_synth_invoke__wide"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "wide", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["wide"] = nil
+            return
+        }
         sceInvokeChildWide = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
