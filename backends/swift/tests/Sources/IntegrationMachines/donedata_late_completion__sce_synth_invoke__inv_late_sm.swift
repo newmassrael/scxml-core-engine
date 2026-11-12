@@ -328,9 +328,12 @@ public final class DonedataLateCompletionSceSynthInvokeInvLatePolicy: InvocableP
     /// nothing answers on. Set before the machine starts; the session reads it when it is made.
     public var basicHTTPAccessURI = ""
 
-    /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this machine's variables
-    /// before it starts, by name. A `<data>` of one of these names takes the value in place of its
-    /// own; a name this machine declares no variable for is never read.
+    /// §scxml-6.4: the values a parent's `<param>` and `namelist` hand this machine before it
+    /// starts, by name: every name the parent evaluated, since which of them it takes is this
+    /// machine's to decide. A top-level `<data>` (one in the `<datamodel>` of `<scxml>` itself) of
+    /// one of these names is declared with the value in place of its own; a state's `<data>` never
+    /// takes one, and a name no top-level `<data>` declares is never read. The start that declares
+    /// the top-level data consumes them, so a later start begins from the document's own values.
     private var invokeSeeds: [String: LuaSeed] = [:]
 
     /// Hands the machine the values its parent's `<invoke>` names. Called before the machine starts.
@@ -431,16 +434,30 @@ public final class DonedataLateCompletionSceSynthInvokeInvLatePolicy: InvocableP
     /// declares none. The name crosses as a string and never as source: an XML name is not always
     /// a Lua identifier. An initialiser that fails raises `error.execution` and leaves the
     /// variable nil.
-    private func defineData(_ id: String, as expression: String?, orText fallback: String? = nil, engine: Engine<DonedataLateCompletionSceSynthInvokeInvLatePolicy>) {
+    ///
+    /// §scxml-6.4: `handed` is the value the parent's `<invoke>` handed a top-level `<data>` of this
+    /// name, which only the declaration of the top-level data passes. It is declared in place of the
+    /// `<data>`'s own value, whose expression, `src` or content is then not evaluated: it raises
+    /// nothing and has no effect. A handed value the session cannot hold is this `<data>`'s
+    /// initialization error, as an initialiser that fails is (§scxml-5.3).
+    private func defineData(
+        _ id: String,
+        handed: LuaSeed? = nil,
+        as expression: String?,
+        orText fallback: String? = nil,
+        engine: Engine<DonedataLateCompletionSceSynthInvokeInvLatePolicy>
+    ) {
         let session = scriptSession
         do {
-            if let seed = invokeSeeds[id] {
-                // W3C SCXML 6.4.1: the value the parent handed this variable replaces its own.
-                switch seed {
+            if let handed {
+                switch handed {
                 case .scalar(let value):
                     try session.setGlobal(id, value)
                 case .json(let text):
+                    // The text is parsed where the session reads it, and the global it was carried
+                    // in is not left in the datamodel, which declares no such name.
                     try session.setGlobal("_scxml_seed", .string(text))
+                    defer { try? session.setGlobal("_scxml_seed", .nilValue) }
                     try session.defineGlobal(id, as: "JSON.parse(_scxml_seed)", chunkName: "=seed")
                 }
             } else if let expression {
@@ -458,7 +475,11 @@ public final class DonedataLateCompletionSceSynthInvokeInvLatePolicy: InvocableP
                 try session.setGlobal(id, .nilValue)
             }
         } catch {
-            raiseExecutionError("<data id='\(id)'> expr failed to evaluate", engine: engine)
+            raiseExecutionError(
+                handed == nil
+                    ? "<data id='\(id)'> expr failed to evaluate"
+                    : "<data id='\(id)'> could not hold the value its parent handed it",
+                engine: engine)
             _ = try? session.setGlobal(id, .nilValue)
         }
     }
@@ -567,10 +588,14 @@ public final class DonedataLateCompletionSceSynthInvokeInvLatePolicy: InvocableP
     /// W3C SCXML 5.3: declares the document's variables. Early binding runs every state's
     /// `<data>` here, at document load, before the state that holds it is visited; late binding
     /// declares a state's own on its first entry (`executeEntryActions`). Runs in the session the
-    /// start established just before it (`establishScriptSession`); a value the parent handed a
-    /// variable takes the place of its `<data>`'s own, and the top-level scripts run last.
+    /// start established just before it (`establishScriptSession`). The order is the one
+    /// §scxml-6.4 fixes for a child: the top-level `<data>`, each declared with the value the parent
+    /// handed it in place of its own; the early-bound `<data>` of the states, which take none; the
+    /// top-level scripts, which read the handed values; then the initial configuration is entered.
     public func initializeDataModel(engine: Engine<DonedataLateCompletionSceSynthInvokeInvLatePolicy>) {
         pendingEventMetadata = EventMetadata()
+        // §scxml-6.4: the values the parent handed are this start's, taken once.
+        invokeSeeds = [:]
     }
 
     /// Keeps the metadata of the event about to be selected on (§scxml-5.10).
