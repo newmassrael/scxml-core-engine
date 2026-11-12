@@ -93,6 +93,49 @@
 {% endif %}
 {% endmacro %}
 
+{# ── docs/adr/0096 + §scxml-6.4: a child whose start was refused ─────────
+   The child's start answers `_child_started` (its `_init`, `_init_with_clock`
+   or `_init_with_parent`), which the site declares. A child that did not start
+   is not kept: its `_active` flag stays clear, so nothing drives, cancels or
+   destroys it, and no `done.invoke` is raised for it. The parent raises
+   error.execution on its internal queue instead, the path a namelist that
+   cannot be read takes, naming the invoke and, for a script session that
+   could not be established, the step it failed at, in the words every backend
+   uses. A refused start closed whatever the child's steps made, so there is
+   nothing of it to release here. `stem` names the child's machine and `slot`
+   its struct. #}
+{% macro refuse_unstarted_child(stem, slot, invoke_info, model, csym_prefix) %}
+            if (_child_started != {{ csym_prefix | upper }}{{ stem | upper }}_START_OK) {
+{% if 'error.execution' in model.events %}
+                const sce_script_session_failure_t *_child_failure =
+                    {{ csym_prefix }}{{ stem }}_script_session_failure(&{{ slot }});
+                switch (_child_failure != NULL ? _child_failure->stage : SCE_SCRIPT_SESSION_STAGE_NONE) {
+                case SCE_SCRIPT_SESSION_STAGE_CREATE:
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "create") }});
+                    break;
+                case SCE_SCRIPT_SESSION_STAGE_LIBRARY:
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "library") }});
+                    break;
+                case SCE_SCRIPT_SESSION_STAGE_SYSTEM_VARIABLES:
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "system-variables") }});
+                    break;
+                default:
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_child_start_refused", invoke_info.invoke_id) }});
+                    break;
+                }
+{% endif %}
+                continue;
+            }
+{% endmacro %}
+
 {# ── §scxml-6.4.1 + §scxml-6.4.3: the invoke's arguments, into one child ──
    `child` describes the session being started — the invoke itself for a
    static child, the chosen candidate for a hybrid one — and `child_L` is that
@@ -797,19 +840,25 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                ordering — those sends fire later from the macrostep
                loop below — but the unified `_init_with_parent` entry
                point keeps a single child-SM init shape. */
-            {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_parent(
-                &sm->child_{{ invoke_info.field_suffix }},
-                sm,
-                sm->session_id,
-                {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
-                p->invoke_id,
-                {{ child_clock_c }});
+            const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_parent(
+                    &sm->child_{{ invoke_info.field_suffix }},
+                    sm,
+                    sm->session_id,
+                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
+                    p->invoke_id,
+                    {{ child_clock_c }});
+{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             {% elif invoke_info.child_needs_event_scheduler and model.needs_event_scheduler %}
             /* §scxml-6.4: the child's `<send delay>`s wait on this machine's
                clock, installed before its entry walk arms any of them. */
-            (void){{ csym_prefix }}{{ invoke_info.child_name }}_init_with_clock(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }});
+            const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init_with_clock(&sm->child_{{ invoke_info.field_suffix }}, {{ child_clock_c }});
+{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             {% else %}
-            {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+            const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             {% endif %}
             sm->child_{{ invoke_info.field_suffix }}_active = true;
             /* W3C SCXML 6.3.1: persist the spawn-time invoke id so
@@ -1036,13 +1085,15 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 }
 {% endif %}
 {% else %}
-                {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
-                    &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
-                    sm,
-                    sm->session_id,
-                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
-                    p->invoke_id,
-                    {{ child_clock_c }});
+                const {{ csym_prefix }}{{ candidate.stem }}_start_status_t _child_started =
+                    {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
+                        &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
+                        sm,
+                        sm->session_id,
+                        {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
+                        p->invoke_id,
+                        {{ child_clock_c }});
+{{ refuse_unstarted_child(candidate.stem, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), invoke_info, model, csym_prefix) }}
 {% endif %}
                 sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_active = true;
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
@@ -1109,7 +1160,9 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                walk and the immediate-final raise below fires
                `done.invoke` synchronously). */
 {{ invoke_namelist_guard(invoke_info, model, csym_prefix) }}
-            {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+            const {{ csym_prefix }}{{ invoke_info.child_name }}_start_status_t _child_started =
+                {{ csym_prefix }}{{ invoke_info.child_name }}_init(&sm->child_{{ invoke_info.field_suffix }});
+{{ refuse_unstarted_child(invoke_info.child_name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info, model, csym_prefix) }}
             sm->child_{{ invoke_info.field_suffix }}_active = true;
             sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
 {{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ ".L", model, csym_prefix, se) }}

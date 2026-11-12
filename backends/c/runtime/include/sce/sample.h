@@ -191,15 +191,9 @@ extern "C" {
 // detection instead of riding on the dead family above. It is also
 // how this header states MISRA C:2012 Rule 17.7, which is the only
 // The analyzer layer fact Polyspace can read from source.
-#if defined(__has_attribute)
-#if __has_attribute(warn_unused_result)
-#define SCE_WARN_UNUSED __attribute__((warn_unused_result))
-#else
-#define SCE_WARN_UNUSED
-#endif
-#else
-#define SCE_WARN_UNUSED
-#endif
+// `SCE_WARN_UNUSED` is defined in `sce/portability.h`, included above,
+// because every machine the C11 backend generates states its start
+// with it too, and a machine includes nothing of this header.
 
 // ── Configure-time self-check ─────────────────────────────────────
 //

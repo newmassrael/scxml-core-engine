@@ -35,7 +35,10 @@ extern "C" {
 #endif
 
 /* Why a start of a machine was refused, or `SCE_START_REFUSAL_NONE` for a start that
- * was made. A refused start leaves the caller's storage as it was. */
+ * was made. A refused start leaves the caller's storage as it was, but for
+ * `SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE`, which is found after the machine was
+ * cleared: it leaves the machine cleared, holding the failure its
+ * `<machine>_script_session_failure` reads. */
 typedef enum sce_start_refusal_e {
     SCE_START_REFUSAL_NONE = 0,
     /* The host gave no id, or the empty text, which is no Nmtoken. */
@@ -48,7 +51,11 @@ typedef enum sce_start_refusal_e {
     SCE_START_REFUSAL_SESSION_LOCATION_TOO_LONG,
     /* The table of acts is NULL, has a NULL member, or only simulates a duty the
      * document states (docs/adr/0038). */
-    SCE_START_REFUSAL_HOST_ACTIONS
+    SCE_START_REFUSAL_HOST_ACTIONS,
+    /* The machine's script session could not be established: its Lua state was
+     * not created, the shared library did not load into it, or the system
+     * variables could not be bound (docs/adr/0096). Nothing was entered. */
+    SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE
 } sce_start_refusal_t;
 
 /* The reason `refusal` gives, in one sentence. */
@@ -67,6 +74,8 @@ SCE_C_UNUSED static inline const char *sce_start_refusal_text(sce_start_refusal_
         return "the session id is published at a location longer than the bytes a URI is held in (SCE_MAX_URI_LEN)";
     case SCE_START_REFUSAL_HOST_ACTIONS:
         return "the host does not perform every act this document declares";
+    case SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE:
+        return "the machine's script session could not be established";
     }
     return "the start was refused for a reason this runtime does not know";
 }

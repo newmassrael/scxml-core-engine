@@ -12,11 +12,13 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{# W3C SCXML G.7: a machine whose document declares `<sce:action>`s cannot
-   start without a host, so every initialiser returns whether it accepted one.
-   `void` for every other document shape, byte-identical to the pre-feature
-   emit. Kept in step with the same `set` in `state_machine.c.jinja2`. #}
-{%- set init_rc = 'bool' if has_native_actions else 'void' %}
+{# docs/adr/0096: every initialiser answers whether the machine started, as
+   `<machine>_start_status_t`, one type for every document shape: a machine
+   whose document declares `<sce:action>`s cannot start without a host that
+   performs them (W3C SCXML G.7), and a machine with a script engine cannot
+   start without its script session. Kept in step with the same `set` in
+   `state_machine.c.jinja2`. #}
+{%- set init_rc = csym_prefix ~ model.name ~ '_start_status_t' %}
 {# docs/adr/0038: a machine takes the caller's opt-in for a simulated host when
    it states a duty itself, or when a child it begins with a host of its own
    states one, because the opt-in the caller gave a parent covers the children
@@ -116,6 +118,12 @@
    and the rule an id a host gives is judged by. Included on every machine:
    every root takes its id from its host when the host gives one. */
 #include "sce/session_id.h"
+
+/* docs/adr/0096: `sce_script_session_failure_t`, what a start refused for its
+   script session leaves for the host to read. Included on every machine, so a
+   host reads every machine's start the same way: one without a script engine
+   answers that nothing failed. */
+#include "sce/script_session.h"
 
 {% if model.test_component %}
 /* docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
@@ -262,10 +270,40 @@ enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {
        interface method does not compile there — and it is here for the same
        reason `_init_with_actions` already refuses one: C has no such check,
        so it moves to the call a C host has to make. */
-    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE{% endif %}
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE{% endif %}{% if model.needs_script_engine %},
+    /* docs/adr/0096: the configuration is one of this document, and the
+       machine's script session could not be established, so it was not stood
+       in it; `_script_session_failure` says which step failed. The twin of
+       `ConfigurationRejection::ScriptSessionUnavailable` on the other
+       backends. Only a machine with a script engine has a session to fail. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_SCRIPT_SESSION_UNAVAILABLE{% endif %}
 
 };
 typedef enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {{ csym_prefix }}{{ model.name }}_configuration_rejection_t;
+
+/* ── docs/adr/0096: whether a start was made ──────────────────────── */
+{# What every `_init*` answers, and what the caller must read: a start can be
+   refused, and a machine that was refused holds no configuration to run.
+   One enumeration for every document shape, each member present only where
+   this document can be refused for its reason, as the configuration
+   rejection above has `_CONFIG_HOST_ACTIONS_INCOMPLETE` only where acts are
+   declared. A machine with neither answers `_START_OK` alone. #}
+enum {{ csym_prefix }}{{ model.name }}_start_status_e {
+    /* The machine started: its initial configuration is entered. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_START_OK = 0{% if model.needs_script_engine %},
+    /* The machine's script session could not be established, so nothing was
+       entered, nothing ran and the machine is not running;
+       `_script_session_failure` says which step failed and what the engine
+       said. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_START_SCRIPT_SESSION_UNAVAILABLE{% endif %}{% if has_native_actions %},
+    /* W3C SCXML G.7: the host does not perform every act this document
+       declares{% if has_native_duties %}, or says it only simulates a duty it
+       states (docs/adr/0038){% endif %}. Refused before the machine is touched,
+       so its storage is as the caller left it. */
+    {{ csym_prefix | upper }}{{ model.name | upper }}_START_HOST_ACTIONS_INCOMPLETE{% endif %}
+
+};
+typedef enum {{ csym_prefix }}{{ model.name }}_start_status_e {{ csym_prefix }}{{ model.name }}_start_status_t;
 
 {% if model.has_history_states %}
 /* ── W3C SCXML 3.10: History pseudo-state enumeration ─────────────── */
@@ -1316,6 +1354,10 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {% endif %}
     {% if model.needs_script_engine %}
     lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
+    /* docs/adr/0096: why the last start could not establish `L`, the step
+       NONE while it did. Written by the start that failed, which leaves `L`
+       NULL, and read through `_script_session_failure`. */
+    sce_script_session_failure_t script_session_failure;
     /* docs/adr/0086, section 8.5 (a): how many event texts the machine holds,
        allocated through `L`'s allocator and not yet freed, in its queues, its
        current events and its scheduled entries. Read by
@@ -1509,12 +1551,15 @@ void {{ csym_prefix }}{{ model.name }}_observe_transition(const {{ csym_prefix }
 
      sce_host_processor_registry_t wiring = {0};
      sce_host_registry_register(&wiring, "<type>", my_handler, &my_host);
-     {{ csym_prefix }}{{ model.name }}_init_with_host_processors(&sm, &wiring);
+     if ({{ csym_prefix }}{{ model.name }}_init_with_host_processors(&sm, &wiring{% if has_native_actions %}, &host{% endif %}) != {{ csym_prefix | upper }}{{ model.name | upper }}_START_OK) {
+         return;   // the machine was NOT started
+     }
 
    The registry is passed INTO `_init` rather than written onto the
    machine first because `_init` zeroes the struct, and the first
    `<onentry>` body may already perform an act — a handler installed
    afterwards would arrive one act too late. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %});
@@ -1531,6 +1576,7 @@ void {{ csym_prefix }}{{ model.name }}_observe_transition(const {{ csym_prefix }
    owns time and serves a processor could therefore have one or the other
    — and a `<send delay>` addressed to a host-served processor is exactly
    the case that needs both. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
@@ -1634,10 +1680,12 @@ uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const
 /* W3C SCXML 6.4.1: start the machine with what RUNS its host invokes — the
    door for an invocation of the initial configuration, which runs inside this
    call and so before any `_register_invoker` could. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %});
 {% if model.needs_event_scheduler %}
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
@@ -1648,11 +1696,13 @@ uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const
 /* W3C SCXML 6.2.5 + 6.4.1: both host seams at once, for a machine that can
    perform a host-served act in its first `<onentry>` and invoke the host from
    its initial state. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors,
                                   const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %});
 {% if model.needs_event_scheduler %}
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors,
@@ -1724,8 +1774,11 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
    The five other backends get "the host supplied it" from their type systems —
    an unimplemented interface method does not compile. C has no such check, so
    the guarantee moves here: this refuses a vtable with a NULL member and
-   returns false, leaving the machine UNINITIALISED rather than running it into
-   a null call at the first act. The operations it requires are:
+   answers `{{ csym_prefix | upper }}{{ model.name | upper }}_START_HOST_ACTIONS_INCOMPLETE`, leaving the machine
+   UNINITIALISED rather than running it into a null call at the first act.{% if model.needs_script_engine %}
+   A start whose script session cannot be established answers
+   `{{ csym_prefix | upper }}{{ model.name | upper }}_START_SCRIPT_SESSION_UNAVAILABLE` (see `_init`'s siblings).{% endif %}
+   The operations it requires are:
 {% for op in native_action_ops %}
      {{ op }}
 {% endfor %}
@@ -1741,22 +1794,23 @@ bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix
 {% endfor %}
          .user_data = &my_state,
      };
-     if (!{{ csym_prefix }}{{ model.name }}_init_with_actions(&sm, &host)) {
-         return;   // a member was NULL: the machine was NOT initialised
+     if ({{ csym_prefix }}{{ model.name }}_init_with_actions(&sm, &host) != {{ csym_prefix | upper }}{{ model.name | upper }}_START_OK) {
+         return;   // the machine was NOT started
      }
 
 {% if has_native_duties %}
    This document states a duty (docs/adr/0038), so the table's first member,
    `realization`, must be written: `SCE_ACTION_PERFORMS` when the host performs
    the duties. A table that says `SCE_ACTION_SIMULATES`, or says nothing, is
-   refused with false and the machine is left UNINITIALISED, as a NULL member
-   is. A recorder or a test double is accepted through
+   refused with `{{ csym_prefix | upper }}{{ model.name | upper }}_START_HOST_ACTIONS_INCOMPLETE` and the machine is left
+   UNINITIALISED, as a NULL member is. A recorder or a test double is accepted through
    `{{ csym_prefix }}{{ model.name }}_init_with_simulated_actions`, which says so by its name.
 
 {% endif %}
    `actions` is copied into the machine, so the struct itself need not outlive
    this call; whatever `user_data` points at must. */
-bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_WARN_UNUSED
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                                           const {{ native_actions_interface }} *actions);
 {% if takes_simulated_host %}
 
@@ -1773,14 +1827,39 @@ bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ mod
    Only this entry takes the opt-in. The entries that also install a clock, a
    host processor or an invoker refuse a simulating host, because they are the
    production wiring and a recorder is not. */
-bool {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_WARN_UNUSED
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_simulated_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                     const {{ native_actions_interface }} *actions);
 {% endif %}
 {% else %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
-   Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
-void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+   Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run.
+{% if model.needs_script_engine %}
+
+   docs/adr/0096: the start establishes the machine's script session first —
+   its Lua state, the shared library loaded into it, the system variables bound
+   — and only then declares its datamodel and enters. When a step fails, it
+   answers `{{ csym_prefix | upper }}{{ model.name | upper }}_START_SCRIPT_SESSION_UNAVAILABLE`: no state was entered, no
+   executable content ran, no event was taken, the machine is not running and
+   holds no Lua state, and `_script_session_failure` names the step and the
+   engine's words. A machine that was refused may be started again, and
+   `_destroy` on it is a no-op. Every other `_init*` answers the same way.
+{% else %}
+
+   docs/adr/0096: this machine has no script engine, so no start of it is
+   refused for one: every `_init*` of it answers `{{ csym_prefix | upper }}{{ model.name | upper }}_START_OK`. The
+   answer is still the caller's to read, as it is on every machine.
 {% endif %}
+*/
+SCE_WARN_UNUSED
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
+
+/* docs/adr/0096: why the last start of this machine could not establish its
+   script session, or NULL when it did not fail there (it started, it was
+   refused for another reason, or the machine has no script engine). Valid
+   until the next `_init*` of the same storage. NULL for a NULL machine. */
+const sce_script_session_failure_t *{{ csym_prefix }}{{ model.name }}_script_session_failure(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* docs/adr/0045 ("Questions the owner answered" 2): start this machine under the
    session id its host gives, as every other backend's machine can be built
@@ -1829,7 +1908,15 @@ void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t 
    A restore (`_restore`) keeps the id the state was saved with, as every
    backend's restore does.
 {% endif %}
+{% if model.needs_script_engine %}
+   An id that is taken does not yet make a start: a script session that cannot
+   be established refuses it after the id was judged, with
+   `SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE`, which leaves the machine
+   cleared and holding the failure `_script_session_failure` reads
+   (docs/adr/0096).
+{% endif %}
 */
+SCE_WARN_UNUSED
 sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ csym_prefix }}{{ model.name }}_t *sm,
                                        const char *session_id{% if model.needs_event_scheduler %},
                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
@@ -1845,6 +1932,7 @@ sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ cs
    `_ioprocessors['basichttp'].location` need this instead of `_init`; a
    machine initialised without it publishes no BasicHTTP entry, because no
    listener serves it. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                             const char *basic_http_access_uri{% if has_native_actions %},
                                                             const {{ native_actions_interface }} *actions{% endif %});
@@ -1867,8 +1955,11 @@ sce_start_refusal_t {{ csym_prefix }}{{ model.name }}_init_with_session_id({{ cs
    clock its parent's do (§scxml-6.4), installed before the entry walk arms
    any of them. `parent_session_id` is the parent's own id, kept where the
    parent keeps it, so a send to the location the parent publishes reaches the
-   parent as `#_parent` does (§scxml-C-1). */
-void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
+   parent as `#_parent` does (§scxml-C-1). It answers as `_init` does: a child
+   whose script session cannot be established is not started, and its parent
+   keeps no child and raises error.execution for the invoke (docs/adr/0096). */
+SCE_WARN_UNUSED
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
                                        const char *parent_session_id,
                                        sce_parent_dispatch_fn dispatch,
@@ -2011,6 +2102,7 @@ int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ 
    bases that do not compare. `sce_clock_monotonic()` is what plain `_init`
    installs; `sce_clock_manual(0)` hands time to the host, which then drives the
    machine with `_advance_time_ms` instead of `_tick`. */
+SCE_WARN_UNUSED
 {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %});
 
 /* §scxml-6.2: Move this machine's clock forward by `ms` and run whatever that
@@ -2625,7 +2717,17 @@ const char *{{ csym_prefix }}{{ model.name }}_configuration_rejection_text(
 
    Takes the full argument set every `_init` variant splits between them: a
    resume is the one call where a host has all of them to hand, and one
-   function is better than the product of the wrappers. */
+   function is better than the product of the wrappers.{% if model.needs_script_engine %}
+
+   ## What it refuses after the configuration
+
+   A configuration that was taken does not yet make a resume: the machine's
+   script session is established before it is stood in it, as every start's
+   is, and one that cannot be answers
+   `{{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_SCRIPT_SESSION_UNAVAILABLE`, with the machine cleared, in no
+   state and not running, and `_script_session_failure` naming the step
+   (docs/adr/0096).{% endif %} */
+SCE_WARN_UNUSED
 {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_prefix }}{{ model.name }}_init_at(
     {{ csym_prefix }}{{ model.name }}_t *sm,
     const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count{% if model.needs_event_scheduler %},
@@ -2647,7 +2749,10 @@ bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.
    then raises error.communication, which is the default — so a host that
    wants the refusal asks this before calling one. A query rather than a
    checked twin of each `_init*`: there are many, and each zeroes the struct,
-   so a flag set beforehand could not survive into it. */
+   so a flag set beforehand could not survive into it. The other reason a root
+   start is refused, a script session that cannot be established, is not a
+   property of the document and cannot be asked beforehand: every `_init*`
+   answers it itself (docs/adr/0096). */
 const char *{{ csym_prefix }}{{ model.name }}_root_start_refusal(void);
 
 {% if model.on_sample_links %}

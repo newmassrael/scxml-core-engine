@@ -511,10 +511,6 @@ pub const REASONS: &[Reason] = &[
         row: "data_expr_failed",
         text: "<data id='{0}'> expr failed to evaluate",
     },
-    Reason {
-        row: "system_variable_unbound",
-        text: "the system variable {0} could not be bound",
-    },
     // An event's data that the machine cannot hold.
     Reason {
         row: "event_data_unallocated",
@@ -570,6 +566,18 @@ pub const REASONS: &[Reason] = &[
     Reason {
         row: "invoke_child_host_incomplete",
         text: "<invoke id='{0}'> was given no complete host for its child",
+    },
+    // A child whose start was refused (docs/adr/0096): `{1}` is the step its
+    // script session failed at, one of the three words every backend names it
+    // by, so each is a text the build knows; the second row is a refusal the
+    // child names no step for.
+    Reason {
+        row: "invoke_child_script_session_failed",
+        text: "<invoke id='{0}'> did not start: its child's script session failed at step '{1}'",
+    },
+    Reason {
+        row: "invoke_child_start_refused",
+        text: "<invoke id='{0}'> did not start",
     },
     Reason {
         row: "invoke_session_id_past_room",

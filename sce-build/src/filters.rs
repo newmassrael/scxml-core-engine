@@ -1932,7 +1932,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     // in step.
     env.add_global(
         "ecma_semantics_lua_c",
-        c_lua_dostring_chunks(ECMA_SEMANTICS_LUA),
+        c_lua_chunk_elements(ECMA_SEMANTICS_LUA),
     );
     // §scxml-B-2 requires `JSON` in an ECMAScript datamodel, and C11 was the
     // one backend whose session did not have it — the other five load this
@@ -1940,7 +1940,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     // semantics do, for the same reason: there is no file to open at runtime.
     env.add_global(
         "json_builtins_lua_c",
-        c_lua_dostring_chunks(JSON_BUILTINS_LUA),
+        c_lua_chunk_elements(JSON_BUILTINS_LUA),
     );
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
@@ -2146,14 +2146,14 @@ pub const ECMA_SEMANTICS_LUA: &str = include_str!("../../sce/include/scripting/e
 /// answer.
 pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/json_builtins.lua");
 
-/// Render a Lua source file as a sequence of `luaL_dostring` calls, each
-/// carrying a string literal short enough for a conforming C compiler.
+/// Split a Lua source file into chunks, each of which the C11 embed carries
+/// as a string literal short enough for a conforming C compiler.
 ///
 /// ISO C99 §5.2.4.1 guarantees only 4095 characters in a string literal,
 /// and GCC's `-Woverlength-strings` (which `-pedantic -Werror` turns fatal
 /// in the C11 test build) measures the length *after* adjacent literals are
 /// concatenated — so splitting one literal per source line does not help.
-/// Several `luaL_dostring` calls do, because each is a complete Lua chunk.
+/// Several literals run one by one do, because each is a complete Lua chunk.
 ///
 /// The split points are blank lines, which in this file separate top-level
 /// definitions. That is what obliges the file to have no file-local
@@ -2163,11 +2163,12 @@ pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/js
 /// Split shared Lua source into the pieces the C11 embed loads separately.
 ///
 /// The split is on blank lines that are OUTSIDE a function body, and the
-/// second half of that sentence is load-bearing. Each chunk is emitted as its
-/// own `luaL_dostring` whose result the generated code discards, so a chunk
-/// that failed to compile would leave its definitions simply absent and the
-/// first document to call one would fail at runtime with no reference back to
-/// here.
+/// second half of that sentence is load-bearing. Each chunk is run on its own,
+/// so a boundary inside a function body leaves two chunks that do not compile.
+/// The generated start reads each chunk's answer and refuses to start on a
+/// failure (docs/adr/0096); before it did, the result was discarded, and a
+/// chunk that failed left its definitions simply absent, the first document
+/// to call one failing at runtime with no reference back to here.
 ///
 /// ⚠ This used to break at EVERY blank line, on the stated ground that "every
 /// definition in the shared assets is a top-level `function` separated from
@@ -2279,7 +2280,14 @@ fn lua_depth_after(paragraph: &str, depth: usize) -> usize {
     depth
 }
 
-fn c_lua_dostring_chunks(text: &str) -> String {
+/// Render a Lua source file as elements of a C array of chunks, each a string
+/// literal followed by its comma.
+///
+/// The C11 template lists them in the array the start of a machine runs one
+/// by one, reading each answer (docs/adr/0096): a chunk that does not load
+/// refuses the start, naming the `library` step, where it used to be a
+/// `(void)luaL_dostring` whose failure left its definitions absent.
+fn c_lua_chunk_elements(text: &str) -> String {
     c11_lua_chunks(text)
         .iter()
         .map(|chunk| {
@@ -2288,7 +2296,7 @@ fn c_lua_dostring_chunks(text: &str) -> String {
                 .map(|line| format!("\"{}\\n\"", escape_c(line.to_string())))
                 .collect::<Vec<_>>()
                 .join("\n            ");
-            format!("        (void)luaL_dostring(sm->L,\n            {literal});")
+            format!("            {literal},")
         })
         .collect::<Vec<_>>()
         .join("\n")

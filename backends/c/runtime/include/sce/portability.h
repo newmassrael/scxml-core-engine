@@ -116,4 +116,29 @@
     "SCE requires C11 or C++11 for alignment specifiers; buffer-pool slot alignment cannot be expressed on this toolchain"
 #endif
 
+/*
+ * A result the caller must read: `warn_unused_result`, on C and C++, GCC
+ * and Clang alike, and nothing on a compiler that does not know it.
+ *
+ * It is how a header states MISRA C:2012 Rule 17.7 in a form a compiler
+ * enforces. `sce/sample.h` states its borrow contract with it, and every
+ * machine the C11 backend generates states with it that a start can be
+ * refused (`<machine>_start_status_t`, docs/adr/0096). Here rather than in
+ * either of them because both include this header, and a generated machine
+ * includes nothing of `sce/sample.h`.
+ *
+ * GCC does not let a `(void)` cast discard such a result. That is the
+ * point: a caller that has nothing to do with a refused start still says
+ * what happens to the machine it did not get.
+ */
+#if defined(__has_attribute)
+#if __has_attribute(warn_unused_result)
+#define SCE_WARN_UNUSED __attribute__((warn_unused_result))
+#else
+#define SCE_WARN_UNUSED
+#endif
+#else
+#define SCE_WARN_UNUSED
+#endif
+
 #endif /* SCE_PORTABILITY_H */

@@ -1852,8 +1852,11 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
 {% endif %}
     /* Constructed with no id given: a tree's state then binds the id it was saved with
        (`_saved_apply`), and a format-1 state, which holds none, keeps the one drawn here. */
-    if ({{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %}) != SCE_START_REFUSAL_NONE) {
-        return sce_saved_refuse(err, "the host does not perform every act this document declares");
+    const sce_start_refusal_t refused = {{ _t }}_init_construct(sm, false, NULL{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %});
+    if (refused != SCE_START_REFUSAL_NONE) {
+        /* The act table, or (docs/adr/0096) a script session that cannot be
+           established, each in the words of the runtime's refusal. */
+        return sce_saved_refuse(err, "%s", sce_start_refusal_text(refused));
     }
     return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);
 }

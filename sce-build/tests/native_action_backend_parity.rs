@@ -210,7 +210,7 @@ fn expectations() -> Vec<Expectation> {
             // pointer a compile error, so `_init_with_actions` refuses the
             // vtable instead — see the C11 channel's
             // `a_vtable_missing_an_operation_is_refused`.
-            host_seam: "bool statechart_native_action_init_with_actions(",
+            host_seam: "statechart_native_action_start_status_t statechart_native_action_init_with_actions(",
             receiver: "sm->actions.",
             payload_guard:
                 "sm->pending_payload.tag == STATECHART_NATIVE_ACTION_PAYLOAD_FRAGMENT_RECEIVED",

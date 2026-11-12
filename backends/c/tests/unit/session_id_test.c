@@ -110,6 +110,7 @@ static void every_refusal_has_its_own_sentence(void) {
         SCE_START_REFUSAL_SESSION_ID_NOT_NMTOKEN,
         SCE_START_REFUSAL_SESSION_LOCATION_TOO_LONG,
         SCE_START_REFUSAL_HOST_ACTIONS,
+        SCE_START_REFUSAL_SCRIPT_SESSION_UNAVAILABLE,
     };
     const size_t count = sizeof(ALL) / sizeof(ALL[0]);
     for (size_t i = 0u; i < count; ++i) {

@@ -7,13 +7,20 @@
    IScriptEngine interface (ScriptEngineProvider in C++/Rust/Go,
    ScriptEngineHost in Kotlin) so that a fixture-level test harness can
    swap a mock engine. The C11 backend is AOT-only and bare-metal-bound:
-   the embedded target runs Lua 5.4 directly with no allocator hook, no
-   futures, no virtual dispatch. So this template emits raw lua C API
-   calls inline, and the abstraction layer that the other backends carry
-   never appears in the generated `_sm.c`.
+   the embedded target runs Lua 5.4 directly with no futures and no virtual
+   dispatch. So this template emits raw lua C API calls inline, and the
+   abstraction layer that the other backends carry never appears in the
+   generated `_sm.c`. The one seam is where the Lua state comes from: a
+   build that names `SCE_LUA_STATE_FACTORY` makes it (with its own
+   allocator, a bounded pool on a device), and one that names none gets
+   `luaL_newstate`'s.
 
    Macros exported:
-     - lua_init_engine()         → create lua_State, openlibs, init datamodel
+     - lua_establish_session()   → docs/adr/0096: create the lua_State, load
+                                   the shared library, bind the system
+                                   variables, or record the step that failed
+     - lua_declare_datamodel()   → the <data>, early-bound <data> and
+                                   top-level <script> of the document
      - lua_destroy_engine()      → close lua_State (idempotent, NULL-safe)
      - lua_assign(loc, expr)     → execute "loc = (transpiled_expr)" chunk
      - lua_eval_guard(cond, var) → set `var` (bool) to truthiness of cond
@@ -77,22 +84,57 @@
         }
 {% endmacro %}
 
-{% macro lua_init_engine() %}
-    /* W3C SCXML 5.10: Open Lua state and register standard libraries. */
+{# docs/adr/0096: the body of `establish_script_session`
+   (state_machine.c.jinja2), which every start calls before it declares the
+   datamodel or enters anything: create the Lua state, load the shared library
+   into it, bind the system variables, in that order (§scxml-D-interpret
+   creates the datamodel before it enters the initial configuration). Answers
+   true with `sm->L` established, or false with `sm->L` NULL and the step that
+   failed, with the engine's words, in `sm->script_session_failure`
+   (`script_session_failed` closes what the steps made). A failure here is the
+   platform's, not the document's: nothing is raised in the machine, whose
+   means of handling an error would run in the session that failed. #}
+{% macro lua_establish_session() %}
+    /* docs/adr/0096, step `create`: the Lua state, from the build's factory
+       when it names one (`SCE_LUA_STATE_FACTORY`, declared above), which is
+       where a device puts its own allocator. `luaL_newstate` answers NULL only
+       when the memory is not there. */
+#ifdef SCE_LUA_STATE_FACTORY
+    sm->L = SCE_LUA_STATE_FACTORY();
+#else
     sm->L = luaL_newstate();
-    if (sm->L != NULL) {
-        luaL_openlibs(sm->L);
-        {% if model.needs_dom_helper %}
-        /* W3C SCXML B.2: install metatables for the host-side XML DOM
-           helper so subsequent `<data>` / `<send><content>` XML payloads
-           can construct DOM userdata via `sce_lua_dom_push_object`.
-           Mirrors cpp `LuaEngine::initializeSession` registerMetatable
-           hook (sce/src/scripting/LuaEngine.cpp:385). The helper is
-           defined in backends/c/runtime/scripting/lua_dom_binding.c (the
-           `sce_c_scripting` tier), which a machine links exactly when it
-           states the `dom` requirement, as this one does. */
-        sce_lua_dom_register_metatable(sm->L);
-        {% endif %}
+#endif
+    if (sm->L == NULL) {
+        sce_script_session_failure_set(&sm->script_session_failure, SCE_SCRIPT_SESSION_STAGE_CREATE,
+                                       "the Lua state could not be allocated");
+        return false;
+    }
+    /* docs/adr/0096, step `library`: the standard libraries, opened in a
+       protected call, so a state that runs out of memory while they open is a
+       failed step and not Lua's panic, which ends the process. */
+    lua_pushcfunction(sm->L, open_standard_libraries);
+    if (lua_pcall(sm->L, 0, 0, 0) != LUA_OK) {
+        return script_session_failed(sm, SCE_SCRIPT_SESSION_STAGE_LIBRARY);
+    }
+    {% if model.needs_dom_helper %}
+    /* W3C SCXML B.2: install metatables for the host-side XML DOM
+       helper so subsequent `<data>` / `<send><content>` XML payloads
+       can construct DOM userdata via `sce_lua_dom_push_object`.
+       Mirrors cpp `LuaEngine::initializeSession` registerMetatable
+       hook (sce/src/scripting/LuaEngine.cpp:385). The helper is
+       defined in backends/c/runtime/scripting/lua_dom_binding.c (the
+       `sce_c_scripting` tier), which a machine links exactly when it
+       states the `dom` requirement, as this one does. */
+    sce_lua_dom_register_metatable(sm->L);
+    {% endif %}
+    {
+        /* docs/adr/0096, step `library`, continued: every chunk below is run
+           and its answer read. They used to run as `(void)luaL_dostring`, so
+           a chunk that did not load left its definitions absent and the
+           machine started anyway, its first `+` or `JSON.stringify` an error
+           with nothing pointing back here. A chunk that fails now refuses the
+           start with the engine's words. */
+        static const char *const library[] = {
         /* W3C SCXML B.2: the ECMAScript operators and library Lua does not
            share — `+` (concatenation or addition depending on the operands),
            `==` (which coerces where Lua's does not), the bitwise family
@@ -114,9 +156,9 @@
            are in the shared file now, and this backend gets them the same
            way it gets `==`.
 
-           Several calls rather than one because ISO C99 guarantees a string
+           Several chunks rather than one because ISO C99 guarantees a string
            literal of only 4095 characters and `-pedantic -Werror` holds the
-           C11 test build to it. Each call carries a complete Lua chunk. */
+           C11 test build to it. Each element carries a complete Lua chunk. */
 {{ ecma_semantics_lua_c }}
         /* W3C SCXML B.2: `JSON.stringify` / `JSON.parse`, from the same
            shared source the C++, Rust, Go and Kotlin Lua engines load —
@@ -130,104 +172,6 @@
            rather than walking the table themselves, so that six backends
            share one encoder instead of six that drift. */
 {{ json_builtins_lua_c }}
-        /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
-           on startup to the system-generated id for the CURRENT SESSION.
-           The value comes from `sm->session_id`, issued once in `_init`
-           from a per-machine monotonic counter; it is not spelled here,
-           because a codegen-time literal names the document and every
-           instance of it would then read the same id.
-
-           This comment used to restate the requirement as "bound and
-           unchanging", which is true of the clause and drops the two parts
-           that constrain the value — that it identifies the session, and
-           that it is an NMTOKEN — and then satisfied only what was left.
-
-           §scxml-5.10, §scxml-B-2-8: "any attempt to change the value of a
-           system variable" fails, whichever way it is made. The assign guard
-           in `state_machine.c.jinja2`'s emit_action refuses an `<assign>` to
-           the whole variable before any Lua runs, and the Lua state refuses
-           everything else — `_sessionid = 'x'` in a `<script>`, a write into
-           `_event` or an `_ioprocessors` entry — because each of the four is
-           bound through `bind_system_variable`, which hands it to the shared
-           `_scxml_bind_system`. The shared semantics above define that
-           function, so they are loaded before this first bind. These were
-           plain globals set by `luaL_dostring` until 2026-11-08, and a
-           document's `<script>` could rebind any of them.
-
-           A bind that fails is the shared Lua missing, not a document's
-           error, and it is said out loud (`bind_system_variable` writes the
-           reason) and raised as error.execution, as a failing script is. */
-        lua_pushstring(sm->L, sm->session_id);
-        if (!bind_system_variable(sm->L, "_sessionid")) {
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                {{ reason("system_variable_unbound", "_sessionid") }});
-        }
-        /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
-           (cpp `LuaEngine.cpp` calls this `sessionName`). Falls back to
-           the document identity when the SCXML omits the attribute, which
-           is W3C 5.10 §3.2.1's "the processor MUST generate a name".
-
-           Pushed as a value, so the name crosses one literal boundary, the
-           C string's, and `escape_c` is the whole of its escaping. It used to
-           be spliced into a Lua chunk as well, which needed `escape_lua`
-           first and a double-quoted Lua string: with single quotes, a name of
-           `it's` produced `_name = 'it's'`. */
-        lua_pushstring(sm->L, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_c }}");
-        if (!bind_system_variable(sm->L, "_name")) {
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                {{ reason("system_variable_unbound", "_name") }});
-        }
-        /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
-           processor the deployment supports, each with a `location` field
-           naming the address that reaches this session through it. Entry
-           names and locations follow cpp `IOProcessorHelper::build`
-           (`sce/include/common/IOProcessorHelper.h`), so a machine reads the
-           same table whichever backend runs it.
-
-           The SCXML processor is filed under both C.1.1's entry name and the
-           `scxml` alias documents index with. Its location is `sm->scxml_location`,
-           the address derived from this session's id in `_init` (or the id a
-           restore carries on under) by `sce_scxml_location` — the one encoder
-           that also spells the origin of every event this session sends
-           (docs/adr/0090), so the address the session publishes and the
-           address its events carry cannot differ.
-
-           W3C SCXML C.2.3: the BasicHTTP entry lands only once the deployment
-           has declared an inbound endpoint. Support for that processor is
-           optional and per-deployment, so a machine with no listener publishes
-           no entry rather than an address nothing answers on.
-
-           The table is built through the Lua C API, every location pushed as a
-           value — the BasicHTTP URI arrives from outside the generated code,
-           and spliced into a chunk a quote in it would end the string literal
-           and be read as Lua — and bound whole, once: §scxml-B-2-8 makes each
-           entry and its `location` part of the read-only variable, so nothing
-           can be added to it after the bind, this machine included. */
-        {
-            static const char *const _scxml_entry[2] = {"http://www.w3.org/TR/scxml/#SCXMLEventProcessor", "scxml"};
-            static const char *const _http_entry[2] = {"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor",
-                                                       "basichttp"};
-            lua_newtable(sm->L);
-            for (int _proc = 0; _proc < 2; _proc++) {
-                lua_newtable(sm->L);
-                lua_pushstring(sm->L, sm->scxml_location);
-                lua_setfield(sm->L, -2, "location");
-                lua_setfield(sm->L, -2, _scxml_entry[_proc]);
-                if (sm->basic_http_access_uri[0] != '\0') {
-                    lua_newtable(sm->L);
-                    lua_pushstring(sm->L, sm->basic_http_access_uri);
-                    lua_setfield(sm->L, -2, "location");
-                    lua_setfield(sm->L, -2, _http_entry[_proc]);
-                }
-            }
-            if (!bind_system_variable(sm->L, "_ioprocessors")) {
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    {{ reason("system_variable_unbound", "_ioprocessors") }});
-            }
-        }
         /* W3C SCXML 5.5 + 3.7: the final-state entry emit evaluates
            `<donedata>` into `_sce_donedata` (string / number / table). A
            compound final serialises it onto its own done.state event's
@@ -235,7 +179,7 @@
            parent, which asks for it through this machine's
            `_done_data_wire` onto done.invoke. No dequeue reads it: an
            event's data rides on the event (`set_current_event`). */
-        (void)luaL_dostring(sm->L, "_sce_donedata = nil");
+            "_sce_donedata = nil",
         /* W3C SCXML 5.5 + 6.3.1 + B-2-9 cross-SM donedata carry: serialise
            the `_sce_donedata` stash (populated by the child's
            `<final><donedata>` entry emit) into the wire string the parent's
@@ -262,17 +206,17 @@
                         equal content produces byte-equal output
                         (committed-tree-sweep §synth-6.2.6 contract).
            Every SM with `needs_script_engine` initialises this helper
-           because `lua_init_engine` runs in each; `lua_donedata_wire_into`
-           calls it on the machine's own L, for a compound final's
-           done.state and for the `_done_data_wire` a parent asks, whose
-           string lands on the `done.invoke.<id>` event's `data[]`. */
-        (void)luaL_dostring(sm->L,
+           because every start of each establishes its session here;
+           `lua_donedata_wire_into` calls it on the machine's own L, for a
+           compound final's done.state and for the `_done_data_wire` a parent
+           asks, whose string lands on the `done.invoke.<id>` event's
+           `data[]`. */
             "_sce_wire_text = {}\n"
             "function _sce_donedata_to_wire(v)\n"
             "  if v == nil then return '' end\n"
             "  if getmetatable(v) == _sce_wire_text then return v[1] end\n"
             "  return JSON.stringify(v)\n"
-            "end");
+            "end",
         {% if model.needs_donedata_helper or model.needs_namelist_helper %}
         /* W3C SCXML 5.7 + C.1 (test343, test553): donedata `<param>` and
            `<send namelist>` evaluation both need to detect ECMAScript
@@ -292,7 +236,6 @@
            only the keys are read. Emitted only for fixtures that actually
            use donedata or namelist (analyzer-pinned helper flags), so
            non-using fixtures keep their lua init footprint unchanged. */
-        (void)luaL_dostring(sm->L,
             "_scxml_declared = {"
             {%- set ns = namespace(first=true) -%}
             {%- for var in model.variables -%}
@@ -309,8 +252,120 @@
             {%- endfor -%}
             {%- endif -%}
             {%- endfor -%}
-            "}");
+            "}",
         {% endif %}
+        };
+        for (size_t _chunk = 0u; _chunk < sizeof(library) / sizeof(library[0]); ++_chunk) {
+            if (luaL_dostring(sm->L, library[_chunk]) != 0) {
+                return script_session_failed(sm, SCE_SCRIPT_SESSION_STAGE_LIBRARY);
+            }
+        }
+    }
+        /* W3C SCXML 5.10: `_sessionid` is a read-only system variable bound
+           on startup to the system-generated id for the CURRENT SESSION.
+           The value comes from `sm->session_id`, issued once in `_init`
+           from a per-machine monotonic counter; it is not spelled here,
+           because a codegen-time literal names the document and every
+           instance of it would then read the same id.
+
+           This comment used to restate the requirement as "bound and
+           unchanging", which is true of the clause and drops the two parts
+           that constrain the value — that it identifies the session, and
+           that it is an NMTOKEN — and then satisfied only what was left.
+
+           §scxml-5.10, §scxml-B-2-8: "any attempt to change the value of a
+           system variable" fails, whichever way it is made. The assign guard
+           in `state_machine.c.jinja2`'s emit_action refuses an `<assign>` to
+           the whole variable before any Lua runs, and the Lua state refuses
+           everything else — `_sessionid = 'x'` in a `<script>`, a write into
+           `_event` or an `_ioprocessors` entry — because each of the four is
+           bound through `bind_system_variable`, which hands it to the shared
+           `_scxml_bind_system`. The shared semantics above define that
+           function, so they are loaded before this first bind. These were
+           plain globals set by `luaL_dostring` until 2026-11-08, and a
+           document's `<script>` could rebind any of them.
+
+           docs/adr/0096, step `system-variables`: a bind that fails is the
+           shared Lua missing, not a document's error. It used to be printed
+           and raised as error.execution while the start went on; it refuses
+           the start now, with the binder's words, since the document's
+           handling of an error would run in this very session. */
+    lua_pushstring(sm->L, sm->session_id);
+    if (!bind_system_variable(sm->L, "_sessionid")) {
+        return script_session_failed(sm, SCE_SCRIPT_SESSION_STAGE_SYSTEM_VARIABLES);
+    }
+        /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
+           (cpp `LuaEngine.cpp` calls this `sessionName`). Falls back to
+           the document identity when the SCXML omits the attribute, which
+           is W3C 5.10 §3.2.1's "the processor MUST generate a name".
+
+           Pushed as a value, so the name crosses one literal boundary, the
+           C string's, and `escape_c` is the whole of its escaping. It used to
+           be spliced into a Lua chunk as well, which needed `escape_lua`
+           first and a double-quoted Lua string: with single quotes, a name of
+           `it's` produced `_name = 'it's'`. */
+    lua_pushstring(sm->L, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_c }}");
+    if (!bind_system_variable(sm->L, "_name")) {
+        return script_session_failed(sm, SCE_SCRIPT_SESSION_STAGE_SYSTEM_VARIABLES);
+    }
+        /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
+           processor the deployment supports, each with a `location` field
+           naming the address that reaches this session through it. Entry
+           names and locations follow cpp `IOProcessorHelper::build`
+           (`sce/include/common/IOProcessorHelper.h`), so a machine reads the
+           same table whichever backend runs it.
+
+           The SCXML processor is filed under both C.1.1's entry name and the
+           `scxml` alias documents index with. Its location is `sm->scxml_location`,
+           the address derived from this session's id in `_init` (or the id a
+           restore carries on under) by `sce_scxml_location` — the one encoder
+           that also spells the origin of every event this session sends
+           (docs/adr/0090), so the address the session publishes and the
+           address its events carry cannot differ.
+
+           W3C SCXML C.2.3: the BasicHTTP entry lands only once the deployment
+           has declared an inbound endpoint. Support for that processor is
+           optional and per-deployment, so a machine with no listener publishes
+           no entry rather than an address nothing answers on.
+
+           The table is built through the Lua C API, every location pushed as a
+           value — the BasicHTTP URI arrives from outside the generated code,
+           and spliced into a chunk a quote in it would end the string literal
+           and be read as Lua — and bound whole, once: §scxml-B-2-8 makes each
+           entry and its `location` part of the read-only variable, so nothing
+           can be added to it after the bind, this machine included. */
+    {
+        static const char *const _scxml_entry[2] = {"http://www.w3.org/TR/scxml/#SCXMLEventProcessor", "scxml"};
+        static const char *const _http_entry[2] = {"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor",
+                                                   "basichttp"};
+        lua_newtable(sm->L);
+        for (int _proc = 0; _proc < 2; _proc++) {
+            lua_newtable(sm->L);
+            lua_pushstring(sm->L, sm->scxml_location);
+            lua_setfield(sm->L, -2, "location");
+            lua_setfield(sm->L, -2, _scxml_entry[_proc]);
+            if (sm->basic_http_access_uri[0] != '\0') {
+                lua_newtable(sm->L);
+                lua_pushstring(sm->L, sm->basic_http_access_uri);
+                lua_setfield(sm->L, -2, "location");
+                lua_setfield(sm->L, -2, _http_entry[_proc]);
+            }
+        }
+        if (!bind_system_variable(sm->L, "_ioprocessors")) {
+            return script_session_failed(sm, SCE_SCRIPT_SESSION_STAGE_SYSTEM_VARIABLES);
+        }
+    }
+    return true;
+{% endmacro %}
+
+{# The document's datamodel, declared in the session `lua_establish_session`
+   established: its top-level <data> (W3C SCXML 5.2, 5.3), the state-local
+   <data> of an early-bound document, and its top-level <script> (W3C SCXML
+   5.8), in that order. A failure here is the document's, and raises
+   error.execution as a failing expression anywhere does. A child started by
+   its parent applies the `<param>` and `namelist` values it was handed after
+   this, once its initial configuration is entered (`invoke_seed_child`). #}
+{% macro lua_declare_datamodel() %}
         {# W3C SCXML 5.2: the document's top-level <datamodel>, one data object
            per <data> it wraps, each a global of this session's engine. #}
         {% for var in model.variables %}
@@ -440,7 +495,6 @@
         }
         {% endfor %}
         {% endif %}
-    }
 {% endmacro %}
 
 {# W3C SCXML 5.3.3 late binding: state-local <data> variables initialise on
@@ -725,10 +779,10 @@
    triggers the param-error `error.execution` raise upstream. C11 mirrors
    that check inside the lua chunk: extract the base identifier of the
    chosen expression (everything up to the first `.` / `[` / operator),
-   look it up in `_scxml_declared` (set up in `lua_init_engine` to mirror
+   look it up in `_scxml_declared` (set up in `lua_establish_session` to mirror
    cpp's `declaredVars`) and `_G[base]` (covers Lua standard globals like
    `math` / `string`, and the system variables, which `_G`'s metatable
-   reads from outside the table — see `lua_init_engine`). Missing on both paths is undeclared → error → upstream
+   reads from outside the table — see `lua_establish_session`). Missing on both paths is undeclared → error → upstream
    pcall catches it and the macro raises error.execution. The base
    extraction uses lua's pattern `^[%a_][%w_]*` so multi-segment
    expressions like `Var1.foo` only check the first segment, exactly
