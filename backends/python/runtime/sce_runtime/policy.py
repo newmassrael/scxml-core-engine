@@ -50,19 +50,31 @@ class StatePolicy(ABC, Generic[S, E]):
     # still reach the script engine session.
     _engine_ref: Optional[Any] = None
 
-    # §scxml-6.4.1 — staging dict for `<invoke>` param/namelist
-    # values that must seed the child's datamodel before its first
-    # macrostep. The parent's `execute_pending_invokes` template
-    # assigns a fresh dict on the child policy (so the class-level
-    # default stays `None` and instances never share state); the
-    # child's `initialize_datamodel` applies the overlay as the
-    # final step so the staged values win over any default-init for
-    # the same `<data>` id. Mirrors the Rust child policy's
-    # `set_param_in_script_engine` ordering — there the pre-init runs
-    # via `ensure_script_engine` BEFORE the data-init macros, here
-    # the overlay runs AFTER because Python's Engine constructs the
-    # session up front and data init is part of `initialize_datamodel`.
-    _pre_init_vars: Optional[Dict[str, Any]] = None
+    # §scxml-6.4.1 — the values the `<invoke>` that starts this session
+    # handed it: every name its `namelist` and `<param>`s evaluated, set
+    # by the parent through `hand_values` before the start. The class
+    # default stays `None`, so instances never share a dict.
+    _handed_values: Optional[Dict[str, Any]] = None
+
+    def hand_values(self, values: Dict[str, Any]) -> None:
+        """§scxml-6.4 — the values an `<invoke>` hands the session this
+        policy starts, by name, before the start.
+
+        The parent hands every name it evaluated and does not ask which
+        ones this document declares: what the session takes is its own
+        to decide. Its start (`initialize_datamodel`) declares a
+        top-level `<data>` whose id a value names with that value, in
+        place of the `<data>`'s own, and takes no other name.
+        """
+        self._handed_values = dict(values)
+
+    def _take_handed_values(self) -> Dict[str, Any]:
+        """The values `hand_values` was given, taken once: the start
+        that reads them consumes them, so a later start of the same
+        policy declares its `<data>` with their own values."""
+        handed = self._handed_values or {}
+        self._handed_values = None
+        return handed
 
     @abstractmethod
     def initial_state(self) -> S:
@@ -251,7 +263,14 @@ class StatePolicy(ABC, Generic[S, E]):
         datamodels. Called exactly once by `Engine.initialize` before any
         onentry action fires. Late-binding documents init state-local data
         on first entry of each owning state via `init_state_datamodel`
-        instead."""
+        instead.
+
+        §scxml-6.4: the order is the top-level `<data>`, each one whose id
+        a handed value names (`hand_values`) declared with that value and
+        its own `expr`, `src` or content not evaluated; then the
+        early-bound state-local `<data>`, which never takes a handed
+        value; then the top-level `<script>`. A handed value naming no
+        top-level `<data>` is not added."""
 
     def init_state_datamodel(self, state: S, engine: "Engine[S, E]") -> None:
         """W3C SCXML 5.3 — state-local `<datamodel>` initialisation. Under

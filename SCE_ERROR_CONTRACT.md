@@ -1864,11 +1864,12 @@ through the injected `IScriptEngine` and releases a session an earlier run
 left readable first; `Engine.initialize`, `initialize_as_root` and `enter_at`
 call it before the run is marked running or its inbox opened, and the
 engine's construction makes no session. The generated `initialize_datamodel`
-(`tools/codegen/templates/python/scriptengine_helpers.py.jinja2`) then applies
-the `<data>`, the parameters the parent handed it and the top-level
-`<script>`, in that order. Nothing after the start makes a session: the Lua
-engine's `SessionNotFoundError` is not a `ScriptError`, so content that reaches
-a session that is not there propagates rather than being taken as
+(`tools/codegen/templates/python/scriptengine_helpers.py.jinja2`) then declares
+the top-level `<data>`, each one the parent handed a value for with that value
+in place of its own (docs/adr/0098), the early-bound state `<data>` and the
+top-level `<script>`, in that order. Nothing after the start makes a session:
+the Lua engine's `SessionNotFoundError` is not a `ScriptError`, so content that
+reaches a session that is not there propagates rather than being taken as
 `error.execution`. The child's start is `ScxmlInvoke.start`, called from
 `execute_pending_invokes` in
 `tools/codegen/templates/python/invoke_methods.py.jinja2`, which ends a

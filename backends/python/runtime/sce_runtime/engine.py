@@ -593,9 +593,10 @@ class Engine(Generic[S, E]):
             lambda state_id: self._policy.is_state_active(state_id, self),
         )
         # §scxml-5.3 early binding: datamodel initialisation runs before
-        # any onentry action fires: the `<data>`, the parameters a parent
-        # handed this session, then the top-level `<script>`, in the session
-        # established above.
+        # any onentry action fires: the top-level `<data>`, each one a parent
+        # handed a value for declared with that value in place of its own
+        # (`StatePolicy.hand_values`), the early-bound state `<data>`, then
+        # the top-level `<script>`, in the session established above.
         self._policy.initialize_datamodel(self)
         # §scxml-D-interpret: enter the document's initial transition, whose
         # source is the `<scxml>` element, through the entry procedure every

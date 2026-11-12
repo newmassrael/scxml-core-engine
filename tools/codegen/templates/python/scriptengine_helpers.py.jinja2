@@ -829,40 +829,69 @@
 {% for state_id, st in model.states | dictsort %}
 {% if st.datamodel and model.binding != 'late' and not static_fields %}{% set ns_dm.any = true %}{% endif %}
 {% endfor %}
+{# §scxml-6.4: the values the invoke that started this session handed it are
+   taken by this start whether or not it declares a `<data>` to take one in,
+   so a later start of the same policy is handed nothing it was not given.
+   `_handed` is bound only where the top-level loop below reads it. #}
+{% if ns_dm.any and model.variables %}
+        # §scxml-6.4 — the values the `<invoke>` that started this session
+        # handed it, by name. Which of them this session takes is decided
+        # here, by the ids of its own top-level `<data>`: the parent hands
+        # every name it evaluated.
+        _handed = self._take_handed_values()
+{% else %}
+        # §scxml-6.4 — no top-level `<data>` of this document is declared
+        # in its session, so a value an `<invoke>` handed it names none and
+        # is not added. Taking the values leaves none for a later start.
+        self._take_handed_values()
+{% endif %}
 {% if ns_dm.any %}
         # W3C SCXML 5.3 — declare every static `<data>` against the
         # script-engine session. Root-level data always binds at
         # startup; state-local data joins it here under early binding
         # (the default). Late binding initialises state-local data on
         # first state entry via `init_state_datamodel`.
+        #
+        # §scxml-6.4 — a top-level `<data>` whose id a handed value names
+        # is declared with that value, in place of its own: its `expr`,
+        # `src` or content is not evaluated, so it raises nothing and has
+        # no effect. A value the session cannot hold is that `<data>`'s
+        # failure (§scxml-5.3), `error.execution`, as its own value's
+        # would be. A handed value that names no top-level `<data>` is
+        # read by no branch below, so it is not added.
 {% for var in model.variables %}
+        if {{ var.id | py_string_literal }} in _handed:
+            self._declare_data(
+                engine, {{ var.id | py_string_literal }}, _handed[{{ var.id | py_string_literal }}]
+            )
+        else:
 {% if var.expr %}
 {% if (var.expr | trim) is startingwith('function') %}
-        # W3C SCXML B.2: function-as-expression. ScriptValue cannot
-        # round-trip a Lua function, so install it directly via
-        # `execute_script` (`var = function(...) ... end`) — mirrors
-        # `tools/codegen/templates/rust/datamodel_macros.rs.jinja2:45`.
-        try:
-            engine._script_engine.execute_script(
-                self._session_id,
-                {{ (var.id ~ ' = ' ~ var.expr) | to_lua_script | py_string_literal }},
-            )
-        except _ScriptError:
-            self._raise_error_execution(
-                engine,
-                "<data id='{{ var.id }}'> function expression failed",
-            )
+            # W3C SCXML B.2: function-as-expression. ScriptValue cannot
+            # round-trip a Lua function, so install it directly via
+            # `execute_script` (`var = function(...) ... end`) — mirrors
+            # `tools/codegen/templates/rust/datamodel_macros.rs.jinja2:45`.
+            try:
+                engine._script_engine.execute_script(
+                    self._session_id,
+                    {{ (var.id ~ ' = ' ~ var.expr) | to_lua_script | py_string_literal }},
+                )
+            except _ScriptError:
+                self._raise_error_execution(
+                    engine,
+                    "<data id='{{ var.id }}'> function expression failed",
+                )
 {% else %}
-        try:
-            _init_val = engine._script_engine.evaluate_expression(
-                self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
-            )
-        except _ScriptError:
-            _init_val = _ScriptValue.undefined()
-            self._raise_error_execution(
-                engine, "<data id='{{ var.id }}'> expr failed to evaluate"
-            )
-        self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
+            try:
+                _init_val = engine._script_engine.evaluate_expression(
+                    self._session_id, {{ var.expr | to_lua_expr | py_string_literal }}
+                )
+            except _ScriptError:
+                _init_val = _ScriptValue.undefined()
+                self._raise_error_execution(
+                    engine, "<data id='{{ var.id }}'> expr failed to evaluate"
+                )
+            self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% endif %}
 {% elif var.src %}
 {# W3C SCXML 5.3.1: `<data src="file:...">` content is inlined at
@@ -872,21 +901,21 @@
    picks up the same Lua-eval → JSON.parse → whitespace-string
    fallback chain inline `<data>` content uses (test446, test558). #}
 {% set _src_content = var.src | read_data_src(model.scxml_base_path) %}
-        self._init_data_with_content(
-            engine,
-            {{ var.id | py_string_literal }},
-            {{ _src_content | to_lua_data_content | py_string_literal }},
-            {{ _src_content | normalize_ws | py_string_literal }},
-        )
+            self._init_data_with_content(
+                engine,
+                {{ var.id | py_string_literal }},
+                {{ _src_content | to_lua_data_content | py_string_literal }},
+                {{ _src_content | normalize_ws | py_string_literal }},
+            )
 {% elif var.content %}
-        self._init_data_with_content(
-            engine,
-            {{ var.id | py_string_literal }},
-            {{ var.content | to_lua_data_content | py_string_literal }},
-            {{ var.content | normalize_ws | py_string_literal }},
-        )
+            self._init_data_with_content(
+                engine,
+                {{ var.id | py_string_literal }},
+                {{ var.content | to_lua_data_content | py_string_literal }},
+                {{ var.content | normalize_ws | py_string_literal }},
+            )
 {% else %}
-        self._declare_data(engine, {{ var.id | py_string_literal }}, _ScriptValue.undefined())
+            self._declare_data(engine, {{ var.id | py_string_literal }}, _ScriptValue.undefined())
 {% endif %}
 {% endfor %}
 {% if model.binding != 'late' %}
@@ -925,32 +954,11 @@
 {% endfor %}
 {% endif %}
 {% endif %}
-        # W3C SCXML 6.4.1 — invoke `<param>` / `namelist` overlay. The
-        # parent's `execute_pending_invokes` stages name→ScriptValue
-        # entries on `_pre_init_vars` between Engine construction and
-        # `_invoke.start()`, and the child's own start applies them here,
-        # in the session that start established (docs/adr/0096). After
-        # the `<data>`, so a staged value overrides the `<data>` default
-        # for the same id, and before the top-level `<script>`, which
-        # reads what the parent handed it: the order Appendix D's
-        # `interpret` gives, and the one the Rust, C++, Go and Kotlin
-        # children apply.
-        if self._pre_init_vars:
-            for _name, _val in self._pre_init_vars.items():
-                # The parent names the variable; a name the child's
-                # engine refuses (a system variable, §scxml-5.10) is
-                # `error.execution` in the child, not an exception.
-                try:
-                    engine._script_engine.set_variable(self._session_id, _name, _val)
-                except _ScriptError:
-                    self._raise_error_execution(
-                        engine, f"invoke <param name='{_name}'> could not be stored"
-                    )
 {% if model.global_scripts %}
         # W3C SCXML 5.8 — top-level `<script>` blocks run once at
         # engine startup, after the document's static datamodel is
-        # declared and the invoke params applied, but before any onentry
-        # fires. The script body is
+        # declared, with the values an `<invoke>` handed it in place
+        # (§scxml-6.4), but before any onentry fires. The script body is
         # already Lua text (rewritten at codegen time); failures here
         # raise `error.execution` on the internal queue but do NOT
         # abort initialisation (the engine still enters the initial

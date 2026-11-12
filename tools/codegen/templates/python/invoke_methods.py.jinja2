@@ -147,15 +147,6 @@
                         "<invoke srcexpr{% if inv.srcexpr %}='{{ inv.srcexpr }}'{% endif %}> evaluated to a document it did not declare",
                     )
                     continue
-{% if inv.namelist or inv.params %}
-                # §scxml-6.4.3: the names the CHOSEN candidate's top-level
-                # `<data>` declares — the only ones an argument may add to it.
-                _child_vars = {
-{% for candidate in inv.candidates %}
-                    {{ candidate.stem | py_string_literal }}: frozenset([{% for cv in candidate.child_datamodel_vars | default([], true) %}{{ cv | py_string_literal }}{{ ", " if not loop.last }}{% endfor %}]),
-{% endfor %}
-                }[__sce_selected_{{ inv.field_suffix | to_python_const }}]
-{% endif %}
 {% endif %}
 {% if inv.namelist %}
                 # W3C SCXML 6.4: "if the evaluation of its arguments produces
@@ -315,36 +306,17 @@
 {% endif %}
 {% endfor %}
 {% elif inv.namelist or inv.params %}
-                # W3C SCXML 6.4.1: Stage namelist + `<param>` values for
-                # the child's datamodel. The dict is applied by the
-                # child's `initialize_datamodel` as a final overlay so
-                # any `<data>` default for the same id is overwritten —
-                # matches the Rust child policy's
-                # `set_param_in_script_engine` semantics
-                # (parent-eval → child-side `set_variable`).
-                _pre_init: Dict[str, _ScriptValue] = {}
+                # §scxml-6.4.1: every value this `<invoke>`'s `namelist` and
+                # `<param>`s name, evaluated here, in this session, and handed
+                # to the child whole. The child's start takes the ones its
+                # top-level `<data>` declares, each in place of that `<data>`'s
+                # own value, and adds no other (§scxml-6.4); which names those
+                # are is the child's own to know, so nothing here filters them.
+                _handed: Dict[str, _ScriptValue] = {}
 {% if inv.namelist %}
-{% if inv.candidates or inv.child_datamodel_vars is defined %}
-{% if not inv.candidates %}
-                # W3C SCXML 6.4.3: Only seed names that the child
-                # actually declares in its `<datamodel>`.
-                _child_vars = { {% for cv in inv.child_datamodel_vars %}{{ cv | py_string_literal }}{{ ", " if not loop.last }}{% endfor %} }
-{% endif %}
-{% for vname in inv.namelist | split %}
-                if {{ vname | py_string_literal }} in _child_vars:
-                    try:
-                        _pre_init[{{ vname | py_string_literal }}] = (
-                            engine._script_engine.evaluate_expression(
-                                self._session_id, {{ vname | py_string_literal }}
-                            )
-                        )
-                    except _ScriptError:
-                        pass
-{% endfor %}
-{% else %}
 {% for vname in inv.namelist | split %}
                 try:
-                    _pre_init[{{ vname | py_string_literal }}] = (
+                    _handed[{{ vname | py_string_literal }}] = (
                         engine._script_engine.evaluate_expression(
                             self._session_id, {{ vname | py_string_literal }}
                         )
@@ -353,17 +325,15 @@
                     pass
 {% endfor %}
 {% endif %}
-{% endif %}
 {% if inv.params %}
 {% for param in inv.params %}
 {# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
    location expression, read as its value; both empty is `location=""`, a
    location that names nothing. The <param> is an argument of this <invoke>
    whether or not the child declares `name`, so it is evaluated — and its
-   failure raised — either way; §scxml-6.4.3 decides only what the child
-   keeps. #}
+   failure raised — either way, and handed; §scxml-6.4.3 decides only what
+   the child keeps, and the child decides it. #}
 {% set param_source = param.expr or param.location %}
-{% set child_keeps = inv.child_datamodel_vars is defined and param.name in inv.child_datamodel_vars %}
 {% if not param_source %}
                 self._raise_error_execution(
                     engine,
@@ -371,23 +341,12 @@
                 )
 {% else %}
                 try:
-                    _param_value = engine._script_engine.evaluate_expression(
-                        self._session_id,
-                        {{ param_source | to_lua_expr | py_string_literal }},
+                    _handed[{{ param.name | py_string_literal }}] = (
+                        engine._script_engine.evaluate_expression(
+                            self._session_id,
+                            {{ param_source | to_lua_expr | py_string_literal }},
+                        )
                     )
-{% if inv.candidates %}
-                    # §scxml-6.4.3: kept only under a name the chosen
-                    # candidate declares.
-                    if {{ param.name | py_string_literal }} in _child_vars:
-                        _pre_init[{{ param.name | py_string_literal }}] = _param_value
-{% elif child_keeps %}
-                    _pre_init[{{ param.name | py_string_literal }}] = _param_value
-{% else %}
-                    # §scxml-6.4.3: {{ param.name }} matches no top-level `<data>`
-                    # of the child, so the Processor MUST NOT add it to the
-                    # invoked session's data model.
-                    del _param_value
-{% endif %}
                 except _ScriptError:
                     # §scxml-5.7.1: BOTH halves — `error.execution` on the
                     # internal queue AND the name and value ignored. Only the
@@ -409,7 +368,7 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-                _child_policy._pre_init_vars = _pre_init
+                _child_policy.hand_values(_handed)
 {% endif %}
                 # W3C SCXML 6.4: the link a child's `#_parent` sends travel,
                 # installed before the child starts, since its first
