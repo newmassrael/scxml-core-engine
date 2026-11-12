@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  What a child takes of the values an <invoke> hands it (§scxml-6.4, docs/adr/0098): a value whose
+  name is the id of a TOP-LEVEL <data> of the child is that <data>'s initial value in place of its
+  own, so the <data>'s own expression is never evaluated; a state's <data> never takes one, early-
+  or late-bound; a name no top-level <data> declares is not added. The child's top-level <script>
+  and its initial <onentry> already read the values it took.
+
+  The parent hands every name it evaluated, the ones the child takes and the ones it does not, and
+  the child alone decides. Each child judges what it saw and reports one event to its parent; the
+  parent lands each failure in a <final> of its own. The Swift tests also start each child alone,
+  handing it the values by `acceptSeeds`, and read its variables.
+
+  inv_early  (early binding)
+    failing   its own expression raises error.execution (W3C 277's `undefined.invalidProperty`);
+              handed, it raises nothing and holds 'handed'.
+    counted   its own expression increments `effects`; handed, `effects` stays 0.
+    obj       handed an object, which arrives whole: `objWhole` is what the top-level script
+              found of its shape.
+    kept      a state's <data> whose id the parent hands too: it keeps 'own'.
+    stray     a name no <data> of the child declares: it stays undefined.
+    The top-level script copies `failing` into `seenByScript`, and the initial <onentry> into
+    `seenByEntry`. The <onentry> then raises `check`, which is taken after every error.execution
+    the declarations raised, since those were raised first, so `errors` counts all of them.
+
+  inv_late   (late binding)
+    handed    a top-level <data>, declared at the start, which takes the value.
+    kept      a state's <data>, bound on the state's first entry, which keeps 'own'.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="early">
+  <datamodel>
+    <data id="box" expr="({name: 'box', items: ['a', 'b']})"/>
+  </datamodel>
+
+  <state id="early">
+    <invoke type="scxml" id="inv_early">
+      <param name="failing" expr="'handed'"/>
+      <param name="counted" expr="7"/>
+      <param name="obj" expr="box"/>
+      <param name="kept" expr="'handed'"/>
+      <param name="stray" expr="'handed'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="running">
+          <datamodel>
+            <data id="errors" expr="0"/>
+            <data id="effects" expr="0"/>
+            <data id="failing" expr="undefined.invalidProperty"/>
+            <data id="counted" expr="++effects"/>
+            <data id="obj" expr="null"/>
+            <data id="objWhole" expr="false"/>
+            <data id="seenByScript" expr="'unset'"/>
+            <data id="seenByEntry" expr="'unset'"/>
+          </datamodel>
+          <script>
+            seenByScript = failing;
+            objWhole = typeof obj === 'object' &amp;&amp; obj !== null &amp;&amp; obj.name === 'box' &amp;&amp; obj.items.length === 2 &amp;&amp; obj.items[0] === 'a' &amp;&amp; obj.items[1] === 'b';
+          </script>
+          <state id="running">
+            <datamodel>
+              <data id="kept" expr="'own'"/>
+            </datamodel>
+            <onentry>
+              <assign location="seenByEntry" expr="failing"/>
+              <raise event="check"/>
+            </onentry>
+            <transition event="error.execution">
+              <assign location="errors" expr="errors + 1"/>
+            </transition>
+            <transition event="check" cond="errors !== 0" target="reported">
+              <send target="#_parent" event="seed.erred"/>
+            </transition>
+            <transition event="check" cond="effects !== 0" target="reported">
+              <send target="#_parent" event="seed.evaluated"/>
+            </transition>
+            <transition event="check" cond="kept !== 'own'" target="reported">
+              <send target="#_parent" event="seed.local"/>
+            </transition>
+            <transition event="check" cond="typeof stray !== 'undefined'" target="reported">
+              <send target="#_parent" event="seed.leaked"/>
+            </transition>
+            <transition event="check" cond="objWhole !== true" target="reported">
+              <send target="#_parent" event="seed.collapsed"/>
+            </transition>
+            <transition event="check" cond="failing !== 'handed' || counted !== 7" target="reported">
+              <send target="#_parent" event="seed.missing"/>
+            </transition>
+            <transition event="check" cond="seenByScript !== 'handed' || seenByEntry !== 'handed'" target="reported">
+              <send target="#_parent" event="seed.late"/>
+            </transition>
+            <transition event="check" target="reported">
+              <send target="#_parent" event="seed.ok"/>
+            </transition>
+          </state>
+          <state id="reported"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="seed.ok" target="late"/>
+    <transition event="seed.erred" target="failOwnValueRaised"/>
+    <transition event="seed.evaluated" target="failOwnValueEvaluated"/>
+    <transition event="seed.local" target="failStateDataTookTheValue"/>
+    <transition event="seed.leaked" target="failUnmatchedNameAdded"/>
+    <transition event="seed.collapsed" target="failObjectNotWhole"/>
+    <transition event="seed.missing" target="failHandedValueLost"/>
+    <transition event="seed.late" target="failStartReadTheOwnValue"/>
+    <transition event="error.execution" target="failParentRaised"/>
+  </state>
+
+  <state id="late">
+    <invoke type="scxml" id="inv_late">
+      <param name="handed" expr="'handed'"/>
+      <param name="kept" expr="'handed'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" binding="late" initial="running">
+          <datamodel>
+            <data id="handed" expr="'unset'"/>
+          </datamodel>
+          <state id="running">
+            <datamodel>
+              <data id="kept" expr="'own'"/>
+            </datamodel>
+            <onentry>
+              <raise event="check"/>
+            </onentry>
+            <transition event="check" cond="kept !== 'own'" target="reported">
+              <send target="#_parent" event="seed.local"/>
+            </transition>
+            <transition event="check" cond="handed !== 'handed'" target="reported">
+              <send target="#_parent" event="seed.missing"/>
+            </transition>
+            <transition event="check" target="reported">
+              <send target="#_parent" event="seed.ok"/>
+            </transition>
+          </state>
+          <state id="reported"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="seed.ok" target="pass"/>
+    <transition event="seed.local" target="failLateStateDataTookTheValue"/>
+    <transition event="seed.missing" target="failLateHandedValueLost"/>
+    <transition event="error.execution" target="failParentRaised"/>
+  </state>
+
+  <final id="pass"/>
+  <final id="failOwnValueRaised"/>
+  <final id="failOwnValueEvaluated"/>
+  <final id="failStateDataTookTheValue"/>
+  <final id="failUnmatchedNameAdded"/>
+  <final id="failObjectNotWhole"/>
+  <final id="failHandedValueLost"/>
+  <final id="failStartReadTheOwnValue"/>
+  <final id="failParentRaised"/>
+  <final id="failLateStateDataTookTheValue"/>
+  <final id="failLateHandedValueLost"/>
+</scxml>

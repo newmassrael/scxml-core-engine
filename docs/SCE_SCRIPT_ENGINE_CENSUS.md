@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 279
+engine-documents 280
 native-prefix-documents 2
-datamodel-variable-init 505
+datamodel-variable-init 506
 transition-guard 258
 assign-action 437
-child-invoke-needs-script-engine 59
+child-invoke-needs-script-engine 61
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 102
@@ -129,6 +129,18 @@ means editing this table in the same commit that causes it. A row whose
 population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
+
+⚠ **2026-11-12, deliberately:** one document lands with this table, and it
+exists to need an engine.
+- `sce-build/tests/fixtures/swift_ecmascript/ecma_invoke_seeds.scxml` is the
+  Swift backend's carrier of what a child takes of the values an `<invoke>`
+  hands it (docs/adr/0098): two inline children, each of which declares
+  `<data>` its engine initializes, so the child's engine is what it tests.
+
+It raises `engine-documents` by one, `datamodel-variable-init` by one (the
+parent's `box`) and `child-invoke-needs-script-engine` by two (`inv_early`,
+`inv_late`), as the analyzer counts the parent: an inline child's own causes
+are not the parent's.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.
