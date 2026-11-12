@@ -43,16 +43,15 @@ public enum ClosedEnumFormExtras {
     public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:closed_enum_form_extras:1\",\"x-sce-source-hash\":\"75f53f6deefa1a9e19646e018ad72cacc30c4c7ca7f7f96f21be9f17f58cfdae\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"slots\":{\"type\":\"array\",\"items\":{\"anyOf\":[{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},{\"type\":\"null\"}]},\"maxItems\":3},\"least\":{\"type\":\"string\",\"pattern\":\"^(-([1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-8])|0|[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[0-1][0-9]{17}|92[0-1][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[0-1][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7])$\"},\"flags\":{\"type\":\"array\",\"items\":{\"type\":\"boolean\"},\"minItems\":1,\"maxItems\":2},\"spare\":{\"anyOf\":[{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"maxItems\":2},{\"type\":\"null\"}]},\"grid\":{\"type\":\"array\",\"items\":{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\"maxItems\":2},\"maxItems\":2}},\"required\":[\"slots\",\"least\",\"flags\",\"spare\",\"grid\"],\"additionalProperties\":false}"
 }
 
-/// The payload of the event: a struct of the schema's fields in the schema's order,
-/// each at its zero until written. A value, so a host that reads one holds a copy.
-public struct ClosedEnumFormExtrasPayload: Equatable, Sendable, SceDefault {
-    public var slots: [UInt16?] = []
-    public var least: Int64 = 0
-    public var flags: [Bool] = []
-    public var spare: [UInt8]? = nil
-    public var grid: [[UInt8]] = []
-
-    public init() {}
+/// The payload of the event: a struct of the schema's fields in the schema's order, built
+/// whole by its initialiser, every field written: no type has a value nobody wrote
+/// (docs/adr/0098, section 4). A value, so a host that reads one holds a copy.
+public struct ClosedEnumFormExtrasPayload: Equatable, Sendable {
+    public var slots: [UInt16?]
+    public var least: Int64
+    public var flags: [Bool]
+    public var spare: [UInt8]?
+    public var grid: [[UInt8]]
 
     public init(slots: [UInt16?], least: Int64, flags: [Bool], spare: [UInt8]?, grid: [[UInt8]]) {
         self.slots = slots
