@@ -2290,6 +2290,10 @@ add_executable(integration_tests
     integration/SendParamPayloadAotTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataTest.cpp
     integration/InvokeParamSeedsDeclaredChildDataAotTest.cpp
+    # docs/adr/0098: a handed value is declared in place of the child's
+    # top-level <data>, whose own value is then never evaluated.
+    integration/AChildTakesAHandedValueInPlaceOfItsDataTest.cpp
+    integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp
     integration/InvokeParamErrorStartsTheChildTest.cpp
     integration/InvokeParamErrorStartsTheChildAotTest.cpp
     integration/EmptyFinalizeUpdatesTheLocationTest.cpp
@@ -2991,6 +2995,15 @@ sce_generate_static_integration_test(send_param_payload ${STATIC_INTEGRATION_OUT
 # so the four phases here are what separate "the parent evaluated this" from
 # "the child evaluated this text".
 sce_generate_static_integration_test(invoke_param_seeds_declared_child_data ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# §scxml-6.4 (docs/adr/0098): the value a child is handed is the initial value
+# of its top-level <data> of that name, in place of its own, whose expr is then
+# never evaluated; a state's <data> and an undeclared name take none. The
+# document sits beside its two C++ drivers rather than under
+# `integration_resources/`: the canonical fixture of that decision lands there
+# last, with the runners of every channel, once each backend has taken its step.
+sce_generate_static_integration_test(a_cpp_child_takes_a_handed_value_in_place_of_its_data ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SCXML_FILE ${CMAKE_CURRENT_SOURCE_DIR}/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml)
 
 # §scxml-5.7.1 under §scxml-6.4: a `<param>` of an `<invoke>` whose expression
 # will not evaluate. Two clauses meet — 6.4.2 terminates the element when "the

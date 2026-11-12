@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- §scxml-6.4 (docs/adr/0098): a value an invoke hands its child, whose
+     name is the id of a <data> in the child's top-level datamodel, is that
+     <data>'s initial value, declared in place of its own: "any value
+     specified in the <data> element is ignored". A name that matches no
+     top-level <data> is not added to the child's datamodel, and a state's
+     <data> never takes a handed value.
+
+     The C++ channels' own document, beside its two drivers
+     (AChildTakesAHandedValueInPlaceOfItsDataTest.cpp, the Interpreter, and
+     AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp, the AOT engine)
+     rather than under integration_resources/: the canonical fixture of
+     ADR 0098 lands there with the runners of every channel, after each
+     backend's own step.
+
+     The first child is handed six values by <param>:
+
+       raising     its own expr would raise error.execution: the child
+                   counts the error.execution events it sees, and must see
+                   none
+       effectful   its own expr pushes onto `effects`: the push must not
+                   happen
+       refusable   a plain value, read through `typeof` only, so a driver
+                   whose script engine refuses to hold it sees the
+                   <data>'s initialization fail (error.execution) and the
+                   variable left unbound, and nothing else move
+       local       the id of a <data> of the state `collect`, not of the
+                   top-level datamodel: it keeps its own value
+       stranger    the id of no <data> at all: it stays undeclared
+       payload     an object, which must arrive whole, nesting and array
+                   included
+
+     The child's top-level <script> and the <onentry> of its initial state
+     record what they read of the handed values, so the order is held too:
+     the values are declared before either runs.
+
+     The second child is handed two namelist locations: `listed`, whose
+     top-level <data> would raise, and `stray`, which it does not declare.
+
+     Each child reports what it saw to the parent in an event, and the parent
+     keeps it in its own datamodel for the drivers to read: the verdicts are
+     the drivers', which say which sentence broke. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" initial="running"
+       name="a_cpp_child_takes_a_handed_value_in_place_of_its_data">
+    <datamodel>
+        <data id="record" expr="({name: 'whole', inner: {depth: 2}, list: [1, 2, 3]})"/>
+        <data id="listed" expr="'handed listed'"/>
+        <data id="stray" expr="'handed stray'"/>
+        <data id="raising_seen" expr="''"/>
+        <data id="effectful_seen" expr="''"/>
+        <data id="effects_seen" expr="-1"/>
+        <data id="refusable_seen" expr="''"/>
+        <data id="local_seen" expr="''"/>
+        <data id="stranger_seen" expr="''"/>
+        <data id="payload_seen" expr="''"/>
+        <data id="script_seen" expr="''"/>
+        <data id="entry_seen" expr="''"/>
+        <data id="errors_seen" expr="-1"/>
+        <data id="listed_seen" expr="''"/>
+        <data id="stray_seen" expr="''"/>
+        <data id="list_errors_seen" expr="-1"/>
+    </datamodel>
+
+    <state id="running">
+        <invoke type="scxml" id="by_param">
+            <param name="raising" expr="'handed raising'"/>
+            <param name="effectful" expr="'handed effectful'"/>
+            <param name="refusable" expr="'handed refusable'"/>
+            <param name="local" expr="'handed local'"/>
+            <param name="stranger" expr="'handed stranger'"/>
+            <param name="payload" expr="record"/>
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="collect">
+                    <datamodel>
+                        <data id="effects" expr="[]"/>
+                        <data id="raising" expr="undefined.invalidProperty"/>
+                        <data id="effectful" expr="effects.push('own effectful ran')"/>
+                        <data id="refusable" expr="'own refusable'"/>
+                        <data id="payload" expr="null"/>
+                        <data id="script_saw" expr="''"/>
+                        <data id="entry_saw" expr="''"/>
+                        <data id="errors" expr="0"/>
+                    </datamodel>
+                    <script>script_saw = raising + '|' + effectful + '|' + payload.name;</script>
+                    <state id="collect">
+                        <datamodel>
+                            <data id="local" expr="'own local'"/>
+                        </datamodel>
+                        <onentry>
+                            <assign location="entry_saw" expr="raising + '|' + effectful + '|' + payload.inner.depth"/>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="error.execution">
+                            <assign location="errors" expr="errors + 1"/>
+                        </transition>
+                        <transition event="report" target="reported">
+                            <send target="#_parent" event="params.report">
+                                <param name="raising" expr="raising"/>
+                                <param name="effectful" expr="effectful"/>
+                                <param name="effects" expr="effects.length"/>
+                                <param name="refusable" expr="typeof refusable === 'undefined' ? 'unbound' : refusable"/>
+                                <param name="local" expr="local"/>
+                                <param name="stranger" expr="typeof stranger"/>
+                                <param name="payload" expr="payload.name + '/' + payload.inner.depth + '/' + payload.list.join(',')"/>
+                                <param name="script" expr="script_saw"/>
+                                <param name="entry" expr="entry_saw"/>
+                                <param name="errors" expr="errors"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="reported"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="params.report" target="listing">
+            <assign location="raising_seen" expr="_event.data.raising"/>
+            <assign location="effectful_seen" expr="_event.data.effectful"/>
+            <assign location="effects_seen" expr="_event.data.effects"/>
+            <assign location="refusable_seen" expr="_event.data.refusable"/>
+            <assign location="local_seen" expr="_event.data.local"/>
+            <assign location="stranger_seen" expr="_event.data.stranger"/>
+            <assign location="payload_seen" expr="_event.data.payload"/>
+            <assign location="script_seen" expr="_event.data.script"/>
+            <assign location="entry_seen" expr="_event.data.entry"/>
+            <assign location="errors_seen" expr="_event.data.errors"/>
+        </transition>
+    </state>
+
+    <state id="listing">
+        <invoke type="scxml" id="by_namelist" namelist="listed stray">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+                       datamodel="ecmascript" initial="collect">
+                    <datamodel>
+                        <data id="listed" expr="undefined.invalidProperty"/>
+                        <data id="errors" expr="0"/>
+                    </datamodel>
+                    <state id="collect">
+                        <onentry>
+                            <raise event="report"/>
+                        </onentry>
+                        <transition event="error.execution">
+                            <assign location="errors" expr="errors + 1"/>
+                        </transition>
+                        <transition event="report" target="reported">
+                            <send target="#_parent" event="names.report">
+                                <param name="listed" expr="listed"/>
+                                <param name="stray" expr="typeof stray"/>
+                                <param name="errors" expr="errors"/>
+                            </send>
+                        </transition>
+                    </state>
+                    <final id="reported"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="names.report" target="done">
+            <assign location="listed_seen" expr="_event.data.listed"/>
+            <assign location="stray_seen" expr="_event.data.stray"/>
+            <assign location="list_errors_seen" expr="_event.data.errors"/>
+        </transition>
+    </state>
+
+    <final id="done"/>
+</scxml>

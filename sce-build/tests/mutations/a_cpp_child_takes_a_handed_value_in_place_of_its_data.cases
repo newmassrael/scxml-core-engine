@@ -1,0 +1,157 @@
+# Mutation cases for docs/adr/0098 on the C++ channels: a value an invoke
+# hands its child is the initial value of the child's top-level <data> of that
+# name, declared in place of its own (§scxml-6.4).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_cpp_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# Before the decision the generated child declared every top-level <data> from
+# its own value and then wrote the handed values over them, so a <data> whose
+# own expr fails raised error.execution in a child the specification says never
+# read it, and one with an effect had it. The parent filtered the names by the
+# child's datamodel, a second copy of a rule the child owns. Each case below
+# puts back one piece of an order the decision rules out, and names the
+# assertion that must go red. The oracle is
+# tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml,
+# run by its AOT driver (and its Interpreter driver, which these templates do
+# not reach).
+#
+# The machines are generated when the tests are built, so there is no
+# committed tree to regenerate: the build is what carries a mutated template
+# into them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets tools/codegen/templates/scriptengine_helpers.jinja2 tools/codegen/templates/invoke_methods.jinja2
+mutation_oracles tests/integration/AChildTakesAHandedValueInPlaceOfItsDataAotTest.cpp tests/integration/AHandedValueRefusingEngine.h tests/integration/a_cpp_child_takes_a_handed_value_in_place_of_its_data.scxml
+
+# ── The own value is evaluated, then overwritten ────────────────────
+#
+# The order every C++ child had: each top-level <data> takes its own value,
+# and the handed values are written over them afterwards.
+# Killers: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `errors_seen
+# === 0` finds the error.execution of `raising`'s own expr and whose
+# `effects_seen === 0` finds the push of `effectful`'s.
+
+mutation_case "the cpp aot child evaluates a handed data's own value first" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        } else {""",
+     """        {""")
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();""",
+     """        // take is dropped here, the names of state `<data>` included.
+{% for var in model.variables %}
+        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        }
+{% endfor %}
+        pendingParams_.clear();""")
+PY
+
+# ── The handed values arrive after the top-level script ─────────────
+#
+# The own value is still skipped, but the handed one is declared only once the
+# top-level <script> has run, so the script reads variables that are not there.
+# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `script_seen`
+# finds what the script recorded missing.
+
+mutation_case "the cpp aot child declares a handed value after its top-level script" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        } else {""",
+     """        if (handedValueFor("{{ var.id }}") != nullptr) {
+        } else {""")
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();""",
+     """        // take is dropped here, the names of state `<data>` included.""")
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """{% if model.has_parallel_states or model.uses_in_predicate %}""",
+     """{% for var in model.variables %}
+        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        }
+{% endfor %}
+        pendingParams_.clear();
+{% if model.has_parallel_states or model.uses_in_predicate %}""")
+PY
+
+# ── A state's <data> takes a handed value ───────────────────────────
+#
+# The shape of a child that seeds any variable its session holds: the state
+# <data> declared at the start under early binding is overwritten too.
+# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `local_seen ===
+# 'own local'` finds the handed value.
+
+mutation_case "the cpp aot child seeds a state's data" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();""",
+     """        // take is dropped here, the names of state `<data>` included.""")
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """{% if model.global_scripts %}
+""",
+     """{% for state_id, state in model.states | dictsort %}
+{% for var in state.datamodel %}
+        if (const ::ScriptValue* handed = handedValueFor("{{ var.id }}")) {
+            declareHandedValue(scriptEngine, "{{ var.id }}", *handed, engine);
+        }
+{% endfor %}
+{% endfor %}
+        pendingParams_.clear();
+{% if model.global_scripts %}
+""")
+PY
+
+# ── A name no top-level <data> declares is added ────────────────────
+#
+# What the start did not take is declared rather than dropped.
+# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `stranger_seen
+# === 'undefined'` and `stray_seen === 'undefined'` find the variables.
+
+mutation_case "the cpp aot child declares a handed name it does not declare" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """        // take is dropped here, the names of state `<data>` included.
+        pendingParams_.clear();""",
+     """        // take is dropped here, the names of state `<data>` included.
+        for (const auto& [leakedName, leakedValue] : pendingParams_) {
+            static_cast<void>(scriptEngine.setVariable(sessionId_.value(), leakedName, leakedValue).get());
+        }
+        pendingParams_.clear();""")
+PY
+
+# ── A value the session cannot hold is a log line ───────────────────
+#
+# The failed declaration is logged and nothing is raised: the old answer to a
+# handed value that was not applied.
+# Killer: `AHandedValueTheSessionCannotHoldFailsItsData`, whose `errors_seen
+# === 1` finds no error.execution.
+
+mutation_case "the cpp aot child raises nothing for a handed value it cannot hold" <<'PY'
+edit("tools/codegen/templates/scriptengine_helpers.jinja2",
+     """            SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+        }
+    }""",
+     """            SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
+            static_cast<void>(engine);
+        }
+    }""")
+PY
+
+# ── The parent hands no <param> value ──────────────────────────────
+#
+# The parent evaluates each <param> and keeps the value to itself.
+# Killer: `AHandedValueIsDeclaredInPlaceOfTheDatasOwn`, whose `raising_seen`
+# finds the <data> unbound and `errors_seen === 0` the own expr's error.
+
+mutation_case "the cpp aot parent hands its child no param value" <<'PY'
+edit("tools/codegen/templates/invoke_methods.jinja2",
+     """                                {{ slot }}->setParamValueInScriptEngine("{{ param.name | escape_cpp }}", __sce_param.getInternalValue());""",
+     """                                static_cast<void>(__sce_param);""")
+PY
