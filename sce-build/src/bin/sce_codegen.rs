@@ -2252,7 +2252,7 @@ struct GenerateArgs {
     ///
     /// Authoring workflows that stage the input file into a
     /// temporary directory before generation (e.g.
-    /// `scripts/regen_donedata_local_invoke_go.sh`, which copies a
+    /// `scripts/regen_donedata_local_invoke_kotlin.sh`, which copies a
     /// tracked fixture into `mktemp -d` so synth-invoke children
     /// don't pollute the source tree) must point this back at
     /// the canonical input root, otherwise the embedded
@@ -2922,18 +2922,19 @@ enum Commands {
     Orchestrate(Box<OrchestrateArgs>),
     /// Batch generate W3C test state machines and test classes
     GenerateW3c(Box<GenerateW3cArgs>),
-    /// Batch generate integration-fixture state machines for the four
-    /// sce-codegen-driven backends (Rust / Kotlin / Go / Python) from
-    /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
+    /// Batch generate integration-fixture state machines for the backends
+    /// whose integration tree is not yet declared (Kotlin / Python / Swift)
+    /// from canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
     ///
     /// Parallel to `generate-w3c` but reads from
     /// `integration_resources/` (separate §synth-6.2.6 input-root from W3C
     /// `resources/`) and emits into each backend's integration tree:
-    ///   - Rust:    `backends/rust/tests/src/integration/<stem>/`            (committed)
     ///   - Kotlin:  `backends/kotlin/tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
-    ///   - Go:      `backends/go/tests/integration/<stem>/`                  (committed)
     ///   - Python:  `backends/python/tests/integration/<stem>/`              (.gitignored, CI regen)
     ///   - Swift:   `backends/swift/tests/Sources/IntegrationMachines/`      (committed, one sweep)
+    ///
+    /// The Rust and Go trees are declared (ADR 0097) and written by
+    /// `materialize rust-integration` and `materialize go-integration`.
     ///
     /// Swift is one sweep over every stem the backend lowers
     /// (`scripts/regen_swift_integration.sh`), so `--stem` is refused for it.
@@ -14026,19 +14027,19 @@ fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat)
 // ── Subcommand: generate-integration ───────────────────────────
 
 /// Batch integration-fixture regeneration for the backends whose
-/// integration tree is still written by a script each (Kotlin, Go,
+/// integration tree is still written by a script each (Kotlin,
 /// Python) or by one sweep (Swift). Parallel to `generate-w3c` but
 /// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures.
 ///
 /// Each `<stem>` is dispatched to the matching backend's regen script
-/// (`scripts/regen_<stem>{_kotlin,_go,_python}.sh`); those scripts
+/// (`scripts/regen_<stem>{_kotlin,_python}.sh`); those scripts
 /// encode the per-language TMP staging + `--input-root` override +
 /// post-processing (Kotlin `// Source:` rewrite, Kotlin
 /// `--kotlin-package-prefix com.sce.integration`).
 ///
-/// Rust is not served: its integration tree is declared
-/// (`tools/codegen/trees/rust-integration.toml`, ADR 0097) and written by
-/// `materialize rust-integration`. Build-time backends (cpp / c11) are not
+/// Rust and Go are not served: their integration trees are declared
+/// (`tools/codegen/trees/{rust,go}-integration.toml`, ADR 0097) and written by
+/// `materialize`. Build-time backends (cpp / c11) are not
 /// served either — they emit at CMake time without a committed tree, so
 /// there is nothing for `generate-integration` to drive.
 fn cmd_generate_integration(
@@ -14065,18 +14066,18 @@ fn cmd_generate_integration(
     // real, and the sentence was a third copy of the set to keep current.
     let script_suffix = match lang {
         Language::Kotlin => "_kotlin",
-        Language::Go => "_go",
         Language::Python => "_python",
         // Swift is one sweep over every stem, not a script each: see
         // `scripts/regen_swift_integration.sh`. The suffix is never read for it.
         Language::Swift => "",
-        Language::Rust | Language::Cpp | Language::C11 => error_format.emit_and_exit(
-            &CliError::UnsupportedLanguage {
-                lang: lang.canonical_name().to_string(),
-                route: LanguageRoute::GenerateIntegration,
-            },
-            "",
-        ),
+        Language::Rust | Language::Go | Language::Cpp | Language::C11 => error_format
+            .emit_and_exit(
+                &CliError::UnsupportedLanguage {
+                    lang: lang.canonical_name().to_string(),
+                    route: LanguageRoute::GenerateIntegration,
+                },
+                "",
+            ),
     };
 
     // ⚠ `--output-dir` is wired for Kotlin and for nothing else, so it is

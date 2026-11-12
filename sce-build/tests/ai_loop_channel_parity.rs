@@ -127,8 +127,8 @@ const CHANNELS: &[Channel] = &[
         engine: "Go AOT",
         driver: "backends/go/tests/integration/ai_loop/ai_loop_test.go",
         scenario: r"func\s+Test(\w+)\(t \*testing\.T\)",
-        generator: "scripts/regen_ai_loop_go.sh",
-        names_document: "FIXTURE=\"examples/ai_loop/ai_loop.scxml\"",
+        generator: "tools/codegen/trees/go-integration.toml",
+        names_document: "[\"generate\", \"examples/ai_loop/ai_loop.scxml\", \"-l\", \"go\"",
     },
     Channel {
         engine: "Kotlin AOT",

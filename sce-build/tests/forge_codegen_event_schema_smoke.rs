@@ -288,7 +288,7 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
 // script path. `gofmt -e` is the syntactic gate; the substring assertions pin
 // the lowering shape. The real compile+run is the committed integration gate
 // `backends/go/tests/integration/event_schema_native` (regen:
-// scripts/regen_event_schema_native_go.sh).
+// `scripts/materialize.sh go-integration`).
 #[test]
 fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
     let Some(gofmt) = toolchain::locate("gofmt") else {

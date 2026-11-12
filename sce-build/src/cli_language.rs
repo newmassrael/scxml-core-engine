@@ -182,15 +182,12 @@ impl LanguageRoute {
             }
             // C++ and C11 integration fixtures emit at CMake build time
             // through `sce_generate_static_integration_test`, so there is
-            // no committed tree for this subcommand to regenerate. Rust's
-            // integration tree is a declared tree (ADR 0097), written by
-            // `materialize rust-integration`.
-            LanguageRoute::GenerateIntegration => &[
-                Language::Kotlin,
-                Language::Go,
-                Language::Python,
-                Language::Swift,
-            ],
+            // no committed tree for this subcommand to regenerate. The Rust
+            // and Go integration trees are declared trees (ADR 0097), written
+            // by `materialize rust-integration` and `materialize go-integration`.
+            LanguageRoute::GenerateIntegration => {
+                &[Language::Kotlin, Language::Python, Language::Swift]
+            }
         }
     }
 
@@ -216,9 +213,9 @@ impl LanguageRoute {
             LanguageRoute::GenerateIntegration => Some(format!(
                 "cpp and c11 are absent because their integration fixtures emit at CMake build \
                  time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate. rust is absent because its integration tree \
-                 is declared in tools/codegen/trees/rust-integration.toml and written by \
-                 `sce-codegen materialize rust-integration`{}",
+                 for this subcommand to regenerate. rust and go are absent because their \
+                 integration trees are declared in tools/codegen/trees/<language>-integration.toml \
+                 and written by `sce-codegen materialize <language>-integration`{}",
                 emitless_sentence(". ", " too"),
             )),
             LanguageRoute::GenerateConformance => (self.languages().len() < Language::ALL.len())

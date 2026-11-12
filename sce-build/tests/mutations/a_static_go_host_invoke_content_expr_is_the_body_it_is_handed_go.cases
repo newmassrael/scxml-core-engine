@@ -28,7 +28,7 @@
 mutation_go backends/go/tests ./integration/statechart_static_host_params/
 mutation_targets tools/codegen/templates/go/invoke_methods.go.jinja2
 mutation_targets backends/go/tests/integration/statechart_static_host_params/statechart_static_host_params_sm.go
-mutation_regen scripts/regen_host_processor_go.sh
+mutation_regen scripts/materialize.sh go-integration
 mutation_oracles backends/go/tests/integration/statechart_static_host_params/host_params_test.go sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── The body is read and handed over ───────────────────────────────

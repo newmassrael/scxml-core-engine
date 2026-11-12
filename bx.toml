@@ -573,12 +573,16 @@ run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalo
 #     found at run time, so no output can be declared for each.
 #   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
 #     com/sce/generated, the W3C tree, and its machines under com/sce/integration, the integration one.
-#   - regen-go-integration, regen-python-integration, regen-swift-tests: the integration fan-out and
-#     the per-document scripts write a directory each into one tree. The W3C Go and Python trees are
-#     directories of their own, and steps of their own.
+#   - regen-go-integration: a declared tree (tools/codegen/trees/go-integration.toml) whose stems are
+#     a directory each under backends/go/tests/integration, found at run time, and the static
+#     datamodel's directory beside them. The W3C Go tree is a directory of its own, and a step of its
+#     own.
+#   - regen-python-integration, regen-swift-tests: the integration fan-out and the per-document
+#     scripts write a directory each into one tree. The W3C Python tree is a directory of its own, and
+#     a step of its own.
 #   - The native-action and host-processor scripts each wrote the Rust, Go and Kotlin trees of one
-#     document, and belonged to no step. They are split by language (scripts/regen_native_action_go.sh,
-#     regen_native_action_kotlin.sh, regen_host_processor_go.sh), each run by its language's step.
+#     document, and belonged to no step. They were split by language, each run by its language's step;
+#     the Rust and Go halves are now generations of those languages' integration manifests.
 #   Every other step owns one tree alone: the Kotlin method-size module, the forge round-trip Go tree,
 #   each Mesh tree, the specs machines, the forge goldens and the embed manifest.
 #

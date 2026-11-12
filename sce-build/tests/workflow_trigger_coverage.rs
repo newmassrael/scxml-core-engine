@@ -1793,11 +1793,11 @@ fn the_filter_matcher_separates_the_two_wildcards() {
     // A wildcard inside a segment stays inside it.
     assert!(filter_matches(
         "scripts/regen_event_schema_native*.sh",
-        "scripts/regen_event_schema_native_go.sh"
+        "scripts/regen_event_schema_native_kotlin.sh"
     ));
     assert!(!filter_matches(
         "scripts/regen_event_schema_native*.sh",
-        "scripts/x/regen_event_schema_native_go.sh"
+        "scripts/x/regen_event_schema_native_kotlin.sh"
     ));
     // A literal pattern matches only itself.
     assert!(filter_matches(

@@ -245,10 +245,6 @@
           "kind": "implements"
         },
         {
-          "file": "scripts/regen_event_schema_native_go.sh",
-          "kind": "references"
-        },
-        {
           "file": "scripts/regen_event_schema_native_kotlin.sh",
           "kind": "references"
         },
@@ -274,6 +270,12 @@
       "target_kind": "section",
       "target_id": "bytesguard-6",
       "reason": "ADR 0097: the Rust tree is declared in tools/codegen/trees/rust-integration.toml and the per-document script is retired"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "bytesguard-6",
+      "reason": "ADR 0097: the Go integration tree is declared in tools/codegen/trees/go-integration.toml; the per-document script is deleted"
     }
   ],
   "frames": {},
