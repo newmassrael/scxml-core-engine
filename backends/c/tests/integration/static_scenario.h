@@ -781,9 +781,19 @@ static int sce_scenario_expect_done_data(sce_scenario_cursor_t *c, const sce_sce
 // when it is.
 static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenario_driver_t *d, int step,
                                       const char *name, size_t index, bool *well_formed) {
+    // A message names the field (`where`), then what the machine holds and what the
+    // scenario states. The longest stated value is a list's compact text, and the
+    // machine's text is written to that same length, so the message is sized from its
+    // parts and holds both with the words around them.
+    enum {
+        SCE_RECORD_WHERE_LEN = 160,
+        SCE_RECORD_STATED_LEN = 128,
+        SCE_RECORD_MESSAGE_LEN = SCE_RECORD_WHERE_LEN + 2 * SCE_RECORD_STATED_LEN + 32,
+    };
+
     int bad = 0;
     char field[64];
-    char message[256];
+    char message[SCE_RECORD_MESSAGE_LEN];
     *well_formed = false;
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "a record is not an object");
@@ -793,7 +803,7 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
         return 0;
     }
     for (;;) {
-        char where[160];
+        char where[SCE_RECORD_WHERE_LEN];
         char want_text[64];
         int64_t want = 0;
         if (!sce_scenario_string(c, field, sizeof(field)) || !sce_scenario_take(c, ':')) {
@@ -815,7 +825,7 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
             // A list a record's field holds (a case of a union holds one, docs/adr/0092)
             // is stated as its elements, compared as the compact text the record's text
             // reader answers for it.
-            char want_list[128];
+            char want_list[SCE_RECORD_STATED_LEN];
             const char *from = c->at;
             if (!sce_scenario_skip_value(c) || !sce_scenario_compact(from, c->at, want_list, sizeof(want_list))) {
                 return sce_scenario_fail(d, step, "a record field's list is not well formed");
@@ -825,7 +835,8 @@ static int sce_scenario_expect_record(sce_scenario_cursor_t *c, const sce_scenar
                 (void)snprintf(message, sizeof(message), "the machine publishes no list field %s", where);
                 bad |= sce_scenario_fail(d, step, message);
             } else if (strcmp(got_text, want_list) != 0) {
-                (void)snprintf(message, sizeof(message), "%s is %s, want %s", where, got_text, want_list);
+                (void)snprintf(message, sizeof(message), "%s is %.*s, want %s", where, (int)SCE_RECORD_STATED_LEN,
+                               got_text, want_list);
                 bad |= sce_scenario_fail(d, step, message);
             }
         } else if (*c->at == '"') {
