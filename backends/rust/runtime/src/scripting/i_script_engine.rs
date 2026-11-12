@@ -203,12 +203,6 @@ pub trait IScriptEngine: Send + Sync {
     /// foreach to distinguish declared-but-empty from undeclared variables.
     fn has_variable(&self, session_id: &str, name: &str) -> bool;
 
-    /// Check if a variable was pre-initialized (e.g., by invoke `<param>`).
-    ///
-    /// Matches C++ `isVariablePreInitialized`. Used by datamodel init to skip
-    /// re-initializing variables already set by the parent SM.
-    fn is_variable_pre_initialized(&self, session_id: &str, name: &str) -> bool;
-
     // ════════════════════════════════════════
     // SCXML-specific Features
     // ════════════════════════════════════════

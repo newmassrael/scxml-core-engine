@@ -132,10 +132,6 @@ impl IScriptEngine for FailingEngine {
         self.inner.has_variable(session_id, name)
     }
 
-    fn is_variable_pre_initialized(&self, session_id: &str, name: &str) -> bool {
-        self.inner.is_variable_pre_initialized(session_id, name)
-    }
-
     fn setup_system_variables(
         &self,
         session_id: &str,
