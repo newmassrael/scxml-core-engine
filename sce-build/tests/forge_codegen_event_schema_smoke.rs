@@ -131,7 +131,11 @@ fn smoke_cpp() {
     let scratch = reset_scratch("cpp");
 
     let mut headers: Vec<String> = Vec::new();
-    let mut include_dirs: Vec<PathBuf> = Vec::new();
+    // A generated schema header holds its bounded fields in the forge runtime's
+    // types (`<sce/forge/bounded.h>`), so the runtime's headers are on the path
+    // as they are for every build that compiles a generated codec.
+    let mut include_dirs: Vec<PathBuf> =
+        vec![repo_root().join("backends/cpp/forge-runtime/include")];
     for fixture in FIXTURES {
         let out_dir = scratch.join(fixture);
         run_generate("cpp", &out_dir, fixture);
