@@ -465,7 +465,7 @@ impl CanonicalForm for SwiftReading {
 
     /// The union's case is bound as the runtime's `UnionCase`, whose `value` is
     /// the case's record.
-    fn case_record(&self, bound: SwiftReadAt) -> SwiftReadAt {
+    fn case_record(&self, bound: SwiftReadAt, _record: &str) -> SwiftReadAt {
         SwiftReadAt::of(
             format!("{}.value", bound.json),
             bound.what,
