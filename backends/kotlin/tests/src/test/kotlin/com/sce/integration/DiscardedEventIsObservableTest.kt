@@ -24,7 +24,7 @@
 // Fixture: integration_resources/discarded_event_is_observable/discarded_event_is_observable.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_discarded_event_is_observable_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

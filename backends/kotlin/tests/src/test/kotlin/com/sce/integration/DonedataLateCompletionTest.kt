@@ -24,7 +24,7 @@
 // Fixture: integration_resources/donedata_late_completion/donedata_late_completion.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_donedata_late_completion_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

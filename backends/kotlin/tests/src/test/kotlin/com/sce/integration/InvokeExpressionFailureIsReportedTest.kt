@@ -15,7 +15,7 @@
 // Fixture: integration_resources/invoke_expression_failure_is_reported/invoke_expression_failure_is_reported.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_expression_failure_is_reported_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

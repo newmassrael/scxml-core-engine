@@ -19,7 +19,7 @@
 // Fixture: integration_resources/invoke_candidate_selects_the_child/invoke_candidate_selects_the_child.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_candidate_selects_the_child_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

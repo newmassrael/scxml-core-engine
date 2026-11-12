@@ -17,7 +17,7 @@
 // Fixture: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_internal_chain_is_bounded_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

@@ -22,7 +22,7 @@
 // It is outside integration_resources/ for the reason
 // tools/codegen/trees/rust-integration.toml states.
 //
-// Regeneration: scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

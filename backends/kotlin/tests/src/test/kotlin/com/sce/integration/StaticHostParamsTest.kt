@@ -10,9 +10,9 @@
 // The committed machine (com/sce/integration/statechart_static_host_params/) is
 // generated from
 // sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
-// (regen: scripts/regen_host_processor_kotlin.sh) and constructed with NO script
-// engine: its variables are fields, and a `<param>` that needed an engine to be
-// read would not have one to ask.
+// (regen: scripts/materialize.sh kotlin-integration) and constructed with NO
+// script engine: its variables are fields, and a `<param>` that needed an
+// engine to be read would not have one to ask.
 //
 // What this holds is the value on the wire. The run `bump`, `go` changes every
 // variable before the send and the invoke read it, so a copy taken at start-up
@@ -36,8 +36,9 @@ import org.junit.jupiter.api.Test
 @DisplayName("StaticHostParams — a typed <param> reaches the host (sce-static, Kotlin AOT)")
 class StaticHostParamsTest {
 
-    // The type the fixture was compiled for; `scripts/regen_host_processor_kotlin.sh`
-    // passes the same string to both declarations.
+    // The type the fixture was compiled for;
+    // `tools/codegen/trees/kotlin-integration.toml` passes the same string to
+    // both declarations.
     private val declaredType = "x-sce-host"
 
     private class Host {

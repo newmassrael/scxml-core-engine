@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_event_data_arrives_as_sent_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

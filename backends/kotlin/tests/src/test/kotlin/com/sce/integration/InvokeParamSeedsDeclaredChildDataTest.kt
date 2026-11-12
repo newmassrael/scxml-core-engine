@@ -17,7 +17,7 @@
 // Fixture: integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_param_seeds_declared_child_data_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

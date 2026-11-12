@@ -13,7 +13,7 @@
 // Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_donedata_local_invoke_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

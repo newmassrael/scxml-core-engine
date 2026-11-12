@@ -21,7 +21,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_xml_data_is_a_dom_tree_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

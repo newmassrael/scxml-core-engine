@@ -17,7 +17,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_self_transition_keeps_its_leaf_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

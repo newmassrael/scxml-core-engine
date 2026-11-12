@@ -21,7 +21,7 @@
 // Fixture: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_empty_finalize_updates_the_location_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

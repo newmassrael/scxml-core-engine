@@ -22,7 +22,7 @@
 // (canonical, shared with the Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_send_param_payload_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

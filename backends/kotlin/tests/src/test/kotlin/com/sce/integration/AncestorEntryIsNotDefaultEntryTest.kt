@@ -19,7 +19,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_ancestor_entry_is_not_default_entry_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

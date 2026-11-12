@@ -26,7 +26,7 @@
 // Fixture: integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_late_tick_honours_cancel_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

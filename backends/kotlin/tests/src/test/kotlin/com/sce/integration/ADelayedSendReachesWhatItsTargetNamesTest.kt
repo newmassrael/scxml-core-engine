@@ -7,7 +7,7 @@
 // Fixture: integration_resources/a_delayed_send_reaches_what_its_target_names/a_delayed_send_reaches_what_its_target_names.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_delayed_send_reaches_what_its_target_names_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

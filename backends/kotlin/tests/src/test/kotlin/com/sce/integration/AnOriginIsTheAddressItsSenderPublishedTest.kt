@@ -18,7 +18,7 @@
 // integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_an_origin_is_the_address_its_sender_published_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

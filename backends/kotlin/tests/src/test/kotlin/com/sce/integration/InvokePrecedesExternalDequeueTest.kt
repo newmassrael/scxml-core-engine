@@ -22,7 +22,7 @@
 // Fixture: integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_precedes_external_dequeue_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

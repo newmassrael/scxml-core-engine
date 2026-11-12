@@ -13,7 +13,7 @@
 // (canonical, shared with the C++ / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_event_fields_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

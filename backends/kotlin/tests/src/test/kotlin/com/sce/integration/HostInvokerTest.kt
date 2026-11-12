@@ -21,7 +21,7 @@
 //
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
 // (shared with the C++, Rust, Go and Python channels). Regeneration:
-//   scripts/regen_host_processor_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 
@@ -62,7 +62,7 @@ import org.junit.jupiter.api.Test
 class HostInvokerTest {
 
     // The type the fixture was compiled for.
-    // `scripts/regen_host_processor_kotlin.sh` passes this same string to
+    // `tools/codegen/trees/kotlin-integration.toml` passes this same string to
     // `--host-invoker`; a test registering a different one would measure
     // nothing and pass, so the `refused` counter is asserted rather than the
     // registration trusted.

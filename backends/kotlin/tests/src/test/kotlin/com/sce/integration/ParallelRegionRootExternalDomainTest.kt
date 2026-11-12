@@ -30,7 +30,7 @@
 // this document has six drivers — there is no mesh channel for it.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_region_root_external_domain_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

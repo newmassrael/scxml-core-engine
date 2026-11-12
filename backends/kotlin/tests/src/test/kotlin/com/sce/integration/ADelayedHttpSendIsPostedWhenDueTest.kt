@@ -8,7 +8,7 @@
 // Fixture: integration_resources/a_delayed_http_send_is_posted_when_due/a_delayed_http_send_is_posted_when_due.scxml
 // (canonical, shared with the C++ AOT / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_delayed_http_send_is_posted_when_due_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

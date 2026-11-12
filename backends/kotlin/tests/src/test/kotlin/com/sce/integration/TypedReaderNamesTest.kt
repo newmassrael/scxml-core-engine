@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / C11 / Go / Python / Rust channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_typed_reader_names_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

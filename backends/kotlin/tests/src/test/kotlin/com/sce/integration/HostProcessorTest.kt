@@ -13,8 +13,8 @@
 //
 // The committed machine is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml`
-// WITH the declaration (regen: `scripts/regen_host_processor_kotlin.sh`), the
-// same document the other five channels drive.
+// WITH the declaration (regen: `scripts/materialize.sh kotlin-integration`),
+// the same document the other five channels drive.
 //
 // The pair at the top is the whole contract:
 //
@@ -52,7 +52,7 @@ import org.junit.jupiter.api.Test
 class HostProcessorTest {
 
     // The type the fixture was compiled for.
-    // `scripts/regen_host_processor_kotlin.sh` passes this same string to
+    // `tools/codegen/trees/kotlin-integration.toml` passes this same string to
     // `--host-processor`; a test registering a different one would measure
     // nothing and pass, so the `refused` counter is asserted rather than the
     // registration trusted.

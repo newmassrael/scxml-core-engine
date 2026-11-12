@@ -21,7 +21,7 @@
 // Fixture: integration_resources/host_event_reaches_the_child/host_event_reaches_the_child.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_event_reaches_the_child_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

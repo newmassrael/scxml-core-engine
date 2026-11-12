@@ -7,7 +7,7 @@
 // Fixture: integration_resources/a_target_expression_is_routed_as_its_literal_is/a_target_expression_is_routed_as_its_literal_is.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_target_expression_is_routed_as_its_literal_is_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

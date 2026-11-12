@@ -21,7 +21,7 @@
 // Fixture: integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_eventless_macrostep_is_bounded_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

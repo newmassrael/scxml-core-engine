@@ -17,7 +17,7 @@
 // Fixture: integration_resources/nested_final_not_terminal/nested_final_not_terminal.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_nested_final_not_terminal_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

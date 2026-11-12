@@ -14,7 +14,7 @@
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_parallel_completion_raises_done_state_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

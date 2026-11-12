@@ -11,7 +11,7 @@
 // Fixture: integration_resources/a_hybrid_invoke_carries_its_arguments/a_hybrid_invoke_carries_its_arguments.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_hybrid_invoke_carries_its_arguments_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

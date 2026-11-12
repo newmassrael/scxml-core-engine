@@ -8,7 +8,7 @@
 //
 // The committed SM (com/sce/integration/statechart_minimal/statechart_minimalSm.kt)
 // is generated from sce-build/tests/fixtures/event_schema/statechart_minimal.scxml
-// (regen: scripts/regen_event_schema_native_kotlin.sh). Because it compiles as
+// (regen: scripts/materialize.sh kotlin-integration). Because it compiles as
 // part of this module, the generated payload data class, the type-erased
 // `EventMetadata.typedPayload` carrier round-trip, and the per-event
 // `raiseJobCompleted` inject seam are really type-checked.

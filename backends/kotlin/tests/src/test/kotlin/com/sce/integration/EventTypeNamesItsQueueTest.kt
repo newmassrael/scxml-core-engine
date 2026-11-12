@@ -11,7 +11,7 @@
 // Fixture: integration_resources/event_type_names_its_queue/event_type_names_its_queue.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_event_type_names_its_queue_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

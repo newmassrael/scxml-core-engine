@@ -15,7 +15,7 @@
 // integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_host_names_its_origin_in_its_own_terms_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 // (generated with `--host-invoker x-sce-host`, the type registered below).
 
 package com.sce.integration

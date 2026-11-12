@@ -11,9 +11,9 @@
 // The committed machine (com/sce/integration/statechart_static_mesh_request/) is
 // generated from
 // sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml
-// (regen: scripts/regen_host_processor_kotlin.sh) and constructed with NO script
-// engine: its variables are fields, and a peer or a `<param>` that needed an
-// engine to be read would not have one to ask.
+// (regen: scripts/materialize.sh kotlin-integration) and constructed with NO
+// script engine: its variables are fields, and a peer or a `<param>` that
+// needed an engine to be read would not have one to ask.
 //
 // The run `bump`, `go` changes `load` and `label` before the request reads them,
 // so a copy taken at start-up (3, "idle") is told from what the fields hold now

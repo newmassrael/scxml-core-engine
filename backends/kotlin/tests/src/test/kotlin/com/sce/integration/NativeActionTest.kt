@@ -6,7 +6,7 @@
 //
 // The committed machine is generated from
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`
-// (regen: `scripts/regen_native_action_kotlin.sh`), the same document the
+// (regen: `scripts/materialize.sh kotlin-integration`), the same document the
 // Rust, Go, Python, C++ and C11 channels drive. Because the tree is part of
 // this module it is REALLY compiled: the generated class takes a
 // `StatechartNativeActionActions` implementation as its first constructor

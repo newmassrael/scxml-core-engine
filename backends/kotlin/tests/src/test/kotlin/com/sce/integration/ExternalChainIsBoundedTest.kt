@@ -23,7 +23,7 @@
 // tools/codegen/trees/rust-integration.toml states.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_external_chain_is_bounded_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

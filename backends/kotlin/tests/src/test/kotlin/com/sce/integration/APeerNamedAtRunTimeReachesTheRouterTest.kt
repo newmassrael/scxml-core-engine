@@ -8,7 +8,7 @@
 // a_peer_named_at_run_time_reaches_the_router.scxml (canonical, shared with the
 // other channels).
 //
-// Regeneration: scripts/regen_a_peer_named_at_run_time_reaches_the_router_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

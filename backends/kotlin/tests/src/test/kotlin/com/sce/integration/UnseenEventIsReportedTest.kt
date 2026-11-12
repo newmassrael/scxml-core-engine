@@ -20,7 +20,7 @@
 // Fixture: integration_resources/unseen_event_is_reported/unseen_event_is_reported.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_unseen_event_is_reported_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

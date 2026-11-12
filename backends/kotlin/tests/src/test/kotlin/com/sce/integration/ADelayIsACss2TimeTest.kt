@@ -6,7 +6,7 @@
 // Fixture: integration_resources/a_delay_is_a_css2_time/a_delay_is_a_css2_time.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_a_delay_is_a_css2_time_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

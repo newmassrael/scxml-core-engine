@@ -8,8 +8,9 @@
 // The committed machine (com/sce/integration/statechart_host_invoker_optional/)
 // is generated from
 // sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
-// (regen: scripts/regen_host_processor_kotlin.sh) and constructed with NO script
-// engine: a `datamodel="sce-static"` machine holds its variables as fields.
+// (regen: scripts/materialize.sh kotlin-integration) and constructed with NO
+// script engine: a `datamodel="sce-static"` machine holds its variables as
+// fields.
 //
 // The host answers through the generated typed interface, so the record it hands
 // in holds each field that may be absent as a nullable; the engine delivers the
@@ -31,8 +32,9 @@ import kotlin.test.assertTrue
 
 class AHostResultMayHoldAValueThatIsAbsentTest {
 
-    // The type the fixture was compiled for; `scripts/regen_host_processor_kotlin.sh`
-    // passes the same string to the invoker declaration.
+    // The type the fixture was compiled for;
+    // `tools/codegen/trees/kotlin-integration.toml` passes the same string to
+    // the invoker declaration.
     private val declaredType = "x-sce-host"
 
     /**

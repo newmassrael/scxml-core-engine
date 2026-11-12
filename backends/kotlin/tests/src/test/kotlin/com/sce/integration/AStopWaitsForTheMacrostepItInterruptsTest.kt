@@ -47,7 +47,8 @@ import org.junit.jupiter.api.Test
 class AStopWaitsForTheMacrostepItInterruptsTest {
 
     // The type the fixture was compiled for; the same string
-    // `scripts/regen_host_processor_kotlin.sh` passes to `--host-processor`.
+    // `tools/codegen/trees/kotlin-integration.toml` passes to
+    // `--host-processor`.
     private val declaredType = "x-sce-host"
 
     /**

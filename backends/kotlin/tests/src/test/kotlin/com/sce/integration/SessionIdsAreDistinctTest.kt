@@ -13,7 +13,7 @@
 // (canonical, shared with every other channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_session_ids_are_distinct_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

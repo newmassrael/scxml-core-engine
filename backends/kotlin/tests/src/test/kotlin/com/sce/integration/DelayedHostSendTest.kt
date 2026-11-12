@@ -23,7 +23,7 @@
 // (canonical, shared with the Rust / C++ / C11 / Go / Python channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_host_processor_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 
@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test
 class DelayedHostSendTest {
 
     // The type the fixture was compiled for.
-    // `scripts/regen_host_processor_kotlin.sh` passes this same string to
+    // `tools/codegen/trees/kotlin-integration.toml` passes this same string to
     // `--host-processor`.
     private val declaredType = "x-sce-host"
 

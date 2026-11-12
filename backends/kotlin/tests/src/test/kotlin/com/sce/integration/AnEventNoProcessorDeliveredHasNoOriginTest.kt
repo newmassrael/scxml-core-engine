@@ -15,7 +15,7 @@
 // integration_resources/an_event_no_processor_delivered_has_no_origin/an_event_no_processor_delivered_has_no_origin.scxml
 // (canonical, shared with the C++ / C11 / Rust / Go / Python channels).
 //
-// Regeneration: scripts/regen_an_event_no_processor_delivered_has_no_origin_kotlin.sh
+// Regeneration: scripts/materialize.sh kotlin-integration
 // (generated with `--host-processor x-sce-host`, the type registered below).
 
 package com.sce.integration

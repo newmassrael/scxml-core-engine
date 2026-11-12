@@ -33,7 +33,7 @@
 // Fixture: examples/ai_loop/ai_loop.scxml
 //
 // Regeneration (after example or template edit):
-//   scripts/regen_ai_loop_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 
@@ -58,7 +58,7 @@ import org.junit.jupiter.api.Test
 class AiLoopTest {
 
     // The processor type the committed machine was generated for.
-    // `scripts/regen_ai_loop_kotlin.sh` passes this same string to
+    // `tools/codegen/trees/kotlin-integration.toml` passes this same string to
     // `--host-processor`, and the other three channels register the same one.
     private val declaredType = "x-sce-host"
 

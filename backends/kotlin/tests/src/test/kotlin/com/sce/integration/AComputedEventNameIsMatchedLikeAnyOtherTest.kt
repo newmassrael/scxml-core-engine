@@ -15,7 +15,7 @@
 // (canonical, shared with the C++ / Rust / Go / Python / C11 channels).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_a_computed_event_name_is_matched_like_any_other_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

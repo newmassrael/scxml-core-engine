@@ -18,7 +18,7 @@
 // Fixture: integration_resources/wildcard_in_document_order/wildcard_in_document_order.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_wildcard_in_document_order_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

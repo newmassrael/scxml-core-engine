@@ -32,7 +32,7 @@
 // Fixture: integration_resources/invoke_precedes_dequeue_midrun/invoke_precedes_dequeue_midrun.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_precedes_dequeue_midrun_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

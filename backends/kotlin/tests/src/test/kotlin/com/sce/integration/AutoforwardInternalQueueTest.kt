@@ -15,7 +15,7 @@
 // Fixture: integration_resources/autoforward_internal_queue/autoforward_internal_queue.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_internal_queue_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

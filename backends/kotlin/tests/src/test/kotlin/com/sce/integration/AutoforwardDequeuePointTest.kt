@@ -17,7 +17,7 @@
 // Fixture: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_autoforward_dequeue_point_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

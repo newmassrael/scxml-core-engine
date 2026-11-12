@@ -13,7 +13,7 @@
 // (canonical, shared with every channel).
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_an_assignment_keeps_the_document_it_is_given_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

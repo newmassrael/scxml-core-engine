@@ -22,7 +22,7 @@
 // written by gen_documents.py beside them.
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_jvm_long_text_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

@@ -24,7 +24,7 @@
 // Fixture: integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_unhandled_error_is_observable_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 

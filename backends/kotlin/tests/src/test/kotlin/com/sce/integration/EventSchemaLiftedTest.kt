@@ -8,7 +8,7 @@
 //
 // The committed SM (com/sce/integration/statechart_lifted/statechart_liftedSm.kt)
 // is generated from sce-build/tests/fixtures/event_schema/statechart_lifted.scxml
-// (regen: scripts/regen_event_schema_native_kotlin.sh).
+// (regen: scripts/materialize.sh kotlin-integration).
 //
 // A schema'd event's typed payload is filled by ONE producer: the generated
 // `raiseJobCompleted` seam. Every other producer — `<send>` with `<param>`, an

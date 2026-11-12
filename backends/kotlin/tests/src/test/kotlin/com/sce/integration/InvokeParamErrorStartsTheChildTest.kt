@@ -21,7 +21,7 @@
 // Fixture: integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml
 //
 // Regeneration (after fixture or template edit):
-//   scripts/regen_invoke_param_error_starts_the_child_kotlin.sh
+//   scripts/materialize.sh kotlin-integration
 
 package com.sce.integration
 
