@@ -65,7 +65,7 @@ public:
     static void setBackend(std::unique_ptr<ILoggerBackend> backend);
 
     /**
-     * @brief Initialize default logger (stdout, no file)
+     * @brief Initialize default logger (the standard error, no file)
      *
      * Creates default backend if no custom backend was injected, and installs this
      * Logger's sink.

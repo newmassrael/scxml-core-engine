@@ -70,7 +70,7 @@ a888d153091d7e7e232d0f38b7bb8ec4f334f5f9 sce/include/common/Latin1Bytes.h
 5ebd00b12ea414008e5124f20085fe0392a25c46 sce/include/common/LogFormat.h
 3bd88e06369f137191f03b239961124b03ac0c06 sce/include/common/LogSink.h
 b5ad942914344ffe3cc56ddfd6ca901784632684 sce/include/common/LogToLogger.h
-11446a7b5e369e890a2de06dde5381354bc9a789 sce/include/common/Logger.h
+3bbd146525a3b33b7695a8336bd6cc292b8ca78d sce/include/common/Logger.h
 0ffebe3929d376c5a613d78bf3bc4c93d0c29389 sce/include/common/LogicalTimeScheduler.h
 cd58b0ccb904ca445b56292ecfb28c3bd3cb7202 sce/include/common/MeshEndpoint.h
 9997d4ecb7814fa5519f5a3eeef24fbe796169af sce/include/common/NamelistHelper.h
