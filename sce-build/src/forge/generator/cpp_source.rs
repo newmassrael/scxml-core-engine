@@ -38,9 +38,10 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// Every form of `plan` the C++ printer does not print, in the order
 /// [`unlowered`] meets them; empty where it prints the codec whole. They are a
 /// number a C++ value has no type for yet (a float or a bool), a list a group
-/// holds held to a law, whose start no arm of a C++ group holds, a chain of
-/// slots whose entries are held to an input, which the Rust printer does not
-/// write either, and a codec held that is refused for one of these.
+/// holds held to a law the printer does not read off an arm
+/// ([`grouped_law_forms`]), a chain of slots whose entries are held to an
+/// input, which the Rust printer does not write either, and a codec held that
+/// is refused for one of these.
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
@@ -102,10 +103,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // bodies or lists, its gates flag inputs or one-bit flags of the codec's
     // own. The encode keeps a body or a list as the arms that hold it present
     // it, all as one type, and two lists of one count as one `Aligned` of the
-    // two (R5). A list held to a law is not: the law's start is the flag the
-    // parent binds, which no arm of a C++ group holds, so the decode would have
-    // no start to hold the list it read to (docs/adr/0065 §6 R8). A float and
-    // a bool have no C++ type, as an element of one has not.
+    // two (R5). A list held to a law is held to it in each arm that holds it,
+    // as it is held alone (docs/adr/0065 §6 R8): the encode derives a flag
+    // bound to every entry from the start of the list the arm the value holds
+    // keeps, and the decode holds the list it read to the law from the start
+    // the frame gave, before it makes the arm ([`grouped_law_forms`] names
+    // the laws it does not read off an arm). A float and a bool have no C++
+    // type, as an element of one has not.
     for group in plan.groups() {
         // A chain's memberships make arms that each hold the chain as a `Chain`
         // of the kinds the arm says (R6b), optionally where a gate of its own
@@ -127,10 +131,7 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 Value::Body { .. } | Value::List { .. } => {
                     forms.extend(held_codec_forms(imports, id, &value));
                     if matches!(&value, Value::List { law, .. } if !law.is_none()) {
-                        forms.push(format!(
-                            "field '{id}': a list on one side of a gate, held to the law its \
-                             entries say their inputs by, has no C++ lowering"
-                        ));
+                        forms.extend(grouped_law_forms(plan, group, id));
                     }
                 }
                 Value::Scalar(t) => forms.push(untyped_scalar(id, t)),
@@ -350,6 +351,42 @@ fn held_codec_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> V
             }
         }
         Value::Scalar(_) | Value::Bytes(_) | Value::Text(_) => {}
+    }
+    forms
+}
+
+/// What of `id`, a list `group` holds whose entries say the inputs it hands
+/// them, the printer does not print (docs/adr/0065 §6 R8).
+///
+/// Each arm that holds such a list holds it as the value holds one alone, a
+/// `Lawful` of its law: a flag of the codec's own bound to every entry is
+/// derived from the start of the list the arm the value holds keeps, and is
+/// the bit the value presents where it holds another arm or none; an input a
+/// chain supplies from the entry before starts fixed. The printer does not
+/// hold to a law a list that shares its count with another (R5), which an arm
+/// holds as one `Aligned` of the two lists, nor a list whose law is over an
+/// input of the codec's own, which the value says by the list's start
+/// ([`said_input`]) and which the printer reads off a source through the
+/// list's own accessor, while a group's member is read off its arm.
+fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<String> {
+    let mut forms = Vec::new();
+    if group
+        .aligned
+        .as_ref()
+        .is_some_and(|(first, second)| first == id || second == id)
+    {
+        forms.push(format!(
+            "field '{id}': a list held to the law its entries say their inputs by, sharing \
+             its count with another list a gate decides, has no C++ lowering"
+        ));
+    }
+    for law in super::rust_source::list_laws(&plan.roles, id) {
+        if let InputValue::Input { name } = &law.against {
+            forms.push(format!(
+                "field '{id}': a list on one side of a gate, held to the law its entries say \
+                 the codec's own input `{name}` by, has no C++ lowering"
+            ));
+        }
     }
     forms
 }
@@ -764,21 +801,23 @@ fn named_entry(plan: &EncodePlan<'_>, imports: &[ImportContext], chain: &str, ke
     )
 }
 
-/// The types each list held to a law is held by (docs/adr/0065 §6 R8), in the
-/// codec's namespace: for each input its entries say, the type that reads it
-/// off any source of an entry through the entry codec's `input_<name>`; for
-/// each kind of entry a chain supplies an input after, the type that tells an
-/// entry of that kind by its identifier; and the law, the runtime's automaton
-/// for each input, several run together as `Laws`.
-fn law_definitions(
+/// The types each list of `lists` held to a law is held by (docs/adr/0065 §6
+/// R8), in the codec's namespace: for each input its entries say, the type
+/// that reads it off any source of an entry through the entry codec's
+/// `input_<name>`; for each kind of entry a chain supplies an input after, the
+/// type that tells an entry of that kind by its identifier; and the law, the
+/// runtime's automaton for each input, several run together as `Laws`.
+/// `lists` are the elements the value presents alone and the members of its
+/// groups, each once.
+fn law_definitions<'e, 'p: 'e>(
     plan: &EncodePlan<'_>,
     imports: &[ImportContext],
-    elements: &[Presented<'_>],
+    lists: impl Iterator<Item = &'e Presented<'p>>,
     l: &LangCtx,
     struct_name: &str,
 ) -> String {
     let mut out = String::new();
-    for e in elements.iter().filter(|e| e.law.is_some()) {
+    for e in lists.filter(|e| e.law.is_some()) {
         let field = &e.field.id;
         let (held, _) = e.list.as_ref().expect("a list held to a law is a list");
         let ns = &held.namespace;
@@ -1287,6 +1326,8 @@ impl<'p> GroupPart<'p> {
         struct_name: &str,
     ) -> Self {
         let fields = &plan.model.fields;
+        // A list whose entries say the inputs it hands them is held to its law
+        // in each arm that holds it, as it is held alone (docs/adr/0065 §6 R8).
         let presented = |id: &str| {
             let field = fields
                 .iter()
@@ -1297,7 +1338,8 @@ impl<'p> GroupPart<'p> {
                 value: plan.value(field),
                 presence: Presence::Gated,
             };
-            Presented::of(&element, l, imports, None)
+            let law = super::rust_source::law_type(&plan.roles, struct_name, id);
+            Presented::of(&element, l, imports, law)
         };
         let mut ids = group.fields();
         ids.sort_by_key(|id| fields.iter().position(|f| f.id == *id));
@@ -3005,10 +3047,20 @@ pub(super) fn render(
             ));
         }
     }
+    // The laws precede the arms' classes, which hold a list a group holds as a
+    // `Lawful` of its law.
+    before.push_str(&law_definitions(
+        plan,
+        imports,
+        elements
+            .iter()
+            .chain(groups.iter().flat_map(|g| g.members.iter())),
+        l,
+        struct_name,
+    ));
     for g in &groups {
         before.push_str(&g.class_text());
     }
-    before.push_str(&law_definitions(plan, imports, &elements, l, struct_name));
     for trait_text in elements
         .iter()
         .filter_map(|e| e.list_trait().or_else(|| e.body_trait()))
@@ -3417,9 +3469,11 @@ pub(super) fn render(
                             unreachable!("a number of encoded lengths is counted apart")
                         }
                         // The start of the list the value holds, which its law
-                        // holds every entry to (docs/adr/0065 §6 R8); where a gate
-                        // leaves the list out, a field beside it holds zero and a
-                        // flag keeps the bits the value presents.
+                        // holds every entry to (docs/adr/0065 §6 R8), kept off the
+                        // arm that holds it for a list a group holds; where a gate
+                        // leaves the list out, or the value holds an arm that does
+                        // not hold it, a field beside it holds zero and a flag keeps
+                        // the bits the value presents.
                         Measured::Start { list, input } => {
                             let held = element(list)
                                 .filter(|e| e.law.is_some())
@@ -4614,11 +4668,23 @@ pub(super) fn render(
     // a gate decides), and a derived number read and dropped, since the value
     // derives it. A carrier keeps the flags it was read with.
     let mut decoded = String::new();
+    // Each element the value presents alone, with whether the decode read it
+    // into a `std::optional`, then each member of a group, which the decode
+    // reads into one where its own gate decides it.
+    let decoded_parts = || {
+        elements.iter().map(|e| (e, e.optional)).chain(
+            groups
+                .iter()
+                .flat_map(|g| g.members.iter())
+                .map(|m| (m, m.read_optionally())),
+        )
+    };
     // A list the decode read is held to its bound by the same door, past which
     // it has too many entries (where it is present, for one a gate decides).
     // A list held to a law is then held to it from the start the frame gave,
-    // past which an entry says what its place does not ask of it.
-    for e in elements.iter().filter(|e| e.law.is_some()) {
+    // past which an entry says what its place does not ask of it; one a group
+    // holds, before the group is made of it.
+    for (e, optional) in decoded_parts().filter(|(e, _)| e.law.is_some()) {
         let (name, view) = (&e.name, &e.view);
         let start = decoded_law_start(plan, l, &e.field.id, view);
         let make = |indent: &str, list: &str, into: &str| {
@@ -4635,7 +4701,7 @@ pub(super) fn render(
                  {indent}}}\n"
             )
         };
-        if e.optional {
+        if optional {
             decoded.push_str(&format!(
                 "        std::optional<{view}> _b_{name};\n\
                  \x20       if ({name}) {{\n\
@@ -4649,13 +4715,7 @@ pub(super) fn render(
     }
     // A list a group holds likewise, where its gate leaves it in, before the
     // group is made of it.
-    let lists = elements.iter().map(|e| (e, e.optional)).chain(
-        groups
-            .iter()
-            .flat_map(|g| g.members.iter())
-            .map(|m| (m, m.read_optionally())),
-    );
-    for (e, optional) in lists.filter(|(e, _)| e.list.is_some() && e.law.is_none()) {
+    for (e, optional) in decoded_parts().filter(|(e, _)| e.list.is_some() && e.law.is_none()) {
         let (name, view) = (&e.name, &e.view);
         if optional {
             decoded.push_str(&format!(
@@ -4680,13 +4740,7 @@ pub(super) fn render(
     }
     // A byte string or a text a group holds is held to its bound likewise,
     // where its gate leaves it in, before the group is made of it.
-    let bytes = elements.iter().map(|e| (e, e.optional)).chain(
-        groups
-            .iter()
-            .flat_map(|g| g.members.iter())
-            .map(|m| (m, m.read_optionally())),
-    );
-    for (e, optional) in bytes.filter(|(e, _)| e.bytes) {
+    for (e, optional) in decoded_parts().filter(|(e, _)| e.bytes) {
         let (name, view) = (&e.name, &e.view);
         if optional {
             decoded.push_str(&format!(
@@ -5176,6 +5230,38 @@ mod tests {
              \x20               _prev_after_marker = static_cast<std::uint8_t>(",
         );
         holds(stem, &code, " == 0x4u);\n            }\n        }\n");
+    }
+
+    /// A list a group holds whose entries say the input it hands them is held
+    /// to its law in the arm: the law is defined before the arm's class that
+    /// holds the list as a `Lawful` of it, the flag bound to every entry is the
+    /// start of the list the arm the value holds keeps, and the decode holds
+    /// the list it read to the law from the flag the frame gave.
+    #[test]
+    fn a_list_a_group_holds_is_held_to_its_law_in_the_arm() {
+        let stem = "codec_repeat_flag_group";
+        let code = cpp_of(stem);
+        let law = "using CodecRepeatFlagGroupEntriesLaw = ";
+        let held = "CodecRepeatFlagGroupEntriesLaw> entries_{};\n";
+        holds(stem, &code, law);
+        holds(stem, &code, held);
+        assert!(
+            code.find(law) < code.find(held),
+            "{stem}: the law is defined before the arm that holds the list:\n{code}"
+        );
+        holds(
+            stem,
+            &code,
+            "        if (_r_entries.has_value()) {\n\
+             \x20           _f_head = (_f_head & ~0x1ull) | \
+             static_cast<std::uint64_t>(static_cast<std::size_t>((*_r_entries).start()));\n\
+             \x20       }\n",
+        );
+        holds(
+            stem,
+            &code,
+            "CodecRepeatFlagGroupEntriesLaw>::make((((head >> 0) & 0x1) != 0), *_l_entries);\n",
+        );
     }
 
     /// A gate on a chain's membership that no group holds is tested on the

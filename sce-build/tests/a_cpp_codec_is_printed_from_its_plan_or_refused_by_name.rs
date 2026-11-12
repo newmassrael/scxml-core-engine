@@ -106,6 +106,7 @@ const PRINTED: &[&str] = &[
     "codec_repeat_elem",
     "codec_repeat_flag_carrier",
     "codec_repeat_flag_gated",
+    "codec_repeat_flag_group",
     "codec_repeat_present_if_basic",
     "codec_repeat_unconditional_count",
     "codec_scout_zid_body",
@@ -188,10 +189,14 @@ const PRINTED: &[&str] = &[
     "subscription_entry",
 ];
 
+/// The directory of the resources.
+fn resources() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
+}
+
 /// Every document of the resources, by path, in order.
 fn resource_documents() -> Vec<PathBuf> {
-    let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&resources)
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(resources())
         .expect("the resources directory")
         .map(|entry| entry.expect("an entry").path())
         .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
@@ -484,5 +489,88 @@ fn a_document_that_imports_a_codec_cpp_refuses_is_refused_for_it() {
                  ({MEASURE_REFUSED_BY})"
             )),
         "{refusal}"
+    );
+}
+
+/// The documents of the resources named by `stems`, copied into `dir`, for a
+/// codec written there that imports them.
+fn copy_resources(dir: &Path, stems: &[&str]) {
+    for stem in stems {
+        let name = format!("{stem}.scxml");
+        std::fs::copy(resources().join(&name), dir.join(&name))
+            .unwrap_or_else(|e| panic!("copy {name}: {e}"));
+    }
+}
+
+/// A list on one side of a gate whose entries say the codec's own input it
+/// hands them is refused by the list's field: the value says the input by the
+/// list's start, which the printer reads off a source through the list's own
+/// accessor, while a group's member is read off the arm that holds it.
+#[test]
+fn a_list_a_group_holds_whose_law_is_over_the_codec_s_own_input_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    copy_resources(dir.path(), &["codec_chain_flag_entry"]);
+    let holder = dir.path().join("holder.scxml");
+    std::fs::write(
+        &holder,
+        codec_document(
+            "holder",
+            r#"<sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="w"/>
+  </sce:import>
+  <sce:flag-inputs>
+    <sce:flag-input name="w" width="1"/>
+  </sce:flag-inputs>"#,
+            r#"<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="L" bit="0"/>
+    </sce:flags>
+    <sce:field id="count" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="2"
+                count="count" max-count="4" sce:present-if="head.L"/>
+    <sce:field id="note" sce:type="uint8" sce:byte="3" sce:bit-size="8"
+               sce:present-if="!head.L"/>"#,
+        ),
+    )
+    .expect("write the holding codec");
+    assert_refused_by(
+        &holder,
+        "codec 'holder': field 'entries': a list on one side of a gate, held to the law its \
+         entries say the codec's own input `w` by, has no C++ lowering",
+    );
+}
+
+/// A list held to a law that shares its count with another list, the two of
+/// which an arm holds as one `Aligned` (docs/adr/0065 §6 R5), is refused by the
+/// list's field.
+#[test]
+fn a_list_held_to_a_law_that_shares_its_count_in_a_group_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    copy_resources(dir.path(), &["codec_chain_flag_entry", "codec_repeat_elem"]);
+    let holder = dir.path().join("holder.scxml");
+    std::fs::write(
+        &holder,
+        codec_document(
+            "holder",
+            r#"<sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>"#,
+            r#"<sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+      <sce:flag name="H" bit="1"/>
+    </sce:flags>
+    <sce:field id="links_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="links" type="codec_repeat_elem" sce:byte="2"
+                count="links_len" max-count="4"/>
+    <sce:repeat id="weights" type="codec_chain_flag_entry" sce:byte="3"
+                count="links_len" max-count="4" sce:present-if="head.H"/>"#,
+        ),
+    )
+    .expect("write the holding codec");
+    assert_refused_by(
+        &holder,
+        "codec 'holder': field 'weights': a list held to the law its entries say their \
+         inputs by, sharing its count with another list a gate decides, has no C++ lowering",
     );
 }

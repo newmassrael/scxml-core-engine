@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a list held to its law on one side of a gate.
+
+     The hand-over of `codec_repeat_flag_gated`, with fields on both sides of
+     L. Where L is set the frame holds `level`, the count and the elements,
+     each handed W as its `wide` input; where it is clear, `note`. The fields
+     L decides are one group of two arms (docs/adr/0065 §6 R4b), and the
+     elements say the input W hands them, so the list is held to the law they
+     say it by (R8): W is the list's start where the value holds the arm that
+     holds the list, and the bit the value presents where it holds `note`.
+
+     Wire shape:
+       byte 0  : head  (bit 0 = W, bit 1 = L)
+       L set   : level (uint8), count (uint8), then `count` elements, each
+                 laid out by W
+       L clear : note  (uint8) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_flag_group">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="head.W"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="W" bit="0"/>
+      <sce:flag name="L" bit="1"/>
+    </sce:flags>
+    <sce:field id="level" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:field id="count" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="3"
+                count="count" max-count="4"
+                sce:present-if="head.L"/>
+    <sce:field id="note" sce:type="uint8" sce:byte="4" sce:bit-size="8"
+               sce:present-if="!head.L"/>
+  </datamodel>
+</scxml>

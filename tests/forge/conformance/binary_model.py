@@ -97,7 +97,10 @@ What the model reads so far, and refuses by name past it:
   before is of that kind, the first clear. Where they say an input they take,
   they follow a law over it (R8): the list is `{"start": {input: 0|1},
   "entries": [..]}`, each entry handed the start for an input the list binds,
-  and a flag bound to the start is derived from it. An input they do not say
+  and a flag bound to the start is derived from it. A list a group holds is
+  stated so in its arm: the flag is derived from its start where the value
+  holds an arm that holds the list, and is the value's own where it holds
+  another or none, as where a gate leaves a list out. An input they do not say
   is no law's: the list is its entries alone, each handed the parent's input
   or the value's own flag, or what the entry before is, as the walk writes it.
   A codec handed an input its value does not say takes it at its encode as
@@ -2880,6 +2883,33 @@ FIXTURES = {
             ({"head": 0x01, "entries": None}, "no list and W set: nothing derives it"),
         ],
         "a gated list's law: the bound flag is its start where the list is there.",
+    ),
+    "codec_repeat_flag_group": Fixture(
+        [
+            ({"head": 0x02, "head.L": {"arm": 0, "level": 7, "entries": {
+                "start": {"wide": 0},
+                "entries": [flag_entry(1, 5, 0, False), flag_entry(2, 6, 0, False)]}}},
+             "L set by the arm that holds the list, W clear by its start: two short entries"),
+            ({"head": 0x03, "head.L": {"arm": 0, "level": 0, "entries": {
+                "start": {"wide": 1}, "entries": [flag_entry(3, 0x1234, 1, False)]}}},
+             "the start set: the entry long, W derived set"),
+            ({"head": 0x03, "head.L": {"arm": 0, "level": 0xFF, "entries": {
+                "start": {"wide": 1}, "entries": []}}},
+             "no entry and the start set: W follows the start, not the entries"),
+            ({"head": 0x02, "head.L": {"arm": 0, "level": 1, "entries": {
+                "start": {"wide": 0}, "entries": []}}},
+             "no entry and the start clear: the count zero, W clear"),
+            ({"head": 0x00, "head.L": {"arm": 1, "note": 9}},
+             "the arm of note: L clear, no list, W the value's own and clear"),
+            ({"head": 0x01, "head.L": {"arm": 1, "note": 0xFF}},
+             "the arm of note and W set: no list derives W, so the value's bit is kept"),
+            ({"head": 0xFE, "head.L": {"arm": 0, "level": 2, "entries": {
+                "start": {"wide": 0}, "entries": [flag_entry(4, 0x7F, 0, False)]}}},
+             "the bits beside W and L are kept"),
+        ],
+        "a list held to its law on one side of a gate (docs/adr/0065 §6 R4b, R8): the arm "
+        "where L is set holds level and the list, whose start is W; the other holds note, "
+        "and there W is the value's own.",
     ),
     "codec_chain_prev_carrier": Fixture(
         [

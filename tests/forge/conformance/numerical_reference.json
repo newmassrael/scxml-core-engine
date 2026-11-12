@@ -44796,6 +44796,19 @@
         {"source": {"header": 0, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "inputs": {"N": 1}, "encoded": [0, 7], "note": "the plain arm says nothing of N, handed set"},
         {"source": {"header": 191, "body": {"body": {"arm": "codec_some_arms_say_plain", "body": {"id": 7}}}}, "inputs": {"N": 0}, "encoded": [191, 7], "note": "the bits beside M are kept"}
       ]
+    },
+    "codec_repeat_flag_group": {
+      "fixture": "CodecRepeatFlagGroup",
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a list held to its law on one side of a gate (docs/adr/0065 \u00a76 R4b, R8): the arm where L is set holds level and the list, whose start is W; the other holds note, and there W is the value's own.",
+      "sources": [
+        {"source": {"head": 2, "head.L": {"arm": 0, "level": 7, "entries": {"start": {"wide": 0}, "entries": [{"header": 1, "wide": {"arm": 1, "short_value": 5}}, {"header": 2, "wide": {"arm": 1, "short_value": 6}}]}}}, "encoded": [2, 7, 2, 1, 5, 2, 6], "note": "L set by the arm that holds the list, W clear by its start: two short entries"},
+        {"source": {"head": 3, "head.L": {"arm": 0, "level": 0, "entries": {"start": {"wide": 1}, "entries": [{"header": 3, "wide": {"arm": 0, "long_value": 4660}}]}}}, "encoded": [3, 0, 1, 3, 18, 52], "note": "the start set: the entry long, W derived set"},
+        {"source": {"head": 3, "head.L": {"arm": 0, "level": 255, "entries": {"start": {"wide": 1}, "entries": []}}}, "encoded": [3, 255, 0], "note": "no entry and the start set: W follows the start, not the entries"},
+        {"source": {"head": 2, "head.L": {"arm": 0, "level": 1, "entries": {"start": {"wide": 0}, "entries": []}}}, "encoded": [2, 1, 0], "note": "no entry and the start clear: the count zero, W clear"},
+        {"source": {"head": 0, "head.L": {"arm": 1, "note": 9}}, "encoded": [0, 9], "note": "the arm of note: L clear, no list, W the value's own and clear"},
+        {"source": {"head": 1, "head.L": {"arm": 1, "note": 255}}, "encoded": [1, 255], "note": "the arm of note and W set: no list derives W, so the value's bit is kept"},
+        {"source": {"head": 254, "head.L": {"arm": 0, "level": 2, "entries": {"start": {"wide": 0}, "entries": [{"header": 4, "wide": {"arm": 1, "short_value": 127}}]}}}, "encoded": [254, 2, 1, 4, 127], "note": "the bits beside W and L are kept"}
+      ]
     }
   },
   "string_lookups": {

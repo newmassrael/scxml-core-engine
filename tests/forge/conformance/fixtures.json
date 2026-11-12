@@ -3268,6 +3268,13 @@
       "fields": []
     },
     {
+      "name": "codec_repeat_flag_group",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "oracle_eligible": false,
+      "fields": []
+    },
+    {
       "name": "codec_repeat_present_if_basic",
       "kind": "codec",
       "ref_section": "codecs",
