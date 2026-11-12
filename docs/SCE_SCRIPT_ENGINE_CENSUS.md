@@ -98,12 +98,12 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 281
+engine-documents 282
 native-prefix-documents 2
-datamodel-variable-init 517
+datamodel-variable-init 528
 transition-guard 258
-assign-action 447
-child-invoke-needs-script-engine 62
+assign-action 457
+child-invoke-needs-script-engine 63
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 102
@@ -130,6 +130,7 @@ population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
 
+<<<<<<< ours
 ⚠ **2026-11-12, deliberately:** one document lands with this table, and it
 exists to need an engine.
 - `sce-build/tests/fixtures/swift_ecmascript/ecma_invoke_seeds.scxml` is the
@@ -154,6 +155,23 @@ engine holds. Read against `script_engine_analyzer`, it raises
 its document's, which the sweep does not walk. Its `sce-static` sibling,
 `tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`,
 needs no engine and carries no cause.
+
+⚠ **2026-11-12, deliberately, predicted from the document and not yet
+measured:** one document lands with this table, and it exists to need an engine.
+- `backends/kotlin/tests/fixtures/a_child_takes_a_handed_value_in_place_of_its_data`
+  holds docs/adr/0098 on the Kotlin channel: a child whose top-level `<data>`
+  have expressions of their own that would fail or have an effect, each taking
+  the value its invoke handed it instead, and a parent that keeps what the
+  child reports in variables of its own. The expressions it hands and the ones
+  it must not evaluate are the point, so the engine is what it tests.
+
+Its parent raises `engine-documents` by one (281 to 282, after the Rust
+document above), `datamodel-variable-init` by 11 (517 to 528, its `<data>`),
+`assign-action` by ten (447 to 457, the report it keeps) and
+`child-invoke-needs-script-engine` by one (62 to 63); its in-line child is not
+a document of the census. The figures were derived by reading the document
+against `script_engine_analyzer`; where the test's block disagrees, the test's
+is the one to carry.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.

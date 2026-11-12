@@ -181,3 +181,16 @@ arguments = [
 ]
 place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/jvm_long_text_ecmascript"
 keep = ["*Sm.kt"]
+
+# The document that holds docs/adr/0098 on this channel until every backend
+# holds that decision, when its canonical fixture lands under
+# integration_resources. Written for an ECMAScript engine, as the long-text
+# document above is, and its inline child joins the parent's package.
+[[generation]]
+arguments = [
+    "generate", "backends/kotlin/tests/fixtures/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml",
+    "-l", "kotlin", "-o", "{out}", "--children", "--kotlin-package-prefix", "com.sce.integration",
+    "--script-engine", "ecmascript",
+]
+place = "backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_child_takes_a_handed_value_in_place_of_its_data"
+keep = ["*Sm.kt"]
