@@ -151,7 +151,9 @@ engine holds. Read against `script_engine_analyzer`, it raises
 `datamodel-variable-init` by eleven (506 to 517, the parent's eleven `<data>`),
 `assign-action` by ten (437 to 447, the parent's ten `<assign>`s) and
 `child-invoke-needs-script-engine` by one (61 to 62); the child's own causes are
-its document's, which the sweep does not walk.
+its document's, which the sweep does not walk. Its `sce-static` sibling,
+`tests/integration/a_static_child_declares_its_data_with_a_handed_value.scxml`,
+needs no engine and carries no cause.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.

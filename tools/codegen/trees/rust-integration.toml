@@ -57,13 +57,15 @@ keep = ["*.rs"]
 #   "External-Event Budget", a driver at a time;
 # - parallel_region_root_external_domain, the external transition of a
 #   region root, has a driver on six of the seven channels;
-# - a_child_takes_a_handed_value_in_place_of_its_data holds docs/adr/0098 on
+# - a_child_takes_a_handed_value_in_place_of_its_data and
+#   a_static_child_declares_its_data_with_a_handed_value hold docs/adr/0098 on
 #   the Rust channel alone, which lands before the others; the canonical
 #   fixture of every channel lands last (its "Order of landing").
 [[generation]]
 each = { list = [
     "a_child_takes_a_handed_value_in_place_of_its_data",
     "a_child_timer_is_a_deadline_of_its_parent",
+    "a_static_child_declares_its_data_with_a_handed_value",
     "external_chain_is_bounded",
     "parallel_region_root_external_domain",
 ], as = "document" }

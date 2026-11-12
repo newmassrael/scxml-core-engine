@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions")
+  and §scxml-6.4 (docs/adr/0098): a value an <invoke> hands its child is the
+  initial value of the child's variable of that name, in place of its own, so a
+  variable declared after it whose initial value reads it reads the handed
+  value, as it would had the child been started with it.
+
+  `working` invokes `worker`, handing `start` the 7 `base` holds. `worker`
+  declares `start = 0` and then `copied = start`, and ends the moment `copied`
+  is 7. A child that declared its variables with their own values and wrote the
+  handed one over `start` afterwards holds `copied = 0`, never ends, and leaves
+  the parent in `working`.
+
+  It sits beside its driver rather than under `integration_resources/`: the
+  Rust channel lands docs/adr/0098 before the others, and the canonical
+  fixture of every channel lands last. See
+  `tools/codegen/trees/rust-integration.toml`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="working" datamodel="sce-static"
+       name="a_static_child_declares_its_data_with_a_handed_value">
+  <datamodel>
+    <data id="base" sce:type="uint32" expr="7"/>
+  </datamodel>
+  <state id="working">
+    <invoke type="scxml" id="worker">
+      <param name="start" expr="base"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="start" sce:type="uint32" expr="0"/>
+            <data id="copied" sce:type="uint32" expr="start"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="copied === 7" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.worker" target="passed"/>
+  </state>
+  <final id="passed"/>
+</scxml>

@@ -1063,6 +1063,52 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
    draws a session id: the predicate `helpers::session_id::drawn` is compiled
    under. #}
 {% set draws_cfg = '#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]' %}
+{# docs/SCE_TEST_PROFILE.md §11.5: what a module parameter starts at before its
+   component fills it. It has no initial value of the document's, so it starts
+   at its type's default, which nothing reads; the machine's own type for an
+   enum has no `Default`, so an enum starts at the variant its document
+   declares first, which nothing reads either. #}
+{% macro module_parameter_start(field, enums) -%}
+{% if field.saved_kind == "enum" -%}
+{% for enum in enums -%}
+{% if enum.ty == field.ty -%}
+{{ field.ty }}::{{ enum.variants[0].ident }}
+{%- endif %}
+{%- endfor %}
+{%- else -%}
+Default::default()
+{%- endif %}
+{%- endmacro %}
+{#
+    SCE Accepted Subset §2.15: each sce-static variable's initial value, in
+    declaration order — an initial value reads the variables declared before
+    it by these names. One chain for the two places the variables are
+    declared: `build`, where `seed` is none, and `accept_params`, where `seed`
+    names the `InvokeParams` the invoking session handed (§scxml-6.4,
+    docs/adr/0098). There a variable handed a value is declared with it in
+    place of its own initial value, so a later initial value that reads it
+    reads the handed value, as it would had the machine been built with it.
+    Every other variable is declared again with its own initial value, which
+    reads only the variables declared before it and can neither fail nor act
+    (one that could fail is refused where it is written), so declaring it a
+    second time is not observable. A module parameter keeps what its
+    component filled.
+#}
+{% macro static_field_declarations(fields, enums, seed) %}
+{% for field in fields %}
+{% if field.module_parameter and seed %}
+        let {{ field.name }}: {{ field.ty }} = ::core::mem::replace(&mut self.{{ field.name }}, {{ module_parameter_start(field, enums) }});
+{% elif field.module_parameter %}
+        let {{ field.name }}: {{ field.ty }} = {{ module_parameter_start(field, enums) }};
+{% elif seed and field.seeded and field.saved_kind == 'optional' %}
+        let {{ field.name }}: {{ field.ty }} = if {{ seed }}.{{ field.name }}.is_some() { {{ seed }}.{{ field.name }} } else { {{ field.init }} };
+{% elif seed and field.seeded %}
+        let {{ field.name }}: {{ field.ty }} = match {{ seed }}.{{ field.name }} { Some(value) => value, None => {{ field.init }} };
+{% else %}
+        let {{ field.name }}: {{ field.ty }} = {{ field.init }};
+{% endif %}
+{% endfor %}
+{% endmacro %}
 {# Whether this machine can be built in a constant expression, for a `static`
    (`new_const`, which `Engine::new_const` builds its engine around; the
    engine's own starting values are all constants, docs/adr/0070): the
@@ -1122,28 +1168,10 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% else %}
     {{ 'const ' if const_buildable else '' }}fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
-   declaration order — an initial value reads the variables declared before
-   it by these names. #}
-{% for field in static_fields %}
-{% if field.module_parameter and field.saved_kind == "enum" %}
-        {# docs/SCE_TEST_PROFILE.md §11.5: as below; the machine's own type for an
-           enum has no `Default`, so it starts at the variant its document
-           declares first, which nothing reads either. #}
-{% for enum in static_enums %}
-{% if enum.ty == field.ty %}
-        let {{ field.name }}: {{ field.ty }} = {{ field.ty }}::{{ enum.variants[0].ident }};
+   declaration order (`static_field_declarations`). #}
+{% if static_fields %}
+{{ static_field_declarations(static_fields, static_enums, none) }}
 {% endif %}
-{% endfor %}
-{% elif field.module_parameter %}
-        {# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value
-           of the document's; the component fills it from the run's module
-           parameters before the machine starts, so it starts at its type's
-           default, which nothing reads. #}
-        let {{ field.name }}: {{ field.ty }} = Default::default();
-{% else %}
-        let {{ field.name }}: {{ field.ty }} = {{ field.init }};
-{% endif %}
-{% endfor %}
         Self {
 {% if has_native_actions %}
             actions,
@@ -1429,19 +1457,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% if ns_seed.any %}
 
-    /// §scxml-6.4.1: give this machine the values `params` carries, in place of
-    /// the ones its `<data>` gave. Called before it initializes.
-    pub fn accept_params(&mut self, params: {{ machine_name }}InvokeParams) {
+    /// §scxml-6.4: give this machine the values `handed` carries, each as the
+    /// initial value of its variable in place of the one its `<data>` gives, so
+    /// that a variable declared after it whose initial value reads it reads the
+    /// handed value (docs/adr/0098). Called before it initializes.
+    pub fn accept_params(&mut self, handed: {{ machine_name }}InvokeParams) {
+{{ static_field_declarations(static_fields, static_enums, 'handed') }}
 {% for field in static_fields %}
-{% if field.seeded and field.saved_kind == 'optional' %}
-        if params.{{ field.name }}.is_some() {
-            self.{{ field.name }} = params.{{ field.name }};
-        }
-{% elif field.seeded %}
-        if let Some(value) = params.{{ field.name }} {
-            self.{{ field.name }} = value;
-        }
-{% endif %}
+        self.{{ field.name }} = {{ field.name }};
 {% endfor %}
     }
 {% endif %}
