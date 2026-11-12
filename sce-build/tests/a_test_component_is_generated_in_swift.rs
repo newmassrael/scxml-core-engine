@@ -185,7 +185,7 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
         let engine = at(component, "let machine = Engine(policy: policy)");
         let served = at(component, "try machine.registerEventProcessor(");
         let invoked = at(component, "try machine.registerInvoker(");
-        let started = at(component, "\n        machine.initialize()\n");
+        let started = at(component, "\n            try machine.initialize()\n");
         let kept = at(component, "\n        sceMachine = machine\n");
         assert!(
             built < named
@@ -810,7 +810,7 @@ fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
     let bound = at(component, "policy.sceTestContextBound = context");
     let read = at(component, "guard context.readModuleParameters(");
     let built = at(component, "let machine = Engine(policy: policy)");
-    let started = at(component, "\n        machine.initialize()\n");
+    let started = at(component, "\n            try machine.initialize()\n");
     assert!(
         bound < read && read < built && built < started,
         "the parameters are read after the context is bound and before the engine is built"

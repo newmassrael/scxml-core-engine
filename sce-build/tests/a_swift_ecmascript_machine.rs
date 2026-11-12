@@ -129,7 +129,7 @@ fn the_engine_is_told_which_rung_a_payload_got_when_the_event_is_bound() {
     let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, GUARDED), &[]);
     assert_eq!(status, Some(0), "{said}");
     assert!(
-        machine.contains("let reading = try ensureLua().bindCurrentEvent("),
+        machine.contains("let reading = try scriptSession.bindCurrentEvent("),
         "the reading the script engine reports is kept: {machine}"
     );
     assert!(
@@ -137,6 +137,38 @@ fn the_engine_is_told_which_rung_a_payload_got_when_the_event_is_bound() {
             "engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))"
         ),
         "and handed to the engine, which counts the undecodable one: {machine}"
+    );
+}
+
+/// docs/adr/0096: the session is made in one place, which the engine asks first in every start, and
+/// every later use reads the session that start made. The seam a test fails a step through is a debug
+/// build's alone, so a release build of a machine cannot be made to refuse its start on request.
+#[test]
+fn the_session_is_established_by_the_start_and_failed_on_request_only_in_a_debug_build() {
+    let (status, machine, said) = generate(&document(r#"datamodel="ecmascript""#, GUARDED), &[]);
+    assert_eq!(status, Some(0), "{said}");
+    assert!(
+        machine.contains("public func establishScriptSession() -> ScriptSessionFailure? {"),
+        "the session is established where the engine asks for it: {machine}"
+    );
+    assert!(
+        !machine.contains("ensureLua"),
+        "nothing makes a session at its first use: {machine}"
+    );
+    let seam = machine
+        .find("\n#if DEBUG\n    /// Asked before each step of establishing a session")
+        .unwrap_or_else(|| panic!("the seam is compiled into a debug build: {machine}"));
+    let release_step = concat!(
+        "\n#else\n",
+        "    private func sceScriptSessionFaultInjected(at stage: ScriptSessionStage) throws {}\n",
+        "#endif\n"
+    );
+    let release = machine[seam..]
+        .find(release_step)
+        .unwrap_or_else(|| panic!("a release build's step asks nothing: {machine}"));
+    assert!(
+        !machine[seam + release..].contains("sceScriptSessionFault?("),
+        "the release branch reads no seam: {machine}"
     );
 }
 

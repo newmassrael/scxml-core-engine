@@ -257,6 +257,12 @@
    once for each start (`native_action::lower_child_hosts`, W3C SCXML 6.4: the child is a
    session of its own, so what the host answers for one start is not carried into the next). #}
         let childPolicy = {{ invoke_info.child_name | to_pascal_case }}Policy({{ 'actions: ' ~ invoke_info.child_host_call if invoke_info.child_host_call else '' }})
+{% if model.needs_script_engine and invoke_info.child_needs_script_engine %}
+#if DEBUG
+        // docs/adr/0096: a test that fails this session's steps on request fails the child's too.
+        childPolicy.sceScriptSessionFault = sceScriptSessionFault
+#endif
+{% endif %}
 {% if ecmascript_datamodel and invoke_info.idlocation %}
         // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names, the id
         // every event of the child carries as `_event.invokeid`, before the child starts.
@@ -298,7 +304,12 @@
         // and this document (empty for a child written in line), installed before the child
         // initializes, since its first state may already send.
         engine.startChildMesh(of: session, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: documentStem("{{ invoke_info.src | default('', true) | escape_swift }}"))
-        session.initialize()
+        guard startChildSession(session, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = nil
+            return
+        }
         sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = session
         // W3C SCXML 6.4: what the child sent while it initialized, and whether it
         // ended doing so.
@@ -386,6 +397,12 @@
             // The stem names the document the build wrote a child for, and its
             // arguments are read only now that the value has chosen it (6.4.3).
             let childPolicy = {{ candidate.stem | to_pascal_case }}Policy({{ 'actions: ' ~ candidate.child_host_call if candidate.child_host_call else '' }})
+{% if model.needs_script_engine and candidate.child_needs_script_engine %}
+#if DEBUG
+            // docs/adr/0096: a test that fails this session's steps on request fails the child's too.
+            childPolicy.sceScriptSessionFault = sceScriptSessionFault
+#endif
+{% endif %}
 {% if ecmascript_datamodel %}
 {% if invoke_info.idlocation %}
             // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names
@@ -433,7 +450,12 @@
             autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
             finalizeScript: ""
         )
-        sceStarted.initialize()
+        guard startChildSession(sceStarted, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", engine: engine) else {
+            // docs/adr/0096: the child's start was refused, so the invoke ends without a child:
+            // it is not kept, and `startChildSession` raised the error.execution that says so.
+            activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = nil
+            return
+        }
         sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} = sceStarted
 {% if invoke_info.candidates %}
         sceInvokeStem{{ invoke_info.field_suffix | to_pascal_case }} = sceSelected
