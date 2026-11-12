@@ -98,8 +98,21 @@ PY
 
 mutation_case "the datamodel is declared after the initial entry" <<'PY'
 edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-     "        declareDatamodel()\n        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n",
-     "        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n        declareDatamodel()\n")
+     "        declareDatamodelOfStart()\n        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n",
+     "        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))\n        declareDatamodelOfStart()\n")
+PY
+
+# ── The handed values outlive the start they were handed for ────────
+#
+# The start no longer clears them, so a host that stops the child and starts
+# it again starts it from the values handed for the invoke's start. Killer: `a
+# later start of the same machine declares the data's own value` (`seed` is
+# `handed` after the second start).
+
+mutation_case "the handed values are kept for a later start" <<'PY'
+edit("backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+     "        try {\n            declareDatamodel()\n        } finally {\n            pendingInvokeParams = emptyMap()\n        }\n",
+     "        declareDatamodel()\n")
 PY
 
 # ── A value the session cannot hold is dropped without a word ───────

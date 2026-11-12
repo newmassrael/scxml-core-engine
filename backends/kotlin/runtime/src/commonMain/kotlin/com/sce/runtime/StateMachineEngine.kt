@@ -3104,12 +3104,30 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * exactly the states it names, and every compound state the entry reaches
      * only as an ancestor of one of them takes no default.
      *
-     * The datamodel is declared first ([declareDatamodel]), in the session the
-     * start established, so no state is entered before its `<data>` is bound.
+     * The datamodel is declared first ([declareDatamodelOfStart]), in the
+     * session the start established, so no state is entered before its
+     * `<data>` is bound.
      */
     private fun enterInitialConfiguration() {
-        declareDatamodel()
+        declareDatamodelOfStart()
         Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))
+    }
+
+    /**
+     * Declare the datamodel of this start ([declareDatamodel]), which takes
+     * the values the invoke handed this machine, and clear them: they belong to
+     * the invoke's start of this machine, so they are consumed by the start
+     * that declares them, whether or not that declaration finished, and a
+     * later start of the same object declares every `<data>` from its own value
+     * ([pendingInvokeParams]). One body for [enterInitialConfiguration] and
+     * [enterAt].
+     */
+    private fun declareDatamodelOfStart() {
+        try {
+            declareDatamodel()
+        } finally {
+            pendingInvokeParams = emptyMap()
+        }
     }
 
     /**
@@ -3347,7 +3365,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
         // executable content — so it runs here for the same reason it runs on
         // the way into [initialize].
-        declareDatamodel()
+        declareDatamodelOfStart()
 
         this.configuration.clear()
         this.configuration.addAll(configuration)
@@ -5578,12 +5596,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-6.4: the values the invoke that started this session handed it,
      * by name, as [setInvokeParams] gave them; empty for a session no invoke
-     * started.
+     * started, and once the start they were handed for has declared its
+     * datamodel.
      *
-     * Kept for the life of the session rather than cleared by the first start:
-     * they are the arguments the session was started with, so every start of it
-     * ([initialize], [start], [enterAt]) declares its top-level `<data>` from the
-     * same values ([declareHandedValue]).
+     * They are the arguments of the invoke's start of this machine, not of
+     * every start a host may make of the same object: the start that takes them
+     * ([declareDatamodelOfStart]) clears them, so a later start (a [stop], then
+     * [initialize]) declares each top-level `<data>` from its own value, as the
+     * Swift and Python children do.
      */
     private var pendingInvokeParams: Map<String, Any?> = emptyMap()
 

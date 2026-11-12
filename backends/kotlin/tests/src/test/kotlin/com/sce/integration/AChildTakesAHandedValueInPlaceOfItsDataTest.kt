@@ -14,6 +14,11 @@
 // that `<data>`, as for an expression of its own that failed, and does not take
 // the `<data>`'s own value instead.
 //
+// The handed values are consumed by the start they were handed for: a machine
+// stopped and started again declares its `<data>` from its own value. That case
+// runs a hand-written machine, since the fixture's child is not the test's to
+// start twice.
+//
 // Fixture: backends/kotlin/tests/fixtures/a_child_takes_a_handed_value_in_place_of_its_data/a_child_takes_a_handed_value_in_place_of_its_data.scxml
 //
 // Regeneration (after fixture or template edit):
@@ -23,8 +28,14 @@ package com.sce.integration
 
 import com.sce.integration.a_child_takes_a_handed_value_in_place_of_its_data.AChildTakesAHandedValueInPlaceOfItsDataState
 import com.sce.integration.a_child_takes_a_handed_value_in_place_of_its_data.AChildTakesAHandedValueInPlaceOfItsDataStateMachine
+import com.sce.runtime.EnabledTransition
+import com.sce.runtime.Event
+import com.sce.runtime.HistoryId
 import com.sce.runtime.ScriptEngineException
+import com.sce.runtime.ScriptSessionFailure
 import com.sce.runtime.ScxmlScriptEngine
+import com.sce.runtime.State
+import com.sce.runtime.StateMachineEngine
 import com.sce.w3c.W3CTestBase
 import com.sce.w3c.driveOnVirtualTime
 import com.sce.w3c.initializeOnVirtualTime
@@ -51,6 +62,51 @@ private class RefusesOneHandedValue(
             throw ScriptEngineException("the double holds no '$name' of '$value'")
         }
         engine.setVariable(sessionId, name, value)
+    }
+}
+
+private object SeedState : State
+
+private sealed interface SeedEvent : Event {
+    /** The `error.execution` a handed value the session cannot hold raises. */
+    data object Failed : SeedEvent
+}
+
+/**
+ * The smallest machine whose start declares a top-level `<data>` as a generated
+ * one does: one state, and `<data id="seed" expr="'own'"/>`, which asks first
+ * for a value its invoke handed it ([declareHandedValue]). It can hand another
+ * machine values as a parent's `<invoke>` does, and read its own `seed`.
+ */
+private class SeedMachine(engine: ScxmlScriptEngine) : StateMachineEngine<SeedState, SeedEvent>(engine) {
+    override val initialState: SeedState = SeedState
+
+    override fun firstEnabledTransition(state: SeedState, event: SeedEvent?): EnabledTransition<SeedState, HistoryId>? = null
+
+    override fun onEntry(state: SeedState, isDefaultEntry: Boolean) {}
+
+    override fun onExit(state: SeedState) {}
+
+    override fun executeTransitionContent(source: SeedState, transitionIndex: Int) {}
+
+    override fun establishScriptSession(): ScriptSessionFailure? =
+        makeScriptSession(scriptEngine ?: error("the machine is built with an engine"), "seed_machine")
+
+    override fun declareDatamodel() {
+        val engine = scriptEngine ?: error("the machine is built with an engine")
+        val sid = scriptSessionId ?: error("the start established a session")
+        if (!declareHandedValue(engine, sid, "seed", SeedEvent.Failed)) {
+            engine.setVariable(sid, "seed", "own")
+        }
+    }
+
+    /** Hand [child] [values] before it starts, as a parent's `<invoke>` does. */
+    fun hand(child: SeedMachine, values: Map<String, Any?>) = setInvokeParams(child, values)
+
+    /** What `seed` holds in the session of this machine's latest start. */
+    fun seed(): Any? {
+        val sid = scriptSessionId ?: return null
+        return scriptEngine?.getVariable(sid, "seed")
     }
 }
 
@@ -158,6 +214,33 @@ class AChildTakesAHandedValueInPlaceOfItsDataTest {
                         "it could not hold, or a `<data>`'s own expression, failed",
                 )
             }
+        }
+    }
+
+    @Test
+    fun `a later start of the same machine declares the data's own value`() {
+        // The values an invoke hands are the arguments of the invoke's start of
+        // the child, consumed by it: a host that stops the same object and
+        // starts it again starts it from the document's own values, as the
+        // Swift and Python children do.
+        val engine = W3CTestBase.createEngine()
+        val parent = SeedMachine(engine)
+        val child = SeedMachine(engine)
+        try {
+            parent.hand(child, mapOf("seed" to "handed"))
+            child.initialize()
+            assertEquals("handed", child.seed(), "the invoke's start of the child takes the handed value")
+            child.stop()
+            child.initialize()
+            assertEquals(
+                "own",
+                child.seed(),
+                "a second start of the same machine took the value handed for the first: the " +
+                    "start that declared it did not consume it",
+            )
+        } finally {
+            child.cleanup()
+            parent.cleanup()
         }
     }
 
