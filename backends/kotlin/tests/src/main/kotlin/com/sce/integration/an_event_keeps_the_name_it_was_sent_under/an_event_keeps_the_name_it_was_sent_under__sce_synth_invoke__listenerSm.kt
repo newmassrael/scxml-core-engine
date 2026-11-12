@@ -2,9 +2,9 @@
 // source-hash: b3f397aa92264728b43a165db1d5ee421434d718571bfaff5006c104a84e0ed1
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml
+// Source: integration_resources/an_event_keeps_the_name_it_was_sent_under/an_event_keeps_the_name_it_was_sent_under.scxml#listener
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
+// SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:34 :: _machine
 
 package com.sce.integration.an_event_keeps_the_name_it_was_sent_under
 
@@ -385,7 +385,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
+    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:34 :: _machine
     override fun onEntry(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, isDefaultEntry: Boolean) {
         when (state) {
             is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> onEntryOfHeard()
@@ -395,13 +395,13 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
 
 
     private fun onEntryOfHeard() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:18 :: heard :: _state_body
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:49 :: heard :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfWaiting() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:36 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -427,7 +427,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
+    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:34 :: _machine
     override fun onExit(state: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState) {
         when (state) {
             is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Heard -> onExitOfHeard()
@@ -437,17 +437,17 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
 
 
     private fun onExitOfHeard() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:18 :: heard :: _state_body
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:49 :: heard :: _state_body
     }
 
     private fun onExitOfWaiting() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:36 :: waiting :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:3 :: _machine
+    // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:34 :: _machine
     override fun executeTransitionContent(source: AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, transitionIndex: Int) {
         when (source) {
             is AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState.Waiting -> transitionContentOfWaiting(transitionIndex)
@@ -471,7 +471,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
 
 
     private fun transitionContentOfWaitingAt0() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:9 :: waiting :: _transition_0
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:40 :: waiting :: _transition_0
 
 
             if (run send@{
@@ -494,7 +494,7 @@ class AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(
     }
 
     private fun transitionContentOfWaitingAt1() {
-                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener.scxml:14 :: waiting :: _transition_1
+                // SCE-MAP: an_event_keeps_the_name_it_was_sent_under.scxml:45 :: waiting :: _transition_1
 
 
             if (run send@{

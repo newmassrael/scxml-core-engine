@@ -2,9 +2,9 @@
 // source-hash: 61a11c1135bc9b5297b489b5bdeec8ed213e07a866294a88591eded59b857e99
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml
+// Source: integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once.scxml#inv1
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
+// SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:72 :: _machine
 
 package com.sce.integration.a_bad_invoke_argument_is_reported_once
 
@@ -430,7 +430,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:72 :: _machine
     override fun onEntry(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, isDefaultEntry: Boolean) {
         when (state) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> onEntryOfReport()
@@ -440,17 +440,17 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
 
 
     private fun onEntryOfReport() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:10 :: report :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:79 :: report :: _state_body
     }
 
     private fun onEntryOfReported() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:19 :: reported :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:88 :: reported :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:72 :: _machine
     override fun onExit(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State) {
         when (state) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> onExitOfReport()
@@ -460,17 +460,17 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
 
 
     private fun onExitOfReport() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:10 :: report :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:79 :: report :: _state_body
     }
 
     private fun onExitOfReported() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:19 :: reported :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:88 :: reported :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:72 :: _machine
     override fun executeTransitionContent(source: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, transitionIndex: Int) {
         when (source) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State.Report -> transitionContentOfReport(transitionIndex)
@@ -493,7 +493,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(
 
 
     private fun transitionContentOfReportAt0() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1.scxml:11 :: report :: _transition_0
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:80 :: report :: _transition_0
 
 
             if (run send@{

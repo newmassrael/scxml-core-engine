@@ -2,9 +2,9 @@
 // source-hash: 0f1bfa983caaf70d2c074c82923a1ce8497543f0fb66b02d42558f479148c65b
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml
+// Source: integration_resources/a_send_reaches_only_what_its_target_names/a_send_reaches_only_what_its_target_names.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:105 :: _machine
 
 package com.sce.integration.a_send_reaches_only_what_its_target_names
 
@@ -360,7 +360,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:105 :: _machine
     override fun onEntry(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> onEntryOfWait()
@@ -369,7 +369,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfWait() {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:107 :: wait :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -395,7 +395,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:105 :: _machine
     override fun onExit(state: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState) {
         when (state) {
             is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> onExitOfWait()
@@ -404,13 +404,13 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfWait() {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:107 :: wait :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:105 :: _machine
     override fun executeTransitionContent(source: ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             is ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidState.Wait -> transitionContentOfWait(transitionIndex)
@@ -432,7 +432,7 @@ class ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun transitionContentOfWaitAt0() {
-                // SCE-MAP: a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid.scxml:9 :: wait :: _transition_0
+                // SCE-MAP: a_send_reaches_only_what_its_target_names.scxml:111 :: wait :: _transition_0
 
 
             if (run send@{

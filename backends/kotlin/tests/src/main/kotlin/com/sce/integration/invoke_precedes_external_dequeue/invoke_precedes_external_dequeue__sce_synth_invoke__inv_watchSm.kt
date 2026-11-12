@@ -2,9 +2,9 @@
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml
+// Source: integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml#inv_watch
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+// SCE-MAP: invoke_precedes_external_dequeue.scxml:63 :: _machine
 
 package com.sce.integration.invoke_precedes_external_dequeue
 
@@ -192,7 +192,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:63 :: _machine
     override fun onEntry(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> onEntryOfMissed()
@@ -204,23 +204,23 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
     private fun onEntryOfMissed() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:79 :: missed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfOrdered() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:80 :: ordered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfSaw() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:74 :: saw :: _state_body
     }
 
     private fun onEntryOfWaiting() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:65 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -246,7 +246,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:63 :: _machine
     override fun onExit(state: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
         when (state) {
             is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Missed -> onExitOfMissed()
@@ -258,25 +258,25 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
     private fun onExitOfMissed() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:19 :: missed :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:79 :: missed :: _state_body
     }
 
     private fun onExitOfOrdered() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:20 :: ordered :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:80 :: ordered :: _state_body
     }
 
     private fun onExitOfSaw() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:14 :: saw :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:74 :: saw :: _state_body
     }
 
     private fun onExitOfWaiting() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:65 :: waiting :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: invoke_precedes_external_dequeue.scxml:63 :: _machine
     override fun executeTransitionContent(source: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
             is InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState.Saw -> transitionContentOfSaw(transitionIndex)
@@ -300,7 +300,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
     private fun transitionContentOfSawAt0() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15 :: saw :: _transition_0
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:75 :: saw :: _transition_0
 
 
             if (run send@{
@@ -336,7 +336,7 @@ class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(
 
 
     private fun transitionContentOfWaitingAt1() {
-                // SCE-MAP: invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10 :: waiting :: _transition_1
+                // SCE-MAP: invoke_precedes_external_dequeue.scxml:70 :: waiting :: _transition_1
 
 
             if (run send@{

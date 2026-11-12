@@ -2,9 +2,9 @@
 // source-hash: 226fda00e41ba56f394c3663b4d11f262f4b5c1805c4daae2daf63854be69165
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/send_param_payload/send_param_payload__sce_synth_invoke__inv_emitter.scxml
+// Source: integration_resources/send_param_payload/send_param_payload.scxml#inv_emitter
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
+// SCE-MAP: send_param_payload.scxml:103 :: _machine
 
 package com.sce.integration.send_param_payload
 
@@ -144,7 +144,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
+    // SCE-MAP: send_param_payload.scxml:103 :: _machine
     override fun onEntry(state: SendParamPayloadSceSynthInvokeInvEmitterState, isDefaultEntry: Boolean) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> onEntryOfEmit()
@@ -154,7 +154,7 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
     private fun onEntryOfEmit() {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
+                // SCE-MAP: send_param_payload.scxml:105 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -182,13 +182,13 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
     }
 
     private fun onEntryOfSent() {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
+                // SCE-MAP: send_param_payload.scxml:113 :: sent :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
+    // SCE-MAP: send_param_payload.scxml:103 :: _machine
     override fun onExit(state: SendParamPayloadSceSynthInvokeInvEmitterState) {
         when (state) {
             is SendParamPayloadSceSynthInvokeInvEmitterState.Emit -> onExitOfEmit()
@@ -198,17 +198,17 @@ class SendParamPayloadSceSynthInvokeInvEmitterStateMachine(
 
 
     private fun onExitOfEmit() {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:5 :: emit :: _state_body
+                // SCE-MAP: send_param_payload.scxml:105 :: emit :: _state_body
     }
 
     private fun onExitOfSent() {
-                // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:13 :: sent :: _state_body
+                // SCE-MAP: send_param_payload.scxml:113 :: sent :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: send_param_payload__sce_synth_invoke__inv_emitter.scxml:3 :: _machine
+    // SCE-MAP: send_param_payload.scxml:103 :: _machine
     override fun executeTransitionContent(source: SendParamPayloadSceSynthInvokeInvEmitterState, transitionIndex: Int) {
         when (source) {
             else -> {}

@@ -2,9 +2,9 @@
 // source-hash: 35fd496336fe3a9e3dcc034c885c10a97c26cb29c29296a4fafd1b7eb4107ea6
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/autoforward_event_fields/autoforward_event_fields__sce_synth_invoke__inv_echo.scxml
+// Source: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml#inv_echo
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
+// SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
 
 package com.sce.integration.autoforward_event_fields
 
@@ -382,7 +382,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> onEntryOfEmit()
@@ -392,7 +392,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     private fun onEntryOfEmit() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:41 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -430,13 +430,13 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     }
 
     private fun onEntryOfReported() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:58 :: reported :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     override fun onExit(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> onExitOfEmit()
@@ -446,17 +446,17 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     private fun onExitOfEmit() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:41 :: emit :: _state_body
     }
 
     private fun onExitOfReported() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
+                // SCE-MAP: autoforward_event_fields.scxml:58 :: reported :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
+    // SCE-MAP: autoforward_event_fields.scxml:39 :: _machine
     override fun executeTransitionContent(source: AutoforwardEventFieldsSceSynthInvokeInvEchoState, transitionIndex: Int) {
         when (source) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> transitionContentOfEmit(transitionIndex)
@@ -480,7 +480,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
 
 
     private fun transitionContentOfEmitAt0() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:11 :: emit :: _transition_0
+                // SCE-MAP: autoforward_event_fields.scxml:47 :: emit :: _transition_0
 
 
             if (run send@{
@@ -503,7 +503,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     }
 
     private fun transitionContentOfEmitAt1() {
-                // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:18 :: emit :: _transition_1
+                // SCE-MAP: autoforward_event_fields.scxml:54 :: emit :: _transition_1
 
 
             if (run send@{

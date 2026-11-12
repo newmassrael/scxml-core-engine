@@ -2,9 +2,9 @@
 // source-hash: a31c47a0247af69ee06a626967ff0d05ffe8ed68e66f9b9928d0b71cb7eccebd
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/donedata_late_completion/donedata_late_completion__sce_synth_invoke__inv_late.scxml
+// Source: integration_resources/donedata_late_completion/donedata_late_completion.scxml#inv_late
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
+// SCE-MAP: donedata_late_completion.scxml:51 :: _machine
 
 package com.sce.integration.donedata_late_completion
 
@@ -369,7 +369,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
+    // SCE-MAP: donedata_late_completion.scxml:51 :: _machine
     override fun onEntry(state: DonedataLateCompletionSceSynthInvokeInvLateState, isDefaultEntry: Boolean) {
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> onEntryOfSettled()
@@ -379,7 +379,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
 
     private fun onEntryOfSettled() {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
+                // SCE-MAP: donedata_late_completion.scxml:59 :: settled :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     assertScriptSession()
@@ -408,7 +408,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     }
 
     private fun onEntryOfWaiting() {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: donedata_late_completion.scxml:53 :: waiting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -434,7 +434,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
+    // SCE-MAP: donedata_late_completion.scxml:51 :: _machine
     override fun onExit(state: DonedataLateCompletionSceSynthInvokeInvLateState) {
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> onExitOfSettled()
@@ -444,17 +444,17 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
 
 
     private fun onExitOfSettled() {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
+                // SCE-MAP: donedata_late_completion.scxml:59 :: settled :: _state_body
     }
 
     private fun onExitOfWaiting() {
-                // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
+                // SCE-MAP: donedata_late_completion.scxml:53 :: waiting :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
+    // SCE-MAP: donedata_late_completion.scxml:51 :: _machine
     override fun executeTransitionContent(source: DonedataLateCompletionSceSynthInvokeInvLateState, transitionIndex: Int) {
         when (source) {
             else -> {}

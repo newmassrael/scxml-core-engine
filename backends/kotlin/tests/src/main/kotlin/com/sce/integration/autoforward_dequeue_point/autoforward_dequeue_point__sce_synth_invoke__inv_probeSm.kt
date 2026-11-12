@@ -2,9 +2,9 @@
 // source-hash: ce55909c83cc4666c5ceb48ddcf2f5ce650a9da03007b3cc081cde9b3ac0761e
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml
+// Source: integration_resources/autoforward_dequeue_point/autoforward_dequeue_point.scxml#inv_probe
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+// SCE-MAP: autoforward_dequeue_point.scxml:73 :: _machine
 
 package com.sce.integration.autoforward_dequeue_point
 
@@ -216,7 +216,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: autoforward_dequeue_point.scxml:73 :: _machine
     override fun onEntry(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> onEntryOfAwaiting()
@@ -229,27 +229,27 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onEntryOfAwaiting() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:81 :: awaiting :: _state_body
     }
 
     private fun onEntryOfEarly() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:92 :: early :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfMarked() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:87 :: marked :: _state_body
     }
 
     private fun onEntryOfOrdered() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:93 :: ordered :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfProbe() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:75 :: probe :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -275,7 +275,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: autoforward_dequeue_point.scxml:73 :: _machine
     override fun onExit(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState) {
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> onExitOfAwaiting()
@@ -288,29 +288,29 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onExitOfAwaiting() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:81 :: awaiting :: _state_body
     }
 
     private fun onExitOfEarly() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:92 :: early :: _state_body
     }
 
     private fun onExitOfMarked() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:87 :: marked :: _state_body
     }
 
     private fun onExitOfOrdered() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:93 :: ordered :: _state_body
     }
 
     private fun onExitOfProbe() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
+                // SCE-MAP: autoforward_dequeue_point.scxml:75 :: probe :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: autoforward_dequeue_point.scxml:73 :: _machine
     override fun executeTransitionContent(source: AutoforwardDequeuePointSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> transitionContentOfAwaiting(transitionIndex)
@@ -334,7 +334,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     private fun transitionContentOfAwaitingAt1() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:13 :: awaiting :: _transition_1
+                // SCE-MAP: autoforward_dequeue_point.scxml:83 :: awaiting :: _transition_1
 
 
             if (run send@{
@@ -370,7 +370,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
     private fun transitionContentOfMarkedAt0() {
-                // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18 :: marked :: _transition_0
+                // SCE-MAP: autoforward_dequeue_point.scxml:88 :: marked :: _transition_0
 
 
             if (run send@{

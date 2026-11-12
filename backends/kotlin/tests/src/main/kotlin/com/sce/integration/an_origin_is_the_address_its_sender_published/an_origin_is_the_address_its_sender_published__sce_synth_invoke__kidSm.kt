@@ -2,9 +2,9 @@
 // source-hash: 1c418d46a68c5397364cc0ec51e4f76987276c6c6be13f06fa56c7db7b51179f
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml
+// Source: integration_resources/an_origin_is_the_address_its_sender_published/an_origin_is_the_address_its_sender_published.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:73 :: _machine
 
 package com.sce.integration.an_origin_is_the_address_its_sender_published
 
@@ -431,7 +431,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:73 :: _machine
     override fun onEntry(state: AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState.Answered -> onEntryOfAnswered()
@@ -442,11 +442,11 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfAnswered() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:28 :: answered :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:98 :: answered :: _state_body
     }
 
     private fun onEntryOfGreeting() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:8 :: greeting :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:78 :: greeting :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -484,11 +484,11 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
     }
 
     private fun onEntryOfListening() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:18 :: listening :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:88 :: listening :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:73 :: _machine
     override fun onExit(state: AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState) {
         when (state) {
             is AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState.Answered -> onExitOfAnswered()
@@ -499,21 +499,21 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfAnswered() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:28 :: answered :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:98 :: answered :: _state_body
     }
 
     private fun onExitOfGreeting() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:8 :: greeting :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:78 :: greeting :: _state_body
     }
 
     private fun onExitOfListening() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:18 :: listening :: _state_body
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:88 :: listening :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:73 :: _machine
     override fun executeTransitionContent(source: AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             is AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState.Greeting -> transitionContentOfGreeting(transitionIndex)
@@ -537,7 +537,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
 
     private fun transitionContentOfGreetingAt0() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:14 :: greeting :: _transition_0
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:84 :: greeting :: _transition_0
 
 
             if (run send@{
@@ -574,7 +574,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
 
     private fun transitionContentOfListeningAt0() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:19 :: listening :: _transition_0
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:89 :: listening :: _transition_0
 
 
             if (run send@{
@@ -646,7 +646,7 @@ AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.HiBack,
     }
 
     private fun transitionContentOfListeningAt1() {
-                // SCE-MAP: an_origin_is_the_address_its_sender_published__sce_synth_invoke__kid.scxml:24 :: listening :: _transition_1
+                // SCE-MAP: an_origin_is_the_address_its_sender_published.scxml:94 :: listening :: _transition_1
 
 
             if (run send@{

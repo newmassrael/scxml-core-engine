@@ -2,9 +2,9 @@
 // source-hash: 61a11c1135bc9b5297b489b5bdeec8ed213e07a866294a88591eded59b857e99
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml
+// Source: integration_resources/a_bad_invoke_argument_is_reported_once/a_bad_invoke_argument_is_reported_once.scxml#inv3
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
+// SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:122 :: _machine
 
 package com.sce.integration.a_bad_invoke_argument_is_reported_once
 
@@ -392,7 +392,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:122 :: _machine
     override fun onEntry(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, isDefaultEntry: Boolean) {
         when (state) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> onEntryOfGone()
@@ -402,17 +402,17 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
 
 
     private fun onEntryOfGone() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:13 :: gone :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:132 :: gone :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfUp() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:8 :: up :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:127 :: up :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:122 :: _machine
     override fun onExit(state: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State) {
         when (state) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Gone -> onExitOfGone()
@@ -422,17 +422,17 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
 
 
     private fun onExitOfGone() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:13 :: gone :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:132 :: gone :: _state_body
     }
 
     private fun onExitOfUp() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:8 :: up :: _state_body
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:127 :: up :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:3 :: _machine
+    // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:122 :: _machine
     override fun executeTransitionContent(source: ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State, transitionIndex: Int) {
         when (source) {
             is ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3State.Up -> transitionContentOfUp(transitionIndex)
@@ -455,7 +455,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
 
 
     private fun transitionContentOfUpAt0() {
-                // SCE-MAP: a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3.scxml:9 :: up :: _transition_0
+                // SCE-MAP: a_bad_invoke_argument_is_reported_once.scxml:128 :: up :: _transition_0
 
 
             if (run send@{

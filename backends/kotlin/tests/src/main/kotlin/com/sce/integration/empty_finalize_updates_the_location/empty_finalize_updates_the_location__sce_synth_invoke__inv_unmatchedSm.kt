@@ -2,9 +2,9 @@
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml
+// Source: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml#inv_unmatched
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
+// SCE-MAP: empty_finalize_updates_the_location.scxml:151 :: _machine
 
 package com.sce.integration.empty_finalize_updates_the_location
 
@@ -376,7 +376,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:151 :: _machine
     override fun onEntry(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, isDefaultEntry: Boolean) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> onEntryOfAnswer()
@@ -386,17 +386,17 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
 
 
     private fun onEntryOfAnswer() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:8 :: answer :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:156 :: answer :: _state_body
     }
 
     private fun onEntryOfDone() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:18 :: done :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:166 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:151 :: _machine
     override fun onExit(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> onExitOfAnswer()
@@ -406,17 +406,17 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
 
 
     private fun onExitOfAnswer() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:8 :: answer :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:156 :: answer :: _state_body
     }
 
     private fun onExitOfDone() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:18 :: done :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:166 :: done :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:151 :: _machine
     override fun executeTransitionContent(source: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, transitionIndex: Int) {
         when (source) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> transitionContentOfAnswer(transitionIndex)
@@ -439,7 +439,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
 
 
     private fun transitionContentOfAnswerAt0() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:9 :: answer :: _transition_0
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:157 :: answer :: _transition_0
 
 
             if (run send@{

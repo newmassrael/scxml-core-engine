@@ -2,9 +2,9 @@
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke__sce_synth_invoke__inv_short.scxml
+// Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml#inv_short
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
+// SCE-MAP: autoforward_done_invoke.scxml:78 :: _machine
 
 package com.sce.integration.autoforward_done_invoke
 
@@ -114,7 +114,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:78 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> onEntryOfOver()
@@ -123,13 +123,13 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
 
     private fun onEntryOfOver() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:80 :: over :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:78 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvShortState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvShortState.Over -> onExitOfOver()
@@ -138,13 +138,13 @@ class AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(
 
 
     private fun onExitOfOver() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:5 :: over :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:80 :: over :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_short.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:78 :: _machine
     override fun executeTransitionContent(source: AutoforwardDoneInvokeSceSynthInvokeInvShortState, transitionIndex: Int) {
         when (source) {
             else -> {}

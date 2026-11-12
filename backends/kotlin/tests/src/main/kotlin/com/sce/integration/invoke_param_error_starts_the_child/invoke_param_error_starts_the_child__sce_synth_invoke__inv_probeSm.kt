@@ -2,9 +2,9 @@
 // source-hash: 387554cf9d8d5415c8347a9554c4bb2db1133a43787a7fb935ba3f3f9103b433
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml
+// Source: integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml#inv_probe
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+// SCE-MAP: invoke_param_error_starts_the_child.scxml:82 :: _machine
 
 package com.sce.integration.invoke_param_error_starts_the_child
 
@@ -381,7 +381,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:82 :: _machine
     override fun onEntry(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> onEntryOfDone()
@@ -391,17 +391,17 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onEntryOfDone() {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:112 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfReport() {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:104 :: report :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:82 :: _machine
     override fun onExit(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState) {
         when (state) {
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> onExitOfDone()
@@ -411,17 +411,17 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onExitOfDone() {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:112 :: done :: _state_body
     }
 
     private fun onExitOfReport() {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:104 :: report :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_error_starts_the_child.scxml:82 :: _machine
     override fun executeTransitionContent(source: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> transitionContentOfReport(transitionIndex)
@@ -444,7 +444,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun transitionContentOfReportAt0() {
-                // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:26 :: report :: _transition_0
+                // SCE-MAP: invoke_param_error_starts_the_child.scxml:105 :: report :: _transition_0
 
 
             if (run send@{

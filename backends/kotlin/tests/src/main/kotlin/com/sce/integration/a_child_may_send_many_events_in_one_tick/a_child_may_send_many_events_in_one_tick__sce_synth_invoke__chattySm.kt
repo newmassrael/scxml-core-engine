@@ -2,9 +2,9 @@
 // source-hash: 8127f9886416636d06d894fac0be36c9fa1ea112226dc4621acfcba18ed7e87c
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml
+// Source: integration_resources/a_child_may_send_many_events_in_one_tick/a_child_may_send_many_events_in_one_tick.scxml#chatty
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
+// SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:33 :: _machine
 
 package com.sce.integration.a_child_may_send_many_events_in_one_tick
 
@@ -383,7 +383,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
+    // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:33 :: _machine
     override fun onEntry(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, isDefaultEntry: Boolean) {
         when (state) {
             is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> onEntryOfC0()
@@ -392,7 +392,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
 
     private fun onEntryOfC0() {
-                // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19 :: c0 :: _state_body
+                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:49 :: c0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -440,7 +440,7 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
+    // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:33 :: _machine
     override fun onExit(state: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState) {
         when (state) {
             is AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState.C0 -> onExitOfC0()
@@ -449,13 +449,13 @@ class AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(
 
 
     private fun onExitOfC0() {
-                // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:19 :: c0 :: _state_body
+                // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:49 :: c0 :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty.scxml:3 :: _machine
+    // SCE-MAP: a_child_may_send_many_events_in_one_tick.scxml:33 :: _machine
     override fun executeTransitionContent(source: AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, transitionIndex: Int) {
         when (source) {
             else -> {}

@@ -2,9 +2,9 @@
 // source-hash: ceb5ba77c107690ed8824e3a95913c8f850f275ca17535023aec22eab166125d
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/host_event_reaches_the_child/host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml
+// Source: integration_resources/host_event_reaches_the_child/host_event_reaches_the_child.scxml#inv_probe
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+// SCE-MAP: host_event_reaches_the_child.scxml:73 :: _machine
 
 package com.sce.integration.host_event_reaches_the_child
 
@@ -171,7 +171,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: host_event_reaches_the_child.scxml:73 :: _machine
     override fun onEntry(state: HostEventReachesTheChildSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
             is HostEventReachesTheChildSceSynthInvokeInvProbeState.Forwarded -> onEntryOfForwarded()
@@ -182,19 +182,19 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onEntryOfForwarded() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:16 :: forwarded :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:86 :: forwarded :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfUnforwarded() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:17 :: unforwarded :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:87 :: unforwarded :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfWatch() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5 :: watch :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:75 :: watch :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -220,7 +220,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: host_event_reaches_the_child.scxml:73 :: _machine
     override fun onExit(state: HostEventReachesTheChildSceSynthInvokeInvProbeState) {
         when (state) {
             is HostEventReachesTheChildSceSynthInvokeInvProbeState.Forwarded -> onExitOfForwarded()
@@ -231,21 +231,21 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun onExitOfForwarded() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:16 :: forwarded :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:86 :: forwarded :: _state_body
     }
 
     private fun onExitOfUnforwarded() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:17 :: unforwarded :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:87 :: unforwarded :: _state_body
     }
 
     private fun onExitOfWatch() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:5 :: watch :: _state_body
+                // SCE-MAP: host_event_reaches_the_child.scxml:75 :: watch :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
+    // SCE-MAP: host_event_reaches_the_child.scxml:73 :: _machine
     override fun executeTransitionContent(source: HostEventReachesTheChildSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
             is HostEventReachesTheChildSceSynthInvokeInvProbeState.Watch -> transitionContentOfWatch(transitionIndex)
@@ -269,7 +269,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
 
 
     private fun transitionContentOfWatchAt0() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:9 :: watch :: _transition_0
+                // SCE-MAP: host_event_reaches_the_child.scxml:79 :: watch :: _transition_0
 
 
             if (run send@{
@@ -292,7 +292,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
     }
 
     private fun transitionContentOfWatchAt1() {
-                // SCE-MAP: host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml:12 :: watch :: _transition_1
+                // SCE-MAP: host_event_reaches_the_child.scxml:82 :: watch :: _transition_1
 
 
             if (run send@{

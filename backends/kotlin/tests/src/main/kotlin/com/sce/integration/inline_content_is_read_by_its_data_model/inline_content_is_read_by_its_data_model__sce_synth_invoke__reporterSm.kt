@@ -2,9 +2,9 @@
 // source-hash: 5d102d83be3372e77ae8dde1c74b18f608301e96c6945cff9b996a5dc929e6ec
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/inline_content_is_read_by_its_data_model/inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml
+// Source: integration_resources/inline_content_is_read_by_its_data_model/inline_content_is_read_by_its_data_model.scxml#reporter
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3 :: _machine
+// SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine
 
 package com.sce.integration.inline_content_is_read_by_its_data_model
 
@@ -113,7 +113,7 @@ class InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3 :: _machine
+    // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine
     override fun onEntry(state: InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, isDefaultEntry: Boolean) {
         when (state) {
             is InlineContentIsReadByItsDataModelSceSynthInvokeReporterState.Reported -> onEntryOfReported()
@@ -122,7 +122,7 @@ class InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(
 
 
     private fun onEntryOfReported() {
-                // SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:5 :: reported :: _state_body
+                // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:88 :: reported :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     var doneEventData = ""
@@ -141,7 +141,7 @@ class InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3 :: _machine
+    // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine
     override fun onExit(state: InlineContentIsReadByItsDataModelSceSynthInvokeReporterState) {
         when (state) {
             is InlineContentIsReadByItsDataModelSceSynthInvokeReporterState.Reported -> onExitOfReported()
@@ -150,13 +150,13 @@ class InlineContentIsReadByItsDataModelSceSynthInvokeReporterStateMachine(
 
 
     private fun onExitOfReported() {
-                // SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:5 :: reported :: _state_body
+                // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:88 :: reported :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: inline_content_is_read_by_its_data_model__sce_synth_invoke__reporter.scxml:3 :: _machine
+    // SCE-MAP: inline_content_is_read_by_its_data_model.scxml:86 :: _machine
     override fun executeTransitionContent(source: InlineContentIsReadByItsDataModelSceSynthInvokeReporterState, transitionIndex: Int) {
         when (source) {
             else -> {}

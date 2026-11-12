@@ -2,9 +2,9 @@
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml
+// Source: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location.scxml#inv_absent
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:3 :: _machine
+// SCE-MAP: empty_finalize_updates_the_location.scxml:112 :: _machine
 
 package com.sce.integration.empty_finalize_updates_the_location
 
@@ -376,7 +376,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:112 :: _machine
     override fun onEntry(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, isDefaultEntry: Boolean) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer -> onEntryOfAnswer()
@@ -386,17 +386,17 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
 
 
     private fun onEntryOfAnswer() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:8 :: answer :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:117 :: answer :: _state_body
     }
 
     private fun onEntryOfDone() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:15 :: done :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:124 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:112 :: _machine
     override fun onExit(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer -> onExitOfAnswer()
@@ -406,17 +406,17 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
 
 
     private fun onExitOfAnswer() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:8 :: answer :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:117 :: answer :: _state_body
     }
 
     private fun onExitOfDone() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:15 :: done :: _state_body
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:124 :: done :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:3 :: _machine
+    // SCE-MAP: empty_finalize_updates_the_location.scxml:112 :: _machine
     override fun executeTransitionContent(source: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, transitionIndex: Int) {
         when (source) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState.Answer -> transitionContentOfAnswer(transitionIndex)
@@ -439,7 +439,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
 
 
     private fun transitionContentOfAnswerAt0() {
-                // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_absent.scxml:9 :: answer :: _transition_0
+                // SCE-MAP: empty_finalize_updates_the_location.scxml:118 :: answer :: _transition_0
 
 
             if (run send@{

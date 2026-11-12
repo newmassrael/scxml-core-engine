@@ -2,9 +2,9 @@
 // source-hash: c56e8b2e82b26aafed117bfaa06905c41b2c8e5d207725d3f84b7293eb1eb4ee
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/event_origin_is_a_location/event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml
+// Source: integration_resources/event_origin_is_a_location/event_origin_is_a_location.scxml#inv_peer
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
+// SCE-MAP: event_origin_is_a_location.scxml:52 :: _machine
 
 package com.sce.integration.event_origin_is_a_location
 
@@ -372,7 +372,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
+    // SCE-MAP: event_origin_is_a_location.scxml:52 :: _machine
     override fun onEntry(state: EventOriginIsALocationSceSynthInvokeInvPeerState, isDefaultEntry: Boolean) {
         when (state) {
             is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> onEntryOfAcked()
@@ -382,13 +382,13 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
 
     private fun onEntryOfAcked() {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body
+                // SCE-MAP: event_origin_is_a_location.scxml:65 :: acked :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfEmit() {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
+                // SCE-MAP: event_origin_is_a_location.scxml:54 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -426,7 +426,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
+    // SCE-MAP: event_origin_is_a_location.scxml:52 :: _machine
     override fun onExit(state: EventOriginIsALocationSceSynthInvokeInvPeerState) {
         when (state) {
             is EventOriginIsALocationSceSynthInvokeInvPeerState.Acked -> onExitOfAcked()
@@ -436,17 +436,17 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
 
     private fun onExitOfAcked() {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:16 :: acked :: _state_body
+                // SCE-MAP: event_origin_is_a_location.scxml:65 :: acked :: _state_body
     }
 
     private fun onExitOfEmit() {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:5 :: emit :: _state_body
+                // SCE-MAP: event_origin_is_a_location.scxml:54 :: emit :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:3 :: _machine
+    // SCE-MAP: event_origin_is_a_location.scxml:52 :: _machine
     override fun executeTransitionContent(source: EventOriginIsALocationSceSynthInvokeInvPeerState, transitionIndex: Int) {
         when (source) {
             is EventOriginIsALocationSceSynthInvokeInvPeerState.Emit -> transitionContentOfEmit(transitionIndex)
@@ -469,7 +469,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
 
     private fun transitionContentOfEmitAt0() {
-                // SCE-MAP: event_origin_is_a_location__sce_synth_invoke__inv_peer.scxml:12 :: emit :: _transition_0
+                // SCE-MAP: event_origin_is_a_location.scxml:61 :: emit :: _transition_0
 
 
             if (run send@{

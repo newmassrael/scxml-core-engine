@@ -2,9 +2,9 @@
 // source-hash: f0b11c032ed1e2694bb49d516788c50005f68b4fc73d25543193ba694c46c41b
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/cancelling_an_invoke_raises_nothing/cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml
+// Source: integration_resources/cancelling_an_invoke_raises_nothing/cancelling_an_invoke_raises_nothing.scxml#child
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
+// SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:24 :: _machine
 
 package com.sce.integration.cancelling_an_invoke_raises_nothing
 
@@ -108,7 +108,7 @@ class CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:24 :: _machine
     override fun onEntry(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, isDefaultEntry: Boolean) {
         when (state) {
             is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> onEntryOfIdle()
@@ -117,11 +117,11 @@ class CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(
 
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
+                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:25 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:24 :: _machine
     override fun onExit(state: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState) {
         when (state) {
             is CancellingAnInvokeRaisesNothingSceSynthInvokeChildState.Idle -> onExitOfIdle()
@@ -130,13 +130,13 @@ class CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(
 
 
     private fun onExitOfIdle() {
-                // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:4 :: idle :: _state_body
+                // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:25 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: cancelling_an_invoke_raises_nothing__sce_synth_invoke__child.scxml:3 :: _machine
+    // SCE-MAP: cancelling_an_invoke_raises_nothing.scxml:24 :: _machine
     override fun executeTransitionContent(source: CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, transitionIndex: Int) {
         when (source) {
             else -> {}

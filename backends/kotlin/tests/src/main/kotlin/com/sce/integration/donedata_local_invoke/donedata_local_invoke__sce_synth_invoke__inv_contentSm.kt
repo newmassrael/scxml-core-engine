@@ -2,9 +2,9 @@
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/donedata_local_invoke/donedata_local_invoke__sce_synth_invoke__inv_content.scxml
+// Source: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml#inv_content
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
+// SCE-MAP: donedata_local_invoke.scxml:58 :: _machine
 
 package com.sce.integration.donedata_local_invoke
 
@@ -335,7 +335,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
+    // SCE-MAP: donedata_local_invoke.scxml:58 :: _machine
     override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvContentState, isDefaultEntry: Boolean) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> onEntryOfDone()
@@ -344,7 +344,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
 
 
     private fun onEntryOfDone() {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body
+                // SCE-MAP: donedata_local_invoke.scxml:60 :: done :: _state_body
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     assertScriptSession()
@@ -369,7 +369,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
+    // SCE-MAP: donedata_local_invoke.scxml:58 :: _machine
     override fun onExit(state: DonedataLocalInvokeSceSynthInvokeInvContentState) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> onExitOfDone()
@@ -378,13 +378,13 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
 
 
     private fun onExitOfDone() {
-                // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body
+                // SCE-MAP: donedata_local_invoke.scxml:60 :: done :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
+    // SCE-MAP: donedata_local_invoke.scxml:58 :: _machine
     override fun executeTransitionContent(source: DonedataLocalInvokeSceSynthInvokeInvContentState, transitionIndex: Int) {
         when (source) {
             else -> {}

@@ -2,9 +2,9 @@
 // source-hash: 54fa213afae337fd55d5bdcc6342253ac581ed7cc7a7519be41e894ee31b3f4b
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml
+// Source: integration_resources/autoforward_done_invoke/autoforward_done_invoke.scxml#inv_watch
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+// SCE-MAP: autoforward_done_invoke.scxml:61 :: _machine
 
 package com.sce.integration.autoforward_done_invoke
 
@@ -172,7 +172,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:61 :: _machine
     override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> onEntryOfMissed()
@@ -183,23 +183,23 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     private fun onEntryOfMissed() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:72 :: missed :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfSaw() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:71 :: saw :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfWatch() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:63 :: watch :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:61 :: _machine
     override fun onExit(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> onExitOfMissed()
@@ -210,21 +210,21 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     private fun onExitOfMissed() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:72 :: missed :: _state_body
     }
 
     private fun onExitOfSaw() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:71 :: saw :: _state_body
     }
 
     private fun onExitOfWatch() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
+                // SCE-MAP: autoforward_done_invoke.scxml:63 :: watch :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
+    // SCE-MAP: autoforward_done_invoke.scxml:61 :: _machine
     override fun executeTransitionContent(source: AutoforwardDoneInvokeSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> transitionContentOfWatch(transitionIndex)
@@ -248,7 +248,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
     private fun transitionContentOfWatchAt0() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:6 :: watch :: _transition_0
+                // SCE-MAP: autoforward_done_invoke.scxml:64 :: watch :: _transition_0
 
 
             if (run send@{
@@ -271,7 +271,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     }
 
     private fun transitionContentOfWatchAt1() {
-                // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:9 :: watch :: _transition_1
+                // SCE-MAP: autoforward_done_invoke.scxml:67 :: watch :: _transition_1
 
 
             if (run send@{

@@ -2,9 +2,9 @@
 // source-hash: 727dc4e641e5354370e1916310a7e6dd3837a7ec7fa73ba2f0888d444be5f4e4
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_target_expression_is_routed_as_its_literal_is/a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml
+// Source: integration_resources/a_target_expression_is_routed_as_its_literal_is/a_target_expression_is_routed_as_its_literal_is.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:101 :: _machine
 
 package com.sce.integration.a_target_expression_is_routed_as_its_literal_is
 
@@ -434,7 +434,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:101 :: _machine
     override fun onEntry(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> onEntryOfWait()
@@ -443,7 +443,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfWait() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8 :: wait :: _state_body
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:106 :: wait :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -469,7 +469,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:101 :: _machine
     override fun onExit(state: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState) {
         when (state) {
             is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> onExitOfWait()
@@ -478,13 +478,13 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfWait() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:8 :: wait :: _state_body
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:106 :: wait :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:101 :: _machine
     override fun executeTransitionContent(source: ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             is ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState.Wait -> transitionContentOfWait(transitionIndex)
@@ -509,7 +509,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
 
     private fun transitionContentOfWaitAt0() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:12 :: wait :: _transition_0
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:110 :: wait :: _transition_0
 
 
             if (run send@{
@@ -600,7 +600,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckNow,
     }
 
     private fun transitionContentOfWaitAt1() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:15 :: wait :: _transition_1
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:113 :: wait :: _transition_1
 
 
             if (run send@{
@@ -689,7 +689,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
     }
 
     private fun transitionContentOfWaitAt2() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:18 :: wait :: _transition_2
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:116 :: wait :: _transition_2
 
 
             if (run send@{
@@ -780,7 +780,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckNow,
     }
 
     private fun transitionContentOfWaitAt3() {
-                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid.scxml:21 :: wait :: _transition_3
+                // SCE-MAP: a_target_expression_is_routed_as_its_literal_is.scxml:119 :: wait :: _transition_3
 
 
             if (run send@{

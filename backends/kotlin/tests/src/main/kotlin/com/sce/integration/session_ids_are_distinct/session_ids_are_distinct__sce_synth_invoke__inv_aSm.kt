@@ -2,9 +2,9 @@
 // source-hash: 72e5f6add40450019fedf97192aa7f8b2b99f0983d778103d9af035fcb5f7cfa
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/session_ids_are_distinct/session_ids_are_distinct__sce_synth_invoke__inv_a.scxml
+// Source: integration_resources/session_ids_are_distinct/session_ids_are_distinct.scxml#inv_a
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
+// SCE-MAP: session_ids_are_distinct.scxml:73 :: _machine
 
 package com.sce.integration.session_ids_are_distinct
 
@@ -335,7 +335,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
+    // SCE-MAP: session_ids_are_distinct.scxml:73 :: _machine
     override fun onEntry(state: SessionIdsAreDistinctSceSynthInvokeInvAState, isDefaultEntry: Boolean) {
         when (state) {
             is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> onEntryOfEmit()
@@ -344,7 +344,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
 
 
     private fun onEntryOfEmit() {
-                // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5 :: emit :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:75 :: emit :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -382,7 +382,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
+    // SCE-MAP: session_ids_are_distinct.scxml:73 :: _machine
     override fun onExit(state: SessionIdsAreDistinctSceSynthInvokeInvAState) {
         when (state) {
             is SessionIdsAreDistinctSceSynthInvokeInvAState.Emit -> onExitOfEmit()
@@ -391,13 +391,13 @@ class SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(
 
 
     private fun onExitOfEmit() {
-                // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:5 :: emit :: _state_body
+                // SCE-MAP: session_ids_are_distinct.scxml:75 :: emit :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_a.scxml:3 :: _machine
+    // SCE-MAP: session_ids_are_distinct.scxml:73 :: _machine
     override fun executeTransitionContent(source: SessionIdsAreDistinctSceSynthInvokeInvAState, transitionIndex: Int) {
         when (source) {
             else -> {}

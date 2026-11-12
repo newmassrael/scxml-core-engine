@@ -2,9 +2,9 @@
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml
+// Source: integration_resources/invoke_param_seeds_declared_child_data/invoke_param_seeds_declared_child_data.scxml#inv_sole
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:3 :: _machine
+// SCE-MAP: invoke_param_seeds_declared_child_data.scxml:127 :: _machine
 
 package com.sce.integration.invoke_param_seeds_declared_child_data
 
@@ -407,7 +407,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:127 :: _machine
     override fun onEntry(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Done -> onEntryOfDone()
@@ -417,17 +417,17 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
 
     private fun onEntryOfDone() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:16 :: done :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:140 :: done :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     private fun onEntryOfReport() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:8 :: report :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:132 :: report :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:127 :: _machine
     override fun onExit(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState) {
         when (state) {
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Done -> onExitOfDone()
@@ -437,17 +437,17 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
 
     private fun onExitOfDone() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:16 :: done :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:140 :: done :: _state_body
     }
 
     private fun onExitOfReport() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:8 :: report :: _state_body
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:132 :: report :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:3 :: _machine
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:127 :: _machine
     override fun executeTransitionContent(source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, transitionIndex: Int) {
         when (source) {
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState.Report -> transitionContentOfReport(transitionIndex)
@@ -471,7 +471,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
 
     private fun transitionContentOfReportAt0() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:9 :: report :: _transition_0
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:133 :: report :: _transition_0
 
 
             if (run send@{
@@ -494,7 +494,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
     }
 
     private fun transitionContentOfReportAt1() {
-                // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole.scxml:12 :: report :: _transition_1
+                // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:136 :: report :: _transition_1
 
 
             if (run send@{

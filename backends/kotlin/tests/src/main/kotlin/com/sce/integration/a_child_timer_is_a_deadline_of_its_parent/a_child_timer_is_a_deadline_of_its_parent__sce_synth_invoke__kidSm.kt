@@ -2,9 +2,9 @@
 // source-hash: efe82d0f54a36c7ec212504e61663f289e48d06d9df162eef19ee9b88cfcf91d
 
 // GENERATED CODE — DO NOT EDIT
-// Source: tests/integration/a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml
+// Source: tests/integration/a_child_timer_is_a_deadline_of_its_parent.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:44 :: _machine
 
 package com.sce.integration.a_child_timer_is_a_deadline_of_its_parent
 
@@ -165,7 +165,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:44 :: _machine
     override fun onEntry(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> onEntryOfFirst()
@@ -176,7 +176,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfFirst() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:5 :: first :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:46 :: first :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -195,7 +195,7 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
     }
 
     private fun onEntryOfSecond() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:11 :: second :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:52 :: second :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -214,13 +214,13 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
     }
 
     private fun onEntryOfSpoke() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:17 :: spoke :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:58 :: spoke :: _state_body
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:44 :: _machine
     override fun onExit(state: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState) {
         when (state) {
             is AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState.First -> onExitOfFirst()
@@ -231,21 +231,21 @@ class AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfFirst() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:5 :: first :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:46 :: first :: _state_body
     }
 
     private fun onExitOfSecond() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:11 :: second :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:52 :: second :: _state_body
     }
 
     private fun onExitOfSpoke() {
-                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:17 :: spoke :: _state_body
+                // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:58 :: spoke :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_timer_is_a_deadline_of_its_parent.scxml:44 :: _machine
     override fun executeTransitionContent(source: AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             else -> {}

@@ -2,9 +2,9 @@
 // source-hash: f55f0d50f2ff05a8b6dba1e27e40d55e81b13b70ab29ebc5ee03738d4ee0ecd4
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_delayed_send_reaches_what_its_target_names/a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml
+// Source: integration_resources/a_delayed_send_reaches_what_its_target_names/a_delayed_send_reaches_what_its_target_names.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:78 :: _machine
 
 package com.sce.integration.a_delayed_send_reaches_what_its_target_names
 
@@ -363,7 +363,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:78 :: _machine
     override fun onEntry(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState.Wait -> onEntryOfWait()
@@ -372,7 +372,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfWait() {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:80 :: wait :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -426,7 +426,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:78 :: _machine
     override fun onExit(state: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState) {
         when (state) {
             is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState.Wait -> onExitOfWait()
@@ -435,13 +435,13 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfWait() {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:5 :: wait :: _state_body
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:80 :: wait :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:78 :: _machine
     override fun executeTransitionContent(source: ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             is ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidState.Wait -> transitionContentOfWait(transitionIndex)
@@ -463,7 +463,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
 
     private fun transitionContentOfWaitAt0() {
-                // SCE-MAP: a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid.scxml:12 :: wait :: _transition_0
+                // SCE-MAP: a_delayed_send_reaches_what_its_target_names.scxml:87 :: wait :: _transition_0
 
 
             if (run send@{

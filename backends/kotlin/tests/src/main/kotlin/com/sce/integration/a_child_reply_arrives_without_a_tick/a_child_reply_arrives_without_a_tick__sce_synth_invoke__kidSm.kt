@@ -2,9 +2,9 @@
 // source-hash: d6cb6d8e9f3a39015ea70f70076b5982d6409d91636abf5c1ae6682daf0bd246
 
 // GENERATED CODE — DO NOT EDIT
-// Source: integration_resources/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml
+// Source: integration_resources/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick.scxml#kid
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:3 :: _machine
+// SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:33 :: _machine
 
 package com.sce.integration.a_child_reply_arrives_without_a_tick
 
@@ -113,7 +113,7 @@ class AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:33 :: _machine
     override fun onEntry(state: AChildReplyArrivesWithoutATickSceSynthInvokeKidState, isDefaultEntry: Boolean) {
         when (state) {
             is AChildReplyArrivesWithoutATickSceSynthInvokeKidState.C0 -> onEntryOfC0()
@@ -122,7 +122,7 @@ class AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(
 
 
     private fun onEntryOfC0() {
-                // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:5 :: c0 :: _state_body
+                // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:35 :: c0 :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -148,7 +148,7 @@ class AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:33 :: _machine
     override fun onExit(state: AChildReplyArrivesWithoutATickSceSynthInvokeKidState) {
         when (state) {
             is AChildReplyArrivesWithoutATickSceSynthInvokeKidState.C0 -> onExitOfC0()
@@ -157,13 +157,13 @@ class AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(
 
 
     private fun onExitOfC0() {
-                // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:5 :: c0 :: _state_body
+                // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:35 :: c0 :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid.scxml:3 :: _machine
+    // SCE-MAP: a_child_reply_arrives_without_a_tick.scxml:33 :: _machine
     override fun executeTransitionContent(source: AChildReplyArrivesWithoutATickSceSynthInvokeKidState, transitionIndex: Int) {
         when (source) {
             else -> {}
