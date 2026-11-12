@@ -191,6 +191,8 @@ step_python_integration() {
     scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
     stage "External-event budget document Python tree"
     scripts/regen_external_chain_is_bounded_python.sh
+    stage "Handed-value document Python tree"
+    scripts/regen_a_child_takes_a_handed_value_in_place_of_its_data_python.sh
 }
 
 # ── swift-tests: the committed machines of backends/swift/tests ─────────
