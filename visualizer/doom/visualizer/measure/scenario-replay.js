@@ -22,6 +22,14 @@
 // replayed count has a floor, so a comparison that quietly stopped being made
 // shows as a number that fell and not as a green run.
 //
+// What the lowering does not spell yet is not decided here: a machine the lowering
+// refuses with `generate/unsupported-feature`, the code of the product's own
+// diagnostic, is skipped as not yet lowered by the Interpreter, which is the rule
+// tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp holds
+// the native Interpreter to (the scenarios of such machines are listed in
+// `NOT_YET_LOWERED`, a_static_datamodel_holds_every_variable_to_a_type.rs). Any
+// other refusal is a failure.
+//
 // Usage: node web/visualizer/measure/scenario-replay.js [scenario.json ...]
 // Without arguments, every scenario under the shared fixture directory.
 
@@ -40,31 +48,33 @@ const FIXTURES = path.join(REPO, 'sce-build', 'tests', 'fixtures', 'static_datam
  * added (2026-10-13), the rest skipped by name below. It rises as the runner
  * learns more of the vocabulary and is lowered only by a decision that names
  * what stopped being replayed.
+ *
+ * 46 of the 104 (2026-11-12): the 46 it replayed before, less `static_lift_list`,
+ * which the lowering refuses as not yet lowered, and with `static_union`, whose
+ * union the lowering spells and which a pattern kept here had skipped as though it
+ * did not. `static_forge_calls`, which a pattern for its imported transforms had
+ * skipped, is skipped now by the lowering's own refusal of them.
  */
-const MIN_REPLAYED = 31;
+const MIN_REPLAYED = 46;
 
 /** The `expect` members this runner can judge. */
 const JUDGED = new Set(['state', 'configuration', 'variables', 'ended']);
 
-/** Elements that make a machine need more than this runner is given. */
+/**
+ * The code of the product's diagnostic for a construct a backend has no lowering
+ * of yet (SCE_ERROR_CONTRACT.md): the one refusal that is not a failure here.
+ */
+const NOT_YET_LOWERED = 'generate/unsupported-feature';
+
+/**
+ * Elements that make a machine need more than this runner is given. What the
+ * lowering does not spell is not listed: the lowering says so itself
+ * (`NOT_YET_LOWERED`).
+ */
 const NEEDS = [
     [/<invoke\b/, 'an <invoke>: a child session needs a dispatcher'],
     [/<send\b/, 'a <send>: the runner wires no dispatcher for what a machine sends'],
     [/<sce:action\b/, 'a host action: the runner is given no host'],
-    // The lowering refuses the call by its kind (docs/adr/0048), and a test of the
-    // generator holds it to that, so this is not a failure of the page's path.
-    [
-        /<sce:import\b[^>]*\bkind="(?:transform|condition|lookup|interpolation|validator)"/,
-        'a call of an imported transform, condition, lookup, interpolation or validator: '
-            + 'the Interpreter has no lowering of it yet',
-    ],
-    // The lowering refuses a union variable (docs/adr/0092, step 4 lands Rust
-    // first), and the scenario lists the Interpreter as not yet lowered
-    // (`NOT_YET_LOWERED` in a_static_datamodel_holds_every_variable_to_a_type.rs).
-    [
-        /\bsce:type="[^"]*\bunion:/,
-        'a union variable: the Interpreter has no lowering of a union yet',
-    ],
 ];
 
 /** Why a scenario cannot be replayed here, or null when it can. */
@@ -125,6 +135,12 @@ function sameValue(got, want) {
     return isDeepStrictEqual(got, want);
 }
 
+/** The first line of what was thrown: an Error's message, or the text of anything else. */
+function firstLine(thrown) {
+    const text = thrown instanceof Error ? thrown.message : String(thrown);
+    return text.split('\n')[0];
+}
+
 /** The documents beside `document`, answered from the fixture directory. */
 function siblingFromFixtures(name) {
     const file = path.join(FIXTURES, name);
@@ -144,11 +160,18 @@ function documentOf(scenario) {
     return fs.readFileSync(file, 'utf8');
 }
 
-/** The failures of one scenario, as sentences; empty when it holds. */
-async function replay(Module, SceBuildWasm, scenario) {
-    const document = documentOf(scenario);
-    const lowered = await SceBuildWasm.lowerForInterpreter(
-        document, scenario.machine, async (name) => siblingFromFixtures(name));
+/**
+ * The failures of one scenario on the documents `lowered` of its machine, as
+ * sentences; empty when it holds.
+ *
+ * A step that restores the machine from a saved state (`restore`, docs/adr/0045)
+ * is carried on by the same machine: the Interpreter keeps no saved state, so
+ * what the restore holds the generated backends to, that the state is read back,
+ * is theirs, and the event the step delivers and what it expects after it are
+ * held here, as AUnionIsReadBuiltWrittenAndLiftedAsTheWireObject carries the
+ * union's on the native Interpreter.
+ */
+function replay(Module, lowered, scenario) {
     const runner = new Module.InteractiveTestRunner();
     const failures = [];
     try {
@@ -200,6 +223,7 @@ async function main(files) {
     let replayed = 0;
     let failed = 0;
     const skipped = [];
+    const carried = [];
     for (const file of files) {
         const scenario = JSON.parse(fs.readFileSync(file, 'utf8'));
         const document = documentOf(scenario);
@@ -210,9 +234,25 @@ async function main(files) {
         }
         let failures;
         try {
-            failures = await replay(Module, SceBuildWasm, scenario);
+            const lowered = await SceBuildWasm.lowerForInterpreter(
+                document, scenario.machine, async (name) => siblingFromFixtures(name));
+            try {
+                failures = replay(Module, lowered, scenario);
+            } catch (e) {
+                failures = [`could not be replayed: ${firstLine(e)}`];
+            }
         } catch (e) {
-            failures = [`could not be replayed: ${String(e).split('\n')[0]}`];
+            // `lowerForInterpreter` throws an Error, whose `code` is the product's
+            // when the product refused the document.
+            if (e.code === NOT_YET_LOWERED) {
+                skipped.push(`${scenario.machine}: not yet lowered by the Interpreter: ${e.message}`);
+                continue;
+            }
+            failures = [`could not be lowered${e.code ? ` (${e.code})` : ''}: ${firstLine(e)}`];
+        }
+        const restores = scenario.steps.filter((step) => step.restore).length;
+        if (restores > 0) {
+            carried.push(`${scenario.machine}: ${restores} step(s) restoring the machine, carried on by the same one`);
         }
         replayed++;
         if (failures.length > 0) {
@@ -224,6 +264,7 @@ async function main(files) {
 
     console.log(`scenario-replay: ${replayed} replayed, ${skipped.length} skipped, ${failed} failed`);
     skipped.forEach((s) => console.log(`    skipped ${s}`));
+    carried.forEach((c) => console.log(`    carried ${c}`));
     if (failed > 0) {
         process.exit(1);
     }

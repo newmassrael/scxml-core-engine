@@ -52,10 +52,9 @@ export function get_machine_name(scxml_content: string): string;
 export function gui_structure(scxml_content: string, scxml_name: string): string;
 
 /**
- * The documents the Interpreter runs for `scxml_content`, as JSON:
- * `[{"file_name": ..., "text": ...}, ...]`, the document asked for first.
- * `siblings_json` is an object of the documents beside it, by name. See
- * [`lowered_for_interpreter`].
+ * The documents the Interpreter runs for `scxml_content`, or the refusal of
+ * them, as the JSON of [`lowering_answer`]. `siblings_json` is an object of
+ * the documents beside it, by name. See [`lowered_for_interpreter`].
  */
 export function lower_for_interpreter(scxml_content: string, scxml_name: string, siblings_json: string): string;
 

@@ -59,12 +59,36 @@ const SceBuildWasm = (() => {
     }
 
     /**
+     * The refusal of a document, as an Error a page can show and a caller can
+     * tell apart by its kind. `diagnostics` are the records the product
+     * refused it with, each the one `sce-codegen lower --error-format=json`
+     * writes for the same refusal (SCE_ERROR_CONTRACT.md); `code` is the first
+     * one's, the record that decides, as the first decides the exit status of
+     * `sce-codegen`; `message` is their messages, a line each.
+     */
+    function refusal(diagnostics) {
+        if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
+            return new Error('the product refused the document with no diagnostic');
+        }
+        const error = new Error(diagnostics.map((record) => record.message).join('\n'));
+        error.code = diagnostics[0].code;
+        error.diagnostics = diagnostics;
+        return error;
+    }
+
+    /**
      * The documents the Interpreter runs for `scxmlContent`, the document
      * asked for first: itself, or the ECMAScript lowering of a
      * `datamodel="sce-static"` one with every document its `<invoke>`s may
      * start (a child named by `src`, a candidate of a hybrid one). Throws with
      * the product's own message when the document cannot be lowered — the
-     * Interpreter is never handed a typed document it would run untyped.
+     * Interpreter is never handed a typed document it would run untyped. What
+     * it throws is always an Error: a refusal of the document carries `code`
+     * and `diagnostics` (see `refusal`), and a failure of anything else (the
+     * module, a sibling that is no XML document) carries neither, so a caller
+     * that admits a construct the lowering has no spelling of yet
+     * (`generate/unsupported-feature`) reads that from the code and admits
+     * nothing else.
      *
      * The lowering reads what the document names beside itself (an imported
      * algorithm or schema, a child named by `src`, a candidate). The page has
@@ -77,25 +101,33 @@ const SceBuildWasm = (() => {
      * nowhere.
      */
     async function lowerForInterpreter(scxmlContent, scxmlName, fetchSibling) {
-        const module = await load();
-        const siblings = {};
-        const wanted = JSON.parse(module.documents_named_by(scxmlContent))
-            .map((name) => beside('', name));
-        const asked = new Set();
-        while (wanted.length > 0) {
-            const path = wanted.shift();
-            if (asked.has(path)) continue;
-            asked.add(path);
-            const text = fetchSibling ? await fetchSibling(path) : null;
-            if (text === null || text === undefined) continue;
-            siblings[path] = text;
-            const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-            for (const name of JSON.parse(module.documents_named_by(text))) {
-                wanted.push(beside(dir, name));
+        let answer;
+        try {
+            const module = await load();
+            const siblings = {};
+            const wanted = JSON.parse(module.documents_named_by(scxmlContent))
+                .map((name) => beside('', name));
+            const asked = new Set();
+            while (wanted.length > 0) {
+                const path = wanted.shift();
+                if (asked.has(path)) continue;
+                asked.add(path);
+                const text = fetchSibling ? await fetchSibling(path) : null;
+                if (text === null || text === undefined) continue;
+                siblings[path] = text;
+                const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+                for (const name of JSON.parse(module.documents_named_by(text))) {
+                    wanted.push(beside(dir, name));
+                }
             }
+            answer = JSON.parse(module.lower_for_interpreter(
+                scxmlContent, scxmlName || 'untitled', JSON.stringify(siblings)));
+        } catch (e) {
+            // The module throws its own failures as text.
+            throw e instanceof Error ? e : new Error(String(e));
         }
-        return JSON.parse(module.lower_for_interpreter(
-            scxmlContent, scxmlName || 'untitled', JSON.stringify(siblings)));
+        if ('diagnostics' in answer) throw refusal(answer.diagnostics);
+        return answer.documents;
     }
 
     return { load, provide, guiStructure, lowerForInterpreter };
