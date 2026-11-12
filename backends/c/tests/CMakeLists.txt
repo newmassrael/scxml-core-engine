@@ -4215,10 +4215,11 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
 
     # §scxml-6.4.3: an <invoke> <param> gives a declared <data> of the invoked
     # session the value the INVOKING session produced, and a name matching no
-    # top-level <data> there is not added at all. This backend already answers
-    # both halves — lua_xfer_top_to_child moves the value across the two Lua
-    # states, and the emission is gated on the child's declared names — so the
-    # driver is here to make that correctness asserted rather than incidental.
+    # top-level <data> there is not added at all. This backend answers both
+    # halves — the parent evaluates and hands the value, the child copies it
+    # into its own Lua state and keeps only the names its top-level <data>
+    # declares (docs/adr/0098) — so the driver is here to make that
+    # correctness asserted rather than incidental.
     sce_generate_static_integration_c_test(invoke_param_seeds_declared_child_data "${SCE_C_INTEGRATION_GENERATED_DIR}")
 
     add_executable(sce_c_integration_invoke_param_seeds_declared_child_data
@@ -4238,6 +4239,43 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_invoke_param_seeds_declared_child_data
     )
     set_tests_properties(c11_integration_invoke_param_seeds_declared_child_data PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # docs/adr/0098, §scxml-6.4: a handed value is the initial value of the
+    # child's top-level <data>, declared in place of its own before the child's
+    # top-level <script>, its entry walk and its first macrostep; state-local
+    # <data> takes nothing, a name the child does not declare is not added, an
+    # object arrives whole, and a value past the bounds of the copy is the
+    # <data>'s initialization error. A document of this channel alone until the
+    # canonical fixture of the ADR lands; this target lowers the bounds of the
+    # copy so its last phase can pass them with small values.
+    sce_generate_static_integration_c_test(a_child_takes_what_it_is_handed
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_child_takes_what_it_is_handed/a_child_takes_what_it_is_handed.scxml"
+    )
+    add_executable(sce_c_integration_a_child_takes_what_it_is_handed
+        integration/test_a_child_takes_what_it_is_handed.c
+        ${INTEGRATION_C_TEST_a_child_takes_what_it_is_handed_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_a_child_takes_what_it_is_handed PRIVATE
+        SCE_MAX_HANDED_VALUE_DEPTH=4
+        SCE_MAX_HANDED_VALUE_ENTRIES=8
+    )
+    sce_c_link_runtime(sce_c_integration_a_child_takes_what_it_is_handed)
+    target_include_directories(sce_c_integration_a_child_takes_what_it_is_handed PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_child_takes_what_it_is_handed PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_child_takes_what_it_is_handed
+        COMMAND sce_c_integration_a_child_takes_what_it_is_handed
+    )
+    set_tests_properties(c11_integration_a_child_takes_what_it_is_handed PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

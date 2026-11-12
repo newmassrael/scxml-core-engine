@@ -1,0 +1,174 @@
+# Mutation cases for docs/adr/0098 on the C11 channel: a value an invoke hands
+# its child is the initial value of the child's top-level <data> whose id it
+# names, taken by the child's start before it declares its datamodel
+# (§scxml-6.4).
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_c11_child_takes_a_handed_value_in_place_of_its_data.cases`.
+#
+# The parent used to write the values as globals of the child's Lua state after
+# the child's start had declared its datamodel, run its top-level <script> and
+# entered its initial configuration, and, for a child that does not address its
+# parent, after its whole first macrostep; a table crossed as nil. Now the
+# parent evaluates every argument, holds the values on its own stack and hands
+# them to the start (`_init_with_parent`, `_init_invoked`), and the child
+# declares each top-level <data> a value is handed for with that value, copied
+# whole, in place of its own. Each case below puts back one piece of the old
+# shape, or lifts one bound of the copy, and names the verdict that must go red.
+# The oracle's document is C11's alone; its target lowers the bounds of the copy
+# (`SCE_MAX_HANDED_VALUE_DEPTH` 4, `SCE_MAX_HANDED_VALUE_ENTRIES` 8).
+#
+# The machines are generated when the tests are built, so there is no committed
+# tree to regenerate: the build is what carries a mutated template into them.
+# Every mutant compiles for every machine of the build, a machine without
+# top-level <data> (which has no `take_handed_value`) included.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_a_child_takes_what_it_is_handed$'
+mutation_targets tools/codegen/templates/c/scriptengine.jinja2 tools/codegen/templates/c/invoke_methods.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_child_takes_what_it_is_handed.c backends/c/tests/integration_resources/a_child_takes_what_it_is_handed/a_child_takes_what_it_is_handed.scxml
+
+# ── The child takes nothing it is handed ───────────────────────────
+#
+# Every top-level <data> takes its own value, as if no invoke had handed it
+# anything: `failing`'s own expression runs and raises error.execution.
+# Killer: `failOwnExpressionRaised`.
+
+mutation_case "the child takes no handed value" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """    for (size_t i = handed->count; i > 0u; --i) {""",
+     """    for (size_t i = 0u; i > 0u; --i) {""")
+PY
+
+# ── State-local <data> is seeded too ───────────────────────────────
+#
+# The shape Go and Kotlin had: any name the child's session holds takes a
+# handed value, an early-bound state <data> included.
+# Killer: `failStateLocalDataSeeded`.
+
+mutation_case "a state-local data takes a handed value" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}""",
+     """        /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
+{% if model.variables %}
+        if (take_handed_value(sm->L, handed, "{{ var.id | escape_c }}") == HANDED_VALUE_TAKEN) {
+{{ lua_set_document_global_top(var.id) }}
+        } else {
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}
+        }
+{% else %}
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}
+{% endif %}""")
+PY
+
+# ── A handed name the child does not declare is added ──────────────
+#
+# After its own declarations the child declares every handed name as well.
+# Killer: `failUnmatchedNameAdded`.
+
+mutation_case "the child adds a handed name it never declared" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """            break;
+        }
+        }
+        {% endfor %}
+        {% if model.binding == 'early' %}""",
+     """            break;
+        }
+        }
+        {% endfor %}
+        {% if model.variables %}
+        for (size_t _leak = 0u; handed != NULL && _leak < handed->count; ++_leak) {
+            if (take_handed_value(sm->L, handed, handed->values[_leak].name) == HANDED_VALUE_TAKEN) {
+                (void)set_document_global(sm->L, handed->values[_leak].name);
+            }
+        }
+        {% endif %}
+        {% if model.binding == 'early' %}""")
+PY
+
+# ── A table crosses without its entries ────────────────────────────
+#
+# The old copy carried a boolean, a number or a string and nothing else; this
+# one makes the table and copies none of its entries.
+# Killer: `failObjectNotWhole` (and the namelist phase, stranded).
+
+mutation_case "a table crosses without its entries" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """    lua_newtable(to);
+    for (;;) {""",
+     """    lua_newtable(to);
+    for (; false;) {""")
+PY
+
+# ── The copy has no depth bound ────────────────────────────────────
+#
+# `tooDeep` nests five objects and is held, so the child raises one
+# error.execution where it should raise two.
+# Killer: `failUnheldValueRaisedNothing`.
+
+mutation_case "the copy has no depth bound" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """    if (depth >= (int)SCE_MAX_HANDED_VALUE_DEPTH || !lua_checkstack(from, 6) || !lua_checkstack(to, 3)) {""",
+     """    if (!lua_checkstack(from, 6) || !lua_checkstack(to, 3)) {""")
+PY
+
+# ── The copy has no entry bound ────────────────────────────────────
+#
+# `tooMany` holds nine entries and is held.
+# Killer: `failUnheldValueRaisedNothing`.
+
+mutation_case "the copy has no entry bound" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """        if (copy->entries > (size_t)SCE_MAX_HANDED_VALUE_ENTRIES) {""",
+     """        if (copy->entries == 0u) {""")
+PY
+
+# ── A value the child cannot hold raises nothing ───────────────────
+#
+# The <data> is left undefined and the document is not told.
+# Killer: `failUnheldValueRaisedNothing`.
+
+mutation_case "a value the child cannot hold raises nothing" <<'PY'
+edit("tools/codegen/templates/c/scriptengine.jinja2",
+     """               error. It is left without a value, and its own is not tried. */
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                {{ reason("data_unstored", var.id) }});
+            break;""",
+     """               error. It is left without a value, and its own is not tried. */
+            break;""")
+PY
+
+# ── A child that does not address its parent is handed nothing ──────
+#
+# `_init_invoked` starts the child with no values, so its first macrostep reads
+# its own `handed`, as the old `_init` route did when it ran that macrostep
+# before the parent wrote the values.
+# Killer: the driver's stranded `firstMacrostep`.
+
+mutation_case "a child started through _init_invoked is handed nothing" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     """{% if not model.needs_script_engine %}
+    /* No script engine, so no datamodel to take a handed value into. */
+    (void)handed;
+{% endif %}
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL, handed{% endif %}""",
+     """    (void)handed;
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, NULL, NULL{% endif %}""")
+PY
+
+# ── The parent keeps the values it handed ──────────────────────────
+#
+# Every invoke leaves its arguments on the parent's Lua stack after the child's
+# start returned.
+# Killer: the driver's check that the parent's stack is as high after the run
+# as it was after the start.
+
+mutation_case "the parent keeps the values it handed on its stack" <<'PY'
+edit("tools/codegen/templates/c/invoke_methods.jinja2",
+     """            lua_settop(sm->L, _handed_base);""",
+     """            (void)_handed_base;""")
+PY

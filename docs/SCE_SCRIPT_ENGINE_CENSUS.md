@@ -98,18 +98,18 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 282
+engine-documents 283
 native-prefix-documents 2
-datamodel-variable-init 529
+datamodel-variable-init 532
 transition-guard 258
 assign-action 458
-child-invoke-needs-script-engine 63
+child-invoke-needs-script-engine 67
 log-expr 46
 send-param-expr 49
 send-dynamic-attr 102
 send-content-expr 1
 foreach-action 20
-static-invoke-namelist 11
+static-invoke-namelist 12
 donedata-param 10
 donedata-content 5
 inline-script-action 3
@@ -130,7 +130,6 @@ population reaches zero is removed in the commit that empties it, because
 a ceiling nothing can breach is indistinguishable from one whose key was
 never spelled correctly.
 
-<<<<<<< ours
 ⚠ **2026-11-12, deliberately:** one document lands with this table, and it
 exists to need an engine.
 - `sce-build/tests/fixtures/swift_ecmascript/ecma_invoke_seeds.scxml` is the
@@ -172,6 +171,24 @@ document above), `datamodel-variable-init` by 12 (517 to 529, its `<data>`),
 a document of the census. The figures were derived by reading the document
 against `script_engine_analyzer`; where the test's block disagrees, the test's
 is the one to carry.
+
+⚠ **2026-11-12, deliberately:** one document lands with this entry, and it
+exists to need an engine.
+- `backends/c/tests/integration_resources/a_child_takes_what_it_is_handed` is
+  the C11 carrier of docs/adr/0098: the values an invoke hands its child are
+  declared in place of the child's own top-level `<data>`, before its script,
+  its entry walk and its first macrostep, and they cross from the parent's Lua
+  state to the child's whole. The parent's values and the children's
+  datamodels are what the document tests.
+
+Counted by hand from what `script_engine_analyzer::analyze` collects, not
+measured (the entry was written where nothing could run the census): three
+top-level `<data>` of the parent raise `datamodel-variable-init` by three, its
+four invokes of children that need an engine raise
+`child-invoke-needs-script-engine` by four, its one invoke with a `namelist`
+raises `static-invoke-namelist` by one, and the document raises
+`engine-documents` by one. A ceiling the census finds above its count is
+lowered to it on the next run that reads it.
 
 ⚠ **2026-11-10, deliberately, two days late (again):** one document landed on
 2026-11-08 without this table, and it exists to need an engine.
