@@ -4,23 +4,22 @@
 // The reader and the writer of the canonical form a test configuration's unit
 // generates for each record its system ports take (docs/SCE_TTCN3_LANE.md
 // §10.3, §10.5; docs/SCE_TEST_PROFILE.md §12.5), compiled here over records of
-// every form Go holds: order_taken (a list of records with a closed enum, an
-// optional text and integer, a record with a truth value, a byte string),
-// job_status (a list of integers, optional integers) and form_extras (an enum
-// of an open set, a list of optional elements, a 64-bit integer, a list with a
-// lower count, an optional list and a list of lists). The packages are
-// generated from sce-build/tests/fixtures/test_profile/trace_forms/ (regen:
+// every form: order_placed (a list of records with a closed enum, an optional
+// text and integer, a record with a truth value, a union of a case with a
+// record, one with none and one with a byte string), job_status (a list of
+// integers, optional integers) and form_extras (an enum of an open set, a list
+// of optional elements, a 64-bit integer, a list with a lower count, an
+// optional list and a list of lists). The packages are generated from
+// sce-build/tests/fixtures/test_profile/trace_forms/ (regen:
 // `scripts/regen_static_datamodel_go.sh`).
 //
 // The twin of backends/rust/tests/tests/a_record_reads_back_the_form_it_writes.rs
-// and of the C++ tests/integration/ARecordReadsBackTheFormItWritesTest.cpp, with
-// the same values and the same refusals, over the configuration C++ reads too,
-// since Go lowers no union either: order_taken holds every form the Rust
-// configuration's order_placed does, and a byte string in the union's place. A
-// value written by `Canonical<Record>` and read back by `Read<Record>` is the
-// value it was, through the canonical text; each malformed spelling of a form is
-// refused, naming where it stands; and a trace of one record of each type
-// replays to a log that holds each value as the trace does.
+// and of the Kotlin ARecordReadsBackTheFormItWritesTest.kt, over the same
+// configuration, with the same values and the same refusals. A value written by
+// `Canonical<Record>` and read back by `Read<Record>` is the value it was,
+// through the canonical text; each malformed spelling of a form is refused,
+// naming where it stands; and a trace of one record of each type replays to a
+// log that holds each value as the trace does.
 
 package static_datamodel
 
@@ -34,15 +33,19 @@ import (
 	sce "github.com/newmassrael/sce-go-runtime"
 	"github.com/newmassrael/sce-go-runtime/testprofile"
 
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/card_payment"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/form_extras"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/forms_configuration"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_status"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_customer"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line"
-	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_taken"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_payment"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_placed"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/paint_color"
-	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/replays_every_unionless_form"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/payment_kind"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/replays_every_form"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/shape_kind_open"
-	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/unionless_forms_configuration"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/voucher_payment"
 )
 
 // formsLine is a line of an order.
@@ -50,27 +53,31 @@ func formsLine(sku string, quantity uint16, color paint_color.PaintColor) order_
 	return order_line.OrderLinePayload{Sku: sku, Quantity: quantity, Color: color}
 }
 
-// formsOrder is an order of two lines, one with a text of a character of two
-// bytes and an escaped quote, the widest order id, a note and no priority,
-// paid with the voucher voucher.
-func formsOrder(voucher []byte) order_taken.OrderTakenPayload {
-	return order_taken.OrderTakenPayload{
+// formsOrder is an order paid by payment: two lines, one with a text of a
+// character of two bytes and an escaped quote, the widest order id, a note and
+// no priority.
+func formsOrder(payment order_payment.OrderPayment) order_placed.OrderPlacedPayload {
+	return order_placed.OrderPlacedPayload{
 		OrderId: math.MaxUint32,
 		Lines: []order_line.OrderLinePayload{
 			formsLine("A-1", 2, paint_color.PaintColorGreen),
 			formsLine("\"q\" é", math.MaxUint16, paint_color.PaintColorBlue),
 		},
-		Note:        optional.Some("ring twice"),
-		Priority:    optional.None[uint8](),
-		Customer:    order_customer.OrderCustomerPayload{FullName: "Ada", Vip: true},
-		VoucherCode: voucher,
+		Note:     optional.Some("ring twice"),
+		Priority: optional.None[uint8](),
+		Customer: order_customer.OrderCustomerPayload{FullName: "Ada", Vip: true},
+		Payment:  payment,
 	}
 }
 
-// formsVouchers are the vouchers the order is paid with: three octets, and
-// none.
-func formsVouchers() [][]byte {
-	return [][]byte{{0x00, 0xab, 0xff}, {}}
+// formsPayments are the three cases of the payment: one of a record, one of
+// none, one of a byte string.
+func formsPayments() []order_payment.OrderPayment {
+	return []order_payment.OrderPayment{
+		order_payment.OrderPaymentCard(card_payment.CardPaymentPayload{Last4: "4242", Amount: 1}),
+		order_payment.OrderPaymentCash(),
+		order_payment.OrderPaymentVoucher(voucher_payment.VoucherPaymentPayload{VoucherCode: []byte{0x00, 0xab, 0xff}}),
+	}
 }
 
 func formsStatuses() []job_status.JobStatusPayload {
@@ -157,23 +164,33 @@ func formsRoundTrip[V any](t *testing.T, value V, write func(V) any, read func(a
 	}
 }
 
+// formsReadOrder is the order paid by payment, written in its canonical text
+// and read back from it, failing the test where it is refused.
+func formsReadOrder(t *testing.T, payment order_payment.OrderPayment) order_placed.OrderPlacedPayload {
+	t.Helper()
+	read, err := forms_configuration.ReadOrderPlaced(
+		formsParsed(t, formsText(t, forms_configuration.CanonicalOrderPlaced(formsOrder(payment)))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return read
+}
+
 // docs/SCE_TEST_PROFILE.md §12.5: a value of each form reads back from the text
 // its writer gives as the value it was.
 func TestARecordReadsBackTheFormItWrites_AValueOfEachFormReadsBackFromItsCanonicalText(t *testing.T) {
-	for _, voucher := range formsVouchers() {
-		formsRoundTrip(t, formsOrder(voucher), unionless_forms_configuration.CanonicalOrderTaken,
-			unionless_forms_configuration.ReadOrderTaken)
+	for _, payment := range formsPayments() {
+		formsRoundTrip(t, formsOrder(payment), forms_configuration.CanonicalOrderPlaced,
+			forms_configuration.ReadOrderPlaced)
 	}
 	for _, status := range formsStatuses() {
-		formsRoundTrip(t, status, unionless_forms_configuration.CanonicalJobStatus,
-			unionless_forms_configuration.ReadJobStatus)
+		formsRoundTrip(t, status, forms_configuration.CanonicalJobStatus, forms_configuration.ReadJobStatus)
 	}
 	for _, extra := range formsExtras() {
-		formsRoundTrip(t, extra, unionless_forms_configuration.CanonicalFormExtras,
-			unionless_forms_configuration.ReadFormExtras)
+		formsRoundTrip(t, extra, forms_configuration.CanonicalFormExtras, forms_configuration.ReadFormExtras)
 	}
-	read, err := unionless_forms_configuration.ReadFormExtras(
-		formsParsed(t, formsText(t, unionless_forms_configuration.CanonicalFormExtras(formsExtras()[1]))))
+	read, err := forms_configuration.ReadFormExtras(
+		formsParsed(t, formsText(t, forms_configuration.CanonicalFormExtras(formsExtras()[1]))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,18 +200,23 @@ func TestARecordReadsBackTheFormItWrites_AValueOfEachFormReadsBackFromItsCanonic
 	if read.Least != math.MaxInt64 {
 		t.Errorf("the greatest int64 reads as %d", read.Least)
 	}
-	paid, err := unionless_forms_configuration.ReadOrderTaken(
-		formsParsed(t, formsText(t, unionless_forms_configuration.CanonicalOrderTaken(formsOrder(formsVouchers()[0])))))
-	if err != nil {
-		t.Fatal(err)
+	payments := formsPayments()
+	card := formsReadOrder(t, payments[0])
+	if card.Payment.Kind() != payment_kind.PaymentKindCard || card.Payment.ProvenCard().Last4 != "4242" {
+		t.Errorf("the card reads as %v", card.Payment)
 	}
-	if !bytes.Equal(paid.VoucherCode, []byte{0x00, 0xab, 0xff}) {
-		t.Errorf("the voucher reads as %v", paid.VoucherCode)
+	if cash := formsReadOrder(t, payments[1]); cash.Payment.Kind() != payment_kind.PaymentKindCash {
+		t.Errorf("the cash reads as %v", cash.Payment)
 	}
-	if len(paid.Lines) != 2 || paid.Lines[1].Sku != "\"q\" é" {
-		t.Errorf("the lines read as %v", paid.Lines)
+	voucher := formsReadOrder(t, payments[2])
+	if voucher.Payment.Kind() != payment_kind.PaymentKindVoucher ||
+		!bytes.Equal(voucher.Payment.ProvenVoucher().VoucherCode, []byte{0x00, 0xab, 0xff}) {
+		t.Errorf("the voucher reads as %v", voucher.Payment)
 	}
-	if paid.Priority.IsPresent() {
+	if len(card.Lines) != 2 || card.Lines[1].Sku != "\"q\" é" {
+		t.Errorf("the lines read as %v", card.Lines)
+	}
+	if card.Priority.IsPresent() {
 		t.Error("an absent priority reads as absent")
 	}
 }
@@ -220,20 +242,21 @@ func formsRefused[V any](t *testing.T, value V, write func(V) any, read func(any
 // naming the place it stands at: the record's type, each field by its id and
 // `[]` for an element of a list.
 func TestARecordReadsBackTheFormItWrites_AMalformedSpellingOfEachFormIsRefusedByName(t *testing.T) {
-	paid := formsOrder(formsVouchers()[0])
-	ofOrder := func(from, to string) string {
-		return formsRefused(t, paid, unionless_forms_configuration.CanonicalOrderTaken,
-			unionless_forms_configuration.ReadOrderTaken, from, to)
+	payments := formsPayments()
+	card, cash, voucher := formsOrder(payments[0]), formsOrder(payments[1]), formsOrder(payments[2])
+	ofOrder := func(value order_placed.OrderPlacedPayload, from, to string) string {
+		return formsRefused(t, value, forms_configuration.CanonicalOrderPlaced,
+			forms_configuration.ReadOrderPlaced, from, to)
 	}
 	extra := formsExtras()[0]
 	ofExtras := func(from, to string) string {
-		return formsRefused(t, extra, unionless_forms_configuration.CanonicalFormExtras,
-			unionless_forms_configuration.ReadFormExtras, from, to)
+		return formsRefused(t, extra, forms_configuration.CanonicalFormExtras,
+			forms_configuration.ReadFormExtras, from, to)
 	}
 	status := formsStatuses()[0]
 	ofStatus := func(from, to string) string {
-		return formsRefused(t, status, unionless_forms_configuration.CanonicalJobStatus,
-			unionless_forms_configuration.ReadJobStatus, from, to)
+		return formsRefused(t, status, forms_configuration.CanonicalJobStatus,
+			forms_configuration.ReadJobStatus, from, to)
 	}
 	sku := `{"color":"red","quantity":"1","sku":"s"},`
 	longName := `"full_name":"` + strings.Repeat("x", 25) + `"`
@@ -241,25 +264,30 @@ func TestARecordReadsBackTheFormItWrites_AMalformedSpellingOfEachFormIsRefusedBy
 		reason   string
 		expected string
 	}{
-		{ofOrder(`"order_id":"4294967295"`, `"order_id":"007"`),
-			"order_taken.order_id: '007' is not the text of an integer's decimal digits"},
-		{ofOrder(`"quantity":"2"`, `"quantity":"65536"`),
-			"order_taken.lines[].quantity: 65536 is past the range of its type"},
-		{ofOrder(`"vip":true`, `"vip":"true"`), "order_taken.customer.vip: a text is not a truth value"},
-		{ofOrder(`"full_name":"Ada"`, longName),
-			"order_taken.customer.full_name: a text of 25 bytes is past the 24 its type holds"},
-		{ofOrder(`"color":"green"`, `"color":"purple"`),
-			"order_taken.lines[].color: 'purple' names no variant of its enum"},
-		{ofOrder(`"note":"ring twice"`, `"note":null`), "order_taken.note: null is not a text"},
-		{ofOrder(`{"customer":`, `{"rush":"1","customer":`), "order_taken: 'rush' is no field of its record"},
-		{ofOrder(`"order_id":"4294967295",`, ""),
-			"order_taken.order_id: the field is absent, and its type is not optional"},
-		{ofOrder(`"lines":[`, `"lines":[`+sku+sku+sku),
-			"order_taken.lines: a list of 5 elements is outside its bounds, 0 to 4"},
-		{ofOrder(`"voucher_code":"00ABFF"`, `"voucher_code":"00abff"`),
-			"order_taken.voucher_code: '00abff' is not octets in upper-case hex, two digits each"},
-		{ofOrder(`"voucher_code":"00ABFF"`, `"voucher_code":"0011223344"`),
-			"order_taken.voucher_code: a byte string of 5 octets is past the 4 its type holds"},
+		{ofOrder(card, `"order_id":"4294967295"`, `"order_id":"007"`),
+			"order_placed.order_id: '007' is not the text of an integer's decimal digits"},
+		{ofOrder(card, `"quantity":"2"`, `"quantity":"65536"`),
+			"order_placed.lines[].quantity: 65536 is past the range of its type"},
+		{ofOrder(card, `"vip":true`, `"vip":"true"`), "order_placed.customer.vip: a text is not a truth value"},
+		{ofOrder(card, `"full_name":"Ada"`, longName),
+			"order_placed.customer.full_name: a text of 25 bytes is past the 24 its type holds"},
+		{ofOrder(card, `"color":"green"`, `"color":"purple"`),
+			"order_placed.lines[].color: 'purple' names no variant of its enum"},
+		{ofOrder(card, `"note":"ring twice"`, `"note":null`), "order_placed.note: null is not a text"},
+		{ofOrder(card, `{"customer":`, `{"rush":"1","customer":`), "order_placed: 'rush' is no field of its record"},
+		{ofOrder(card, `"order_id":"4294967295",`, ""),
+			"order_placed.order_id: the field is absent, and its type is not optional"},
+		{ofOrder(card, `"lines":[`, `"lines":[`+sku+sku+sku),
+			"order_placed.lines: a list of 5 elements is outside its bounds, 0 to 4"},
+		{ofOrder(card, `{"card":`, `{"cheque":`), "order_placed.payment: 'cheque' names no case of its union"},
+		{ofOrder(card, `"last4":"4242"}}`, `"last4":"4242"},"cash":{}}`),
+			"order_placed.payment: a value of a union is an object of one member, and this one has 2"},
+		{ofOrder(cash, `{"cash":{}}`, `{"cash":{"x":"1"}}`),
+			"order_placed.payment.cash: a case that holds no record is the empty object"},
+		{ofOrder(voucher, `"voucher_code":"00ABFF"`, `"voucher_code":"00abff"`),
+			"order_placed.payment.voucher_code: '00abff' is not octets in upper-case hex, two digits each"},
+		{ofOrder(voucher, `"voucher_code":"00ABFF"`, `"voucher_code":"0011223344"`),
+			"order_placed.payment.voucher_code: a byte string of 5 octets is past the 4 its type holds"},
 		{ofStatus(`"tag":"255"`, `"tag":"256"`), "job_status.tag: 256 is past the range of its type"},
 		{ofStatus(`"codes":[]`, `"codes":["x"]`),
 			"job_status.codes[]: 'x' is not the text of an integer's decimal digits"},
@@ -293,17 +321,17 @@ func TestARecordReadsBackTheFormItWrites_ATraceOfEveryFormReplaysToTheValuesItHo
 	}
 	trace := testprofile.Trace{
 		Suite:    "forms_suite",
-		TestCase: replays_every_unionless_form.Name,
+		TestCase: replays_every_form.Name,
 		Inputs: []testprofile.TraceInput{
-			input(0, "order_taken", unionless_forms_configuration.CanonicalOrderTaken(formsOrder(formsVouchers()[0]))),
-			input(0, "job_status", unionless_forms_configuration.CanonicalJobStatus(formsStatuses()[0])),
-			input(250, "form_extras", unionless_forms_configuration.CanonicalFormExtras(formsExtras()[0])),
+			input(0, "order_placed", forms_configuration.CanonicalOrderPlaced(formsOrder(formsPayments()[0]))),
+			input(0, "job_status", forms_configuration.CanonicalJobStatus(formsStatuses()[0])),
+			input(250, "form_extras", forms_configuration.CanonicalFormExtras(formsExtras()[0])),
 		},
 	}
 	text := trace.CanonicalText()
 	suite := testprofile.Suite{
 		Name:     "forms_suite",
-		Executes: []testprofile.Execute{{TestCase: replays_every_unionless_form.TestCase(), Guard: testprofile.NoGuard}},
+		Executes: []testprofile.Execute{{TestCase: replays_every_form.TestCase(), Guard: testprofile.NoGuard}},
 	}
 	results, err := testprofile.RunSuiteWithTraces(suite, testprofile.FeaturesOf(), func(string) (testprofile.Trace, error) {
 		return testprofile.ParseTrace(text)
