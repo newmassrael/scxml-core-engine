@@ -1252,7 +1252,7 @@ pub(super) fn log_type_name(record: &ScopedRecord) -> String {
 /// A case of a union in the canonical form: the variant it is for, by its
 /// declared name, and, where the case holds a record, the name the record is
 /// bound to and its written form.
-pub(super) type CanonicalCase = (String, Option<(String, String)>);
+pub(crate) type CanonicalCase = (String, Option<(String, String)>);
 
 /// How a backend spells the canonical form of a value in the test log
 /// (docs/SCE_TEST_PROFILE.md §12.5) with the writers of its runtime: one
@@ -1383,7 +1383,7 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
 /// width, a text's, a byte string's and a list's bounds, and the record a set
 /// of fields builds, since a value that does not belong to its type is refused
 /// where it is read.
-pub(super) trait CanonicalForm {
+pub(crate) trait CanonicalForm {
     /// The backend's spelling of the value the walk stands at.
     type At;
 
@@ -1524,7 +1524,7 @@ impl<S: CanonicalSpelling> CanonicalForm for Writing<'_, S> {
 /// it is absent, and in a list, which writes `null` in its place
 /// ([`CanonicalForm::optional_element`]). Refused, naming why: a number that
 /// is no integer, and an optional value anywhere else.
-pub(super) fn canonical_form<S: CanonicalForm>(
+pub(crate) fn canonical_form<S: CanonicalForm>(
     spelling: &S,
     ty: &ValueType,
     at: &S::At,
@@ -1533,27 +1533,19 @@ pub(super) fn canonical_form<S: CanonicalForm>(
     Ok(match ty {
         TypeOf::Scalar(SceType::Bool) => spelling.boolean(at),
         TypeOf::Scalar(SceType::Enum(reference)) => {
-            let declared = scope.enums.get(&reference.alias).ok_or_else(|| {
-                format!(
-                    "`enum:{}` names no enum the document imports",
-                    reference.alias
-                )
-            })?;
+            let declared = scope
+                .enums
+                .get(&reference.alias)
+                .ok_or_else(|| unimported("enum", &reference.alias))?;
             spelling.enumerated(at, declared)
         }
         TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
             spelling.integer(at, scalar)
         }
-        TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
+        TypeOf::Scalar(_) => return Err(formless(ty)),
         TypeOf::Text { max } => spelling.text(at, max),
         TypeOf::Bytes { max } => spelling.bytes(at, max),
-        TypeOf::Optional { .. } => {
-            return Err(format!(
-                "a value of {ty} has a form in the test log only as a field of a record, \
-                 which omits it where it is absent, or as an element of a list, which is \
-                 null where it is absent"
-            ))
-        }
+        TypeOf::Optional { .. } => return Err(optional_out_of_place(ty)),
         TypeOf::List { elem, max } => {
             let (binding, bound) = spelling.bound(at, "item");
             let element = spelling.list_element(at, bound);
@@ -1572,7 +1564,7 @@ pub(super) fn canonical_form<S: CanonicalForm>(
             let record = scope
                 .records
                 .get(alias)
-                .ok_or_else(|| format!("`record:{alias}` names no record the document imports"))?;
+                .ok_or_else(|| unimported("record", alias))?;
             let fields = record
                 .fields
                 .iter()
@@ -1601,7 +1593,7 @@ pub(super) fn canonical_form<S: CanonicalForm>(
             let union = scope
                 .unions
                 .get(alias)
-                .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))?;
+                .ok_or_else(|| unimported("union", alias))?;
             let cases = union
                 .cases
                 .iter()
@@ -1628,6 +1620,29 @@ pub(super) fn canonical_form<S: CanonicalForm>(
             spelling.union(at, union, cases)?
         }
     })
+}
+
+/// Why the type `<kind>:<alias>` has no form where it is read: the scope it is
+/// read in names no such type, as no document imports it under that alias.
+pub(crate) fn unimported(kind: &str, alias: &str) -> String {
+    format!("`{kind}:{alias}` names no {kind} the document imports")
+}
+
+/// Why a value of the scalar `ty` has no form in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5): it is no integer, no `bool` and no value
+/// of an enum.
+pub(crate) fn formless(ty: &ValueType) -> String {
+    format!("a value of {ty} has no form in the test log")
+}
+
+/// Why a value of `ty`, which may be absent, has no form where it stands: the
+/// form writes an absent value only as a record omits a field or as a list
+/// writes `null` for an element.
+pub(crate) fn optional_out_of_place(ty: &ValueType) -> String {
+    format!(
+        "a value of {ty} has a form in the test log only as a field of a record, which omits \
+         it where it is absent, or as an element of a list, which is null where it is absent"
+    )
 }
 
 /// A backend's spelling that lowers a union whatever

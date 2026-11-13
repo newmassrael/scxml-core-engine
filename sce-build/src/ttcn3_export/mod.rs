@@ -53,7 +53,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::forge::error::{ForgeError, GenerateError, Located};
-use crate::forge::model::{ForgeDocument, ForgeKind};
+use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge, TestSuiteModel};
 use names::{unit_name, Declared, Namespace, Origin};
 
 /// What the export of a suite writes, and each definition of its behaviour
@@ -197,10 +197,58 @@ fn definitions<V: Serialize>(
         .collect()
 }
 
-/// Export the suite at `path` (docs/SCE_TEST_PROFILE.md §9.5).
+/// A test suite read as the export reads it: parsed with its imports, held to
+/// the rules `check` holds it to, and with every document it reaches read and
+/// held to the rules of its kind (`reach`). What the export translates, and
+/// what the check of a recorded input trace reads the suite's tables from
+/// (`trace_check`), so both refuse the same suites. Private to the export and
+/// the modules under it, as the tables it holds are.
+struct ReadSuite {
+    /// The suite's text as read, which places a refusal in it where its
+    /// author wrote it, before its `<xi:include>` and `<sce:use>` expanded.
+    loaded: crate::LoadedForgeSource,
+    /// The path the suite was named by, which a refusal of its kind names.
+    path: PathBuf,
+    parsed: ParsedForge,
+    /// The directory the suite's imports resolve against.
+    dir: PathBuf,
+    /// Where a name written in the suite is refused: at its root.
+    at: Origin,
+    reach: reach::Reach,
+}
+
+impl ReadSuite {
+    /// The suite itself.
+    fn suite(&self) -> Result<&TestSuiteModel, ExportError> {
+        as_suite(&self.path, &self.parsed.document)
+    }
+
+    /// `e`, a refusal of the suite or of a document it reaches, placed where
+    /// its author wrote it.
+    fn refused(&self, e: Located<ForgeError>) -> ExportError {
+        ExportError::Refused(self.loaded.positions.authored(e))
+    }
+}
+
+/// `document`, read from `path`, as the test suite it must be.
+fn as_suite<'d>(
+    path: &Path,
+    document: &'d ForgeDocument,
+) -> Result<&'d TestSuiteModel, ExportError> {
+    match document {
+        ForgeDocument::TestSuite(suite) => Ok(suite),
+        other => Err(ExportError::NotASuite(format!(
+            "{} is a document of sce:kind=\"{}\"",
+            path.display(),
+            other.kind()
+        ))),
+    }
+}
+
+/// Read the suite at `path` as the export reads it ([`ReadSuite`]).
 /// `include_dirs` resolve the suite's `<xi:include>` and `<sce:use>`
 /// fragments, as `generate` resolves them.
-pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export, ExportError> {
+fn read_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<ReadSuite, ExportError> {
     let loaded = crate::load_forge_source(path, include_dirs).map_err(ExportError::Refused)?;
     let path_text = path.to_string_lossy();
     let label = crate::DocumentLabel::for_input_path(&path_text);
@@ -209,15 +257,36 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     let parsed = crate::forge::parser::parse_forge_with_imports(loaded.text(), label)
         .map_err(refused)?
         .ok_or_else(|| ExportError::NotASuite(format!("{} is a statechart", path.display())))?;
-    let ForgeDocument::TestSuite(suite) = &parsed.document else {
-        return Err(ExportError::NotASuite(format!(
-            "{} is a document of sce:kind=\"{}\"",
-            path.display(),
-            parsed.document.kind()
-        )));
-    };
+    let suite = as_suite(path, &parsed.document)?;
     reach::check_document(&parsed, dir, label.diagnostic_label).map_err(refused)?;
     let reached = reach::reach(&parsed, dir, label.diagnostic_label).map_err(refused)?;
+    let at = Origin {
+        kind: ForgeKind::TestSuite,
+        document: suite.name.clone(),
+        label: label.diagnostic_label.to_string(),
+        line: reach::root_line(&parsed.document),
+    };
+    Ok(ReadSuite {
+        loaded,
+        path: path.to_path_buf(),
+        parsed,
+        dir: dir.to_path_buf(),
+        at,
+        reach: reached,
+    })
+}
+
+/// Export the suite at `path` (docs/SCE_TEST_PROFILE.md §9.5).
+/// `include_dirs` resolve the suite's `<xi:include>` and `<sce:use>`
+/// fragments, as `generate` resolves them.
+pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export, ExportError> {
+    let read = read_suite(path, include_dirs)?;
+    let suite = read.suite()?;
+    let parsed = &read.parsed;
+    let dir = read.dir.as_path();
+    let label = read.at.label.as_str();
+    let refused = |e: Located<ForgeError>| read.refused(e);
+    let reached = &read.reach;
     // The feature model, which E15 alone reads: the walk does not follow it.
     let features = suite
         .features
@@ -228,17 +297,12 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
                 .iter()
                 .find(|i| i.alias == alias && i.kind == ForgeKind::FeatureModel)
         })
-        .map(|import| reach::feature_model(import, dir, label.diagnostic_label))
+        .map(|import| reach::feature_model(import, dir, label))
         .transpose()
         .map_err(refused)?;
 
     let name = unit_name(&suite.name);
-    let at = Origin {
-        kind: ForgeKind::TestSuite,
-        document: suite.name.clone(),
-        label: label.diagnostic_label.to_string(),
-        line: reach::root_line(&parsed.document),
-    };
+    let at = &read.at;
     let mut names = Namespace::default();
     names
         .definition(&name, Declared::read("the suite's module", at.clone()))
@@ -254,24 +318,23 @@ pub fn export_suite(path: &Path, include_dirs: &[PathBuf]) -> Result<Ttcn3Export
     // where it is written, after them.
     let suite_scope = crate::forge::import_source::type_scope(&parsed.imports, dir);
     let parameter_views =
-        behaviour::module_parameters(suite, &suite_scope, &at, &mut names).map_err(refused)?;
-    let module = types::types_module(&name, &reached, &mut names, &at).map_err(refused)?;
-    let port_type_views = port_types::port_types(&reached, &mut names).map_err(refused)?;
-    let template_views = templates::templates(&reached, &mut names).map_err(refused)?;
-    let behaviour = behaviour::behaviour(&reached, &mut names).map_err(refused)?;
+        behaviour::module_parameters(suite, &suite_scope, at, &mut names).map_err(refused)?;
+    let module = types::types_module(&name, reached, &mut names, at).map_err(refused)?;
+    let port_type_views = port_types::port_types(reached, &mut names).map_err(refused)?;
+    let template_views = templates::templates(reached, &mut names).map_err(refused)?;
+    let behaviour = behaviour::behaviour(reached, &mut names).map_err(refused)?;
     let execution = execution::execution(
         suite,
         &parsed.imports,
         dir,
-        &at,
+        at,
         features.as_ref(),
-        &reached,
+        reached,
         &mut names,
     )
     .map_err(refused)?;
 
-    let in_suite =
-        |e: ForgeError| ExportError::Refused(Located::in_file(e, label.diagnostic_label));
+    let in_suite = |e: ForgeError| ExportError::Refused(Located::in_file(e, label));
     let env = render::environment().map_err(in_suite)?;
     let types_module =
         render::render(&env, render::TYPES_MODULE, "module", &module).map_err(in_suite)?;

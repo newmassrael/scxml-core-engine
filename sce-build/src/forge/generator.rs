@@ -42,8 +42,11 @@ mod rust_view;
 mod swift_codec;
 mod swift_test_tables;
 mod swift_test_template;
-mod test_tables;
-mod test_template_walk;
+// The two the TTCN-3 export's check of a recorded input trace reads too
+// (`ttcn3_export::trace_check`): the inputs a configuration's system ports take,
+// and the walk that decides which types have a canonical form.
+pub(crate) mod test_tables;
+pub(crate) mod test_template_walk;
 
 /// A byte case of the Rust conformance harness, its source a literal of the
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].

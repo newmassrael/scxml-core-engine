@@ -39,7 +39,7 @@ use super::types::{Site, TypeExpr};
 use crate::feature_model::{upper_spelling, FeatureModel};
 use crate::forge::error::{ForgeError, Located};
 use crate::forge::model::{
-    ForgeDocument, ForgeImport, ForgeKind, TestConfigurationModel, TestSuiteModel,
+    ForgeDocument, ForgeImport, ForgeKind, TestConfigurationModel, TestExecute, TestSuiteModel,
 };
 use crate::presence_condition::PresenceCondition;
 
@@ -159,17 +159,7 @@ pub(super) fn execution(
     let configurations = configurations(reach)?;
     let mut executed = Vec::new();
     for execute in &suite.executes {
-        let node = format!("sce:execute '{}'", execute.test_case);
-        let case = imports
-            .iter()
-            .find(|i| i.alias == execute.test_case && i.kind == ForgeKind::TestCase)
-            .and_then(|import| reach.imported(dir, import))
-            .ok_or_else(|| {
-                site(&node, execute.source_line).refuse(format!(
-                    "'{}' names no test case the suite reaches",
-                    execute.test_case
-                ))
-            })?;
+        let case = executed_case(suite, execute, imports, dir, at, reach)?;
         let configuration = run_in(case, reach, &configurations)?;
         executed.push(Executed {
             test_case: &execute.test_case,
@@ -263,8 +253,39 @@ pub(super) fn execution(
     })
 }
 
+/// The test case the `<sce:execute>` `execute` of `suite` runs: the document
+/// the suite, whose imports are `imports` read in `dir` and which is refused
+/// at `at`, imports as a test case under the alias it names, among the
+/// documents `reach` holds.
+pub(super) fn executed_case<'r>(
+    suite: &TestSuiteModel,
+    execute: &TestExecute,
+    imports: &[ForgeImport],
+    dir: &Path,
+    at: &Origin,
+    reach: &'r Reach,
+) -> Result<&'r Reached, Located<ForgeError>> {
+    imports
+        .iter()
+        .find(|i| i.alias == execute.test_case && i.kind == ForgeKind::TestCase)
+        .and_then(|import| reach.imported(dir, import))
+        .ok_or_else(|| {
+            Site {
+                origin: at.at(execute.source_line),
+                subject: format!(
+                    "test-suite '{}': sce:execute '{}'",
+                    suite.name, execute.test_case
+                ),
+            }
+            .refuse(format!(
+                "'{}' names no test case the suite reaches",
+                execute.test_case
+            ))
+        })
+}
+
 /// The configuration the test case `case` runs in, among `configurations`.
-fn run_in<'c, 'r>(
+pub(super) fn run_in<'c, 'r>(
     case: &Reached,
     reach: &Reach,
     configurations: &'c [Configuration<'r>],

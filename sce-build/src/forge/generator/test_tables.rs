@@ -26,7 +26,7 @@ use crate::forge::value_type::{ScopedRecord, TypeScope, ValueType};
 use crate::presence_condition::PresenceExpr;
 
 /// The refusal of the document `kind` `name`, at `at`, for `why`.
-pub(super) fn refused(
+pub(crate) fn refused(
     kind: ForgeKind,
     name: &str,
     at: Option<&crate::forge::error::SourceLocation>,
@@ -154,13 +154,13 @@ pub(super) fn configuration_rows<'a>(
 /// A record a recorded input trace may carry on a system port
 /// (docs/SCE_TTCN3_LANE.md §10.2): its type, `record:<alias>` read in the
 /// scope of the port type that names it, and the record.
-pub(super) struct TraceInputRow<'a> {
+pub(crate) struct TraceInputRow<'a> {
     /// The type of the record, as the port type's scope reads it.
-    pub(super) record_type: ValueType,
+    pub(crate) record_type: ValueType,
     /// The scope the port type's imports name the record in.
-    pub(super) scope: &'a TypeScope,
+    pub(crate) scope: &'a TypeScope,
     /// The record.
-    pub(super) record: &'a ScopedRecord,
+    pub(crate) record: &'a ScopedRecord,
 }
 
 /// A system port of a configuration (docs/SCE_TEST_PROFILE.md §11.6): its id
@@ -171,35 +171,34 @@ pub(super) struct SystemPortRow<'a> {
     pub(super) inputs: Vec<TraceInputRow<'a>>,
 }
 
-/// Each system port of the test configuration `m`, whose imports are
-/// `imports`, with the records a trace may carry on it, in document order.
+/// Each system port of the test configuration `m` with the records a trace may
+/// carry on it, in document order; `port_type_of` answers the test port type
+/// the configuration imports under an alias.
 ///
 /// Refused by name where a system port's type names no test port type the
 /// configuration imports, and where its `in` list names a record the port
 /// type's own imports do not.
-pub(super) fn system_port_rows<'a>(
+fn system_port_rows<'a>(
     m: &'a TestConfigurationModel,
-    imports: &'a [ImportContext],
+    port_type_of: &impl Fn(&str) -> Option<&'a TestPortTypeImport>,
 ) -> Result<Vec<SystemPortRow<'a>>, ForgeError> {
     let kind = ForgeKind::TestConfiguration;
     let at = m.source_location.as_ref();
     m.system_ports
         .iter()
         .map(|port| {
-            let port_type = import_of(imports, &port.port_type, ForgeKind::TestPortType.as_attr())
-                .and_then(|i| i.test_port_type.as_ref())
-                .ok_or_else(|| {
-                    refused(
-                        kind,
-                        &m.name,
-                        at,
-                        format!(
-                            "the system port '{}' is of '{}', which names no test port type the \
+            let port_type = port_type_of(&port.port_type).ok_or_else(|| {
+                refused(
+                    kind,
+                    &m.name,
+                    at,
+                    format!(
+                        "the system port '{}' is of '{}', which names no test port type the \
                              configuration imports",
-                            port.id, port.port_type
-                        ),
-                    )
-                })?;
+                        port.id, port.port_type
+                    ),
+                )
+            })?;
             let inputs = port_type
                 .inputs
                 .iter()
@@ -236,45 +235,62 @@ pub(super) fn system_port_rows<'a>(
 /// A record a recorded input trace may carry, as the unit of a configuration
 /// reads it: the name of its type in the test log ([`log_type_name`]), which
 /// names the unit's reader and writer of it, and its row.
-pub(super) struct TraceRecord<'a> {
-    pub(super) type_name: String,
-    pub(super) row: TraceInputRow<'a>,
+pub(crate) struct TraceRecord<'a> {
+    pub(crate) type_name: String,
+    pub(crate) row: TraceInputRow<'a>,
 }
 
 /// One arm of the `input` of a configuration's unit: a system port, the name
 /// of a record its type's `in` list names, and the record.
-pub(super) struct TraceArm<'a> {
-    pub(super) port: &'a str,
-    pub(super) type_name: String,
-    pub(super) record: &'a ScopedRecord,
+pub(crate) struct TraceArm<'a> {
+    pub(crate) port: &'a str,
+    pub(crate) type_name: String,
+    pub(crate) record: &'a ScopedRecord,
 }
 
 /// What the unit of a configuration writes of the inputs a recorded trace may
 /// carry ([`trace_records`]).
-pub(super) struct TraceRecords<'a> {
+pub(crate) struct TraceRecords<'a> {
     /// Each system port's id, in document order.
-    pub(super) system_ports: Vec<&'a str>,
+    pub(crate) system_ports: Vec<&'a str>,
     /// An arm of `input` per system port and record its type's `in` list
     /// names, in document order.
-    pub(super) arms: Vec<TraceArm<'a>>,
+    pub(crate) arms: Vec<TraceArm<'a>>,
     /// Each record once, in the order the arms first name it: the unit
     /// declares its reader and its writer once.
-    pub(super) records: Vec<TraceRecord<'a>>,
+    pub(crate) records: Vec<TraceRecord<'a>>,
 }
 
 /// The inputs a recorded trace may carry on the system ports of the test
 /// configuration `m`, whose imports are `imports` (docs/SCE_TTCN3_LANE.md
-/// §10.2, §10.5), as every backend's unit of it writes them: the system ports
-/// ([`system_port_rows`]), an arm per port and record, and each record once,
-/// by its type in the test log ([`log_type_name`]).
-///
-/// Two records of one name are refused by name, as the types module of the
-/// export would hold them under one name.
+/// §10.2, §10.5), as every backend's unit of it writes them
+/// ([`trace_records_of`], each port type read from the import enrichment).
 pub(super) fn trace_records<'a>(
     m: &'a TestConfigurationModel,
     imports: &'a [ImportContext],
 ) -> Result<TraceRecords<'a>, ForgeError> {
-    let ports = system_port_rows(m, imports)?;
+    trace_records_of(m, |alias| {
+        import_of(imports, alias, ForgeKind::TestPortType.as_attr())
+            .and_then(|i| i.test_port_type.as_ref())
+    })
+}
+
+/// The inputs a recorded trace may carry on the system ports of the test
+/// configuration `m` (docs/SCE_TTCN3_LANE.md §10.2, §10.5): the system ports
+/// ([`system_port_rows`]), an arm per port and record, and each record once,
+/// by its type in the test log ([`log_type_name`]). `port_type_of` answers the
+/// test port type the configuration imports under an alias: the generators
+/// read it from the import enrichment ([`trace_records`]), and the check of a
+/// trace against its suite from the documents the suite reaches
+/// (`crate::ttcn3_export::trace_check`), so both read one table.
+///
+/// Two records of one name are refused by name, as the types module of the
+/// export would hold them under one name.
+pub(crate) fn trace_records_of<'a>(
+    m: &'a TestConfigurationModel,
+    port_type_of: impl Fn(&str) -> Option<&'a TestPortTypeImport>,
+) -> Result<TraceRecords<'a>, ForgeError> {
+    let ports = system_port_rows(m, &port_type_of)?;
     let mut arms = Vec::new();
     let mut records: Vec<TraceRecord<'a>> = Vec::new();
     for port in &ports {
