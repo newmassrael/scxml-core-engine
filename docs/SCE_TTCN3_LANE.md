@@ -2,11 +2,11 @@
 
 - Status: design of ADR 0091 order of work step 5, written 2026-11-10. Of what SCE gives the lane, the canonical log
   the lane compares is in place (order of work step 6, TP §12.5): all seven native runtimes write it, and each is held
-  to one expected log. Of the trace surface and native trace replay (S1), the surface, the shared walk and the Rust
-  backend are in place (§10.4, §10.5); the other six backends and the corpus (S2) are not built yet. The
-  lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`, which exists and is private for
-  now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The SCE-side slices S1 and S2 come
-  first, then the downstream slices D1 to D5 (§13).
+  to one expected log. The trace surface and native trace replay (S1) are in place on all seven backends (§10.4,
+  §10.5). Of the corpus (S2), every test case of `runtime_suite` has a trace and an expected log (§12.1); the rest
+  of §12.4 is not built yet. The lane is split between SCE and a separate downstream repository, `sce-ttcn3-titan`,
+  which exists and is private for now. Its `SCE_PIN` is `0d48bef3bd`. This document is SCE's side of the design. The
+  SCE-side slices S1 and S2 come first, then the downstream slices D1 to D5 (§13).
 - Downstream design: `docs/DESIGN.md` of https://github.com/newmassrael/sce-ttcn3-titan, cited as **DD §x**. It
   holds §6 to §9, §11 and §13.2 of this design under the same numbers, and this document keeps only their headings,
   so that a section has one text.
@@ -339,7 +339,8 @@ each form (`sce_rust_runtime::test::from_canonical`) in the order the generated 
 the first refusal of a value is the one the runner gives, in its words. Which types have a form is decided by the one
 walk of the form (`canonical_form`). Each refusal is placed in the trace file and names the place it is about by its
 JSON pointer (`/inputs/0/value/code`); `sce-build/tests/a_trace_is_checked_against_its_suite.rs` holds each refusal and
-holds the committed trace of `answers_the_job`, and a trace of every form of the every-form fixtures, to fit.
+holds every committed trace of `runtime_suite`, one for each of its test cases, and a trace of every form of the
+every-form fixtures, to fit.
 
 ### 10.5 Native trace replay
 
@@ -478,7 +479,7 @@ The corpus is SCE's: the suites, their recorded traces, their expected logs, and
 types their mapped ports carry. ADR 0091 §7 asks it to cover every row of its §2 and every refusal of its §3. An
 expected log is the canonical log a reviewed native run wrote for one trace. SCE's own tests hold every backend's run
 to it, so a change of native behaviour shows in SCE before it reaches the lane. This is what the tree holds on
-2026-11-10.
+2026-11-13.
 
 ### 12.1 What runs today
 
@@ -487,10 +488,23 @@ to it, so a change of native behaviour shows in SCE before it reaches the lane. 
 - **`job_suite`, `ping_suite`, `orders_suite` and `nested_suite`** (`sce-build/tests/fixtures/test_profile/`, its
   `assembly/`, and `sce-build/tests/fixtures/ttcn3_export/`) are exported and validated, and their documents are
   generated, but no suite of them runs end to end.
-- **One test case has an expected log, and no suite has a trace.** The run of `answers_the_job` of `runtime_suite`,
-  in a world with no feature and answered with success by the tests' system adapter, is held on all seven backends to
-  `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json` (TP §12.5). Its input comes from
-  that adapter, not from a trace. No mapped message type of any suite has a codec document (DD §8.4).
+- **Every test case of `runtime_suite` has a trace and an expected log, and no other suite has either.** The
+  traces are `sce-build/tests/fixtures/test_profile/runtime/traces/<test case>.json`, written by hand, each the
+  inputs the tests' system adapter gives that test case (§10.2):
+  - `answers_the_job`: the reply of code 0 to job 7 on `sut` at 500 (an instant in microseconds, as a trace's `at`
+    is); the case passes at 500.
+  - `serves_a_ptc`: no input, since its configuration has no system port; the MTC answers its PTC and passes at 0.
+  - `keeps_a_ptc`: no input, since the idler's system port `quiet` is never sent to; the removed PTC's
+    `inconc` outweighs the MTC's `pass` at 15 ms.
+  - `answers_before_the_guard`: the same reply as `answers_the_job`, at 500; the guard of 0.1 ms ends the case in
+    `error` at 100, before the reply is due, so the reply is never delivered.
+
+  Each trace's expected log is `expected_logs/<test case>.json` beside them (TP §12.5). On all seven backends the
+  suite's runner program replays the whole directory of traces in the world of every feature
+  (`ptcs,removal,guard`), and so does the runner run in the process on every backend but Rust; each backend's test
+  holds every log written to its expected log byte for byte, and the set of logs written to the set of expected
+  logs. `sce-codegen check-trace` holds each trace to fit the suite (§10.4). No mapped message type of any suite has
+  a codec document (DD §8.4).
 
 ### 12.2 The rows of ADR 0091 §2
 
@@ -540,7 +554,8 @@ Every refusal has a refused fixture that `sce-build`'s tests hold to its diagnos
 
 ### 12.4 What the corpus must gain (slice S2)
 
-- a trace for every test case of every runnable suite, and the expected log of each trace;
+- a trace for every test case of every runnable suite, and the expected log of each trace (`runtime_suite`'s are in
+  place, §12.1);
 - every message type a system port of a runnable suite carries is a codec message type (ADR 0102 §1.1), CBOR or
   content-line, and positional once ADR 0100 and ADR 0102's step 8 land, so that every message crossing the system
   interface passes through a codec on both sides. An event schema on a system port stays legal in the profile, its
@@ -589,6 +604,8 @@ listed in DD §13.2.
 - The expected logs are written in `sce-test-log.v1`, whose schema and native writers are in place (§13.3). The
   traces they are written for are replayed through S1. The codec documents depend on neither, and can land first.
 - Files: the corpus fixtures, their traces, expected logs and codec documents, and the test that holds the coverage.
+- In place: the traces and the expected logs of every test case of `runtime_suite`, and on each backend the first
+  test above over them (§12.1).
 
 ### 13.2 In the downstream
 
