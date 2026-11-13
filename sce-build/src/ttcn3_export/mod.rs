@@ -45,6 +45,7 @@ pub mod port_types;
 mod reach;
 mod render;
 pub mod templates;
+pub mod trace_check;
 pub mod types;
 pub mod witness;
 

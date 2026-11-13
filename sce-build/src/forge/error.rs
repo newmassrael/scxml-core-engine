@@ -713,6 +713,41 @@ pub enum TestProfileRule {
     ExportName,
 }
 
+/// Why a recorded input trace does not fit the suite it is checked against
+/// (docs/SCE_TTCN3_LANE.md §10.2), one wire code each: the refusal a
+/// [`ValidationError::TestTrace`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceRule {
+    /// The text is not a trace: not JSON, not of the shape
+    /// `sce-test-trace.v1`, its inputs out of the order of their instants, or
+    /// not its one canonical text. Wire code `test-profile/trace-text`.
+    Text,
+    /// The trace's `suite` is not the suite it is checked against, or its
+    /// `test_case` names no test case the suite runs. Wire code
+    /// `test-profile/trace-test-case`.
+    TestCase,
+    /// An input's `port` is no system port of the test case's configuration.
+    /// Wire code `test-profile/trace-port`.
+    Port,
+    /// An input's `type` is not on the `in` list of the type of its system
+    /// port. Wire code `test-profile/trace-type`.
+    Type,
+    /// An input's `value` does not belong to its type, read in the value form
+    /// of docs/SCE_TEST_PROFILE.md §12.5. Wire code `test-profile/trace-value`.
+    Value,
+}
+
+/// The message of a [`ValidationError::TestTrace`]: the reader's own words,
+/// after the JSON pointer of the place in the trace they are about, where
+/// there is one.
+fn trace_refusal_message(pointer: &str, detail: &str) -> String {
+    if pointer.is_empty() {
+        detail.to_string()
+    } else {
+        format!("{pointer}: {detail}")
+    }
+}
+
 /// Semantic validation errors from kind-specific parsing.
 ///
 /// These fire *after* XML is successfully parsed — the document
@@ -1462,6 +1497,24 @@ pub enum ValidationError {
         rule: TestProfileRule,
         kind: ForgeKind,
         document: String,
+        actual: String,
+        detail: String,
+    },
+
+    /// A recorded input trace that does not fit the suite it is checked
+    /// against (docs/SCE_TTCN3_LANE.md §10.2), `sce-codegen check-trace`.
+    /// `rule` names why and decides the wire code; `pointer` is the JSON
+    /// pointer of the place in the trace the refusal is about (`/inputs/0/port`),
+    /// empty where the text is no trace at all; `actual` is what the trace
+    /// spells there, a token, empty where the place holds none (an object, an
+    /// array, a text the canonical form escapes); `detail` is the refusal in the
+    /// words of the Rust runtime's reader of a trace, which says it at replay.
+    ///
+    /// Wire code: `test-profile/trace-<rule>` ([`TraceRule`]).
+    #[error("{}", trace_refusal_message(.pointer, .detail))]
+    TestTrace {
+        rule: TraceRule,
+        pointer: String,
         actual: String,
         detail: String,
     },
@@ -7042,6 +7095,15 @@ impl ForgeError {
     pub fn exit_code(&self) -> i32 {
         match self {
             ForgeError::Xml(_) => 2,
+            // A trace that does not fit its suite is the answer of a run that
+            // read both its inputs, as a query that matched nothing is: the
+            // status SCE_ERROR_CONTRACT.md §6 gives `test-profile/trace-*`,
+            // the codes of this variant alone.
+            ForgeError::Validation(refused)
+                if matches!(**refused, ValidationError::TestTrace { .. }) =>
+            {
+                1
+            }
             ForgeError::Validation(_) => 3,
             ForgeError::Expression(_) => 4,
             ForgeError::Import(_) => 5,

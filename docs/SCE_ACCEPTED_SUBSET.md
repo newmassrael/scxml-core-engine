@@ -671,6 +671,15 @@ never renamed. An enum of an open set, a float, a list of values that may be abs
 a template or a formal parameter of a list type have no TTCN-3 form there and are
 `generate/unsupported-feature`.
 
+A recorded input trace checked against its suite (`sce-codegen check-trace`,
+`docs/SCE_TTCN3_LANE.md` §10.2) is read after the suite is held to the rules above. A
+text that is no trace, out of the order of its instants or not its one canonical text is
+`test-profile/trace-text`; a trace of another suite, or of a test case the suite does not
+run, is `test-profile/trace-test-case`; an input on a port that is no system port of the
+test case's configuration is `test-profile/trace-port`; an input of a type its port's `in`
+list does not name is `test-profile/trace-type`; and a value that does not belong to its
+type is `test-profile/trace-value`.
+
 `union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
 told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
 tag: the `id` is the key the tag is written under, and the `sce:type` an
@@ -10000,7 +10009,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (531 codes)
+## Appendix — `DiagnosticCode` index (536 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10119,6 +10128,11 @@ Codes that the author can avoid by writing a better SCXML /
 | `test-profile/port-direction` | Validation |
 | `test-profile/specific-template` | Validation |
 | `test-profile/export-name` | Validation |
+| `test-profile/trace-text` | Validation |
+| `test-profile/trace-test-case` | Validation |
+| `test-profile/trace-port` | Validation |
+| `test-profile/trace-type` | Validation |
+| `test-profile/trace-value` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

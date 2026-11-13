@@ -3746,6 +3746,39 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Check a recorded input trace against the test suite it is of, without
+    /// running it (docs/SCE_TTCN3_LANE.md §4, §10.2).
+    ///
+    /// The suite is read as `export-ttcn3` reads it, held to the rules
+    /// `check` holds it to with every document it reaches. The trace is read
+    /// by the Rust runtime's reader of a trace, and is refused where it is
+    /// not JSON, not of the shape `sce-test-trace.v1`, out of the order of its
+    /// instants or not its one canonical text (`test-profile/trace-text`),
+    /// where it is of another suite or of a test case the suite does not run
+    /// (`test-profile/trace-test-case`), and, for each input, where its port
+    /// is no system port of the test case's configuration
+    /// (`test-profile/trace-port`), its type is not on the `in` list of that
+    /// port's type (`test-profile/trace-type`), or its value does not belong
+    /// to its type (`test-profile/trace-value`). Every refusal is reported, in
+    /// the words of the runtime's reader, placed in the trace file with the
+    /// JSON pointer of what it is about.
+    ///
+    /// Exit 0 when the trace fits the suite, writing nothing; 1 when it does
+    /// not, each refusal a `test-profile/trace-*` record; any other status is
+    /// the one `SCE_ERROR_CONTRACT.md` §6 gives the record that says an input
+    /// was not read (the suite refused, a file not read, the command line).
+    #[command(name = "check-trace")]
+    CheckTrace {
+        /// The `test-suite` document.
+        suite: String,
+        /// The trace, a file of `sce-test-trace.v1`.
+        trace: String,
+        /// Directories searched to resolve the suite's `<xi:include>` and
+        /// `<sce:use>` fragments by name — same semantics as
+        /// `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
     /// profile that holds each field of each codec of a set at the capacity a
     /// deploy input's `codecs:` block gives it, or at its bound.
@@ -4717,6 +4750,11 @@ fn main() {
             &include_dir,
             error_format,
         ),
+        Commands::CheckTrace {
+            suite,
+            trace,
+            include_dir,
+        } => cmd_check_trace(&suite, &trace, &include_dir, error_format),
         Commands::Deployment {
             scxml,
             deploy,
@@ -4915,6 +4953,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::CodecFormat { .. }
         | Commands::BoundSpelling { .. }
         | Commands::PayloadSchema { .. }
+        | Commands::CheckTrace { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -14700,6 +14739,39 @@ fn cmd_export_ttcn3(
         write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(&text), &drift);
     }
     finish_generated_output();
+}
+
+// ── Subcommand: check-trace ────────────────────────────────────
+//
+// A recorded input trace against the suite it is of, without running it
+// (docs/SCE_TTCN3_LANE.md §4, §10.2). Writes nothing when the trace fits;
+// reports every refusal of it and exits with the status SCE_ERROR_CONTRACT.md
+// §6 gives `test-profile/trace-*` when it does not. An input that is not read
+// (the trace file, the suite) is the record of why, with its own status.
+
+fn cmd_check_trace(suite: &str, trace: &str, include_dirs: &[String], error_format: ErrorFormat) {
+    // Read as the runner reads a trace, whole and as UTF-8: a file that is not
+    // is an input not read, as it is to the runner.
+    let text = sce_build::confine::read_to_string(Path::new(trace)).unwrap_or_else(|source| {
+        cli_exit(CliError::ReadInput {
+            path: trace.to_string(),
+            source,
+        })
+    });
+    let include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let refusals = sce_build::ttcn3_export::trace_check::check_trace(
+        Path::new(suite),
+        &include_dirs,
+        trace,
+        &text,
+    )
+    .unwrap_or_else(|refused| match refused {
+        sce_build::ttcn3_export::ExportError::Refused(e) => error_format.emit_forge_and_exit(&e),
+        sce_build::ttcn3_export::ExportError::NotASuite(what) => cli_exit(CliError::Usage {
+            detail: format!("check-trace reads a test suite (sce:kind=\"test-suite\"); {what}"),
+        }),
+    });
+    error_format.emit_all_and_exit(&refusals, "");
 }
 
 /// Report every bound `content` writes as an attribute

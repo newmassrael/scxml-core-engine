@@ -971,6 +971,11 @@ references against a real document and drift silently.
 | `test-profile/specific-template` | `validation` | no | SCE Test Profile §6.2 |
 | `test-profile/template-float` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/template-parameter` | `validation` | no | SCE Test Profile §11.4 |
+| `test-profile/trace-port` | `validation` | no | SCE TTCN-3 Lane §10.2 |
+| `test-profile/trace-test-case` | `validation` | no | SCE TTCN-3 Lane §10.2 |
+| `test-profile/trace-text` | `validation` | no | SCE TTCN-3 Lane §10.2 |
+| `test-profile/trace-type` | `validation` | no | SCE TTCN-3 Lane §10.2 |
+| `test-profile/trace-value` | `validation` | no | SCE TTCN-3 Lane §10.2 |
 | `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
 | `traceability/meta-generated-source-line-marker-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/sce-map-attribute-stripped` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
@@ -1304,7 +1309,7 @@ would have to guess; `cli/query-no-match` is the case that exists.
 | Code | Meaning |
 |---|---|
 | `0` | Success. |
-| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. |
+| `1` | `cli/query-no-match` — a well-formed query against a well-formed artifact that matched nothing. Not a failure of the run: the tool looked and the answer was "none". Separate from `20` so a build gate can assert "this state lowered to something" without a JSON parser. `test-profile/trace-text`, `test-profile/trace-test-case`, `test-profile/trace-port`, `test-profile/trace-type`, `test-profile/trace-value` — `check-trace` read the suite and the trace, and the trace does not fit the suite (docs/SCE_TTCN3_LANE.md §10.2): the same class of answer, the inputs read and the answer no, as `grep` and `diff` exit 1. |
 | `2` | `xml/*` |
 | `3` | `validation/*` |
 | `4` | `expression/*` |

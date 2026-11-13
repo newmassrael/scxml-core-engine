@@ -23,11 +23,15 @@ roxmltree = "0.20"
 # The one Appendix D core every Rust machine runs on (docs/adr/0064). The
 # TTCN-3 export asks it which states a branch of a test component exits and
 # enters, rather than computing them a second time
-# (`ttcn3_export::macrostep`, docs/SCE_TEST_PROFILE.md §9.5). Without its
-# default features: the export reads the tables and the microstep alone, which
-# the bare-metal profile carries too, and no cycle forms, since the runtime
-# depends on nothing of this crate.
-sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false }
+# (`ttcn3_export::macrostep`, docs/SCE_TEST_PROFILE.md §9.5). The check of a
+# recorded input trace against its suite (`ttcn3_export::trace_check`,
+# docs/SCE_TTCN3_LANE.md §10.2) reads the trace with the runtime's own reader
+# of it and of each form of its values (`sce_rust_runtime::test`), so the
+# check and a replay refuse one trace alike; that module is the `std` profile's,
+# and `std` is the one feature asked for. Not the defaults: the BasicHTTP
+# processor and the macrostep report are nothing this crate reads. No cycle
+# forms, since the runtime depends on nothing of this crate.
+sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false, features = ["std"] }
 # libxml2 FFI for XSD schema validation. Used at the parser entry point
 # to validate the sce: extension namespace against schemas/sce-forge.xsd
 # before any structural parsing runs. Build dependency: libxml2-dev
@@ -1997,6 +2001,13 @@ required-features = ["cli"]
 [[test]]
 name = "a_plan_names_the_machine_a_hyphenated_stem_spells"
 path = "tests/a_plan_names_the_machine_a_hyphenated_stem_spells.rs"
+required-features = ["cli"]
+
+# `check-trace` holds a recorded input trace to its suite without running it
+# (docs/SCE_TTCN3_LANE.md §10.2). It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_trace_is_checked_against_its_suite"
+path = "tests/a_trace_is_checked_against_its_suite.rs"
 required-features = ["cli"]
 
 [lints]

@@ -23,7 +23,7 @@
 
 use crate::forge::error::{
     ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, TestProfileRule,
-    ValidationError, XmlError,
+    TraceRule, ValidationError, XmlError,
 };
 use serde::Serialize;
 
@@ -1000,6 +1000,27 @@ pub enum DiagnosticCode {
     /// another name in its scope (docs/SCE_TEST_PROFILE.md §9.5).
     #[serde(rename = "test-profile/export-name")]
     TestProfileExportName,
+    /// A text checked as a recorded input trace that is no trace: not JSON,
+    /// not of its shape, out of order or not its one canonical text
+    /// (docs/SCE_TTCN3_LANE.md §10.2).
+    #[serde(rename = "test-profile/trace-text")]
+    TestProfileTraceText,
+    /// A trace of another suite, or of a test case its suite does not run
+    /// (docs/SCE_TTCN3_LANE.md §10.2).
+    #[serde(rename = "test-profile/trace-test-case")]
+    TestProfileTraceTestCase,
+    /// A trace's input on a port that is no system port of the test case's
+    /// configuration (docs/SCE_TTCN3_LANE.md §10.2).
+    #[serde(rename = "test-profile/trace-port")]
+    TestProfileTracePort,
+    /// A trace's input of a type its system port's `in` list does not name
+    /// (docs/SCE_TTCN3_LANE.md §10.2).
+    #[serde(rename = "test-profile/trace-type")]
+    TestProfileTraceType,
+    /// A trace's input whose value does not belong to its type
+    /// (docs/SCE_TTCN3_LANE.md §10.2, docs/SCE_TEST_PROFILE.md §12.5).
+    #[serde(rename = "test-profile/trace-value")]
+    TestProfileTraceValue,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3981,6 +4002,11 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TestProfilePortDirection,
         TestProfileSpecificTemplate,
         TestProfileExportName,
+        TestProfileTraceText,
+        TestProfileTraceTestCase,
+        TestProfileTracePort,
+        TestProfileTraceType,
+        TestProfileTraceValue,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4759,6 +4785,11 @@ impl DiagnosticCode {
             }
             TestProfileSpecificTemplate => Some("SCE Test Profile §6.2"),
             TestProfileExportName => Some("SCE Test Profile §9.5"),
+            TestProfileTraceText
+            | TestProfileTraceTestCase
+            | TestProfileTracePort
+            | TestProfileTraceType
+            | TestProfileTraceValue => Some("SCE TTCN-3 Lane §10.2"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5701,6 +5732,11 @@ impl DiagnosticCode {
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
             | TestProfileExportName
+            | TestProfileTraceText
+            | TestProfileTraceTestCase
+            | TestProfileTracePort
+            | TestProfileTraceType
+            | TestProfileTraceValue
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6231,6 +6267,11 @@ impl DiagnosticCode {
             TestProfilePortDirection => "test-profile/port-direction",
             TestProfileSpecificTemplate => "test-profile/specific-template",
             TestProfileExportName => "test-profile/export-name",
+            TestProfileTraceText => "test-profile/trace-text",
+            TestProfileTraceTestCase => "test-profile/trace-test-case",
+            TestProfileTracePort => "test-profile/trace-port",
+            TestProfileTraceType => "test-profile/trace-type",
+            TestProfileTraceValue => "test-profile/trace-value",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8590,6 +8631,29 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 actual.clone(),
                 detail.clone(),
             ],
+        },
+        // A trace that does not fit its suite (docs/SCE_TTCN3_LANE.md §10.2).
+        // `actual` is the token the trace spells at the place the pointer
+        // names, absent where it spells none there; no fix, since which value
+        // the trace meant is the recorder's to say.
+        ValidationError::TestTrace {
+            rule,
+            pointer,
+            actual,
+            detail,
+        } => DiagnosticPayload {
+            code: match rule {
+                TraceRule::Text => DiagnosticCode::TestProfileTraceText,
+                TraceRule::TestCase => DiagnosticCode::TestProfileTraceTestCase,
+                TraceRule::Port => DiagnosticCode::TestProfileTracePort,
+                TraceRule::Type => DiagnosticCode::TestProfileTraceType,
+                TraceRule::Value => DiagnosticCode::TestProfileTraceValue,
+            },
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!actual.is_empty()).then(|| actual.clone()),
+            fix: None,
+            key_fragments: vec![pointer.clone(), actual.clone(), detail.clone()],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMeshRpcReservedParam,
@@ -14639,6 +14703,81 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:a6b276729c62ac25","code":"test-profile/export-name","stage":"validation","spec":"SCE Test Profile §9.5","message":"enum 'result': the variant 'error' is a reserved word of TTCN-3 (ES 201 873-1 Annex A): the export writes every name as it is written (docs/SCE_TEST_PROFILE.md §9.5), so a name it cannot write is refused rather than renamed","actual":"error"}"#,
             ),
             (
+                // A text that is no trace (docs/SCE_TTCN3_LANE.md §10.2): the
+                // reader names no place in it, so neither pointer nor `actual`.
+                "forge/test-profile-trace-text",
+                ValidationError::TestTrace {
+                    rule: TraceRule::Text,
+                    pointer: String::new(),
+                    actual: String::new(),
+                    detail: "input 1, at 4, comes after an input at 5: the inputs stand in order \
+                             of their instants"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:26586754645f2faf","code":"test-profile/trace-text","stage":"validation","spec":"SCE TTCN-3 Lane §10.2","message":"input 1, at 4, comes after an input at 5: the inputs stand in order of their instants"}"#,
+            ),
+            (
+                // A trace of a test case its suite does not run: the test
+                // case's name, as the trace spells it, is `actual`.
+                "forge/test-profile-trace-test-case",
+                ValidationError::TestTrace {
+                    rule: TraceRule::TestCase,
+                    pointer: "/test_case".into(),
+                    actual: "answers_the_jobs".into(),
+                    detail: "the trace is of the test case 'answers_the_jobs', which the suite \
+                             'runtime_suite' does not run"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f6784d741cc1fabf","code":"test-profile/trace-test-case","stage":"validation","spec":"SCE TTCN-3 Lane §10.2","message":"/test_case: the trace is of the test case 'answers_the_jobs', which the suite 'runtime_suite' does not run","actual":"answers_the_jobs"}"#,
+            ),
+            (
+                // An input on a port that is no system port: the port is
+                // `actual`.
+                "forge/test-profile-trace-port",
+                ValidationError::TestTrace {
+                    rule: TraceRule::Port,
+                    pointer: "/inputs/0/port".into(),
+                    actual: "oracle".into(),
+                    detail: "input 0, at 500: 'oracle' is not a system port of the test case's \
+                             configuration"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2c2897e24da3af4a","code":"test-profile/trace-port","stage":"validation","spec":"SCE TTCN-3 Lane §10.2","message":"/inputs/0/port: input 0, at 500: 'oracle' is not a system port of the test case's configuration","actual":"oracle"}"#,
+            ),
+            (
+                // An input of a type its port does not take: the type is
+                // `actual`.
+                "forge/test-profile-trace-type",
+                ValidationError::TestTrace {
+                    rule: TraceRule::Type,
+                    pointer: "/inputs/0/type".into(),
+                    actual: "job_request".into(),
+                    detail: "input 0, at 500: 'job_request' is not on the `in` list of the type \
+                             of the system port 'sut'"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0638687737fda872","code":"test-profile/trace-type","stage":"validation","spec":"SCE TTCN-3 Lane §10.2","message":"/inputs/0/type: input 0, at 500: 'job_request' is not on the `in` list of the type of the system port 'sut'","actual":"job_request"}"#,
+            ),
+            (
+                // A value that does not belong to its type: the text the
+                // reader refused is `actual`.
+                "forge/test-profile-trace-value",
+                ValidationError::TestTrace {
+                    rule: TraceRule::Value,
+                    pointer: "/inputs/0/value/code".into(),
+                    actual: "007".into(),
+                    detail: "input 0, at 500: job_reply.code: '007' is not the text of an \
+                             integer's decimal digits"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:eb49e49a6862e47d","code":"test-profile/trace-value","stage":"validation","spec":"SCE TTCN-3 Lane §10.2","message":"/inputs/0/value/code: input 0, at 500: job_reply.code: '007' is not the text of an integer's decimal digits","actual":"007"}"#,
+            ),
+            (
                 "forge/mesh-rpc-reserved-param",
                 ValidationError::MeshRpcReservedParam {
                     param: "_mesh_event".into(),
@@ -20566,6 +20705,11 @@ mod tests {
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
             | TestProfileExportName
+            | TestProfileTraceText
+            | TestProfileTraceTestCase
+            | TestProfileTracePort
+            | TestProfileTraceType
+            | TestProfileTraceValue
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -21576,6 +21720,11 @@ mod tests {
                 | TestProfileModuleParameterWritten | TestProfilePortDirection
                 | TestProfileSpecificTemplate
                 | TestProfileExportName
+                | TestProfileTraceText
+                | TestProfileTraceTestCase
+                | TestProfileTracePort
+                | TestProfileTraceType
+                | TestProfileTraceValue
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21995,9 +22144,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            531,
+            536,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 531 distinct variants to match the DiagnosticCode \
+             expected 536 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22677,6 +22826,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | TestProfilePortDirection
             | TestProfileSpecificTemplate
             | TestProfileExportName
+            | TestProfileTraceText
+            | TestProfileTraceTestCase
+            | TestProfileTracePort
+            | TestProfileTraceType
+            | TestProfileTraceValue
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

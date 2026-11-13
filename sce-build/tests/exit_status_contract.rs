@@ -50,7 +50,7 @@ const MIN_TABLE_ROWS: usize = 14;
 /// Raised with the list rather than left where it was: at 24 against 35
 /// probes the floor would not have noticed eleven of them disappearing,
 /// which is the one thing it is here to notice.
-const MIN_PROBES: usize = 38;
+const MIN_PROBES: usize = 40;
 
 /// Rows of §6 this file does not exercise, each with the reason.
 ///
@@ -591,6 +591,27 @@ fn probes(fx: &Fixtures) -> Vec<(String, Vec<String>, Option<String>)> {
             s("--state"),
             s("definitely_not_a_state"),
         ],
+        None,
+    );
+
+    // ── a trace that does not fit its suite: the inputs read, the answer no ──
+    //
+    // Row `1` is not the query commands' alone: `check-trace` read the suite
+    // and the trace and found that the trace does not fit (a text that is no
+    // trace, here). A trace file it cannot read is an input not read, and
+    // leaves with the status of that record instead.
+    let runtime_suite = repo_root()
+        .join("sce-build/tests/fixtures/test_profile/runtime/runtime_suite.scxml")
+        .display()
+        .to_string();
+    add(
+        "test-profile/trace-does-not-fit",
+        vec![s("check-trace"), runtime_suite.clone(), fx.path("bad.json")],
+        None,
+    );
+    add(
+        "cli/check-trace-missing-trace",
+        vec![s("check-trace"), runtime_suite, fx.path("nope.json")],
         None,
     );
 
